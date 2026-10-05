@@ -628,7 +628,7 @@ func sync_armies(armies: Array, battle) -> void:
 				if n >= 0 and sim.cells[n]["controller"] != a["side"] and Types.is_passable(sim.cells[n]) and sim.cells[n]["controller"] != Types.NOBODY:
 					face_to += cell_world(n) - cell_world(a["hex"])
 		if face_to.length() > 0.1:
-			var want := atan2(face_to.x, face_to.z) + PI
+			var want := atan2(face_to.x, face_to.z)  # models face +Z
 			model.rotation.y = lerp_angle(model.rotation.y, want, 0.25)
 	for id in _army_nodes.keys():
 		if not alive.has(id):

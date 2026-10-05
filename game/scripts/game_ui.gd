@@ -227,6 +227,10 @@ func _on_card_input(event: InputEvent, card: String) -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if event is InputEventScreenTouch:
+		_finger_down = (event as InputEventScreenTouch).pressed
+	elif event is InputEventMouseButton and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
+		_finger_down = (event as InputEventMouseButton).pressed
 	if _drag_card != "":
 		var pos := Vector2.ZERO
 		var released := false
@@ -570,40 +574,57 @@ static func fmt_time(sec: int) -> String:
 
 
 ## items: [{id, name, level, max, busy, left, speed, cost: {res: n}, seconds, reason}]
-func show_buildings(items: Array) -> void:
-	if _bpanel == null:
-		_bpanel = Control.new()
-		_bpanel.position = Vector2(0, VH - 188)
-		_bpanel.size = Vector2(640, 182)
-		_bpanel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		root.add_child(_bpanel)
-		root.move_child(_bpanel, 0)
-		_bscroll = ScrollContainer.new()
-		_bscroll.position = Vector2(8, 0)
-		_bscroll.size = Vector2(626, 182)
-		_bscroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-		_bscroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
-		_bpanel.add_child(_bscroll)
-		_brow = HBoxContainer.new()
-		_brow.add_theme_constant_override("separation", 8)
-		_bscroll.add_child(_brow)
+var _bkey := ""
+var _finger_down := false
+
+
+func _ensure_panel() -> void:
+	if _bpanel != null:
+		return
+	_bpanel = Control.new()
+	_bpanel.position = Vector2(0, VH - 188)
+	_bpanel.size = Vector2(640, 182)
+	_bpanel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(_bpanel)
+	root.move_child(_bpanel, 0)
+	_bscroll = ScrollContainer.new()
+	_bscroll.position = Vector2(8, 0)
+	_bscroll.size = Vector2(626, 182)
+	_bscroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_bscroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+	_bpanel.add_child(_bscroll)
+	_brow = HBoxContainer.new()
+	_brow.add_theme_constant_override("separation", 8)
+	_bscroll.add_child(_brow)
+
+
+## Rebuilds the card row only when its content changed, and never under a finger (a rebuild between
+## press and release would swallow the tap).
+func _fill_panel(kind: String, items: Array, builder: Callable) -> void:
+	_ensure_panel()
 	_bpanel.visible = true
+	var key := kind + JSON.stringify(items)
+	if key == _bkey:
+		return
+	if _finger_down and _bkey.begins_with(kind):
+		return
+	_bkey = key
 	var keep := _bscroll.scroll_horizontal
 	for c in _brow.get_children():
 		_brow.remove_child(c)
 		c.queue_free()
 	for it in items:
-		_brow.add_child(_building_card(it))
+		_brow.add_child(builder.call(it))
 	_bscroll.set_deferred("scroll_horizontal", keep)
+
+
+func show_buildings(items: Array) -> void:
+	_fill_panel("b", items, _building_card)
 
 
 ## Army tab: one card per army (strength, readiness, refill) and a «Новая армия» card (canon §8.1).
 func show_armies(items: Array) -> void:
-	show_buildings([])
-	for c in _brow.get_children():
-		c.queue_free()
-	for it in items:
-		_brow.add_child(_army_card(it))
+	_fill_panel("a", items, _army_card)
 
 
 func _army_card(it: Dictionary) -> Control:
@@ -677,11 +698,7 @@ func _army_card(it: Dictionary) -> Control:
 
 ## Diplomacy tab: a card per neighbour — leader, opinion, status, war / gift buttons (canon §10.6).
 func show_diplomacy(items: Array) -> void:
-	show_buildings([])
-	for c in _brow.get_children():
-		c.queue_free()
-	for it in items:
-		_brow.add_child(_diplomacy_card(it))
+	_fill_panel("d", items, _diplomacy_card)
 
 
 func _diplomacy_card(it: Dictionary) -> Control:
@@ -733,11 +750,7 @@ func _diplomacy_card(it: Dictionary) -> Control:
 
 ## World tab: chapter progress and the chapter stars (canon §12.1).
 func show_world(items: Array) -> void:
-	show_buildings([])
-	for c in _brow.get_children():
-		c.queue_free()
-	for it in items:
-		_brow.add_child(_chapter_card(it) if it["kind"] == "chapter" else _star_card(it))
+	_fill_panel("w", items, func(it): return _chapter_card(it) if it["kind"] == "chapter" else _star_card(it))
 
 
 func _chapter_card(it: Dictionary) -> Control:
@@ -810,6 +823,7 @@ func _star_card(it: Dictionary) -> Control:
 func hide_buildings() -> void:
 	if _bpanel:
 		_bpanel.visible = false
+	_bkey = ""
 
 
 func _building_card(it: Dictionary) -> Control:
