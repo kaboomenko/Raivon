@@ -1,0 +1,27 @@
+{
+  "name": "raivon",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Raivon: Territory Wars — mobile hex territory strategy",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @raivon/client",
+    "build": "npm run build -w @raivon/client",
+    "test": "npm test -w @raivon/sim",
+    "typecheck": "tsc -p packages/sim && tsc -p apps/client"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.2",
+    "vite-plugin-singlefile": "^2.3.3",
+    "vitest": "^5.0.3"
+  }
+}
