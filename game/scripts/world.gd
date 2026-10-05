@@ -31,6 +31,7 @@ func _ready() -> void:
 	_place_props()
 	_place_armies()
 	_build_clouds()
+	_build_horizon()
 
 
 func _load_models() -> void:
@@ -449,3 +450,74 @@ func describe(c: Vector2i) -> Dictionary:
 		bonus = "+50% к защите · Ядро"
 	return {"title": title, "owner": owner_text, "owner_color": owner_col, "bonus": bonus,
 		"attackable": cell["owner"] == Owner.ENEMY, "terrain": cell["terrain"]}
+
+
+# ------------------------------------------------------------------ horizon: mountain ring + clouds beyond the known map
+
+func _build_horizon() -> void:
+	var ring_mat := StandardMaterial3D.new()
+	ring_mat.albedo_color = Color(0.2, 0.24, 0.22)
+	ring_mat.roughness = 1.0
+	for q in range(-12, 13):
+		for r in range(-14, 15):
+			var c := Vector2i(q, r)
+			if cells.has(c):
+				continue
+			var p := axial_to_world(q, r)
+			if abs(p.x) > 16.0 or abs(p.z) > 19.0:
+				continue
+			# only a band around the map, the far void stays dark
+			var near := false
+			for d in DIRS:
+				for d2 in DIRS:
+					if cells.has(c + d + d2) or cells.has(c + d):
+						near = true
+			if not near:
+				continue
+			var roll := rng.randf()
+			if roll < 0.55:
+				spawn("mountain", p + Vector3(0, -0.1, 0), rng.randf() * TAU, rng.randf_range(1.6, 2.6))
+			elif roll < 0.85:
+				for i in 4:
+					spawn("tree_pine", p + Vector3(rng.randf_range(-0.7, 0.7), -0.05, rng.randf_range(-0.7, 0.7)), rng.randf() * TAU, rng.randf_range(0.9, 1.3))
+			var base := MeshInstance3D.new()
+			var cm := CylinderMesh.new()
+			cm.top_radius = 1.0
+			cm.bottom_radius = 1.0
+			cm.height = 1.0
+			cm.radial_segments = 6
+			base.mesh = cm
+			base.rotation.y = 0.0
+			base.position = p + Vector3(0, -0.55, 0)
+			base.material_override = ring_mat
+			add_child(base)
+			if rng.randf() < 0.6:
+				_cloud(p + Vector3(rng.randf_range(-0.5, 0.5), rng.randf_range(1.2, 2.4), rng.randf_range(-0.5, 0.5)), rng.randf_range(3.0, 5.0))
+
+
+var _cloud_mat: StandardMaterial3D
+
+func _cloud(pos: Vector3, size: float) -> void:
+	if _cloud_mat == null:
+		var tex := GradientTexture2D.new()
+		var g := Gradient.new()
+		g.set_color(0, Color(1, 1, 1, 0.9))
+		g.set_color(1, Color(1, 1, 1, 0.0))
+		tex.gradient = g
+		tex.fill = GradientTexture2D.FILL_RADIAL
+		tex.fill_from = Vector2(0.5, 0.5)
+		tex.fill_to = Vector2(0.5, 0.0)
+		_cloud_mat = StandardMaterial3D.new()
+		_cloud_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_cloud_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_cloud_mat.albedo_texture = tex
+		_cloud_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+		_cloud_mat.albedo_color = Color(0.9, 0.92, 0.95, 0.85)
+	var q := QuadMesh.new()
+	q.size = Vector2(size, size * 0.6)
+	var mi := MeshInstance3D.new()
+	mi.mesh = q
+	mi.material_override = _cloud_mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.position = pos
+	add_child(mi)
