@@ -576,6 +576,13 @@ func sync_armies(armies: Array, battle) -> void:
 		var id: int = a["id"]
 		alive[id] = true
 		var node: Node3D = _army_nodes.get(id)
+		var dl: int = int(sim.states[a["side"]]["dev_level"]) if a["side"] < sim.states.size() else 1
+		if node != null and int(node.get_meta("dl", dl)) != dl:
+			var keep := node.position
+			node.queue_free()
+			node = _make_army(a)
+			node.position = keep
+			_army_nodes[id] = node
 		if node == null:
 			node = _make_army(a)
 			_army_nodes[id] = node
@@ -694,8 +701,21 @@ func _make_army(a: Dictionary) -> Node3D:
 	var model := Node3D.new()
 	model.name = "model"
 	node.add_child(model)
-	spawn("squad_" + side, model, Vector3(-0.15, 0, 0.05), 0.0, 1.15)
-	spawn("knight_" + ("blue" if side == "blue" else "red"), model, Vector3(0.32, 0, 0.25), 0.0, 1.25)
+	# troops look like their state's development level (canon §6.1); fall back to the base models
+	var dl: int = int(sim.states[a["side"]]["dev_level"]) if a["side"] < sim.states.size() else 1
+	node.set_meta("dl", dl)
+	var squad := ""
+	var assault := ""
+	for n in range(dl, 0, -1):
+		if squad == "" and has_model("squad_dl%d_%s" % [n, side]):
+			squad = "squad_dl%d_%s" % [n, side]
+		if assault == "" and has_model("assault_dl%d_%s" % [n, side]):
+			assault = "assault_dl%d_%s" % [n, side]
+	spawn(squad if squad != "" else "squad_" + side, model, Vector3(-0.15, 0, 0.05), 0.0, 1.15)
+	if assault != "":
+		spawn(assault, model, Vector3(0.32, 0, 0.25), 0.0, 1.25)
+	elif dl >= 2 or squad == "":
+		spawn("knight_" + ("blue" if side == "blue" else "red"), model, Vector3(0.32, 0, 0.25), 0.0, 1.25)
 	spawn("banner_" + side, model, Vector3(0.05, 0, -0.35), 0.0, 0.9)
 	var lbl := Label3D.new()
 	lbl.name = "label"
