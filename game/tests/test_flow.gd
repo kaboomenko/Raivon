@@ -122,7 +122,19 @@ func _run() -> void:
 		_check(econ.busy_builders(g.now_s()) == 1, "upgrade occupies a builder")
 		g.time_offset += 2 * 3600
 		g._econ_tick()
-		_check(econ.building(target_b["id"])["level"] == lvl0 + 1, "upgrade completes after its timer")
+		_check(econ.building(target_b["id"])["level"] == lvl0 + 1, "upgrade completes after its timer (%s)" % target_b["name"])
+	# fortification on an own non-capital hex via the fort button
+	var fhex := -1
+	for c in g.sim.cells:
+		if c["owner"] == Types.PLAYER and c["kind"] == "plain" and c["fort"] == 0:
+			fhex = c["id"]
+			break
+	if fhex >= 0:
+		g._select(fhex)
+		g._fort_action()
+		g.time_offset += 3600
+		g._econ_tick()
+		_check(g.sim.cells[fhex]["fort"] == 1, "fort button builds a level-1 fortification")
 	g._open_tab("army")
 	g.queue_free()
 	await process_frame

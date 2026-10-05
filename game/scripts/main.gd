@@ -325,7 +325,7 @@ func _on_hud_button(name: String) -> void:
 		"pin":
 			rig.focus(map_view.cell_world(sim.states[Types.PLAYER]["capital_id"]))
 		"fort":
-			ui.toast("Укрепления — в следующей версии")
+			_fort_action()
 		"trophy":
 			ui.toast("Глава I «Долина»: %d / %d гексов" % [_player_hexes(), CHAPTER_GOAL])
 		"book":
@@ -1094,6 +1094,9 @@ func _econ_event(ev: Dictionary) -> void:
 	match ev.get("type", ""):
 		"upgrade_done":
 			var b: Dictionary = econ.building(int(ev["building"]))
+			if String(b.get("type", "")) in ["fort", "tower"] and int(b.get("hex", -1)) >= 0:
+				map_view.refresh_hex(int(b["hex"]))
+				map_view.pop_hex(int(b["hex"]))
 			var name: String = Economy.BUILDINGS[String(ev.get("building_type", b.get("type", "")))]["name"]
 			ui.toast("%s: уровень %d готов!" % [name, int(ev["level"])])
 			sfx.play("capture")
@@ -1102,10 +1105,64 @@ func _econ_event(ev: Dictionary) -> void:
 		"dev_level":
 			ui.toast("🏰 Держава достигла УР %d! Новые постройки и уровни" % econ.dev_level())
 			sfx.play("fanfare")
+			_dl_ceremony()
 		"building_unlocked":
 			ui.toast("Открыто: %s" % Economy.BUILDINGS[String(ev.get("building_type", "market"))]["name"])
 		"fort_refund":
 			ui.toast("Укрепление на потерянном гексе разобрано, металл возвращён")
+
+
+## DL-up (canon §6): the capital rebuilds first, then the rest of the land in rings, ~6 s in total.
+func _dl_ceremony() -> void:
+	var own := {}
+	for c in sim.cells:
+		if c["owner"] == Types.PLAYER:
+			own[c["id"]] = true
+	var cap: int = sim.states[Types.PLAYER]["capital_id"]
+	var rings := Topology.rings_from(sim, [cap], own)
+	var max_r := 1
+	for id in rings:
+		max_r = maxi(max_r, int(rings[id]))
+	var step := minf(0.35, 5.0 / max_r)
+	rig.focus(map_view.cell_world(cap))
+	map_view.fireworks(map_view.cell_world(cap), 3)
+	for id in rings:
+		var t := 0.2 + step * int(rings[id])
+		var tw := map_view.create_tween()
+		tw.tween_interval(t)
+		tw.tween_callback(map_view.refresh_hex.bind(id))
+		tw.tween_callback(map_view.pop_hex.bind(id))
+		tw.tween_callback(map_view.burst.bind(id, Color(1.0, 0.85, 0.35), int(rings[id]) == 0))
+		tw.tween_callback(sfx.play.bind("pop", int(rings[id]), -4.0))
+
+
+## Fort button: build a fortification on the selected own hex or upgrade the one standing there.
+func _fort_action() -> void:
+	if selected < 0 or sim.cells[selected]["owner"] != Types.PLAYER:
+		ui.toast("Выберите свой гекс, чтобы поставить укрепление")
+		return
+	var now := now_s()
+	econ.tick(sim, now)
+	var fort: Dictionary = {}
+	for b in econ.buildings_at(selected):
+		if b["type"] == "fort":
+			fort = b
+	if fort.is_empty():
+		var reason: String = econ.can_build(sim, "fort", selected, now)
+		if reason != "" or not econ.start_build(sim, "fort", selected, now):
+			ui.toast(reason if reason != "" else "Нельзя построить")
+			return
+		ui.toast("Укрепление строится: %s" % GameUI.fmt_time(int(econ.buildings_at(selected)[-1]["upgrade_end"]) - now))
+	else:
+		var reason2: String = econ.can_upgrade(fort, now)
+		if reason2 != "" or not econ.start_upgrade(fort["id"], now):
+			ui.toast(reason2 if reason2 != "" else "Нельзя улучшить")
+			return
+		ui.toast("Укрепление → ур. %d" % (int(fort["level"]) + 1))
+	sfx.play("coin")
+	map_view.burst(selected, Color(1.0, 0.85, 0.3))
+	_econ_tick()
+	_autosave()
 
 
 func _update_bubbles() -> void:

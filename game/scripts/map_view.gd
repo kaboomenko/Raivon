@@ -233,6 +233,31 @@ func pop_hex(id: int) -> void:
 	tw.tween_property(holder, "scale", Vector3.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
+## Model name for `kind` ("city", "residence") in the style of the owner's development level
+## (canon §6: every DL changes how the state looks); falls back to lower levels, "" if none exist.
+func evolved(kind: String, owner: int) -> String:
+	if owner <= Types.NOBODY or owner >= sim.states.size():
+		return ""
+	var dl: int = clampi(int(sim.states[owner]["dev_level"]), 1, 10)
+	var side := _faction_suffix(owner)
+	for n in range(dl, 0, -1):
+		var name := "%s_dl%d_%s" % [kind, n, side]
+		if models.has(name):
+			return name
+	return ""
+
+
+## Fortification around the hex edge by its own level (canon §6.1: forts look like their level).
+func _place_fort(c: Dictionary, holder: Node3D) -> void:
+	var lvl: int = c["fort"]
+	if lvl <= 0:
+		return
+	for n in range(mini(lvl, 8), 0, -1):
+		if models.has("fort_l%d" % n):
+			spawn("fort_l%d" % n, holder, Vector3.ZERO, 0.0, 1.0)
+			return
+
+
 func _place_hex_props(c: Dictionary) -> void:
 	var holder := Node3D.new()
 	holder.position = cell_world(c["id"])
@@ -251,13 +276,23 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 	var side := _faction_suffix(c["owner"])
 	match c["kind"]:
 		"capital":
-			var model := "castle" if c["owner"] == Types.PLAYER else ("castle_green" if c["owner"] == MapGen.HAMLETS else "castle_red")
-			spawn(model, holder, p, 0.3 if c["owner"] == Types.PLAYER else PI, 1.35)
+			var rm := evolved("residence", c["owner"])
+			if rm != "":
+				spawn(rm, holder, p, 0.3 if c["owner"] == Types.PLAYER else PI, 1.0)
+			else:
+				var model := "castle" if c["owner"] == Types.PLAYER else ("castle_green" if c["owner"] == MapGen.HAMLETS else "castle_red")
+				spawn(model, holder, p, 0.3 if c["owner"] == Types.PLAYER else PI, 1.35)
+			_place_fort(c, holder)
 			return
 		"city":
-			var hm := "house_blue" if c["owner"] == Types.PLAYER else ("house_green" if c["owner"] == MapGen.HAMLETS else "house_red")
-			for o in [Vector3(-0.3, 0, 0.15), Vector3(0.3, 0, -0.25), Vector3(0.1, 0, 0.4), Vector3(-0.25, 0, -0.35)]:
-				spawn(hm, holder, p + o, rng.randf() * TAU, 1.05)
+			var cm := evolved("city", c["owner"])
+			if cm != "":
+				spawn(cm, holder, p, rng.randf() * TAU, 1.0)
+			else:
+				var hm := "house_blue" if c["owner"] == Types.PLAYER else ("house_green" if c["owner"] == MapGen.HAMLETS else "house_red")
+				for o in [Vector3(-0.3, 0, 0.15), Vector3(0.3, 0, -0.25), Vector3(0.1, 0, 0.4), Vector3(-0.25, 0, -0.35)]:
+					spawn(hm, holder, p + o, rng.randf() * TAU, 1.05)
+			_place_fort(c, holder)
 			return
 		"farm":
 			spawn("wheat_field", holder, p + Vector3(0.1, 0, 0.1), 0.0, 0.95)
@@ -279,6 +314,7 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 			for i in rng.randi_range(1, 4):
 				var off := Vector3(rng.randf_range(-0.6, 0.6), 0, rng.randf_range(-0.6, 0.6))
 				spawn("tree_pine" if rng.randf() < 0.6 else "tree_round", holder, p + off, rng.randf() * TAU, rng.randf_range(0.7, 1.0))
+	_place_fort(c, holder)
 	if c["owner"] != Types.NOBODY and rng.randf() < 0.3:
 		spawn("banner_" + side, holder, p + Vector3(rng.randf_range(-0.4, 0.4), 0, rng.randf_range(-0.4, 0.4)))
 
