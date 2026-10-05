@@ -68,6 +68,7 @@ static func to_dict(g: Node) -> Dictionary:
 		"speed_minutes": g.speed_minutes,
 		"purchases": g.purchases,
 		"research": g.research.to_dict(),
+		"market": g.market.to_dict() if g.market != null else {},
 	}
 	if g.get("econ") != null:
 		d["econ"] = g.econ.to_dict()
@@ -163,6 +164,10 @@ static func apply(g: Node, d: Dictionary) -> bool:
 	g.purchases = d.get("purchases", {})
 	if d.has("research"):
 		g.research = load("res://scripts/sim/research.gd").from_dict(d["research"])
+	if typeof(d.get("market")) == TYPE_DICTIONARY:
+		if g.market == null:
+			g.market = load("res://scripts/sim/market.gd").new()
+		g.market.load_dict(d["market"])
 	g._last_refill = int(d.get("saved_at", 0))  # armies heal while the app is closed
 	if d.has("econ") and g.get("econ") != null:
 		g.econ = g.econ.get_script().from_dict(d["econ"])

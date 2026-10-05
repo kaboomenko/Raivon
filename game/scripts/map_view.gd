@@ -1264,11 +1264,11 @@ func _process(delta: float) -> void:
 		bn.position.y = 2.0 + 0.07 * sin(bt * 3.0 + h)
 	_step_volleys(delta)
 	for i in range(_sails.size() - 1, -1, -1):
-		var sl: Node3D = _sails[i]
-		if not is_instance_valid(sl):
+		var obj: Variant = _sails[i]
+		if not is_instance_valid(obj):
 			_sails.remove_at(i)
 			continue
-		sl.rotate_object_local(Vector3.FORWARD, -1.1 * delta)
+		(obj as Node3D).rotate_object_local(Vector3.FORWARD, -1.1 * delta)
 	for h in _dep_nodes:
 		var ic: Node3D = _dep_nodes[h].get_node("icon")
 		ic.position.y = cell_world(h).y + 0.8 + 0.06 * sin(bt * 2.5 + h * 0.7)

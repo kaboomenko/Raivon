@@ -416,3 +416,28 @@ ftue.13,Отлично! Окружённые гексы сдаются быст�
 ftue.14,Подпишите мир с Хуторами.,Sign a peace with the Hamlets.
 ftue.15,Пощадить Хутора (+20 к мнению) или разграбить? Выберите и удерживайте печать.,"Spare the Hamlets (+20 opinion) or plunder them? Choose, then hold the seal."
 toast.cloud_loaded,Загружено облачное сохранение,Cloud save restored
+res.name.gold,Золото,Gold
+res.name.food,Еда,Food
+res.name.metal,Металл,Metal
+market.title,Рынок · ур. %d,Market · level %d
+market.rate,курс %s : 1,rate %s : 1
+market.give,Отдаю,You give
+market.get,Получаю,You get
+market.stock,на складе %s,stored %s
+market.free,свободно %s,free %s
+market.max,Всё,All
+market.fits,Поместится только %s — склад почти полон,Only %s fits — the warehouse is almost full
+market.exchange,Обменять,Exchange
+market.trader,Торговец · новые лоты через %s,Trader · new lots in %s
+market.buy,Купить,Buy
+market.bought,Куплено,Bought
+market.open,⇄ Рынок,⇄ Market
+market.done,Обмен: −%s %s → +%s %s,Exchanged: −%s %s → +%s %s
+market.not_enough,Не хватает ресурса для этого лота,Not enough resources for this lot
+market.no_space,На складе нет места,No room in the warehouse
+market.locked,Рынок открывается на УР2,The Market opens at DL2
+market.no_lot,Лот недоступен,Lot unavailable
+market.full_hint,Склад: %s почти полон · обменяй на Рынке,Warehouse: %s almost full · trade it at the Market
+trader.needed,Нужное,Needed
+trader.common,Ходовой,Popular
+trader.generous,Щедрый,Generous

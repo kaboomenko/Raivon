@@ -15,6 +15,7 @@ signal world_action(id: String)
 signal research_start(line: String)
 signal plunder_selected(level: int)
 signal research_speedup(line: String)
+signal market_open
 
 const PANEL := Color(0.055, 0.085, 0.14, 0.95)
 const EDGE := Color(0.32, 0.42, 0.58, 0.6)
@@ -336,6 +337,10 @@ func set_primary(kind: String, title: String, color := Color(0.13, 0.4, 0.9), en
 
 # ------------------------------------------------------------------ modals
 
+func has_modal() -> bool:
+	return _modal != null
+
+
 func close_modal() -> void:
 	if _modal:
 		_modal.queue_free()
@@ -593,6 +598,129 @@ func show_settings(sound_on: bool, on_sound: Callable, on_new_game: Callable, on
 	_button(box, Rect2(40, 584, 681, 84), tr("ui.close"), Color(0.13, 0.4, 0.9), close_modal)
 
 
+# ------------------------------------------------------------------ market (05 §13)
+
+const MARKET_RES: Array[String] = ["gold", "food", "metal"]
+const MARKET_PCT: Array[int] = [10, 25, 50, 100]
+
+
+## 2632 -> "2.63" ("2,63" in Russian).
+static func _rate_txt(milli: int) -> String:
+	var t := "%.2f" % (milli / 1000.0)
+	return t.replace(".", ",") if L.lang() == "ru" else t
+
+## Market: «give / get» resource pickers, amount presets, live quote and the daily trader's 3 lots.
+## `info`: level, rate (thousandths), res, cap, lots [{key, give, get, give_amt, get_amt, rate, bought, ok}],
+## refresh_left, sel {give, get, pct}. `quote_fn(give, get, amount) -> {give, get, cap_hit}`;
+## `on_exchange(give, get, amount)`, `on_lot(i)` — the caller re-opens the modal with fresh info.
+func show_market(info: Dictionary, quote_fn: Callable, on_exchange: Callable, on_lot: Callable) -> void:
+	var box := _modal_box(Rect2(40, 330, 861, 1180))
+	var sel: Dictionary = info["sel"]
+	var res: Dictionary = info["res"]
+	var cap: Dictionary = info["cap"]
+	var rerender := func(): show_market(info, quote_fn, on_exchange, on_lot)
+	_at(_label(tr("market.title") % int(info["level"]), 34), box, Vector2(36, 26))
+	var rl := _label(tr("market.rate") % _rate_txt(int(info["rate"])), 22, Color(1.0, 0.85, 0.4))
+	rl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_at(rl, box, Vector2(430, 34), Vector2(395, 34))
+	for row in 2:
+		var y := 96.0 + row * 170.0
+		var side := "give" if row == 0 else "get"
+		_at(_label(tr("market." + side), 22, MUTED, false), box, Vector2(36, y))
+		for i in MARKET_RES.size():
+			var r: String = MARKET_RES[i]
+			var on: bool = String(sel[side]) == r
+			var other := "get" if side == "give" else "give"
+			var b := _panel(box, Rect2(36 + i * 268, y + 36, 254, 116), _style(Color(0.16, 0.42, 0.95) if on else Color(0.14, 0.18, 0.27), 14, Color(1, 1, 1, 0.6 if on else 0.25), 2))
+			var ic := TextureRect.new()
+			ic.texture = _icon(r)
+			ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			ic.size = Vector2(44, 44)
+			ic.position = Vector2(14, 14)
+			ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			b.add_child(ic)
+			var nl := _label(tr("res.name." + r), 22)
+			nl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			_at(nl, b, Vector2(66, 20))
+			var amount: int = int(res.get(r, 0)) if side == "give" else maxi(0, int(cap.get(r, 0)) - int(res.get(r, 0)))
+			var sub := _label(tr("market.stock" if side == "give" else "market.free") % fmt_num(amount), 17, Color(0.85, 0.9, 1.0) if on else MUTED, false)
+			sub.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			_at(sub, b, Vector2(14, 70))
+			b.gui_input.connect(func(e):
+				if _is_tap(e) and String(sel[side]) != r:
+					if String(sel[other]) == r:
+						sel[other] = sel[side]
+					sel[side] = r
+					rerender.call())
+	var give: String = sel["give"]
+	var get_r: String = sel["get"]
+	for i in MARKET_PCT.size():
+		var pct: int = MARKET_PCT[i]
+		var on2: bool = int(sel["pct"]) == pct
+		_button(box, Rect2(36 + i * 200, 448, 188, 70), "%d%%" % pct if pct < 100 else tr("market.max"), Color(0.16, 0.42, 0.95) if on2 else Color(0.14, 0.18, 0.27), func():
+			sel["pct"] = pct
+			rerender.call())
+	var want: int = int(res.get(give, 0)) * int(sel["pct"]) / 100
+	var q: Dictionary = quote_fn.call(give, get_r, want)
+	var qg: int = int(q.get("give", 0))
+	var qr: int = int(q.get("get", 0))
+	var line := HBoxContainer.new()
+	line.add_theme_constant_override("separation", 12)
+	line.alignment = BoxContainer.ALIGNMENT_CENTER
+	line.position = Vector2(0, 540)
+	line.size = Vector2(861, 56)
+	for part in [[give, "−" + fmt_num(qg)], ["", "→"], [get_r, "+" + fmt_num(qr)]]:
+		if String(part[0]) != "":
+			var ic2 := TextureRect.new()
+			ic2.texture = _icon(String(part[0]))
+			ic2.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			ic2.custom_minimum_size = Vector2(44, 44)
+			line.add_child(ic2)
+		line.add_child(_label(String(part[1]), 34))
+	box.add_child(line)
+	if bool(q.get("cap_hit", false)):
+		var ch := _label(tr("market.fits") % fmt_num(qr), 18, Color(1.0, 0.7, 0.35), false)
+		ch.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		_at(ch, box, Vector2(0, 600), Vector2(861, 26))
+	var can := qr > 0
+	var ex := _button(box, Rect2(36, 636, 789, 92), tr("market.exchange"), Color(0.2, 0.6, 0.3) if can else Color(0.3, 0.33, 0.4), func():
+		if can:
+			on_exchange.call(give, get_r, qg))
+	ex.modulate.a = 1.0 if can else 0.6
+	var tl := _label(tr("market.trader") % fmt_time(int(info["refresh_left"])), 22, Color(1.0, 0.85, 0.4))
+	tl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_at(tl, box, Vector2(0, 752), Vector2(861, 32))
+	var lots: Array = info["lots"]
+	for i in lots.size():
+		var lot: Dictionary = lots[i]
+		var y2 := 796.0 + i * 100.0
+		var row_p := _panel(box, Rect2(36, y2, 789, 88), _style(Color(0.12, 0.16, 0.24), 12, Color(0.95, 0.75, 0.3, 0.6), 2), Control.MOUSE_FILTER_IGNORE)
+		var nm := _label(tr(String(lot["key"])), 20, Color(1.0, 0.85, 0.4))
+		_at(nm, row_p, Vector2(16, 6))
+		var lr := HBoxContainer.new()
+		lr.add_theme_constant_override("separation", 8)
+		lr.position = Vector2(16, 38)
+		for part2 in [[String(lot["give"]), fmt_num(int(lot["give_amt"]))], ["", "→"], [String(lot["get"]), fmt_num(int(lot["get_amt"]))]]:
+			if String(part2[0]) != "":
+				var ic3 := TextureRect.new()
+				ic3.texture = _icon(String(part2[0]))
+				ic3.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+				ic3.custom_minimum_size = Vector2(32, 32)
+				lr.add_child(ic3)
+			lr.add_child(_label(String(part2[1]), 24))
+		row_p.add_child(lr)
+		var rate_l := _label(_rate_txt(int(lot["rate"])) + " : 1", 17, MUTED, false)
+		_at(rate_l, row_p, Vector2(380, 44))
+		var bought: bool = lot["bought"]
+		var ok: bool = lot.get("ok", false)
+		var idx := i
+		var bb := _button(row_p, Rect2(560, 12, 214, 64), tr("market.bought") if bought else tr("market.buy"), Color(0.3, 0.33, 0.4) if bought or not ok else Color(0.85, 0.55, 0.1), func():
+			if not bought:
+				on_lot.call(idx))
+		bb.mouse_filter = Control.MOUSE_FILTER_STOP
+	_button(box, Rect2(36, 1100, 789, 64), tr("ui.close"), Color(0.13, 0.4, 0.9), close_modal)
+
+
 # ------------------------------------------------------------------ buildings tab (canon §7)
 
 const RES_ICON := {"gold": "coin", "food": "food", "metal": "metal", "oil": "metal", "raivite": "raivite"}
@@ -607,6 +735,16 @@ func _icon(res: String) -> Texture2D:
 	if not _icon_cache.has(k):
 		_icon_cache[k] = load("res://assets/ui/%s.png" % k)
 	return _icon_cache[k]
+
+
+## 12345 -> "12 345" (exact amounts on the Market).
+static func fmt_num(n: int) -> String:
+	var t := str(absi(n))
+	var out := ""
+	while t.length() > 3:
+		out = " " + t.substr(t.length() - 3) + out
+		t = t.substr(0, t.length() - 3)
+	return ("-" if n < 0 else "") + t + out
 
 
 static func fmt_time(sec: int) -> String:
@@ -871,6 +1009,8 @@ func hide_buildings() -> void:
 
 
 func _building_card(it: Dictionary) -> Control:
+	if it.has("market"):
+		return _market_card(it)
 	var card := Panel.new()
 	card.custom_minimum_size = Vector2(150, 178)
 	var busy: bool = it["busy"]
@@ -939,6 +1079,38 @@ func _building_card(it: Dictionary) -> Control:
 			building_upgrade.emit(id)
 		else:
 			toast(it["reason"]), true)
+	return card
+
+
+## First card of the Buildings tab once the Market stands: current rate and an «open» button.
+func _market_card(it: Dictionary) -> Control:
+	var card := Panel.new()
+	card.custom_minimum_size = Vector2(150, 178)
+	card.add_theme_stylebox_override("panel", _style(Color(0.17, 0.14, 0.08), 12, Color(0.95, 0.75, 0.3, 0.9), 2))
+	card.mouse_filter = Control.MOUSE_FILTER_PASS
+	var nm := _label(tr("bld.market"), 17)
+	nm.position = Vector2(0, 6)
+	nm.size = Vector2(150, 24)
+	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	card.add_child(nm)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 2)
+	row.position = Vector2(14, 44)
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for r in MARKET_RES:
+		var ic := TextureRect.new()
+		ic.texture = _icon(r)
+		ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		ic.custom_minimum_size = Vector2(38, 38)
+		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(ic)
+	card.add_child(row)
+	var rl := _label(tr("market.rate") % _rate_txt(int(it["rate"])), 15, MUTED, false)
+	rl.position = Vector2(0, 92)
+	rl.size = Vector2(150, 22)
+	rl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	card.add_child(rl)
+	_card_button(card, tr("market.open"), Color(0.85, 0.55, 0.1), func(): market_open.emit(), true)
 	return card
 
 

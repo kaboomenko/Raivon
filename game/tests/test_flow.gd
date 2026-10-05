@@ -396,6 +396,30 @@ func _run() -> void:
 				_check(g.ftue == 0, "FTUE complete after war 2")
 		else:
 			print("NOTE  FTUE war 2 skipped (ftue=%d)" % g.ftue)
+	# Market (05 §13): card in the Buildings tab, exchange, trader lot once a day
+	if g.Market.market_level(g.econ) == 0:
+		g.econ._find_type("residence")["upgrade_end"] = 1  # finish a DL2 upgrade (unlocks the Market)
+		g.econ.tick(g.sim, g.now_s())
+	_check(g.Market.market_level(g.econ) == 1, "Market unlocked at DL2")
+	if g.Market.market_level(g.econ) > 0:
+		g.mode = g.Mode.MAP
+		g._open_tab("buildings")
+		var mitems: Array = g._building_items(g.now_s())
+		_check(mitems.size() > 0 and mitems[0].has("market"), "Market card leads the Buildings tab")
+		g.econ.res["food"] = 3000
+		g.econ.res["metal"] = 0
+		g.market_sel = {"give": "food", "get": "metal", "pct": 50}
+		g._open_market()
+		_check(g.ui.has_modal(), "Market opens")
+		g._on_market_exchange("food", "metal", 1500)
+		_check(int(g.econ.res["food"]) == 1500 and int(g.econ.res["metal"]) == 500, "Market exchange at 3:1")
+		g.econ.res.merge({"gold": 4000, "food": 4000, "metal": 4000}, true)
+		var lot: Dictionary = g.market.lots[0]
+		var had: int = g.econ.res[lot["get"]]
+		g.econ.res[lot["get"]] = 0
+		g._on_market_lot(0)
+		_check(int(g.econ.res[lot["get"]]) == int(lot["get_amt"]) and g.market.lots[0]["bought"], "trader lot bought (had %d)" % had)
+		g.ui.close_modal()
 	g.queue_free()
 	await process_frame
 

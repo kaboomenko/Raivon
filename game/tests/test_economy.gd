@@ -7,6 +7,7 @@ const World := preload("res://scripts/sim/world.gd")
 const MapGen := preload("res://scripts/sim/map_gen.gd")
 const Economy := preload("res://scripts/sim/economy.gd")
 const L := preload("res://scripts/l10n.gd")
+const Market := preload("res://scripts/sim/market.gd")
 
 const SEED := 20261004
 const T0 := 1790000000
@@ -35,6 +36,8 @@ func _init() -> void:
 		["to_dict / from_dict round trip (also via JSON)", _test_roundtrip],
 		["determinism: same inputs, same outputs; tick granularity", _test_determinism],
 		["refusal reasons are translation keys; l10n.t() renders them in ru / en", _test_reason_text],
+		["market: rates, floor, warehouse cut, no raivites", _test_market],
+		["market trader: daily lots, one buy each, 04:00 refresh, save", _test_trader],
 	]
 	for t in tests:
 		_errors.clear()
@@ -471,3 +474,90 @@ func _test_reason_text() -> void:
 	_eq(L.t("err.not_enough|res.gen.gold"), "Not enough gold", "en: key argument is translated")
 	_eq(L.t("err.need_residence|2"), "Needs Residence Lv 2", "en: residence gate")
 	TranslationServer.set_locale(lang0)
+
+
+func _market_econ() -> Array:
+	var w := _world()
+	var e := Economy.new(w, T0)
+	var r := e._find_type("residence")
+	_grant_hexes(w, 3)
+	e.tick(w, T0)
+	e.start_upgrade(int(r["id"]), T0)
+	e.tick(w, T0 + 60)
+	return [w, e]
+
+
+func _test_market() -> void:
+	_eq(Market.rate_milli(1), 3000, "3:1 at level 1")
+	_eq(Market.rate_milli(8), 2632, "2.63:1 at level 8 (05 §13.1)")
+	_eq(Market.rate_milli(20), 2000, "2:1 at level 20")
+	_eq(Market.rate_milli(99), 2000, "clamped")
+	var w := _world()
+	var e0 := Economy.new(w, T0)
+	_eq(Market.quote(e0, "food", "metal", 300), {}, "no market at DL1")
+	var we := _market_econ()
+	var e: Economy = we[1]
+	_eq(Market.market_level(e), 1, "market level 1 after DL2")
+	e.res["food"] = 3000
+	e.res["metal"] = 0
+	var q := Market.quote(e, "food", "metal", 1000)
+	_eq(int(q["get"]), 333, "floor(1000 / 3)")
+	_eq(int(q["give"]), 1000, "gives all")
+	_eq(Market.quote(e, "food", "raivite", 100), {}, "raivites are not traded")
+	_eq(Market.quote(e, "food", "food", 100), {}, "same resource")
+	_eq(int(Market.quote(e, "food", "metal", 99999)["give"]), 3000, "cannot give more than stored")
+	var cap: int = e.storage_cap()["metal"]
+	e.res["metal"] = cap - 100
+	q = Market.quote(e, "food", "metal", 3000)
+	_eq(int(q["get"]), 100, "cut to free space")
+	_eq(int(q["give"]), 300, "input trimmed to what fits")
+	_check(bool(q["cap_hit"]), "cap hit flagged")
+	var got := Market.exchange(e, "food", "metal", 3000)
+	_eq(int(got["get"]), 100, "exchange applied")
+	_eq(int(e.res["food"]), 2700, "food spent")
+	_eq(int(e.res["metal"]), cap, "metal at cap")
+	_eq(Market.exchange(e, "food", "metal", 3000), {}, "nothing fits -> no-op")
+	_eq(int(e.res["food"]), 2700, "unchanged")
+
+
+func _test_trader() -> void:
+	var we := _market_econ()
+	var w: World = we[0]
+	var e: Economy = we[1]
+	e.res["gold"] = 4000
+	e.res["food"] = 100
+	e.res["metal"] = 2000
+	var m := Market.new()
+	m.refresh(e, w, T0)
+	_eq(m.lots.size(), 3, "3 lots")
+	_eq([m.lots[0]["give"], m.lots[0]["get"]], ["gold", "food"], "needed: fullest -> emptiest")
+	var pairs := {}
+	for lot in m.lots:
+		_check(lot["give"] != lot["get"], "different resources")
+		pairs[str([lot["give"], lot["get"]])] = true
+		_check(int(lot["get_amt"]) >= Market.MIN_LOT, "volume floor")
+		_check(int(lot["give_amt"]) * 1000 >= int(lot["get_amt"]) * int(lot["rate"]), "rate respected")
+		_check(int(lot["rate"]) < Market.rate_milli(1), "better than the market")
+	_eq(pairs.size(), 3, "no repeated pair in a day")
+	var m2 := Market.new()
+	m2.refresh(e, w, T0)
+	_eq(m2.to_dict(), m.to_dict(), "deterministic")
+	e.res[m.lots[0]["give"]] = int(e.storage_cap()["gold"])
+	var before: int = e.res[m.lots[0]["get"]]
+	_eq(m.can_buy(e, 0), "", "lot 1 buyable")
+	_check(m.buy(e, 0), "bought")
+	_eq(int(e.res[m.lots[0]["get"]]), before + int(m.lots[0]["get_amt"]), "received")
+	_eq(m.can_buy(e, 0), "market.bought", "once per day")
+	_eq(m.can_buy(e, 7), "market.no_lot", "bad index")
+	var day0 := Market.trader_day(T0)
+	var next := (day0 + 1) * Market.DAY + Market.REFRESH_SEC
+	_eq(Market.refresh_left(T0), next - T0, "countdown to 04:00")
+	m.refresh(e, w, next - 1)
+	_check(m.lots[0]["bought"], "same day keeps state")
+	var saved: Dictionary = JSON.parse_string(JSON.stringify(m.to_dict()))
+	var m3 := Market.new()
+	m3.load_dict(saved)
+	_eq(m3.to_dict(), m.to_dict(), "save round trip")
+	m.refresh(e, w, next)
+	_check(not m.lots[0]["bought"], "new lots at 04:00")
+	_eq(m.day, day0 + 1, "day advanced")

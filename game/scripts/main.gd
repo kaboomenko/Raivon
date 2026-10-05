@@ -23,6 +23,7 @@ const Economy := preload("res://scripts/sim/economy.gd")
 const Deposits := preload("res://scripts/sim/deposits.gd")
 const Cases := preload("res://scripts/sim/cases.gd")
 const Research := preload("res://scripts/sim/research.gd")
+const Market := preload("res://scripts/sim/market.gd")
 const Net := preload("res://scripts/net.gd")
 const ShopUI := preload("res://scripts/shop_ui.gd")
 const L := preload("res://scripts/l10n.gd")
@@ -57,6 +58,9 @@ var deposits  # Deposits (scripts/sim/deposits.gd)
 var first_convoy_done := false
 var cases  # Cases (scripts/sim/cases.gd)
 var research  # Research (scripts/sim/research.gd)
+var market  # Market trader state (scripts/sim/market.gd)
+var market_sel := {"give": "food", "get": "metal", "pct": 25}
+var _full_hinted := {}  # resource -> true once the «warehouse full → Market» hint was shown
 var net: Node  # cloud saves (scripts/net.gd)
 var _remote_pending := {}
 var shop: Control
@@ -113,6 +117,7 @@ func _ready() -> void:
 	deposits = Deposits.new(MAP_SEED ^ 0x5EED)
 	cases = Cases.new(int(Time.get_unix_time_from_system()) & 0x7FFFFFFF)
 	research = Research.new()
+	market = Market.new()
 	save_enabled = save_enabled and not _scripted_run()
 	_init_language()
 	var loaded := false
@@ -154,6 +159,7 @@ func _ready() -> void:
 		_show_peace())
 	ui.research_start.connect(_on_research_start)
 	ui.research_speedup.connect(_on_research_speedup)
+	ui.market_open.connect(_open_market)
 	_make_selection()
 	_make_drag_marker()
 	_focus_front(0.7)
@@ -1392,6 +1398,7 @@ func _econ_tick() -> void:
 	hud.set_resources(econ.res, econ.income_per_hour(sim), econ.storage_cap(), econ.builders - econ.busy_builders(now), econ.builders)
 	hud.set_level(econ.dev_level())
 	hud.set_mail(_unread())
+	_market_hint()
 	_apply_remote_if_any()
 	hud.shop_dot.visible = cases.claim_free_crates(now) > 0
 	_ai_tick(now)
@@ -2077,7 +2084,77 @@ func _building_items(now: int) -> Array:
 			"busy": busy, "left": int(b["upgrade_end"]) - now, "speed": econ.speedup_cost(b, now),
 			"cost": cost, "seconds": secs, "reason": L.t(reason), "stock": speed_minutes})
 	items.sort_custom(func(x, y): return int(x["busy"]) > int(y["busy"]))
+	if Market.market_level(econ) > 0:
+		items.push_front({"id": -100, "market": true, "name": tr("bld.market"), "rate": Market.rate_milli(Market.market_level(econ))})
 	return items
+
+
+# ---------------------------------------------------------------- market (05 §13)
+
+func _open_market() -> void:
+	if Market.market_level(econ) <= 0:
+		ui.toast(tr("market.locked"))
+		return
+	var now := now_s()
+	econ.tick(sim, now)
+	market.refresh(econ, sim, now)
+	var lots: Array = []
+	for i in market.lots.size():
+		var lot: Dictionary = market.lots[i].duplicate()
+		lot["ok"] = market.can_buy(econ, i) == ""
+		lots.append(lot)
+	var lvl: int = Market.market_level(econ)
+	var info := {"level": lvl, "rate": Market.rate_milli(lvl), "res": econ.res.duplicate(), "cap": econ.storage_cap(),
+		"lots": lots, "refresh_left": Market.refresh_left(now), "sel": market_sel}
+	ui.show_market(info, func(g: String, r: String, amt: int) -> Dictionary: return Market.quote(econ, g, r, amt),
+		_on_market_exchange, _on_market_lot)
+
+
+func _on_market_exchange(give: String, get_res: String, amount: int) -> void:
+	var q: Dictionary = Market.exchange(econ, give, get_res, amount)
+	if q.is_empty():
+		ui.toast(tr("market.no_space"))
+		return
+	_market_done(give, int(q["give"]), get_res, int(q["get"]))
+
+
+func _on_market_lot(i: int) -> void:
+	var reason: String = market.can_buy(econ, i)
+	if reason != "":
+		ui.toast(tr(reason))
+		return
+	var lot: Dictionary = market.lots[i]
+	market.buy(econ, i)
+	_market_done(String(lot["give"]), int(lot["give_amt"]), String(lot["get"]), int(lot["get_amt"]))
+
+
+func _market_done(give: String, gave: int, get_res: String, got: int) -> void:
+	_stat("trades")
+	sfx.play("coin")
+	sfx.haptic(20)
+	_econ_tick()
+	_open_market()
+	ui.toast(tr("market.done") % [GameUI.fmt_num(gave), tr("res.gen." + give), GameUI.fmt_num(got), tr("res.gen." + get_res)])
+	_autosave()
+
+
+## «Склад почти полон → Рынок» (05 §13.4): once per resource each time it climbs to ≥90% of the cap;
+## the Market then opens with that resource under «Отдаю».
+func _market_hint() -> void:
+	if Market.market_level(econ) <= 0 or mode != Mode.MAP or ftue != 0 or ui.has_modal():
+		return
+	var cap: Dictionary = econ.storage_cap()
+	for r in Economy.RES:
+		var full := float(econ.res.get(r, 0)) / maxf(1.0, float(cap[r]))
+		if full >= 0.9 and not _full_hinted.has(r):
+			_full_hinted[r] = true
+			ui.toast(tr("market.full_hint") % tr("res.gen." + r))
+			if market_sel["get"] == r:
+				market_sel["get"] = market_sel["give"]
+			market_sel["give"] = r
+			return
+		elif full < 0.8:
+			_full_hinted.erase(r)
 
 
 func _on_building_upgrade(id: int) -> void:
@@ -2550,6 +2627,13 @@ func _demo(spec: String) -> void:
 		return
 	if what == "settings":
 		_on_hud_button("gear")
+		return
+	if what == "market":
+		var r: Dictionary = econ._find_type("residence")
+		r["upgrade_end"] = 1
+		econ.tick(sim, now_s())
+		econ.res.merge({"gold": 3200, "food": 4700, "metal": 900}, true)
+		_open_market()
 		return
 	var enemy := MapGen.BARONS
 	_declare(enemy, War.recommend_goals(sim, enemy, 1)[0])
