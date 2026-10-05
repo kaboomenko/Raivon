@@ -20,6 +20,7 @@ var res_labels := {}  # res -> [value Label, rate Label]
 var builders_label: Label
 var level_label: Label
 var mail_badge: Array = []
+var shop_dot: Panel  # red dot: a free crate is ready
 var tab_highlight: Panel
 var tab_labels := {}
 var unit_cards: Control  # the Army tab content (hidden while another tab is open)
@@ -148,6 +149,29 @@ func _build() -> void:
 			bt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			add_child(bt)
 			mail_badge = [badge, bt]
+
+	# ---- store button (below the left column)
+	var sb := _panel(Rect2(16, 524, 64, 74), _style(Color(0.35, 0.2, 0.55), 14, Color(1.0, 0.8, 0.35, 0.9), 2))
+	sb.gui_input.connect(_on_button_input.bind("shop"))
+	var si := TextureRect.new()
+	si.texture = load("res://assets/ui/raivite.png")
+	si.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	si.position = Vector2(26, 528)
+	si.size = Vector2(44, 44)
+	si.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(si)
+	var sl := _label("Лавка", 14)
+	sl.position = Vector2(16, 572)
+	sl.size = Vector2(64, 22)
+	sl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	add_child(sl)
+	shop_dot = Panel.new()
+	shop_dot.add_theme_stylebox_override("panel", _style(Color(0.9, 0.2, 0.15), 9, Color(1, 1, 1, 0.9), 2))
+	shop_dot.position = Vector2(66, 518)
+	shop_dot.size = Vector2(18, 18)
+	shop_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	shop_dot.visible = false
+	add_child(shop_dot)
 
 	# ---- minimap (top-right)
 	var mm_panel := _panel(Rect2(730, 90, 198, 206), _style(PANEL, 12, Color(0.4, 0.5, 0.65, 0.8)))
