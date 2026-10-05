@@ -465,6 +465,20 @@ func _run() -> void:
 			_check(g.ui._action2_kind == "offensive", "offensive available once the armies reach the front")
 		else:
 			print("NOTE  no march needed for the Barons front")
+	# defeat with heavy plunder: ruin and damaged buildings, repair on the hex (canon §9.14)
+	g._apply_defeat(MapGen.BARONS, [])
+	_check(g.econ.ruin_left(g.now_s()) == 8 * 3600 and g.econ.ruin_pct == 40, "defeat: ruin −40% for 8 h")
+	_check(g.econ.damaged.size() > 0, "defeat: %d hex buildings damaged" % g.econ.damaged.size())
+	if g.econ.damaged.size() > 0:
+		var dh: int = g.econ.damaged.keys()[0]
+		g.econ.res.merge({"gold": 99999, "food": 99999, "metal": 99999}, true)
+		g._select(dh)
+		_check(g.ui._action2_kind == "repair" and g.ui._action_kind == "repair_ad", "damaged hex offers repair (and a free ad repair)")
+		g._on_action("repair")
+		_check(int(g.econ.damaged.get(dh, 0)) > g.now_s(), "repair under way")
+		g.time_offset += 601
+		g._econ_tick()
+		_check(not g.econ.damaged.has(dh), "building repaired after 10 min")
 	g.queue_free()
 	await process_frame
 

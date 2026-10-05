@@ -451,3 +451,15 @@ march.busy,Там уже стоит армия,Another army is already there
 march.arrived,Армия прибыла на место,The army has arrived
 toast.armies_marching,Армии выступили к фронту · %s в пути,Armies march to the front · %s on the road
 ui.armies_marching,Армии идут к фронту · %s,Armies marching to the front · %s
+err.not_damaged,Здание не повреждено,The building isn't damaged
+err.repairing,Ремонт уже идёт,Repair already under way
+inbox.ruin.title,Разорение,Ruin
+inbox.ruin.text,"Грабёж разорил державу: −%d%% производства на %d ч, повреждено зданий: %d. Выберите гекс с дымом, чтобы починить здание.","The plunder ruined the realm: −%d%% production for %d h, %d buildings damaged. Pick a smoking hex to repair a building."
+ui.repair,Починить · %s,Repair · %s
+ui.repairing,Ремонт · %s,Repairing · %s
+ui.repair_ad,▶ Починить сразу,▶ Repair now
+toast.repair_started,Ремонт начат · %s,Repair started · %s
+toast.repaired,Здание отремонтировано,Building repaired
+tile.damaged,здание повреждено (−50%),building damaged (−50%)
+tile.ruin,разорение −%d%% · %s,ruin −%d%% · %s
+ui.ad_sub,реклама · бесплатно,ad · free

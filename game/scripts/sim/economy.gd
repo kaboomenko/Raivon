@@ -148,6 +148,15 @@ var _upkeep_rem: int = 0
 ## Army food upkeep, thousandths of food per hour (04 §6.1); set by the game from its armies before tick().
 var army_food_milli: int = 0
 var _food_rem: int = 0
+## Разорение after a plundered defeat (canon §9.14): −ruin_pct% production on own hexes until ruin_until.
+var ruin_pct: int = 0
+var ruin_until: int = 0
+## Damaged hex buildings (canon §9.14): hex id -> repair end (0 = waiting for repair); −50% output until repaired.
+var damaged: Dictionary = {}
+const REPAIR_SEC := 600
+const REPAIR_PCT := 5
+const DAMAGE_KINDS: Array[String] = ["city", "farm", "mine", "port"]
+var _rate_t: int = -1  # time the temporary modifiers are evaluated at (inside _accrue), else last_tick
 var _events: Array = []
 ## Cache of the player's land, refreshed whenever a world is passed in.
 var _synced: bool = false
@@ -258,8 +267,9 @@ func hex_income(world: World, hex: int) -> Dictionary:
 	if c["controller"] != Types.PLAYER or not Types.is_passable(c):
 		return out
 	var hr := _hex_rate_milli(c, c["owner"] != Types.PLAYER)
+	var m := _temp_mult100(hex, c["owner"] == Types.PLAYER)
 	for r in hr:
-		out[r] = int(hr[r]) / 1000
+		out[r] = int(hr[r]) * m / 100 / 1000
 	return out
 
 
@@ -472,13 +482,23 @@ func tick(world: World, now: int) -> Array:
 				var e: int = b["upgrade_end"]
 				if e > t and e < next:
 					next = e
+			if ruin_until > t and ruin_until < next:
+				next = ruin_until
+			for h in damaged:
+				var re: int = damaged[h]
+				if re > t and re < next:
+					next = re
+			_rate_t = t
 			_accrue(world, t, next)
+			_rate_t = -1
 			t = next
 			_complete_due(t)
+			_finish_repairs(t)
 			if t >= now:
 				break
 		last_tick = now
 	_complete_due(now)
+	_finish_repairs(now)
 	_sync_world(world)
 	_sync(world)
 	var out := _events
@@ -573,6 +593,9 @@ func to_dict() -> Dictionary:
 		"stock_rem": _stock_rem.duplicate(true),
 		"upkeep_rem": _upkeep_rem,
 		"food_rem": _food_rem,
+		"ruin_pct": ruin_pct,
+		"ruin_until": ruin_until,
+		"damaged": damaged.duplicate(),
 		"army_food_milli": army_food_milli,
 		"chapter": chapter,
 		"capital_hex": capital_hex,
@@ -610,6 +633,11 @@ static func from_dict(d: Dictionary) -> RefCounted:
 	e._stock_rem = _int_keyed(d.get("stock_rem", {}))
 	e._upkeep_rem = int(d.get("upkeep_rem", 0))
 	e._food_rem = int(d.get("food_rem", 0))
+	e.ruin_pct = int(d.get("ruin_pct", 0))
+	e.ruin_until = int(d.get("ruin_until", 0))
+	var dm: Dictionary = d.get("damaged", {})
+	for k in dm:
+		e.damaged[int(k)] = int(dm[k])
 	e.army_food_milli = int(d.get("army_food_milli", 0))
 	e.chapter = int(d.get("chapter", 1))
 	e.capital_hex = int(d.get("capital_hex", -1))
@@ -825,9 +853,124 @@ func _hex_rates(world: World) -> Dictionary:
 		if c["controller"] != Types.PLAYER or not Types.is_passable(c):
 			continue
 		var hr := _hex_rate_milli(c, c["owner"] != Types.PLAYER)
-		if not hr.is_empty():
-			out[int(c["id"])] = hr
+		if hr.is_empty():
+			continue
+		var m := _temp_mult100(int(c["id"]), c["owner"] == Types.PLAYER)
+		if m != 100:
+			for r in hr:
+				hr[r] = int(hr[r]) * m / 100
+		out[int(c["id"])] = hr
 	return out
+
+
+## Temporary production modifiers of an own hex, percent: ruin × damaged building (they multiply, canon §5.1).
+func _temp_mult100(hex: int, own: bool) -> int:
+	if not own:
+		return 100
+	var t := _rate_t if _rate_t >= 0 else last_tick
+	var m := 100
+	if ruin_until > t:
+		m = m * (100 - ruin_pct) / 100
+	if damaged.has(hex):
+		var e: int = damaged[hex]
+		if e == 0 or e > t:
+			m = m / 2
+	return m
+
+
+## Ruin after a plundered defeat: a repeat doesn't stack — the larger percent and the later end win (canon §5.1).
+func apply_ruin(pct: int, seconds: int, now: int) -> void:
+	if ruin_until > now:
+		ruin_pct = maxi(ruin_pct, pct)
+		ruin_until = maxi(ruin_until, now + seconds)
+	else:
+		ruin_pct = pct
+		ruin_until = now + seconds
+
+
+func ruin_left(now: int) -> int:
+	return maxi(0, ruin_until - now)
+
+
+## Halves the remaining ruin (ad_ruin_halve, canon §15.2).
+func halve_ruin(now: int) -> void:
+	if ruin_until > now:
+		ruin_until = now + (ruin_until - now) / 2
+
+
+## Damages up to `n` hex buildings of the loser (cities, farms, mines, ports; never capital buildings),
+## the most productive first, ties by hex id. Returns the damaged hex ids.
+func damage_buildings(world: World, n: int) -> Array:
+	var cands: Array = []
+	for c in world.cells:
+		if c["owner"] != Types.PLAYER or c["controller"] != Types.PLAYER or not DAMAGE_KINDS.has(String(c["kind"])):
+			continue
+		if damaged.has(int(c["id"])):
+			continue
+		var tot := 0
+		var hr := _hex_rate_milli(c, false)
+		for r in hr:
+			tot += int(hr[r])
+		cands.append([tot, int(c["id"])])
+	cands.sort_custom(func(a, b): return a[0] > b[0] if a[0] != b[0] else a[1] < b[1])
+	var out: Array = []
+	for i in mini(n, cands.size()):
+		damaged[int(cands[i][1])] = 0
+		out.append(int(cands[i][1]))
+	return out
+
+
+## Repair price: 5% of the current level price of the hex's building type, 10 min (canon §9.14).
+func repair_cost(world: World, hex: int) -> Dictionary:
+	var spec: Dictionary = HEX_PRODUCTION.get(String(world.cells[hex]["kind"]), {})
+	var t: String = spec.get("lvl", "")
+	var lvl := maxi(1, _type_level(t)) if t != "" else 1
+	var full := _level_cost(t, lvl) if t != "" else {"gold": 100}
+	var out := {}
+	for r in RES:
+		var v: int = int(full.get(r, 0)) * REPAIR_PCT / 100
+		if v > 0:
+			out[r] = v
+	if out.is_empty():
+		out["gold"] = 10
+	return out
+
+
+## "" when the repair can start, else a reason key.
+func can_repair(world: World, hex: int) -> String:
+	if not damaged.has(hex):
+		return "err.not_damaged"
+	if int(damaged[hex]) > 0:
+		return "err.repairing"
+	var cost := repair_cost(world, hex)
+	for r in cost:
+		if int(res.get(r, 0)) < int(cost[r]):
+			return "err.not_enough|" + String(RES_NAMES[r])
+	return ""
+
+
+## Starts a repair (free = ad_repair: no cost, done at once). Returns true when started.
+func start_repair(world: World, hex: int, now: int, free := false) -> bool:
+	if free:
+		if not damaged.has(hex):
+			return false
+		damaged.erase(hex)
+		return true
+	if can_repair(world, hex) != "":
+		return false
+	var cost := repair_cost(world, hex)
+	for r in cost:
+		res[r] = int(res[r]) - int(cost[r])
+	damaged[hex] = now + REPAIR_SEC
+	return true
+
+
+func _finish_repairs(now: int) -> void:
+	for h in damaged.keys():
+		var e: int = damaged[h]
+		if e > 0 and e <= now:
+			damaged.erase(h)
+			_events.append({"type": "repair_done", "hex": h})
 
 
 func _rates_total(world: World) -> Dictionary:

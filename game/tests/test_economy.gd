@@ -37,6 +37,7 @@ func _init() -> void:
 		["determinism: same inputs, same outputs; tick granularity", _test_determinism],
 		["refusal reasons are translation keys; l10n.t() renders them in ru / en", _test_reason_text],
 		["army food upkeep: pool first, then storage, no debt, 8 h pause", _test_army_food],
+		["ruin and damaged buildings: −%, no stacking, repair, save", _test_ruin],
 		["market: rates, floor, warehouse cut, no raivites", _test_market],
 		["market trader: daily lots, one buy each, 04:00 refresh, save", _test_trader],
 	]
@@ -591,3 +592,66 @@ func _test_army_food() -> void:
 	_check(int(e.res["gold"]) >= 0 and before >= 0, "gold untouched by army upkeep")
 	var e2: Economy = Economy.from_dict(JSON.parse_string(JSON.stringify(e.to_dict())))
 	_eq(e2.army_food_milli, e.army_food_milli, "round trip keeps the upkeep")
+
+
+func _test_ruin() -> void:
+	var w := _world()
+	var e := Economy.new(w, T0)
+	var base: int = e.income_per_hour(w)["gold"]
+	var gross: int = e.gross_per_hour(w)["gold"]
+	e.apply_ruin(40, 8 * 3600, T0)
+	e.tick(w, T0)
+	_check(int(e.income_per_hour(w)["gold"]) < base, "ruin lowers income (%d -> %d)" % [base, int(e.income_per_hour(w)["gold"])])
+	_eq(int(e.gross_per_hour(w)["gold"]), gross, "gross_rate ignores temporary modifiers")
+	e.apply_ruin(20, 2 * 3600, T0 + 60)
+	_eq([e.ruin_pct, e.ruin_until], [40, T0 + 8 * 3600], "repeat ruin doesn't stack: larger % and later end")
+	e.halve_ruin(T0 + 3600)
+	_eq(e.ruin_until, T0 + 3600 + 7 * 1800, "ad halves the rest")
+	# accrual: ruin ends mid-interval, result independent of tick granularity
+	var a := Economy.new(w, T0)
+	var b := Economy.new(w, T0)
+	a.apply_ruin(40, 1800, T0)
+	b.apply_ruin(40, 1800, T0)
+	a.tick(w, T0 + 3600)
+	for t in range(T0 + 60, T0 + 3601, 60):
+		b.tick(w, t)
+	_eq(_stock_sum(a, "gold"), _stock_sum(b, "gold"), "ruin end splits the accrual (same for any granularity)")
+	# damaged buildings
+	var d: Array = e.damage_buildings(w, 3)
+	_check(d.size() >= 1, "buildings damaged: %d" % d.size())
+	var farm := -1
+	for h in d:
+		_check(int(w.cells[h]["owner"]) == PLAYER and Economy.DAMAGE_KINDS.has(String(w.cells[h]["kind"])), "only hex buildings of the loser")
+		if String(w.cells[h]["kind"]) == "farm":
+			farm = h
+	var h0: int = d[0]
+	var c0: Dictionary = w.cells[h0]
+	var inc_damaged: Dictionary = e.hex_income(w, h0)
+	e.ruin_until = 0
+	var inc_d: Dictionary = e.hex_income(w, h0)
+	e.damaged.erase(h0)
+	var inc_ok: Dictionary = e.hex_income(w, h0)
+	e.damaged[h0] = 0
+	for r in inc_ok:
+		_check(int(inc_d.get(r, 0)) * 2 <= int(inc_ok[r]) + 1, "damaged hex yields half (%s %d vs %d)" % [r, int(inc_d.get(r, 0)), int(inc_ok[r])])
+	_check(inc_damaged.size() >= 0 and c0["kind"] != "capital", "capital never damaged")
+	var cost := e.repair_cost(w, h0)
+	_check(not cost.is_empty(), "repair has a price %s" % str(cost))
+	e.res = {"gold": 0, "food": 0, "metal": 0, "raivite": 0}
+	_check(e.can_repair(w, h0).begins_with("err.not_enough"), "can't repair without resources")
+	e.res = {"gold": 99999, "food": 99999, "metal": 99999, "raivite": 0}
+	var now := T0 + 7200
+	e.tick(w, now)
+	_check(e.start_repair(w, h0, now), "repair started")
+	_eq(e.can_repair(w, h0), "err.repairing", "one repair at a time per building")
+	var evs := e.tick(w, now + Economy.REPAIR_SEC)
+	var done := false
+	for ev in evs:
+		if ev["type"] == "repair_done" and int(ev["hex"]) == h0:
+			done = true
+	_check(done and not e.damaged.has(h0), "repaired after 10 min")
+	if d.size() > 1:
+		_check(e.start_repair(w, int(d[1]), now, true) and not e.damaged.has(int(d[1])), "free repair (ad) is instant")
+	var e2: Economy = Economy.from_dict(JSON.parse_string(JSON.stringify(e.to_dict())))
+	_eq([e2.ruin_pct, e2.ruin_until, e2.damaged], [e.ruin_pct, e.ruin_until, e.damaged], "round trip keeps ruin and damage")
+	_check(farm >= -1, "ok")

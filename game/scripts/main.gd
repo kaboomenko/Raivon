@@ -135,6 +135,7 @@ func _ready() -> void:
 	map_view = MapView.new()
 	add_child(map_view)
 	map_view.set_world(sim)
+	_show_damage()
 	rig = CameraRig.new()
 	add_child(rig)
 	rig.bounds = Rect2(-6.5, -7.5, 13.0, 12.0)
@@ -391,6 +392,18 @@ func _primary_for_selection() -> void:
 		ui.set_primary("pick_target", tr("ui.pick_target"), Color(0.8, 0.22, 0.16))
 		return
 	var c: Dictionary = sim.cells[selected]
+	if c["owner"] == Types.PLAYER and econ.damaged.has(selected):
+		var re: int = econ.damaged[selected]
+		if re > now_s():
+			ui.set_primary("repairing", tr("ui.repairing") % GameUI.fmt_time(re - now_s()), Color(0.3, 0.35, 0.45), false)
+		else:
+			var cost: Dictionary = econ.repair_cost(sim, selected)
+			var parts := PackedStringArray()
+			for r in cost:
+				parts.append("%d %s" % [int(cost[r]), tr("res.short." + String(r))])
+			ui.set_primary("repair", tr("ui.repair") % ", ".join(parts), Color(0.85, 0.55, 0.1), econ.can_repair(sim, selected) == "")
+			ui.set_action("repair_ad", tr("ui.repair_ad"), tr("ui.ad_sub"), Color(0.2, 0.4, 0.25))
+		return
 	var dep: Dictionary = deposits.at(selected)
 	if not dep.is_empty():
 		var cv: Dictionary = deposits.convoy_for(selected)
@@ -555,6 +568,10 @@ func _on_action(kind: String) -> void:
 				_march_pick = int(ma["id"])
 				ui.toast(tr("march.pick"))
 				_refresh_ui()
+		"repair":
+			_repair(selected, false)
+		"repair_ad":
+			_repair(selected, true)
 		"march_cancel":
 			_march_pick = -1
 			_refresh_ui()
@@ -682,6 +699,10 @@ func _describe(id: int) -> Dictionary:
 				parts.append(tr("tile.income") % [inc[r], tr("res.short." + String(r))])
 		if parts.size() > 0:
 			bonus = " · ".join(parts)
+		if own == Types.PLAYER and econ.damaged.has(id):
+			bonus += " · " + tr("tile.damaged")
+		if own == Types.PLAYER and econ.ruin_left(now_s()) > 0:
+			bonus += " · " + tr("tile.ruin") % [econ.ruin_pct, GameUI.fmt_time(econ.ruin_left(now_s()))]
 	var dep: Dictionary = deposits.at(id) if deposits != null else {}
 	if not dep.is_empty():
 		bonus = tr("tile.deposit") % [int(dep["amount"]), tr("res.gen." + String(dep["res"])), GameUI.fmt_time(int(dep["gather_sec"]))]
@@ -1486,7 +1507,49 @@ func _apply_defeat(enemy: int, lost: Array) -> void:
 	var looted: Dictionary = econ.plunder(0.6, g12)  # Wolf plunders 60%, 12 h loss cap (canon §9.14, decision 20)
 	var msg := L.pack("inbox.defeat.text", [lost.size(), int(looted.get("gold", 0)), int(looted.get("food", 0)), int(looted.get("metal", 0))])
 	_post("inbox.defeat.title", msg)
+	# heavy plunder also brings ruin −40% for 8 h and 3 damaged hex buildings (canon §9.14)
+	var lvl := 3
+	econ.apply_ruin(RUIN_PCT[lvl], RUIN_HOURS[lvl] * 3600, now_s())
+	var dmg: Array = econ.damage_buildings(sim, lvl)
+	_show_damage()
+	_post("inbox.ruin.title", L.pack("inbox.ruin.text", [RUIN_PCT[lvl], RUIN_HOURS[lvl], dmg.size()]))
 	_finish_war(enemy, L.t(msg))
+
+
+const RUIN_PCT: Array[int] = [0, 20, 30, 40]  # by plunder level: light / medium / heavy (canon §9.14)
+const RUIN_HOURS: Array[int] = [0, 4, 6, 8]
+
+
+## Smoke over damaged hex buildings until they are repaired.
+func _show_damage() -> void:
+	for h in econ.damaged:
+		map_view.smoke(int(h), 1.0e9)
+
+
+func _repair(hex: int, free: bool) -> void:
+	var now := now_s()
+	econ.tick(sim, now)
+	if free:
+		if not _rewarded("ad_repair", 3) or not econ.start_repair(sim, hex, now, true):
+			return
+		_repaired(hex)
+	else:
+		var reason: String = econ.can_repair(sim, hex)
+		if reason != "" or not econ.start_repair(sim, hex, now):
+			ui.toast(L.t(reason) if reason != "" else tr("toast.cant_upgrade"))
+			return
+		sfx.play("coin")
+		ui.toast(tr("toast.repair_started") % GameUI.fmt_time(Economy.REPAIR_SEC))
+	_econ_tick()
+	_refresh_ui()
+	_autosave()
+
+
+func _repaired(hex: int) -> void:
+	map_view.clear_smoke(hex)
+	map_view.burst(hex, Color(1.0, 0.85, 0.3), true)
+	sfx.play("capture")
+	ui.toast(tr("toast.repaired"))
 
 
 func _finish_war(enemy: int, msg: String) -> void:
@@ -1584,6 +1647,8 @@ func _econ_event(ev: Dictionary) -> void:
 			ui.toast(tr("toast.unlocked") % tr(String(Economy.BUILDINGS[String(ev.get("building_type", "market"))]["name"])))
 		"fort_refund":
 			ui.toast(tr("toast.fort_refund"))
+		"repair_done":
+			_repaired(int(ev["hex"]))
 
 
 ## DL-up (canon §6): the capital rebuilds first, then the rest of the land in rings, ~6 s in total.
@@ -2785,6 +2850,12 @@ func _demo(spec: String) -> void:
 		return
 	if what == "settings":
 		_on_hud_button("gear")
+		return
+	if what == "ruin":
+		_apply_defeat(MapGen.BARONS, [])
+		var dh: int = econ.damaged.keys()[0]
+		_select(dh)
+		rig.focus(map_view.cell_world(dh), 0.4)
 		return
 	if what == "march":
 		var ma: Dictionary = _player_armies()[0]
