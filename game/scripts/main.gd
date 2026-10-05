@@ -22,6 +22,7 @@ const Save := preload("res://scripts/save.gd")
 const Economy := preload("res://scripts/sim/economy.gd")
 const Deposits := preload("res://scripts/sim/deposits.gd")
 const Cases := preload("res://scripts/sim/cases.gd")
+const Research := preload("res://scripts/sim/research.gd")
 const ShopUI := preload("res://scripts/shop_ui.gd")
 
 enum Mode { MAP, WAR, BATTLE, RESULT, PEACE, CEREMONY }
@@ -52,6 +53,7 @@ var econ  # Economy (scripts/sim/economy.gd)
 var deposits  # Deposits (scripts/sim/deposits.gd)
 var first_convoy_done := false
 var cases  # Cases (scripts/sim/cases.gd)
+var research  # Research (scripts/sim/research.gd)
 var shop: Control
 var speed_minutes := 0  # speed-up items from cases, used on building timers
 var purchases := {}  # test-build purchases (sku -> count), first Raivite pack ×2
@@ -104,6 +106,7 @@ func _ready() -> void:
 	econ = Economy.new(sim, now_s())
 	deposits = Deposits.new(MAP_SEED ^ 0x5EED)
 	cases = Cases.new(int(Time.get_unix_time_from_system()) & 0x7FFFFFFF)
+	research = Research.new()
 	save_enabled = save_enabled and not _scripted_run()
 	var loaded := false
 	if save_enabled:
@@ -134,6 +137,8 @@ func _ready() -> void:
 	ui.army_action.connect(_on_army_action)
 	ui.diplomacy_action.connect(_on_diplomacy_action)
 	ui.world_action.connect(_on_world_action)
+	ui.research_start.connect(_on_research_start)
+	ui.research_speedup.connect(_on_research_speedup)
 	_make_selection()
 	_make_drag_marker()
 	_focus_front(0.7)
@@ -285,6 +290,8 @@ func _refresh_ui() -> void:
 		ui.show_diplomacy(_diplomacy_items(now_s()))
 	elif tab == "world" and econ != null:
 		ui.show_world(_world_items())
+	elif tab == "development" and econ != null:
+		ui.show_buildings(_research_items(now_s()))
 	match mode:
 		Mode.MAP:
 			ui.set_action("", "")
@@ -393,7 +400,7 @@ func _on_hud_button(name: String) -> void:
 		"tab_diplomacy":
 			_open_tab("diplomacy")
 		"tab_development":
-			ui.toast("Исследования откроются на УР2")
+			_open_tab("development")
 		"tab_world":
 			_open_tab("world")
 
@@ -533,7 +540,7 @@ func _pick_target() -> void:
 
 
 func _colonize_cost() -> int:
-	return int(ceil(50.0 * Economy.PROD_MULT100[econ.dev_level()] / 100.0 * (1.0 + 0.15 * colonized)))
+	return int(ceil(50.0 * Economy.PROD_MULT100[econ.dev_level()] / 100.0 * (1.0 + 0.15 * colonized) * (1.0 - 0.1 * research.level("colonization"))))
 
 
 ## 1 min in chapter I, 5 / 15 / 30 min in later chapters (canon §12.1).
@@ -1186,6 +1193,10 @@ func now_s() -> int:
 
 func _econ_tick() -> void:
 	var now := now_s()
+	var done_line: String = research.tick(now)
+	if done_line != "":
+		_on_research_done(done_line)
+	econ.research = research.economy_levels()
 	for ev in econ.tick(sim, now):
 		_econ_event(ev)
 	_army_refill(now)
@@ -1195,7 +1206,8 @@ func _econ_tick() -> void:
 	for ev in deposits.tick(sim, econ.gross_per_hour(sim), now):
 		if ev["type"] == "convoy_back":
 			_stat("convoys")
-			var got: Dictionary = econ.add_resources({String(ev["res"]): int(ev["amount"])})
+			var cargo: int = int(round(int(ev["amount"]) * (1.0 + 0.05 * research.level("logistics"))))
+			var got: Dictionary = econ.add_resources({String(ev["res"]): cargo})
 			var n := int(got.get(String(ev["res"]), 0))
 			var cap: int = sim.states[Types.PLAYER]["capital_id"]
 			map_view.floater(cap, "+%d" % n, Color(1.0, 0.88, 0.4))
@@ -1220,6 +1232,8 @@ func _econ_tick() -> void:
 		ui.show_diplomacy(_diplomacy_items(now))
 	elif tab == "world" and mode in [Mode.MAP, Mode.WAR]:
 		ui.show_world(_world_items())
+	elif tab == "development" and mode in [Mode.MAP, Mode.WAR]:
+		ui.show_buildings(_research_items(now))
 	if mode == Mode.MAP and selected >= 0:
 		_primary_for_selection()
 
@@ -1391,6 +1405,8 @@ func _open_tab(t: String) -> void:
 		ui.show_diplomacy(_diplomacy_items(now_s()))
 	elif t == "world":
 		ui.show_world(_world_items())
+	elif t == "development":
+		ui.show_buildings(_research_items(now_s()))
 	else:
 		ui.hide_buildings()
 
@@ -1491,6 +1507,71 @@ func _on_buy_sku(sku: String) -> void:
 		shop.refresh(int(econ.res["raivite"]), now_s())
 	_econ_tick()
 	_autosave()
+
+
+# ---------------------------------------------------------------------- research (canon §12.3)
+
+func _academy_level() -> int:
+	for b in econ.buildings:
+		if b["type"] == "academy":
+			return int(b["level"])
+	return 1
+
+
+func _research_items(now: int) -> Array:
+	var items: Array = []
+	var dl: int = econ.dev_level()
+	var acad := _academy_level()
+	for line in Research.ORDER:
+		var spec: Dictionary = Research.LINES[line]
+		var busy: bool = not research.current.is_empty() and research.current["line"] == line
+		var left := int(research.current["end"]) - now if busy else 0
+		var maxed: bool = research.level(line) >= int(spec["max"])
+		items.append({"id": -1, "line": line, "name": spec["name"], "level": research.level(line),
+			"max": research.max_level(line, dl, acad), "busy": busy, "left": left,
+			"speed": Economy.speedup_price(left) if busy else 0, "cost": research.cost(line) if not maxed else {},
+			"seconds": research.seconds(line, acad) if not maxed else 0,
+			"reason": research.can_start(line, dl, acad, econ.res, now), "stock": speed_minutes})
+	items.sort_custom(func(x, y): return int(x["busy"]) > int(y["busy"]))
+	return items
+
+
+func _on_research_start(line: String) -> void:
+	var now := now_s()
+	if not research.start(line, econ.dev_level(), _academy_level(), econ.res, now):
+		ui.toast(research.can_start(line, econ.dev_level(), _academy_level(), econ.res, now))
+		return
+	sfx.play("coin")
+	ui.toast("🔬 %s → ур. %d · %s" % [Research.LINES[line]["name"], research.level(line) + 1, GameUI.fmt_time(int(research.current["end"]) - now)])
+	_econ_tick()
+	_autosave()
+
+
+func _on_research_speedup(_line: String) -> void:
+	if research.current.is_empty():
+		return
+	var now := now_s()
+	var left := int(research.current["end"]) - now
+	if speed_minutes > 0 and left > Economy.FREE_FINISH_SEC:
+		var use := mini(speed_minutes, int(ceil(left / 60.0)))
+		speed_minutes -= use
+		research.current["end"] = int(research.current["end"]) - use * 60
+	else:
+		var price := Economy.speedup_price(left)
+		if int(econ.res["raivite"]) < price:
+			ui.toast("Не хватает Райвитов")
+			return
+		econ.res["raivite"] = int(econ.res["raivite"]) - price
+		research.current["end"] = now
+	_econ_tick()
+	_autosave()
+
+
+func _on_research_done(line: String) -> void:
+	ui.toast("🔬 Изучено: %s, ур. %d — %s" % [Research.LINES[line]["name"], research.level(line), Research.LINES[line]["desc"]])
+	sfx.play("capture")
+	if line == "infantry":
+		_rescale_armies()
 
 
 # ---------------------------------------------------------------------- chapter (canon §12.1)
@@ -1686,7 +1767,7 @@ func _army_refill(now: int) -> void:
 	for b in econ.buildings:
 		if b["type"] == "infirmary":
 			inf_lvl = int(b["level"])
-	var speed := 1.0 + 0.05 * inf_lvl
+	var speed: float = (1.0 + 0.05 * inf_lvl) * (1.0 + 0.05 * research.level("reserve"))
 	var food_per_fx := float(Economy.PROD_MULT100[dl]) / 100.0 / Types.strength_mult(maxi(1, dl)) / 1000.0
 	for a in _player_armies():
 		var missing: int = int(a["max_str"]) - int(a["str"])
@@ -1704,18 +1785,20 @@ func _army_refill(now: int) -> void:
 ## New DL raises max Strength; readiness in % is kept (canon §8.1).
 func _rescale_armies() -> void:
 	var dl: int = econ.dev_level()
+	var fam: float = 1.0 + 0.06 * research.level("infantry")  # family level 1 + researched levels (canon §8.1)
 	for a in _player_armies():
-		var slots: int = maxi(1, roundi(float(a["max_str"]) / (Armies.INFANTRY_BASE * Types.FX * Types.strength_mult(maxi(1, dl - 1)))))
+		var slots: int = int(a.get("slots", 3))
 		var ready := float(a["str"]) / maxf(1.0, float(a["max_str"]))
-		var fresh := Armies.infantry_army(a["id"], Types.PLAYER, a["hex"], slots, dl)
-		a["max_str"] = fresh["max_str"]
-		a["str"] = int(round(float(fresh["max_str"]) * ready))
+		var mx := Types.js_round(Armies.INFANTRY_BASE * slots * Types.strength_mult(dl) * fam * Types.FX)
+		a["max_str"] = mx
+		a["str"] = int(round(float(mx) * ready))
 
 
 func _train_cost() -> Dictionary:
 	var dl: int = econ.dev_level()
 	var slots: int = SLOT_LIMIT[dl]
-	return {"food": int(ceil(40.0 * slots * Economy.PROD_MULT100[dl] / 100.0)), "seconds": INF_TRAIN_SEC[dl] * slots, "slots": slots}
+	var t: int = int(INF_TRAIN_SEC[dl] * slots * maxf(0.25, 1.0 - 0.05 * research.level("drill")))
+	return {"food": int(ceil(40.0 * slots * Economy.PROD_MULT100[dl] / 100.0)), "seconds": t, "slots": slots}
 
 
 func _train_army() -> void:
@@ -1742,7 +1825,10 @@ func _finish_training() -> void:
 	var id := 1
 	for a in armies:
 		id = maxi(id, int(a["id"]) + 1)
-	armies.append(Armies.infantry_army(id, Types.PLAYER, cap, int(training["slots"]), econ.dev_level()))
+	var fresh := Armies.infantry_army(id, Types.PLAYER, cap, int(training["slots"]), econ.dev_level())
+	fresh["slots"] = int(training["slots"])
+	armies.append(fresh)
+	_rescale_armies()
 	training = {}
 	_normalize_armies()
 	map_view.burst(cap, MapView.C_PLAYER, true)
@@ -1771,7 +1857,7 @@ func _army_items(now: int) -> Array:
 	var i := 1
 	for a in _player_armies():
 		items.append({"id": a["id"], "name": "Армия %d" % i, "str": int(round(float(a["str"]) / 1000.0)), "max": int(round(float(a["max_str"]) / 1000.0)),
-			"slots": maxi(1, roundi(float(a["max_str"]) / (Armies.INFANTRY_BASE * Types.FX * Types.strength_mult(maxi(1, econ.dev_level()))))),
+			"slots": int(a.get("slots", 3)),
 			"refilling": int(a["str"]) < int(a["max_str"])})
 		i += 1
 	var dl: int = econ.dev_level()
@@ -2189,7 +2275,9 @@ func _update_minimap() -> void:
 # ====================================================================== debug / CI
 
 func _handle_args() -> void:
-	var shot := ""
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--shot="):
+			_shot(a.substr(7))  # starts first: a failing argument below can't leave the process hanging
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--zoom="):
 			rig.zoom = float(a.substr(7))
@@ -2204,10 +2292,7 @@ func _handle_args() -> void:
 			_open_tab(a.substr(6))
 		elif a.begins_with("--demo="):
 			_demo(a.substr(7))
-		elif a.begins_with("--shot="):
-			shot = a.substr(7)
-	if shot != "":
-		_shot(shot)
+
 
 
 ## Scripted states for screenshots: plays the offensive with a simple bot (same as tests/test_sim.gd).

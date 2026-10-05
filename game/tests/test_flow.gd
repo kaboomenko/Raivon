@@ -150,6 +150,17 @@ func _run() -> void:
 	g._on_world_action("expand")
 	_check(g.chapter_done and econ.res["raivite"] >= rv0 + 210, "chapter I completes: legacy +200 Raivites")
 
+	# research: Taxes level 1 raises gold income by 2% (canon §12.3)
+	var inc0: int = econ.gross_per_hour(g.sim)["gold"]
+	econ.res["gold"] = maxi(econ.res["gold"], 2000)
+	g._on_research_start("taxes")
+	_check(not g.research.current.is_empty(), "research started")
+	g.time_offset += 120
+	g._econ_tick()
+	_check(g.research.level("taxes") == 1 and econ.gross_per_hour(g.sim)["gold"] > inc0, "Taxes researched: gold income %d → %d" % [inc0, econ.gross_per_hour(g.sim)["gold"]])
+	g._open_tab("development")
+	_check(g._research_items(g.now_s()).size() == 10, "development tab lists research lines")
+
 	# store: free war crate after 6 h, paid Royal case, speed-up items
 	g._open_shop()
 	g.time_offset += 6 * 3600 + 5

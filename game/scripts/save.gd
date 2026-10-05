@@ -19,7 +19,7 @@ static func save(g: Node) -> void:
 	var armies: Array = []
 	for a in g.armies:
 		armies.append({"id": a["id"], "side": a["side"], "hex": a["hex"], "str": a["str"], "max_str": a["max_str"],
-			"infantry": a["infantry"]})
+			"infantry": a["infantry"], "slots": a.get("slots", 3)})
 	var d := {
 		"version": VERSION,
 		"seed": g.sim.map_seed,
@@ -47,6 +47,7 @@ static func save(g: Node) -> void:
 		"cases": g.cases.to_dict(),
 		"speed_minutes": g.speed_minutes,
 		"purchases": g.purchases,
+		"research": g.research.to_dict(),
 	}
 	if g.get("econ") != null:
 		d["econ"] = g.econ.to_dict()
@@ -86,7 +87,7 @@ static func apply(g: Node, d: Dictionary) -> bool:
 	for a in d.get("armies", []):
 		armies.append({"id": int(a["id"]), "side": int(a["side"]), "hex": int(a["hex"]), "str": int(a["str"]),
 			"max_str": int(a["max_str"]), "infantry": int(a["infantry"]), "hold": false, "move": null,
-			"start_str": int(a["str"]), "attrition": 0, "routed": false})
+			"start_str": int(a["str"]), "attrition": 0, "routed": false, "slots": int(a.get("slots", 3))})
 	var war := {}
 	var sw: Dictionary = d.get("war", {})
 	for k in sw:
@@ -144,6 +145,8 @@ static func apply(g: Node, d: Dictionary) -> bool:
 		g.cases = load("res://scripts/sim/cases.gd").from_dict(d["cases"])
 	g.speed_minutes = int(d.get("speed_minutes", 0))
 	g.purchases = d.get("purchases", {})
+	if d.has("research"):
+		g.research = load("res://scripts/sim/research.gd").from_dict(d["research"])
 	g._last_refill = int(d.get("saved_at", 0))  # armies heal while the app is closed
 	if d.has("econ") and g.get("econ") != null:
 		g.econ = g.econ.get_script().from_dict(d["econ"])

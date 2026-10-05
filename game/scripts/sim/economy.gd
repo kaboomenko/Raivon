@@ -137,6 +137,9 @@ var last_collect: int = 0
 var chapter: int = 1
 var capital_hex: int = -1
 var next_id: int = 1
+## Research levels that change the economy (canon §12.3, set by research.gd): gold/food/metal +2% output
+## per level, "cellars" +2 pp protected share per level, "thrift" −3% upkeep per level.
+var research := {"gold": 0, "food": 0, "metal": 0, "cellars": 0, "thrift": 0}
 
 ## hex id -> {res: sub-unit remainder < SUB} — fractional part of stock.
 var _stock_rem: Dictionary = {}
@@ -189,6 +192,10 @@ func storage_cap() -> Dictionary:
 
 ## Protected share of the warehouse, percent (canon §7: ур. 1–4 40%, 5–9 45%, 10–14 50%, 15–19 55%, 20 60%).
 func protected_percent() -> int:
+	return _warehouse_protected() + 2 * int(research.get("cellars", 0))
+
+
+func _warehouse_protected() -> int:
 	var lvl := _type_level("warehouse")
 	if lvl >= 20:
 		return 60
@@ -563,12 +570,16 @@ func to_dict() -> Dictionary:
 		"capital_hex": capital_hex,
 		"next_id": next_id,
 		"gold_net_milli": _gold_net_milli,
+		"research": research.duplicate(),
 	}
 
 
 ## Accepts to_dict() output, also after a JSON round trip (float numbers, string keys).
 static func from_dict(d: Dictionary) -> RefCounted:
 	var e: _Self = _Self.new(null, int(d.get("last_tick", 0)))
+	var rs: Dictionary = d.get("research", {})
+	for k in rs:
+		e.research[String(k)] = int(rs[k])
 	e.res = {}
 	var r_in: Dictionary = d.get("res", {})
 	for k in r_in:
@@ -790,6 +801,7 @@ func _hex_rate_milli(c: Dictionary, occupied: bool) -> Dictionary:
 	var base: Dictionary = spec["res"]
 	for r in base:
 		var v: int = int(base[r]) * mp * lm / 10   # base × 1000 × mp/100 × lm/100
+		v = v * (100 + 2 * int(research.get(r, 0))) / 100
 		if occupied:
 			v /= 2
 		out[r] = v
@@ -841,7 +853,7 @@ func _upkeep_milli() -> int:
 			"defense":
 				if bool(_own_ctrl.get(int(b["hex"]), not _synced)):
 					total += base * UPKEEP_MULT100[clampi(lvl, 1, 10)] * _level_mult100(lvl) / 10
-	return total
+	return total * (100 - 3 * int(research.get("thrift", 0))) / 100
 
 
 ## Accrues the interval [a, b) clipped to the 8 h economy window (canon §4 E7).

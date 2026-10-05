@@ -12,6 +12,8 @@ signal building_speedup(id: int)
 signal army_action(id: int, kind: String)
 signal diplomacy_action(state: int, kind: String)
 signal world_action(id: String)
+signal research_start(line: String)
+signal research_speedup(line: String)
 
 const PANEL := Color(0.055, 0.085, 0.14, 0.95)
 const EDGE := Color(0.32, 0.42, 0.58, 0.6)
@@ -812,7 +814,12 @@ func _building_card(it: Dictionary) -> Control:
 		var sp: int = it["speed"]
 		var stock: int = it.get("stock", 0)
 		var txt := "⚡ бесплатно" if sp == 0 else ("⏩ запас %d мин" % stock if stock > 0 else "⚡ %d" % sp)
-		_card_button(card, txt, Color(0.85, 0.55, 0.1), func(): building_speedup.emit(id), sp > 0)
+		var line_s: String = it.get("line", "")
+		_card_button(card, txt, Color(0.85, 0.55, 0.1), func():
+			if line_s != "":
+				research_speedup.emit(line_s)
+			else:
+				building_speedup.emit(id), sp > 0)
 		return card
 	if int(it["level"]) >= int(it["max"]) and String(it["reason"]) != "":
 		var m := _label(it["reason"], 15, MUTED, false)
@@ -822,7 +829,7 @@ func _building_card(it: Dictionary) -> Control:
 		m.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		card.add_child(m)
 		return card
-	var y := 60.0
+	var y := 54.0
 	var cost: Dictionary = it["cost"]
 	for r in cost:
 		var row := HBoxContainer.new()
@@ -831,18 +838,21 @@ func _building_card(it: Dictionary) -> Control:
 		var ic := TextureRect.new()
 		ic.texture = _icon(r)
 		ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		ic.custom_minimum_size = Vector2(24, 24)
+		ic.custom_minimum_size = Vector2(20, 20)
 		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		row.add_child(ic)
-		row.add_child(_label(str(cost[r]), 18, TEXT, false))
+		row.add_child(_label(str(cost[r]), 16, TEXT, false))
 		card.add_child(row)
-		y += 26
-	var tl := _label("⏱ " + fmt_time(int(it["seconds"])), 15, MUTED, false)
+		y += 20
+	var tl := _label("⏱ " + fmt_time(int(it["seconds"])), 14, MUTED, false)
 	tl.position = Vector2(26, y)
 	card.add_child(tl)
 	var ok: bool = String(it["reason"]) == ""
-	_card_button(card, "⬆ Улучшить", Color(0.2, 0.55, 0.3) if ok else Color(0.3, 0.33, 0.4), func():
-		if ok:
+	var line: String = it.get("line", "")
+	_card_button(card, "🔬 Изучить" if line != "" else "⬆ Улучшить", Color(0.2, 0.55, 0.3) if ok else Color(0.3, 0.33, 0.4), func():
+		if ok and line != "":
+			research_start.emit(line)
+		elif ok:
 			building_upgrade.emit(id)
 		else:
 			toast(it["reason"]), true)
