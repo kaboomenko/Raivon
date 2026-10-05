@@ -556,6 +556,24 @@ func show_ultimatum(enemy: String, hex_name: String, tribute: int, can_pay: bool
 	_button(box, Rect2(30, 722, 780, 84), tr("ult.later"), Color(0.3, 0.33, 0.42), close_modal)
 
 
+## Simple announcement: title, lines of text, one button (world expansion, chapter cards).
+func show_info(title: String, lines: Array, button: String, on_button: Callable) -> void:
+	var h := 230.0 + 52.0 * lines.size()
+	var box := _modal_box(Rect2(60, maxf(200.0, (VH - h) / 2.0 - 80.0), 821, h))
+	var t := _label(title, 36, Color(1.0, 0.85, 0.4))
+	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_at(t, box, Vector2(0, 28), Vector2(821, 48))
+	var y := 100.0
+	for ln in lines:
+		var l := _label(String(ln), 22, TEXT, false)
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD
+		l.custom_minimum_size = Vector2(741, 0)
+		l.position = Vector2(40, y)
+		box.add_child(l)
+		y += 52.0
+	_button(box, Rect2(40, h - 110, 741, 84), button, Color(0.13, 0.4, 0.9), on_button)
+
+
 ## Settings: sound, language (applies at once: `on_lang` gets "ru" / "en" and re-renders the game, then this
 ## modal is shown again by the caller), new game, build info.
 func show_settings(sound_on: bool, on_sound: Callable, on_new_game: Callable, on_lang: Callable) -> void:

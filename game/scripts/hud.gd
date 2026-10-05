@@ -559,8 +559,16 @@ class Minimap extends Control:
 	func _draw() -> void:
 		if world == null or world.get("sim") == null:
 			return
-		var sc := 10.5
-		var c := size / 2
+		# fit the whole open world (it grows by chapter)
+		var lo := Vector2(1e9, 1e9)
+		var hi := Vector2(-1e9, -1e9)
+		for cell in world.sim.cells:
+			var wp: Vector3 = world.axial_to_world(cell["q"], cell["r"])
+			lo = lo.min(Vector2(wp.x, wp.z))
+			hi = hi.max(Vector2(wp.x, wp.z))
+		var span := hi - lo + Vector2(2.0, 2.0)
+		var sc := minf(size.x / span.x, size.y / span.y)
+		var c := size / 2 - (lo + hi) / 2.0 * sc
 		for cell in world.sim.cells:
 			var p: Vector3 = world.axial_to_world(cell["q"], cell["r"])
 			var col := Color(0.32, 0.36, 0.42)

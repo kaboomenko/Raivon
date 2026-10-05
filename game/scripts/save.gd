@@ -64,6 +64,7 @@ static func to_dict(g: Node) -> Dictionary:
 		"stats": g.stats,
 		"stars_claimed": g.stars_claimed,
 		"chapter_done": g.chapter_done,
+		"chapter": g.chapter,
 		"cases": g.cases.to_dict(),
 		"speed_minutes": g.speed_minutes,
 		"purchases": g.purchases,
@@ -90,6 +91,8 @@ static func read() -> Dictionary:
 ## Applies a save read by `read()` to a freshly generated world; returns false if it does not fit.
 static func apply(g: Node, d: Dictionary) -> bool:
 	var w = MapGen.generate_chapter_one(int(d["seed"]))
+	if int(d.get("chapter", 1)) >= 2:
+		load("res://scripts/sim/ring_gen.gd").extend_chapter_two(w, int(w.map_seed) ^ 0x2)
 	var cells: Array = d["cells"]
 	if cells.size() != w.cells.size():
 		return false
@@ -166,6 +169,7 @@ static func apply(g: Node, d: Dictionary) -> bool:
 	g.stats = sts
 	g.stars_claimed = d.get("stars_claimed", {})
 	g.chapter_done = bool(d.get("chapter_done", false))
+	g.chapter = int(d.get("chapter", 1))
 	if d.has("cases"):
 		g.cases = load("res://scripts/sim/cases.gd").from_dict(d["cases"])
 	g.speed_minutes = int(d.get("speed_minutes", 0))

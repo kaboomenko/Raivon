@@ -26,6 +26,7 @@ const Research := preload("res://scripts/sim/research.gd")
 const Market := preload("res://scripts/sim/market.gd")
 const March := preload("res://scripts/sim/march.gd")
 const Camps := preload("res://scripts/sim/camps.gd")
+const RingGen := preload("res://scripts/sim/ring_gen.gd")
 const Net := preload("res://scripts/net.gd")
 const ShopUI := preload("res://scripts/shop_ui.gd")
 const L := preload("res://scripts/l10n.gd")
@@ -34,7 +35,8 @@ enum Mode { MAP, WAR, BATTLE, RESULT, PEACE, CEREMONY }
 
 const MAP_SEED := 20261004
 const HAND := ["attack", "breakthrough", "airstrike", "encircle", "defense"]
-const CHAPTER_GOAL := 20
+const CHAPTER_GOALS: Array[int] = [0, 20, 36]  # official hexes per chapter (canon §12.1)
+const COLONIZE_SEC: Array[int] = [0, 60, 300]  # 1 min in chapter I, 5 min in II (canon §12.1)
 const TRUCE_SEC := 30 * 60
 ## Translation keys of unnamed hexes: by kind, else by terrain.
 const KIND_NAMES := {"capital": "kind.capital", "city": "kind.city", "farm": "kind.farm", "mine": "kind.mine", "port": "kind.port", "military_base": "kind.military_base"}
@@ -87,6 +89,7 @@ var training := {}  # new army being formed: {end, slots}
 var stats := {}  # chapter counters for the stars: peaces, goals, pockets, colonized, forts, convoys, defenses
 var stars_claimed := {}
 var chapter_done := false
+var chapter := 1  # open chapter: 1 «Долина», 2 «Речной край»
 var opinion := {}  # AI state -> opinion of the player, decays toward 0 (canon §10.5)
 var gift_at := {}  # AI state -> unix time of the last gift
 var _last_opinion := 0
@@ -142,7 +145,7 @@ func _ready() -> void:
 	_show_damage()
 	rig = CameraRig.new()
 	add_child(rig)
-	rig.bounds = Rect2(-6.5, -7.5, 13.0, 12.0)
+	_fit_camera_bounds()
 	rig.hex_tapped.connect(_on_hex_tapped)
 	rig.order_drag.connect(_on_order_drag)
 	rig.order_filter = _order_filter
@@ -630,7 +633,7 @@ func _on_hud_button(name: String) -> void:
 		"tower":
 			_tower_action()
 		"trophy":
-			ui.toast(tr("toast.chapter_progress") % [_player_hexes(), CHAPTER_GOAL])
+			ui.toast(tr("toast.chapter_progress") % [_player_hexes(), _chapter_goal()])
 		"book":
 			ui.toast(tr("toast.chronicle_locked"))
 		"mail":
@@ -658,6 +661,30 @@ func _war_or_front_center() -> Vector3:
 		return map_view.cell_world(war["goal"])
 	var g := War.recommend_goals(sim, MapGen.BARONS, 1)
 	return map_view.cell_world(g[0]) if g.size() > 0 else rig.target
+
+
+## Camera limits around the open world (chapter I: the original −6.5…6.5 × −7.5…4.5 box).
+func _fit_camera_bounds() -> void:
+	var lo := Vector2(-6.5, -7.5)
+	var hi := Vector2(6.5, 4.5)
+	if int(sim.radius) <= 4:
+		rig.bounds = Rect2(lo, hi - lo)
+		return
+	for c in sim.cells:
+		var p: Vector3 = MapView.axial_to_world(int(c["q"]), int(c["r"]))
+		lo = lo.min(Vector2(p.x - 1.0, p.z - 3.0))
+		hi = hi.max(Vector2(p.x + 1.0, p.z - 1.0))
+	rig.bounds = Rect2(lo, hi - lo)
+
+
+## Chapter II ring (canon §12.1): the world grows around the old one; the map, camera and minimap follow.
+func _expand_world() -> void:
+	if not RingGen.extend_chapter_two(sim, int(sim.map_seed) ^ 0x2):
+		return
+	map_view.set_world(sim)
+	map_view.set_camps(camps.active)
+	_fit_camera_bounds()
+	_minimap_snap = ""
 
 
 func _new_game() -> void:
@@ -813,7 +840,19 @@ func _colonize_cost() -> int:
 
 ## 1 min in chapter I, 5 / 15 / 30 min in later chapters (canon §12.1).
 func _colonize_seconds() -> int:
-	return 60
+	return COLONIZE_SEC[clampi(chapter, 1, COLONIZE_SEC.size() - 1)]
+
+
+func _chapter_goal() -> int:
+	return CHAPTER_GOALS[clampi(chapter, 1, CHAPTER_GOALS.size() - 1)]
+
+
+## Every AI state of the open world (chapter I: Barons, Hamlets; chapter II adds the League and the Order).
+func _ai_states() -> Array:
+	var out: Array = []
+	for s in range(2, sim.states.size()):
+		out.append(s)
+	return out
 
 
 ## Colonization (canon §12.1): gold and a timer, one at a time, no builder needed.
@@ -865,7 +904,7 @@ func _finish_colonize(id: int) -> void:
 	map_view.pop_hex(id)
 	_autosave()
 	map_view.mark_dirty()
-	ui.toast(tr("toast.colonized") % [_cell_name(id), _player_hexes(), CHAPTER_GOAL])
+	ui.toast(tr("toast.colonized") % [_cell_name(id), _player_hexes(), _chapter_goal()])
 	_select(id)
 
 
@@ -1470,7 +1509,7 @@ func _sign_peace() -> void:
 			land += " · " + (tr("ceremony.city") if cities == 1 else tr("ceremony.cities") % cities)
 	lines.append(land)
 	lines.append(tr("ceremony.realm") % [before, MapGen.official_value(sim, Types.PLAYER)])
-	lines.append(tr("ceremony.chapter") % [hexes_before, _player_hexes(), CHAPTER_GOAL])
+	lines.append(tr("ceremony.chapter") % [hexes_before, _player_hexes(), _chapter_goal()])
 	# plunder (canon §9.14): % of the loser's exposed treasury; the AI economy is not simulated yet, so its
 	# treasury is taken as 8 h of comparable production with the 40% protected share; 12 h loss cap for all
 	var gross: Dictionary = econ.gross_per_hour(sim)
@@ -1581,7 +1620,7 @@ func _end_ceremony() -> void:
 	map_view.mark_dirty()
 	_ceremony = {}
 	_set_mode(Mode.MAP)
-	if _player_hexes() >= CHAPTER_GOAL and not chapter_done:
+	if _player_hexes() >= _chapter_goal() and not chapter_done:
 		ui.toast(tr("toast.chapter_goal"))
 
 
@@ -2152,8 +2191,8 @@ func _star_progress(st: Array) -> int:
 
 
 func _world_items() -> Array:
-	var items: Array = [{"kind": "chapter", "hexes": _player_hexes(), "goal": CHAPTER_GOAL, "done": chapter_done,
-		"can_expand": _player_hexes() >= CHAPTER_GOAL and war.is_empty() and not chapter_done}]
+	var items: Array = [{"kind": "chapter", "hexes": _player_hexes(), "goal": _chapter_goal(), "done": chapter_done,
+		"can_expand": _player_hexes() >= _chapter_goal() and war.is_empty() and not chapter_done}]
 	for st in STARS:
 		var prog := mini(_star_progress(st), int(st[3]))
 		items.append({"kind": "star", "id": st[0], "title": tr(String(st[1])), "progress": prog, "need": st[3],
@@ -2182,7 +2221,10 @@ func _on_world_action(id: String) -> void:
 
 ## Content wall (canon §12.1): chapter II is not out yet — the legacy is paid and a teaser shown.
 func _complete_chapter() -> void:
-	if chapter_done or _player_hexes() < CHAPTER_GOAL or not war.is_empty():
+	if chapter_done or _player_hexes() < _chapter_goal() or not war.is_empty():
+		return
+	if chapter == 1:
+		_world_expansion()
 		return
 	chapter_done = true
 	econ.res["raivite"] = int(econ.res["raivite"]) + 200
@@ -2193,11 +2235,80 @@ func _complete_chapter() -> void:
 	_autosave()
 
 
+## «Мир расширяется» (canon §12.1, 02 §17.1, 07 §4): chapter I legacy, the ring of chapter II with the River
+## League and the Order of Stone, their forts by the AI norm, the new goal; the camera pulls back over the new world.
+func _world_expansion() -> void:
+	var hexes_before := _land_count()
+	econ.res["raivite"] = int(econ.res["raivite"]) + 200  # chapter I legacy
+	_expand_world()
+	chapter = 2
+	econ.chapter = 2
+	_ai_forts([RingGen.LEAGUE, RingGen.ORDER])
+	map_view.refresh_props()
+	map_view.set_camps(camps.active)
+	var hexes_after := _land_count()
+	rig.focus(Vector3(0, 0, -1.0), 1.0)
+	for s in [RingGen.LEAGUE, RingGen.ORDER]:
+		var cap: int = sim.states[s]["capital_id"]
+		map_view.burst(cap, map_view.state_color(s), true)
+		map_view.floater(cap, _state_name(s), map_view.state_color(s).lightened(0.4))
+	map_view.fireworks(map_view.cell_world(sim.states[Types.PLAYER]["capital_id"]), 5)
+	sfx.play("fanfare")
+	_post("inbox.expansion.title", L.pack("inbox.expansion.text", [hexes_before, hexes_after, _chapter_goal()]))
+	ui.show_info(tr("expansion.title"), [
+		tr("expansion.world") % [hexes_before, hexes_after],
+		tr("expansion.states"),
+		"· %s — %s, %s" % [_state_name(RingGen.LEAGUE), tr("archetype.owl"), tr("dl.short") % int(sim.states[RingGen.LEAGUE]["dev_level"])],
+		"· %s — %s, %s" % [_state_name(RingGen.ORDER), tr("archetype.turtle"), tr("dl.short") % int(sim.states[RingGen.ORDER]["dev_level"])],
+		tr("expansion.goal") % [_chapter_goal(), _player_hexes()],
+		tr("expansion.advisor"),
+	], tr("ui.continue"), func():
+		ui.close_modal()
+		rig.focus(map_view.cell_world(sim.states[Types.PLAYER]["capital_id"]), 0.6))
+	_autosave()
+
+
+func _land_count() -> int:
+	var n := 0
+	for c in sim.cells:
+		if Types.is_passable(c):
+			n += 1
+	return n
+
+
+## AI forts by the canon norm (§9.16): 25% of border hexes at DL − 2; Wolf 15% and −1; Turtle 40% and +2.
+func _ai_forts(states: Array) -> void:
+	for s in states:
+		var arch: String = sim.states[s]["archetype"]
+		var share := 25
+		var lvl: int = int(sim.states[s]["dev_level"]) - 2
+		if arch == "wolf":
+			share = 15
+			lvl -= 1
+		elif arch == "turtle":
+			share = 40
+			lvl += 2
+		lvl = clampi(lvl, 1, 10)
+		var border: Array = []
+		for c in sim.cells:
+			if c["owner"] != s or not Types.is_passable(c) or c["kind"] == "capital":
+				continue
+			for n in sim.neighbors[c["id"]]:
+				if n >= 0 and sim.cells[n]["owner"] != s and Types.is_passable(sim.cells[n]):
+					border.append(c)
+					break
+		border.sort_custom(func(a, b): return int(a["value"]) > int(b["value"]) if int(a["value"]) != int(b["value"]) else int(a["id"]) < int(b["id"]))
+		for c in border.slice(0, maxi(1, border.size() * share / 100)):
+			c["fort"] = lvl
+
+
 # ---------------------------------------------------------------------- diplomacy (canon §10.4–10.6)
 
 ## Leader name, archetype and character (translation keys).
 const LEADERS := {2: ["leader.barons", "archetype.wolf", "leader.barons.desc"],
-	3: ["leader.hamlets", "archetype.fox", "leader.hamlets.desc"]}
+	3: ["leader.hamlets", "archetype.fox", "leader.hamlets.desc"],
+	4: ["leader.league", "archetype.owl", "leader.league.desc"],
+	5: ["leader.order", "archetype.turtle", "leader.order.desc"]}
 
 
 func _opinion_add(s: int, v: float) -> void:
@@ -2240,7 +2351,7 @@ static func _opinion_word(v: float) -> String:
 
 func _diplomacy_items(now: int) -> Array:
 	var items: Array = []
-	for s in [MapGen.BARONS, MapGen.HAMLETS]:
+	for s in _ai_states():
 		var status: String = tr("dipl.peace")
 		if not war.is_empty() and int(war["enemy"]) == s:
 			status = tr("dipl.war")
@@ -3014,6 +3125,16 @@ func _demo(spec: String) -> void:
 		return
 	if what == "settings":
 		_on_hud_button("gear")
+		return
+	if what == "ch2":
+		_world_expansion()
+		if parts.size() > 1:  # ch2:port / ch2:military_base / ch2:camp — look at a ring II feature
+			ui.close_modal()
+			for c in sim.cells:
+				if (parts[1] == "camp" and not camps.at(c["id"]).is_empty()) or c["kind"] == parts[1]:
+					_select(c["id"])
+					rig.focus(map_view.cell_world(c["id"]), 0.4)
+					break
 		return
 	if what == "camp":
 		_camps_tick(now_s())

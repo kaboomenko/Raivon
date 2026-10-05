@@ -206,7 +206,7 @@ func _noise_tex(freq: float, octaves: int, seed_: int) -> NoiseTexture2D:
 func _faction_suffix(s: int) -> String:
 	if s == Types.PLAYER:
 		return "blue"
-	if s == MapGen.HAMLETS:
+	if s == MapGen.HAMLETS or s == 4:  # Hamlets, River League
 		return "green"
 	return "red"
 
@@ -303,6 +303,10 @@ func _place_fort_edges(c: Dictionary, holder: Node3D, n: int) -> void:
 
 
 func _place_camp(hex: int, holder: Node3D) -> void:
+	if has_model("raider_camp"):
+		spawn("raider_camp", holder, Vector3.ZERO, rng.randf_range(-0.4, 0.4), 1.0)
+		_camp_icon(hex, holder)
+		return
 	for o in [Vector3(-0.28, 0, 0.12), Vector3(0.3, 0, 0.05), Vector3(0.0, 0, -0.32)]:
 		var t := spawn("tent_red", holder, o, rng.randf() * TAU, 0.85)
 		if t:
@@ -321,6 +325,21 @@ func _place_camp(hex: int, holder: Node3D) -> void:
 		post.position = Vector3(cos(a) * 0.62, 0.13, sin(a) * 0.62)
 		post.rotation.z = 0.15 * sin(a * 3.0)
 		holder.add_child(post)
+	_camp_icon(hex, holder)
+
+
+## Rotation that turns a port model's water inlet (+X in the model) toward the hex's water neighbour.
+func _water_side(c: Dictionary) -> float:
+	for i in 6:
+		var d: Vector2i = HexGrid.DIRS[i]
+		var nid: int = sim.id_at(int(c["q"]) + d.x, int(c["r"]) + d.y)
+		if nid >= 0 and sim.cells[nid]["terrain"] == "water":
+			var dv := axial_to_world(int(c["q"]) + d.x, int(c["r"]) + d.y) - axial_to_world(int(c["q"]), int(c["r"]))
+			return atan2(-dv.z, dv.x)  # Blender +X rotated onto the neighbour direction
+	return 0.0
+
+
+func _camp_icon(hex: int, holder: Node3D) -> void:
 	var icon := Sprite3D.new()
 	var res: String = camp_hexes[hex]
 	icon.texture = load("res://assets/ui/%s.png" % {"gold": "coin", "food": "food", "metal": "metal"}.get(res, "coin"))
@@ -403,6 +422,16 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 		"mine":
 			spawn("mine", holder, p, 0.2, 1.1)
 			return
+		"port":
+			if has_model("port"):
+				spawn("port", holder, p, _water_side(c), 1.0)
+				_place_fort(c, holder)
+				return
+		"military_base":
+			if has_model("military_base"):
+				spawn("military_base", holder, p, 0.3, 1.0)
+				_place_fort(c, holder)
+				return
 	match c["terrain"]:
 		"forest":
 			for i in rng.randi_range(8, 12):
@@ -430,12 +459,13 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 func _build_horizon() -> void:
 	var ring_mat := StandardMaterial3D.new()
 	ring_mat.albedo_color = Color(0.18, 0.22, 0.2)
-	for q in range(-9, 10):
-		for r in range(-9, 10):
-			if abs(q + r) > 9 or sim.id_at(q, r) >= 0:
+	var rr: int = maxi(4, int(sim.radius))  # the horizon ring sits around the open world (grows by chapter)
+	for q in range(-rr - 5, rr + 6):
+		for r in range(-rr - 5, rr + 6):
+			if abs(q + r) > rr + 5 or sim.id_at(q, r) >= 0:
 				continue
 			var d: int = (absi(q) + absi(r) + absi(q + r)) / 2
-			if d > 8:
+			if d > rr + 4:
 				continue
 			var p := axial_to_world(q, r)
 			var roll := rng.randf()
@@ -443,9 +473,9 @@ func _build_horizon() -> void:
 			if near:
 				for i in 3:
 					spawn("tree_pine" if rng.randf() < 0.7 else "tree_round", _horizon_root, p + Vector3(rng.randf_range(-0.7, 0.7), -0.1, rng.randf_range(-0.7, 0.7)), rng.randf() * TAU, rng.randf_range(0.8, 1.1))
-			elif d <= 6 and roll < 0.5:
+			elif d <= rr + 2 and roll < 0.5:
 				spawn("mountain", _horizon_root, p + Vector3(0, -0.15, 0), rng.randf() * TAU, rng.randf_range(1.7, 2.8))
-			elif d <= 6:
+			elif d <= rr + 2:
 				for i in 5:
 					spawn("tree_pine", _horizon_root, p + Vector3(rng.randf_range(-0.7, 0.7), -0.1, rng.randf_range(-0.7, 0.7)), rng.randf() * TAU, rng.randf_range(0.9, 1.4))
 			var base := MeshInstance3D.new()
@@ -458,7 +488,7 @@ func _build_horizon() -> void:
 			base.position = p + Vector3(0, -0.62, 0)
 			base.material_override = ring_mat
 			_horizon_root.add_child(base)
-			if not near and rng.randf() < 0.55 + 0.1 * (d - 5):
+			if not near and rng.randf() < 0.55 + 0.1 * (d - rr - 1):
 				_cloud(p + Vector3(rng.randf_range(-0.5, 0.5), rng.randf_range(1.0, 2.6), rng.randf_range(-0.5, 0.5)), rng.randf_range(3.5, 6.0))
 
 

@@ -142,13 +142,14 @@ func _run() -> void:
 	g._on_world_action("peace")
 	_check(econ.res["raivite"] == rv0 + 10, "a star is claimed only once")
 	for c in g.sim.cells:
-		if g._player_hexes() >= g.CHAPTER_GOAL:
+		if g._player_hexes() >= g._chapter_goal():
 			break
 		if c["owner"] == Types.NOBODY and Types.is_passable(c):
 			c["owner"] = Types.PLAYER
 			c["controller"] = Types.PLAYER
 	g._on_world_action("expand")
-	_check(g.chapter_done and econ.res["raivite"] >= rv0 + 210, "chapter I completes: legacy +200 Raivites")
+	_check(g.chapter == 2 and econ.res["raivite"] >= rv0 + 210, "chapter I completes: legacy +200 Raivites, chapter II opens")
+	g.ui.close_modal()
 
 	# research: Taxes level 1 raises gold income by 2% (canon §12.3)
 	var inc0: int = econ.gross_per_hour(g.sim)["gold"]
@@ -519,6 +520,25 @@ func _run() -> void:
 	for r in ["gold", "food", "metal"]:
 		gained += int(g.econ.res[r]) - int(res_before[r])
 	_check(gained > 0, "camp loot credited (+%d)" % gained)
+	# Chapter II: «Мир расширяется» (canon §12.1, 02 §17)
+	g.ui.close_modal()
+	var n_before: int = 61
+	if g.chapter == 1:
+		g._world_expansion()
+	_check(g.chapter == 2 and g.sim.states.size() == 6 and g._land_count() == 90, "world expanded to 90 land hexes, 2 new states")
+	_check(g._chapter_goal() == 36 and g._colonize_seconds() == 300, "chapter II goal 36, colonization 5 min")
+	var dip: Array = g._diplomacy_items(g.now_s())
+	_check(dip.size() == 4, "diplomacy lists 4 neighbours")
+	var forts := 0
+	for c in g.sim.cells:
+		if int(c["owner"]) == 5 and int(c["fort"]) > 0:
+			forts += 1
+	_check(forts >= 2, "the Order of Stone builds forts (%d)" % forts)
+	Save.save(g)
+	var g3: Node = load("res://scenes/main.tscn").instantiate()
+	g3.save_enabled = false
+	_check(Save.apply(g3, Save.read()) and g3.sim.cells.size() == g.sim.cells.size() and g3.chapter == 2, "chapter II save restores the ring (%d -> %d cells)" % [n_before, g3.sim.cells.size()])
+	g3.free()
 	g.queue_free()
 	await process_frame
 

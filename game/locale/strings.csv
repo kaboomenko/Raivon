@@ -478,3 +478,32 @@ camp.lost,Мародёры отбились — лагерь стоит,The mara
 camp.blocks,Сначала разбейте лагерь мародёров,Destroy the marauder camp first
 tile.camp,Лагерь мародёров,Marauder camp
 tile.camp_loot,"добыча: %s · наград сегодня %d/3","loot: %s · rewards today %d/3"
+state.league,Речная Лига,River League
+state.order,Орден Камня,Order of Stone
+leader.league,Канцлер Ивета Мудрая,Chancellor Iveta the Wise
+leader.league.desc,"Дипломат, ищет союзников, держит порт","A diplomat who seeks allies and holds a port"
+leader.order,Магистр Торвальд Терпеливый,Magister Torvald the Patient
+leader.order.desc,"Высокие стены, редко нападает","High walls, rarely attacks"
+archetype.owl,Сова,Owl
+archetype.turtle,Черепаха,Turtle
+cell.league_capital,Устье,Rivermouth
+cell.order_capital,Гранитная Твердь,Granite Hold
+cell.ch2_city_ford,Бродград,Fordton
+cell.ch2_city_bridge,Мостовик,Bridgewick
+cell.ch2_farm_reed,Камышовые луга,Reed Meadows
+cell.ch2_farm_willow,Ивовые поля,Willow Fields
+cell.ch2_farm_delta,Дельтовые нивы,Delta Fields
+cell.ch2_mine_granite,Гранитный рудник,Granite Quarry
+cell.ch2_mine_slate,Сланцевая копь,Slate Pit
+cell.ch2_mine_iron,Железный рудник,Iron Mine
+cell.ch2_port_fish,Рыбный порт,Fishing Port
+cell.ch2_port_salt,Соляная пристань,Salt Wharf
+cell.ch2_base,Речная застава,River Outpost
+expansion.title,Мир расширяется!,The world expands!
+expansion.world,Мир: %d → %d гексов,World: %d → %d hexes
+expansion.states,+2 государства:,+2 states:
+expansion.goal,Цель главы II «Речной край»: %d гексов (у вас %d),Chapter II “River Country” goal: %d hexes (you have %d)
+expansion.advisor,«Долина признала наш флаг. Но за холмами слышен шум рек и чужих барабанов».,“The valley has accepted our banner. But beyond the hills we hear rivers and foreign drums.”
+inbox.expansion.title,Мир расширяется,The world expands
+inbox.expansion.text,"Открыт «Речной край»: мир вырос с %d до %d гексов, у нас новые соседи — Речная Лига и Орден Камня. Цель главы II — %d гексов.","“River Country” is open: the world grew from %d to %d hexes, and we have new neighbours, the River League and the Order of Stone. Chapter II goal: %d hexes."
+dl.short,УР%d,DL%d

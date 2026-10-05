@@ -14,3 +14,4 @@ game/locale/*.translation
 builds/*.idsig
 builds/ios/
 builds/*.apk
+__pycache__/
