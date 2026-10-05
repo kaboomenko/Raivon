@@ -61,6 +61,9 @@ const STRIKE_WARN_SEC := 20 * 60  # strike announced 20 min ahead (canon §9.11)
 var _econ_acc := 1.0
 var _last_refill := 0
 var training := {}  # new army being formed: {end, slots}
+var opinion := {}  # AI state -> opinion of the player, decays toward 0 (canon §10.5)
+var gift_at := {}  # AI state -> unix time of the last gift
+var _last_opinion := 0
 var ad_counts := {}  # rewarded placement -> [day, views] (daily caps, canon §15.2)
 
 var map_view: Node3D
@@ -119,6 +122,7 @@ func _ready() -> void:
 	ui.building_upgrade.connect(_on_building_upgrade)
 	ui.building_speedup.connect(_on_building_speedup)
 	ui.army_action.connect(_on_army_action)
+	ui.diplomacy_action.connect(_on_diplomacy_action)
 	_make_selection()
 	_make_drag_marker()
 	_focus_front(0.7)
@@ -266,6 +270,8 @@ func _refresh_ui() -> void:
 		ui.show_buildings(_building_items(now_s()))
 	elif tab == "army" and econ != null:
 		ui.show_armies(_army_items(now_s()))
+	elif tab == "diplomacy" and econ != null:
+		ui.show_diplomacy(_diplomacy_items(now_s()))
 	match mode:
 		Mode.MAP:
 			ui.set_action("", "")
@@ -371,10 +377,10 @@ func _on_hud_button(name: String) -> void:
 			_open_tab(name.substr(4))
 		"shop":
 			ui.toast("Лавка открывается…")
+		"tab_diplomacy":
+			_open_tab("diplomacy")
 		"tab_development":
 			ui.toast("Исследования откроются на УР2")
-		"tab_diplomacy":
-			ui.toast("Дипломатия: перемирия и мнение соседей — скоро")
 		"tab_world":
 			ui.toast("Глава I «Долина»: %d / %d гексов" % [_player_hexes(), CHAPTER_GOAL])
 
@@ -574,6 +580,7 @@ func _declare(enemy: int, goal: int) -> void:
 	_ensure_armies_for(enemy)
 	war = War.declare_war(sim, enemy, goal)
 	war["started"] = now_s()
+	_opinion_add(enemy, -50.0)
 	map_view.at_war_with = enemy
 	map_view.mark_dirty()
 	map_view.sync_armies(armies, null)
@@ -944,6 +951,11 @@ func _sign_peace() -> void:
 		for h in d["hexes"]:
 			prev[h] = sim.cells[h]["owner"]
 	var enemy: int = war["enemy"]
+	var annexed_value := 0
+	for d in chosen:
+		for h in d["hexes"]:
+			annexed_value += int(sim.cells[h]["value"])
+	_opinion_add(enemy, -2.0 * annexed_value)
 	var res: Dictionary = War.apply_treaty(sim, war, chosen)
 	sfx.play("seal")
 	sfx.haptic(120)
@@ -1081,6 +1093,7 @@ func _open_defeat_or_white(score: float) -> void:
 			func(): ui.close_modal(); _set_mode(Mode.WAR),
 			func():
 				War.white_peace(sim)
+				_opinion_add(enemy, 25.0)
 				_finish_war(enemy, "🕊 Белый мир подписан"))
 		return
 	var lost := _defeat_losses(enemy)
@@ -1146,6 +1159,7 @@ func _econ_tick() -> void:
 	for ev in econ.tick(sim, now):
 		_econ_event(ev)
 	_army_refill(now)
+	_opinion_decay(now)
 	if not training.is_empty() and now >= int(training["end"]):
 		_finish_training()
 	for ev in deposits.tick(sim, econ.gross_per_hour(sim), now):
@@ -1170,6 +1184,8 @@ func _econ_tick() -> void:
 		ui.show_buildings(_building_items(now))
 	elif tab == "army" and mode in [Mode.MAP, Mode.WAR]:
 		ui.show_armies(_army_items(now))
+	elif tab == "diplomacy" and mode in [Mode.MAP, Mode.WAR]:
+		ui.show_diplomacy(_diplomacy_items(now))
 	if mode == Mode.MAP and selected >= 0:
 		_primary_for_selection()
 
@@ -1336,8 +1352,107 @@ func _open_tab(t: String) -> void:
 		ui.show_buildings(_building_items(now_s()))
 	elif t == "army":
 		ui.show_armies(_army_items(now_s()))
+	elif t == "diplomacy":
+		ui.show_diplomacy(_diplomacy_items(now_s()))
 	else:
 		ui.hide_buildings()
+
+
+# ---------------------------------------------------------------------- diplomacy (canon §10.4–10.6)
+
+const LEADERS := {2: ["Барон Гродек Клык", "Волк", "Мало крепостей, много армий, частые ультиматумы"],
+	3: ["Голова Мирося Златоуст", "Лис", "Богат, любит сделки и золото"]}
+
+
+func _opinion_add(s: int, v: float) -> void:
+	opinion[s] = float(opinion.get(s, 0.0)) + v
+
+
+## Memory fades by 0.5 per hour toward zero (canon §10.5).
+func _opinion_decay(now: int) -> void:
+	if _last_opinion == 0:
+		_last_opinion = now
+	var hours := float(now - _last_opinion) / 3600.0
+	_last_opinion = now
+	if hours <= 0.0:
+		return
+	for k in opinion.keys():
+		var v: float = opinion[k]
+		opinion[k] = move_toward(v, 0.0, 0.5 * hours)
+
+
+func _opinion_of(s: int) -> float:
+	var v: float = opinion.get(s, 0.0)
+	for c in sim.cells:
+		if c["owner"] == Types.PLAYER and _touches_owner(c["id"], s):
+			return v - 10.0  # a shared border, permanently
+	return v
+
+
+static func _opinion_word(v: float) -> String:
+	if v <= -50.0:
+		return "Враждебен"
+	if v < -10.0:
+		return "Насторожен"
+	if v <= 10.0:
+		return "Нейтрален"
+	if v <= 50.0:
+		return "Дружелюбен"
+	return "Друг державы"
+
+
+func _diplomacy_items(now: int) -> Array:
+	var items: Array = []
+	for s in [MapGen.BARONS, MapGen.HAMLETS]:
+		var status := "Мир"
+		if not war.is_empty() and int(war["enemy"]) == s:
+			status = "⚔ Война"
+		elif _truce_left(s) > 0:
+			status = "🕊 Перемирие %s" % GameUI.fmt_time(_truce_left(s))
+		var gift_left := maxi(0, int(gift_at.get(s, 0)) + 86400 - now)
+		var v := _opinion_of(s)
+		items.append({"id": s, "state": _state_name(s), "leader": LEADERS[s][0], "archetype": LEADERS[s][1],
+			"opinion": v, "word": _opinion_word(v), "status": status,
+			"can_war": war.is_empty() and _truce_left(s) == 0, "gift_cost": _gift_cost(), "gift_left": gift_left,
+			"color": map_view.state_color(s)})
+	return items
+
+
+func _gift_cost() -> int:
+	return maxi(50, int(econ.gross_per_hour(sim).get("gold", 0)))
+
+
+func _on_diplomacy_action(s: int, kind: String) -> void:
+	match kind:
+		"war":
+			var g := War.recommend_goals(sim, s, 1)
+			if g.is_empty():
+				ui.toast("Нет общей границы для войны")
+				return
+			rig.focus(map_view.cell_world(g[0]))
+			_select(g[0])
+			ui.toast("Цель выбрана — нажмите «Объявить войну»")
+		"gift":
+			var cost := _gift_cost()
+			if int(gift_at.get(s, 0)) + 86400 > now_s():
+				ui.toast("Подарок этому соседу — раз в сутки")
+				return
+			if econ.res["gold"] < cost:
+				ui.toast("Не хватает золота")
+				return
+			econ.res["gold"] -= cost
+			var emb := 0
+			for b in econ.buildings:
+				if b["type"] == "embassy":
+					emb = int(b["level"])
+			_opinion_add(s, 10.0 * (1.0 + 0.05 * emb))
+			gift_at[s] = now_s()
+			sfx.play("coin")
+			ui.toast("%s благодарит за подарок" % LEADERS[s][0])
+		"alliance":
+			ui.toast("Союзы откроются позже")
+	_econ_tick()
+	_autosave()
 
 
 # ---------------------------------------------------------------------- armies (canon §8.1)
@@ -1609,6 +1724,7 @@ func _answer_ultimatum(kind: String) -> void:
 			sim.cells[hex]["owner"] = enemy
 			sim.cells[hex]["controller"] = enemy
 			truce[enemy] = now + 24 * 3600
+			_opinion_add(enemy, 20.0)
 			map_view.refresh_hex(hex)
 			map_view.mark_dirty()
 			_normalize_armies()
@@ -1636,6 +1752,7 @@ func _answer_ultimatum(kind: String) -> void:
 					break
 			war["strike_from"] = from
 			war["strike_at"] = now + STRIKE_WARN_SEC
+			_opinion_add(enemy, -50.0)
 			map_view.at_war_with = enemy
 			map_view.mark_dirty()
 			sfx.play("warn")

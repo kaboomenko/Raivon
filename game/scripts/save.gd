@@ -39,6 +39,8 @@ static func save(g: Node) -> void:
 		"first_convoy_done": g.first_convoy_done,
 		"training": g.training,
 		"ad_counts": g.ad_counts,
+		"opinion": g.opinion,
+		"gift_at": g.gift_at,
 	}
 	if g.get("econ") != null:
 		d["econ"] = g.econ.to_dict()
@@ -114,6 +116,17 @@ static func apply(g: Node, d: Dictionary) -> bool:
 		tr[k] = int(st2[k])
 	g.training = tr
 	g.ad_counts = d.get("ad_counts", {})
+	var op := {}
+	var so: Dictionary = d.get("opinion", {})
+	for k in so:
+		op[int(k)] = float(so[k])
+	g.opinion = op
+	var ga := {}
+	var sg: Dictionary = d.get("gift_at", {})
+	for k in sg:
+		ga[int(k)] = int(sg[k])
+	g.gift_at = ga
+	g._last_opinion = int(d.get("saved_at", 0))
 	g._last_refill = int(d.get("saved_at", 0))  # armies heal while the app is closed
 	if d.has("econ") and g.get("econ") != null:
 		g.econ = g.econ.get_script().from_dict(d["econ"])

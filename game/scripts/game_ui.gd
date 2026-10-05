@@ -10,6 +10,7 @@ signal seal_done
 signal building_upgrade(id: int)
 signal building_speedup(id: int)
 signal army_action(id: int, kind: String)
+signal diplomacy_action(state: int, kind: String)
 
 const PANEL := Color(0.055, 0.085, 0.14, 0.95)
 const EDGE := Color(0.32, 0.42, 0.58, 0.6)
@@ -643,6 +644,62 @@ func _army_card(it: Dictionary) -> Control:
 		ok.size = Vector2(150, 24)
 		ok.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		card.add_child(ok)
+	return card
+
+
+## Diplomacy tab: a card per neighbour — leader, opinion, status, war / gift buttons (canon §10.6).
+func show_diplomacy(items: Array) -> void:
+	show_buildings([])
+	for c in _brow.get_children():
+		c.queue_free()
+	for it in items:
+		_brow.add_child(_diplomacy_card(it))
+
+
+func _diplomacy_card(it: Dictionary) -> Control:
+	var card := Panel.new()
+	card.custom_minimum_size = Vector2(304, 178)
+	var col: Color = it["color"]
+	card.add_theme_stylebox_override("panel", _style(Color(0.1, 0.14, 0.22), 12, col, 3))
+	card.mouse_filter = Control.MOUSE_FILTER_PASS
+	var st := _label(it["state"], 18, col.lightened(0.3))
+	st.position = Vector2(12, 6)
+	card.add_child(st)
+	var ld := _label("%s · %s" % [it["leader"], it["archetype"]], 14, MUTED, false)
+	ld.position = Vector2(12, 32)
+	ld.size = Vector2(284, 20)
+	ld.clip_text = true
+	card.add_child(ld)
+	var v: float = it["opinion"]
+	var op := _label("Мнение: %+d · %s" % [roundi(v), it["word"]], 16, Color(0.5, 1.0, 0.6) if v > 10.0 else (Color(1.0, 0.55, 0.45) if v < -10.0 else TEXT), false)
+	op.position = Vector2(12, 56)
+	card.add_child(op)
+	var stt := _label(it["status"], 16, Color(1.0, 0.85, 0.4), false)
+	stt.position = Vector2(12, 82)
+	card.add_child(stt)
+	var id: int = it["id"]
+	var bw := _panel(card, Rect2(10, 128, 136, 40), _style(Color(0.75, 0.2, 0.15) if it["can_war"] else Color(0.3, 0.33, 0.4), 10, Color(1, 1, 1, 0.45), 2))
+	bw.mouse_filter = Control.MOUSE_FILTER_PASS
+	var lw := _label("⚔ Война", 17)
+	lw.size = Vector2(136, 40)
+	lw.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lw.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	bw.add_child(lw)
+	var can_war: bool = it["can_war"]
+	bw.gui_input.connect(func(e): if _is_tap(e):
+		if can_war:
+			diplomacy_action.emit(id, "war")
+		else:
+			toast(it["status"]))
+	var gl: int = it["gift_left"]
+	var bg := _panel(card, Rect2(156, 128, 138, 40), _style(Color(0.2, 0.5, 0.35) if gl == 0 else Color(0.3, 0.33, 0.4), 10, Color(1, 1, 1, 0.45), 2))
+	bg.mouse_filter = Control.MOUSE_FILTER_PASS
+	var lg := _label(("🎁 %d зол." % int(it["gift_cost"])) if gl == 0 else "🎁 " + fmt_time(gl), 16)
+	lg.size = Vector2(138, 40)
+	lg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	lg.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	bg.add_child(lg)
+	bg.gui_input.connect(func(e): if _is_tap(e): diplomacy_action.emit(id, "gift"))
 	return card
 
 
