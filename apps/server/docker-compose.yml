@@ -1,0 +1,21 @@
+# Single-VPS setup for launch (budget $100/mo: one Hetzner CX22/CPX21 is enough for the first tens of
+# thousands of players with this API). Secrets come from .env next to this file (JWT_SECRET, PGPASSWORD).
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: raivon
+      POSTGRES_PASSWORD: ${PGPASSWORD:?set PGPASSWORD}
+      POSTGRES_DB: raivon
+    volumes: [pgdata:/var/lib/postgresql/data]
+  api:
+    build: { context: ../.., dockerfile: apps/server/Dockerfile }
+    restart: unless-stopped
+    depends_on: [db]
+    environment:
+      DATABASE_URL: postgres://raivon:${PGPASSWORD}@db/raivon
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+    ports: ["8080:8080"]
+volumes:
+  pgdata: {}

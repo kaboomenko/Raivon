@@ -1,0 +1,50 @@
+# Tests on every push: server (with a real PostgreSQL) and the Godot client suites (headless).
+name: Tests
+
+on:
+  push:
+    branches: [claude/funny-maxwell-5e3vez, main]
+  pull_request:
+
+jobs:
+  server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_USER: raivon, POSTGRES_PASSWORD: raivon, POSTGRES_DB: raivon }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U raivon" --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci || npm install
+      - run: npx vitest run --root apps/server
+        env:
+          TEST_DATABASE_URL: postgres://raivon:raivon@localhost:5432/raivon
+      - run: npx vitest run --root packages/sim
+
+  client:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      GODOT_VERSION: 4.5.1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Godot
+        run: |
+          curl -sSL -o godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip
+      - name: Import
+        run: ./Godot_v${GODOT_VERSION}-stable_linux.x86_64 --headless --path game --import || true
+      - name: Test suites
+        run: |
+          set -e
+          G=./Godot_v${GODOT_VERSION}-stable_linux.x86_64
+          for t in test_sim test_economy test_deposits test_cases test_flow; do
+            echo "== $t"
+            $G --headless --path game --script res://tests/$t.gd
+          done
