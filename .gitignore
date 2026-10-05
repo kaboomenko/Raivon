@@ -9,3 +9,4 @@ test-results/
 # Godot
 game/.godot/
 *.import
+builds/*.idsig
