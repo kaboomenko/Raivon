@@ -103,6 +103,17 @@ func _mark(c: Vector2i, terrain: String, kind: String) -> void:
 
 # ------------------------------------------------------------------ terrain
 
+func _on_front(c: Vector2i) -> bool:
+	var own: int = cells[c]["owner"]
+	for d in DIRS:
+		var nb: Vector2i = c + d
+		if cells.has(nb):
+			var o: int = cells[nb]["owner"]
+			if o != own and (o == Owner.PLAYER or o == Owner.ENEMY):
+				return true
+	return false
+
+
 func _hex_points(center: Vector3, radius: float) -> Array:
 	var pts := []
 	for k in 6:
@@ -128,9 +139,9 @@ func _build_terrain() -> void:
 				col = Color(0.12, 0.38, 0.55)
 				top = -0.18
 		if cell["owner"] == Owner.ENEMY:
-			col = col.lerp(Color(0.32, 0.22, 0.16), 0.5).lerp(Color(0.75, 0.12, 0.1), 0.35)  # scorched, red-tinted
+			col = col.lerp(Color(0.3, 0.2, 0.15), 0.5).lerp(Color(0.8, 0.1, 0.08), 0.5 if _on_front(c) else 0.25)  # scorched, red-tinted
 		elif cell["owner"] == Owner.PLAYER:
-			col = col.lerp(Color(0.1, 0.28, 0.8), 0.3)  # blue-tinted own land
+			col = col.lerp(Color(0.1, 0.28, 0.85), 0.5 if _on_front(c) else 0.12)  # blue near the front, natural inside
 		if cell["owner"] == Owner.FOG:
 			col = Color(0.18, 0.19, 0.21)
 		col = col * (0.92 + rng.randf() * 0.16)
@@ -200,6 +211,9 @@ func _flat_mat(color: Color, emission := 0.0, alpha := 1.0) -> StandardMaterial3
 	if alpha < 1.0:
 		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	if emission > 0.0:
+		# Lit black surface + HDR emission so the glow pass blooms it (neon border, reference §2).
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_PER_PIXEL
+		m.albedo_color = Color(0, 0, 0, alpha)
 		m.emission_enabled = true
 		m.emission = color
 		m.emission_energy_multiplier = emission
@@ -236,12 +250,12 @@ func _build_territory() -> void:
 			if other == owner:
 				_strip(lines[owner], e[0], e[1], 0.035, y + 0.01)
 			else:
-				_strip(borders[owner], e[0], e[1], 0.15, y + 0.02)
+				_strip(borders[owner], e[0], e[1], 0.11, y + 0.025)
 			_add_mesh(tint[Owner.FOG], _flat_mat(Color(0.08, 0.09, 0.11), 0.0, 0.55))
-	_add_mesh(lines[Owner.PLAYER], _flat_mat(BLUE.lightened(0.3), 2.2, 0.75))
-	_add_mesh(lines[Owner.ENEMY], _flat_mat(RED.lightened(0.2), 2.2, 0.7))
-	_add_mesh(borders[Owner.PLAYER], _flat_mat(Color(0.45, 0.75, 1.0), 7.0))
-	_add_mesh(borders[Owner.ENEMY], _flat_mat(Color(1.0, 0.35, 0.3), 7.0))
+	_add_mesh(lines[Owner.PLAYER], _flat_mat(Color(0.25, 0.55, 1.0), 0.9, 0.7))
+	_add_mesh(lines[Owner.ENEMY], _flat_mat(Color(1.0, 0.25, 0.2), 0.9, 0.7))
+	_add_mesh(borders[Owner.PLAYER], _flat_mat(Color(0.15, 0.5, 1.0), 4.5))
+	_add_mesh(borders[Owner.ENEMY], _flat_mat(Color(1.0, 0.12, 0.08), 4.5))
 
 
 func _edge(center: Vector3, nb: Vector2i) -> Array:

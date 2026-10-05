@@ -304,8 +304,8 @@ def barracks():
 
 def tree_pine():
     trunk = m("trunk", "#6a4327")
-    green = m("pine", "#2f6e33", 0.75)
-    green2 = m("pine2", "#3d8a3c", 0.75)
+    green = m("pine", "#1f4d2a", 0.75)
+    green2 = m("pine2", "#2a6233", 0.75)
     cyl("trunk", 0.035, 0.15, (0, 0, 0.075), trunk, 8, 0.005)
     for i in range(4):
         cone("tier", 0.2 - i * 0.04, 0.22, (0, 0, 0.2 + i * 0.12), green if i % 2 else green2, 9, 0.01)
@@ -313,8 +313,8 @@ def tree_pine():
 
 def tree_round():
     trunk = m("trunk", "#6a4327")
-    leaf = m("leaf", "#4f9d3a", 0.8)
-    leaf2 = m("leaf2", "#6bb84a", 0.8)
+    leaf = m("leaf", "#3b7a2e", 0.8)
+    leaf2 = m("leaf2", "#4f8f37", 0.8)
     cyl("trunk", 0.035, 0.2, (0, 0, 0.1), trunk, 8, 0.005)
     sphere("crown", 0.17, (0, 0, 0.32), leaf, (1, 1, 0.9), 2)
     sphere("crown2", 0.12, (0.07, -0.05, 0.42), leaf2, (1, 1, 0.9), 2)
