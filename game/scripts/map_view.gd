@@ -302,6 +302,46 @@ func _place_fort_edges(c: Dictionary, holder: Node3D, n: int) -> void:
 		spawn("fort_l%d_post" % n, holder, Vector3.ZERO, int(k) * PI / 3.0, 1.0)
 
 
+func _place_camp(hex: int, holder: Node3D) -> void:
+	for o in [Vector3(-0.28, 0, 0.12), Vector3(0.3, 0, 0.05), Vector3(0.0, 0, -0.32)]:
+		var t := spawn("tent_red", holder, o, rng.randf() * TAU, 0.85)
+		if t:
+			_tint(t, Color(0.62, 0.6, 0.56))
+	for i in 9:
+		var a := TAU * i / 9.0
+		var post := MeshInstance3D.new()
+		var cm := CylinderMesh.new()
+		cm.top_radius = 0.025
+		cm.bottom_radius = 0.035
+		cm.height = 0.26
+		var m := StandardMaterial3D.new()
+		m.albedo_color = Color(0.42, 0.3, 0.2)
+		cm.material = m
+		post.mesh = cm
+		post.position = Vector3(cos(a) * 0.62, 0.13, sin(a) * 0.62)
+		post.rotation.z = 0.15 * sin(a * 3.0)
+		holder.add_child(post)
+	var icon := Sprite3D.new()
+	var res: String = camp_hexes[hex]
+	icon.texture = load("res://assets/ui/%s.png" % {"gold": "coin", "food": "food", "metal": "metal"}.get(res, "coin"))
+	icon.pixel_size = 0.0035
+	icon.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	icon.no_depth_test = true
+	icon.position = Vector3(0, 1.05, 0)
+	holder.add_child(icon)
+
+
+## Greys out an imported model (camp tents are the red tent recoloured).
+func _tint(n: Node, col: Color) -> void:
+	if n is MeshInstance3D:
+		var mi: MeshInstance3D = n
+		var m := StandardMaterial3D.new()
+		m.albedo_color = col
+		mi.material_override = m
+	for ch in n.get_children():
+		_tint(ch, col)
+
+
 ## Defensive tower (canon §7): stands at the back of the hex, grows a little with its level.
 func _place_tower(c: Dictionary, holder: Node3D) -> void:
 	var lvl: int = int(c.get("tower", 0))
@@ -320,6 +360,9 @@ func _place_hex_props(c: Dictionary) -> void:
 
 func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 	rng.seed = 7 + int(c["id"]) * 7919
+	if camp_hexes.has(int(c["id"])):
+		_place_camp(int(c["id"]), holder)
+		return
 	if not Types.is_passable(c):
 		if c["terrain"] == "mountain":
 			spawn("mountain", holder, Vector3.ZERO, rng.randf() * TAU, rng.randf_range(1.2, 1.6))
@@ -944,6 +987,31 @@ func has_bubble(hex: int) -> bool:
 
 ## Text floating over a hex (colonization timers); "" removes it.
 var _march_paths := {}  # army id -> {"key": String, "node": Node3D}
+var camp_hexes := {}  # hex -> resource shown over the tents (marauder camps, canon §5.1)
+
+
+func camp_count() -> int:
+	return camp_hexes.size()
+
+
+## Marauder camps: grey tents, palisade, campfire smoke and the loot icon over them (02 §13.2).
+func set_camps(active: Array) -> void:
+	var now := {}
+	for cm in active:
+		now[int(cm["hex"])] = String(cm["res"])
+	var changed: Array = []
+	for h in camp_hexes:
+		if not now.has(h):
+			changed.append(h)
+			clear_smoke(int(h))
+	for h in now:
+		if not camp_hexes.has(h) or camp_hexes[h] != now[h]:
+			changed.append(h)
+	camp_hexes = now
+	for h in changed:
+		refresh_hex(int(h), false)
+		if camp_hexes.has(h):
+			smoke(int(h), 1.0e9)
 
 
 ## Dotted routes of marching armies (canon §8.1: a march is visible on the map). `paths`: army id -> Array of

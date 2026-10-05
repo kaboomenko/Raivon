@@ -69,6 +69,7 @@ static func to_dict(g: Node) -> Dictionary:
 		"purchases": g.purchases,
 		"research": g.research.to_dict(),
 		"market": g.market.to_dict() if g.market != null else {},
+		"camps": g.camps.to_dict() if g.camps != null else {},
 	}
 	if g.get("econ") != null:
 		d["econ"] = g.econ.to_dict()
@@ -171,6 +172,10 @@ static func apply(g: Node, d: Dictionary) -> bool:
 	g.purchases = d.get("purchases", {})
 	if d.has("research"):
 		g.research = load("res://scripts/sim/research.gd").from_dict(d["research"])
+	if typeof(d.get("camps")) == TYPE_DICTIONARY:
+		if g.camps == null:
+			g.camps = load("res://scripts/sim/camps.gd").new(int(d["seed"]) ^ 0xCA4B)
+		g.camps.load_dict(d["camps"])
 	if typeof(d.get("market")) == TYPE_DICTIONARY:
 		if g.market == null:
 			g.market = load("res://scripts/sim/market.gd").new()

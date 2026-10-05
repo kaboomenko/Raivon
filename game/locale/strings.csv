@@ -467,3 +467,14 @@ toast.tower_building,Башня строится: %s,Tower under construction: %
 toast.tower_upgrade,Башня → ур. %d,Tower → Lv %d
 ui.ruin_halve,▶ Сократить разорение вдвое,▶ Halve the ruin
 ui.ruin_left,разорение −%d%% · %s,ruin −%d%% · %s
+ui.attack_camp,⚔ Разбить лагерь,⚔ Raid the camp
+camp.approach,Подойдите границей к лагерю,Bring your border next to the camp
+camp.after_war,Лагерь — после войны,Camp: after the war
+camp.need_army,Подведите армию к лагерю (⇢ Марш),Bring an army next to the camp (⇢ March)
+camp.fight,Мародёры! Сломите их за 60 секунд,Marauders! Break them within 60 seconds
+camp.won,Лагерь разбит: +%d %s,Camp destroyed: +%d %s
+camp.won_no_loot,Лагерь разбит — награды на сегодня кончились,Camp destroyed. No more loot today
+camp.lost,Мародёры отбились — лагерь стоит,The marauders held. The camp still stands
+camp.blocks,Сначала разбейте лагерь мародёров,Destroy the marauder camp first
+tile.camp,Лагерь мародёров,Marauder camp
+tile.camp_loot,"добыча: %s · наград сегодня %d/3","loot: %s · rewards today %d/3"

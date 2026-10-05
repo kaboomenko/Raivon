@@ -484,6 +484,41 @@ func _run() -> void:
 		_check(g.ui._action_kind == "ruin_halve", "own hex offers to halve the ruin")
 		g._on_action("ruin_halve")
 		_check(absi(g.econ.ruin_left(g.now_s()) - left0 / 2) <= 1, "ruin halved (%d -> %d s)" % [left0, g.econ.ruin_left(g.now_s())])
+	# Marauder camp: 60 s fight, loot, the hex is wild again (canon §5.1, 03 §5.7)
+	g.ui.close_modal()
+	g.war = {}
+	g.mode = g.Mode.MAP
+	g._camps_tick(g.now_s())
+	_check(g.camps.active.size() >= 2, "marauder camps on the map (%d)" % g.camps.active.size())
+	var camp: int = g.camps.active[0]["hex"]
+	var near := -1
+	for n in g.sim.neighbors[camp]:
+		if n >= 0 and Types.is_passable(g.sim.cells[n]) and g._army_at(n).is_empty():
+			near = n
+			break
+	g.sim.cells[near]["owner"] = Types.PLAYER
+	g.sim.cells[near]["controller"] = Types.PLAYER
+	var fa: Dictionary = g._player_armies()[0]
+	fa["hex"] = near
+	fa["str"] = fa["max_str"]
+	g._select(camp)
+	_check(g.ui._action2_kind == "camp", "camp offers a raid")
+	g._colonize(camp)
+	_check(g.colonizing.is_empty() or not g.colonizing.has(camp), "a camp blocks colonization")
+	g.econ.res.merge({"gold": 0, "food": 0, "metal": 0}, true)  # room in the warehouse for the loot
+	var res_before: Dictionary = g.econ.res.duplicate()
+	g._on_action("camp")
+	_check(g.mode == g.Mode.BATTLE and g.battle != null and g.battle.duration_ticks() == 600, "camp fight is 60 s")
+	g.battle.issue(Types.PLAYER, {"t": "attack", "army": fa["id"], "target": camp})
+	while g.battle != null and not g.battle.over:
+		g._battle_step()
+	g._end_camp_fight()
+	_check(g.camps.at(camp).is_empty() and g.sim.cells[camp]["owner"] == Types.NOBODY and g.sim.cells[camp]["controller"] == Types.NOBODY, "camp destroyed, hex wild again")
+	_check(int(fa["hex"]) != camp, "the army does not enter the wild hex")
+	var gained := 0
+	for r in ["gold", "food", "metal"]:
+		gained += int(g.econ.res[r]) - int(res_before[r])
+	_check(gained > 0, "camp loot credited (+%d)" % gained)
 	g.queue_free()
 	await process_frame
 

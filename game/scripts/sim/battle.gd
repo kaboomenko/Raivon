@@ -176,6 +176,8 @@ func can_target(side: int, target: int) -> bool:
 		return false
 	if c["controller"] != enemy_of(side):
 		return false
+	if opts.has("camp") and target != int(opts["camp"]):
+		return false  # marauder fight (03 §5.7): only the camp hex
 	if side != attacker() and _protected_core.has(target):
 		return false
 	return true
@@ -520,7 +522,9 @@ func step() -> void:
 		if a["side"] == attacker() and not a["routed"] and a["str"] > 0:
 			player_alive = true
 			break
-	if not player_alive:
+	if opts.has("camp") and _captured.has(int(opts["camp"])):
+		_finish("camp")  # raiders broken: the camp is destroyed
+	elif not player_alive:
 		_finish("wiped")
 	elif tick >= duration_ticks():
 		_finish("time")

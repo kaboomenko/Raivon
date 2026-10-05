@@ -25,6 +25,7 @@ const Cases := preload("res://scripts/sim/cases.gd")
 const Research := preload("res://scripts/sim/research.gd")
 const Market := preload("res://scripts/sim/market.gd")
 const March := preload("res://scripts/sim/march.gd")
+const Camps := preload("res://scripts/sim/camps.gd")
 const Net := preload("res://scripts/net.gd")
 const ShopUI := preload("res://scripts/shop_ui.gd")
 const L := preload("res://scripts/l10n.gd")
@@ -60,6 +61,8 @@ var first_convoy_done := false
 var cases  # Cases (scripts/sim/cases.gd)
 var research  # Research (scripts/sim/research.gd)
 var market  # Market trader state (scripts/sim/market.gd)
+var camps  # marauder camps (scripts/sim/camps.gd)
+var _camp_fight := {}  # running camp fight: hex, fort before, army hexes before
 var market_sel := {"give": "food", "get": "metal", "pct": 25}
 var _march_pick := -1  # army id waiting for a destination tap (canon §8.1 march)
 var _march_dest := {}  # army id -> destination hex (timer label)
@@ -121,6 +124,7 @@ func _ready() -> void:
 	cases = Cases.new(int(Time.get_unix_time_from_system()) & 0x7FFFFFFF)
 	research = Research.new()
 	market = Market.new()
+	camps = Camps.new(MAP_SEED ^ 0xCA4B)
 	save_enabled = save_enabled and not _scripted_run()
 	_init_language()
 	var loaded := false
@@ -416,6 +420,13 @@ func _primary_for_selection() -> void:
 		return
 	if not Types.is_passable(c):
 		ui.set_primary("", "")
+	elif not camps.at(selected).is_empty():
+		if not war.is_empty():
+			ui.set_primary("camp_wait", tr("camp.after_war"), Color(0.3, 0.35, 0.45), false)
+		elif not Camps.attackable(sim, selected):
+			ui.set_primary("camp_far", tr("camp.approach"), Color(0.3, 0.35, 0.45), false)
+		else:
+			ui.set_primary("camp", tr("ui.attack_camp"), Color(0.8, 0.22, 0.16))
 	elif colonizing.has(selected):
 		var left: int = int(colonizing[selected]) - now_s()
 		var price := Economy.speedup_price(left)
@@ -571,6 +582,8 @@ func _on_action(kind: String) -> void:
 				_march_pick = int(ma["id"])
 				ui.toast(tr("march.pick"))
 				_refresh_ui()
+		"camp":
+			_start_camp_fight(selected)
 		"repair":
 			_repair(selected, false)
 		"repair_ad":
@@ -714,6 +727,10 @@ func _describe(id: int) -> Dictionary:
 			bonus += " · " + tr("tile.damaged")
 		if own == Types.PLAYER and econ.ruin_left(now_s()) > 0:
 			bonus += " · " + tr("tile.ruin") % [econ.ruin_pct, GameUI.fmt_time(econ.ruin_left(now_s()))]
+	var cm: Dictionary = camps.at(id) if camps != null else {}
+	if not cm.is_empty():
+		return {"title": tr("tile.camp"), "owner": owner_text, "owner_color": Color(0.75, 0.72, 0.68),
+			"bonus": tr("tile.camp_loot") % [tr("res.name." + String(cm["res"])), camps.rewards_left(now_s())], "attackable": false}
 	var dep: Dictionary = deposits.at(id) if deposits != null else {}
 	if not dep.is_empty():
 		bonus = tr("tile.deposit") % [int(dep["amount"]), tr("res.gen." + String(dep["res"])), GameUI.fmt_time(int(dep["gather_sec"]))]
@@ -801,6 +818,9 @@ func _colonize_seconds() -> int:
 
 ## Colonization (canon §12.1): gold and a timer, one at a time, no builder needed.
 func _colonize(id: int) -> void:
+	if not camps.at(id).is_empty():
+		ui.toast(tr("camp.blocks"))
+		return
 	if not colonizing.is_empty():
 		ui.toast(tr("toast.colonizing"))
 		return
@@ -1002,10 +1022,12 @@ func _cooldowns() -> Dictionary:
 
 
 func _battle_step() -> void:
-	ai.think(battle)
+	if ai != null:
+		ai.think(battle)
 	battle.step()
-	var ws := War.war_score(sim, war)
-	battle.last_stand = Types.PLAYER if ws["control"] <= 30 else -1
+	if not war.is_empty():
+		var ws := War.war_score(sim, war)
+		battle.last_stand = Types.PLAYER if ws["control"] <= 30 else -1
 	while _ev_i < battle.events.size():
 		_handle_event(battle.events[_ev_i])
 		_ev_i += 1
@@ -1021,7 +1043,7 @@ func _handle_event(ev: Dictionary) -> void:
 			map_view.smoke(ev["hex"], 5.0, true)
 			map_view.burst(ev["hex"], MapView.C_PLAYER if mine else MapView.C_WAR, true)
 			map_view.floater(ev["hex"], tr("floater.occupied") if mine else tr("floater.lost"), Color(0.75, 0.85, 1.0) if mine else Color(1.0, 0.7, 0.7))
-			if mine and ev["hex"] == war["goal"]:
+			if mine and not war.is_empty() and ev["hex"] == war["goal"]:
 				_stat("goals")
 				ui.toast(tr("toast.goal_taken"))
 		"tower_hit":
@@ -1041,6 +1063,99 @@ func _handle_event(ev: Dictionary) -> void:
 				map_view.burst(ev["hex"], Color(0.6, 0.82, 1.0) if mine else Color(1.0, 0.6, 0.6))
 			if not mine:
 				map_view.floater(ev["hex"], tr(String(Battle.CARDS[ev["card"]]["name"])), Color(1.0, 0.7, 0.7))
+
+
+# ---------------------------------------------------------------- marauder camps (canon §5.1, 03 §5.7)
+
+func _camps_tick(now: int) -> void:
+	var taken := {}
+	for d in deposits.active:
+		taken[int(d["hex"])] = true
+	for h in colonizing:
+		taken[int(h)] = true
+	var before: int = camps.active.size()
+	camps.tick(sim, taken, now)
+	if camps.active.size() != before or map_view.camp_count() != camps.active.size():
+		map_view.set_camps(camps.active)
+
+
+func _start_camp_fight(hex: int) -> void:
+	if mode != Mode.MAP or camps.at(hex).is_empty():
+		return
+	var ready := false
+	var total := 0
+	var n := 0
+	for a in _player_armies():
+		total += int(a["max_str"])
+		n += 1
+		if sim.neighbors[hex].has(int(a["hex"])) and not March.is_marching(a) and int(a["str"]) * 2 >= int(a["max_str"]):
+			ready = true
+	if not ready:
+		ui.toast(tr("camp.need_army"))
+		return
+	_stop_marches()
+	var homes := {}
+	for a in armies:
+		homes[int(a["id"])] = int(a["hex"])
+		a["routed"] = false
+		a["hold"] = false
+	_camp_fight = {"hex": hex, "fort": int(sim.cells[hex]["fort"]), "homes": homes}
+	sim.cells[hex]["fort"] = Camps.fort_level(econ.dev_level())
+	battle = Battle.new(sim, armies, {"attacker": Types.PLAYER, "defender": Types.NOBODY, "ai_energy_mult": 0,
+		"cards": HAND, "camp": hex, "ticks": Camps.FIGHT_TICKS})
+	battle.garrison[hex] = camps.garrison(total / maxi(1, n), now_s())
+	ai = null
+	flag_hex = hex
+	_acc = 0.0
+	_ev_i = 0
+	_select(-1)
+	rig.focus(map_view.cell_world(hex), 0.45)
+	_set_mode(Mode.BATTLE)
+	sfx.play("warn")
+	ui.toast(tr("camp.fight"))
+
+
+func _end_camp_fight() -> void:
+	var hex: int = _camp_fight["hex"]
+	var won: bool = battle.end_reason == "camp"
+	battle = null
+	var c: Dictionary = sim.cells[hex]
+	c["owner"] = Types.NOBODY
+	c["controller"] = Types.NOBODY  # armies never enter a wild hex: the camp is just gone (03 §5.7)
+	c["fort"] = int(_camp_fight["fort"])
+	var homes: Dictionary = _camp_fight["homes"]
+	for a in armies:
+		if a["side"] == Types.PLAYER:
+			if int(a["hex"]) == hex or sim.cells[int(a["hex"])]["controller"] != Types.PLAYER:
+				a["hex"] = int(homes.get(int(a["id"]), a["hex"]))
+			if a["routed"] or int(a["str"]) < int(a["max_str"]) / 10:
+				a["str"] = maxi(int(a["str"]), int(a["max_str"]) / 10)
+				a["routed"] = false
+	_camp_fight = {}
+	_last_refill = now_s()
+	_normalize_armies()
+	map_view.sync_armies(armies, null)
+	map_view.mark_dirty()
+	_set_mode(Mode.MAP)
+	if won:
+		var rw: Dictionary = camps.defeat(hex, econ.gross_per_hour(sim), now_s())
+		map_view.set_camps(camps.active)
+		map_view.burst(hex, Color(1.0, 0.85, 0.3), true)
+		sfx.play("fanfare")
+		_stat("camps")
+		var amt: int = int(rw.get("amount", 0))
+		if amt > 0:
+			var got: Dictionary = econ.add_resources({String(rw["res"]): amt})
+			var n: int = int(got.get(String(rw["res"]), 0))
+			map_view.floater(hex, "+%d" % n, Color(1.0, 0.88, 0.4))
+			ui.toast(tr("camp.won") % [n, tr("res.gen." + String(rw["res"]))])
+		else:
+			ui.toast(tr("camp.won_no_loot"))
+	else:
+		sfx.play("lost")
+		ui.toast(tr("camp.lost"))
+	_select(hex)
+	_autosave()
 
 
 func _end_offensive() -> void:
@@ -1612,6 +1727,7 @@ func _econ_tick() -> void:
 			map_view.floater(cap, "+%d" % n, Color(1.0, 0.88, 0.4))
 			sfx.play("coin")
 			ui.toast(tr("toast.convoy_back") % [n, tr("res.gen." + String(ev["res"]))])
+	_camps_tick(now)
 	for h in colonizing.keys():
 		if now >= int(colonizing[h]):
 			_finish_colonize(h)
@@ -2808,7 +2924,10 @@ func _process(delta: float) -> void:
 			_battle_step()
 		_refresh_ui()
 		if battle.over:
-			_end_offensive()
+			if _camp_fight.is_empty():
+				_end_offensive()
+			else:
+				_end_camp_fight()
 	elif mode == Mode.CEREMONY:
 		_step_ceremony(delta)
 	_step_marches()
@@ -2895,6 +3014,17 @@ func _demo(spec: String) -> void:
 		return
 	if what == "settings":
 		_on_hud_button("gear")
+		return
+	if what == "camp":
+		_camps_tick(now_s())
+		var best := -1
+		var cap: int = sim.states[Types.PLAYER]["capital_id"]
+		for cm in camps.active:
+			var h: int = cm["hex"]
+			if best < 0 or map_view.cell_world(h).distance_to(map_view.cell_world(cap)) < map_view.cell_world(best).distance_to(map_view.cell_world(cap)):
+				best = h
+		_select(best)
+		rig.focus(map_view.cell_world(best), 0.4)
 		return
 	if what == "forts":
 		var cap: int = sim.states[Types.PLAYER]["capital_id"]
