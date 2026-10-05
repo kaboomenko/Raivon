@@ -987,20 +987,41 @@ func _battle_tap(id: int) -> void:
 	_last_tap = {"army": a["id"], "t": now}
 
 
-func _on_card_drag(_card: String, screen: Vector2, active: bool) -> void:
-	if not active or screen.y > GameUI.VH - 280:
+## Card drag preview: the hex under the finger turns green/red by whether the card can be played there,
+## with the attack forecast (×1.4) for cards that strike an enemy hex.
+func _on_card_drag(card: String, screen: Vector2, active: bool) -> void:
+	var sel_mat := selection.material_override as StandardMaterial3D
+	if not active or screen.y > GameUI.VH - 280 or battle == null:
 		selection.visible = false
+		sel_mat.albedo_color = Color(1.0, 0.95, 0.7)
+		_drag_lbl.visible = false
 		return
 	var id: int = map_view.id_at_world(rig.ground_at(screen))
 	if id < 0:
 		selection.visible = false
+		_drag_lbl.visible = false
 		return
 	selection.position = map_view.cell_world(id) + Vector3(0, 0.06, 0)
 	selection.visible = true
+	var ok: bool = battle.validate(Types.PLAYER, {"t": "card", "card": card, "target": id})
+	sel_mat.albedo_color = Color(0.45, 1.0, 0.5) if ok else Color(1.0, 0.35, 0.3)
+	_drag_lbl.visible = false
+	if ok and Battle.CARDS[card]["target"] == "enemy" and card != "airstrike":
+		var ids: Array = []
+		for a in battle.adjacent_idle_armies(Types.PLAYER, id):
+			ids.append(a["id"])
+		if not ids.is_empty():
+			var f: float = battle.forecast(Types.PLAYER, ids, id, card == "breakthrough")["f"]
+			_drag_lbl.text = "×%.1f" % f
+			_drag_lbl.modulate = Color(0.35, 1.0, 0.45) if f >= 1.2 else (Color(1.0, 0.85, 0.3) if f >= 0.8 else Color(1.0, 0.35, 0.3))
+			_drag_lbl.position = map_view.cell_world(id) + Vector3(0, 1.0, 0)
+			_drag_lbl.visible = true
 
 
 func _on_card_drop(card: String, screen: Vector2) -> void:
 	selection.visible = false
+	_drag_lbl.visible = false
+	(selection.material_override as StandardMaterial3D).albedo_color = Color(1.0, 0.95, 0.7)
 	if battle == null:
 		return
 	var id: int = map_view.id_at_world(rig.ground_at(screen))

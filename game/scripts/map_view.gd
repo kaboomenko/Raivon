@@ -579,6 +579,7 @@ func sync_armies(armies: Array, battle) -> void:
 				var a0 = battle.army_by_id(cl["attackers"][0])
 				if a0 != null:
 					live_clashes[cl["id"]] = cell_world(a0["hex"]).lerp(cell_world(cl["target"]), 0.5)
+					_clash_dst[cl["id"]] = cell_world(cl["target"])
 	_sync_clash_fx(live_clashes)
 	var alive := {}
 	for a in armies:
@@ -648,6 +649,46 @@ func sync_armies(armies: Array, battle) -> void:
 
 
 var _clash_fx := {}  # clash id -> CPUParticles3D
+var _clash_dst := {}  # clash id -> target hex position
+
+var _volley_t := {}  # clash id -> seconds until the next volley
+var _volleys: Array = []  # {node, from, to, t, dur}
+
+
+## Arrow volleys arcing onto the clash target (canon §9 «бой виден»): 5 shafts per volley, every ~0.7 s.
+func _volley(from: Vector3, to: Vector3) -> void:
+	for i in 5:
+		var shaft := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(0.022, 0.022, 0.2)
+		shaft.mesh = bm
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.albedo_color = Color(0.25, 0.18, 0.1)
+		shaft.material_override = m
+		shaft.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(shaft)
+		var jitter := Vector3(rng.randf_range(-0.25, 0.25), 0, rng.randf_range(-0.25, 0.25))
+		_volleys.append({"node": shaft, "from": from + jitter * 0.5, "to": to + jitter, "t": -0.06 * i, "dur": 0.55})
+
+
+func _step_volleys(delta: float) -> void:
+	for v in _volleys.duplicate():
+		v["t"] += delta
+		var n: MeshInstance3D = v["node"]
+		var k: float = clampf(float(v["t"]) / float(v["dur"]), 0.0, 1.0)
+		n.visible = float(v["t"]) >= 0.0
+		var a: Vector3 = v["from"]
+		var b: Vector3 = v["to"]
+		var p := a.lerp(b, k) + Vector3(0, 0.5 + 1.1 * sin(PI * k), 0)
+		var p2 := a.lerp(b, minf(1.0, k + 0.03)) + Vector3(0, 0.5 + 1.1 * sin(PI * minf(1.0, k + 0.03)), 0)
+		n.position = p
+		if p2.distance_to(p) > 0.0001:
+			n.look_at(p2, Vector3.UP)
+		if k >= 1.0:
+			n.queue_free()
+			_volleys.erase(v)
+
 
 func _sync_clash_fx(live: Dictionary) -> void:
 	for cid in _clash_fx.keys():
@@ -663,6 +704,12 @@ func _sync_clash_fx(live: Dictionary) -> void:
 			add_child(fx)
 			_clash_fx[cid] = fx
 		fx.position = live[cid] + Vector3(0, 0.35, 0)
+		var vt: float = _volley_t.get(cid, 0.0) - get_process_delta_time()
+		if vt <= 0.0:
+			vt = 0.6 + rng.randf() * 0.3
+			var mid: Vector3 = live[cid]
+			_volley(mid + (mid - _clash_dst.get(cid, mid)).normalized() * 0.8, _clash_dst.get(cid, mid))
+		_volley_t[cid] = vt
 
 
 func _make_sparks() -> CPUParticles3D:
@@ -1215,6 +1262,7 @@ func _process(delta: float) -> void:
 	for h in _bubbles:
 		var bn: Node3D = _bubbles[h]
 		bn.position.y = 2.0 + 0.07 * sin(bt * 3.0 + h)
+	_step_volleys(delta)
 	for i in range(_sails.size() - 1, -1, -1):
 		var sl: Node3D = _sails[i]
 		if not is_instance_valid(sl):
