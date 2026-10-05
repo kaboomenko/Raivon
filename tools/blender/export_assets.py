@@ -32,8 +32,60 @@ def reset():
     kit._MATS.clear()
 
 
+def bake_asset(objs, size=1024):
+    """Join, unwrap and bake base colour of procedural materials into one texture (glTF-friendly)."""
+    bpy.ops.object.select_all(action="DESELECT")
+    for o in objs:
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = objs[0]
+    bpy.ops.object.convert(target="MESH")  # apply modifiers
+    bpy.ops.object.join()
+    ob = bpy.context.active_object
+    bpy.ops.object.mode_set(mode="EDIT")
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=0.004)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    img = bpy.data.images.new("bake", size, size)
+    for slot in ob.material_slots:
+        nt = slot.material.node_tree
+        node = nt.nodes.new("ShaderNodeTexImage")
+        node.image = img
+        nt.nodes.active = node
+    sc = bpy.context.scene
+    sc.render.engine = "CYCLES"
+    sc.cycles.device = "CPU"
+    sc.cycles.samples = 1
+    sc.render.bake.use_pass_direct = False
+    sc.render.bake.use_pass_indirect = False
+    sc.render.bake.margin = 4
+    bpy.ops.object.bake(type="DIFFUSE", pass_filter={"COLOR"})
+    # one material: baked colour + per-slot roughness/metal/emission averaged into the main one
+    emissive = [s.material for s in ob.material_slots if s.material.node_tree.nodes["Principled BSDF"].inputs["Emission Strength"].default_value > 0]
+    metal = [s.material for s in ob.material_slots if s.material.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value > 0.3]
+    baked = bpy.data.materials.new("baked")
+    baked.use_nodes = True
+    bnt = baked.node_tree
+    tex = bnt.nodes.new("ShaderNodeTexImage")
+    tex.image = img
+    bnt.links.new(tex.outputs["Color"], bnt.nodes["Principled BSDF"].inputs["Base Color"])
+    bnt.nodes["Principled BSDF"].inputs["Roughness"].default_value = 0.8
+    keep = {}
+    for i, slot in enumerate(ob.material_slots):
+        keep[i] = slot.material if (slot.material in emissive or slot.material in metal) else baked
+    mats = list(dict.fromkeys(keep.values()))
+    old_idx = [p.material_index for p in ob.data.polygons]
+    ob.data.materials.clear()
+    for mm in mats:
+        ob.data.materials.append(mm)
+    for p, oi in zip(ob.data.polygons, old_idx):
+        p.material_index = mats.index(keep[oi])
+    img.pack()
+    return ob
+
+
 def export(name):
     objs = [o for o in bpy.context.scene.objects if o.type == "MESH"]
+    objs = [bake_asset(objs, 512 if len(objs) < 12 else 1024)]
     for o in objs:
         o.select_set(True)
     bpy.context.view_layer.objects.active = objs[0]
@@ -43,6 +95,11 @@ def export(name):
 
 
 def m(name, color, rough=0.75, metal=0.0, emission=None, strength=0.0):
+    tex = {"stone": "stone", "stone_d": "stone", "cobble": "stone", "roof": "roof", "wood": "wood",
+           "planks": "wood", "timber": "wood", "plaster": "plaster", "door": "wood", "mrock": "plaster",
+           "mrock_d": "plaster", "rock": "plaster", "roof_wood": "wood"}
+    if name in tex and not emission and metal == 0.0:
+        return kit.textured(tex[name], color)
     return mat(name, color, rough, metal, emission, strength)
 
 
@@ -120,7 +177,7 @@ def banner(x, y, color, h=0.9, w=0.22):
 # ------------------------------------------------------------------ assets
 
 
-def castle():
+def castle(roof=ROOF_BLUE, flagc=ROOF_BLUE):
     st = m("stone", STONE, 0.85)
     box("base", (1.3, 1.3, 0.06), (0, 0, 0.03), m("cobble", "#a59d8e", 0.9), 0.02)
     corners = [(-0.55, -0.55), (0.55, -0.55), (0.55, 0.55), (-0.55, 0.55)]
@@ -128,23 +185,23 @@ def castle():
         x0, y0 = corners[i]
         x1, y1 = corners[(i + 1) % 4]
         crenellated_wall(x0, y0, x1, y1, 0.3)
-        round_tower(x0, y0, 0.11, 0.5)
+        round_tower(x0, y0, 0.11, 0.5, roof)
     # gatehouse
     box("gate", (0.28, 0.16, 0.42), (0, -0.56, 0.21), st, 0.02)
     box("gate_door", (0.13, 0.03, 0.2), (0, -0.645, 0.1), m("door", "#4a2f19", 0.8), 0.01)
-    prism_roof("gate_roof", 0.3, 0.18, 0.14, (0, -0.56, 0.42), m("roof", ROOF_BLUE, 0.5))
+    prism_roof("gate_roof", 0.3, 0.18, 0.14, (0, -0.56, 0.42), m("roof", roof, 0.5))
     # keep
     box("keep", (0.5, 0.42, 0.75), (0.05, 0.12, 0.375), st, 0.02)
-    prism_roof("keep_roof", 0.54, 0.46, 0.34, (0.05, 0.12, 0.75), m("roof", ROOF_BLUE, 0.5))
+    prism_roof("keep_roof", 0.54, 0.46, 0.34, (0.05, 0.12, 0.75), m("roof", roof, 0.5))
     for x, y, h in [(-0.22, -0.08, 0.95), (0.3, -0.08, 0.85), (0.3, 0.32, 1.05), (-0.2, 0.33, 0.8)]:
-        round_tower(x, y, 0.09, h)
+        round_tower(x, y, 0.09, h, roof)
     # hall
-    square_house(-0.28, 0.32, 0.34, 0.26, 0.38, ROOF_BLUE, STONE, 0.0, False)
+    square_house(-0.28, 0.32, 0.34, 0.26, 0.38, roof, STONE, 0.0, False)
     for i in range(6):
         w = box("win", (0.03, 0.02, 0.06), (-0.14 + i * 0.07, -0.095, 0.5), m("win_lit", "#ffcf6b", 0.5, emission="#ffb84a", strength=2.0), 0.003)
-    banner(0.05, 0.12, ROOF_BLUE, 1.45, 0.24)
-    banner(-0.55, -0.55, ROOF_BLUE, 0.95, 0.16)
-    banner(0.55, -0.55, ROOF_BLUE, 0.95, 0.16)
+    banner(0.05, 0.12, flagc, 1.45, 0.24)
+    banner(-0.55, -0.55, flagc, 0.95, 0.16)
+    banner(0.55, -0.55, flagc, 0.95, 0.16)
 
 
 def house(roof):
@@ -332,6 +389,7 @@ def tent(color):
 
 ASSETS = {
     "castle": castle,
+    "castle_red": lambda: castle(ROOF_RED, "#b3272b"),
     "house_blue": house(ROOF_BLUE),
     "house_red": house(ROOF_RED),
     "mine": mine,

@@ -157,10 +157,10 @@ func _build_terrain() -> void:
 			st.add_vertex(a); st.add_vertex(a2); st.add_vertex(b2)
 	var mi := MeshInstance3D.new()
 	mi.mesh = st.commit()
-	var mat := StandardMaterial3D.new()
-	mat.vertex_color_use_as_albedo = true
-	mat.vertex_color_is_srgb = true
-	mat.roughness = 0.95
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://shaders/terrain.gdshader")
+	mat.set_shader_parameter("noise_big", _noise_tex(0.9, 3, 101))
+	mat.set_shader_parameter("noise_fine", _noise_tex(6.0, 2, 202))
 	mi.material_override = mat
 	add_child(mi)
 	# water surface
@@ -175,6 +175,20 @@ func _build_terrain() -> void:
 	wm.roughness = 0.15
 	water.material_override = wm
 	add_child(water)
+
+
+func _noise_tex(freq: float, octaves: int, seed_: int) -> NoiseTexture2D:
+	var n := FastNoiseLite.new()
+	n.seed = seed_
+	n.frequency = freq / 64.0
+	n.fractal_octaves = octaves
+	var t := NoiseTexture2D.new()
+	t.width = 256
+	t.height = 256
+	t.seamless = true
+	t.generate_mipmaps = true
+	t.noise = n
+	return t
 
 
 # ------------------------------------------------------------------ territory: tint, inner grid, glowing border
@@ -292,8 +306,7 @@ func _place_props() -> void:
 				spawn("banner_blue", p + Vector3(0.45, 0, 0.3))
 				continue
 			"enemy_castle":
-				var cn := spawn("castle", p, PI, 1.2)
-				_tint_roofs(cn, Color(0.62, 0.12, 0.12))
+				spawn("castle_red", p, PI, 1.4)
 				continue
 			"enemy_camp":
 				spawn("tent_red", p + Vector3(-0.3, 0, -0.2))

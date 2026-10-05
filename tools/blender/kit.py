@@ -246,3 +246,77 @@ def palisade(p0, p1, z, color="#a0703e"):
     mid = (v0 + v1) / 2
     beam = box("beam", ((v1 - v0).length, 0.04, 0.04), (mid.x, mid.y, z + 0.15), wood, 0.01)
     beam.rotation_euler.z = math.atan2(v1.y - v0.y, v1.x - v0.x)
+
+
+# ---------------------------------------------------------------- textured (procedural → baked) materials
+
+def _coords(nt):
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    return tc.outputs["Object"]
+
+
+def textured(kind, color, scale=1.0):
+    """Procedural surface with real detail; baked to an image on export (see export_assets.bake_asset)."""
+    key = ("tex", kind, color, scale)
+    if key in _MATS:
+        return _MATS[key]
+    m = bpy.data.materials.new(f"{kind}_{color}")
+    m.use_nodes = True
+    nt = m.node_tree
+    bsdf = nt.nodes["Principled BSDF"]
+    co = _coords(nt)
+    base = srgb(color)
+    dark = tuple(c * 0.55 for c in base)
+    if kind in ("stone", "roof"):
+        br = nt.nodes.new("ShaderNodeTexBrick")
+        nt.links.new(co, br.inputs["Vector"])
+        br.inputs["Color1"].default_value = (*base, 1)
+        br.inputs["Color2"].default_value = (*tuple(c * 0.8 for c in base), 1)
+        br.inputs["Mortar"].default_value = (*dark, 1)
+        if kind == "stone":
+            br.inputs["Scale"].default_value = 9.0 * scale
+            br.inputs["Mortar Size"].default_value = 0.025
+            br.inputs["Brick Width"].default_value = 0.6
+            br.inputs["Row Height"].default_value = 0.3
+        else:  # roof tiles: short rows, strong shadow lines
+            br.inputs["Scale"].default_value = 14.0 * scale
+            br.inputs["Mortar Size"].default_value = 0.04
+            br.inputs["Brick Width"].default_value = 0.35
+            br.inputs["Row Height"].default_value = 0.22
+        noise = nt.nodes.new("ShaderNodeTexNoise")
+        noise.inputs["Scale"].default_value = 25.0
+        nt.links.new(co, noise.inputs["Vector"])
+        mix = nt.nodes.new("ShaderNodeMix")
+        mix.data_type = "RGBA"
+        mix.blend_type = "MULTIPLY"
+        mix.inputs["Factor"].default_value = 0.35
+        nt.links.new(br.outputs["Color"], mix.inputs["A"])
+        nt.links.new(noise.outputs["Color"], mix.inputs["B"])
+        nt.links.new(mix.outputs["Result"], bsdf.inputs["Base Color"])
+    elif kind == "wood":
+        wave = nt.nodes.new("ShaderNodeTexWave")
+        wave.wave_type = "BANDS"
+        wave.inputs["Scale"].default_value = 6.0 * scale
+        wave.inputs["Distortion"].default_value = 6.0
+        wave.inputs["Detail"].default_value = 3.0
+        nt.links.new(co, wave.inputs["Vector"])
+        ramp = nt.nodes.new("ShaderNodeValToRGB")
+        ramp.color_ramp.elements[0].color = (*dark, 1)
+        ramp.color_ramp.elements[1].color = (*base, 1)
+        nt.links.new(wave.outputs["Fac"], ramp.inputs["Fac"])
+        nt.links.new(ramp.outputs["Color"], bsdf.inputs["Base Color"])
+    else:  # plaster / cloth / generic: soft mottling
+        noise = nt.nodes.new("ShaderNodeTexNoise")
+        noise.inputs["Scale"].default_value = 12.0 * scale
+        noise.inputs["Detail"].default_value = 4.0
+        nt.links.new(co, noise.inputs["Vector"])
+        ramp = nt.nodes.new("ShaderNodeValToRGB")
+        ramp.color_ramp.elements[0].position = 0.3
+        ramp.color_ramp.elements[0].color = (*tuple(c * 0.82 for c in base), 1)
+        ramp.color_ramp.elements[1].position = 0.75
+        ramp.color_ramp.elements[1].color = (*base, 1)
+        nt.links.new(noise.outputs["Fac"], ramp.inputs["Fac"])
+        nt.links.new(ramp.outputs["Color"], bsdf.inputs["Base Color"])
+    bsdf.inputs["Roughness"].default_value = 0.8
+    _MATS[key] = m
+    return m
