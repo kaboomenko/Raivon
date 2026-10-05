@@ -20,6 +20,7 @@ func _check(cond: bool, msg: String) -> void:
 
 func _new_game() -> Node:
 	var g: Node = load("res://scenes/main.tscn").instantiate()
+	g.save_enabled = false
 	root.add_child(g)
 	await process_frame
 	await process_frame
@@ -54,6 +55,28 @@ func _run() -> void:
 		if g.sim.cells[id]["owner"] != MapGen.BARONS:
 			core_ok = false
 	_check(core_ok, "the Barons keep their core")
+	var Save = load("res://scripts/save.gd")
+	var path_backup := ""
+	if FileAccess.file_exists(Save.PATH):
+		path_backup = FileAccess.get_file_as_string(Save.PATH)
+	Save.save(g)
+	var owners_before: Array = []
+	for c in g.sim.cells:
+		owners_before.append(c["owner"])
+	var g2: Node = load("res://scenes/main.tscn").instantiate()
+	g2.save_enabled = false
+	_check(Save.apply(g2, Save.read()), "save applies to a new game")
+	var same := true
+	for i in owners_before.size():
+		if g2.sim.cells[i]["owner"] != owners_before[i]:
+			same = false
+	_check(same and g2.truce.has(MapGen.BARONS), "save round trip keeps borders and truce")
+	g2.free()
+	if path_backup != "":
+		var f := FileAccess.open(Save.PATH, FileAccess.WRITE)
+		f.store_string(path_backup)
+	else:
+		Save.wipe()
 
 	# 2. Truce blocks a new war; colonization of a free hex
 	var bh := -1

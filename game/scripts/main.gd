@@ -18,6 +18,7 @@ const Hud := preload("res://scripts/hud.gd")
 const CameraRig := preload("res://scripts/camera_rig.gd")
 const GameUI := preload("res://scripts/game_ui.gd")
 const Sfx := preload("res://scripts/sfx.gd")
+const Save := preload("res://scripts/save.gd")
 
 enum Mode { MAP, WAR, BATTLE, RESULT, PEACE, CEREMONY }
 
@@ -36,6 +37,7 @@ var ai = null
 var flag_hex := -1
 var mode := Mode.MAP
 var truce := {}  # state -> unix time when war may be declared again
+var save_enabled := true  # tests switch it off before adding the scene
 
 var map_view: Node3D
 var rig: Node3D
@@ -63,6 +65,11 @@ func _ready() -> void:
 	add_child(sfx)
 	sim = MapGen.generate_chapter_one(MAP_SEED)
 	armies = Armies.starting_armies(sim)
+	save_enabled = save_enabled and not _scripted_run()
+	var loaded := false
+	if save_enabled:
+		var d := Save.read()
+		loaded = not d.is_empty() and Save.apply(self, d)
 	map_view = MapView.new()
 	add_child(map_view)
 	map_view.set_world(sim)
@@ -86,7 +93,9 @@ func _ready() -> void:
 	_make_drag_marker()
 	_focus_front(0.7)
 	map_view.sync_armies(armies, null)
-	_set_mode(Mode.MAP)
+	_set_mode(Mode.WAR if not war.is_empty() else Mode.MAP)
+	if loaded:
+		ui.toast("С возвращением! Прогресс загружен")
 	await get_tree().process_frame
 	_handle_args()
 
@@ -188,6 +197,26 @@ func _focus_front(z: float) -> void:
 func _set_mode(m: Mode) -> void:
 	mode = m
 	_refresh_ui()
+	if m in [Mode.MAP, Mode.WAR, Mode.RESULT]:
+		_autosave()
+
+
+func _autosave() -> void:
+	if save_enabled:
+		Save.save(self)
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_PAUSED or what == NOTIFICATION_WM_CLOSE_REQUEST:
+		if mode != Mode.BATTLE and mode != Mode.CEREMONY:
+			_autosave()
+
+
+func _scripted_run() -> bool:
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--demo") or a.begins_with("--shot") or a == "--fresh":
+			return true
+	return false
 
 
 func _refresh_ui() -> void:
@@ -370,6 +399,7 @@ func _colonize(id: int) -> void:
 	sfx.haptic(20)
 	map_view.refresh_hex(id)
 	map_view.pop_hex(id)
+	_autosave()
 	ui.toast("Колонизирован «%s» · Глава I: %d / %d" % [_cell_name(id), _player_hexes(), CHAPTER_GOAL])
 	_select(id)
 
