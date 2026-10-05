@@ -145,6 +145,9 @@ var research := {"gold": 0, "food": 0, "metal": 0, "cellars": 0, "thrift": 0}
 ## hex id -> {res: sub-unit remainder < SUB} — fractional part of stock.
 var _stock_rem: Dictionary = {}
 var _upkeep_rem: int = 0
+## Army food upkeep, thousandths of food per hour (04 §6.1); set by the game from its armies before tick().
+var army_food_milli: int = 0
+var _food_rem: int = 0
 var _events: Array = []
 ## Cache of the player's land, refreshed whenever a world is passed in.
 var _synced: bool = false
@@ -220,6 +223,8 @@ func income_per_hour(world: World) -> Dictionary:
 		var v: int = gross[r]
 		if r == "gold":
 			v -= up
+		elif r == "food":
+			v -= army_food_milli
 		out[r] = v / 1000
 	return out
 
@@ -567,6 +572,8 @@ func to_dict() -> Dictionary:
 		"stock": stock.duplicate(true),
 		"stock_rem": _stock_rem.duplicate(true),
 		"upkeep_rem": _upkeep_rem,
+		"food_rem": _food_rem,
+		"army_food_milli": army_food_milli,
 		"chapter": chapter,
 		"capital_hex": capital_hex,
 		"next_id": next_id,
@@ -602,6 +609,8 @@ static func from_dict(d: Dictionary) -> RefCounted:
 	e.stock = _int_keyed(d.get("stock", {}))
 	e._stock_rem = _int_keyed(d.get("stock_rem", {}))
 	e._upkeep_rem = int(d.get("upkeep_rem", 0))
+	e._food_rem = int(d.get("food_rem", 0))
+	e.army_food_milli = int(d.get("army_food_milli", 0))
 	e.chapter = int(d.get("chapter", 1))
 	e.capital_hex = int(d.get("capital_hex", -1))
 	e.next_id = int(d.get("next_id", e.buildings.size() + 1))
@@ -913,7 +922,29 @@ func _accrue(world: World, a: int, b: int) -> void:
 			whole -= take
 	if whole > 0:
 		res["gold"] = maxi(0, int(res["gold"]) - whole)
+	_take_pool_first("food", army_food_milli, dt)
 	_prune_stock()
+
+
+## Army upkeep (04 §6.1): `milli_per_h` × dt in whole units, first from the uncollected pool (hex id order),
+## then from storage; never below 0 and no debt (canon §4 E2).
+func _take_pool_first(r: String, milli_per_h: int, dt: int) -> void:
+	if milli_per_h <= 0:
+		return
+	var owed := _food_rem + milli_per_h * dt
+	var whole := owed / SUB
+	_food_rem = owed % SUB
+	for h in _sorted_keys(stock):
+		if whole <= 0:
+			break
+		var s: Dictionary = stock[h]
+		var have: int = s.get(r, 0)
+		var take := mini(have, whole)
+		if take > 0:
+			s[r] = have - take
+			whole -= take
+	if whole > 0:
+		res[r] = maxi(0, int(res.get(r, 0)) - whole)
 
 
 ## Adds `sub` sub-units of r to a hex; the total is capped at `cap_sub` (but never reduced below what

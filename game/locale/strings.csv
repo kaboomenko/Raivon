@@ -441,3 +441,4 @@ market.full_hint,Склад: %s почти полон · обменяй на Р�
 trader.needed,Нужное,Needed
 trader.common,Ходовой,Popular
 trader.generous,Щедрый,Generous
+army.upkeep,−%d еды/ч,−%d food/h

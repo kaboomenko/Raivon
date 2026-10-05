@@ -36,6 +36,7 @@ func _init() -> void:
 		["to_dict / from_dict round trip (also via JSON)", _test_roundtrip],
 		["determinism: same inputs, same outputs; tick granularity", _test_determinism],
 		["refusal reasons are translation keys; l10n.t() renders them in ru / en", _test_reason_text],
+		["army food upkeep: pool first, then storage, no debt, 8 h pause", _test_army_food],
 		["market: rates, floor, warehouse cut, no raivites", _test_market],
 		["market trader: daily lots, one buy each, 04:00 refresh, save", _test_trader],
 	]
@@ -561,3 +562,32 @@ func _test_trader() -> void:
 	m.refresh(e, w, next)
 	_check(not m.lots[0]["bought"], "new lots at 04:00")
 	_eq(m.day, day0 + 1, "day advanced")
+
+
+func _test_army_food() -> void:
+	var w := _world()
+	var e := Economy.new(w, T0)
+	var food_gross: int = e.income_per_hour(w)["food"]
+	e.army_food_milli = 15000  # two armies of 75: 15 food/h
+	_eq(int(e.income_per_hour(w)["food"]), food_gross - 15, "net food shows the army")
+	e.collect_all()
+	e.tick(w, T0 + 3600)
+	var pool := _stock_sum(e, "food")
+	_eq(pool, food_gross - 15, "1 h: pool grows by the net flow")
+	var stored: int = e.res["food"]
+	e.army_food_milli = 10000000  # far above income: eats the pool, then storage
+	e.tick(w, T0 + 7200)
+	_eq(_stock_sum(e, "food"), 0, "pool eaten first")
+	_eq(int(e.res["food"]), maxi(0, stored + pool + food_gross - 10000), "then storage")
+	e.tick(w, T0 + 4 * 3600)
+	_eq(int(e.res["food"]), 0, "never below zero")
+	var before: int = e.res["gold"]
+	e.res["food"] = 500
+	e.tick(w, T0 + 20 * 3600)
+	_eq(int(e.res["food"]), 0, "upkeep runs inside the 8 h window")
+	e.res["food"] = 500
+	e.tick(w, T0 + 30 * 3600)
+	_eq(int(e.res["food"]), 500, "paused after 8 h without collecting (E7)")
+	_check(int(e.res["gold"]) >= 0 and before >= 0, "gold untouched by army upkeep")
+	var e2: Economy = Economy.from_dict(JSON.parse_string(JSON.stringify(e.to_dict())))
+	_eq(e2.army_food_milli, e.army_food_milli, "round trip keeps the upkeep")

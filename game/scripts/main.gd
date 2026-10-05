@@ -1374,6 +1374,7 @@ func _econ_tick() -> void:
 	if done_line != "":
 		_on_research_done(done_line)
 	econ.research = research.economy_levels()
+	econ.army_food_milli = _army_food_milli()
 	for ev in econ.tick(sim, now):
 		_econ_event(ev)
 	_army_refill(now)
@@ -1928,6 +1929,16 @@ const INF_TRAIN_SEC: Array[int] = [20, 20, 60, 180, 360, 600, 900, 1500, 2400, 3
 const REFILL_FULL_SEC: Array[int] = [1200, 1200, 1200, 2400, 2400, 3600, 3600, 5400, 5400, 7200, 7200]
 
 
+## Army food upkeep, thousandths per hour (04 §6.1): 0.1 × max strength, ×1.5 while at war, −3% per Thrift level.
+func _army_food_milli() -> int:
+	var total := 0
+	for a in _player_armies():
+		total += int(a["max_str"]) / 10  # max_str is in thousandths: 0.1 × (max_str / 1000) food/h
+	if not war.is_empty():
+		total = total * 3 / 2
+	return total * (100 - 3 * research.level("thrift")) / 100
+
+
 func _player_armies() -> Array:
 	var out: Array = []
 	for a in armies:
@@ -2040,6 +2051,7 @@ func _army_items(now: int) -> Array:
 	for a in _player_armies():
 		items.append({"id": a["id"], "name": tr("army.name") % i, "str": int(round(float(a["str"]) / 1000.0)), "max": int(round(float(a["max_str"]) / 1000.0)),
 			"slots": int(a.get("slots", 3)),
+			"upkeep": roundi(int(a["max_str"]) / 10000.0 * (1.5 if not war.is_empty() else 1.0) * (1.0 - 0.03 * research.level("thrift"))),
 			"refilling": int(a["str"]) < int(a["max_str"])})
 		i += 1
 	var dl: int = econ.dev_level()

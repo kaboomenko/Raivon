@@ -867,6 +867,12 @@ func _army_card(it: Dictionary) -> Control:
 	sub2.size = Vector2(150, 22)
 	sub2.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	card.add_child(sub2)
+	if it.has("upkeep"):
+		var up := _label(tr("army.upkeep") % int(it["upkeep"]), 13, Color(0.9, 0.8, 0.5), false)
+		up.position = Vector2(0, 117)
+		up.size = Vector2(150, 16)
+		up.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		card.add_child(up)
 	if it["refilling"]:
 		_card_button(card, tr("army.refill"), Color(0.85, 0.55, 0.1), func(): army_action.emit(id, "refill"), true)
 	else:
