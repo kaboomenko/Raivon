@@ -510,6 +510,7 @@ func step() -> void:
 
 	_step_moves()
 	_step_clashes()
+	_step_towers()
 	_step_effects()
 	if tick % TICKS_PER_SEC == 0:
 		_step_attrition()
@@ -625,6 +626,38 @@ func _step_clashes() -> void:
 			if clashes[i]["id"] == id:
 				clashes.remove_at(i)
 				break
+
+
+## М_силы by level, permille (canon §6.2) — towers hit by their own level.
+const STR_MULT_PM: Array[int] = [1000, 1000, 1250, 1550, 1900, 2350, 2900, 3600, 4400, 5400, 6600]
+
+
+## Towers (canon §7, 03 §8.6): 1.5 × М_силы(tower level) Strength per second to every enemy army in an adjacent
+## hex while it is in any clash. A tower on an occupied hex works for nobody. Direct damage: no multipliers.
+func _step_towers() -> void:
+	var in_clash := {}
+	for cl in clashes:
+		for aid in cl["attackers"]:
+			in_clash[aid] = true
+		if cl["defender"] != -1:
+			in_clash[cl["defender"]] = true
+	if in_clash.is_empty():
+		return
+	for c in world.cells:
+		var lvl: int = int(c.get("tower", 0))
+		if lvl <= 0 or c["controller"] != c["owner"]:
+			continue
+		var side: int = c["owner"]
+		var dmg: int = (150 * STR_MULT_PM[clampi(lvl, 1, 10)]) / 1000
+		for n in world.neighbors[c["id"]]:
+			if n < 0:
+				continue
+			for a in armies:
+				if a["hex"] != n or a["side"] == side or a["routed"] or int(a["str"]) <= 0 or not in_clash.has(a["id"]):
+					continue
+				a["str"] = maxi(1, int(a["str"]) - dmg)
+				if tick % TICKS_PER_SEC == 0:
+					events.append({"type": "tower_hit", "tick": tick, "hex": c["id"], "target": n})
 
 
 func _retreat_or_rout(army: Dictionary, encircled: bool) -> void:

@@ -45,6 +45,7 @@ func _init() -> void:
 		["AI never captures the player core (seeds 1..10) + identical to TS", _test_ai_core],
 		["AI counteroffensive identical to TS, core safe (seeds 1..10)", _test_ai_counter],
 		["cards: defense, airstrike, encircle, breakthrough", _test_cards],
+		["towers hit adjacent enemy armies in clashes", _test_towers],
 		["war: treaty never takes the enemy core", _test_treaty],
 		["war: identical to TS (score, demands, package)", _test_treaty_matches_ts],
 		["war: stars follow the canon", _test_stars],
@@ -534,3 +535,46 @@ func _test_stars() -> void:
 	War.record_offensive(war, 0)
 	_eq(war["battles"], 9, "no capture −1")
 	_eq(war["offensives"], 2, "offensive count")
+
+
+func _test_towers() -> void:
+	var lost := []
+	for lvl in [0, 1, 4]:
+		var d := _duel(100, 91)
+		var b: Battle = d["b"]
+		var src: int = d["attacker"]["hex"]
+		b.world.cells[src]["tower"] = lvl
+		var def: Dictionary = b.army_by_id(101)
+		var before: int = def["str"]
+		b.step()  # idle: no clash, no tower damage
+		_check(int(def["str"]) == before, "tower lvl %d silent outside a clash" % lvl)
+		b.issue(PLAYER, {"t": "attack", "army": d["attacker"]["id"], "target": d["target"]})
+		for i in 20:
+			b.step()
+		lost.append(before - int(def["str"]))
+	# 20 ticks = 2 s: tower lvl 1 adds 2 × 1.5 = 3 Strength; lvl 4 × М_силы 1.9 = 5.7 (minus a tick of joining)
+	var extra1: int = int(lost[1]) - int(lost[0])
+	var extra4: int = int(lost[2]) - int(lost[0])
+	_check(extra1 >= 2 * FX and extra1 <= 32 * FX / 10, "tower lvl 1 adds ~1.5 Strength/s (%.2f in 2 s)" % (extra1 / float(FX)))
+	_check(extra4 > extra1 * 18 / 10, "tower lvl 4 hits ×1.9 harder (%.2f)" % (extra4 / float(FX)))
+	# occupied hex: tower works for nobody
+	var d2 := _duel(100, 91)
+	var b2: Battle = d2["b"]
+	var src2: int = d2["attacker"]["hex"]
+	b2.world.cells[src2]["tower"] = 5
+	b2.world.cells[src2]["controller"] = BARONS
+	var def2: Dictionary = b2.army_by_id(101)
+	def2["hex"] = d2["target"]
+	b2.world.cells[src2]["controller"] = PLAYER
+	b2.world.cells[src2]["owner"] = BARONS  # player occupies a Barons hex with a Barons tower
+	var str0: int = def2["str"]
+	b2.issue(PLAYER, {"t": "attack", "army": d2["attacker"]["id"], "target": d2["target"]})
+	for i in 20:
+		b2.step()
+	var d3 := _duel(100, 91)
+	var b3: Battle = d3["b"]
+	var def3: Dictionary = b3.army_by_id(101)
+	b3.issue(PLAYER, {"t": "attack", "army": d3["attacker"]["id"], "target": d3["target"]})
+	for i in 20:
+		b3.step()
+	_check(str0 - int(def2["str"]) == int(def3["max_str"]) - int(def3["str"]), "tower on an occupied hex is silent")

@@ -817,11 +817,15 @@ func _sync_world(world: World) -> void:
 			continue
 		var c: Dictionary = world.cells[int(b["hex"])]
 		if c["owner"] != Types.PLAYER:
+			if b["type"] == "tower":
+				c["tower"] = 0
 			var refund := add_resources(b.get("paid", {}), true)
 			_events.append({"type": "fort_refund", "building": b["id"], "hex": b["hex"], "refund": refund})
 			continue
 		if b["type"] == "fort":
 			c["fort"] = int(b["level"])
+		elif b["type"] == "tower":
+			c["tower"] = int(b["level"])
 		keep.append(b)
 	buildings = keep
 

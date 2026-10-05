@@ -188,7 +188,7 @@ func _build() -> void:
 	minimap = mm
 
 	# ---- right buttons
-	var right := ["target", "pin", "fort"]
+	var right := ["target", "pin", "fort", "tower"]
 	for i in right.size():
 		var y := 312.0 + i * 74.0
 		var rb := _panel(Rect2(864, y, 62, 62), _style(PANEL, 14))
@@ -458,6 +458,12 @@ class Icon extends Control:
 				for i in 3:
 					draw_rect(Rect2(w * (.2 + i * .23), h * .2, w * .14, h * .16), col)
 				draw_rect(Rect2(w * .42, h * .6, w * .16, h * .25), Color(0.06, 0.08, 0.13))
+			"tower":
+				draw_rect(Rect2(w * .34, h * .3, w * .32, h * .58), TEXT_C)
+				draw_rect(Rect2(w * .26, h * .16, w * .48, h * .16), TEXT_C)
+				for i in 3:
+					draw_rect(Rect2(w * (.26 + i * .18), h * .06, w * .12, h * .12), TEXT_C)
+				draw_rect(Rect2(w * .46, h * .42, w * .08, h * .18), Color(0.06, 0.08, 0.13))
 			"helmet":
 				draw_circle(Vector2(w * .5, h * .5), w * .34, TEXT_C)
 				draw_rect(Rect2(w * .16, h * .5, w * .68, h * .35), TEXT_C)

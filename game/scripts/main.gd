@@ -605,6 +605,8 @@ func _on_hud_button(name: String) -> void:
 			rig.focus(map_view.cell_world(sim.states[Types.PLAYER]["capital_id"]))
 		"fort":
 			_fort_action()
+		"tower":
+			_tower_action()
 		"trophy":
 			ui.toast(tr("toast.chapter_progress") % [_player_hexes(), CHAPTER_GOAL])
 		"book":
@@ -1013,6 +1015,8 @@ func _handle_event(ev: Dictionary) -> void:
 			if mine and ev["hex"] == war["goal"]:
 				_stat("goals")
 				ui.toast(tr("toast.goal_taken"))
+		"tower_hit":
+			map_view.tower_volley(int(ev["hex"]), int(ev["target"]))
 		"repelled":
 			sfx.play("repelled")
 			map_view.floater(ev["hex"], tr("floater.repelled") if mine else tr("floater.held"), Color.WHITE)
@@ -1676,6 +1680,36 @@ func _dl_ceremony() -> void:
 
 
 ## Fort button: build a fortification on the selected own hex or upgrade the one standing there.
+## Tower on the selected own plain hex: build, or upgrade the one standing there (canon §7).
+func _tower_action() -> void:
+	if selected < 0 or sim.cells[selected]["owner"] != Types.PLAYER:
+		ui.toast(tr("toast.pick_own_hex"))
+		return
+	var now := now_s()
+	econ.tick(sim, now)
+	var tower: Dictionary = {}
+	for b in econ.buildings_at(selected):
+		if b["type"] == "tower":
+			tower = b
+	if tower.is_empty():
+		var reason: String = econ.can_build(sim, "tower", selected, now)
+		if reason != "" or not econ.start_build(sim, "tower", selected, now):
+			ui.toast(L.t(reason) if reason != "" else tr("toast.cant_build"))
+			return
+		ui.toast(tr("toast.tower_building") % GameUI.fmt_time(int(econ.buildings_at(selected)[-1]["upgrade_end"]) - now))
+	else:
+		var reason2: String = econ.can_upgrade(tower, now)
+		if reason2 != "" or not econ.start_upgrade(tower["id"], now):
+			ui.toast(L.t(reason2) if reason2 != "" else tr("toast.cant_upgrade"))
+			return
+		ui.toast(tr("toast.tower_upgrade") % (int(tower["level"]) + 1))
+	sfx.play("coin")
+	map_view.burst(selected, Color(1.0, 0.85, 0.3))
+	_stat("towers")
+	_econ_tick()
+	_autosave()
+
+
 func _fort_action() -> void:
 	if selected < 0 or sim.cells[selected]["owner"] != Types.PLAYER:
 		ui.toast(tr("toast.pick_own_hex"))
@@ -2850,6 +2884,17 @@ func _demo(spec: String) -> void:
 		return
 	if what == "settings":
 		_on_hud_button("gear")
+		return
+	if what == "tower":
+		var cap: int = sim.states[Types.PLAYER]["capital_id"]
+		for n in sim.neighbors[cap]:
+			if n >= 0 and sim.cells[n]["kind"] == "plain" and econ.can_build(sim, "tower", n, now_s()) == "":
+				_select(n)
+				_tower_action()
+				econ.buildings_at(n)[-1]["upgrade_end"] = 1
+				_econ_tick()
+				rig.focus(map_view.cell_world(n), 0.4)
+				break
 		return
 	if what == "ruin":
 		_apply_defeat(MapGen.BARONS, [])

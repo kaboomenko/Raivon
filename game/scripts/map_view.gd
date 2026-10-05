@@ -258,6 +258,7 @@ func evolved(kind: String, owner: int) -> String:
 
 ## Fortification around the hex edge by its own level (canon §6.1: forts look like their level).
 func _place_fort(c: Dictionary, holder: Node3D) -> void:
+	_place_tower(c, holder)
 	var lvl: int = c["fort"]
 	if lvl <= 0:
 		return
@@ -265,6 +266,14 @@ func _place_fort(c: Dictionary, holder: Node3D) -> void:
 		if has_model("fort_l%d" % n):
 			spawn("fort_l%d" % n, holder, Vector3.ZERO, 0.0, 1.0)
 			return
+
+
+## Defensive tower (canon §7): stands at the back of the hex, grows a little with its level.
+func _place_tower(c: Dictionary, holder: Node3D) -> void:
+	var lvl: int = int(c.get("tower", 0))
+	if lvl <= 0 or not has_model("watchtower"):
+		return
+	spawn("watchtower", holder, Vector3(0.38, 0, -0.32), 0.6, 1.0 + 0.06 * (lvl - 1))
 
 
 func _place_hex_props(c: Dictionary) -> void:
@@ -662,6 +671,11 @@ var _volleys: Array = []  # {node, from, to, t, dur}
 
 
 ## Arrow volleys arcing onto the clash target (canon §9 «бой виден»): 5 shafts per volley, every ~0.7 s.
+## Arrows from a tower top onto an adjacent hex (battle event tower_hit).
+func tower_volley(tower_hex: int, target_hex: int) -> void:
+	_volley(cell_world(tower_hex) + Vector3(0.38, 1.0, -0.32), cell_world(target_hex))
+
+
 func _volley(from: Vector3, to: Vector3) -> void:
 	for i in 5:
 		var shaft := MeshInstance3D.new()

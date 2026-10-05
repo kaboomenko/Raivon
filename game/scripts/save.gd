@@ -32,7 +32,7 @@ static func write_raw(d: Dictionary) -> void:
 static func to_dict(g: Node) -> Dictionary:
 	var cells: Array = []
 	for c in g.sim.cells:
-		cells.append([c["owner"], c["controller"], c["fort"]])
+		cells.append([c["owner"], c["controller"], c["fort"], int(c.get("tower", 0))])
 	var states: Array = []
 	for st in g.sim.states:
 		states.append(st["dev_level"])
@@ -97,6 +97,7 @@ static func apply(g: Node, d: Dictionary) -> bool:
 		w.cells[i]["owner"] = int(row[0])
 		w.cells[i]["controller"] = int(row[1])
 		w.cells[i]["fort"] = int(row[2])
+		w.cells[i]["tower"] = int(row[3]) if row.size() > 3 else 0
 	var states: Array = d.get("states", [])
 	for i in mini(states.size(), w.states.size()):
 		w.states[i]["dev_level"] = int(states[i])
