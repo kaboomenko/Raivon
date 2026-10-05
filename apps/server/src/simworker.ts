@@ -26,6 +26,12 @@ class Worker {
       this.pending.delete(id);
       p.resolve(msg);
     });
+    this.proc.on("error", (err) => {
+      // e.g. ENOENT when the Godot binary is missing: fail pending calls instead of crashing the process
+      this.alive = false;
+      for (const p of this.pending.values()) p.reject(err);
+      this.pending.clear();
+    });
     this.proc.on("exit", () => {
       this.alive = false;
       for (const p of this.pending.values()) p.reject(new Error("sim worker exited"));
@@ -38,6 +44,7 @@ class Worker {
   }
 
   call(cmd: string, args: Record<string, unknown>, timeoutMs: number): Promise<Record<string, unknown>> {
+    if (!this.alive) return Promise.reject(new Error("sim worker is not running"));
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {

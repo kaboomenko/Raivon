@@ -1,14 +1,23 @@
 // Runs only where a Godot binary exists (CI downloads one; local dev: /opt/godot or GODOT_BIN).
 import { existsSync, readFileSync } from "node:fs";
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { SimPool } from "../src/simworker.js";
+
+it("a missing Godot binary fails calls cleanly instead of crashing", async () => {
+  const p = new SimPool("/nonexistent/godot", 1);
+  await expect(p.call("ping", {}, 2000)).rejects.toThrow();
+  p.close();
+});
 
 const bin = process.env.GODOT_BIN ?? "/opt/godot/Godot_v4.5.1-stable_linux.x86_64";
 const run = existsSync(bin) ? describe : describe.skip;
 
 run("sim worker (headless Godot)", () => {
-  const pool = new SimPool(bin, 1);
-  afterAll(() => pool.close());
+  let pool: SimPool;
+  beforeAll(() => {
+    pool = new SimPool(bin, 1);
+  });
+  afterAll(() => pool?.close());
 
   it("answers ping", async () => {
     expect(await pool.call("ping", {}, 60000)).toMatchObject({ ok: true, pong: true });
