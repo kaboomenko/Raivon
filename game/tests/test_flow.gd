@@ -355,6 +355,28 @@ func _run() -> void:
 			if String(it["title"]).begins_with("Набег"):
 				raided = true
 		_check(raided and g._raid.is_empty(), "FTUE: the raid breaks against the fence")
+		# war 2 with the Hamlets: encirclement card, then spare or plunder (canon §14.3, 6:00–9:30)
+		if g.ftue == 10:
+			g.truce = {}
+			g._ftue_tick(0.1)
+			_check(g.selected >= 0 and g.sim.cells[g.selected]["owner"] == MapGen.HAMLETS, "FTUE war 2: Hamlets goal selected")
+			g._on_action("declare")
+			_check(g.ftue == 11, "FTUE war 2 declared")
+			g._on_action("offensive")
+			_check(g.ftue == 12 and g.battle.duration_ticks() == 600, "FTUE war 2 offensive (encircle hint)")
+			while g.battle != null and not g.battle.over:
+				if g.battle.tick % 20 == 0:
+					g._bot_move()
+				g._battle_step()
+			g._end_offensive()
+			if g.ftue == 14:
+				g.ui.close_modal()
+				g._open_peace()
+				_check(g.ftue == 15, "FTUE war 2 peace with plunder choice")
+				g._sign_peace()
+				_check(g.ftue == 0, "FTUE complete after war 2")
+		else:
+			print("NOTE  FTUE war 2 skipped (ftue=%d)" % g.ftue)
 	g.queue_free()
 	await process_frame
 

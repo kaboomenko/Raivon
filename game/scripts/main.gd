@@ -604,6 +604,7 @@ func _finish_colonize(id: int) -> void:
 
 func _declare(enemy: int, goal: int) -> void:
 	_ensure_armies_for(enemy)
+	_deploy_to_front(enemy)
 	war = War.declare_war(sim, enemy, goal)
 	war["started"] = now_s()
 	_opinion_add(enemy, -50.0)
@@ -616,7 +617,35 @@ func _declare(enemy: int, goal: int) -> void:
 	ui.toast("Война объявлена: %s! Цель — «%s» (+10 к счёту)" % [_state_name(enemy), _cell_name(goal)])
 	if ftue == 1:
 		ftue = 2
+	elif ftue == 10:
+		ftue = 11
 	_set_mode(Mode.WAR)
+
+
+## Armies that don't touch the new enemy march to free front hexes facing it (instant in v1; the canon's
+## 20 s per hex march across the strategic map comes with the march system).
+func _deploy_to_front(enemy: int) -> void:
+	var front: Array = []
+	for c in sim.cells:
+		if c["controller"] == Types.PLAYER and c["owner"] == Types.PLAYER and Types.is_passable(c) and _touches_owner(c["id"], enemy):
+			front.append(c)
+	front.sort_custom(func(x, y): return int(x["value"]) > int(y["value"]))
+	var taken := {}
+	for a in _player_armies():
+		if _touches_owner(int(a["hex"]), enemy):
+			taken[int(a["hex"])] = true
+	var moved := 0
+	for a in _player_armies():
+		if _touches_owner(int(a["hex"]), enemy):
+			continue
+		for c in front:
+			if not taken.has(c["id"]):
+				taken[c["id"]] = true
+				a["hex"] = c["id"]
+				moved += 1
+				break
+	if moved > 0:
+		ui.toast("Армии выдвинулись к границе")
 
 
 ## Every state at war needs field armies; Hamlets have none at the start (port of the TS client).
@@ -678,10 +707,10 @@ func _start_offensive() -> void:
 		flag_hex = g[0] if g.size() > 0 else -1
 	var opts := {"attacker": Types.PLAYER, "defender": enemy, "ai_energy_mult": 600, "cards": HAND}
 	if ftue > 0:
-		# the first offensive is short and the Barons do not play cards (canon §14.3)
+		# tutorial offensives are short and the enemy plays no cards (canon §14.3)
 		opts["ai_energy_mult"] = 0
 		opts["ticks"] = 60 * Battle.TICKS_PER_SEC
-		ftue = 3
+		ftue = 12 if ftue >= 10 else 3
 	battle = Battle.new(sim, armies, opts)
 	ai = BattleAI.new(enemy)
 	_acc = 0.0
@@ -760,7 +789,9 @@ func _end_offensive() -> void:
 	var res: Dictionary = battle.result()
 	var stars := War.offensive_stars(res["captured"], flag_hex, res["routed_player_armies"])
 	sfx.play("fanfare" if stars > 0 else "lost")
-	if ftue > 0:
+	if ftue >= 10:
+		ftue = 14 if stars > 0 else 11
+	elif ftue > 0:
 		ftue = 5 if stars > 0 else 2
 	War.record_offensive(war, stars)
 	var ws := War.war_score(sim, war)
@@ -925,7 +956,9 @@ func _open_peace() -> void:
 	_chosen = {}
 	for d in War.recommend_package(sim, war, _demands, ws["score"]):
 		_chosen[d["id"]] = true
-	if ftue > 0:
+	if ftue >= 14:
+		ftue = 15
+	elif ftue > 0:
 		ftue = 6
 	_set_mode(Mode.PEACE)
 	_show_peace()
@@ -997,7 +1030,11 @@ func _sign_peace() -> void:
 	var res: Dictionary = War.apply_treaty(sim, war, chosen)
 	sfx.play("seal")
 	sfx.haptic(120)
-	if ftue > 0:
+	if ftue >= 15:
+		ftue = 0
+		ui.coach_hide()
+		ui.toast("Обучение пройдено! Дальше держава ваша.")
+	elif ftue > 0:
 		ftue = 0
 		_ftue_next = 7
 		ui.coach_hide()
@@ -1202,6 +1239,8 @@ func _apply_defeat(enemy: int, lost: Array) -> void:
 
 func _finish_war(enemy: int, msg: String) -> void:
 	ui.close_modal()
+	if ftue >= 10:
+		ftue = 0  # the tutorial war ended without a treaty — let the player go on freely
 	map_view.strike_arrow(-1, -1, "")
 	truce[enemy] = Time.get_unix_time_from_system() + TRUCE_SEC
 	war = {}
@@ -1342,6 +1381,7 @@ func _fort_action() -> void:
 	if ftue == 9:
 		# scripted marauder raid breaks against the new fence (canon §14.3, 5:00–6:00)
 		ftue = 0
+		_ftue_next = 10  # then war 2 with the Hamlets
 		_raid = {"hex": selected, "at": now + 25}
 		ui.coach_hide()
 	_econ_tick()
@@ -1998,7 +2038,10 @@ func _ai_tick(now: int) -> void:
 		_stat("defenses")
 		sfx.play("repelled")
 		_post("Набег мародёров", "Мародёры с диких земель налетели на «%s» и разбились о плетень. Укрепления защищают гексы и склады." % _cell_name(h))
-		ui.toast("Мародёры разбились о плетень! Обучение пройдено — дальше держава ваша.")
+		ui.toast("Мародёры разбились о плетень! Укрепления берегут гексы и склады.")
+		if _ftue_next == 10:
+			_ftue_next = 0
+			ftue = 10 if _hamlets_target() >= 0 else 0
 	if ultimatum_at > 0 and now >= ultimatum_at and ultimatum.is_empty() and war.is_empty() and mode == Mode.MAP and _truce_left(MapGen.BARONS) == 0:
 		_issue_ultimatum(now)
 	if not ultimatum.is_empty() and now >= int(ultimatum["deadline"]) and mode in [Mode.MAP, Mode.WAR]:
@@ -2065,6 +2108,7 @@ func _answer_ultimatum(kind: String) -> void:
 			_post("Дань уплачена", "%d золота. Перемирие 24 ч." % int(ultimatum["tribute"]))
 		"refuse":
 			_ensure_armies_for(enemy)
+			_deploy_to_front(enemy)
 			var goals := War.recommend_goals(sim, enemy, 1)
 			war = War.declare_war(sim, enemy, goals[0] if goals.size() > 0 else hex)
 			war["ai_goal"] = hex
@@ -2143,6 +2187,12 @@ const FTUE_TEXT := {
 	7: "Держава растёт! Откройте «Здания» и улучшите Резиденцию — халупы станут избами.",
 	8: "Жёлтый контур — бесплатные ресурсы. Коснитесь жилы и отправьте обоз.",
 	9: "Укрепите границу: выберите свой гекс у Баронов и нажмите кнопку «форт» справа.",
+	10: "Вольные Хутора заняли шахту у нашей границы. Объявите им войну!",
+	11: "Начните наступление.",
+	12: "Карта «Окружение» ◎ режет снабжение: перетащите её на вражеский гекс у ваших армий.",
+	13: "Отлично! Окружённые гексы сдаются быстрее. Захватите шахту!",
+	14: "Подпишите мир с Хуторами.",
+	15: "Пощадить Хутора (+20 к мнению) или разграбить? Выберите и удерживайте печать.",
 	2: "Начните наступление: у вас 60 секунд.",
 	3: "Тяните от своей армии на вражеский гекс — армия пойдёт в атаку.",
 	4: "Отлично! Карта «Атака» бросает в бой все армии рядом. Захватите ещё!",
@@ -2191,6 +2241,20 @@ func _ftue_deposit() -> int:
 func _ftue_attacked() -> void:
 	if ftue == 3:
 		ftue = 4
+	elif ftue == 12:
+		ftue = 13
+
+
+## FTUE war 2 goal (canon §14.3): the Hamlets' mine at the border, else their best border hex.
+func _hamlets_target() -> int:
+	if not war.is_empty() or _truce_left(MapGen.HAMLETS) > 0:
+		return -1
+	var core := MapGen.core_of(sim, MapGen.HAMLETS)
+	var goals := War.recommend_goals(sim, MapGen.HAMLETS, 3)
+	for g in goals:
+		if sim.cells[g]["kind"] == "mine" and not core.has(g):
+			return g
+	return goals[0] if goals.size() > 0 else -1
 
 
 func _ftue_tick(delta: float) -> void:
@@ -2230,13 +2294,30 @@ func _ftue_tick(delta: float) -> void:
 				target = rig.cam.unproject_position(map_view.cell_world(dh) + Vector3(0, 0.8, 0))
 		9:
 			target = Vector2(895, 486)
+		10:
+			var ht := _hamlets_target()
+			if ht < 0 and mode == Mode.MAP:
+				ftue = 0
+				return
+			if mode == Mode.MAP and (selected < 0 or sim.cells[selected]["owner"] != MapGen.HAMLETS) and ht >= 0:
+				rig.focus(map_view.cell_world(ht))
+				_select(ht)
+			target = Vector2(793, GameUI.VH - 76)
+		11:
+			target = Vector2(793, GameUI.VH - 76) if mode == Mode.WAR else Vector2(285, 998)
+		12:
+			target = Vector2(445, GameUI.VH - 124)
+		14:
+			target = Vector2(655, 998) if mode == Mode.RESULT else Vector2(793, GameUI.VH - 200)
+		15:
+			target = Vector2(274, 1380)
 	if _ftue_shown != ftue:
 		_ftue_shown = ftue
 		_ftue_t = 0.0
 		ui.coach(FTUE_TEXT[ftue], target)
 	_ftue_t += delta
 	ui.coach_target(target)
-	if ftue == 4 and _ftue_t > 6.0:
+	if (ftue == 4 or ftue == 13) and _ftue_t > 6.0:
 		ui.coach_hide()
 	if ftue == 3 and battle != null:
 		# show the easiest win: the best forecast among idle army → adjacent target pairs
