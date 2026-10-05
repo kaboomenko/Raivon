@@ -119,10 +119,11 @@ func _cases_tab() -> void:
 	ui._at(ui._label("👑 Королевский кейс", 30), c2, Vector2(24, 18))
 	ui._at(ui._label(cases.pity_text("case_royal"), 19, Color(1.0, 0.85, 0.4), false), c2, Vector2(24, 64))
 	var tgt: String = cases.target_commander
-	ui._at(ui._label("«Цель»: %s (50%% эпических и легендарных осколков)" % (tgt if tgt != "" else "не выбрана"), 18, MUTED, false), c2, Vector2(24, 98))
+	var tname: String = String(cases.commander(tgt).get("name", tgt)) if tgt != "" else "не выбрана"
+	ui._at(ui._label("«Цель»: %s (50%% эпических и легендарных осколков)" % tname, 18, MUTED, false), c2, Vector2(24, 98))
 	var p1: int = cases.price("case_royal")
 	ui._button(c2, Rect2(24, 150, 360, 84), "Открыть · %d 💎" % p1, Color(0.45, 0.25, 0.75), func(): open_case.emit("case_royal", 1, "raivite"))
-	ui._button(c2, Rect2(400, 150, 360, 84), "×10 · %d 💎" % (p1 * 9), Color(0.6, 0.3, 0.85), func(): open_case.emit("case_royal", 10, "raivite"))
+	ui._button(c2, Rect2(400, 150, 360, 84), "×10 · %d 💎" % cases.price_x10("case_royal"), Color(0.6, 0.3, 0.85), func(): open_case.emit("case_royal", 10, "raivite"))
 	ui._at(ui._label("×10 гарантирует эпическое и выше", 17, MUTED, false), c2, Vector2(400, 244))
 	_info_button(c2, Vector2(780, 160), "case_royal")
 	# Кейс коллекции (сезонный): no duplicates, 8 items
@@ -210,7 +211,7 @@ static func describe(rw: Dictionary) -> String:
 		"speedup":
 			return "Ускорение %d мин" % int(rw["minutes"])
 		"shards":
-			return "%d осколков: %s" % [int(rw["n"]), rw["commander"]]
+			return "%d осколков: %s" % [int(rw["n"]), rw.get("name", rw["commander"])]
 		"cosmetic":
 			return "Косметика: %s" % rw["name"]
 		"glitter":
@@ -270,5 +271,7 @@ func _atelier_tab() -> void:
 	if owned.is_empty():
 		col.add_child(ui._label("Косметика выпадает из кейсов: чернила границы, печати, салюты, узоры заливки.", 21, MUTED, false))
 	for id in owned:
-		var it: Dictionary = owned[id] if typeof(owned[id]) == TYPE_DICTIONARY else {"name": str(id), "rarity": "common"}
+		var it: Dictionary = cases.cosmetic(String(id))
+		if it.is_empty():
+			it = {"name": str(id), "rarity": "common"}
 		col.add_child(ui._label("✦ %s" % it.get("name", id), 23, RARITY_COLOR.get(String(it.get("rarity", "common")), Color.WHITE), false))

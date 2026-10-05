@@ -456,10 +456,11 @@ ASSETS = {
     "tent_red": tent("#b3272b"),
 }
 
-only = set(sys.argv[2:])
-for name, build in ASSETS.items():
-    if only and name not in only:
-        continue
-    reset()
-    build()
-    export(name)
+if __name__ == "__main__":  # importable by evolution_assets.py (shared bake/export helpers)
+    only = set(sys.argv[2:])
+    for name, build in ASSETS.items():
+        if only and name not in only:
+            continue
+        reset()
+        build()
+        export(name)

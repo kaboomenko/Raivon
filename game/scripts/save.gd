@@ -44,6 +44,9 @@ static func save(g: Node) -> void:
 		"stats": g.stats,
 		"stars_claimed": g.stars_claimed,
 		"chapter_done": g.chapter_done,
+		"cases": g.cases.to_dict(),
+		"speed_minutes": g.speed_minutes,
+		"purchases": g.purchases,
 	}
 	if g.get("econ") != null:
 		d["econ"] = g.econ.to_dict()
@@ -137,6 +140,10 @@ static func apply(g: Node, d: Dictionary) -> bool:
 	g.stats = sts
 	g.stars_claimed = d.get("stars_claimed", {})
 	g.chapter_done = bool(d.get("chapter_done", false))
+	if d.has("cases"):
+		g.cases = load("res://scripts/sim/cases.gd").from_dict(d["cases"])
+	g.speed_minutes = int(d.get("speed_minutes", 0))
+	g.purchases = d.get("purchases", {})
 	g._last_refill = int(d.get("saved_at", 0))  # armies heal while the app is closed
 	if d.has("econ") and g.get("econ") != null:
 		g.econ = g.econ.get_script().from_dict(d["econ"])

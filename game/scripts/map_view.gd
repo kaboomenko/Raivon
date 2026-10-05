@@ -40,9 +40,6 @@ static func axial_to_world(q: int, r: int) -> Vector3:
 
 func _ready() -> void:
 	rng.seed = 7
-	for f in DirAccess.get_files_at("res://assets/models"):
-		if f.ends_with(".glb"):
-			models[f.get_basename()] = load("res://assets/models/" + f)
 	_overlay_root = Node3D.new()
 	add_child(_overlay_root)
 	_props_root = Node3D.new()
@@ -98,9 +95,16 @@ func state_color(s: int) -> Color:
 	return Color.hex((int(sim.states[s]["color"]) << 8) | 0xff)
 
 
+## Models load on first use (there are ~150 of them across all development levels).
+func has_model(name: String) -> bool:
+	return models.has(name) or ResourceLoader.exists("res://assets/models/%s.glb" % name)
+
+
 func spawn(name: String, parent: Node, pos: Vector3, rot := 0.0, s := 1.0) -> Node3D:
 	if not models.has(name):
-		return null
+		if not ResourceLoader.exists("res://assets/models/%s.glb" % name):
+			return null
+		models[name] = load("res://assets/models/%s.glb" % name)
 	var n: Node3D = models[name].instantiate()
 	n.position = pos
 	n.rotation.y = rot
@@ -242,7 +246,7 @@ func evolved(kind: String, owner: int) -> String:
 	var side := _faction_suffix(owner)
 	for n in range(dl, 0, -1):
 		var name := "%s_dl%d_%s" % [kind, n, side]
-		if models.has(name):
+		if has_model(name):
 			return name
 	return ""
 
@@ -253,7 +257,7 @@ func _place_fort(c: Dictionary, holder: Node3D) -> void:
 	if lvl <= 0:
 		return
 	for n in range(mini(lvl, 8), 0, -1):
-		if models.has("fort_l%d" % n):
+		if has_model("fort_l%d" % n):
 			spawn("fort_l%d" % n, holder, Vector3.ZERO, 0.0, 1.0)
 			return
 
@@ -278,7 +282,8 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 		"capital":
 			var rm := evolved("residence", c["owner"])
 			if rm != "":
-				spawn(rm, holder, p, 0.3 if c["owner"] == Types.PLAYER else PI, 1.0)
+				var early := rm.contains("_dl1_") or rm.contains("_dl2_") or rm.contains("_dl3_")
+				spawn(rm, holder, p, 0.3 if c["owner"] == Types.PLAYER else PI, 1.3 if early else 1.0)  # small early buildings fill the hex
 			else:
 				var model := "castle" if c["owner"] == Types.PLAYER else ("castle_green" if c["owner"] == MapGen.HAMLETS else "castle_red")
 				spawn(model, holder, p, 0.3 if c["owner"] == Types.PLAYER else PI, 1.35)
@@ -287,7 +292,7 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 		"city":
 			var cm := evolved("city", c["owner"])
 			if cm != "":
-				spawn(cm, holder, p, rng.randf() * TAU, 1.0)
+				spawn(cm, holder, p, rng.randf_range(-0.25, 0.25), 1.15)  # tall towers stay at the back
 			else:
 				var hm := "house_blue" if c["owner"] == Types.PLAYER else ("house_green" if c["owner"] == MapGen.HAMLETS else "house_red")
 				for o in [Vector3(-0.3, 0, 0.15), Vector3(0.3, 0, -0.25), Vector3(0.1, 0, 0.4), Vector3(-0.25, 0, -0.35)]:

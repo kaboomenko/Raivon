@@ -21,6 +21,8 @@ const Sfx := preload("res://scripts/sfx.gd")
 const Save := preload("res://scripts/save.gd")
 const Economy := preload("res://scripts/sim/economy.gd")
 const Deposits := preload("res://scripts/sim/deposits.gd")
+const Cases := preload("res://scripts/sim/cases.gd")
+const ShopUI := preload("res://scripts/shop_ui.gd")
 
 enum Mode { MAP, WAR, BATTLE, RESULT, PEACE, CEREMONY }
 
@@ -49,6 +51,10 @@ var _raid := {}  # FTUE marauder raid: {hex, at}
 var econ  # Economy (scripts/sim/economy.gd)
 var deposits  # Deposits (scripts/sim/deposits.gd)
 var first_convoy_done := false
+var cases  # Cases (scripts/sim/cases.gd)
+var shop: Control
+var speed_minutes := 0  # speed-up items from cases, used on building timers
+var purchases := {}  # test-build purchases (sku -> count), first Raivite pack ×2
 var colonizing := {}  # hex -> unix time the colonization finishes
 var colonized := 0  # colonizations so far (price and timer grow, 05 §colonization)
 var time_offset := 0  # debug fast-forward for demos/tests (--skip=SECONDS)
@@ -97,6 +103,7 @@ func _ready() -> void:
 	armies = Armies.starting_armies(sim)
 	econ = Economy.new(sim, now_s())
 	deposits = Deposits.new(MAP_SEED ^ 0x5EED)
+	cases = Cases.new(int(Time.get_unix_time_from_system()) & 0x7FFFFFFF)
 	save_enabled = save_enabled and not _scripted_run()
 	var loaded := false
 	if save_enabled:
@@ -382,7 +389,7 @@ func _on_hud_button(name: String) -> void:
 		"tab_buildings", "tab_army":
 			_open_tab(name.substr(4))
 		"shop":
-			ui.toast("Лавка открывается…")
+			_open_shop()
 		"tab_diplomacy":
 			_open_tab("diplomacy")
 		"tab_development":
@@ -944,7 +951,11 @@ func _on_demand_toggled(id: String) -> void:
 	_show_peace()
 
 
+var _last_score := 0.0
+
+
 func _sign_peace() -> void:
+	_last_score = War.war_score(sim, war)["score"] if not war.is_empty() else 0.0
 	var before := MapGen.official_value(sim, Types.PLAYER)
 	var hexes_before := _player_hexes()
 	var old_player := {}
@@ -1015,6 +1026,12 @@ func _sign_peace() -> void:
 		lines.append("💰 Контрибуция: +%d золота" % int(got.get("gold", 0)))
 	if res.get("reparations", false):
 		lines.append("📜 Репарации: 10% производства на 24 ч")
+	# trophy chest for a victorious peace: bronze < 30, silver < 60, gold ≥ 60 war score (canon §15.4)
+	var score: float = _last_score  # war score at signing (the war dict is cleared below)
+	var chest := "case_trophy_gold" if score >= 60.0 else ("case_trophy_silver" if score >= 30.0 else "case_trophy_bronze")
+	var opened: Dictionary = cases.open(chest, _case_ctx(), now_s())
+	_apply_case_rewards([opened])
+	lines.append("🎁 %s: %s" % [Cases.case_name(chest), ShopUI.describe(opened["rewards"][0]) if opened["rewards"].size() > 0 else "—"])
 	truce[enemy] = Time.get_unix_time_from_system() + TRUCE_SEC
 	if ultimatum_at == 0:
 		ultimatum_at = now_s() + 2 * 3600  # scripted Barons ultimatum ~2 h later (canon §14.3)
@@ -1192,6 +1209,7 @@ func _econ_tick() -> void:
 	hud.set_resources(econ.res, econ.income_per_hour(sim), econ.storage_cap(), econ.builders - econ.busy_builders(now), econ.builders)
 	hud.set_level(econ.dev_level())
 	hud.set_mail(_unread())
+	hud.shop_dot.visible = cases.claim_free_crates(now) > 0
 	_ai_tick(now)
 	_update_bubbles()
 	if tab == "buildings" and mode in [Mode.MAP, Mode.WAR]:
@@ -1375,6 +1393,104 @@ func _open_tab(t: String) -> void:
 		ui.show_world(_world_items())
 	else:
 		ui.hide_buildings()
+
+
+# ---------------------------------------------------------------------- store & cases (canon §15)
+
+func _case_ctx() -> Dictionary:
+	return {"income_per_hour": econ.gross_per_hour(sim), "dl": econ.dev_level()}
+
+
+## Real-money items are hidden in Russia (decision 16; the store country comes from the store SDK later,
+## the device locale stands in for it now). Raivite items and cases work everywhere (decisions 7, 13).
+func _payments_enabled() -> bool:
+	return not OS.get_locale().to_upper().ends_with("RU")
+
+
+func _open_shop() -> void:
+	if shop:
+		shop.queue_free()
+	shop = ShopUI.new()
+	ui.root.add_child(shop)
+	shop.setup(ui, cases, int(econ.res["raivite"]), _payments_enabled(), now_s())
+	shop.open_case.connect(_on_open_case)
+	shop.buy_sku.connect(_on_buy_sku)
+	shop.closed.connect(func():
+		shop.queue_free()
+		shop = null)
+
+
+func _on_open_case(case_id: String, times: int, pay: String) -> void:
+	var now := now_s()
+	match pay:
+		"free":
+			if not cases.use_free_crate(now):
+				ui.toast("Ящик ещё собирается")
+				return
+		"ad":
+			if not _rewarded("ad_free_crate", 2):
+				return
+		"raivite":
+			var price: int = cases.price_x10(case_id) if times == 10 else cases.price(case_id)
+			if int(econ.res["raivite"]) < price:
+				ui.toast("Не хватает Райвитов")
+				return
+			econ.res["raivite"] = int(econ.res["raivite"]) - price
+	var results: Array = cases.open_x10(case_id, _case_ctx(), now) if times == 10 else [cases.open(case_id, _case_ctx(), now)]
+	_apply_case_rewards(results)
+	sfx.play("capture")
+	sfx.haptic(30)
+	shop.refresh(int(econ.res["raivite"]), now)
+	shop.show_reveal(results)
+	_autosave()
+
+
+func _apply_case_rewards(results: Array) -> void:
+	for r in results:
+		for rw in r.get("rewards", []):
+			match String(rw.get("kind", "")):
+				"res":
+					econ.add_resources(rw["res"])
+				"speedup":
+					speed_minutes += int(rw["minutes"])
+				_:
+					pass  # shards, cosmetics and glitter are kept by the cases module itself
+
+
+## Store purchases: no billing SDK yet. Debug (test) builds grant the item so flows can be tested.
+func _on_buy_sku(sku: String) -> void:
+	if not OS.is_debug_build():
+		ui.toast("Покупки появятся в релизной версии")
+		return
+	var first: bool = not purchases.has(sku)
+	purchases[sku] = int(purchases.get(sku, 0)) + 1
+	for row in ShopUI.RAIVITE_SKUS:
+		if row[0] == sku:
+			var n: int = int(row[2]) * (2 if first else 1)
+			econ.res["raivite"] = int(econ.res["raivite"]) + n
+			ui.toast("ТЕСТ: +%d Райвитов без оплаты" % n)
+	match sku:
+		"iap_builder":
+			if first:
+				econ.builders += 1
+				econ.res["raivite"] = int(econ.res["raivite"]) + 300
+				ui.toast("ТЕСТ: 4-й строитель и 300 Райвитов")
+		"iap_starter":
+			econ.res["raivite"] = int(econ.res["raivite"]) + 250
+			var g: Dictionary = econ.gross_per_hour(sim)
+			econ.add_resources({"gold": int(g.get("gold", 0)) * 8, "food": int(g.get("food", 0)) * 8, "metal": int(g.get("metal", 0)) * 8})
+			ui.toast("ТЕСТ: набор новобранца")
+		"iap_no_ads":
+			econ.res["raivite"] = int(econ.res["raivite"]) + 200
+			ui.toast("ТЕСТ: межстраничная реклама отключена")
+		"iap_ration":
+			econ.res["raivite"] = int(econ.res["raivite"]) + 300
+			ui.toast("ТЕСТ: паёк державы")
+	sfx.play("coin")
+	if shop:
+		shop.refresh(int(econ.res["raivite"]), now_s())
+	_econ_tick()
+	_autosave()
 
 
 # ---------------------------------------------------------------------- chapter (canon §12.1)
