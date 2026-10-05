@@ -439,6 +439,32 @@ func _run() -> void:
 	g.time_offset += secs
 	g._step_marches()
 	_check(int(ma["hex"]) == dest and not g.March.is_marching(ma), "army arrived after %d s" % secs)
+	# war outside the tutorial: armies march to the front, the offensive waits for the first arrival
+	g.truce = {}
+	g.ftue = 0
+	var goals: Array = War.recommend_goals(g.sim, MapGen.BARONS, 1)
+	if goals.size() > 0:
+		for a in g._player_armies():
+			a["hex"] = g.sim.states[Types.PLAYER]["capital_id"] if a == ma else a["hex"]
+		g._declare(MapGen.BARONS, goals[0])
+		var marching := 0
+		for a in g._player_armies():
+			if g.March.is_marching(a):
+				marching += 1
+		if marching > 0:
+			g._select(-1)
+			g._refresh_ui()
+			var ready_now := false
+			for a in g._player_armies():
+				if g._touches_owner(int(a["hex"]), MapGen.BARONS) and not g.March.is_marching(a):
+					ready_now = true
+			_check(ready_now or g.ui._action2_kind == "", "offensive waits while the armies march (%d marching)" % marching)
+			g.time_offset += 600
+			g._step_marches()
+			g._refresh_ui()
+			_check(g.ui._action2_kind == "offensive", "offensive available once the armies reach the front")
+		else:
+			print("NOTE  no march needed for the Barons front")
 	g.queue_free()
 	await process_frame
 

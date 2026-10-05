@@ -450,3 +450,4 @@ march.no_route,Туда армии не пройти,The army can't get there
 march.busy,Там уже стоит армия,Another army is already there
 march.arrived,Армия прибыла на место,The army has arrived
 toast.armies_marching,Армии выступили к фронту · %s в пути,Armies march to the front · %s on the road
+ui.armies_marching,Армии идут к фронту · %s,Armies marching to the front · %s

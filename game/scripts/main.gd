@@ -378,7 +378,7 @@ func _refresh_ui() -> void:
 		Mode.WAR:
 			ui.set_action("peace", tr("ui.peace_btn"), tr("ui.score") % ws.get("score", 0.0), Color(0.12, 0.36, 0.2))
 			if not _march_primary():
-				ui.set_primary("offensive", tr("ui.offensive"), Color(0.8, 0.22, 0.16))
+				_offensive_primary()
 		Mode.BATTLE:
 			ui.set_primary("retreat", tr("ui.retreat"), Color(0.32, 0.36, 0.46))
 		_:
@@ -423,6 +423,23 @@ func _primary_for_selection() -> void:
 		ui.set_primary("upgrade", tr("ui.upgrade"), Color(0.13, 0.4, 0.9))
 	else:
 		ui.set_primary("", "")
+
+
+## «Наступление», or a march timer while every army is still on its way to the front (none touches the enemy).
+func _offensive_primary() -> void:
+	var enemy: int = war.get("enemy", -1)
+	var wait := 0
+	for a in _player_armies():
+		if _touches_owner(int(a["hex"]), enemy) and not March.is_marching(a):
+			wait = 0
+			break
+		if March.is_marching(a):
+			var left := March.seconds_left(sim, a, now_s())
+			wait = left if wait == 0 else mini(wait, left)
+	if wait > 0:
+		ui.set_primary("wait", tr("ui.armies_marching") % GameUI.fmt_time(wait), Color(0.3, 0.35, 0.45), false)
+	else:
+		ui.set_primary("offensive", tr("ui.offensive"), Color(0.8, 0.22, 0.16))
 
 
 ## March button for an own army on the selected hex (MAP and WAR). True when it took the primary slot.
@@ -1542,6 +1559,8 @@ func _econ_tick() -> void:
 		ui.show_buildings(_research_items(now))
 	if mode == Mode.MAP and selected >= 0:
 		_primary_for_selection()
+	elif mode == Mode.WAR and not _march_primary():
+		_offensive_primary()
 
 
 func _econ_event(ev: Dictionary) -> void:
