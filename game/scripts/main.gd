@@ -3,26 +3,32 @@ extends Node3D
 
 const World := preload("res://scripts/world.gd")
 const Hud := preload("res://scripts/hud.gd")
+const CameraRig := preload("res://scripts/camera_rig.gd")
 
 var world: Node3D
-var cam: Camera3D
-var zoom := 0.55  # 1 = strategic, 0 = close-up
+var rig: Node3D
+var hud: CanvasLayer
+var selection: MeshInstance3D
 
 
 func _ready() -> void:
 	_environment()
 	world = World.new()
 	add_child(world)
-	cam = Camera3D.new()
-	add_child(cam)
-	_place_camera()
-	var hud := Hud.new()
+	rig = CameraRig.new()
+	add_child(rig)
+	rig.hex_tapped.connect(_on_hex_tapped)
+	hud = Hud.new()
 	hud.world = world
 	add_child(hud)
+	_make_selection()
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--zoom="):
-			zoom = float(a.substr(7))
-			_place_camera()
+			rig.zoom = float(a.substr(7))
+			rig.zoom_target = rig.zoom
+		if a.begins_with("--select="):
+			var parts := a.substr(9).split(",")
+			_on_hex_tapped(Vector2i(int(parts[0]), int(parts[1])))
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--shot="):
 			_shot(a.substr(7))
@@ -75,14 +81,41 @@ func _environment() -> void:
 	add_child(sun)
 
 
-func _place_camera() -> void:
-	# Strategic: high, wide. Close-up: low, near the capital. Both at ~50° like the reference.
-	var target := Vector3(-0.6, 0, 0.2).lerp(Vector3(-2.6, 0, -0.6), 1.0 - zoom)
-	var dist := lerpf(8.0, 24.0, zoom)
-	var pitch := deg_to_rad(lerpf(42.0, 52.0, zoom))
-	cam.fov = 32
-	cam.position = target + Vector3(0, sin(pitch), cos(pitch)) * dist
-	cam.look_at(target)
+func _make_selection() -> void:
+	selection = MeshInstance3D.new()
+	var tm := TorusMesh.new()
+	tm.inner_radius = 0.86
+	tm.outer_radius = 0.96
+	tm.rings = 6
+	tm.ring_segments = 6
+	selection.mesh = tm
+	selection.rotation.y = PI / 6.0
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.albedo_color = Color(1.0, 0.95, 0.7)
+	m.emission_enabled = true
+	m.emission = Color(1.0, 0.9, 0.55)
+	m.emission_energy_multiplier = 3.0
+	selection.material_override = m
+	selection.scale = Vector3(1, 0.15, 1)
+	selection.visible = false
+	add_child(selection)
+
+
+func _process(_delta: float) -> void:
+	if selection.visible:
+		var k := 1.0 + 0.03 * sin(Time.get_ticks_msec() / 160.0)
+		selection.scale = Vector3(k, 0.15, k)
+
+
+func _on_hex_tapped(c: Vector2i) -> void:
+	if not world.cells.has(c):
+		selection.visible = false
+		return
+	var p: Vector3 = world.axial_to_world(c.x, c.y)
+	selection.position = p + Vector3(0, 0.06, 0)
+	selection.visible = true
+	hud.show_tile(world.describe(c))
 
 
 func _shot(path: String) -> void:

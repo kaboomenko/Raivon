@@ -11,6 +11,10 @@ const MUTED := Color(0.62, 0.68, 0.78)
 
 var world: Node3D
 var font_bold: Font
+var tile_title: Label
+var tile_owner: Label
+var tile_bonus: Label
+var attack_btn: Panel
 
 
 func _ready() -> void:
@@ -187,9 +191,11 @@ func _build() -> void:
 	tile.size = Vector2(70, 60)
 	add_child(tile)
 	var tn := _label("Равнина", 21)
+	tile_title = tn
 	tn.position = Vector2(746, base_y + 18)
 	add_child(tn)
 	var to := _label("Ваша территория", 17, Color(0.45, 0.7, 1.0), false)
+	tile_owner = to
 	to.position = Vector2(746, base_y + 48)
 	add_child(to)
 	var shield := Icon.new("plus")
@@ -197,9 +203,11 @@ func _build() -> void:
 	shield.size = Vector2(28, 28)
 	add_child(shield)
 	var bonus := _label("+25% к защите", 18, TEXT, false)
+	tile_bonus = bonus
 	bonus.position = Vector2(712, base_y + 92)
 	add_child(bonus)
 	var btn := _panel(Rect2(660, vh - 122, 266, 92), _style(Color(0.13, 0.4, 0.9), 16, Color(0.55, 0.75, 1.0), 3))
+	attack_btn = btn
 	var sw := Icon.new("swords")
 	sw.position = Vector2(684, vh - 104)
 	sw.size = Vector2(54, 54)
@@ -207,6 +215,14 @@ func _build() -> void:
 	var at := _label("Атаковать", 28)
 	at.position = Vector2(748, vh - 98)
 	add_child(at)
+
+
+func show_tile(info: Dictionary) -> void:
+	tile_title.text = info["title"]
+	tile_owner.text = info["owner"]
+	tile_owner.add_theme_color_override("font_color", info["owner_color"])
+	tile_bonus.text = info["bonus"]
+	attack_btn.modulate = Color(1, 1, 1, 1.0 if info["attackable"] else 0.45)
 
 
 # ====================================================================== icons drawn in code

@@ -389,3 +389,36 @@ func _build_clouds() -> void:
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			mi.position = axial_to_world(c.x, c.y) + Vector3(rng.randf_range(-0.6, 0.6), rng.randf_range(0.6, 1.4), rng.randf_range(-0.6, 0.6))
 			add_child(mi)
+
+
+## Text for the HUD tile panel (reference: «Равнина / Ваша территория / +25% к защите»).
+func describe(c: Vector2i) -> Dictionary:
+	var cell: Dictionary = cells[c]
+	var names := {"grass": "Равнина", "forest": "Лес", "mountain": "Горы", "water": "Озеро"}
+	var kinds := {"castle": "Столица", "house": "Город", "mine": "Каменоломня", "field": "Ферма", "windmill": "Мельница",
+		"barracks": "Казармы", "watchtower": "Сторожевая башня", "enemy_castle": "Кремнёвый замок", "enemy_camp": "Военный лагерь"}
+	var title: String = kinds.get(cell["kind"], names.get(cell["terrain"], "Гекс"))
+	var owner_text := "Дикие земли"
+	var owner_col := Color(0.8, 0.8, 0.75)
+	match cell["owner"]:
+		Owner.PLAYER:
+			owner_text = "Ваша территория"
+			owner_col = Color(0.45, 0.7, 1.0)
+		Owner.ENEMY:
+			owner_text = "Кремнёвые Бароны"
+			owner_col = Color(1.0, 0.45, 0.42)
+		Owner.FOG:
+			owner_text = "Неизведанные земли"
+			owner_col = Color(0.6, 0.6, 0.65)
+	var bonus := "+0% к защите"
+	match cell["terrain"]:
+		"forest":
+			bonus = "+25% к защите"
+		"mountain":
+			bonus = "+40% к обороне"
+		"grass":
+			bonus = "+10% к защите" if cell["kind"] == "" else "+25% к защите"
+	if cell["kind"] == "castle" or cell["kind"] == "enemy_castle":
+		bonus = "+50% к защите · Ядро"
+	return {"title": title, "owner": owner_text, "owner_color": owner_col, "bonus": bonus,
+		"attackable": cell["owner"] == Owner.ENEMY, "terrain": cell["terrain"]}
