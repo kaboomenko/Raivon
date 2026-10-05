@@ -41,6 +41,7 @@ var save_enabled := true  # tests switch it off before adding the scene
 var ftue := 0  # first-war tutorial step (canon §14.3); 0 = finished / off
 var _ftue_shown := -1
 var _ftue_t := 0.0
+var _mill := -1
 
 var map_view: Node3D
 var rig: Node3D
@@ -102,6 +103,7 @@ func _ready() -> void:
 		ui.toast("С возвращением! Прогресс загружен")
 	elif save_enabled:
 		ftue = 1
+	_burned_mill()
 	await get_tree().process_frame
 	_handle_args()
 
@@ -570,6 +572,7 @@ func _handle_event(ev: Dictionary) -> void:
 			sfx.play("clash", 0, -6.0)
 		"capture":
 			sfx.play("capture" if mine else "lost")
+			map_view.smoke(ev["hex"], 5.0, true)
 			map_view.burst(ev["hex"], MapView.C_PLAYER if mine else MapView.C_WAR, true)
 			map_view.floater(ev["hex"], "Оккупирован!" if mine else "Потерян", Color(0.75, 0.85, 1.0) if mine else Color(1.0, 0.7, 0.7))
 			if mine and ev["hex"] == war["goal"]:
@@ -813,6 +816,8 @@ func _sign_peace() -> void:
 	if ftue > 0:
 		ftue = 0
 		ui.coach_hide()
+		if _mill >= 0:
+			map_view.clear_smoke(_mill)
 	_normalize_armies()
 	ui.close_modal()
 	# Ink wave: hexes touching the old territory flip first, ~0.25 s per ring (canon §10.3).
@@ -985,6 +990,24 @@ const FTUE_TEXT := {
 }
 
 
+## FTUE hook (canon §14.3): the Barons burned the player's border mill — it smokes until the first peace.
+func _burned_mill() -> void:
+	if ftue <= 0:
+		return
+	for c in sim.cells:
+		if c["owner"] == Types.PLAYER and c["kind"] == "farm" and _touches_owner(c["id"], MapGen.BARONS):
+			map_view.smoke(c["id"], -1.0, true)
+			_mill = c["id"]
+			return
+
+
+func _touches_owner(id: int, s: int) -> bool:
+	for n in sim.neighbors[id]:
+		if n >= 0 and sim.cells[n]["owner"] == s:
+			return true
+	return false
+
+
 func _ftue_attacked() -> void:
 	if ftue == 3:
 		ftue = 4
@@ -1100,6 +1123,7 @@ func _demo(spec: String) -> void:
 	var what := parts[0]
 	if what.begins_with("ftue"):
 		ftue = 1
+		_burned_mill()
 		var step := int(parts[1]) if parts.size() > 1 else 1
 		if step >= 2:
 			_declare(MapGen.BARONS, War.recommend_goals(sim, MapGen.BARONS, 1)[0])

@@ -638,6 +638,7 @@ func _make_sparks() -> CPUParticles3D:
 	m.emission_energy_multiplier = 3.0
 	mesh.material = m
 	fx.mesh = mesh
+	fx.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return fx
 
 
@@ -713,6 +714,116 @@ func burst(hex: int, color: Color, big := false) -> void:
 	_fx.append({"node": mi, "t": 0.0, "dur": 0.9 if big else 0.6, "big": big})
 
 
+var _smoke_mat: StandardMaterial3D
+var _smokes := {}  # hex id -> CPUParticles3D (persistent smoke, e.g. the burned FTUE mill)
+
+
+## Gradient from explicit stops (add_point() reorders indices, so never mix it with set_color(i)).
+func _ramp(offsets: Array, colors: Array) -> Gradient:
+	var g := Gradient.new()
+	g.offsets = PackedFloat32Array(offsets)
+	g.colors = PackedColorArray(colors)
+	return g
+
+
+func _soft_tex() -> GradientTexture2D:
+	var tex := GradientTexture2D.new()
+	var g := Gradient.new()
+	g.set_color(0, Color(1, 1, 1, 1))
+	g.set_color(1, Color(1, 1, 1, 0))
+	tex.gradient = g
+	tex.fill = GradientTexture2D.FILL_RADIAL
+	tex.fill_from = Vector2(0.5, 0.5)
+	tex.fill_to = Vector2(0.5, 0.0)
+	tex.width = 64
+	tex.height = 64
+	return tex
+
+
+## Rising smoke column over a hex (with embers when `fire`). `seconds` < 0 keeps it until clear_smoke().
+func smoke(hex: int, seconds: float, fire := false) -> void:
+	if _smoke_mat == null:
+		_smoke_mat = StandardMaterial3D.new()
+		_smoke_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_smoke_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		# BILLBOARD_PARTICLES draws not-yet-spawned particles as black quads at the emitter; keep_scale avoids it
+		_smoke_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+		_smoke_mat.billboard_keep_scale = true
+		_smoke_mat.vertex_color_use_as_albedo = true
+		_smoke_mat.albedo_texture = _soft_tex()
+	var root := Node3D.new()
+	root.position = cell_world(hex) + Vector3(0.15, 0.2, -0.1)
+	add_child(root)
+	var sm := CPUParticles3D.new()
+	sm.amount = 22
+	sm.lifetime = 3.2
+	sm.direction = Vector3(0.25, 1, 0)
+	sm.spread = 12.0
+	sm.initial_velocity_min = 0.35
+	sm.initial_velocity_max = 0.6
+	sm.gravity = Vector3(0.12, 0.05, 0)
+	sm.scale_amount_min = 0.6
+	sm.scale_amount_max = 1.0
+	var curve := Curve.new()
+	curve.add_point(Vector2(0, 0.35))
+	curve.add_point(Vector2(1, 1.6))
+	sm.scale_amount_curve = curve
+	var ramp := _ramp([0.0, 0.15, 0.6, 1.0], [Color(0.5, 0.47, 0.44, 0.0), Color(0.5, 0.48, 0.46, 0.34), Color(0.7, 0.7, 0.72, 0.18), Color(0.85, 0.85, 0.88, 0.0)])
+	sm.color_ramp = ramp
+	var q := QuadMesh.new()
+	q.size = Vector2(0.7, 0.7)
+	q.material = _smoke_mat
+	sm.mesh = q
+	sm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(sm)
+	if fire:
+		var fl := CPUParticles3D.new()
+		fl.amount = 26
+		fl.lifetime = 0.7
+		fl.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+		fl.emission_sphere_radius = 0.18
+		fl.direction = Vector3.UP
+		fl.spread = 15.0
+		fl.initial_velocity_min = 0.5
+		fl.initial_velocity_max = 0.9
+		fl.gravity = Vector3(0, 0.6, 0)
+		fl.scale_amount_min = 0.3
+		fl.scale_amount_max = 0.55
+		var fr := _ramp([0.0, 0.4, 1.0], [Color(1.0, 0.95, 0.5, 0.95), Color(1.0, 0.45, 0.1, 0.8), Color(0.6, 0.1, 0.05, 0.0)])
+		fl.color_ramp = fr
+		var fm := _smoke_mat.duplicate() as StandardMaterial3D
+		fm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		var fq := QuadMesh.new()
+		fq.size = Vector2(0.45, 0.45)
+		fq.material = fm
+		fl.mesh = fq
+		fl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(fl)
+	if seconds >= 0.0:
+		var tw := root.create_tween()
+		tw.tween_interval(seconds)
+		tw.tween_callback(func():
+			for c in root.get_children():
+				(c as CPUParticles3D).emitting = false)
+		tw.tween_interval(3.3)
+		tw.tween_callback(root.queue_free)
+	else:
+		clear_smoke(hex)
+		_smokes[hex] = root
+
+
+func clear_smoke(hex: int) -> void:
+	var root: Node3D = _smokes.get(hex)
+	if root == null:
+		return
+	_smokes.erase(hex)
+	for c in root.get_children():
+		(c as CPUParticles3D).emitting = false
+	var tw := root.create_tween()
+	tw.tween_interval(3.3)
+	tw.tween_callback(root.queue_free)
+
+
 ## Fireworks («салют», canon §10.3) over a point: `volleys` bursts 0.45 s apart.
 func fireworks(pos: Vector3, volleys: int) -> void:
 	var palette := [Color(1.0, 0.85, 0.3), Color(0.45, 0.75, 1.0), Color(1.0, 0.45, 0.4), Color(0.6, 1.0, 0.6), Color(1.0, 1.0, 1.0)]
@@ -730,10 +841,7 @@ func fireworks(pos: Vector3, volleys: int) -> void:
 		fx.damping_min = 1.5
 		fx.damping_max = 2.5
 		var col: Color = palette[(i * 2 + 1) % palette.size()]
-		var g := Gradient.new()
-		g.set_color(0, Color(1, 1, 1))
-		g.add_point(0.25, col)
-		g.set_color(g.get_point_count() - 1, Color(col.r, col.g, col.b, 0.0))
+		var g := _ramp([0.0, 0.25, 1.0], [Color(1, 1, 1), col, Color(col.r, col.g, col.b, 0.0)])
 		fx.color_ramp = g
 		var mesh := SphereMesh.new()
 		mesh.radius = 0.04
@@ -746,6 +854,7 @@ func fireworks(pos: Vector3, volleys: int) -> void:
 		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		mesh.material = m
 		fx.mesh = mesh
+		fx.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		fx.position = pos + Vector3(rng.randf_range(-1.2, 1.2), rng.randf_range(2.6, 3.6), rng.randf_range(-1.0, 0.6))
 		fx.emitting = false
 		add_child(fx)
