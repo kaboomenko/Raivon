@@ -13,6 +13,7 @@ signal army_action(id: int, kind: String)
 signal diplomacy_action(state: int, kind: String)
 signal world_action(id: String)
 signal research_start(line: String)
+signal plunder_selected(level: int)
 signal research_speedup(line: String)
 
 const PANEL := Color(0.055, 0.085, 0.14, 0.95)
@@ -358,7 +359,10 @@ func show_result(stars: int, captured: int, lost: int, score: float, control: in
 	_button(box, Rect2(410, 540, 350, 76), "🕊 Мир (%.1f)" % score, Color(0.2, 0.6, 0.3), on_peace)
 
 
-func show_peace(enemy: String, budget: float, control: int, demands: Array, chosen: Dictionary) -> void:
+const PLUNDER_NAMES := ["Пощадить", "Лёгкое 30%", "Среднее 45%", "Тяжёлое 60%"]
+
+
+func show_peace(enemy: String, budget: float, control: int, demands: Array, chosen: Dictionary, plunder := 1) -> void:
 	var box := _modal_box(Rect2(30, 640, 881, 1010), true)
 	var ink := Color(0.24, 0.16, 0.07)
 	_at(_label("📜 Мирный договор: %s" % enemy, 32, ink, false), box, Vector2(30, 24))
@@ -368,22 +372,43 @@ func show_peace(enemy: String, budget: float, control: int, demands: Array, chos
 			used += d["cost"]
 	_at(_label("Очки: %.1f / %.1f · Контроль фронта %d%%" % [used, budget, control], 22, ink, false), box, Vector2(30, 78))
 	_at(_label("ИИ согласится, если сумма не больше счёта. Ядро врага требовать нельзя.", 17, Color(0.42, 0.32, 0.18), false), box, Vector2(30, 112))
-	var y := 150.0
+	var scroll := ScrollContainer.new()
+	scroll.position = Vector2(26, 150)
+	scroll.size = Vector2(829, 548)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	box.add_child(scroll)
+	var list := VBoxContainer.new()
+	list.custom_minimum_size = Vector2(820, 0)
+	list.add_theme_constant_override("separation", 6)
+	scroll.add_child(list)
 	for d in demands:
-		if y > 760:
-			break
 		var on: bool = chosen.has(d["id"])
 		var fits: bool = on or used + float(d["cost"]) <= budget + 0.0001
-		var row := _panel(box, Rect2(26, y, 829, 64), _style(Color(0.3, 0.55, 0.3, 0.25) if on else Color(0.3, 0.2, 0.1, 0.08), 12, Color(0.25, 0.5, 0.25) if on else Color(0, 0, 0, 0), 3))
+		var row := Panel.new()
+		row.custom_minimum_size = Vector2(820, 58)
+		row.add_theme_stylebox_override("panel", _style(Color(0.3, 0.55, 0.3, 0.25) if on else Color(0.3, 0.2, 0.1, 0.08), 12, Color(0.25, 0.5, 0.25) if on else Color(0, 0, 0, 0), 3))
+		row.mouse_filter = Control.MOUSE_FILTER_PASS
 		row.modulate = Color(1, 1, 1, 1.0 if fits else 0.45)
 		var icon := "⭕" if d["kind"] == "pocket" else ("⬢" if d["kind"] == "annex" else ("💰" if d["kind"] == "contribution" else "📜"))
-		_at(_label(icon + "  " + str(d["label"]), 22, ink, false), row, Vector2(16, 16))
-		var c := _label("%.1f" % d["cost"], 24, ink)
+		_at(_label(icon + "  " + str(d["label"]), 21, ink, false), row, Vector2(16, 14))
+		var c := _label("%.1f" % d["cost"], 23, ink)
 		c.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		_at(c, row, Vector2(600, 14), Vector2(210, 34))
+		_at(c, row, Vector2(590, 12), Vector2(210, 34))
 		var id: String = d["id"]
 		row.gui_input.connect(func(e): if _is_tap(e): demand_toggled.emit(id))
-		y += 72
+		list.add_child(row)
+	# plunder: the winner's free right, level chosen by the player (canon §9.14)
+	_at(_label("Разграбление:", 20, ink, false), box, Vector2(30, 722))
+	for i in 4:
+		var on := i == plunder
+		var pb := _panel(box, Rect2(190 + i * 168, 712, 160, 56), _style(Color(0.55, 0.25, 0.12) if on and i > 0 else (Color(0.25, 0.5, 0.3) if on else Color(0.3, 0.2, 0.1, 0.12)), 12, Color(0.4, 0.25, 0.1, 0.6), 2))
+		var pl := _label(PLUNDER_NAMES[i], 16, Color.WHITE if on else ink, on)
+		pl.size = Vector2(160, 56)
+		pl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		pl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		pb.add_child(pl)
+		var lvl := i
+		pb.gui_input.connect(func(e): if _is_tap(e): plunder_selected.emit(lvl))
 	var seal := _panel(box, Rect2(26, 800, 829, 96), _style(Color(0.2, 0.55, 0.28), 16, Color(1, 1, 1, 0.6), 3))
 	_seal_prog = _panel(seal, Rect2(0, 0, 0, 96), _style(Color(1, 1, 1, 0.3), 16, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
 	var sl := _label("🔏 Удерживайте печать — подписать мир", 26)

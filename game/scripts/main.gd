@@ -137,6 +137,9 @@ func _ready() -> void:
 	ui.army_action.connect(_on_army_action)
 	ui.diplomacy_action.connect(_on_diplomacy_action)
 	ui.world_action.connect(_on_world_action)
+	ui.plunder_selected.connect(func(l: int):
+		plunder_level = l
+		_show_peace())
 	ui.research_start.connect(_on_research_start)
 	ui.research_speedup.connect(_on_research_speedup)
 	_make_selection()
@@ -929,7 +932,7 @@ func _open_peace() -> void:
 
 func _show_peace() -> void:
 	var ws := War.war_score(sim, war)
-	ui.show_peace(_state_name(war["enemy"]), ws["score"], ws["control"], _demands, _chosen)
+	ui.show_peace(_state_name(war["enemy"]), ws["score"], ws["control"], _demands, _chosen, plunder_level)
 	_highlight_demands()
 
 
@@ -959,6 +962,9 @@ func _on_demand_toggled(id: String) -> void:
 
 
 var _last_score := 0.0
+var plunder_level := 1  # 0 spare, 1 light 30%, 2 medium 45%, 3 heavy 60% (canon §9.14)
+const PLUNDER_PCT := [0.0, 0.30, 0.45, 0.60]
+const PLUNDER_OPINION := [20.0, -10.0, -20.0, -30.0]
 
 
 func _sign_peace() -> void:
@@ -1026,6 +1032,22 @@ func _sign_peace() -> void:
 	lines.append(("+%d гекс." % annexed.size() + (" · +%d город" % cities if cities > 0 else "")) if annexed.size() > 0 else "Земли не присоединены")
 	lines.append("Держава %d → %d" % [before, MapGen.official_value(sim, Types.PLAYER)])
 	lines.append("Глава I: %d → %d из %d" % [hexes_before, _player_hexes(), CHAPTER_GOAL])
+	# plunder (canon §9.14): % of the loser's exposed treasury; the AI economy is not simulated yet, so its
+	# treasury is taken as 8 h of comparable production with the 40% protected share; 12 h loss cap for all
+	var gross: Dictionary = econ.gross_per_hour(sim)
+	var loot := {}
+	var contrib_gold := 0
+	if res.get("gold_packs", 0) > 0:
+		contrib_gold = int(res["gold_packs"]) * 4 * maxi(60, int(gross.get("gold", 0)))
+	if plunder_level > 0:
+		for r in ["gold", "food", "metal"]:
+			var ph: int = maxi(30, int(gross.get(r, 0)))
+			var exposed := int(ph * 8 * 0.6)
+			var cap_left: int = ph * 12 - (contrib_gold if r == "gold" else 0)
+			loot[r] = maxi(0, mini(int(exposed * PLUNDER_PCT[plunder_level]), cap_left))
+		econ.add_resources(loot)
+		lines.append("⚒ Разграблено: %d золота, %d еды, %d металла" % [int(loot["gold"]), int(loot["food"]), int(loot["metal"])])
+	_opinion_add(enemy, PLUNDER_OPINION[plunder_level])
 	if res.get("gold_packs", 0) > 0:
 		# a package = 4 h of the enemy's gold production (canon §10.1); the enemy economy is not modelled yet
 		var gold := int(res["gold_packs"]) * 4 * maxi(60, int(econ.gross_per_hour(sim).get("gold", 0)))
@@ -1057,7 +1079,7 @@ func _sign_peace() -> void:
 		last_flip = maxf(last_flip, flip[id])
 	_ceremony = {"t": 0.0, "lines": lines, "popped": {}, "counters": false, "zoom0": rig.zoom_target, "zoom1": zoom_out,
 		"center": center, "counters_at": maxf(4.0, last_flip + 0.5), "goal_taken": annexed.has(war["goal"]),
-		"gold_packs": int(res.get("gold_packs", 0))}
+		"gold_packs": int(res.get("gold_packs", 0)), "loot": loot}
 	war = {}
 	flag_hex = -1
 	_set_mode(Mode.CEREMONY)
@@ -1097,12 +1119,13 @@ func _step_ceremony(delta: float) -> void:
 		for i in volleys:
 			get_tree().create_timer(0.45 * i + 0.3).timeout.connect(sfx.play.bind("firework", 0, -8.0))
 		var active_after := maxf(0.5, 7.0 - t)
-		ui.show_ceremony_counters(_ceremony["lines"], _end_ceremony, _double_trophies if int(_ceremony["gold_packs"]) > 0 else Callable(), active_after)
+		ui.show_ceremony_counters(_ceremony["lines"], _end_ceremony, _double_trophies if int(_ceremony["gold_packs"]) > 0 or not _ceremony.get("loot", {}).is_empty() else Callable(), active_after)
 
 
 ## Rewarded ad «×2 трофеи» — SDK stub until monetization lands (canon §14.10).
 func _double_trophies() -> void:
 	ui.toast("Тестовая сборка: реклама не подключена — трофеи удвоены")
+	econ.add_resources(_ceremony.get("loot", {}))
 	econ.add_resources({"gold": int(_ceremony["gold_packs"]) * 4 * maxi(60, int(econ.gross_per_hour(sim).get("gold", 0)))})
 	_ceremony["gold_packs"] = 0
 	_end_ceremony()
@@ -1166,7 +1189,11 @@ func _apply_defeat(enemy: int, lost: Array) -> void:
 		sim.cells[id]["owner"] = enemy
 		sim.cells[id]["controller"] = enemy
 	War.white_peace(sim)
-	var looted: Dictionary = econ.plunder(0.6)
+	var g12 := {}
+	var gph: Dictionary = econ.gross_per_hour(sim)
+	for r in ["gold", "food", "metal"]:
+		g12[r] = 12 * maxi(30, int(gph.get(r, 0)))
+	var looted: Dictionary = econ.plunder(0.6, g12)  # Wolf plunders 60%, 12 h loss cap (canon §9.14, decision 20)
 	var msg := "Мир с потерями: −%d гекс., разграблено %d золота, %d еды, %d металла. Щит 24 ч и «Реванш» +15%%" % [lost.size(), int(looted.get("gold", 0)), int(looted.get("food", 0)), int(looted.get("metal", 0))]
 	_post("Поражение в войне", msg)
 	_finish_war(enemy, msg)
