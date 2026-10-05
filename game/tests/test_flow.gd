@@ -147,6 +147,21 @@ func _run() -> void:
 		g.time_offset += 3600
 		g._econ_tick()
 		_check(g.sim.cells[fhex]["fort"] == 1, "fort button builds a level-1 fortification")
+	# deposit + convoy (canon §5.2): the first convoy is the fast FTUE one
+	var dhex := -1
+	for dep in g.deposits.active:
+		if g.deposits.can_send(g.sim, dep["hex"], econ.dev_level()) == "":
+			dhex = dep["hex"]
+			break
+	if dhex >= 0:
+		var res_key: String = g.deposits.at(dhex)["res"]
+		var before: int = econ.res[res_key]
+		g._select(dhex)
+		_check(g.ui._action2_kind == "convoy", "deposit hex offers a convoy")
+		g._on_action("convoy")
+		g.time_offset += 61
+		g._econ_tick()
+		_check(econ.res[res_key] > before or before >= econ.storage_cap()[res_key], "convoy brings the deposit home (%s %d → %d)" % [res_key, before, econ.res[res_key]])
 	g._open_tab("army")
 	g.queue_free()
 	await process_frame

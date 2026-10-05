@@ -35,6 +35,8 @@ static func save(g: Node) -> void:
 		"inbox": g.inbox,
 		"ultimatum": g.ultimatum,
 		"ultimatum_at": g.ultimatum_at,
+		"deposits": g.deposits.to_dict(),
+		"first_convoy_done": g.first_convoy_done,
 	}
 	if g.get("econ") != null:
 		d["econ"] = g.econ.to_dict()
@@ -101,6 +103,9 @@ static func apply(g: Node, d: Dictionary) -> bool:
 		ult[k] = int(su[k])
 	g.ultimatum = ult
 	g.ultimatum_at = int(d.get("ultimatum_at", 0))
+	if d.has("deposits"):
+		g.deposits = load("res://scripts/sim/deposits.gd").from_dict(d["deposits"], int(d["seed"]) ^ 0x5EED)
+	g.first_convoy_done = bool(d.get("first_convoy_done", false))
 	if d.has("econ") and g.get("econ") != null:
 		g.econ = g.econ.get_script().from_dict(d["econ"])
 	return true

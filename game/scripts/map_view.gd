@@ -827,6 +827,136 @@ func hex_label(hex: int, text: String, color := Color(1, 0.9, 0.5)) -> void:
 	l.modulate = color
 
 
+# ------------------------------------------------------------------ deposits & convoys (canon §5.2)
+
+const C_DEPOSIT := Color(1.0, 0.82, 0.15)
+var _dep_nodes := {}  # hex -> Node3D
+var _carts := {}  # convoy id -> Node3D
+
+
+## deposits: [{hex, res, ...}], convoys: [{id, hex, ...} + "phase": {phase, progress, left}].
+func set_deposits(deposits: Array, convoys: Array) -> void:
+	var seen := {}
+	for d in deposits:
+		var h: int = d["hex"]
+		seen[h] = true
+		if not _dep_nodes.has(h):
+			_dep_nodes[h] = _make_deposit(h, String(d["res"]))
+	for h in _dep_nodes.keys():
+		if not seen.has(h):
+			_dep_nodes[h].queue_free()
+			_dep_nodes.erase(h)
+	var cap := cell_world(sim.states[Types.PLAYER]["capital_id"])
+	var live := {}
+	for cv in convoys:
+		var id: int = cv["id"]
+		live[id] = true
+		var cart: Node3D = _carts.get(id)
+		if cart == null:
+			cart = _make_cart()
+			_carts[id] = cart
+		var ph: Dictionary = cv["phase"]
+		var target := cell_world(int(cv["hex"]))
+		var p: Vector3
+		match String(ph["phase"]):
+			"out":
+				p = cap.lerp(target, float(ph["progress"]))
+				(cart.get_node("body") as Node3D).rotation.y = atan2(target.x - cap.x, target.z - cap.z)
+			"gather":
+				p = target + Vector3(0.3, 0, 0.25)
+			_:
+				p = target.lerp(cap, float(ph["progress"]))
+				(cart.get_node("body") as Node3D).rotation.y = atan2(cap.x - target.x, cap.z - target.z)
+		cart.position = p
+		var lbl: Label3D = cart.get_node("label")
+		lbl.text = ("⛏ " if String(ph["phase"]) == "gather" else "") + _fmt_left(int(ph["left"]))
+	for id in _carts.keys():
+		if not live.has(id):
+			_carts[id].queue_free()
+			_carts.erase(id)
+
+
+static func _fmt_left(sec: int) -> String:
+	if sec >= 3600:
+		return "%d:%02d:%02d" % [sec / 3600, (sec % 3600) / 60, sec % 60]
+	return "%d:%02d" % [sec / 60, sec % 60]
+
+
+func _make_deposit(hex: int, res: String) -> Node3D:
+	var node := Node3D.new()
+	add_child(node)
+	var center := cell_world(hex) + Vector3(0, 0.05, 0)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var pts := _hex_pts(center, 0.86)
+	for k in 6:
+		_strip(st, pts[k], pts[(k + 1) % 6], 0.11, center.y + 0.02)
+	var mi := MeshInstance3D.new()
+	mi.mesh = st.commit()
+	mi.material_override = _glow_mat(C_DEPOSIT, 1.15, 1.0)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	node.add_child(mi)
+	var sp := Sprite3D.new()
+	sp.name = "icon"
+	sp.texture = _tex({"gold": "coin", "food": "food", "metal": "metal"}.get(res, "coin"))
+	sp.pixel_size = 0.0034
+	sp.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	sp.shaded = false
+	sp.position = center + Vector3(0, 0.75, 0)
+	node.add_child(sp)
+	return node
+
+
+func _make_cart() -> Node3D:
+	var cart := Node3D.new()
+	add_child(cart)
+	var body := Node3D.new()
+	body.name = "body"
+	cart.add_child(body)
+	var wood := StandardMaterial3D.new()
+	wood.albedo_color = Color(0.55, 0.36, 0.2)
+	var box := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(0.22, 0.12, 0.34)
+	box.mesh = bm
+	box.material_override = wood
+	box.position = Vector3(0, 0.14, 0)
+	body.add_child(box)
+	var sack := MeshInstance3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = 0.1
+	sm.height = 0.16
+	sack.mesh = sm
+	var sackm := StandardMaterial3D.new()
+	sackm.albedo_color = Color(0.9, 0.78, 0.45)
+	sack.material_override = sackm
+	sack.position = Vector3(0, 0.25, 0)
+	body.add_child(sack)
+	for x in [-0.13, 0.13]:
+		for z in [-0.1, 0.1]:
+			var wheel := MeshInstance3D.new()
+			var cm := CylinderMesh.new()
+			cm.top_radius = 0.06
+			cm.bottom_radius = 0.06
+			cm.height = 0.03
+			wheel.mesh = cm
+			wheel.material_override = wood
+			wheel.rotation.z = PI / 2
+			wheel.position = Vector3(x, 0.06, z)
+			body.add_child(wheel)
+	var lbl := Label3D.new()
+	lbl.name = "label"
+	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	lbl.no_depth_test = true
+	lbl.font_size = 40
+	lbl.outline_size = 10
+	lbl.pixel_size = 0.005
+	lbl.modulate = C_DEPOSIT
+	lbl.position = Vector3(0, 0.55, 0)
+	cart.add_child(lbl)
+	return cart
+
+
 # ------------------------------------------------------------------ AI strike arrow (canon §9.11)
 
 var _strike: Node3D
@@ -1049,6 +1179,9 @@ func _process(delta: float) -> void:
 	for h in _bubbles:
 		var bn: Node3D = _bubbles[h]
 		bn.position.y = 2.0 + 0.07 * sin(bt * 3.0 + h)
+	for h in _dep_nodes:
+		var ic: Node3D = _dep_nodes[h].get_node("icon")
+		ic.position.y = cell_world(h).y + 0.8 + 0.06 * sin(bt * 2.5 + h * 0.7)
 	for f in _fx.duplicate():
 		f["t"] += delta
 		var k: float = f["t"] / f["dur"]

@@ -20,6 +20,7 @@ const GameUI := preload("res://scripts/game_ui.gd")
 const Sfx := preload("res://scripts/sfx.gd")
 const Save := preload("res://scripts/save.gd")
 const Economy := preload("res://scripts/sim/economy.gd")
+const Deposits := preload("res://scripts/sim/deposits.gd")
 
 enum Mode { MAP, WAR, BATTLE, RESULT, PEACE, CEREMONY }
 
@@ -44,6 +45,8 @@ var _ftue_shown := -1
 var _ftue_t := 0.0
 var _mill := -1
 var econ  # Economy (scripts/sim/economy.gd)
+var deposits  # Deposits (scripts/sim/deposits.gd)
+var first_convoy_done := false
 var colonizing := {}  # hex -> unix time the colonization finishes
 var colonized := 0  # colonizations so far (price and timer grow, 05 §colonization)
 var time_offset := 0  # debug fast-forward for demos/tests (--skip=SECONDS)
@@ -82,6 +85,7 @@ func _ready() -> void:
 	sim = MapGen.generate_chapter_one(MAP_SEED)
 	armies = Armies.starting_armies(sim)
 	econ = Economy.new(sim, now_s())
+	deposits = Deposits.new(MAP_SEED ^ 0x5EED)
 	save_enabled = save_enabled and not _scripted_run()
 	var loaded := false
 	if save_enabled:
@@ -272,6 +276,15 @@ func _primary_for_selection() -> void:
 		ui.set_primary("pick_target", "⚔ Выбрать цель", Color(0.8, 0.22, 0.16))
 		return
 	var c: Dictionary = sim.cells[selected]
+	var dep: Dictionary = deposits.at(selected)
+	if not dep.is_empty():
+		var cv: Dictionary = deposits.convoy_for(selected)
+		if not cv.is_empty():
+			ui.set_primary("", "🐴 Обоз · %s" % GameUI.fmt_time(int(cv["back"]) - now_s()), Color(0.3, 0.33, 0.42), false)
+		else:
+			var reason: String = deposits.can_send(sim, selected, econ.dev_level())
+			ui.set_primary("convoy", "🐴 Отправить обоз" if reason == "" else reason, Color(0.8, 0.6, 0.1), reason == "")
+		return
 	if not Types.is_passable(c):
 		ui.set_primary("", "")
 	elif colonizing.has(selected):
@@ -307,6 +320,8 @@ func _on_action(kind: String) -> void:
 			_open_tab("buildings")
 		"colonize_now":
 			_speedup_colonize(selected)
+		"convoy":
+			_send_convoy(selected)
 		"offensive":
 			_start_offensive()
 		"retreat":
@@ -420,6 +435,12 @@ func _describe(id: int) -> Dictionary:
 				parts.append("+%d %s/ч" % [inc[r], {"gold": "зол.", "food": "еды", "metal": "мет."}.get(r, r)])
 		if parts.size() > 0:
 			bonus = " · ".join(parts)
+	var dep: Dictionary = deposits.at(id) if deposits != null else {}
+	if not dep.is_empty():
+		var rn := {"gold": "золота", "food": "еды", "metal": "металла"}
+		bonus = "Залежь: %d %s · сбор %s" % [int(dep["amount"]), rn.get(String(dep["res"]), ""), GameUI.fmt_time(int(dep["gather_sec"]))]
+		return {"title": "%s (%s)" % [Deposits.NAMES.get(String(dep["res"]), "Залежь"), dep["size"]], "owner": owner_text,
+			"owner_color": Color(1.0, 0.85, 0.3), "bonus": bonus, "attackable": false}
 	return {
 		"title": _cell_name(id),
 		"owner": owner_text,
@@ -1102,6 +1123,14 @@ func _econ_tick() -> void:
 	var now := now_s()
 	for ev in econ.tick(sim, now):
 		_econ_event(ev)
+	for ev in deposits.tick(sim, econ.gross_per_hour(sim), now):
+		if ev["type"] == "convoy_back":
+			var got: Dictionary = econ.add_resources({String(ev["res"]): int(ev["amount"])})
+			var n := int(got.get(String(ev["res"]), 0))
+			var cap: int = sim.states[Types.PLAYER]["capital_id"]
+			map_view.floater(cap, "+%d" % n, Color(1.0, 0.88, 0.4))
+			sfx.play("coin")
+			ui.toast("Обоз привёз: +%d %s" % [n, {"gold": "золота", "food": "еды", "metal": "металла"}.get(String(ev["res"]), "")])
 	for h in colonizing.keys():
 		if now >= int(colonizing[h]):
 			_finish_colonize(h)
@@ -1190,6 +1219,30 @@ func _fort_action() -> void:
 	sfx.play("coin")
 	map_view.burst(selected, Color(1.0, 0.85, 0.3))
 	_econ_tick()
+	_autosave()
+
+
+func _sync_deposits() -> void:
+	var now := now_s()
+	var view: Array = []
+	for cv in deposits.convoys:
+		var v: Dictionary = cv.duplicate()
+		v["phase"] = Deposits.convoy_phase(cv, now)
+		view.append(v)
+	map_view.set_deposits(deposits.active if mode in [Mode.MAP, Mode.WAR] else [], view)
+
+
+func _send_convoy(hex: int) -> void:
+	var reason: String = deposits.can_send(sim, hex, econ.dev_level())
+	if reason != "":
+		ui.toast(reason)
+		return
+	deposits.send(sim, hex, econ.dev_level(), now_s(), not first_convoy_done)
+	first_convoy_done = true
+	var cv: Dictionary = deposits.convoy_for(hex)
+	sfx.play("tap")
+	ui.toast("Обоз в пути: вернётся через %s" % GameUI.fmt_time(int(cv["back"]) - now_s()))
+	_primary_for_selection()
 	_autosave()
 
 
@@ -1554,6 +1607,7 @@ func _process(delta: float) -> void:
 	elif mode == Mode.CEREMONY:
 		_step_ceremony(delta)
 	map_view.sync_armies(armies, battle)
+	_sync_deposits()
 	_ftue_tick(delta)
 	_econ_acc += delta
 	if _econ_acc >= 1.0:
