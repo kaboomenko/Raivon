@@ -7,7 +7,8 @@ on:
   workflow_dispatch:
   push:
     branches: [claude/funny-maxwell-5e3vez, main]
-    paths: ["game/**", ".github/workflows/ios-xcode.yml"]
+    # only on version bumps (export_presets.cfg changes) — artifacts are large
+    paths: ["game/export_presets.cfg", ".github/workflows/ios-xcode.yml"]
 
 jobs:
   export:
@@ -41,4 +42,4 @@ jobs:
         with:
           name: Raivon-ios-xcode
           path: Raivon-ios-xcode.zip
-          retention-days: 30
+          retention-days: 7
