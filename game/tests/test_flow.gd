@@ -150,6 +150,22 @@ func _run() -> void:
 	g._on_world_action("expand")
 	_check(g.chapter_done and econ.res["raivite"] >= rv0 + 210, "chapter I completes: legacy +200 Raivites")
 
+	# store: free war crate after 6 h, paid Royal case, speed-up items
+	g._open_shop()
+	g.time_offset += 6 * 3600 + 5
+	g.cases.claim_free_crates(g.now_s())
+	g.time_offset += 6 * 3600 + 5
+	var crates: int = g.cases.claim_free_crates(g.now_s())
+	_check(crates >= 1, "free war crate accrues every 6 h (%d)" % crates)
+	var hist0: int = g.cases.history.size()
+	g._on_open_case("case_war_crate", 1, "free")
+	_check(g.cases.history.size() == hist0 + 1, "free crate opened")
+	econ.res["raivite"] = 500
+	g._on_open_case("case_royal", 1, "raivite")
+	_check(econ.res["raivite"] == 340, "Royal case costs 160 Raivites")
+	g.shop.queue_free()
+	g.shop = null
+
 	# fortification on an own non-capital hex via the fort button
 	var fhex := -1
 	for c in g.sim.cells:

@@ -810,7 +810,9 @@ func _building_card(it: Dictionary) -> Control:
 		t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		card.add_child(t)
 		var sp: int = it["speed"]
-		_card_button(card, "⚡ бесплатно" if sp == 0 else "⚡ %d" % sp, Color(0.85, 0.55, 0.1), func(): building_speedup.emit(id), sp > 0)
+		var stock: int = it.get("stock", 0)
+		var txt := "⚡ бесплатно" if sp == 0 else ("⏩ запас %d мин" % stock if stock > 0 else "⚡ %d" % sp)
+		_card_button(card, txt, Color(0.85, 0.55, 0.1), func(): building_speedup.emit(id), sp > 0)
 		return card
 	if int(it["level"]) >= int(it["max"]) and String(it["reason"]) != "":
 		var m := _label(it["reason"], 15, MUTED, false)

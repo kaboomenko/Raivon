@@ -1814,7 +1814,7 @@ func _building_items(now: int) -> Array:
 		var busy: bool = int(b["upgrade_end"]) > now
 		items.append({"id": b["id"], "name": info["name"], "level": b["level"], "max": econ.max_level(b),
 			"busy": busy, "left": int(b["upgrade_end"]) - now, "speed": econ.speedup_cost(b, now),
-			"cost": cost, "seconds": secs, "reason": reason})
+			"cost": cost, "seconds": secs, "reason": reason, "stock": speed_minutes})
 	items.sort_custom(func(x, y): return int(x["busy"]) > int(y["busy"]))
 	return items
 
@@ -1839,6 +1839,16 @@ func _on_building_upgrade(id: int) -> void:
 func _on_building_speedup(id: int) -> void:
 	var now := now_s()
 	var b: Dictionary = econ.building(id)
+	# speed-up items from cases go first (whole minutes), then Raivites for the rest
+	var left := int(b["upgrade_end"]) - now
+	if speed_minutes > 0 and left > Economy.FREE_FINISH_SEC:
+		var use := mini(speed_minutes, int(ceil(left / 60.0)))
+		speed_minutes -= use
+		b["upgrade_end"] = int(b["upgrade_end"]) - use * 60
+		ui.toast("⏩ Ускорение из запаса: −%d мин (осталось в запасе %d мин)" % [use, speed_minutes])
+		_econ_tick()
+		_autosave()
+		return
 	if econ.res["raivite"] < econ.speedup_cost(b, now):
 		ui.toast("Не хватает Райвитов")
 		return
@@ -2226,6 +2236,12 @@ func _demo(spec: String) -> void:
 		if what == "strike":
 			_answer_ultimatum("refuse")
 			rig.focus(map_view.cell_world(int(war["strike_hex"])), 0.45)
+		return
+	if what == "shop" or what == "royal":
+		econ.res["raivite"] = 2000
+		_open_shop()
+		if what == "royal":
+			_on_open_case("case_royal", 10, "raivite")
 		return
 	if what == "settings":
 		_on_hud_button("gear")

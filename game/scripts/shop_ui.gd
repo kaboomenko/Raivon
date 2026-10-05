@@ -172,7 +172,7 @@ func show_reveal(results: Array) -> void:
 		if order.find(String(r["rarity"])) > order.find(best):
 			best = r["rarity"]
 	var glow: Panel = ui._panel(box, Rect2(260, 40, 341, 220), ui._style(RARITY_COLOR[best] * Color(1, 1, 1, 0.25), 110, RARITY_COLOR[best], 6))
-	var title := ui._label(RARITY_RU[best] + "!", 40, RARITY_COLOR[best])
+	var title := ui._label(RARITY_RU[best] + "!", 32, RARITY_COLOR[best])
 	title.size = Vector2(341, 220)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
