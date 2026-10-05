@@ -17,6 +17,7 @@ const MapView := preload("res://scripts/map_view.gd")
 const Hud := preload("res://scripts/hud.gd")
 const CameraRig := preload("res://scripts/camera_rig.gd")
 const GameUI := preload("res://scripts/game_ui.gd")
+const Sfx := preload("res://scripts/sfx.gd")
 
 enum Mode { MAP, WAR, BATTLE, RESULT, PEACE, CEREMONY }
 
@@ -41,6 +42,7 @@ var rig: Node3D
 var hud: CanvasLayer
 var ui: CanvasLayer
 var selection: MeshInstance3D
+var sfx: Node
 var selected := -1
 
 var _acc := 0.0
@@ -57,6 +59,8 @@ var _minimap_snap := ""
 
 func _ready() -> void:
 	_environment()
+	sfx = Sfx.new()
+	add_child(sfx)
 	sim = MapGen.generate_chapter_one(MAP_SEED)
 	armies = Armies.starting_armies(sim)
 	map_view = MapView.new()
@@ -271,6 +275,7 @@ func _select(id: int) -> void:
 		return
 	selection.position = map_view.cell_world(id) + Vector3(0, 0.06, 0)
 	selection.visible = true
+	sfx.play("tap")
 	hud.show_tile(_describe(id))
 	_refresh_ui()
 	if mode == Mode.WAR:
@@ -361,6 +366,8 @@ func _colonize(id: int) -> void:
 	c["controller"] = Types.PLAYER
 	map_view.burst(id, MapView.C_PLAYER, true)
 	map_view.floater(id, "+1 гекс", Color(0.75, 0.85, 1.0))
+	sfx.play("coin")
+	sfx.haptic(20)
 	map_view.refresh_hex(id)
 	map_view.pop_hex(id)
 	ui.toast("Колонизирован «%s» · Глава I: %d / %d" % [_cell_name(id), _player_hexes(), CHAPTER_GOAL])
@@ -374,6 +381,8 @@ func _declare(enemy: int, goal: int) -> void:
 	map_view.mark_dirty()
 	map_view.sync_armies(armies, null)
 	map_view.burst(goal, MapView.C_WAR, true)
+	sfx.play("warn")
+	sfx.haptic(60)
 	ui.toast("Война объявлена: %s! Цель — «%s» (+10 к счёту)" % [_state_name(enemy), _cell_name(goal)])
 	_set_mode(Mode.WAR)
 
@@ -441,6 +450,7 @@ func _start_offensive() -> void:
 	_select(-1)
 	rig.focus(_front_center(), 0.5)
 	_set_mode(Mode.BATTLE)
+	sfx.play("warn")
 	ui.toast("В бой! Тяните от армии к врагу или бросьте карту на гекс")
 
 
@@ -479,18 +489,23 @@ func _battle_step() -> void:
 func _handle_event(ev: Dictionary) -> void:
 	var mine: bool = ev.get("side", -1) == Types.PLAYER
 	match ev["type"]:
+		"clash":
+			sfx.play("clash", 0, -6.0)
 		"capture":
+			sfx.play("capture" if mine else "lost")
 			map_view.burst(ev["hex"], MapView.C_PLAYER if mine else MapView.C_WAR, true)
 			map_view.floater(ev["hex"], "Оккупирован!" if mine else "Потерян", Color(0.75, 0.85, 1.0) if mine else Color(1.0, 0.7, 0.7))
 			if mine and ev["hex"] == war["goal"]:
 				ui.toast("🚩 Цель войны взята: +10 к счёту")
 		"repelled":
+			sfx.play("repelled")
 			map_view.floater(ev["hex"], "Атака отбита" if mine else "Отбились!", Color.WHITE)
 		"routed":
 			var a = battle.army_by_id(ev["army"])
 			if a != null:
 				map_view.floater(a["hex"], "Армия разбита", Color(1.0, 0.7, 0.28))
 		"card":
+			sfx.play("boom" if ev["card"] == "airstrike" else "card")
 			if ev["card"] == "airstrike":
 				map_view.burst(ev["hex"], Color(1.0, 0.65, 0.2), true)
 			else:
@@ -502,6 +517,7 @@ func _handle_event(ev: Dictionary) -> void:
 func _end_offensive() -> void:
 	var res: Dictionary = battle.result()
 	var stars := War.offensive_stars(res["captured"], flag_hex, res["routed_player_armies"])
+	sfx.play("fanfare" if stars > 0 else "lost")
 	War.record_offensive(war, stars)
 	var ws := War.war_score(sim, war)
 	battle = null
@@ -551,7 +567,10 @@ func _on_order_drag(phase: int, screen: Vector2) -> void:
 		ui.toast("Только на соседний гекс")
 		return
 	if battle.can_target(Types.PLAYER, hex):
-		if not battle.issue(Types.PLAYER, {"t": "attack", "army": a["id"], "target": hex}):
+		if battle.issue(Types.PLAYER, {"t": "attack", "army": a["id"], "target": hex}):
+			sfx.play("attack")
+			sfx.haptic(15)
+		else:
 			ui.toast("Не хватает энергии (нужно 2)")
 	elif sim.cells[hex]["controller"] == Types.PLAYER:
 		if not battle.issue(Types.PLAYER, {"t": "move", "army": a["id"], "to": hex}):
@@ -705,6 +724,8 @@ func _sign_peace() -> void:
 			prev[h] = sim.cells[h]["owner"]
 	var enemy: int = war["enemy"]
 	var res: Dictionary = War.apply_treaty(sim, war, chosen)
+	sfx.play("seal")
+	sfx.haptic(120)
 	_normalize_armies()
 	ui.close_modal()
 	# Ink wave: hexes touching the old territory flip first, ~0.25 s per ring (canon §10.3).
@@ -783,10 +804,16 @@ func _step_ceremony(delta: float) -> void:
 			map_view.refresh_hex(id)  # buildings and flags switch to the player's style
 			map_view.pop_hex(id)
 			map_view.burst(id, MapView.C_PLAYER, true)
+			sfx.play("pop", _ceremony["popped"].size() - 1)
+			sfx.haptic(10)
 	if t >= float(_ceremony["counters_at"]) and not _ceremony["counters"]:
 		_ceremony["counters"] = true
 		var cap: int = sim.states[Types.PLAYER]["capital_id"]
-		map_view.fireworks(map_view.cell_world(cap), 5 if _ceremony["goal_taken"] else 2)
+		var volleys := 5 if _ceremony["goal_taken"] else 2
+		map_view.fireworks(map_view.cell_world(cap), volleys)
+		sfx.play("fanfare")
+		for i in volleys:
+			get_tree().create_timer(0.45 * i + 0.3).timeout.connect(sfx.play.bind("firework", 0, -8.0))
 		var active_after := maxf(0.5, 7.0 - t)
 		ui.show_ceremony_counters(_ceremony["lines"], _end_ceremony, _double_trophies if int(_ceremony["gold_packs"]) > 0 else Callable(), active_after)
 
