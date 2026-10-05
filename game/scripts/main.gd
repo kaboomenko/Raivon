@@ -82,6 +82,7 @@ func _ready() -> void:
 	hud = Hud.new()
 	hud.world = map_view
 	add_child(hud)
+	hud.button_pressed.connect(_on_hud_button)
 	ui = GameUI.new()
 	add_child(ui)
 	ui.action_pressed.connect(_on_action)
@@ -282,6 +283,38 @@ func _on_action(kind: String) -> void:
 		"back_to_war":
 			ui.close_modal()
 			_set_mode(Mode.WAR)
+
+
+func _on_hud_button(name: String) -> void:
+	sfx.play("tap")
+	match name:
+		"gear":
+			if mode in [Mode.MAP, Mode.WAR]:
+				ui.show_settings(sfx.enabled, func(): sfx.enabled = not sfx.enabled, _new_game)
+		"target":
+			rig.focus(_front_center() if mode == Mode.BATTLE else _war_or_front_center())
+		"pin":
+			rig.focus(map_view.cell_world(sim.states[Types.PLAYER]["capital_id"]))
+		"fort":
+			ui.toast("Укрепления — в следующей версии")
+		"trophy":
+			ui.toast("Глава I «Долина»: %d / %d гексов" % [_player_hexes(), CHAPTER_GOAL])
+		"book":
+			ui.toast("Летопись откроется после главы I")
+		"mail":
+			ui.toast("Писем от соседей пока нет")
+
+
+func _war_or_front_center() -> Vector3:
+	if not war.is_empty():
+		return map_view.cell_world(war["goal"])
+	var g := War.recommend_goals(sim, MapGen.BARONS, 1)
+	return map_view.cell_world(g[0]) if g.size() > 0 else rig.target
+
+
+func _new_game() -> void:
+	Save.wipe()
+	get_tree().reload_current_scene()
 
 
 # ====================================================================== map mode
@@ -975,6 +1008,9 @@ func _handle_args() -> void:
 func _demo(spec: String) -> void:
 	var parts := spec.split(":")
 	var what := parts[0]
+	if what == "settings":
+		_on_hud_button("gear")
+		return
 	var enemy := MapGen.BARONS
 	_declare(enemy, War.recommend_goals(sim, enemy, 1)[0])
 	if what == "war":

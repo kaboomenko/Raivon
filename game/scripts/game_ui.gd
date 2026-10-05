@@ -436,6 +436,36 @@ func show_ceremony_counters(lines: Array, on_done: Callable, on_double := Callab
 	get_tree().create_timer(active_after).timeout.connect(func(): gate["open"] = true)
 
 
+func show_settings(sound_on: bool, on_sound: Callable, on_new_game: Callable) -> void:
+	var box := _modal_box(Rect2(90, 470, 761, 600))
+	_at(_label("Настройки", 36), box, Vector2(40, 30))
+	_button(box, Rect2(40, 110, 681, 84), "🔊 Звук: вкл" if sound_on else "🔇 Звук: выкл", Color(0.2, 0.3, 0.45), func():
+		on_sound.call()
+		show_settings(not sound_on, on_sound, on_new_game))
+	var hold := _panel(box, Rect2(40, 214, 681, 84), _style(Color(0.55, 0.16, 0.14), 14, Color(1, 1, 1, 0.5), 2))
+	var prog := _panel(hold, Rect2(0, 0, 0, 84), _style(Color(1, 1, 1, 0.25), 14, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
+	var hl := _label("Новая игра (удерживайте)", 22)
+	hl.size = Vector2(681, 84)
+	hl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	hold.add_child(hl)
+	var state := {"tw": null}
+	hold.gui_input.connect(func(e):
+		if e is InputEventScreenTouch or e is InputEventMouseButton:
+			if e.pressed:
+				var tw := create_tween()
+				state["tw"] = tw
+				tw.tween_property(prog, "size:x", 681.0, 1.2)
+				tw.tween_callback(func(): close_modal(); on_new_game.call())
+			elif state["tw"] != null:
+				(state["tw"] as Tween).kill()
+				state["tw"] = null
+				prog.size.x = 0.0)
+	_at(_label("Прогресс сохраняется автоматически на устройстве.", 18, MUTED, false), box, Vector2(40, 330))
+	_at(_label("Raivon: Territory Wars · тестовая сборка %s" % ProjectSettings.get_setting("application/config/version", "0.3"), 18, MUTED, false), box, Vector2(40, 366))
+	_button(box, Rect2(40, 480, 681, 84), "Закрыть", Color(0.13, 0.4, 0.9), close_modal)
+
+
 func toast(text: String) -> void:
 	var l := _label(text, 24)
 	l.size = Vector2(VW - 80, 40)

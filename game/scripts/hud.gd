@@ -17,6 +17,8 @@ var tile_bonus: Label
 var attack_btn: Panel
 var minimap: Control
 
+signal button_pressed(name: String)
+
 
 func _ready() -> void:
 	var f := SystemFont.new()
@@ -115,8 +117,10 @@ func _build() -> void:
 	var left := ["trophy", "book", "mail", "gear"]
 	for i in left.size():
 		var y := 244.0 + i * 70.0
-		_panel(Rect2(16, y, 64, 60), _style(PANEL, 14))
+		var lb := _panel(Rect2(16, y, 64, 60), _style(PANEL, 14))
+		lb.gui_input.connect(_on_button_input.bind(left[i]))
 		var ic := Icon.new(left[i])
+		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		ic.position = Vector2(26, y + 8)
 		ic.size = Vector2(44, 44)
 		add_child(ic)
@@ -142,8 +146,10 @@ func _build() -> void:
 	var right := ["target", "pin", "fort"]
 	for i in right.size():
 		var y := 312.0 + i * 74.0
-		_panel(Rect2(864, y, 62, 62), _style(PANEL, 14))
+		var rb := _panel(Rect2(864, y, 62, 62), _style(PANEL, 14))
+		rb.gui_input.connect(_on_button_input.bind(right[i]))
 		var ic := Icon.new(right[i])
+		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		ic.position = Vector2(873, y + 9)
 		ic.size = Vector2(44, 44)
 		add_child(ic)
@@ -217,6 +223,11 @@ func _build() -> void:
 	var at := _label("Атаковать", 28)
 	at.position = Vector2(748, vh - 98)
 	add_child(at)
+
+
+func _on_button_input(e: InputEvent, name: String) -> void:
+	if (e is InputEventScreenTouch and not e.pressed) or (e is InputEventMouseButton and not e.pressed and e.button_index == MOUSE_BUTTON_LEFT):
+		button_pressed.emit(name)
 
 
 func show_tile(info: Dictionary) -> void:
