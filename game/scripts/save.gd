@@ -32,6 +32,9 @@ static func save(g: Node) -> void:
 		"ftue": g.ftue,
 		"colonizing": g.colonizing,
 		"colonized": g.colonized,
+		"inbox": g.inbox,
+		"ultimatum": g.ultimatum,
+		"ultimatum_at": g.ultimatum_at,
 	}
 	if g.get("econ") != null:
 		d["econ"] = g.econ.to_dict()
@@ -91,6 +94,13 @@ static func apply(g: Node, d: Dictionary) -> bool:
 		col[int(k)] = int(sc[k])
 	g.colonizing = col
 	g.colonized = int(d.get("colonized", 0))
+	g.inbox = d.get("inbox", [])
+	var ult := {}
+	var su: Dictionary = d.get("ultimatum", {})
+	for k in su:
+		ult[k] = int(su[k])
+	g.ultimatum = ult
+	g.ultimatum_at = int(d.get("ultimatum_at", 0))
 	if d.has("econ") and g.get("econ") != null:
 		g.econ = g.econ.get_script().from_dict(d["econ"])
 	return true

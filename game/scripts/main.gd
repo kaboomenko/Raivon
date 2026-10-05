@@ -48,6 +48,11 @@ var colonizing := {}  # hex -> unix time the colonization finishes
 var colonized := 0  # colonizations so far (price and timer grow, 05 §colonization)
 var time_offset := 0  # debug fast-forward for demos/tests (--skip=SECONDS)
 var tab := "army"
+var inbox: Array = []  # reports: {t, title, text, read}
+var ultimatum := {}  # active AI ultimatum: {state, hex, tribute, deadline}
+var ultimatum_at := 0  # 0 = not scheduled yet, -1 = done; unix time of the scripted Barons ultimatum
+const WAR_CAP_SEC := 2 * 3600  # chapter I war cap (canon §9.1)
+const STRIKE_WARN_SEC := 20 * 60  # strike announced 20 min ahead (canon §9.11)
 var _econ_acc := 1.0
 
 var map_view: Node3D
@@ -331,7 +336,13 @@ func _on_hud_button(name: String) -> void:
 		"book":
 			ui.toast("Летопись откроется после главы I")
 		"mail":
-			ui.toast("Писем от соседей пока нет")
+			if not ultimatum.is_empty():
+				_show_ultimatum()
+			else:
+				ui.show_inbox(inbox, now_s())
+				for it in inbox:
+					it["read"] = true
+				hud.set_mail(0)
 		"tab_buildings", "tab_army":
 			_open_tab(name.substr(4))
 		"tab_development":
@@ -530,6 +541,7 @@ func _finish_colonize(id: int) -> void:
 func _declare(enemy: int, goal: int) -> void:
 	_ensure_armies_for(enemy)
 	war = War.declare_war(sim, enemy, goal)
+	war["started"] = now_s()
 	map_view.at_war_with = enemy
 	map_view.mark_dirty()
 	map_view.sync_armies(armies, null)
@@ -939,6 +951,9 @@ func _sign_peace() -> void:
 	if res.get("reparations", false):
 		lines.append("📜 Репарации: 10% производства на 24 ч")
 	truce[enemy] = Time.get_unix_time_from_system() + TRUCE_SEC
+	if ultimatum_at == 0:
+		ultimatum_at = now_s() + 2 * 3600  # scripted Barons ultimatum ~2 h later (canon §14.3)
+	map_view.strike_arrow(-1, -1, "")
 	map_view.prev_owner = prev
 	map_view.flip_at = flip
 	map_view.ceremony_t = 0.0
@@ -1025,7 +1040,14 @@ func _open_defeat_or_white(score: float) -> void:
 				War.white_peace(sim)
 				_finish_war(enemy, "🕊 Белый мир подписан"))
 		return
-	# Defeat (canon §9.14): the AI annexes what it occupies, ≤20% of value, ≤1 city, never the core.
+	var lost := _defeat_losses(enemy)
+	ui.show_result(0, 0, lost.size(), score, War.war_score(sim, war)["control"], "Поражение: −%d гекс., грабёж 60%%" % lost.size(),
+		func(): ui.close_modal(); _set_mode(Mode.WAR),
+		func(): _apply_defeat(enemy, lost))
+
+
+## Defeat (canon §9.14): the AI annexes what it occupies, ≤20% of value, ≤1 city, never the core.
+func _defeat_losses(enemy: int) -> Array:
 	var core := MapGen.core_of(sim, Types.PLAYER)
 	var limit := int(MapGen.official_value(sim, Types.PLAYER) * 0.2)
 	var cands: Array = []
@@ -1043,19 +1065,23 @@ func _open_defeat_or_white(score: float) -> void:
 		if c["kind"] == "city":
 			cities += 1
 		lost.append(c["id"])
-	ui.show_result(0, 0, lost.size(), score, War.war_score(sim, war)["control"], "Поражение: −%d гекс., грабёж 60%%" % lost.size(),
-		func(): ui.close_modal(); _set_mode(Mode.WAR),
-		func():
-			for id in lost:
-				sim.cells[id]["owner"] = enemy
-				sim.cells[id]["controller"] = enemy
-			War.white_peace(sim)
-			var looted: Dictionary = econ.plunder(0.6)
-			_finish_war(enemy, "Мир с потерями: разграблено %d золота, %d еды, %d металла. Щит 24 ч и «Реванш» +15%%" % [int(looted.get("gold", 0)), int(looted.get("food", 0)), int(looted.get("metal", 0))]))
+	return lost
+
+
+func _apply_defeat(enemy: int, lost: Array) -> void:
+	for id in lost:
+		sim.cells[id]["owner"] = enemy
+		sim.cells[id]["controller"] = enemy
+	War.white_peace(sim)
+	var looted: Dictionary = econ.plunder(0.6)
+	var msg := "Мир с потерями: −%d гекс., разграблено %d золота, %d еды, %d металла. Щит 24 ч и «Реванш» +15%%" % [lost.size(), int(looted.get("gold", 0)), int(looted.get("food", 0)), int(looted.get("metal", 0))]
+	_post("Поражение в войне", msg)
+	_finish_war(enemy, msg)
 
 
 func _finish_war(enemy: int, msg: String) -> void:
 	ui.close_modal()
+	map_view.strike_arrow(-1, -1, "")
 	truce[enemy] = Time.get_unix_time_from_system() + TRUCE_SEC
 	war = {}
 	_normalize_armies()
@@ -1083,6 +1109,8 @@ func _econ_tick() -> void:
 			map_view.hex_label(h, "⛳ " + GameUI.fmt_time(int(colonizing[h]) - now))
 	hud.set_resources(econ.res, econ.income_per_hour(sim), econ.storage_cap(), econ.builders - econ.busy_builders(now), econ.builders)
 	hud.set_level(econ.dev_level())
+	hud.set_mail(_unread())
+	_ai_tick(now)
 	_update_bubbles()
 	if tab == "buildings" and mode in [Mode.MAP, Mode.WAR]:
 		ui.show_buildings(_building_items(now))
@@ -1271,6 +1299,159 @@ func _on_building_speedup(id: int) -> void:
 		_autosave()
 
 
+# ====================================================================== AI aggression (chapter I: scripted only)
+
+func _post(title: String, text: String) -> void:
+	inbox.append({"t": now_s(), "title": title, "text": text, "read": false})
+	if inbox.size() > 40:
+		inbox.pop_front()
+	hud.set_mail(_unread())
+	# TODO(push): local notification when the app is in background (decision 21: raids always notify)
+
+
+func _unread() -> int:
+	var n := 0
+	for it in inbox:
+		if not it.get("read", false):
+			n += 1
+	return n
+
+
+func _ai_tick(now: int) -> void:
+	if ultimatum_at > 0 and now >= ultimatum_at and ultimatum.is_empty() and war.is_empty() and mode == Mode.MAP and _truce_left(MapGen.BARONS) == 0:
+		_issue_ultimatum(now)
+	if not ultimatum.is_empty() and now >= int(ultimatum["deadline"]) and mode in [Mode.MAP, Mode.WAR]:
+		_answer_ultimatum("refuse")
+	if war.is_empty():
+		return
+	if war.has("strike_at"):
+		var left := int(war["strike_at"]) - now
+		if left <= 0 and mode in [Mode.MAP, Mode.WAR]:
+			_resolve_strike()
+		elif left > 0:
+			map_view.strike_arrow(int(war["strike_from"]), int(war["strike_hex"]), "⚔ " + GameUI.fmt_time(left))
+	if war.has("started") and now - int(war["started"]) >= WAR_CAP_SEC and mode in [Mode.MAP, Mode.WAR]:
+		_war_cap()
+
+
+func _issue_ultimatum(now: int) -> void:
+	ultimatum_at = -1
+	var core := MapGen.core_of(sim, Types.PLAYER)
+	var best := -1
+	for c in sim.cells:
+		if c["owner"] == Types.PLAYER and Types.is_passable(c) and not core.has(c["id"]) and _touches_owner(c["id"], MapGen.BARONS):
+			if best < 0 or int(c["value"]) > int(sim.cells[best]["value"]):
+				best = c["id"]
+	if best < 0:
+		return
+	var tribute := 8 * maxi(60, int(econ.gross_per_hour(sim).get("gold", 0)))
+	ultimatum = {"state": MapGen.BARONS, "hex": best, "tribute": tribute, "deadline": now + 4 * 3600}
+	_post("Ультиматум: %s" % _state_name(MapGen.BARONS), "Требуют «%s» или %d золота. Ответ — 4 ч, иначе война." % [_cell_name(best), tribute])
+	sfx.play("warn")
+	sfx.haptic(60)
+	rig.focus(map_view.cell_world(best))
+	_show_ultimatum()
+
+
+func _show_ultimatum() -> void:
+	ui.show_ultimatum(_state_name(int(ultimatum["state"])), _cell_name(int(ultimatum["hex"])), int(ultimatum["tribute"]),
+		econ.res["gold"] >= int(ultimatum["tribute"]), int(ultimatum["deadline"]) - now_s(),
+		_answer_ultimatum.bind("accept"), _answer_ultimatum.bind("pay"), _answer_ultimatum.bind("refuse"))
+
+
+func _answer_ultimatum(kind: String) -> void:
+	if ultimatum.is_empty():
+		return
+	var enemy: int = ultimatum["state"]
+	var hex: int = ultimatum["hex"]
+	var now := now_s()
+	match kind:
+		"accept":
+			sim.cells[hex]["owner"] = enemy
+			sim.cells[hex]["controller"] = enemy
+			truce[enemy] = now + 24 * 3600
+			map_view.refresh_hex(hex)
+			map_view.mark_dirty()
+			_normalize_armies()
+			_post("Уступка", "«%s» отдан. Перемирие 24 ч." % _cell_name(hex))
+		"pay":
+			if econ.res["gold"] < int(ultimatum["tribute"]):
+				ui.toast("Не хватает золота")
+				return
+			econ.res["gold"] -= int(ultimatum["tribute"])
+			truce[enemy] = now + 24 * 3600
+			_post("Дань уплачена", "%d золота. Перемирие 24 ч." % int(ultimatum["tribute"]))
+		"refuse":
+			_ensure_armies_for(enemy)
+			var goals := War.recommend_goals(sim, enemy, 1)
+			war = War.declare_war(sim, enemy, goals[0] if goals.size() > 0 else hex)
+			war["ai_goal"] = hex
+			war["by_ai"] = 1
+			war["started"] = now
+			# the AI's first strike is announced at the start of a war it began (canon §9.11)
+			war["strike_hex"] = hex
+			var from := hex
+			for n in sim.neighbors[hex]:
+				if n >= 0 and sim.cells[n]["owner"] == enemy:
+					from = n
+					break
+			war["strike_from"] = from
+			war["strike_at"] = now + STRIKE_WARN_SEC
+			map_view.at_war_with = enemy
+			map_view.mark_dirty()
+			sfx.play("warn")
+			_post("Война!", "%s объявили войну. Удар по «%s» через 20 мин — укрепите гекс или наступайте первыми." % [_state_name(enemy), _cell_name(hex)])
+			ultimatum = {}
+			ui.close_modal()
+			_set_mode(Mode.WAR)
+			return
+	ultimatum = {}
+	ui.close_modal()
+	_econ_tick()
+	_autosave()
+
+
+## The announced strike lands. Chapter I strikes are scripted and the first AI counterattack in the game
+## is always repelled (canon §9.11); the deterministic auto-defense battle comes with chapter II.
+func _resolve_strike() -> void:
+	var hex: int = war["strike_hex"]
+	war.erase("strike_at")
+	war.erase("strike_hex")
+	war.erase("strike_from")
+	map_view.strike_arrow(-1, -1, "")
+	war["battles"] = clampi(int(war["battles"]) + 2, -10, 10)
+	var gold := int(maxi(60, int(econ.gross_per_hour(sim).get("gold", 0))) / 2.0)
+	econ.add_resources({"gold": gold})
+	map_view.burst(hex, MapView.C_PLAYER, true)
+	map_view.floater(hex, "Отбито!", Color(0.75, 0.85, 1.0))
+	sfx.play("repelled")
+	var msg := "%s атаковали «%s» — атака отбита! +2 к военному счёту, +%d золота." % [_state_name(int(war["enemy"])), _cell_name(hex), gold]
+	_post("Оборона", msg)
+	ui.toast(msg)
+	_refresh_ui()
+	_autosave()
+
+
+## War cap (canon §9.13): the recommended package at ВС ≥ +10, white peace at |ВС| < 10, defeat at ≤ −10.
+func _war_cap() -> void:
+	var ws := War.war_score(sim, war)
+	var enemy: int = war["enemy"]
+	ui.close_modal()
+	if ws["score"] >= 10.0:
+		_demands = War.available_demands(sim, war)
+		_chosen = {}
+		for d in War.recommend_package(sim, war, _demands, ws["score"]):
+			_chosen[d["id"]] = true
+		_post("Кап войны", "Война длилась 2 ч — подписан рекомендованный мир.")
+		_sign_peace()
+	elif ws["score"] > -10.0:
+		War.white_peace(sim)
+		_post("Кап войны", "Война длилась 2 ч — белый мир.")
+		_finish_war(enemy, "Кап войны: белый мир")
+	else:
+		_apply_defeat(enemy, _defeat_losses(enemy))
+
+
 # ====================================================================== FTUE (canon §14.3)
 
 const FTUE_TEXT := {
@@ -1433,6 +1614,18 @@ func _demo(spec: String) -> void:
 			_start_offensive()
 		for i in 3:
 			_ftue_tick(0.4)
+		return
+	if what == "ultimatum" or what == "strike":
+		_demo("ceremony:0.1")
+		for i in 80:
+			_step_ceremony(0.1)
+		_end_ceremony()
+		truce = {}
+		ultimatum_at = now_s() - 1
+		_ai_tick(now_s())
+		if what == "strike":
+			_answer_ultimatum("refuse")
+			rig.focus(map_view.cell_world(int(war["strike_hex"])), 0.45)
 		return
 	if what == "settings":
 		_on_hud_button("gear")

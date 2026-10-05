@@ -438,6 +438,53 @@ func show_ceremony_counters(lines: Array, on_done: Callable, on_double := Callab
 	get_tree().create_timer(active_after).timeout.connect(func(): gate["open"] = true)
 
 
+## Inbox (mail button): reports of raids, defenses, ultimatums. items: [{title, text, t (unix), read}]
+func show_inbox(items: Array, now: int) -> void:
+	var box := _modal_box(Rect2(50, 300, 841, 1060))
+	_at(_label("✉ Донесения", 34), box, Vector2(36, 26))
+	var scroll := ScrollContainer.new()
+	scroll.position = Vector2(24, 90)
+	scroll.size = Vector2(793, 830)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	box.add_child(scroll)
+	var col := VBoxContainer.new()
+	col.custom_minimum_size = Vector2(780, 0)
+	col.add_theme_constant_override("separation", 10)
+	scroll.add_child(col)
+	if items.is_empty():
+		col.add_child(_label("Пока тихо. Здесь появятся донесения о набегах и обороне.", 22, MUTED, false))
+	for i in range(items.size() - 1, -1, -1):
+		var it: Dictionary = items[i]
+		var card := PanelContainer.new()
+		card.add_theme_stylebox_override("panel", _style(Color(0.1, 0.15, 0.25) if it.get("read", false) else Color(0.14, 0.22, 0.38), 12, EDGE, 2))
+		var v := VBoxContainer.new()
+		card.add_child(v)
+		var ago := maxi(0, now - int(it["t"]))
+		var when := "только что" if ago < 60 else ("%d мин назад" % (ago / 60) if ago < 3600 else "%d ч назад" % (ago / 3600))
+		v.add_child(_label("%s  ·  %s" % [it["title"], when], 22))
+		var body := _label(it["text"], 19, MUTED, false)
+		body.autowrap_mode = TextServer.AUTOWRAP_WORD
+		body.custom_minimum_size = Vector2(760, 0)
+		v.add_child(body)
+		col.add_child(card)
+	_button(box, Rect2(24, 950, 793, 84), "Закрыть", Color(0.13, 0.4, 0.9), close_modal)
+
+
+## AI ultimatum (canon §9.1): accept (cede the hex), pay tribute, or refuse (war).
+func show_ultimatum(enemy: String, hex_name: String, tribute: int, can_pay: bool, left_sec: int, on_accept: Callable, on_pay: Callable, on_refuse: Callable) -> void:
+	var box := _modal_box(Rect2(50, 380, 841, 860), true)
+	var ink := Color(0.3, 0.08, 0.05)
+	_at(_label("⚔ Ультиматум: %s" % enemy, 32, ink, false), box, Vector2(30, 26))
+	var t := _label("«Отдай нам «%s» — или заплати дань %d золота. Иначе — война.»\n\nНа ответ: %s. Без ответа — война." % [hex_name, tribute, fmt_time(left_sec)], 23, Color(0.25, 0.16, 0.08), false)
+	t.autowrap_mode = TextServer.AUTOWRAP_WORD
+	_at(t, box, Vector2(30, 90), Vector2(780, 260))
+	_button(box, Rect2(30, 380, 780, 96), "Принять: отдать «%s» (перемирие 24 ч)" % hex_name, Color(0.45, 0.35, 0.2), on_accept)
+	var pay := _button(box, Rect2(30, 494, 780, 96), "Откупиться: %d золота" % tribute, Color(0.75, 0.55, 0.12), on_pay)
+	pay.modulate.a = 1.0 if can_pay else 0.45
+	_button(box, Rect2(30, 608, 780, 96), "⚔ Отказать — война!", Color(0.75, 0.16, 0.12), on_refuse)
+	_button(box, Rect2(30, 722, 780, 84), "Подумать (ответ позже)", Color(0.3, 0.33, 0.42), close_modal)
+
+
 func show_settings(sound_on: bool, on_sound: Callable, on_new_game: Callable) -> void:
 	var box := _modal_box(Rect2(90, 470, 761, 600))
 	_at(_label("Настройки", 36), box, Vector2(40, 30))

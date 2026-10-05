@@ -827,6 +827,51 @@ func hex_label(hex: int, text: String, color := Color(1, 0.9, 0.5)) -> void:
 	l.modulate = color
 
 
+# ------------------------------------------------------------------ AI strike arrow (canon §9.11)
+
+var _strike: Node3D
+
+
+## Red arrow from the attacker's hex to the target with a countdown; from < 0 removes it.
+func strike_arrow(from: int, to: int, text: String) -> void:
+	if from < 0:
+		if _strike:
+			_strike.queue_free()
+			_strike = null
+		return
+	if _strike == null:
+		_strike = Node3D.new()
+		add_child(_strike)
+		var a := cell_world(from) + Vector3(0, 0.7, 0)
+		var b := cell_world(to) + Vector3(0, 0.7, 0)
+		var dir := (b - a).normalized()
+		var side := dir.cross(Vector3.UP) * 0.22
+		var tip := b - dir * 0.45
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		for v in [a + side, tip + side, tip - side, a + side, tip - side, a - side, tip + side * 2.4, b - dir * 0.05, tip - side * 2.4]:
+			st.add_vertex(v)
+		var mi := MeshInstance3D.new()
+		mi.mesh = st.commit()
+		var am := _glow_mat(C_WAR, 1.4, 0.95)
+		am.no_depth_test = true
+		am.render_priority = 4
+		mi.material_override = am
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_strike.add_child(mi)
+		var l := Label3D.new()
+		l.name = "label"
+		l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		l.no_depth_test = true
+		l.font_size = 56
+		l.outline_size = 14
+		l.pixel_size = 0.006
+		l.modulate = Color(1.0, 0.55, 0.5)
+		l.position = a.lerp(b, 0.5) + Vector3(0, 1.2, 0)
+		_strike.add_child(l)
+	(_strike.get_node("label") as Label3D).text = text
+
+
 var _smoke_mat: StandardMaterial3D
 var _smokes := {}  # hex id -> CPUParticles3D (persistent smoke, e.g. the burned FTUE mill)
 

@@ -27,6 +27,18 @@ func _new_game() -> Node:
 	return g
 
 
+## A game right after the first victorious peace, truce expired (the player owns land beyond the core).
+func _after_first_peace() -> Node:
+	var g := await _new_game()
+	g._demo("ceremony:0.1")
+	for i in 80:
+		g._step_ceremony(0.1)
+	g._end_ceremony()
+	g.truce = {}
+	g.inbox = []
+	return g
+
+
 func _initialize() -> void:
 	_run.call_deferred()
 
@@ -189,6 +201,36 @@ func _run() -> void:
 	for i in 60:
 		g._process(0.1)
 	_check(g.battle == null or g.battle.tick > 0, "battle ticks in _process")
+	g.queue_free()
+	await process_frame
+
+	# 4b. Scripted Barons ultimatum (canon §9.1, §14.3), first strike always repelled, war cap
+	g = await _after_first_peace()
+	g.ultimatum_at = g.now_s() - 1
+	g._ai_tick(g.now_s())
+	_check(not g.ultimatum.is_empty() and g._unread() == 1, "ultimatum issued and posted to the inbox")
+	var uhex: int = g.ultimatum["hex"]
+	g._answer_ultimatum("refuse")
+	_check(not g.war.is_empty() and g.war["ai_goal"] == uhex and g.war.has("strike_at"), "refusal starts an AI war with an announced strike")
+	var battles0: int = g.war["battles"]
+	g.time_offset += 21 * 60
+	g._econ_tick()
+	_check(not g.war.has("strike_at") and g.war["battles"] == battles0 + 2, "the first strike is repelled (+2 war score)")
+	g.time_offset += 2 * 3600
+	g._econ_tick()
+	_check(g.war.is_empty(), "war cap closes the war after 2 h (mode %d)" % g.mode)
+	if g.mode == g.Mode.CEREMONY:
+		for i in 80:
+			g._step_ceremony(0.1)
+		g._end_ceremony()
+	g.queue_free()
+	await process_frame
+	g = await _after_first_peace()
+	g.ultimatum_at = g.now_s() - 1
+	g._ai_tick(g.now_s())
+	var ahex: int = g.ultimatum["hex"]
+	g._answer_ultimatum("accept")
+	_check(g.sim.cells[ahex]["owner"] == MapGen.BARONS and g._truce_left(MapGen.BARONS) > 0, "accepting cedes the hex and gives a truce")
 	g.queue_free()
 	await process_frame
 

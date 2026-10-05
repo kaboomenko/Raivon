@@ -19,6 +19,7 @@ var minimap: Control
 var res_labels := {}  # res -> [value Label, rate Label]
 var builders_label: Label
 var level_label: Label
+var mail_badge: Array = []
 var tab_highlight: Panel
 var tab_labels := {}
 var unit_cards: Control  # the Army tab content (hidden while another tab is open)
@@ -141,9 +142,12 @@ func _build() -> void:
 			badge.position = Vector2(62, y - 8)
 			badge.size = Vector2(26, 26)
 			add_child(badge)
-			var bt := _label("3", 15)
-			bt.position = Vector2(70, y - 6)
+			var bt := _label("", 15)
+			bt.position = Vector2(62, y - 6)
+			bt.size = Vector2(26, 22)
+			bt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			add_child(bt)
+			mail_badge = [badge, bt]
 
 	# ---- minimap (top-right)
 	var mm_panel := _panel(Rect2(730, 90, 198, 206), _style(PANEL, 12, Color(0.4, 0.5, 0.65, 0.8)))
@@ -276,6 +280,12 @@ func set_resources(res: Dictionary, per_hour: Dictionary, caps: Dictionary, free
 			d.text = ("%s%s/ч" % ["+" if ph >= 0 else "", fmt(ph)]) if not full else "склад полон"
 			d.add_theme_color_override("font_color", GOOD if ph >= 0 and not full else Color(1.0, 0.55, 0.4))
 	builders_label.text = "%d/%d" % [free_builders, builders]
+
+
+func set_mail(unread: int) -> void:
+	for n in mail_badge:
+		(n as Control).visible = unread > 0
+	(mail_badge[1] as Label).text = str(mini(unread, 9))
 
 
 func set_level(dl: int) -> void:
