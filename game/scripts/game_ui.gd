@@ -202,7 +202,7 @@ func set_battle(visible_hand: bool, energy_units: int, unit: int, cooldowns: Dic
 		var cd: int = cooldowns.get(c, 0)
 		p.modulate = Color(1, 1, 1, 0.45 if (pts < _card_cost(c) or cd > 0) else 1.0)
 		(p.get_node("cd") as Label).text = str(int(ceil(cd / 10.0))) if cd > 0 else ""
-	set_action("timer", "%d:%02d" % [seconds_left / 60, seconds_left % 60], "Финальный рывок!" if rush else "Отступить ↩", Color(0.5, 0.2, 0.2) if rush else Color(0.2, 0.25, 0.4))
+	set_action("timer", "%d:%02d" % [seconds_left / 60, seconds_left % 60], "Финальный рывок!" if rush else "до конца наступления", Color(0.5, 0.2, 0.2) if rush else Color(0.2, 0.25, 0.4))
 
 
 func _on_card_input(event: InputEvent, card: String) -> void:
@@ -396,11 +396,16 @@ func show_ceremony_counters(lines: Array, on_done: Callable) -> void:
 	_modal.size = Vector2(VW, VH)
 	_modal.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(_modal)
+	var back := _panel(_modal, Rect2(40, 200, VW - 80, 60 + lines.size() * 64), _style(Color(0.04, 0.07, 0.13, 0.82), 22, Color(0.45, 0.65, 1.0, 0.8), 3), Control.MOUSE_FILTER_IGNORE)
+	back.modulate.a = 0.0
+	create_tween().tween_property(back, "modulate:a", 1.0, 0.3)
 	for i in lines.size():
 		var l := _label(lines[i], 40)
 		l.size = Vector2(VW, 60)
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		l.position = Vector2(0, 230 + i * 64)
+		if i > 0:
+			l.add_theme_font_size_override("font_size", 30)
 		l.modulate.a = 0.0
 		_modal.add_child(l)
 		var tw := create_tween()

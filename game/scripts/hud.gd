@@ -15,6 +15,7 @@ var tile_title: Label
 var tile_owner: Label
 var tile_bonus: Label
 var attack_btn: Panel
+var minimap: Control
 
 
 func _ready() -> void:
@@ -135,6 +136,7 @@ func _build() -> void:
 	mm.position = Vector2(740, 100)
 	mm.size = Vector2(178, 186)
 	add_child(mm)
+	minimap = mm
 
 	# ---- right buttons
 	var right := ["target", "pin", "fort"]
@@ -405,27 +407,27 @@ class Portrait extends SubViewportContainer:
 # ====================================================================== minimap
 
 class Minimap extends Control:
-	var world: Node3D
+	var world: Node3D  # map_view.gd
+	var view_rect := Rect2()
 
 	func _draw() -> void:
-		if world == null:
+		if world == null or world.get("sim") == null:
 			return
-		var cells: Dictionary = world.cells
-		var sc := 7.2
+		var sc := 10.5
 		var c := size / 2
-		for k in cells:
-			var p: Vector3 = world.axial_to_world(k.x, k.y)
-			var owner: int = cells[k]["owner"]
-			var col := Color(0.5, 0.5, 0.52)
-			if owner == 1:
-				col = Color(0.25, 0.5, 1.0)
-			elif owner == 2:
-				col = Color(0.85, 0.2, 0.22)
-			elif owner == 3:
-				continue
+		for cell in world.sim.cells:
+			var p: Vector3 = world.axial_to_world(cell["q"], cell["r"])
+			var col := Color(0.32, 0.36, 0.42)
+			if cell["terrain"] == "water":
+				col = Color(0.16, 0.32, 0.5)
+			elif cell["terrain"] != "mountain":
+				col = world.state_color(world.owner_of(cell)).darkened(0.15)
 			var pts := PackedVector2Array()
 			for i in 6:
 				var a := PI / 3 * i
-				pts.append(c + Vector2(p.x, p.z) * sc + Vector2(cos(a), sin(a)) * sc * 0.97)
+				pts.append(c + Vector2(p.x, p.z) * sc + Vector2(cos(a), sin(a)) * sc * 0.95)
 			draw_colored_polygon(pts, col)
-		draw_rect(Rect2(c + Vector2(-20, -40), Vector2(48, 70)), Color(1, 1, 1), false, 2)
+			if cell["controller"] != cell["owner"] and cell["controller"] != 0:
+				draw_circle(c + Vector2(p.x, p.z) * sc, sc * 0.35, world.state_color(cell["controller"]))
+		if view_rect.size != Vector2.ZERO:
+			draw_rect(Rect2(c + view_rect.position * sc, view_rect.size * sc), Color(1, 1, 1), false, 2)

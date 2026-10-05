@@ -26,6 +26,7 @@ var prev_owner := {}
 var _terrain_mi: MeshInstance3D
 var _overlay_root: Node3D
 var _props_root: Node3D
+var _horizon_root: Node3D
 var _army_nodes := {}  # army id -> Node3D
 var _fx: Array = []
 var _dirty := true
@@ -45,14 +46,17 @@ func _ready() -> void:
 	add_child(_overlay_root)
 	_props_root = Node3D.new()
 	add_child(_props_root)
+	_horizon_root = Node3D.new()
+	add_child(_horizon_root)
 
 
 func set_world(w) -> void:
 	sim = w
-	for c in _props_root.get_children():
+	for c in _horizon_root.get_children():
 		c.queue_free()
 	_build_terrain()
-	_place_props()
+	refresh_props()
+	rng.seed = 11
 	_build_horizon()
 	_dirty = true
 
@@ -88,7 +92,7 @@ func state_color(s: int) -> Color:
 		return C_PLAYER
 	if s == Types.NOBODY:
 		return C_WILD
-	if s == at_war_with:
+	if s == at_war_with or s == MapGen.BARONS:  # the Barons are the hostile neighbour: always red
 		return C_WAR
 	return Color.hex((int(sim.states[s]["color"]) << 8) | 0xff)
 
@@ -196,8 +200,17 @@ func _faction_suffix(s: int) -> String:
 	return "red"
 
 
+## Re-spawns buildings, trees and banners (after a treaty or colonization changes owners).
+## Each cell has its own seed, so trees stay where they were.
+func refresh_props() -> void:
+	for c in _props_root.get_children():
+		c.queue_free()
+	_place_props()
+
+
 func _place_props() -> void:
 	for c in sim.cells:
+		rng.seed = 7 + int(c["id"]) * 7919
 		if not Types.is_passable(c):
 			if c["terrain"] == "mountain":
 				spawn("mountain", _props_root, cell_world(c["id"]), rng.randf() * TAU, rng.randf_range(1.2, 1.6))
@@ -250,11 +263,15 @@ func _build_horizon() -> void:
 				continue
 			var p := axial_to_world(q, r)
 			var roll := rng.randf()
-			if d <= 6 and roll < 0.5:
-				spawn("mountain", _props_root, p + Vector3(0, -0.15, 0), rng.randf() * TAU, rng.randf_range(1.7, 2.8))
+			var near := p.z > 3.0  # bottom of the screen: keep low so it never hides the player's land
+			if near:
+				for i in 3:
+					spawn("tree_pine" if rng.randf() < 0.7 else "tree_round", _horizon_root, p + Vector3(rng.randf_range(-0.7, 0.7), -0.1, rng.randf_range(-0.7, 0.7)), rng.randf() * TAU, rng.randf_range(0.8, 1.1))
+			elif d <= 6 and roll < 0.5:
+				spawn("mountain", _horizon_root, p + Vector3(0, -0.15, 0), rng.randf() * TAU, rng.randf_range(1.7, 2.8))
 			elif d <= 6:
 				for i in 5:
-					spawn("tree_pine", _props_root, p + Vector3(rng.randf_range(-0.7, 0.7), -0.1, rng.randf_range(-0.7, 0.7)), rng.randf() * TAU, rng.randf_range(0.9, 1.4))
+					spawn("tree_pine", _horizon_root, p + Vector3(rng.randf_range(-0.7, 0.7), -0.1, rng.randf_range(-0.7, 0.7)), rng.randf() * TAU, rng.randf_range(0.9, 1.4))
 			var base := MeshInstance3D.new()
 			var cm := CylinderMesh.new()
 			cm.top_radius = 1.0
@@ -264,8 +281,8 @@ func _build_horizon() -> void:
 			base.mesh = cm
 			base.position = p + Vector3(0, -0.62, 0)
 			base.material_override = ring_mat
-			_props_root.add_child(base)
-			if rng.randf() < 0.55 + 0.1 * (d - 5):
+			_horizon_root.add_child(base)
+			if not near and rng.randf() < 0.55 + 0.1 * (d - 5):
 				_cloud(p + Vector3(rng.randf_range(-0.5, 0.5), rng.randf_range(1.0, 2.6), rng.randf_range(-0.5, 0.5)), rng.randf_range(3.5, 6.0))
 
 
@@ -294,7 +311,7 @@ func _cloud(pos: Vector3, size: float) -> void:
 	mi.material_override = _cloud_mat
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mi.position = pos
-	_props_root.add_child(mi)
+	_horizon_root.add_child(mi)
 
 
 # ------------------------------------------------------------------ territory overlay (rebuilt on change)
@@ -329,8 +346,15 @@ func _rebuild_overlay() -> void:
 				st = SurfaceTool.new()
 				st.begin(Mesh.PRIMITIVE_TRIANGLES)
 				tints[own] = st
+			# inner-glow look of the references: faint in the middle, saturated at the rim
+			var tc := state_color(own)
+			var base := 0.2 if own == Types.PLAYER else 0.34
+			var c_in := Color(tc.r, tc.g, tc.b, base * 0.45)
+			var c_rim := Color(tc.r, tc.g, tc.b, base * 1.45)
 			for k in 6:
-				st.add_vertex(center); st.add_vertex(pts[k]); st.add_vertex(pts[(k + 1) % 6])
+				st.set_color(c_in); st.add_vertex(center)
+				st.set_color(c_rim); st.add_vertex(pts[k])
+				st.set_color(c_rim); st.add_vertex(pts[(k + 1) % 6])
 		# occupation hatch in the occupier colour (canon §3.1)
 		if c["controller"] != own and c["controller"] != Types.NOBODY:
 			var hs: SurfaceTool = hatch.get(c["controller"])
@@ -360,7 +384,7 @@ func _rebuild_overlay() -> void:
 				if prog > 0.0:
 					_strip(_st(borders, own), e[0], e[0].lerp(e[1], prog), w, center.y + 0.012)
 	for o in tints:
-		_add(tints[o], _tint_mat(state_color(o), 0.18 if o == Types.PLAYER else 0.26))
+		_add(tints[o], _tint_mat(Color.WHITE, 1.0))
 	for o in hatch:
 		_add(hatch[o], _hatch_mat(state_color(o)))
 	for o in lines:
@@ -411,6 +435,7 @@ func _add(st: SurfaceTool, m: Material) -> void:
 func _tint_mat(c: Color, alpha: float) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_color = Color(c.r, c.g, c.b, alpha)
+	m.vertex_color_use_as_albedo = true
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.roughness = 0.9
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
