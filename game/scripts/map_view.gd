@@ -345,9 +345,15 @@ func _tint(n: Node, col: Color) -> void:
 ## Defensive tower (canon §7): stands at the back of the hex, grows a little with its level.
 func _place_tower(c: Dictionary, holder: Node3D) -> void:
 	var lvl: int = int(c.get("tower", 0))
-	if lvl <= 0 or not has_model("watchtower"):
+	if lvl <= 0:
 		return
-	spawn("watchtower", holder, Vector3(0.38, 0, -0.32), 0.6, 1.0 + 0.06 * (lvl - 1))
+	# its own look per level (canon §6.1): slinger lookout → archer tower → ballista … → laser turret
+	for n in range(mini(lvl, 8), 0, -1):
+		if has_model("tower_l%d" % n):
+			spawn("tower_l%d" % n, holder, Vector3(0.42, 0, -0.36), 0.0, 1.35)
+			return
+	if has_model("watchtower"):
+		spawn("watchtower", holder, Vector3(0.38, 0, -0.32), 0.6, 1.0 + 0.06 * (lvl - 1))
 
 
 func _place_hex_props(c: Dictionary) -> void:
