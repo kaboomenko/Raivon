@@ -9,6 +9,8 @@ test-results/
 # Godot
 game/.godot/
 *.import
+# generated from game/locale/strings.csv by the CSV importer (godot --import)
+game/locale/*.translation
 builds/*.idsig
 builds/ios/
 builds/*.apk
