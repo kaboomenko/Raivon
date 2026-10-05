@@ -27,6 +27,7 @@ var _terrain_mi: MeshInstance3D
 var _overlay_root: Node3D
 var _props_root: Node3D
 var _horizon_root: Node3D
+var _hex_props := {}  # hex id -> Node3D holder of that hex's props
 var _army_nodes := {}  # army id -> Node3D
 var _fx: Array = []
 var _dirty := true
@@ -209,46 +210,77 @@ func refresh_props() -> void:
 
 
 func _place_props() -> void:
+	_hex_props.clear()
 	for c in sim.cells:
-		rng.seed = 7 + int(c["id"]) * 7919
-		if not Types.is_passable(c):
-			if c["terrain"] == "mountain":
-				spawn("mountain", _props_root, cell_world(c["id"]), rng.randf() * TAU, rng.randf_range(1.2, 1.6))
-			continue
-		var p := cell_world(c["id"])
-		var side := _faction_suffix(c["owner"])
-		match c["kind"]:
-			"capital":
-				var model := "castle" if c["owner"] == Types.PLAYER else ("castle_green" if c["owner"] == MapGen.HAMLETS else "castle_red")
-				spawn(model, _props_root, p, 0.3 if c["owner"] == Types.PLAYER else PI, 1.35)
-				continue
-			"city":
-				var hm := "house_blue" if c["owner"] == Types.PLAYER else ("house_green" if c["owner"] == MapGen.HAMLETS else "house_red")
-				for o in [Vector3(-0.3, 0, 0.15), Vector3(0.3, 0, -0.25), Vector3(0.1, 0, 0.4), Vector3(-0.25, 0, -0.35)]:
-					spawn(hm, _props_root, p + o, rng.randf() * TAU, 1.05)
-				continue
-			"farm":
-				spawn("wheat_field", _props_root, p + Vector3(0.1, 0, 0.1), 0.0, 0.95)
-				spawn("windmill", _props_root, p + Vector3(-0.45, 0, -0.3), 0.4, 0.95)
-				continue
-			"mine":
-				spawn("mine", _props_root, p, 0.2, 1.1)
-				continue
-		match c["terrain"]:
-			"forest":
-				for i in rng.randi_range(8, 12):
-					var off := Vector3(rng.randf_range(-0.62, 0.62), 0, rng.randf_range(-0.62, 0.62))
-					spawn("tree_pine" if rng.randf() < 0.75 else "tree_round", _props_root, p + off, rng.randf() * TAU, rng.randf_range(0.85, 1.3))
-			"hills":
-				for i in 3:
-					spawn("rock", _props_root, p + Vector3(rng.randf_range(-0.5, 0.5), 0, rng.randf_range(-0.5, 0.5)), rng.randf() * TAU, rng.randf_range(1.2, 2.0))
-				spawn("tree_pine", _props_root, p + Vector3(0.3, 0, 0.3), 0.0, 1.0)
-			_:
-				for i in rng.randi_range(1, 4):
-					var off := Vector3(rng.randf_range(-0.6, 0.6), 0, rng.randf_range(-0.6, 0.6))
-					spawn("tree_pine" if rng.randf() < 0.6 else "tree_round", _props_root, p + off, rng.randf() * TAU, rng.randf_range(0.7, 1.0))
-		if c["owner"] != Types.NOBODY and rng.randf() < 0.3:
-			spawn("banner_" + side, _props_root, p + Vector3(rng.randf_range(-0.4, 0.4), 0, rng.randf_range(-0.4, 0.4)))
+		_place_hex_props(c)
+
+
+## Rebuilds one hex's props in its current owner's style (the ceremony flips them one by one).
+func refresh_hex(id: int) -> void:
+	var old: Node3D = _hex_props.get(id)
+	if old:
+		old.queue_free()
+	_place_hex_props(sim.cells[id])
+
+
+## Ceremony «pop»: the hex's buildings jump to 1.08 and settle back.
+func pop_hex(id: int) -> void:
+	var holder: Node3D = _hex_props.get(id)
+	if holder == null:
+		return
+	holder.scale = Vector3.ONE * 1.12
+	var tw := create_tween()
+	tw.tween_property(holder, "scale", Vector3.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+
+func _place_hex_props(c: Dictionary) -> void:
+	var holder := Node3D.new()
+	holder.position = cell_world(c["id"])
+	_props_root.add_child(holder)
+	_hex_props[c["id"]] = holder
+	_place_hex_props_into(c, holder)
+
+
+func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
+	rng.seed = 7 + int(c["id"]) * 7919
+	if not Types.is_passable(c):
+		if c["terrain"] == "mountain":
+			spawn("mountain", holder, Vector3.ZERO, rng.randf() * TAU, rng.randf_range(1.2, 1.6))
+		return
+	var p := Vector3.ZERO
+	var side := _faction_suffix(c["owner"])
+	match c["kind"]:
+		"capital":
+			var model := "castle" if c["owner"] == Types.PLAYER else ("castle_green" if c["owner"] == MapGen.HAMLETS else "castle_red")
+			spawn(model, holder, p, 0.3 if c["owner"] == Types.PLAYER else PI, 1.35)
+			return
+		"city":
+			var hm := "house_blue" if c["owner"] == Types.PLAYER else ("house_green" if c["owner"] == MapGen.HAMLETS else "house_red")
+			for o in [Vector3(-0.3, 0, 0.15), Vector3(0.3, 0, -0.25), Vector3(0.1, 0, 0.4), Vector3(-0.25, 0, -0.35)]:
+				spawn(hm, holder, p + o, rng.randf() * TAU, 1.05)
+			return
+		"farm":
+			spawn("wheat_field", holder, p + Vector3(0.1, 0, 0.1), 0.0, 0.95)
+			spawn("windmill", holder, p + Vector3(-0.45, 0, -0.3), 0.4, 0.95)
+			return
+		"mine":
+			spawn("mine", holder, p, 0.2, 1.1)
+			return
+	match c["terrain"]:
+		"forest":
+			for i in rng.randi_range(8, 12):
+				var off := Vector3(rng.randf_range(-0.62, 0.62), 0, rng.randf_range(-0.62, 0.62))
+				spawn("tree_pine" if rng.randf() < 0.75 else "tree_round", holder, p + off, rng.randf() * TAU, rng.randf_range(0.85, 1.3))
+		"hills":
+			for i in 3:
+				spawn("rock", holder, p + Vector3(rng.randf_range(-0.5, 0.5), 0, rng.randf_range(-0.5, 0.5)), rng.randf() * TAU, rng.randf_range(1.2, 2.0))
+			spawn("tree_pine", holder, p + Vector3(0.3, 0, 0.3), 0.0, 1.0)
+		_:
+			for i in rng.randi_range(1, 4):
+				var off := Vector3(rng.randf_range(-0.6, 0.6), 0, rng.randf_range(-0.6, 0.6))
+				spawn("tree_pine" if rng.randf() < 0.6 else "tree_round", holder, p + off, rng.randf() * TAU, rng.randf_range(0.7, 1.0))
+	if c["owner"] != Types.NOBODY and rng.randf() < 0.3:
+		spawn("banner_" + side, holder, p + Vector3(rng.randf_range(-0.4, 0.4), 0, rng.randf_range(-0.4, 0.4)))
 
 
 func _build_horizon() -> void:
@@ -679,6 +711,49 @@ func burst(hex: int, color: Color, big := false) -> void:
 	mi.position = p
 	add_child(mi)
 	_fx.append({"node": mi, "t": 0.0, "dur": 0.9 if big else 0.6, "big": big})
+
+
+## Fireworks («салют», canon §10.3) over a point: `volleys` bursts 0.45 s apart.
+func fireworks(pos: Vector3, volleys: int) -> void:
+	var palette := [Color(1.0, 0.85, 0.3), Color(0.45, 0.75, 1.0), Color(1.0, 0.45, 0.4), Color(0.6, 1.0, 0.6), Color(1.0, 1.0, 1.0)]
+	for i in volleys:
+		var fx := CPUParticles3D.new()
+		fx.one_shot = true
+		fx.amount = 70
+		fx.lifetime = 1.3
+		fx.explosiveness = 0.95
+		fx.direction = Vector3.UP
+		fx.spread = 180.0
+		fx.initial_velocity_min = 2.2
+		fx.initial_velocity_max = 3.0
+		fx.gravity = Vector3(0, -2.2, 0)
+		fx.damping_min = 1.5
+		fx.damping_max = 2.5
+		var col: Color = palette[(i * 2 + 1) % palette.size()]
+		var g := Gradient.new()
+		g.set_color(0, Color(1, 1, 1))
+		g.add_point(0.25, col)
+		g.set_color(g.get_point_count() - 1, Color(col.r, col.g, col.b, 0.0))
+		fx.color_ramp = g
+		var mesh := SphereMesh.new()
+		mesh.radius = 0.04
+		mesh.height = 0.08
+		mesh.radial_segments = 4
+		mesh.rings = 2
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.vertex_color_use_as_albedo = true
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mesh.material = m
+		fx.mesh = mesh
+		fx.position = pos + Vector3(rng.randf_range(-1.2, 1.2), rng.randf_range(2.6, 3.6), rng.randf_range(-1.0, 0.6))
+		fx.emitting = false
+		add_child(fx)
+		var tw := fx.create_tween()  # bound to fx: dies with it, never touches a freed node
+		tw.tween_interval(0.45 * i + 0.01)
+		tw.tween_callback(fx.set.bind("emitting", true))
+		tw.tween_interval(2.0)
+		tw.tween_callback(fx.queue_free)
 
 
 func floater(hex: int, text: String, color := Color.WHITE) -> void:

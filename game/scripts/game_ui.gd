@@ -390,7 +390,9 @@ func show_peace(enemy: String, budget: float, control: int, demands: Array, chos
 	_button(box, Rect2(26, 908, 829, 70), "Назад к войне", Color(0.45, 0.35, 0.2), func(): action_pressed.emit("back_to_war"))
 
 
-func show_ceremony_counters(lines: Array, on_done: Callable) -> void:
+## Ceremony counters and rewards (canon §10.3 steps 4–5). Buttons appear early but accept taps only
+## after `active_after` seconds (no ad may start before the ceremony ends, §14.10).
+func show_ceremony_counters(lines: Array, on_done: Callable, on_double := Callable(), active_after := 3.0) -> void:
 	close_modal()
 	_modal = Control.new()
 	_modal.size = Vector2(VW, VH)
@@ -407,15 +409,31 @@ func show_ceremony_counters(lines: Array, on_done: Callable) -> void:
 		if i > 0:
 			l.add_theme_font_size_override("font_size", 30)
 		l.modulate.a = 0.0
+		l.scale = Vector2(1.0, 1.0)
 		_modal.add_child(l)
 		var tw := create_tween()
 		tw.tween_interval(i * 0.25)
 		tw.tween_property(l, "modulate:a", 1.0, 0.35)
-	var b := _button(_modal, Rect2(120, VH - 150, 700, 96), "Продолжить", Color(0.13, 0.4, 0.9), on_done)
-	b.modulate.a = 0.0
-	var tw2 := create_tween()
-	tw2.tween_interval(1.2)
-	tw2.tween_property(b, "modulate:a", 1.0, 0.3)
+	var shade := _panel(_modal, Rect2(0, VH - 290 if on_double.is_valid() else VH - 175, VW, 290), _style(Color(0.03, 0.05, 0.1, 0.9), 0, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
+	shade.modulate.a = 0.0
+	var tw0 := create_tween()
+	tw0.tween_interval(1.0)
+	tw0.tween_property(shade, "modulate:a", 1.0, 0.3)
+	var buttons: Array = []
+	var gate := {"open": false}
+	var done := func(): if gate["open"]: on_done.call()
+	if on_double.is_valid():
+		var dbl := func(): if gate["open"]: on_double.call()
+		buttons.append(_button(_modal, Rect2(60, VH - 262, 821, 92), "🎬 ×2 трофеи (реклама)", Color(0.85, 0.55, 0.1), dbl))
+	buttons.append(_button(_modal, Rect2(60, VH - 150, 821, 96), "Продолжить", Color(0.13, 0.4, 0.9), done))
+	for b in buttons:
+		b.modulate.a = 0.0
+		var tw2 := create_tween()
+		tw2.tween_interval(1.2)
+		tw2.tween_property(b, "modulate:a", 0.5, 0.3)
+		tw2.tween_interval(maxf(0.0, active_after - 1.5))
+		tw2.tween_property(b, "modulate:a", 1.0, 0.2)
+	get_tree().create_timer(active_after).timeout.connect(func(): gate["open"] = true)
 
 
 func toast(text: String) -> void:

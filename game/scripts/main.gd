@@ -361,7 +361,8 @@ func _colonize(id: int) -> void:
 	c["controller"] = Types.PLAYER
 	map_view.burst(id, MapView.C_PLAYER, true)
 	map_view.floater(id, "+1 гекс", Color(0.75, 0.85, 1.0))
-	map_view.refresh_props()
+	map_view.refresh_hex(id)
+	map_view.pop_hex(id)
 	ui.toast("Колонизирован «%s» · Глава I: %d / %d" % [_cell_name(id), _player_hexes(), CHAPTER_GOAL])
 	_select(id)
 
@@ -742,14 +743,23 @@ func _sign_peace() -> void:
 	map_view.prev_owner = prev
 	map_view.flip_at = flip
 	map_view.ceremony_t = 0.0
-	_ceremony = {"t": 0.0, "dur": maxf(5.5, 1.6 + 0.25 * max_ring + 1.9), "lines": lines, "popped": {}, "counters": false,
-		"zoom0": rig.zoom_target, "center": _centroid(annexed)}
+	var max_d := 0.0
+	var center := _centroid(annexed)
+	for id in annexed:
+		max_d = maxf(max_d, map_view.cell_world(id).distance_to(center))
+	# whole war zone + 2 hexes in frame (canon §10.3 step 2)
+	var zoom_out := clampf(((max_d + 3.4) / 0.29 - 7.5) / 16.5, rig.zoom_target, 1.0)
+	var last_flip := 1.6
+	for id in flip:
+		last_flip = maxf(last_flip, flip[id])
+	_ceremony = {"t": 0.0, "lines": lines, "popped": {}, "counters": false, "zoom0": rig.zoom_target, "zoom1": zoom_out,
+		"center": center, "counters_at": maxf(4.0, last_flip + 0.5), "goal_taken": annexed.has(war["goal"]),
+		"gold_packs": int(res.get("gold_packs", 0))}
 	war = {}
 	flag_hex = -1
-	map_view.sync_armies(armies, null)
 	_set_mode(Mode.CEREMONY)
 	if annexed.size() > 0:
-		rig.focus(_ceremony["center"])
+		rig.focus(center)
 
 
 func _centroid(ids: Array) -> Vector3:
@@ -765,15 +775,27 @@ func _step_ceremony(delta: float) -> void:
 	_ceremony["t"] += delta
 	var t: float = _ceremony["t"]
 	map_view.ceremony_t = t
-	rig.zoom_target = clampf(float(_ceremony["zoom0"]) + 0.12 * clampf((t - 0.8) / 0.8, 0.0, 1.0), 0.0, 1.0)
+	var k := clampf((t - 0.8) / 0.8, 0.0, 1.0)
+	rig.zoom_target = lerpf(float(_ceremony["zoom0"]), float(_ceremony["zoom1"]), k * k * (3.0 - 2.0 * k))
 	for id in map_view.flip_at:
 		if t >= map_view.flip_at[id] and not _ceremony["popped"].has(id):
 			_ceremony["popped"][id] = true
+			map_view.refresh_hex(id)  # buildings and flags switch to the player's style
+			map_view.pop_hex(id)
 			map_view.burst(id, MapView.C_PLAYER, true)
-	if t >= float(_ceremony["dur"]) - 3.0 and not _ceremony["counters"]:
+	if t >= float(_ceremony["counters_at"]) and not _ceremony["counters"]:
 		_ceremony["counters"] = true
-		map_view.refresh_props()
-		ui.show_ceremony_counters(_ceremony["lines"], _end_ceremony)
+		var cap: int = sim.states[Types.PLAYER]["capital_id"]
+		map_view.fireworks(map_view.cell_world(cap), 5 if _ceremony["goal_taken"] else 2)
+		var active_after := maxf(0.5, 7.0 - t)
+		ui.show_ceremony_counters(_ceremony["lines"], _end_ceremony, _double_trophies if int(_ceremony["gold_packs"]) > 0 else Callable(), active_after)
+
+
+## Rewarded ad «×2 трофеи» — SDK stub until monetization lands (canon §14.10).
+func _double_trophies() -> void:
+	ui.toast("Тестовая сборка: реклама не подключена — трофеи удвоены")
+	_ceremony["gold_packs"] = 0
+	_end_ceremony()
 
 
 func _end_ceremony() -> void:
