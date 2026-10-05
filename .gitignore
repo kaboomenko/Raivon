@@ -11,3 +11,4 @@ game/.godot/
 *.import
 builds/*.idsig
 builds/ios/
+builds/*.apk

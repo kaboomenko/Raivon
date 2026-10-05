@@ -1,0 +1,69 @@
+# Builds the test versions and uploads them as downloadable artifacts (Actions → run → Artifacts):
+#  - Raivon-android-apk: debug APK for the Samsung (install directly);
+#  - Raivon-ios-xcode: Xcode project for iPhone — open on the MacBook, pick a Team, press Run.
+# See docs/testing_on_devices.md. An .ipa needs macOS + signing and is done in Xcode.
+name: Mobile builds
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [claude/funny-maxwell-5e3vez, main]
+    # only on version bumps (export_presets.cfg changes) — artifacts are large
+    paths: ["game/export_presets.cfg", ".github/workflows/mobile-builds.yml"]
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      GODOT_VERSION: 4.5.1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download Godot and export templates
+        run: |
+          set -e
+          base=https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable
+          curl -sSL -o godot.zip "$base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip
+          curl -sSL -o templates.tpz "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          dest="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          mkdir -p "$dest"
+          unzip -q -j templates.tpz "templates/ios.zip" "templates/android_debug.apk" "templates/android_release.apk" "templates/version.txt" -d "$dest"
+      - name: Import and export the Xcode project
+        run: |
+          set -e
+          G=./Godot_v${GODOT_VERSION}-stable_linux.x86_64
+          $G --headless --path game --import || true
+          mkdir -p builds/ios
+          $G --headless --path game --export-debug "iOS" ../builds/ios/Raivon.xcodeproj
+          test -f builds/ios/Raivon.pck
+      - name: Zip
+        run: cd builds && zip -qry ../Raivon-ios-xcode.zip ios
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Raivon-ios-xcode
+          path: Raivon-ios-xcode.zip
+          retention-days: 7
+      - name: Android debug APK
+        run: |
+          set -e
+          keytool -genkeypair -v -keystore "$HOME/debug.keystore" -storepass android -alias androiddebugkey \
+            -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          mkdir -p "$HOME/.config/godot"
+          cat > "$HOME/.config/godot/editor_settings-4.5.tres" <<EOT
+          [gd_resource type="EditorSettings" format=3]
+          [resource]
+          export/android/android_sdk_path = "$ANDROID_HOME"
+          export/android/java_sdk_path = "$JAVA_HOME_17_X64"
+          export/android/debug_keystore = "$HOME/debug.keystore"
+          export/android/debug_keystore_user = "androiddebugkey"
+          export/android/debug_keystore_pass = "android"
+          EOT
+          sed -i 's/^          //' "$HOME/.config/godot/editor_settings-4.5.tres"
+          ./Godot_v${GODOT_VERSION}-stable_linux.x86_64 --headless --path game --export-debug "Android" ../builds/raivon-debug.apk
+          test -f builds/raivon-debug.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Raivon-android-apk
+          path: builds/raivon-debug.apk
+          retention-days: 30
