@@ -420,6 +420,25 @@ func _run() -> void:
 		g._on_market_lot(0)
 		_check(int(g.econ.res[lot["get"]]) == int(lot["get_amt"]) and g.market.lots[0]["bought"], "trader lot bought (had %d)" % had)
 		g.ui.close_modal()
+	# March (canon §8.1): select an army, press March, tap a hex; it walks 20–40 s per hex
+	g.ui.close_modal()
+	g.war = {}
+	g.mode = g.Mode.MAP
+	var ma: Dictionary = g._player_armies()[0]
+	var dest := -1
+	for c in g.sim.cells:
+		if int(c["owner"]) == Types.PLAYER and g._army_at(c["id"]).is_empty() and not g.March.route(g.sim, Types.PLAYER, int(ma["hex"]), c["id"]).is_empty():
+			if dest < 0 or g.March.route(g.sim, Types.PLAYER, int(ma["hex"]), c["id"])["seconds"] > g.March.route(g.sim, Types.PLAYER, int(ma["hex"]), dest)["seconds"]:
+				dest = c["id"]
+	g._select(int(ma["hex"]))
+	g._on_action("march")
+	_check(g._march_pick == int(ma["id"]), "March: waiting for a destination")
+	g._on_hex_tapped(Vector2i(int(g.sim.cells[dest]["q"]), int(g.sim.cells[dest]["r"])))
+	_check(g.March.is_marching(ma), "March ordered to hex %d" % dest)
+	var secs: int = g.March.seconds_left(g.sim, ma, g.now_s())
+	g.time_offset += secs
+	g._step_marches()
+	_check(int(ma["hex"]) == dest and not g.March.is_marching(ma), "army arrived after %d s" % secs)
 	g.queue_free()
 	await process_frame
 

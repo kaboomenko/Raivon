@@ -24,6 +24,7 @@ const Deposits := preload("res://scripts/sim/deposits.gd")
 const Cases := preload("res://scripts/sim/cases.gd")
 const Research := preload("res://scripts/sim/research.gd")
 const Market := preload("res://scripts/sim/market.gd")
+const March := preload("res://scripts/sim/march.gd")
 const Net := preload("res://scripts/net.gd")
 const ShopUI := preload("res://scripts/shop_ui.gd")
 const L := preload("res://scripts/l10n.gd")
@@ -60,6 +61,8 @@ var cases  # Cases (scripts/sim/cases.gd)
 var research  # Research (scripts/sim/research.gd)
 var market  # Market trader state (scripts/sim/market.gd)
 var market_sel := {"give": "food", "get": "metal", "pct": 25}
+var _march_pick := -1  # army id waiting for a destination tap (canon §8.1 march)
+var _march_dest := {}  # army id -> destination hex (timer label)
 var _full_hinted := {}  # resource -> true once the «warehouse full → Market» hint was shown
 var net: Node  # cloud saves (scripts/net.gd)
 var _remote_pending := {}
@@ -374,7 +377,8 @@ func _refresh_ui() -> void:
 			_primary_for_selection()
 		Mode.WAR:
 			ui.set_action("peace", tr("ui.peace_btn"), tr("ui.score") % ws.get("score", 0.0), Color(0.12, 0.36, 0.2))
-			ui.set_primary("offensive", tr("ui.offensive"), Color(0.8, 0.22, 0.16))
+			if not _march_primary():
+				ui.set_primary("offensive", tr("ui.offensive"), Color(0.8, 0.22, 0.16))
 		Mode.BATTLE:
 			ui.set_primary("retreat", tr("ui.retreat"), Color(0.32, 0.36, 0.46))
 		_:
@@ -413,10 +417,105 @@ func _primary_for_selection() -> void:
 			ui.set_primary("core", tr("ui.core_protected"), Color(0.3, 0.35, 0.45), false)
 		else:
 			ui.set_primary("declare", tr("ui.declare_war"), Color(0.8, 0.22, 0.16))
+	elif _march_primary():
+		pass
 	elif c["owner"] == Types.PLAYER:
 		ui.set_primary("upgrade", tr("ui.upgrade"), Color(0.13, 0.4, 0.9))
 	else:
 		ui.set_primary("", "")
+
+
+## March button for an own army on the selected hex (MAP and WAR). True when it took the primary slot.
+func _march_primary() -> bool:
+	var a := _army_at(selected)
+	if a.is_empty():
+		return false
+	if _march_pick == int(a["id"]):
+		ui.set_primary("march_cancel", tr("march.pick"), Color(0.3, 0.35, 0.45))
+	elif March.is_marching(a):
+		ui.set_primary("march_stop", tr("ui.marching") % GameUI.fmt_time(March.seconds_left(sim, a, now_s())), Color(0.3, 0.35, 0.45))
+	else:
+		ui.set_primary("march", tr("ui.march"), Color(0.16, 0.42, 0.95))
+	return true
+
+
+## The player's army standing on (or last reached) `hex`, else {}.
+func _army_at(hex: int) -> Dictionary:
+	if hex < 0:
+		return {}
+	for a in _player_armies():
+		if int(a["hex"]) == hex and int(a["str"]) > 0:
+			return a
+	return {}
+
+
+func _army_by_id(id: int) -> Dictionary:
+	for a in armies:
+		if int(a["id"]) == id:
+			return a
+	return {}
+
+
+func _march_to(hex: int) -> void:
+	var a := _army_by_id(_march_pick)
+	_march_pick = -1
+	if a.is_empty() or hex == int(a["hex"]):
+		_refresh_ui()
+		return
+	for b in _player_armies():
+		if b != a and (int(b["hex"]) == hex or _march_dest.get(int(b["id"]), -1) == hex):
+			ui.toast(tr("march.busy"))
+			_refresh_ui()
+			return
+	var r: Dictionary = March.order(sim, a, hex, now_s())
+	if r.is_empty():
+		ui.toast(tr("march.no_route"))
+		sfx.play("warn")
+		_refresh_ui()
+		return
+	_march_dest[int(a["id"])] = hex
+	sfx.play("attack")
+	ui.toast(tr("march.started") % GameUI.fmt_time(int(r["seconds"])))
+	_select(hex)
+	_autosave()
+
+
+## Moves marching armies on and keeps their destination timers up to date.
+func _step_marches() -> void:
+	var now := now_s()
+	var now_f := float(now) + fmod(Time.get_unix_time_from_system(), 1.0)
+	var paths := {}
+	for a in _player_armies():
+		var id: int = a["id"]
+		if March.is_marching(a) and March.step(sim, a, now):
+			if _march_dest.has(id):
+				map_view.hex_label(int(_march_dest[id]), "")
+				_march_dest.erase(id)
+			if mode in [Mode.MAP, Mode.WAR]:
+				ui.toast(tr("march.arrived"))
+				_refresh_ui()
+		a["march_vis"] = March.progress(a, now_f)
+		if March.is_marching(a):
+			paths[id] = [int(a["hex"])] + (a["march"]["path"] as Array)
+			var dest: int = (a["march"]["path"] as Array).back()
+			_march_dest[id] = dest
+			map_view.hex_label(dest, "⇢ " + GameUI.fmt_time(March.seconds_left(sim, a, now)), Color(0.6, 0.85, 1.0))
+		elif _march_dest.has(id):
+			map_view.hex_label(int(_march_dest[id]), "")
+			_march_dest.erase(id)
+	map_view.set_march_paths(paths)
+
+
+## Offensives fight from where the armies stand (04 §7.2): marches end on the last hex reached.
+func _stop_marches() -> void:
+	_march_pick = -1
+	for a in _player_armies():
+		March.stop(a)
+		a["march_vis"] = {}
+	for id in _march_dest:
+		map_view.hex_label(int(_march_dest[id]), "")
+	_march_dest.clear()
+	map_view.set_march_paths({})
 
 
 func _on_action(kind: String) -> void:
@@ -433,6 +532,21 @@ func _on_action(kind: String) -> void:
 			_speedup_colonize(selected)
 		"convoy":
 			_send_convoy(selected)
+		"march":
+			var ma := _army_at(selected)
+			if not ma.is_empty():
+				_march_pick = int(ma["id"])
+				ui.toast(tr("march.pick"))
+				_refresh_ui()
+		"march_cancel":
+			_march_pick = -1
+			_refresh_ui()
+		"march_stop":
+			var ms := _army_at(selected)
+			if not ms.is_empty():
+				March.stop(ms)
+				_step_marches()
+				_refresh_ui()
 		"offensive":
 			_start_offensive()
 		"retreat":
@@ -501,6 +615,9 @@ func _on_hex_tapped(c: Vector2i) -> void:
 		_battle_tap(id)
 		return
 	if mode not in [Mode.MAP, Mode.WAR]:
+		return
+	if _march_pick >= 0 and id >= 0:
+		_march_to(id)
 		return
 	if id >= 0 and map_view.has_bubble(id):
 		_collect_all()
@@ -716,16 +833,24 @@ func _deploy_to_front(enemy: int) -> void:
 		if _touches_owner(int(a["hex"]), enemy):
 			taken[int(a["hex"])] = true
 	var moved := 0
+	var longest := 0
 	for a in _player_armies():
 		if _touches_owner(int(a["hex"]), enemy):
 			continue
 		for c in front:
 			if not taken.has(c["id"]):
 				taken[c["id"]] = true
-				a["hex"] = c["id"]
+				# canon §8.1: armies march to the new front (20 s/hex); the tutorial skips the walk
+				if ftue != 0 or March.order(sim, a, int(c["id"]), now_s()).is_empty():
+					March.stop(a)
+					a["hex"] = c["id"]
+				else:
+					longest = maxi(longest, March.seconds_left(sim, a, now_s()))
 				moved += 1
 				break
-	if moved > 0:
+	if longest > 0:
+		ui.toast(tr("toast.armies_marching") % GameUI.fmt_time(longest))
+	elif moved > 0:
 		ui.toast(tr("toast.armies_deployed"))
 
 
@@ -775,6 +900,7 @@ func _normalize_armies() -> void:
 
 func _start_offensive() -> void:
 	var enemy: int = war["enemy"]
+	_stop_marches()
 	for a in armies:
 		# The AI refills between offensives (canon 11 §15.1); the player's armies heal over time for food.
 		if a["side"] != Types.PLAYER:
@@ -2556,6 +2682,7 @@ func _process(delta: float) -> void:
 			_end_offensive()
 	elif mode == Mode.CEREMONY:
 		_step_ceremony(delta)
+	_step_marches()
 	map_view.sync_armies(armies, battle)
 	_sync_deposits()
 	_ftue_tick(delta)
@@ -2639,6 +2766,22 @@ func _demo(spec: String) -> void:
 		return
 	if what == "settings":
 		_on_hud_button("gear")
+		return
+	if what == "march":
+		var ma: Dictionary = _player_armies()[0]
+		var far := -1
+		var far_s := 0
+		for c in sim.cells:
+			var r: Dictionary = March.route(sim, Types.PLAYER, int(ma["hex"]), c["id"])
+			if not r.is_empty() and int(r["seconds"]) > far_s and int(r["seconds"]) <= 160:
+				far = c["id"]
+				far_s = r["seconds"]
+		_select(int(ma["hex"]))
+		_on_action("march")
+		_march_to(far)
+		time_offset += 30
+		_step_marches()
+		rig.focus(map_view.cell_world(far), 0.55)
 		return
 	if what == "market":
 		var r: Dictionary = econ._find_type("residence")

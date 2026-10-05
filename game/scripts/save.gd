@@ -39,7 +39,7 @@ static func to_dict(g: Node) -> Dictionary:
 	var armies: Array = []
 	for a in g.armies:
 		armies.append({"id": a["id"], "side": a["side"], "hex": a["hex"], "str": a["str"], "max_str": a["max_str"],
-			"infantry": a["infantry"], "slots": a.get("slots", 3)})
+			"infantry": a["infantry"], "slots": a.get("slots", 3), "march": a.get("march")})
 	var d := {
 		"version": VERSION,
 		"seed": g.sim.map_seed,
@@ -105,6 +105,12 @@ static func apply(g: Node, d: Dictionary) -> bool:
 		armies.append({"id": int(a["id"]), "side": int(a["side"]), "hex": int(a["hex"]), "str": int(a["str"]),
 			"max_str": int(a["max_str"]), "infantry": int(a["infantry"]), "hold": false, "move": null,
 			"start_str": int(a["str"]), "attrition": 0, "routed": false, "slots": int(a.get("slots", 3))})
+		var mv: Variant = a.get("march")
+		if typeof(mv) == TYPE_DICTIONARY and typeof(mv.get("path")) == TYPE_ARRAY and not (mv["path"] as Array).is_empty():
+			var mpath: Array = []
+			for h in mv["path"]:
+				mpath.append(int(h))
+			armies.back()["march"] = {"path": mpath, "t0": int(mv.get("t0", 0)), "leg": int(mv.get("leg", 20))}
 	var war := {}
 	var sw: Dictionary = d.get("war", {})
 	for k in sw:

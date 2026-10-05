@@ -603,7 +603,13 @@ func sync_armies(armies: Array, battle) -> void:
 		var hop := 0.0
 		var sway := 0.0
 		var face_to := Vector3.ZERO
-		if a["move"] != null:
+		var mv: Dictionary = a.get("march_vis", {}) if typeof(a.get("march_vis")) == TYPE_DICTIONARY else {}
+		if battle == null and not mv.is_empty():
+			var mto := cell_world(int(mv["to"]))
+			p = p.lerp(mto, float(mv["f"]))  # strategic march, 20–40 s per hex (canon §8.1)
+			hop = absf(sin(t * 8.0 + id)) * 0.06
+			face_to = mto - cell_world(a["hex"])
+		elif a["move"] != null:
 			var to := cell_world(a["move"]["to"])
 			p = p.lerp(to, 1.0 - float(a["move"]["left"]) / 15.0)
 			hop = absf(sin(t * 11.0 + id)) * 0.07  # marching
@@ -889,6 +895,56 @@ func has_bubble(hex: int) -> bool:
 
 
 ## Text floating over a hex (colonization timers); "" removes it.
+var _march_paths := {}  # army id -> {"key": String, "node": Node3D}
+
+
+## Dotted routes of marching armies (canon §8.1: a march is visible on the map). `paths`: army id -> Array of
+## hex ids from the army's hex to the destination. Dots are rebuilt only when a route changes.
+func set_march_paths(paths: Dictionary) -> void:
+	for id in _march_paths.keys():
+		if not paths.has(id):
+			(_march_paths[id]["node"] as Node3D).queue_free()
+			_march_paths.erase(id)
+	for id in paths:
+		var hexes: Array = paths[id]
+		var key := str(hexes)
+		if _march_paths.has(id) and String(_march_paths[id]["key"]) == key:
+			continue
+		if _march_paths.has(id):
+			(_march_paths[id]["node"] as Node3D).queue_free()
+		var root := Node3D.new()
+		add_child(root)
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.albedo_color = Color(0.75, 0.9, 1.0, 0.9)
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.no_depth_test = true
+		var dot := CylinderMesh.new()
+		dot.top_radius = 0.06
+		dot.bottom_radius = 0.06
+		dot.height = 0.02
+		dot.material = mat
+		for i in range(hexes.size() - 1):
+			var a := cell_world(int(hexes[i]))
+			var b := cell_world(int(hexes[i + 1]))
+			for k in range(1, 5):
+				var m := MeshInstance3D.new()
+				m.mesh = dot
+				m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				m.position = a.lerp(b, k / 5.0) + Vector3(0, 0.12, 0)
+				root.add_child(m)
+		var ring := MeshInstance3D.new()
+		var tm := TorusMesh.new()
+		tm.inner_radius = 0.28
+		tm.outer_radius = 0.36
+		tm.material = mat
+		ring.mesh = tm
+		ring.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		ring.position = cell_world(int(hexes.back())) + Vector3(0, 0.12, 0)
+		root.add_child(ring)
+		_march_paths[id] = {"key": key, "node": root}
+
+
 func hex_label(hex: int, text: String, color := Color(1, 0.9, 0.5)) -> void:
 	var l: Label3D = _hex_labels.get(hex)
 	if text == "":

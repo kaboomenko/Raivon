@@ -1211,7 +1211,15 @@ func _process_coach(delta: float) -> void:
 		_ghost_dot.modulate.a = 1.0 if u <= 1.05 else 0.35
 
 
+var _toast_nodes: Array = []
+
+
+## Short message under the top bar; a new toast replaces the one still showing.
 func toast(text: String) -> void:
+	for n in _toast_nodes:
+		if is_instance_valid(n):
+			(n as Node).queue_free()
+	_toast_nodes.clear()
 	var l := _label(text, 24)
 	l.position = Vector2(40, 300)
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1220,7 +1228,8 @@ func toast(text: String) -> void:
 	var lines_h := font_bold.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, VW - 80, 24).y
 	var bg := _panel(root, Rect2(30, 290, VW - 60, maxf(70.0, lines_h + 24.0)), _style(Color(0.05, 0.08, 0.14, 0.92), 14), Control.MOUSE_FILTER_IGNORE)
 	root.add_child(l)
-	var tw := create_tween()
+	_toast_nodes = [bg, l]
+	var tw := bg.create_tween()  # dies with the node when a newer toast replaces it
 	tw.tween_interval(2.0)
 	tw.tween_property(l, "modulate:a", 0.0, 0.4)
 	tw.parallel().tween_property(bg, "modulate:a", 0.0, 0.4)

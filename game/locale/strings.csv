@@ -442,3 +442,11 @@ trader.needed,Нужное,Needed
 trader.common,Ходовой,Popular
 trader.generous,Щедрый,Generous
 army.upkeep,−%d еды/ч,−%d food/h
+ui.march,⇢ Марш армии,⇢ March
+ui.marching,Армия в пути · %s,Army marching · %s
+march.pick,Выберите гекс — куда идти армии,Pick a hex for the army to march to
+march.started,Армия выступила · в пути %s,The army sets out · %s on the road
+march.no_route,Туда армии не пройти,The army can't get there
+march.busy,Там уже стоит армия,Another army is already there
+march.arrived,Армия прибыла на место,The army has arrived
+toast.armies_marching,Армии выступили к фронту · %s в пути,Armies march to the front · %s on the road
