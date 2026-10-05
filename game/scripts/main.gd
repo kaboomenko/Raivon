@@ -254,6 +254,7 @@ func _focus_front(z: float) -> void:
 
 func _set_mode(m: Mode) -> void:
 	mode = m
+	sfx.play_music("battle" if m == Mode.BATTLE else "map")
 	_refresh_ui()
 	if m in [Mode.MAP, Mode.WAR, Mode.RESULT]:
 		_autosave()

@@ -6,7 +6,13 @@ extends Node
 const RATE := 22050
 const MAJOR := [0, 2, 4, 5, 7, 9, 11]
 
-var enabled := true
+var enabled := true:
+	set(v):
+		enabled = v
+		_music_volume()
+var _music: Array[AudioStreamPlayer] = []
+var _music_on := 0
+var _music_name := ""
 var _cache := {}
 var _players: Array[AudioStreamPlayer] = []
 var _next := 0
@@ -19,6 +25,11 @@ func _ready() -> void:
 		var p := AudioStreamPlayer.new()
 		add_child(p)
 		_players.append(p)
+	for i in 2:
+		var m := AudioStreamPlayer.new()
+		m.volume_db = -80.0
+		add_child(m)
+		_music.append(m)
 
 
 func play(name: String, step := 0, volume_db := 0.0) -> void:
@@ -35,6 +46,37 @@ func play(name: String, step := 0, volume_db := 0.0) -> void:
 	p.pitch_scale = pow(2.0, semis / 12.0)
 	p.volume_db = volume_db
 	p.play()
+
+
+## Background music with a 1.2 s crossfade: "map" or "battle" (tools/audio/make_music.py).
+func play_music(name: String) -> void:
+	if name == _music_name:
+		return
+	_music_name = name
+	var path := "res://assets/audio/music_%s.ogg" % name
+	if not ResourceLoader.exists(path):
+		return
+	var stream: AudioStreamOggVorbis = load(path)
+	stream.loop = true
+	var old := _music[_music_on]
+	_music_on = 1 - _music_on
+	var cur := _music[_music_on]
+	cur.stream = stream
+	cur.volume_db = -40.0
+	cur.play()
+	var tw := create_tween()
+	tw.tween_property(cur, "volume_db", _music_db(), 1.2)
+	tw.parallel().tween_property(old, "volume_db", -60.0, 1.2)
+	tw.tween_callback(old.stop)
+
+
+func _music_db() -> float:
+	return -11.0 if enabled else -80.0
+
+
+func _music_volume() -> void:
+	if _music.size() == 2:
+		_music[_music_on].volume_db = _music_db()
 
 
 func haptic(ms: int) -> void:
