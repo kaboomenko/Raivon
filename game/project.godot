@@ -29,3 +29,7 @@ textures/vram_compression/import_etc2_astc=true
 
 locale/translations=PackedStringArray("res://locale/strings.ru.translation", "res://locale/strings.en.translation")
 locale/fallback="en"
+
+[raivon]
+
+server_url=""

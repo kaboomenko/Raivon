@@ -23,6 +23,7 @@ const Economy := preload("res://scripts/sim/economy.gd")
 const Deposits := preload("res://scripts/sim/deposits.gd")
 const Cases := preload("res://scripts/sim/cases.gd")
 const Research := preload("res://scripts/sim/research.gd")
+const Net := preload("res://scripts/net.gd")
 const ShopUI := preload("res://scripts/shop_ui.gd")
 const L := preload("res://scripts/l10n.gd")
 
@@ -56,6 +57,8 @@ var deposits  # Deposits (scripts/sim/deposits.gd)
 var first_convoy_done := false
 var cases  # Cases (scripts/sim/cases.gd)
 var research  # Research (scripts/sim/research.gd)
+var net: Node  # cloud saves (scripts/net.gd)
+var _remote_pending := {}
 var shop: Control
 var speed_minutes := 0  # speed-up items from cases, used on building timers
 var purchases := {}  # test-build purchases (sku -> count), first Raivite pack ×2
@@ -116,6 +119,11 @@ func _ready() -> void:
 	if save_enabled:
 		var d := Save.read()
 		loaded = not d.is_empty() and Save.apply(self, d)
+	net = Net.new()
+	add_child(net)
+	if save_enabled:
+		net.remote_newer.connect(_on_remote_save)
+		net.start()
 	map_view = MapView.new()
 	add_child(map_view)
 	map_view.set_world(sim)
@@ -301,7 +309,26 @@ func _set_mode(m: Mode) -> void:
 
 func _autosave() -> void:
 	if save_enabled:
-		Save.save(self)
+		var d := Save.save(self)
+		if net:
+			net.push(d)
+
+
+## A newer save arrived from the cloud (another device or a reinstall): apply it on the map, never mid-battle.
+func _on_remote_save(data: Dictionary) -> void:
+	var local := Save.read()
+	if not local.is_empty() and int(local.get("saved_at", 0)) > int(data.get("saved_at", 0)):
+		return  # our copy is newer; the next autosave uploads it
+	_remote_pending = data
+
+
+func _apply_remote_if_any() -> void:
+	if _remote_pending.is_empty() or mode not in [Mode.MAP, Mode.WAR]:
+		return
+	Save.write_raw(_remote_pending)
+	_remote_pending = {}
+	ui.toast(tr("toast.cloud_loaded"))
+	get_tree().create_timer(0.8).timeout.connect(get_tree().reload_current_scene)
 
 
 func _notification(what: int) -> void:
@@ -1309,8 +1336,9 @@ func _finish_war(enemy: int, msg: String) -> void:
 
 # ====================================================================== economy (canon §4, §7)
 
+## Server-aligned time when online (device clock changes don't skip timers), plus the debug offset.
 func now_s() -> int:
-	return int(Time.get_unix_time_from_system()) + time_offset
+	return int(Time.get_unix_time_from_system()) + time_offset + (int(net.server_offset) if net != null else 0)
 
 
 func _econ_tick() -> void:
@@ -1343,6 +1371,7 @@ func _econ_tick() -> void:
 	hud.set_resources(econ.res, econ.income_per_hour(sim), econ.storage_cap(), econ.builders - econ.busy_builders(now), econ.builders)
 	hud.set_level(econ.dev_level())
 	hud.set_mail(_unread())
+	_apply_remote_if_any()
 	hud.shop_dot.visible = cases.claim_free_crates(now) > 0
 	_ai_tick(now)
 	_update_bubbles()

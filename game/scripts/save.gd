@@ -11,7 +11,25 @@ const VERSION := 1
 const SETTINGS_PATH := "user://settings.json"
 
 
-static func save(g: Node) -> void:
+## Writes the save file and returns the same dictionary (net.gd uploads it to the cloud).
+static func save(g: Node) -> Dictionary:
+	var d := to_dict(g)
+	var f := FileAccess.open(PATH, FileAccess.WRITE)
+	if f == null:
+		push_warning("save failed: %s" % FileAccess.get_open_error())
+		return d
+	f.store_string(JSON.stringify(d))
+	return d
+
+
+## Writes a save received from the cloud (applied on the next load).
+static func write_raw(d: Dictionary) -> void:
+	var f := FileAccess.open(PATH, FileAccess.WRITE)
+	if f:
+		f.store_string(JSON.stringify(d))
+
+
+static func to_dict(g: Node) -> Dictionary:
 	var cells: Array = []
 	for c in g.sim.cells:
 		cells.append([c["owner"], c["controller"], c["fort"]])
@@ -25,7 +43,7 @@ static func save(g: Node) -> void:
 	var d := {
 		"version": VERSION,
 		"seed": g.sim.map_seed,
-		"saved_at": int(Time.get_unix_time_from_system()),
+		"saved_at": int(g.now_s()) if g.has_method("now_s") else int(Time.get_unix_time_from_system()),
 		"cells": cells,
 		"states": states,
 		"armies": armies,
@@ -53,11 +71,7 @@ static func save(g: Node) -> void:
 	}
 	if g.get("econ") != null:
 		d["econ"] = g.econ.to_dict()
-	var f := FileAccess.open(PATH, FileAccess.WRITE)
-	if f == null:
-		push_warning("save failed: %s" % FileAccess.get_open_error())
-		return
-	f.store_string(JSON.stringify(d))
+	return d
 
 
 ## Returns {} when there is no usable save.

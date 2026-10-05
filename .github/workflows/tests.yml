@@ -50,3 +50,12 @@ jobs:
             echo "== $t"
             $G --headless --path game --script res://tests/$t.gd
           done
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Cloud save against a live server
+        run: |
+          set -e
+          npm ci || npm install
+          (cd apps/server && PORT=8091 npx tsx src/index.ts > /tmp/server.log 2>&1 &)
+          sleep 4
+          ./Godot_v${GODOT_VERSION}-stable_linux.x86_64 --headless --path game --script res://tests/test_net.gd -- --server=http://127.0.0.1:8091
