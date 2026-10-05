@@ -29,6 +29,7 @@ static func save(g: Node) -> void:
 		"armies": armies,
 		"war": g.war,
 		"truce": g.truce,
+		"ftue": g.ftue,
 	}
 	if g.get("econ") != null:
 		d["econ"] = g.econ.to_dict()
@@ -81,6 +82,7 @@ static func apply(g: Node, d: Dictionary) -> bool:
 	g.armies = armies
 	g.war = war
 	g.truce = truce
+	g.ftue = int(d.get("ftue", 0))
 	if d.has("econ") and g.get("econ") != null:
 		g.econ = g.econ.get_script().from_dict(d["econ"])
 	return true

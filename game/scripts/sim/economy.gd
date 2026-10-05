@@ -250,6 +250,17 @@ func hex_income(world: World, hex: int) -> Dictionary:
 	return out
 
 
+## Exact uncollected amount of a resource over all hexes (sums the fractional remainders too), whole
+## units — what «Собрать всё» would bring with unlimited storage (up to the per-hex rounding).
+func stock_total(r: String) -> int:
+	var total := 0
+	for h in stock:
+		total += int(stock[h].get(r, 0)) * SUB
+	for h in _stock_rem:
+		total += int(_stock_rem[h].get(r, 0))
+	return total / SUB
+
+
 func building(id: int) -> Dictionary:
 	for b in buildings:
 		if b["id"] == id:
@@ -840,18 +851,42 @@ func _accrue(world: World, a: int, b: int) -> void:
 		return
 	var dt := end - a
 	_sync(world)
-	var penalty := treasury_empty()   # «Казна пуста»: production −25% (canon §3.4)
+	var quarters := 3 if treasury_empty() else 4   # «Казна пуста»: production −25% (canon §3.4)
 	var rates := _hex_rates(world)
-	for h in _sorted_keys(rates):
+	var keys := _sorted_keys(rates)
+	# The pool grows by the NET flow (canon §4, 05 §5.1); coins over hexes are a visual split of the
+	# pool proportional to hex income (05 §5.1). So gold upkeep is spread over gold hexes pro rata:
+	# every gold hex but the biggest gets floor(rate × net / gross), the biggest takes the rest, so
+	# Σ = net exactly and accrual is linear in time (same result for any tick granularity).
+	var up := _upkeep_milli()
+	var gold_gross := 0
+	var top := -1
+	var top_rate := 0
+	for h in keys:
+		var g: int = int(rates[h].get("gold", 0)) * quarters / 4
+		gold_gross += g
+		if g > top_rate:
+			top = h
+			top_rate = g
+	var gold_net := maxi(0, gold_gross - up)
+	var gold_eff := {}
+	var given := 0
+	for h in keys:
+		var g: int = int(rates[h].get("gold", 0)) * quarters / 4
+		if g > 0 and h != top:
+			gold_eff[h] = g * gold_net / gold_gross
+			given += int(gold_eff[h])
+	if top >= 0:
+		gold_eff[top] = gold_net - given
+	for h in keys:
 		var hr: Dictionary = rates[h]
 		for r in hr:
 			var rate: int = hr[r]
-			var add := rate * dt
-			if penalty:
-				add = add * 3 / 4
-			_add_stock(h, String(r), add, rate * POOL_HOURS * HOUR)
-	# Upkeep: whole gold units, from the pool (stock, hex id order) first, then storage; no debt (E2).
-	var owed := _upkeep_rem + _upkeep_milli() * dt
+			var eff: int = gold_eff.get(h, 0) if r == "gold" else rate * quarters / 4
+			_add_stock(h, String(r), eff * dt, rate * POOL_HOURS * HOUR)
+	# Upkeep above gold income: whole units from the pool (stock, hex id order), then storage;
+	# no debt (canon §4 E2).
+	var owed := _upkeep_rem + maxi(0, up - gold_gross) * dt
 	var whole := owed / SUB
 	_upkeep_rem = owed % SUB
 	for h in _sorted_keys(stock):

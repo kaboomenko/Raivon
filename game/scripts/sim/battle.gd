@@ -16,7 +16,8 @@ extends RefCounted
 ## BattleEvent (Dictionary), "type" is one of:
 ##   clash {tick, clash, target, side} | capture {tick, hex, side, from} | repelled {tick, hex, side}
 ##   routed {tick, army} | retreat {tick, army, to} | card {tick, side, card, hex} | end {tick, reason}
-## Options (Dictionary): {attacker:int (player side), defender:int, ai_energy_mult:int (‰), cards:Array[String]}
+## Options (Dictionary): {attacker:int (player side), defender:int, ai_energy_mult:int (‰), cards:Array[String],
+##   ticks:int (optional offensive length, default OFFENSIVE_TICKS)}
 
 const Types := preload("res://scripts/sim/types.gd")
 const MapGen := preload("res://scripts/sim/map_gen.gd")
@@ -141,8 +142,17 @@ func energy_points(side: int) -> int:
 	return int(energy.get(side, 0)) / ENERGY_UNIT
 
 
+## Offensive length; opts.ticks shortens it (FTUE: 60 s, canon §14.3).
+func duration_ticks() -> int:
+	return int(opts.get("ticks", OFFENSIVE_TICKS))
+
+
+func is_rush() -> bool:
+	return tick > duration_ticks() - FINAL_RUSH_TICKS
+
+
 func seconds_left() -> int:
-	return maxi(0, ceili(float(OFFENSIVE_TICKS - tick) / TICKS_PER_SEC))
+	return maxi(0, ceili(float(duration_ticks() - tick) / TICKS_PER_SEC))
 
 
 ## The clash this army is attacking in, or null.
@@ -477,7 +487,7 @@ func step() -> void:
 		return
 	tick += 1
 
-	var rush := tick > OFFENSIVE_TICKS - FINAL_RUSH_TICKS
+	var rush := is_rush()
 	for side in [attacker(), defender()]:
 		var regen := 10 # 1 energy per 3 s = 300 / 30 ticks
 		if rush:
@@ -511,7 +521,7 @@ func step() -> void:
 			break
 	if not player_alive:
 		_finish("wiped")
-	elif tick >= OFFENSIVE_TICKS:
+	elif tick >= duration_ticks():
 		_finish("time")
 
 

@@ -38,6 +38,9 @@ var flag_hex := -1
 var mode := Mode.MAP
 var truce := {}  # state -> unix time when war may be declared again
 var save_enabled := true  # tests switch it off before adding the scene
+var ftue := 0  # first-war tutorial step (canon §14.3); 0 = finished / off
+var _ftue_shown := -1
+var _ftue_t := 0.0
 
 var map_view: Node3D
 var rig: Node3D
@@ -97,6 +100,8 @@ func _ready() -> void:
 	_set_mode(Mode.WAR if not war.is_empty() else Mode.MAP)
 	if loaded:
 		ui.toast("С возвращением! Прогресс загружен")
+	elif save_enabled:
+		ftue = 1
 	await get_tree().process_frame
 	_handle_args()
 
@@ -225,7 +230,7 @@ func _refresh_ui() -> void:
 	map_view.at_war_with = enemy
 	var ws := War.war_score(sim, war) if not war.is_empty() else {}
 	ui.set_control(ws.get("score", 0.0), ws.get("control", 50), _state_name(enemy), not war.is_empty() and mode in [Mode.WAR, Mode.BATTLE, Mode.RESULT])
-	ui.set_battle(mode == Mode.BATTLE and battle != null, battle.energy[Types.PLAYER] if battle else 0, Battle.ENERGY_UNIT, _cooldowns(), battle.seconds_left() if battle else 0, battle != null and battle.tick > Battle.OFFENSIVE_TICKS - Battle.FINAL_RUSH_TICKS)
+	ui.set_battle(mode == Mode.BATTLE and battle != null, battle.energy[Types.PLAYER] if battle else 0, Battle.ENERGY_UNIT, _cooldowns(), battle.seconds_left() if battle else 0, battle != null and battle.is_rush())
 	match mode:
 		Mode.MAP:
 			ui.set_action("", "")
@@ -447,6 +452,8 @@ func _declare(enemy: int, goal: int) -> void:
 	sfx.play("warn")
 	sfx.haptic(60)
 	ui.toast("Война объявлена: %s! Цель — «%s» (+10 к счёту)" % [_state_name(enemy), _cell_name(goal)])
+	if ftue == 1:
+		ftue = 2
 	_set_mode(Mode.WAR)
 
 
@@ -506,7 +513,13 @@ func _start_offensive() -> void:
 	if flag_hex < 0:
 		var g := War.recommend_goals(sim, enemy, 1)
 		flag_hex = g[0] if g.size() > 0 else -1
-	battle = Battle.new(sim, armies, {"attacker": Types.PLAYER, "defender": enemy, "ai_energy_mult": 600, "cards": HAND})
+	var opts := {"attacker": Types.PLAYER, "defender": enemy, "ai_energy_mult": 600, "cards": HAND}
+	if ftue > 0:
+		# the first offensive is short and the Barons do not play cards (canon §14.3)
+		opts["ai_energy_mult"] = 0
+		opts["ticks"] = 60 * Battle.TICKS_PER_SEC
+		ftue = 3
+	battle = Battle.new(sim, armies, opts)
 	ai = BattleAI.new(enemy)
 	_acc = 0.0
 	_ev_i = 0
@@ -514,7 +527,8 @@ func _start_offensive() -> void:
 	rig.focus(_front_center(), 0.5)
 	_set_mode(Mode.BATTLE)
 	sfx.play("warn")
-	ui.toast("В бой! Тяните от армии к врагу или бросьте карту на гекс")
+	if ftue == 0:
+		ui.toast("В бой! Тяните от армии к врагу или бросьте карту на гекс")
 
 
 ## Middle of the fighting: the player's armies and the flag hex, nudged toward the enemy.
@@ -581,6 +595,8 @@ func _end_offensive() -> void:
 	var res: Dictionary = battle.result()
 	var stars := War.offensive_stars(res["captured"], flag_hex, res["routed_player_armies"])
 	sfx.play("fanfare" if stars > 0 else "lost")
+	if ftue > 0:
+		ftue = 5 if stars > 0 else 2
 	War.record_offensive(war, stars)
 	var ws := War.war_score(sim, war)
 	battle = null
@@ -633,6 +649,7 @@ func _on_order_drag(phase: int, screen: Vector2) -> void:
 		if battle.issue(Types.PLAYER, {"t": "attack", "army": a["id"], "target": hex}):
 			sfx.play("attack")
 			sfx.haptic(15)
+			_ftue_attacked()
 		else:
 			ui.toast("Не хватает энергии (нужно 2)")
 	elif sim.cells[hex]["controller"] == Types.PLAYER:
@@ -716,7 +733,9 @@ func _on_card_drop(card: String, screen: Vector2) -> void:
 		ui.toast("Не хватает энергии (нужно %d)" % Battle.CARDS[card]["cost"])
 	elif not battle.card_ready(Types.PLAYER, card):
 		ui.toast("Карта перезаряжается")
-	elif not battle.issue(Types.PLAYER, {"t": "card", "card": card, "target": id}):
+	elif battle.issue(Types.PLAYER, {"t": "card", "card": card, "target": id}):
+		_ftue_attacked()
+	else:
 		ui.toast("Сюда нельзя: %s" % ("нужен свой гекс" if Battle.CARDS[card]["target"] == "own" else "нужен вражеский гекс рядом с армией"))
 
 
@@ -735,6 +754,8 @@ func _open_peace() -> void:
 	_chosen = {}
 	for d in War.recommend_package(sim, war, _demands, ws["score"]):
 		_chosen[d["id"]] = true
+	if ftue > 0:
+		ftue = 6
 	_set_mode(Mode.PEACE)
 	_show_peace()
 
@@ -789,6 +810,9 @@ func _sign_peace() -> void:
 	var res: Dictionary = War.apply_treaty(sim, war, chosen)
 	sfx.play("seal")
 	sfx.haptic(120)
+	if ftue > 0:
+		ftue = 0
+		ui.coach_hide()
 	_normalize_armies()
 	ui.close_modal()
 	# Ink wave: hexes touching the old territory flip first, ~0.25 s per ring (canon §10.3).
@@ -949,6 +973,71 @@ func _finish_war(enemy: int, msg: String) -> void:
 	ui.toast(msg)
 
 
+# ====================================================================== FTUE (canon §14.3)
+
+const FTUE_TEXT := {
+	1: "Бароны сожгли нашу пограничную мельницу! Объявите им войну.",
+	2: "Начните наступление: у вас 60 секунд.",
+	3: "Тяните от своей армии на вражеский гекс — армия пойдёт в атаку.",
+	4: "Отлично! Карта «Атака» бросает в бой все армии рядом. Захватите ещё!",
+	5: "Захваченное пока лишь оккупировано. Подпишите мир — и граница сдвинется.",
+	6: "Удерживайте печать, чтобы подписать договор.",
+}
+
+
+func _ftue_attacked() -> void:
+	if ftue == 3:
+		ftue = 4
+
+
+func _ftue_tick(delta: float) -> void:
+	if ftue <= 0:
+		if _ftue_shown != 0:
+			_ftue_shown = 0
+			ui.coach_hide()
+		return
+	var target := Vector2(-1, -1)
+	match ftue:
+		1:
+			if selected < 0 and mode == Mode.MAP:
+				_pick_target()
+			target = Vector2(793, GameUI.VH - 76)
+		2:
+			target = Vector2(793, GameUI.VH - 76) if mode == Mode.WAR else Vector2(285, 998)
+		4:
+			target = Vector2(70, GameUI.VH - 124)
+		5:
+			target = Vector2(655, 998)
+		6:
+			target = Vector2(470, 1488)
+	if _ftue_shown != ftue:
+		_ftue_shown = ftue
+		_ftue_t = 0.0
+		ui.coach(FTUE_TEXT[ftue], target)
+	_ftue_t += delta
+	ui.coach_target(target)
+	if ftue == 4 and _ftue_t > 6.0:
+		ui.coach_hide()
+	if ftue == 3 and battle != null:
+		# show the easiest win: the best forecast among idle army → adjacent target pairs
+		var from := -1
+		var to := -1
+		var best := -1.0
+		for a in armies:
+			if a["side"] != Types.PLAYER or battle.army_at(a["hex"], Types.PLAYER) == null:
+				continue
+			for n in sim.neighbors[a["hex"]]:
+				if n >= 0 and battle.can_target(Types.PLAYER, n):
+					var f: float = battle.forecast(Types.PLAYER, [a["id"]], n)["f"]
+					if f > best:
+						best = f
+						from = a["hex"]
+						to = n
+		if from >= 0:
+			var cam: Camera3D = rig.cam
+			ui.coach_ghost(cam.unproject_position(map_view.cell_world(from) + Vector3(0, 0.3, 0)), cam.unproject_position(map_view.cell_world(to) + Vector3(0, 0.3, 0)))
+
+
 # ====================================================================== frame
 
 func _process(delta: float) -> void:
@@ -968,6 +1057,7 @@ func _process(delta: float) -> void:
 	elif mode == Mode.CEREMONY:
 		_step_ceremony(delta)
 	map_view.sync_armies(armies, battle)
+	_ftue_tick(delta)
 	_update_minimap()
 
 
@@ -1008,6 +1098,16 @@ func _handle_args() -> void:
 func _demo(spec: String) -> void:
 	var parts := spec.split(":")
 	var what := parts[0]
+	if what.begins_with("ftue"):
+		ftue = 1
+		var step := int(parts[1]) if parts.size() > 1 else 1
+		if step >= 2:
+			_declare(MapGen.BARONS, War.recommend_goals(sim, MapGen.BARONS, 1)[0])
+		if step >= 3:
+			_start_offensive()
+		for i in 3:
+			_ftue_tick(0.4)
+		return
 	if what == "settings":
 		_on_hud_button("gear")
 		return

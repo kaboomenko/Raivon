@@ -148,5 +148,31 @@ func _run() -> void:
 	g.queue_free()
 	await process_frame
 
+	# 5. FTUE: guided first war (canon §14.3)
+	g = await _new_game()
+	g.ftue = 1
+	g._ftue_tick(0.1)
+	_check(g.selected >= 0 and g.ui._action2_kind == "declare", "FTUE preselects a war goal")
+	g._on_action("declare")
+	_check(g.ftue == 2, "FTUE step: declared")
+	g._on_action("offensive")
+	_check(g.ftue == 3 and g.battle.duration_ticks() == 600, "FTUE offensive is 60 s")
+	g._ftue_tick(0.1)
+	_check(g.ui._ghost_from.x >= 0, "FTUE ghost finger shown")
+	while g.battle != null and not g.battle.over:
+		if g.battle.tick % 20 == 0:
+			g._bot_move()
+		g._battle_step()
+	g._end_offensive()
+	_check(g.ftue == 5 or g.ftue == 2, "FTUE after the offensive (step %d)" % g.ftue)
+	if g.ftue == 5:
+		g.ui.close_modal()
+		g._open_peace()
+		_check(g.ftue == 6, "FTUE peace step")
+		g._sign_peace()
+		_check(g.ftue == 0, "FTUE finished after the seal")
+	g.queue_free()
+	await process_frame
+
 	print("\n%s" % ("ALL FLOW CHECKS PASSED" if fails == 0 else "%d FLOW CHECK(S) FAILED" % fails))
 	quit(1 if fails > 0 else 0)

@@ -466,6 +466,85 @@ func show_settings(sound_on: bool, on_sound: Callable, on_new_game: Callable) ->
 	_button(box, Rect2(40, 480, 681, 84), "Закрыть", Color(0.13, 0.4, 0.9), close_modal)
 
 
+# ------------------------------------------------------------------ coach (FTUE, canon §14.3)
+
+var _coach: Control
+var _coach_lbl: Label
+var _coach_ring: Panel
+var _coach_arrow: Label
+var _coach_target := Vector2(-1, -1)
+var _ghost_from := Vector2(-1, -1)
+var _ghost_to := Vector2(-1, -1)
+var _ghost_dot: Panel
+var _coach_t := 0.0
+
+
+func _build_coach() -> void:
+	_coach = Control.new()
+	_coach.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_coach.z_index = 40
+	root.add_child(_coach)
+	var box := _panel(_coach, Rect2(108, 166, 612, 96), _style(Color(0.98, 0.93, 0.78, 0.97), 16, Color(0.75, 0.55, 0.2), 3), Control.MOUSE_FILTER_IGNORE)
+	_coach_lbl = _label("", 23, Color(0.22, 0.14, 0.05), false)
+	_coach_lbl.position = Vector2(18, 10)
+	_coach_lbl.size = Vector2(576, 76)
+	_coach_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+	_coach_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	box.add_child(_coach_lbl)
+	_coach_ring = _panel(_coach, Rect2(0, 0, 120, 120), _style(Color(1, 1, 1, 0.0), 60, Color(1.0, 0.85, 0.3), 6), Control.MOUSE_FILTER_IGNORE)
+	_coach_arrow = _label("▼", 56, Color(1.0, 0.85, 0.3))
+	_coach.add_child(_coach_arrow)
+	_ghost_dot = _panel(_coach, Rect2(0, 0, 64, 64), _style(Color(1, 1, 1, 0.7), 32, Color(1.0, 0.85, 0.3), 5), Control.MOUSE_FILTER_IGNORE)
+	_coach.visible = false
+
+
+## Shows an advisor line; `target` (screen px) gets a pulsing ring and a bouncing arrow.
+func coach(text: String, target := Vector2(-1, -1)) -> void:
+	if _coach == null:
+		_build_coach()
+	_coach.visible = true
+	_coach_lbl.text = text
+	_coach_target = target
+	_ghost_from = Vector2(-1, -1)
+
+
+func coach_target(target: Vector2) -> void:
+	_coach_target = target
+
+
+## Ghost finger dragging from → to (screen px), looping; call every frame while the camera moves.
+func coach_ghost(from: Vector2, to: Vector2) -> void:
+	_ghost_from = from
+	_ghost_to = to
+
+
+func coach_hide() -> void:
+	if _coach:
+		_coach.visible = false
+
+
+func _process_coach(delta: float) -> void:
+	if _coach == null or not _coach.visible:
+		return
+	_coach_t += delta
+	var has_t := _coach_target.x >= 0
+	_coach_ring.visible = has_t
+	_coach_arrow.visible = has_t
+	if has_t:
+		var k := 1.0 + 0.12 * sin(_coach_t * 6.0)
+		_coach_ring.size = Vector2(120, 120) * k
+		_coach_ring.position = _coach_target - _coach_ring.size / 2
+		_coach_arrow.position = _coach_target + Vector2(-20, -150 + 14 * sin(_coach_t * 5.0))
+	var has_g := _ghost_from.x >= 0
+	_ghost_dot.visible = has_g
+	if has_g:
+		var u := fmod(_coach_t, 1.6) / 1.2
+		var e := clampf(u, 0.0, 1.0)
+		e = e * e * (3.0 - 2.0 * e)
+		_ghost_dot.position = _ghost_from.lerp(_ghost_to, e) - Vector2(32, 32)
+		_ghost_dot.modulate.a = 1.0 if u <= 1.05 else 0.35
+
+
 func toast(text: String) -> void:
 	var l := _label(text, 24)
 	l.size = Vector2(VW - 80, 40)
@@ -482,6 +561,7 @@ func toast(text: String) -> void:
 
 
 func _process(delta: float) -> void:
+	_process_coach(delta)
 	if _seal_t >= 0.0 and _seal_prog:
 		_seal_t += delta
 		_seal_prog.size.x = 829.0 * clampf(_seal_t / 0.8, 0.0, 1.0)
