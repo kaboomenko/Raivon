@@ -438,17 +438,23 @@ func _start_offensive() -> void:
 	_acc = 0.0
 	_ev_i = 0
 	_select(-1)
-	var pts: Array = [map_view.cell_world(flag_hex)] if flag_hex >= 0 else []
-	for a in armies:
-		if a["side"] == Types.PLAYER:
-			pts.append(map_view.cell_world(a["hex"]))
-	var front := Vector3.ZERO
-	for p in pts:
-		front += p
-	if pts.size() > 0:
-		rig.focus(front / pts.size() + Vector3(0, 0, 0.8), 0.5)
+	rig.focus(_front_center(), 0.5)
 	_set_mode(Mode.BATTLE)
 	ui.toast("В бой! Тяните от армии к врагу или бросьте карту на гекс")
+
+
+## Middle of the fighting: the player's armies and the flag hex, nudged toward the enemy.
+func _front_center() -> Vector3:
+	var p := Vector3.ZERO
+	var n := 0
+	for a in armies:
+		if a["side"] == Types.PLAYER and a["str"] > 0:
+			p += map_view.cell_world(a["hex"])
+			n += 1
+	if flag_hex >= 0:
+		p += map_view.cell_world(flag_hex)
+		n += 1
+	return p / n - Vector3(0, 0, 0.4) if n > 0 else rig.target
 
 
 func _cooldowns() -> Dictionary:
@@ -844,12 +850,12 @@ func _process(delta: float) -> void:
 			_acc -= 0.1
 			steps += 1
 			_battle_step()
-		map_view.sync_armies(battle.armies, battle)
 		_refresh_ui()
 		if battle.over:
 			_end_offensive()
 	elif mode == Mode.CEREMONY:
 		_step_ceremony(delta)
+	map_view.sync_armies(armies, battle)
 	_update_minimap()
 
 
@@ -901,7 +907,8 @@ func _demo(spec: String) -> void:
 			_bot_move()
 		_battle_step()
 	if what == "battle":
-		map_view.sync_armies(battle.armies, battle)
+		rig.focus(_front_center())
+		rig.zoom = rig.zoom_target
 		_refresh_ui()
 		return
 	_end_offensive()

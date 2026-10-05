@@ -480,6 +480,22 @@ void fragment() {
 # ------------------------------------------------------------------ armies
 
 func sync_armies(armies: Array, battle) -> void:
+	var t := Time.get_ticks_msec() / 1000.0
+	var cam := get_viewport().get_camera_3d()
+	# who is fighting where (canon §9.5: clashes on a target hex)
+	var fighting := {}  # army id -> target hex (attackers) or -2 (defender)
+	var live_clashes := {}
+	if battle != null:
+		for cl in battle.clashes:
+			for aid in cl["attackers"]:
+				fighting[aid] = cl["target"] if cl["entering"] == 0 else -3
+			if cl["defender"] >= 0:
+				fighting[cl["defender"]] = -2
+			if cl["entering"] == 0 and cl["attackers"].size() > 0:
+				var a0 = battle.army_by_id(cl["attackers"][0])
+				if a0 != null:
+					live_clashes[cl["id"]] = cell_world(a0["hex"]).lerp(cell_world(cl["target"]), 0.5)
+	_sync_clash_fx(live_clashes)
 	var alive := {}
 	for a in armies:
 		if a["str"] <= 0:
@@ -491,26 +507,106 @@ func sync_armies(armies: Array, battle) -> void:
 			node = _make_army(a)
 			_army_nodes[id] = node
 		var p := cell_world(a["hex"])
+		var model: Node3D = node.get_node("model")
+		var hop := 0.0
+		var sway := 0.0
+		var face_to := Vector3.ZERO
 		if a["move"] != null:
 			var to := cell_world(a["move"]["to"])
 			p = p.lerp(to, 1.0 - float(a["move"]["left"]) / 15.0)
-		node.position = node.position.lerp(p, 0.35) if node.position.distance_to(p) < 3.0 else p
-		var lbl: Label3D = node.get_node("label")
-		lbl.text = str(int(round(a["str"] / 1000.0)))
+			hop = absf(sin(t * 11.0 + id)) * 0.07  # marching
+			face_to = to - cell_world(a["hex"])
+		elif fighting.has(id) and int(fighting[id]) >= 0:
+			var tgt := cell_world(int(fighting[id]))
+			p = p.lerp(tgt, 0.36)  # pressed against the enemy line
+			hop = absf(sin(t * 9.0 + id * 1.7)) * 0.05
+			sway = sin(t * 13.0 + id) * 0.09
+			face_to = tgt - cell_world(a["hex"])
+		elif fighting.has(id) and int(fighting[id]) == -3:
+			hop = absf(sin(t * 11.0 + id)) * 0.06  # advancing into the clash
+		elif fighting.has(id):
+			sway = sin(t * 12.0 + id) * 0.06  # holding against an attack
+		node.position = node.position.lerp(p, 0.3) if node.position.distance_to(p) < 3.0 else p
+		model.position.y = hop
+		model.rotation.z = sway
 		var ready := float(a["str"]) / maxf(1.0, float(a["max_str"]))
+		var lbl: Label3D = node.get_node("label")
+		lbl.text = str(int(round(a["str"] / 1000.0))) if not a["routed"] else "✖"
 		lbl.modulate = Color(1, 1, 1) if ready >= 0.5 else Color(1.0, 0.75, 0.4)
+		var bar: Node3D = node.get_node("bar")
+		bar.visible = battle != null and not a["routed"]
+		if cam:
+			bar.global_basis = cam.global_basis
+		var fill: MeshInstance3D = bar.get_node("fill")
+		fill.scale.x = maxf(0.02, ready)
+		fill.position.x = -0.32 * (1.0 - fill.scale.x)
+		model.scale = Vector3.ONE * (0.8 if a["routed"] else 1.0)
 		node.modulate_alpha = 0.45 if a["routed"] else 1.0
-		# face the nearest enemy-controlled neighbour
-		var enemy_dir := Vector3.ZERO
-		for n in sim.neighbors[a["hex"]]:
-			if n >= 0 and sim.cells[n]["controller"] != a["side"] and Types.is_passable(sim.cells[n]) and sim.cells[n]["controller"] != Types.NOBODY:
-				enemy_dir += cell_world(n) - cell_world(a["hex"])
-		if enemy_dir.length() > 0.1:
-			node.get_node("model").rotation.y = atan2(enemy_dir.x, enemy_dir.z) + PI
+		# face the enemy (the clash target, or the enemy-controlled neighbours)
+		if face_to == Vector3.ZERO:
+			for n in sim.neighbors[a["hex"]]:
+				if n >= 0 and sim.cells[n]["controller"] != a["side"] and Types.is_passable(sim.cells[n]) and sim.cells[n]["controller"] != Types.NOBODY:
+					face_to += cell_world(n) - cell_world(a["hex"])
+		if face_to.length() > 0.1:
+			var want := atan2(face_to.x, face_to.z) + PI
+			model.rotation.y = lerp_angle(model.rotation.y, want, 0.25)
 	for id in _army_nodes.keys():
 		if not alive.has(id):
 			_army_nodes[id].queue_free()
 			_army_nodes.erase(id)
+
+
+var _clash_fx := {}  # clash id -> CPUParticles3D
+
+func _sync_clash_fx(live: Dictionary) -> void:
+	for cid in _clash_fx.keys():
+		if not live.has(cid):
+			var old: CPUParticles3D = _clash_fx[cid]
+			old.emitting = false
+			get_tree().create_timer(0.8).timeout.connect(old.queue_free)
+			_clash_fx.erase(cid)
+	for cid in live:
+		var fx: CPUParticles3D = _clash_fx.get(cid)
+		if fx == null:
+			fx = _make_sparks()
+			add_child(fx)
+			_clash_fx[cid] = fx
+		fx.position = live[cid] + Vector3(0, 0.35, 0)
+
+
+func _make_sparks() -> CPUParticles3D:
+	var fx := CPUParticles3D.new()
+	fx.amount = 28
+	fx.lifetime = 0.55
+	fx.randomness = 0.5
+	fx.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	fx.emission_sphere_radius = 0.28
+	fx.direction = Vector3.UP
+	fx.spread = 70.0
+	fx.initial_velocity_min = 1.2
+	fx.initial_velocity_max = 2.6
+	fx.gravity = Vector3(0, -7.0, 0)
+	fx.scale_amount_min = 0.5
+	fx.scale_amount_max = 1.2
+	var g := Gradient.new()
+	g.set_color(0, Color(1.0, 0.95, 0.6))
+	g.set_color(1, Color(1.0, 0.35, 0.05, 0.0))
+	fx.color_ramp = g
+	var mesh := SphereMesh.new()
+	mesh.radius = 0.025
+	mesh.height = 0.05
+	mesh.radial_segments = 4
+	mesh.rings = 2
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.vertex_color_use_as_albedo = true
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.emission_enabled = true
+	m.emission = Color(1.0, 0.6, 0.2)
+	m.emission_energy_multiplier = 3.0
+	mesh.material = m
+	fx.mesh = mesh
+	return fx
 
 
 class ArmyNode extends Node3D:
@@ -537,6 +633,27 @@ func _make_army(a: Dictionary) -> Node3D:
 	lbl.position = Vector3(0, 1.15, 0)
 	lbl.outline_modulate = Color(0.05, 0.1, 0.25) if side == "blue" else Color(0.3, 0.05, 0.05)
 	node.add_child(lbl)
+	var bar := Node3D.new()
+	bar.name = "bar"
+	bar.position = Vector3(0, 0.92, 0)
+	node.add_child(bar)
+	var team := Color(0.3, 0.62, 1.0) if side == "blue" else (Color(0.3, 0.8, 0.35) if side == "green" else Color(1.0, 0.25, 0.2))
+	for part in [["bg", Color(0.03, 0.05, 0.1, 0.85), Vector2(0.7, 0.1), 0.0], ["fill", team, Vector2(0.64, 0.06), 0.002]]:
+		var q := QuadMesh.new()
+		q.size = part[2]
+		var mi := MeshInstance3D.new()
+		mi.name = part[0]
+		mi.mesh = q
+		mi.position.z = part[3]
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.albedo_color = part[1]
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.no_depth_test = true
+		m.render_priority = 2 if part[0] == "fill" else 1
+		mi.material_override = m
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		bar.add_child(mi)
 	return node
 
 
