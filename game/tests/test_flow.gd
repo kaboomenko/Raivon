@@ -135,6 +135,21 @@ func _run() -> void:
 		g.time_offset += 2 * 3600
 		g._econ_tick()
 		_check(econ.building(target_b["id"])["level"] == lvl0 + 1, "upgrade completes after its timer (%s)" % target_b["name"])
+	# chapter stars and completion (canon §12.1)
+	var rv0: int = econ.res["raivite"]
+	g._on_world_action("peace")
+	_check(econ.res["raivite"] == rv0 + 10 and g.stars_claimed.has("peace"), "peace star claimed: +10 Raivites")
+	g._on_world_action("peace")
+	_check(econ.res["raivite"] == rv0 + 10, "a star is claimed only once")
+	for c in g.sim.cells:
+		if g._player_hexes() >= g.CHAPTER_GOAL:
+			break
+		if c["owner"] == Types.NOBODY and Types.is_passable(c):
+			c["owner"] = Types.PLAYER
+			c["controller"] = Types.PLAYER
+	g._on_world_action("expand")
+	_check(g.chapter_done and econ.res["raivite"] >= rv0 + 210, "chapter I completes: legacy +200 Raivites")
+
 	# fortification on an own non-capital hex via the fort button
 	var fhex := -1
 	for c in g.sim.cells:

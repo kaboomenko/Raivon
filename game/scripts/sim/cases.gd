@@ -124,8 +124,8 @@ static func rarity_name(rarity: String) -> String:
 
 
 static func cosmetic(id: String) -> Dictionary:
-	var cos: Dictionary = data().get("cosmetics", {})
-	return cos.get(id, {})
+	var all_cos: Dictionary = data().get("cosmetics", {})
+	return all_cos.get(id, {})
 
 
 static func commander(id: String) -> Dictionary:

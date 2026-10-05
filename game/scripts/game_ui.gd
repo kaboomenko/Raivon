@@ -11,6 +11,7 @@ signal building_upgrade(id: int)
 signal building_speedup(id: int)
 signal army_action(id: int, kind: String)
 signal diplomacy_action(state: int, kind: String)
+signal world_action(id: String)
 
 const PANEL := Color(0.055, 0.085, 0.14, 0.95)
 const EDGE := Color(0.32, 0.42, 0.58, 0.6)
@@ -703,6 +704,82 @@ func _diplomacy_card(it: Dictionary) -> Control:
 	return card
 
 
+## World tab: chapter progress and the chapter stars (canon §12.1).
+func show_world(items: Array) -> void:
+	show_buildings([])
+	for c in _brow.get_children():
+		c.queue_free()
+	for it in items:
+		_brow.add_child(_chapter_card(it) if it["kind"] == "chapter" else _star_card(it))
+
+
+func _chapter_card(it: Dictionary) -> Control:
+	var card := Panel.new()
+	card.custom_minimum_size = Vector2(250, 178)
+	card.add_theme_stylebox_override("panel", _style(Color(0.1, 0.16, 0.26), 12, Color(0.45, 0.65, 1.0), 3))
+	card.mouse_filter = Control.MOUSE_FILTER_PASS
+	_at(_label("Глава I «Долина»", 18), card, Vector2(12, 6))
+	var h: int = it["hexes"]
+	var g: int = it["goal"]
+	_at(_label("Гексов: %d / %d" % [h, g], 17, TEXT, false), card, Vector2(12, 36))
+	var bar := _panel(card, Rect2(12, 66, 226, 14), _style(Color(1, 1, 1, 0.1), 7, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
+	_panel(bar, Rect2(0, 0, 226.0 * clampf(float(h) / g, 0.0, 1.0), 14), _style(Color(0.3, 0.62, 1.0), 7, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
+	if it["done"]:
+		_at(_label("Пройдена! Глава II — скоро", 16, Color(0.5, 1.0, 0.6)), card, Vector2(12, 96))
+	elif it["can_expand"]:
+		var b := _panel(card, Rect2(10, 128, 230, 40), _style(Color(0.2, 0.55, 0.3), 10, Color(1, 1, 1, 0.5), 2))
+		b.mouse_filter = Control.MOUSE_FILTER_PASS
+		var l := _label("🌍 Мир расширяется", 17)
+		l.size = Vector2(230, 40)
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		b.add_child(l)
+		b.gui_input.connect(func(e): if _is_tap(e): world_action.emit("expand"))
+	else:
+		var hint := _label("Мир или колонизация — каждый гекс на счету", 14, MUTED, false)
+		hint.position = Vector2(12, 96)
+		hint.autowrap_mode = TextServer.AUTOWRAP_WORD
+		hint.custom_minimum_size = Vector2(226, 0)  # autowrap needs a fixed width
+		card.add_child(hint)
+	return card
+
+
+func _star_card(it: Dictionary) -> Control:
+	var card := Panel.new()
+	card.custom_minimum_size = Vector2(150, 178)
+	var done: bool = int(it["progress"]) >= int(it["need"])
+	var claimed: bool = it["claimed"]
+	card.add_theme_stylebox_override("panel", _style(Color(0.16, 0.14, 0.08) if done and not claimed else Color(0.1, 0.15, 0.25), 12, Color(1.0, 0.8, 0.3) if done else Color(0.45, 0.58, 0.8, 0.7), 2))
+	card.mouse_filter = Control.MOUSE_FILTER_PASS
+	var star := _label("★" if claimed else "☆", 30, Color(1.0, 0.82, 0.25) if done else MUTED)
+	star.position = Vector2(0, 4)
+	star.size = Vector2(150, 40)
+	star.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	card.add_child(star)
+	var t := _label(it["title"], 15, TEXT, false)
+	t.position = Vector2(8, 46)
+	t.autowrap_mode = TextServer.AUTOWRAP_WORD
+	t.custom_minimum_size = Vector2(134, 0)  # autowrap needs a fixed width
+	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	card.add_child(t)
+	var id: String = it["id"]
+	if claimed:
+		var ok := _label("Получено", 16, Color(0.5, 1.0, 0.6))
+		ok.position = Vector2(0, 140)
+		ok.size = Vector2(150, 24)
+		ok.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		card.add_child(ok)
+	elif done:
+		_card_button(card, "Забрать", Color(0.75, 0.55, 0.12), func(): world_action.emit(id), true)
+	else:
+		var p := _label("%d / %d" % [int(it["progress"]), int(it["need"])], 18, MUTED)
+		p.position = Vector2(0, 138)
+		p.size = Vector2(150, 28)
+		p.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		card.add_child(p)
+	return card
+
+
 func hide_buildings() -> void:
 	if _bpanel:
 		_bpanel.visible = false
@@ -738,8 +815,8 @@ func _building_card(it: Dictionary) -> Control:
 	if int(it["level"]) >= int(it["max"]) and String(it["reason"]) != "":
 		var m := _label(it["reason"], 15, MUTED, false)
 		m.position = Vector2(8, 66)
-		m.size = Vector2(134, 70)
 		m.autowrap_mode = TextServer.AUTOWRAP_WORD
+		m.custom_minimum_size = Vector2(134, 0)  # autowrap needs a fixed width
 		m.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		card.add_child(m)
 		return card
@@ -802,8 +879,8 @@ func _build_coach() -> void:
 	var box := _panel(_coach, Rect2(108, 166, 612, 96), _style(Color(0.98, 0.93, 0.78, 0.97), 16, Color(0.75, 0.55, 0.2), 3), Control.MOUSE_FILTER_IGNORE)
 	_coach_lbl = _label("", 23, Color(0.22, 0.14, 0.05), false)
 	_coach_lbl.position = Vector2(18, 10)
-	_coach_lbl.size = Vector2(576, 76)
 	_coach_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
+	_coach_lbl.custom_minimum_size = Vector2(576, 0)  # autowrap needs a fixed width
 	_coach_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	box.add_child(_coach_lbl)
 	_coach_ring = _panel(_coach, Rect2(0, 0, 120, 120), _style(Color(1, 1, 1, 0.0), 60, Color(1.0, 0.85, 0.3), 6), Control.MOUSE_FILTER_IGNORE)
@@ -862,10 +939,10 @@ func _process_coach(delta: float) -> void:
 
 func toast(text: String) -> void:
 	var l := _label(text, 24)
-	l.size = Vector2(VW - 80, 40)
 	l.position = Vector2(40, 300)
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD
+	l.custom_minimum_size = Vector2(VW - 80, 0)  # autowrap needs a fixed width
 	var bg := _panel(root, Rect2(30, 290, VW - 60, 70), _style(Color(0.05, 0.08, 0.14, 0.92), 14), Control.MOUSE_FILTER_IGNORE)
 	root.add_child(l)
 	var tw := create_tween()

@@ -61,6 +61,9 @@ const STRIKE_WARN_SEC := 20 * 60  # strike announced 20 min ahead (canon §9.11)
 var _econ_acc := 1.0
 var _last_refill := 0
 var training := {}  # new army being formed: {end, slots}
+var stats := {}  # chapter counters for the stars: peaces, goals, pockets, colonized, forts, convoys, defenses
+var stars_claimed := {}
+var chapter_done := false
 var opinion := {}  # AI state -> opinion of the player, decays toward 0 (canon §10.5)
 var gift_at := {}  # AI state -> unix time of the last gift
 var _last_opinion := 0
@@ -123,6 +126,7 @@ func _ready() -> void:
 	ui.building_speedup.connect(_on_building_speedup)
 	ui.army_action.connect(_on_army_action)
 	ui.diplomacy_action.connect(_on_diplomacy_action)
+	ui.world_action.connect(_on_world_action)
 	_make_selection()
 	_make_drag_marker()
 	_focus_front(0.7)
@@ -272,6 +276,8 @@ func _refresh_ui() -> void:
 		ui.show_armies(_army_items(now_s()))
 	elif tab == "diplomacy" and econ != null:
 		ui.show_diplomacy(_diplomacy_items(now_s()))
+	elif tab == "world" and econ != null:
+		ui.show_world(_world_items())
 	match mode:
 		Mode.MAP:
 			ui.set_action("", "")
@@ -382,7 +388,7 @@ func _on_hud_button(name: String) -> void:
 		"tab_development":
 			ui.toast("Исследования откроются на УР2")
 		"tab_world":
-			ui.toast("Глава I «Долина»: %d / %d гексов" % [_player_hexes(), CHAPTER_GOAL])
+			_open_tab("world")
 
 
 func _war_or_front_center() -> Vector3:
@@ -523,8 +529,9 @@ func _colonize_cost() -> int:
 	return int(ceil(50.0 * Economy.PROD_MULT100[econ.dev_level()] / 100.0 * (1.0 + 0.15 * colonized)))
 
 
+## 1 min in chapter I, 5 / 15 / 30 min in later chapters (canon §12.1).
 func _colonize_seconds() -> int:
-	return 60 if colonized < 3 else (300 if colonized < 6 else (900 if colonized < 10 else 1800))
+	return 60
 
 
 ## Colonization (canon §12.1): gold and a timer, one at a time, no builder needed.
@@ -558,6 +565,7 @@ func _speedup_colonize(id: int) -> void:
 
 
 func _finish_colonize(id: int) -> void:
+	_stat("colonized")
 	colonizing.erase(id)
 	map_view.hex_label(id, "")
 	colonized += 1
@@ -711,6 +719,7 @@ func _handle_event(ev: Dictionary) -> void:
 			map_view.burst(ev["hex"], MapView.C_PLAYER if mine else MapView.C_WAR, true)
 			map_view.floater(ev["hex"], "Оккупирован!" if mine else "Потерян", Color(0.75, 0.85, 1.0) if mine else Color(1.0, 0.7, 0.7))
 			if mine and ev["hex"] == war["goal"]:
+				_stat("goals")
 				ui.toast("🚩 Цель войны взята: +10 к счёту")
 		"repelled":
 			sfx.play("repelled")
@@ -956,6 +965,10 @@ func _sign_peace() -> void:
 		for h in d["hexes"]:
 			annexed_value += int(sim.cells[h]["value"])
 	_opinion_add(enemy, -2.0 * annexed_value)
+	_stat("peaces")
+	for d in chosen:
+		if d["kind"] == "pocket":
+			_stat("pockets")
 	var res: Dictionary = War.apply_treaty(sim, war, chosen)
 	sfx.play("seal")
 	sfx.haptic(120)
@@ -1082,8 +1095,8 @@ func _end_ceremony() -> void:
 	map_view.mark_dirty()
 	_ceremony = {}
 	_set_mode(Mode.MAP)
-	if _player_hexes() >= CHAPTER_GOAL:
-		ui.toast("🌍 Глава I пройдена! Мир расширяется (скоро)")
+	if _player_hexes() >= CHAPTER_GOAL and not chapter_done:
+		ui.toast("🌍 Цель главы выполнена — вкладка «Мир»")
 
 
 func _open_defeat_or_white(score: float) -> void:
@@ -1164,6 +1177,7 @@ func _econ_tick() -> void:
 		_finish_training()
 	for ev in deposits.tick(sim, econ.gross_per_hour(sim), now):
 		if ev["type"] == "convoy_back":
+			_stat("convoys")
 			var got: Dictionary = econ.add_resources({String(ev["res"]): int(ev["amount"])})
 			var n := int(got.get(String(ev["res"]), 0))
 			var cap: int = sim.states[Types.PLAYER]["capital_id"]
@@ -1186,6 +1200,8 @@ func _econ_tick() -> void:
 		ui.show_armies(_army_items(now))
 	elif tab == "diplomacy" and mode in [Mode.MAP, Mode.WAR]:
 		ui.show_diplomacy(_diplomacy_items(now))
+	elif tab == "world" and mode in [Mode.MAP, Mode.WAR]:
+		ui.show_world(_world_items())
 	if mode == Mode.MAP and selected >= 0:
 		_primary_for_selection()
 
@@ -1262,6 +1278,7 @@ func _fort_action() -> void:
 		ui.toast("Укрепление → ур. %d" % (int(fort["level"]) + 1))
 	sfx.play("coin")
 	map_view.burst(selected, Color(1.0, 0.85, 0.3))
+	_stat("forts")
 	if ftue == 9:
 		# scripted marauder raid breaks against the new fence (canon §14.3, 5:00–6:00)
 		ftue = 0
@@ -1354,8 +1371,77 @@ func _open_tab(t: String) -> void:
 		ui.show_armies(_army_items(now_s()))
 	elif t == "diplomacy":
 		ui.show_diplomacy(_diplomacy_items(now_s()))
+	elif t == "world":
+		ui.show_world(_world_items())
 	else:
 		ui.hide_buildings()
+
+
+# ---------------------------------------------------------------------- chapter (canon §12.1)
+
+## Chapter I stars: 10 Raivites + 1 h of production each; all stars give a cosmetic (canon §12.1).
+const STARS := [
+	["peace", "Подпишите мир", "peaces", 1],
+	["goal", "Возьмите цель войны", "goals", 1],
+	["pocket", "Заберите котёл по договору", "pockets", 1],
+	["colonize", "Колонизируйте 3 гекса", "colonized", 3],
+	["fort", "Поставьте укрепление", "forts", 1],
+	["convoy", "Привезите 3 обоза", "convoys", 3],
+	["defense", "Отбейте набег или удар", "defenses", 1],
+	["dl3", "Достигните УР3", "", 3],
+]
+
+
+func _stat(key: String) -> void:
+	stats[key] = int(stats.get(key, 0)) + 1
+
+
+func _star_progress(st: Array) -> int:
+	if String(st[2]) == "":
+		return econ.dev_level()
+	return int(stats.get(String(st[2]), 0))
+
+
+func _world_items() -> Array:
+	var items: Array = [{"kind": "chapter", "hexes": _player_hexes(), "goal": CHAPTER_GOAL, "done": chapter_done,
+		"can_expand": _player_hexes() >= CHAPTER_GOAL and war.is_empty() and not chapter_done}]
+	for st in STARS:
+		var prog := mini(_star_progress(st), int(st[3]))
+		items.append({"kind": "star", "id": st[0], "title": st[1], "progress": prog, "need": st[3],
+			"claimed": stars_claimed.has(st[0])})
+	return items
+
+
+func _on_world_action(id: String) -> void:
+	if id == "expand":
+		_complete_chapter()
+		return
+	for st in STARS:
+		if st[0] == id and not stars_claimed.has(id) and _star_progress(st) >= int(st[3]):
+			stars_claimed[id] = true
+			var gross: Dictionary = econ.gross_per_hour(sim)
+			econ.add_resources({"gold": int(gross.get("gold", 0)), "food": int(gross.get("food", 0)), "metal": int(gross.get("metal", 0))})
+			econ.res["raivite"] = int(econ.res["raivite"]) + 10
+			sfx.play("capture")
+			ui.toast("⭐ Звезда главы: +10 Райвитов и час производства")
+			if stars_claimed.size() == STARS.size():
+				_post("Все звёзды главы I", "Награда: чернила границы «Долина» (косметика).")
+				ui.toast("Все звёзды главы! Чернила границы «Долина» — ваши")
+	_econ_tick()
+	_autosave()
+
+
+## Content wall (canon §12.1): chapter II is not out yet — the legacy is paid and a teaser shown.
+func _complete_chapter() -> void:
+	if chapter_done or _player_hexes() < CHAPTER_GOAL or not war.is_empty():
+		return
+	chapter_done = true
+	econ.res["raivite"] = int(econ.res["raivite"]) + 200
+	map_view.fireworks(map_view.cell_world(sim.states[Types.PLAYER]["capital_id"]), 5)
+	sfx.play("fanfare")
+	_post("Глава I «Долина» завершена", "Наследие: Капитан Лира и 200 Райвитов. Глава II «Речной край» скоро — за туманом уже видны паруса.")
+	ui.toast("🌍 Глава I пройдена! +200 Райвитов, Капитан Лира. Глава II — скоро")
+	_autosave()
 
 
 # ---------------------------------------------------------------------- diplomacy (canon §10.4–10.6)
@@ -1669,6 +1755,7 @@ func _ai_tick(now: int) -> void:
 		_raid = {}
 		map_view.burst(h, Color(1.0, 0.6, 0.3), true)
 		map_view.floater(h, "Набег отбит!", Color(0.75, 0.85, 1.0))
+		_stat("defenses")
 		sfx.play("repelled")
 		_post("Набег мародёров", "Мародёры с диких земель налетели на «%s» и разбились о плетень. Укрепления защищают гексы и склады." % _cell_name(h))
 		ui.toast("Мародёры разбились о плетень! Обучение пройдено — дальше держава ваша.")
@@ -1776,6 +1863,7 @@ func _resolve_strike() -> void:
 	war.erase("strike_from")
 	map_view.strike_arrow(-1, -1, "")
 	war["battles"] = clampi(int(war["battles"]) + 2, -10, 10)
+	_stat("defenses")
 	var gold := int(maxi(60, int(econ.gross_per_hour(sim).get("gold", 0))) / 2.0)
 	econ.add_resources({"gold": gold})
 	map_view.burst(hex, MapView.C_PLAYER, true)

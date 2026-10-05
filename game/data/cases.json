@@ -1,0 +1,205 @@
+{
+	"version": 1,
+	"_doc": "Single source of case odds (canon 00_canon.md §15.4, §15.5, §15.8; 09_monetization.md §9.10.2–9.10.11 cases.yaml). Read by sim/cases.gd for both the RNG and the «i» screen. Item probability = tier p × w / Σw of eligible items. Cases work identically in all countries, including paid opening; odds disclosure and pity are additions.",
+	"rarities": [
+		{"id": "common", "name_ru": "Обычное", "item_ru": "обычная"},
+		{"id": "rare", "name_ru": "Редкое", "item_ru": "редкая"},
+		{"id": "epic", "name_ru": "Эпическое", "item_ru": "эпическая"},
+		{"id": "legendary", "name_ru": "Легендарное", "item_ru": "легендарная"}
+	],
+	"duplicates": {"to": "cur_glitter", "rare": 20, "epic": 80, "legendary": 300},
+	"workshop_glitter": {"rare": 150, "epic": 400, "legendary": 1000},
+	"free_crate": {"case": "case_war_crate", "every_sec": 21600, "cap": 2},
+	"speedups": {"item_speedup_5m": 5, "item_speedup_15m": 15, "item_speedup_1h": 60, "item_speedup_3h": 180, "item_speedup_8h": 480},
+	"res_names": {"gold": "Золото", "food": "Еда", "metal": "Металл", "oil": "Нефть", "all": "Ресурсы"},
+	"commanders": {
+		"cmd_bram": {"name": "Сержант Брам", "rarity": "common"},
+		"cmd_lira": {"name": "Капитан Лира", "rarity": "common"},
+		"cmd_olm": {"name": "Инженер Ольм", "rarity": "common"},
+		"cmd_vik": {"name": "Следопыт Вик", "rarity": "common"},
+		"cmd_vega": {"name": "Генерал Вега", "rarity": "rare"},
+		"cmd_kort": {"name": "Маршал Корт", "rarity": "rare"},
+		"cmd_seir": {"name": "Адмирал Сейр", "rarity": "rare"},
+		"cmd_frey": {"name": "Полковник Фрей", "rarity": "rare"},
+		"cmd_irma": {"name": "Ирма Сталь", "rarity": "epic"},
+		"cmd_hawk": {"name": "Генерал Хоук", "rarity": "epic"},
+		"cmd_vance": {"name": "Леди Вэнс", "rarity": "epic"},
+		"cmd_rai": {"name": "Император Рай", "rarity": "legendary"}
+	},
+	"commander_unlock_shards": {"common": 10, "rare": 20, "epic": 40, "legendary": 80},
+	"categories": {
+		"cos_border_ink": "Чернила границы",
+		"cos_peace_seal": "Печать мира",
+		"cos_peace_fireworks": "Салют мира",
+		"cos_fill_pattern": "Узор заливки",
+		"cos_capital_skin": "Скин столицы",
+		"cos_frame": "Рамка",
+		"cos_flag_part": "Элемент флага",
+		"cos_unit_skin": "Скин отрядов",
+		"cos_emote": "Эмоция"
+	},
+	"cosmetics": {
+		"cos_border_ink_copper": {"name": "Медь", "category": "cos_border_ink", "rarity": "rare", "price": 300},
+		"cos_border_ink_gold_thread": {"name": "Золотая нить", "category": "cos_border_ink", "rarity": "rare", "price": 400},
+		"cos_border_ink_flame": {"name": "Пламя", "category": "cos_border_ink", "rarity": "epic", "price": 700},
+		"cos_border_ink_ice": {"name": "Лёд", "category": "cos_border_ink", "rarity": "epic", "price": 0},
+		"cos_border_ink_neon": {"name": "Неон", "category": "cos_border_ink", "rarity": "epic", "price": 800},
+		"cos_border_ink_aurora": {"name": "Северное сияние", "category": "cos_border_ink", "rarity": "legendary", "price": 0},
+		"cos_peace_seal_wax": {"name": "Сургуч", "category": "cos_peace_seal", "rarity": "rare", "price": 600},
+		"cos_peace_seal_gold_stamp": {"name": "Золотой штамп", "category": "cos_peace_seal", "rarity": "epic", "price": 900},
+		"cos_peace_seal_dragon_paw": {"name": "Драконья лапа", "category": "cos_peace_seal", "rarity": "epic", "price": 1000},
+		"cos_peace_seal_hologram": {"name": "Голограмма", "category": "cos_peace_seal", "rarity": "legendary", "price": 1200},
+		"cos_peace_seal_ice_rune": {"name": "Ледяная руна", "category": "cos_peace_seal", "rarity": "rare", "price": 0},
+		"cos_peace_fireworks_confetti": {"name": "Конфетти", "category": "cos_peace_fireworks", "rarity": "rare", "price": 600},
+		"cos_peace_fireworks_classic": {"name": "Фейерверк", "category": "cos_peace_fireworks", "rarity": "epic", "price": 800},
+		"cos_peace_fireworks_petals": {"name": "Лепестки", "category": "cos_peace_fireworks", "rarity": "epic", "price": 800},
+		"cos_peace_fireworks_lightning": {"name": "Молнии", "category": "cos_peace_fireworks", "rarity": "legendary", "price": 1000},
+		"cos_peace_fireworks_snowfall": {"name": "Снегопад", "category": "cos_peace_fireworks", "rarity": "epic", "price": 0},
+		"cos_fill_pattern_parquet": {"name": "Паркет", "category": "cos_fill_pattern", "rarity": "rare", "price": 400},
+		"cos_fill_pattern_honeycomb": {"name": "Соты", "category": "cos_fill_pattern", "rarity": "rare", "price": 400},
+		"cos_fill_pattern_mosaic": {"name": "Мозаика", "category": "cos_fill_pattern", "rarity": "epic", "price": 600},
+		"cos_fill_pattern_carbon": {"name": "Карбон", "category": "cos_fill_pattern", "rarity": "epic", "price": 600},
+		"cos_fill_pattern_frost": {"name": "Иней", "category": "cos_fill_pattern", "rarity": "epic", "price": 0},
+		"cos_capital_skin_ice_citadel": {"name": "Ледяная цитадель", "category": "cos_capital_skin", "rarity": "legendary", "price": 0},
+		"cos_capital_skin_garden_city": {"name": "Город-сад", "category": "cos_capital_skin", "rarity": "legendary", "price": 0, "usd": 7.99},
+		"cos_capital_skin_steampunk": {"name": "Стимпанк", "category": "cos_capital_skin", "rarity": "legendary", "price": 0, "usd": 9.99},
+		"cos_capital_skin_desert_oasis": {"name": "Пустынный оазис", "category": "cos_capital_skin", "rarity": "legendary", "price": 0, "usd": 7.99},
+		"cos_frame_season_1": {"name": "Сезон I", "category": "cos_frame", "rarity": "rare", "price": 0},
+		"cos_frame_ice": {"name": "Ледяная", "category": "cos_frame", "rarity": "rare", "price": 0},
+		"cos_unit_skin_snow_jaegers": {"name": "Снежные егеря", "category": "cos_unit_skin", "rarity": "rare", "price": 0},
+		"cos_unit_skin_scarlet_guard": {"name": "Алая гвардия", "category": "cos_unit_skin", "rarity": "epic", "price": 500},
+		"cos_unit_skin_sand_foxes": {"name": "Песчаные лисы", "category": "cos_unit_skin", "rarity": "rare", "price": 400},
+		"cos_emote_salute": {"name": "Отдать честь", "category": "cos_emote", "rarity": "rare", "price": 100},
+		"cos_emote_white_flag": {"name": "Белый флаг", "category": "cos_emote", "rarity": "rare", "price": 150},
+		"cos_emote_laugh": {"name": "Хохот", "category": "cos_emote", "rarity": "rare", "price": 200},
+		"cos_emote_applause": {"name": "Аплодисменты", "category": "cos_emote", "rarity": "rare", "price": 0},
+		"cos_emote_card_up_sleeve": {"name": "Карта в рукаве", "category": "cos_emote", "rarity": "epic", "price": 0},
+		"cos_emote_snowman": {"name": "Снеговик", "category": "cos_emote", "rarity": "rare", "price": 0}
+	},
+	"pools": {
+		"pool_crate": ["cos_border_ink_copper", "cos_fill_pattern_honeycomb", "cos_fill_pattern_parquet",
+			"cos_emote_laugh", "cos_emote_white_flag", "cos_unit_skin_sand_foxes"],
+		"pool_royal_rare": ["cos_border_ink_gold_thread", "cos_peace_seal_wax", "cos_peace_fireworks_confetti",
+			"cos_fill_pattern_parquet", "cos_emote_salute", "cos_unit_skin_sand_foxes"],
+		"pool_royal_epic": ["cos_border_ink_neon", "cos_peace_seal_gold_stamp", "cos_peace_seal_dragon_paw",
+			"cos_peace_fireworks_classic", "cos_peace_fireworks_petals", "cos_fill_pattern_mosaic",
+			"cos_fill_pattern_carbon", "cos_unit_skin_scarlet_guard"],
+		"pool_royal_legendary": ["cos_capital_skin_garden_city", "cos_capital_skin_steampunk",
+			"cos_capital_skin_desert_oasis", "cos_peace_seal_hologram", "cos_peace_fireworks_lightning"]
+	},
+	"cases": {
+		"case_war_crate": {
+			"name_ru": "Военный ящик",
+			"price": 0,
+			"tiers": {
+				"common": {"p": 0.75, "items": [
+					{"id": "gold_2h", "name_ru": "Золото 2 ч", "resources_h": 2, "res": "res_gold", "w": 14},
+					{"id": "food_2h", "name_ru": "Еда 2 ч", "resources_h": 2, "res": "res_food", "w": 12},
+					{"id": "metal_2h", "name_ru": "Металл 2 ч", "resources_h": 2, "res": "res_metal", "w": 12},
+					{"id": "gold_4h", "name_ru": "Золото 4 ч", "resources_h": 4, "res": "res_gold", "w": 9},
+					{"id": "food_4h", "name_ru": "Еда 4 ч", "resources_h": 4, "res": "res_food", "w": 7},
+					{"id": "metal_4h", "name_ru": "Металл 4 ч", "resources_h": 4, "res": "res_metal", "w": 7},
+					{"id": "oil_4h", "name_ru": "Нефть 4 ч (до УР5 — Золото 4 ч)", "resources_h": 4, "res": "res_oil", "fallback": {"below_dev_level": 5, "res": "res_gold"}, "w": 4},
+					{"id": "all_2h", "name_ru": "Ресурсы 2 ч (все)", "resources_h": 2, "res": "all", "w": 6},
+					{"id": "gold_8h", "name_ru": "Золото 8 ч", "resources_h": 8, "res": "res_gold", "w": 2},
+					{"id": "metal_8h", "name_ru": "Металл 8 ч", "resources_h": 8, "res": "res_metal", "w": 2}
+				]},
+				"rare": {"p": 0.18, "items": [
+					{"id": "speedup_15m_x2", "name_ru": "2 × ускорение 15 мин", "speedup": "item_speedup_15m", "n": 2, "w": 6},
+					{"id": "speedup_1h", "name_ru": "Ускорение 1 ч", "speedup": "item_speedup_1h", "n": 1, "w": 8},
+					{"id": "speedup_1h_x2", "name_ru": "2 × ускорение 1 ч", "speedup": "item_speedup_1h", "n": 2, "w": 4}
+				]},
+				"epic": {"p": 0.065, "items": [
+					{"id": "shards_5", "name_ru": "5 осколков случайного командира", "shards": "pool", "n": 5, "w": 4},
+					{"id": "shards_10", "name_ru": "10 осколков случайного командира", "shards": "pool", "n": 10, "w": 2.5}
+				]},
+				"legendary": {"p": 0.005, "items": [
+					{"id": "cosmetic", "name_ru": "Предмет косметики из пула ящика", "cosmetic_pool": "pool_crate", "w": 0.5}
+				]}
+			},
+			"pity": {"legendary": {"hard_at": 60, "counter": "crate_cosmetic"}},
+			"pity_text": "cosmetic",
+			"shard_pool": {"rarities": ["common", "rare"], "unopened_weight": 2, "exclude_maxed": true}
+		},
+		"case_trophy_bronze": {
+			"name_ru": "Трофейный сундук (бронзовый)",
+			"price": 0,
+			"roll": "case_war_crate",
+			"res_mult": 2,
+			"pity": {"legendary": {"hard_at": 60, "counter": "crate_cosmetic"}},
+			"pity_text": "cosmetic"
+		},
+		"case_trophy_silver": {
+			"name_ru": "Трофейный сундук (серебряный)",
+			"price": 0,
+			"roll": "case_war_crate",
+			"res_mult": 3,
+			"pity": {"legendary": {"hard_at": 60, "counter": "crate_cosmetic"}},
+			"pity_text": "cosmetic"
+		},
+		"case_trophy_gold": {
+			"name_ru": "Трофейный сундук (золотой)",
+			"price": 0,
+			"roll": "case_war_crate",
+			"res_mult": 5,
+			"extra": [
+				{"id": "gold_epic_shards", "name_ru": "5 осколков эпического командира (100%)", "shards": "pool", "rarity": "epic", "n": 5, "target": true}
+			],
+			"pity": {"legendary": {"hard_at": 60, "counter": "crate_cosmetic"}},
+			"pity_text": "cosmetic"
+		},
+		"case_arena_chest": {
+			"name_ru": "Сундук Арены",
+			"price": 0,
+			"roll": "case_war_crate",
+			"res_mult": 2,
+			"pity": {},
+			"pity_text": "none"
+		},
+		"case_royal": {
+			"name_ru": "Королевский кейс",
+			"price": 160,
+			"price_x10": 1440,
+			"sub_key_per_week": 1,
+			"tiers": {
+				"common": {"p": 0.62, "items": [
+					{"id": "res_all_8h", "name_ru": "Ресурсы 8 ч (все)", "resources_h": 8, "res": "all", "w": 20},
+					{"id": "speedup_1h", "name_ru": "Ускорение 1 ч", "speedup": "item_speedup_1h", "n": 1, "w": 20},
+					{"id": "shards_common_10", "name_ru": "10 осколков обычного командира", "shards": "pool", "rarity": "common", "n": 10, "w": 22}
+				]},
+				"rare": {"p": 0.28, "items": [
+					{"id": "speedup_3h_1h", "name_ru": "Ускорения 3 ч + 1 ч", "bundle": [{"speedup": "item_speedup_3h", "n": 1}, {"speedup": "item_speedup_1h", "n": 1}], "w": 10},
+					{"id": "shards_rare_10", "name_ru": "10 осколков редкого командира", "shards": "pool", "rarity": "rare", "n": 10, "w": 12},
+					{"id": "cosmetic_rare", "name_ru": "Редкая косметика", "cosmetic_pool": "pool_royal_rare", "w": 6}
+				]},
+				"epic": {"p": 0.085, "items": [
+					{"id": "shards_epic_10", "name_ru": "10 осколков эпического командира", "shards": "pool", "rarity": "epic", "n": 10, "target": true, "w": 5.5},
+					{"id": "cosmetic_epic", "name_ru": "Эпическая косметика", "cosmetic_pool": "pool_royal_epic", "w": 3}
+				]},
+				"legendary": {"p": 0.015, "items": [
+					{"id": "shards_legendary_20", "name_ru": "20 осколков легендарного командира", "shards": "pool", "rarity": "legendary", "n": 20, "target": true, "w": 0.9},
+					{"id": "cosmetic_legendary", "name_ru": "Легендарная косметика", "cosmetic_pool": "pool_royal_legendary", "w": 0.6}
+				]}
+			},
+			"pity": {
+				"epic_plus": {"every": 10, "forced_draw": "proportional", "counter": "royal_epic"},
+				"legendary": {"soft_from": 40, "soft_step": 0.06, "hard_at": 50, "counter": "royal_leg",
+					"hold": ["epic"], "share": ["common", "rare"]}
+			},
+			"pity_text": "royal",
+			"target": {"share": 0.5, "rarities": ["epic", "legendary"]}
+		},
+		"case_collection": {
+			"name_ru": "Кейс коллекции",
+			"collection": true,
+			"season": 1,
+			"set_name_ru": "Ледяной рубеж",
+			"prices": [100, 150, 200, 250, 300, 400, 500, 600],
+			"central": "cos_capital_skin_ice_citadel",
+			"set": ["cos_capital_skin_ice_citadel", "cos_border_ink_ice", "cos_fill_pattern_frost",
+				"cos_peace_fireworks_snowfall", "cos_unit_skin_snow_jaegers", "cos_peace_seal_ice_rune",
+				"cos_frame_ice", "cos_emote_snowman"],
+			"pity_text": "collection"
+		}
+	}
+}

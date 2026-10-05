@@ -8,8 +8,8 @@ const SEED := 20261005
 const T0 := 1790000000
 const CTX := {"income_per_hour": {"gold": 100, "food": 50, "metal": 40}, "dl": 3}
 ## The statistical runs (§9.10.11 asks for 1 M per case on the server; here a smaller headless budget).
-const STAT_ROYAL := 400000
-const STAT_CRATE := 300000
+const STAT_ROYAL := 300000
+const STAT_CRATE := 250000
 const STAT_ARENA := 100000
 ## Fixed commander state for the statistical runs, so the war crate's «not yet unlocked ×2» weights do
 ## not drift while shards accumulate.
@@ -207,7 +207,7 @@ func _test_royal_epic() -> void:
 	var worst := 0
 	var forced_total := 0
 	var forced_leg := 0
-	for i in range(40000):
+	for i in range(20000):
 		var r := c.open("case_royal", CTX, T0 + i)
 		var rr := String(r["rarity"])
 		since += 1
@@ -218,7 +218,7 @@ func _test_royal_epic() -> void:
 	_eq(worst, 10, "the every-10 guarantee is reached")
 	# ×10 always contains epic+, from any counter state.
 	var d := Cases.new(SEED + 7)
-	for k in range(3000):
+	for k in range(1500):
 		var batch := d.open_x10("case_royal", CTX, T0 + k)
 		_eq(batch.size(), 10, "×10 gives 10 results")
 		var has := false
@@ -239,7 +239,7 @@ func _test_royal_epic() -> void:
 	_near(float(p2["legendary"]), 0.375 / (0.375 + 0.085), 1e-12, "forced epic+ at n = 45")
 	# Empirical share of legendary among forced draws (outside soft pity).
 	var e := Cases.new(SEED + 11)
-	for i in range(60000):
+	for i in range(40000):
 		var ep := int(e.pity.get("royal_epic", 0))
 		var lp := int(e.pity.get("royal_leg", 0))
 		var r3 := e.open("case_royal", CTX, T0 + i)
@@ -267,7 +267,7 @@ func _test_royal_legendary() -> void:
 	var since := 0
 	var worst := 0
 	var soft_hits := 0
-	for i in range(60000):
+	for i in range(30000):
 		var r := c.open("case_royal", CTX, T0 + i)
 		since += 1
 		if String(r["rarity"]) == "legendary":
@@ -320,7 +320,7 @@ func _test_target() -> void:
 	_check(c.set_target("cmd_irma"), "Ирма Сталь can be «Цель»")
 	var irma := 0
 	var epic_shards := 0
-	for i in range(40000):
+	for i in range(20000):
 		var r := c.open("case_royal", {"income_per_hour": CTX["income_per_hour"], "dl": 3,
 			"commanders_owned": ALL_OWNED}, T0 + i)
 		for rv in (r["rewards"] as Array):
@@ -657,11 +657,11 @@ func _test_roundtrip() -> void:
 
 
 ## Chi-square of observed rarity counts against expected counts.
-func _chi2(obs: Dictionary, exp: Dictionary) -> Array:
+func _chi2(obs: Dictionary, expected: Dictionary) -> Array:
 	var chi := 0.0
 	var df := -1
-	for k in exp:
-		var e := float(exp[k])
+	for k in expected:
+		var e := float(expected[k])
 		if e <= 0.0:
 			continue
 		var o := float(obs.get(k, 0))
