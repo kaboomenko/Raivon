@@ -2896,6 +2896,17 @@ func _demo(spec: String) -> void:
 	if what == "settings":
 		_on_hud_button("gear")
 		return
+	if what == "forts":
+		var cap: int = sim.states[Types.PLAYER]["capital_id"]
+		sim.cells[cap]["fort"] = 3
+		var lv := 1
+		for n in sim.neighbors[cap]:
+			if n >= 0 and sim.cells[n]["owner"] == Types.PLAYER:
+				sim.cells[n]["fort"] = lv
+				lv = lv % 8 + 1
+		map_view.refresh_props()
+		rig.focus(map_view.cell_world(cap), 0.3)
+		return
 	if what == "tower":
 		var cap: int = sim.states[Types.PLAYER]["capital_id"]
 		for n in sim.neighbors[cap]:

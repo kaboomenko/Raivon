@@ -5,6 +5,7 @@ extends Node3D
 
 const Types := preload("res://scripts/sim/types.gd")
 const MapGen := preload("res://scripts/sim/map_gen.gd")
+const HexGrid := preload("res://scripts/sim/hexgrid.gd")
 
 const SQ3 := 1.7320508
 const DIRS := [Vector2i(1, 0), Vector2i(1, -1), Vector2i(0, -1), Vector2i(-1, 0), Vector2i(-1, 1), Vector2i(0, 1)]
@@ -225,11 +226,16 @@ func _place_props() -> void:
 
 
 ## Rebuilds one hex's props in its current owner's style (the ceremony flips them one by one).
-func refresh_hex(id: int) -> void:
+func refresh_hex(id: int, neighbours := true) -> void:
 	var old: Node3D = _hex_props.get(id)
 	if old:
 		old.queue_free()
 	_place_hex_props(sim.cells[id])
+	if neighbours:
+		# forts next door draw walls only towards foreign land: their outer edges may have changed
+		for n in sim.neighbors[id]:
+			if n >= 0 and int(sim.cells[n]["fort"]) > 0:
+				refresh_hex(n, false)
 
 
 ## Ceremony «pop»: the hex's buildings jump to 1.08 and settle back.
@@ -263,9 +269,37 @@ func _place_fort(c: Dictionary, holder: Node3D) -> void:
 	if lvl <= 0:
 		return
 	for n in range(mini(lvl, 8), 0, -1):
+		if has_model("fort_l%d_edge" % n) and has_model("fort_l%d_post" % n):
+			_place_fort_edges(c, holder, n)
+			return
 		if has_model("fort_l%d" % n):
 			spawn("fort_l%d" % n, holder, Vector3.ZERO, 0.0, 1.0)
 			return
+
+
+## Walls only on the edges that face foreign or wild land (canon §7), corner posts where those walls meet.
+## An inner fort (every neighbour is ours) shows just its corner posts, so it stays visible.
+func _place_fort_edges(c: Dictionary, holder: Node3D, n: int) -> void:
+	var own: int = c["owner"]
+	var corners := {}  # corner index 0..5 (angle k·60°) -> true
+	var outer := 0
+	for i in 6:
+		var d: Vector2i = HexGrid.DIRS[i]
+		var nid: int = sim.id_at(int(c["q"]) + d.x, int(c["r"]) + d.y)
+		if nid >= 0 and int(sim.cells[nid]["owner"]) == own:
+			continue
+		outer += 1
+		var dv := axial_to_world(int(c["q"]) + d.x, int(c["r"]) + d.y) - axial_to_world(int(c["q"]), int(c["r"]))
+		var ang := atan2(-dv.z, dv.x)  # Blender angle of the edge normal (Godot −Z is Blender +Y)
+		spawn("fort_l%d_edge" % n, holder, Vector3.ZERO, ang - PI / 2.0, 1.0)  # the edge piece faces 90°
+		var k := posmod(roundi(rad_to_deg(ang) / 60.0 - 0.5), 6)  # corners at normal ± 30°
+		corners[k] = true
+		corners[(k + 1) % 6] = true
+	if outer == 0:
+		for k in 6:
+			corners[k] = true
+	for k in corners:
+		spawn("fort_l%d_post" % n, holder, Vector3.ZERO, int(k) * PI / 3.0, 1.0)
 
 
 ## Defensive tower (canon §7): stands at the back of the hex, grows a little with its level.
