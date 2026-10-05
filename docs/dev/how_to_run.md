@@ -6,7 +6,7 @@
 4. Скриншот клиента: `tools/godot_shot.sh /путь/out.png [--zoom=0.15]` (941×1672, как эталон).
 5. Проверка GDScript: `godot --headless --path game --check-only --script res://scripts/<file>.gd`.
 5b. Тест игрового цикла: `godot --headless --path game --script res://tests/test_flow.gd`. Демо-состояния для скриншотов: `tools/godot_shot.sh OUT.png --demo=battle:40|result|peace|ceremony:1.5`.
-6. APK для Android: `cd game && godot --headless --path . --export-debug "Android" ../builds/raivon-debug.apk` (arm64, подпись отладочным ключом). APK кладётся в `builds/` и коммитится только на заметных вехах.
+6. APK для Android: `cd game && godot --headless --path . --export-debug "Android" ../builds/raivon-debug.apk` (arm64, подпись отладочным ключом). APK в git не коммитится (большой): для владельца его собирает GitHub Actions «Mobile builds» при смене версии в `export_presets.cfg` (артефакты Android APK и проект Xcode).
 7. Старый веб-прототип (`apps/client`, `packages/sim`) — только как справочник правил; `npm test` гоняет тесты sim.
 
 Особенности: видеокарты нет, рендер программный (lavapipe) — кадр 941×1672 рендерится ~30 с. Сайты с CC0-моделями заблокированы сетевой политикой окружения.
