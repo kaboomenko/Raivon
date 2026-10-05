@@ -44,6 +44,8 @@ var ftue := 0  # first-war tutorial step (canon §14.3); 0 = finished / off
 var _ftue_shown := -1
 var _ftue_t := 0.0
 var _mill := -1
+var _ftue_next := 0  # step to resume after the peace ceremony
+var _raid := {}  # FTUE marauder raid: {hex, at}
 var econ  # Economy (scripts/sim/economy.gd)
 var deposits  # Deposits (scripts/sim/deposits.gd)
 var first_convoy_done := false
@@ -931,6 +933,7 @@ func _sign_peace() -> void:
 	sfx.haptic(120)
 	if ftue > 0:
 		ftue = 0
+		_ftue_next = 7
 		ui.coach_hide()
 		if _mill >= 0:
 			map_view.clear_smoke(_mill)
@@ -1042,6 +1045,9 @@ func _double_trophies() -> void:
 
 func _end_ceremony() -> void:
 	ui.close_modal()
+	if _ftue_next > 0:
+		ftue = _ftue_next
+		_ftue_next = 0
 	map_view.ceremony_t = -1.0
 	map_view.flip_at = {}
 	map_view.prev_owner = {}
@@ -1218,6 +1224,11 @@ func _fort_action() -> void:
 		ui.toast("Укрепление → ур. %d" % (int(fort["level"]) + 1))
 	sfx.play("coin")
 	map_view.burst(selected, Color(1.0, 0.85, 0.3))
+	if ftue == 9:
+		# scripted marauder raid breaks against the new fence (canon §14.3, 5:00–6:00)
+		ftue = 0
+		_raid = {"hex": selected, "at": now + 25}
+		ui.coach_hide()
 	_econ_tick()
 	_autosave()
 
@@ -1239,6 +1250,8 @@ func _send_convoy(hex: int) -> void:
 		return
 	deposits.send(sim, hex, econ.dev_level(), now_s(), not first_convoy_done)
 	first_convoy_done = true
+	if ftue == 8:
+		ftue = 9
 	var cv: Dictionary = deposits.convoy_for(hex)
 	sfx.play("tap")
 	ui.toast("Обоз в пути: вернётся через %s" % GameUI.fmt_time(int(cv["back"]) - now_s()))
@@ -1337,6 +1350,8 @@ func _on_building_upgrade(id: int) -> void:
 	sfx.play("coin")
 	sfx.haptic(20)
 	ui.toast("%s → ур. %d · %s" % [Economy.BUILDINGS[b["type"]]["name"], int(b["level"]) + 1, GameUI.fmt_time(int(b["upgrade_end"]) - now)])
+	if ftue == 7 and b["type"] == "residence":
+		ftue = 8
 	_econ_tick()
 	_autosave()
 
@@ -1371,6 +1386,14 @@ func _unread() -> int:
 
 
 func _ai_tick(now: int) -> void:
+	if not _raid.is_empty() and now >= int(_raid["at"]) and mode in [Mode.MAP, Mode.WAR]:
+		var h: int = _raid["hex"]
+		_raid = {}
+		map_view.burst(h, Color(1.0, 0.6, 0.3), true)
+		map_view.floater(h, "Набег отбит!", Color(0.75, 0.85, 1.0))
+		sfx.play("repelled")
+		_post("Набег мародёров", "Мародёры с диких земель налетели на «%s» и разбились о плетень. Укрепления защищают гексы и склады." % _cell_name(h))
+		ui.toast("Мародёры разбились о плетень! Обучение пройдено — дальше держава ваша.")
 	if ultimatum_at > 0 and now >= ultimatum_at and ultimatum.is_empty() and war.is_empty() and mode == Mode.MAP and _truce_left(MapGen.BARONS) == 0:
 		_issue_ultimatum(now)
 	if not ultimatum.is_empty() and now >= int(ultimatum["deadline"]) and mode in [Mode.MAP, Mode.WAR]:
@@ -1509,6 +1532,9 @@ func _war_cap() -> void:
 
 const FTUE_TEXT := {
 	1: "Бароны сожгли нашу пограничную мельницу! Объявите им войну.",
+	7: "Держава растёт! Откройте «Здания» и улучшите Резиденцию — халупы станут избами.",
+	8: "Жёлтый контур — бесплатные ресурсы. Коснитесь жилы и отправьте обоз.",
+	9: "Укрепите границу: выберите свой гекс у Баронов и нажмите кнопку «форт» справа.",
 	2: "Начните наступление: у вас 60 секунд.",
 	3: "Тяните от своей армии на вражеский гекс — армия пойдёт в атаку.",
 	4: "Отлично! Карта «Атака» бросает в бой все армии рядом. Захватите ещё!",
@@ -1533,6 +1559,25 @@ func _touches_owner(id: int, s: int) -> bool:
 		if n >= 0 and sim.cells[n]["owner"] == s:
 			return true
 	return false
+
+
+func _residence_busy() -> bool:
+	for b in econ.buildings:
+		if b["type"] == "residence" and int(b["upgrade_end"]) > now_s():
+			return true
+	return false
+
+
+## The FTUE gold vein: a small deposit on the player's land, reachable by the first (fast) convoy.
+func _ftue_deposit() -> int:
+	for d in deposits.active:
+		if sim.cells[d["hex"]]["owner"] == Types.PLAYER and int(d["convoy"]) < 0:
+			return d["hex"]
+	for c in sim.cells:
+		if c["owner"] == Types.PLAYER and c["kind"] == "plain" and int(c["fort"]) == 0 and deposits.at(c["id"]).is_empty():
+			deposits.spawn_at(sim, c["id"], "gold", "S", econ.gross_per_hour(sim), now_s())
+			return c["id"]
+	return -1
 
 
 func _ftue_attacked() -> void:
@@ -1560,6 +1605,23 @@ func _ftue_tick(delta: float) -> void:
 			target = Vector2(655, 998)
 		6:
 			target = Vector2(470, 1488)
+		7:
+			if econ.dev_level() >= 2 or _residence_busy():
+				ftue = 8
+				return
+			var why: String = econ.can_upgrade(econ.buildings[0], now_s())
+			if why != "" and why.begins_with("Нужно"):
+				ftue = 8  # not enough land for DL2 yet — the convoy step comes first
+				return
+			target = Vector2(70, 1440) if tab != "buildings" else Vector2(83, GameUI.VH - 35)
+		8:
+			var dh := _ftue_deposit()
+			if dh >= 0 and _ftue_shown != 8:
+				rig.focus(map_view.cell_world(dh))
+			if dh >= 0:
+				target = rig.cam.unproject_position(map_view.cell_world(dh) + Vector3(0, 0.8, 0))
+		9:
+			target = Vector2(895, 486)
 	if _ftue_shown != ftue:
 		_ftue_shown = ftue
 		_ftue_t = 0.0

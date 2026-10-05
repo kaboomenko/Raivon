@@ -271,7 +271,40 @@ func _run() -> void:
 		g._open_peace()
 		_check(g.ftue == 6, "FTUE peace step")
 		g._sign_peace()
-		_check(g.ftue == 0, "FTUE finished after the seal")
+		_check(g.ftue == 0, "FTUE coach hidden during the ceremony")
+		for i in 80:
+			g._step_ceremony(0.1)
+		g._end_ceremony()
+		_check(g.ftue == 7, "FTUE resumes after the ceremony (residence step)")
+		g._ftue_tick(0.1)
+		if g.ftue == 7:
+			g._on_building_upgrade(g.econ.buildings[0]["id"])
+		_check(g.ftue == 8, "FTUE: residence step done (or skipped for lack of land)")
+		g._ftue_tick(0.1)
+		var dh: int = g._ftue_deposit()
+		g._select(dh)
+		g._on_action("convoy")
+		_check(g.ftue == 9, "FTUE: convoy sent to the gold vein")
+		var fh := -1
+		for c in g.sim.cells:
+			if c["owner"] == Types.PLAYER and c["kind"] == "plain" and int(c["fort"]) == 0 and g.deposits.at(c["id"]).is_empty() and g._touches_owner(c["id"], MapGen.BARONS):
+				fh = c["id"]
+				break
+		if fh < 0:
+			for c in g.sim.cells:
+				if c["owner"] == Types.PLAYER and c["kind"] == "plain" and int(c["fort"]) == 0 and g.deposits.at(c["id"]).is_empty():
+					fh = c["id"]
+					break
+		g._select(fh)
+		g._fort_action()
+		_check(g.ftue == 0 and not g._raid.is_empty(), "FTUE: fence started, marauder raid scheduled")
+		g.time_offset += 60
+		g._econ_tick()
+		var raided := false
+		for it in g.inbox:
+			if String(it["title"]).begins_with("Набег"):
+				raided = true
+		_check(raided and g._raid.is_empty(), "FTUE: the raid breaks against the fence")
 	g.queue_free()
 	await process_frame
 
