@@ -7,6 +7,8 @@ signal card_drop(card: String, screen: Vector2)
 signal card_drag(card: String, screen: Vector2, active: bool)
 signal demand_toggled(id: String)
 signal seal_done
+signal building_upgrade(id: int)
+signal building_speedup(id: int)
 
 const PANEL := Color(0.055, 0.085, 0.14, 0.95)
 const EDGE := Color(0.32, 0.42, 0.58, 0.6)
@@ -464,6 +466,136 @@ func show_settings(sound_on: bool, on_sound: Callable, on_new_game: Callable) ->
 	_at(_label("Прогресс сохраняется автоматически на устройстве.", 18, MUTED, false), box, Vector2(40, 330))
 	_at(_label("Raivon: Territory Wars · тестовая сборка %s" % ProjectSettings.get_setting("application/config/version", "0.3"), 18, MUTED, false), box, Vector2(40, 366))
 	_button(box, Rect2(40, 480, 681, 84), "Закрыть", Color(0.13, 0.4, 0.9), close_modal)
+
+
+# ------------------------------------------------------------------ buildings tab (canon §7)
+
+const RES_ICON := {"gold": "coin", "food": "food", "metal": "metal", "oil": "metal", "raivite": "raivite"}
+var _bpanel: Control
+var _bscroll: ScrollContainer
+var _brow: HBoxContainer
+var _icon_cache := {}
+
+
+func _icon(res: String) -> Texture2D:
+	var k: String = RES_ICON.get(res, "coin")
+	if not _icon_cache.has(k):
+		_icon_cache[k] = load("res://assets/ui/%s.png" % k)
+	return _icon_cache[k]
+
+
+static func fmt_time(sec: int) -> String:
+	if sec >= 3600:
+		return "%d ч %02d мин" % [sec / 3600, (sec % 3600) / 60]
+	if sec >= 60:
+		return "%d:%02d" % [sec / 60, sec % 60]
+	return "%d с" % sec
+
+
+## items: [{id, name, level, max, busy, left, speed, cost: {res: n}, seconds, reason}]
+func show_buildings(items: Array) -> void:
+	if _bpanel == null:
+		_bpanel = Control.new()
+		_bpanel.position = Vector2(0, VH - 188)
+		_bpanel.size = Vector2(640, 182)
+		_bpanel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		root.add_child(_bpanel)
+		root.move_child(_bpanel, 0)
+		_bscroll = ScrollContainer.new()
+		_bscroll.position = Vector2(8, 0)
+		_bscroll.size = Vector2(626, 182)
+		_bscroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		_bscroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+		_bpanel.add_child(_bscroll)
+		_brow = HBoxContainer.new()
+		_brow.add_theme_constant_override("separation", 8)
+		_bscroll.add_child(_brow)
+	_bpanel.visible = true
+	var keep := _bscroll.scroll_horizontal
+	for c in _brow.get_children():
+		_brow.remove_child(c)
+		c.queue_free()
+	for it in items:
+		_brow.add_child(_building_card(it))
+	_bscroll.set_deferred("scroll_horizontal", keep)
+
+
+func hide_buildings() -> void:
+	if _bpanel:
+		_bpanel.visible = false
+
+
+func _building_card(it: Dictionary) -> Control:
+	var card := Panel.new()
+	card.custom_minimum_size = Vector2(150, 178)
+	var busy: bool = it["busy"]
+	card.add_theme_stylebox_override("panel", _style(Color(0.1, 0.15, 0.25) if not busy else Color(0.16, 0.14, 0.1), 12, Color(0.45, 0.58, 0.8, 0.8) if not busy else Color(0.95, 0.7, 0.25, 0.9), 2))
+	card.mouse_filter = Control.MOUSE_FILTER_PASS
+	var nm := _label(it["name"], 17)
+	nm.position = Vector2(0, 6)
+	nm.size = Vector2(150, 24)
+	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	nm.clip_text = true
+	card.add_child(nm)
+	var lv := _label("ур. %d / %d" % [it["level"], it["max"]], 15, MUTED, false)
+	lv.position = Vector2(0, 32)
+	lv.size = Vector2(150, 22)
+	lv.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	card.add_child(lv)
+	var id: int = it["id"]
+	if busy:
+		var t := _label(fmt_time(int(it["left"])), 28, Color(1.0, 0.85, 0.4))
+		t.position = Vector2(0, 62)
+		t.size = Vector2(150, 40)
+		t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		card.add_child(t)
+		var sp: int = it["speed"]
+		_card_button(card, "⚡ бесплатно" if sp == 0 else "⚡ %d" % sp, Color(0.85, 0.55, 0.1), func(): building_speedup.emit(id), sp > 0)
+		return card
+	if int(it["level"]) >= int(it["max"]) and String(it["reason"]) != "":
+		var m := _label(it["reason"], 15, MUTED, false)
+		m.position = Vector2(8, 66)
+		m.size = Vector2(134, 70)
+		m.autowrap_mode = TextServer.AUTOWRAP_WORD
+		m.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		card.add_child(m)
+		return card
+	var y := 60.0
+	var cost: Dictionary = it["cost"]
+	for r in cost:
+		var row := HBoxContainer.new()
+		row.position = Vector2(26, y)
+		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var ic := TextureRect.new()
+		ic.texture = _icon(r)
+		ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		ic.custom_minimum_size = Vector2(24, 24)
+		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(ic)
+		row.add_child(_label(str(cost[r]), 18, TEXT, false))
+		card.add_child(row)
+		y += 26
+	var tl := _label("⏱ " + fmt_time(int(it["seconds"])), 15, MUTED, false)
+	tl.position = Vector2(26, y)
+	card.add_child(tl)
+	var ok: bool = String(it["reason"]) == ""
+	_card_button(card, "⬆ Улучшить", Color(0.2, 0.55, 0.3) if ok else Color(0.3, 0.33, 0.4), func():
+		if ok:
+			building_upgrade.emit(id)
+		else:
+			toast(it["reason"]), true)
+	return card
+
+
+func _card_button(card: Control, text: String, color: Color, cb: Callable, _enabled: bool) -> void:
+	var b := _panel(card, Rect2(8, 134, 134, 38), _style(color, 10, Color(1, 1, 1, 0.45), 2))
+	b.mouse_filter = Control.MOUSE_FILTER_PASS
+	var l := _label(text, 17)
+	l.size = Vector2(134, 38)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	b.add_child(l)
+	b.gui_input.connect(func(e): if _is_tap(e): cb.call())
 
 
 # ------------------------------------------------------------------ coach (FTUE, canon §14.3)

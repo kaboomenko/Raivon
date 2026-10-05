@@ -30,6 +30,8 @@ static func save(g: Node) -> void:
 		"war": g.war,
 		"truce": g.truce,
 		"ftue": g.ftue,
+		"colonizing": g.colonizing,
+		"colonized": g.colonized,
 	}
 	if g.get("econ") != null:
 		d["econ"] = g.econ.to_dict()
@@ -83,6 +85,12 @@ static func apply(g: Node, d: Dictionary) -> bool:
 	g.war = war
 	g.truce = truce
 	g.ftue = int(d.get("ftue", 0))
+	var col := {}
+	var sc: Dictionary = d.get("colonizing", {})
+	for k in sc:
+		col[int(k)] = int(sc[k])
+	g.colonizing = col
+	g.colonized = int(d.get("colonized", 0))
 	if d.has("econ") and g.get("econ") != null:
 		g.econ = g.econ.get_script().from_dict(d["econ"])
 	return true

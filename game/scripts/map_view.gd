@@ -714,6 +714,83 @@ func burst(hex: int, color: Color, big := false) -> void:
 	_fx.append({"node": mi, "t": 0.0, "dur": 0.9 if big else 0.6, "big": big})
 
 
+# ------------------------------------------------------------------ resource bubbles & hex labels
+
+var _bubbles := {}  # hex -> Node3D
+var _hex_labels := {}  # hex -> Label3D
+var _tex_cache := {}
+
+
+func _tex(name: String) -> Texture2D:
+	if not _tex_cache.has(name):
+		_tex_cache[name] = load("res://assets/ui/%s.png" % name)
+	return _tex_cache[name]
+
+
+## CoC-style bubbles over hexes with uncollected income: data = {hex: {"res": "gold", "amount": n}}.
+func set_bubbles(data: Dictionary) -> void:
+	for h in _bubbles.keys():
+		if not data.has(h):
+			_bubbles[h].queue_free()
+			_bubbles.erase(h)
+	for h in data:
+		var node: Node3D = _bubbles.get(h)
+		var icon_name: String = {"gold": "coin", "food": "food", "metal": "metal"}.get(data[h]["res"], "coin")
+		if node == null:
+			node = Node3D.new()
+			node.position = cell_world(h) + Vector3(0, 2.0, 0)
+			add_child(node)
+			for part in [["bg", "bubble", 0.0046, 0], ["icon", icon_name, 0.0032, 1]]:
+				var sp := Sprite3D.new()
+				sp.name = part[0]
+				sp.texture = _tex(part[1])
+				sp.pixel_size = part[2]
+				sp.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+				sp.no_depth_test = true
+				sp.render_priority = 3 + part[3]
+				sp.shaded = false
+				node.add_child(sp)
+			var lbl := Label3D.new()
+			lbl.name = "amount"
+			lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+			lbl.no_depth_test = true
+			lbl.render_priority = 5
+			lbl.font_size = 44
+			lbl.outline_size = 12
+			lbl.pixel_size = 0.005
+			lbl.position = Vector3(0, -0.42, 0)
+			node.add_child(lbl)
+			_bubbles[h] = node
+		(node.get_node("icon") as Sprite3D).texture = _tex(icon_name)
+		(node.get_node("amount") as Label3D).text = "+%d" % int(data[h]["amount"])
+
+
+func has_bubble(hex: int) -> bool:
+	return _bubbles.has(hex)
+
+
+## Text floating over a hex (colonization timers); "" removes it.
+func hex_label(hex: int, text: String, color := Color(1, 0.9, 0.5)) -> void:
+	var l: Label3D = _hex_labels.get(hex)
+	if text == "":
+		if l:
+			l.queue_free()
+			_hex_labels.erase(hex)
+		return
+	if l == null:
+		l = Label3D.new()
+		l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		l.no_depth_test = true
+		l.font_size = 52
+		l.outline_size = 14
+		l.pixel_size = 0.005
+		l.position = cell_world(hex) + Vector3(0, 0.9, 0)
+		add_child(l)
+		_hex_labels[hex] = l
+	l.text = text
+	l.modulate = color
+
+
 var _smoke_mat: StandardMaterial3D
 var _smokes := {}  # hex id -> CPUParticles3D (persistent smoke, e.g. the burned FTUE mill)
 
@@ -887,6 +964,10 @@ func _process(delta: float) -> void:
 		_snapshot = snap
 		_dirty = false
 		_rebuild_overlay()
+	var bt := Time.get_ticks_msec() / 1000.0
+	for h in _bubbles:
+		var bn: Node3D = _bubbles[h]
+		bn.position.y = 2.0 + 0.07 * sin(bt * 3.0 + h)
 	for f in _fx.duplicate():
 		f["t"] += delta
 		var k: float = f["t"] / f["dur"]

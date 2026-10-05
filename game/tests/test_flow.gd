@@ -90,8 +90,40 @@ func _run() -> void:
 	g._pick_target()
 	if g.selected >= 0 and g.sim.cells[g.selected]["owner"] == Types.NOBODY:
 		var n0: int = g._player_hexes()
+		var gold0: int = g.econ.res["gold"]
 		g._on_action("colonize")
-		_check(g._player_hexes() == n0 + 1, "colonize adds a hex")
+		_check(g.colonizing.size() == 1 and g.econ.res["gold"] < gold0, "colonization starts: gold paid, timer running")
+		g.time_offset += 3600
+		g._econ_tick()
+		_check(g._player_hexes() == n0 + 1 and g.colonizing.is_empty(), "colonization timer adds a hex")
+
+	# 2b. Economy: income accrues, «collect all», building upgrade with a timer
+	var econ = g.econ
+	g.time_offset += 2 * 3600
+	g._econ_tick()
+	var stock_before: int = econ.stock_total("gold")
+	_check(stock_before > 0 and g.map_view._bubbles.size() > 0, "income accrues on hexes and shows bubbles")
+	var gold_before: int = econ.res["gold"]
+	g._collect_all()
+	var cap_gold: int = econ.storage_cap()["gold"]
+	_check(econ.stock_total("gold") < stock_before and (econ.res["gold"] > gold_before or gold_before >= cap_gold),
+		"collect all moves stock into storage (gold %d → %d, cap %d, stock %d → %d)" % [gold_before, econ.res["gold"], cap_gold, stock_before, econ.stock_total("gold")])
+	g._open_tab("buildings")
+	var items: Array = g._building_items(g.now_s())
+	_check(items.size() >= 5, "buildings tab lists buildings (%d)" % items.size())
+	var target_b: Dictionary = {}
+	for it in items:
+		if it["reason"] == "" and not it["busy"]:
+			target_b = it
+			break
+	if not target_b.is_empty():
+		var lvl0: int = econ.building(target_b["id"])["level"]
+		g._on_building_upgrade(target_b["id"])
+		_check(econ.busy_builders(g.now_s()) == 1, "upgrade occupies a builder")
+		g.time_offset += 2 * 3600
+		g._econ_tick()
+		_check(econ.building(target_b["id"])["level"] == lvl0 + 1, "upgrade completes after its timer")
+	g._open_tab("army")
 	g.queue_free()
 	await process_frame
 

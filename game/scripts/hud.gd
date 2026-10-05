@@ -16,6 +16,12 @@ var tile_owner: Label
 var tile_bonus: Label
 var attack_btn: Panel
 var minimap: Control
+var res_labels := {}  # res -> [value Label, rate Label]
+var builders_label: Label
+var level_label: Label
+var tab_highlight: Panel
+var tab_labels := {}
+var unit_cards: Control  # the Army tab content (hidden while another tab is open)
 
 signal button_pressed(name: String)
 
@@ -64,32 +70,37 @@ func _build() -> void:
 	var vw := 941.0
 	var vh := 1672.0
 
-	# ---- top resource bar
+	# ---- top resource bar (live values from the economy, set_resources)
 	_panel(Rect2(108, 10, 680, 66), _style(PANEL, 12))
-	var res := [
-		["coin", "12.4K", "+1.2K/h"], ["wood", "8.6K", "+820/h"], ["stone", "4.1K", "+530/h"],
-		["wheat", "6.8K", "+760/h"], ["crystal", "920", "+120/h"],
-	]
+	var res := [["gold", "coin"], ["food", "food"], ["metal", "metal"], ["raivite", "raivite"]]
 	for i in res.size():
-		var x := 122.0 + i * 134.0
-		var icon := Icon.new(res[i][0])
-		icon.position = Vector2(x, 20)
-		icon.size = Vector2(44, 44)
+		var x := 120.0 + i * 168.0
+		var icon := TextureRect.new()
+		icon.texture = load("res://assets/ui/%s.png" % res[i][1])
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.position = Vector2(x, 18)
+		icon.size = Vector2(48, 48)
+		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		add_child(icon)
-		var v := _label(res[i][1], 22)
-		v.position = Vector2(x + 50, 14)
+		var v := _label("—", 22)
+		v.position = Vector2(x + 52, 14)
 		add_child(v)
-		var d := _label(res[i][2], 15, GOOD, false)
-		d.position = Vector2(x + 52, 42)
+		var d := _label("", 15, GOOD, false)
+		d.position = Vector2(x + 54, 42)
 		add_child(d)
+		res_labels[res[i][0]] = [v, d]
 	_panel(Rect2(800, 10, 130, 66), _style(PANEL, 12))
-	var pop_icon := Icon.new("people")
-	pop_icon.position = Vector2(812, 24)
-	pop_icon.size = Vector2(36, 36)
-	add_child(pop_icon)
-	var pop := _label("48/60", 22)
-	pop.position = Vector2(852, 26)
-	add_child(pop)
+	var bi := TextureRect.new()
+	bi.texture = load("res://assets/ui/builder.png")
+	bi.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	bi.position = Vector2(808, 18)
+	bi.size = Vector2(48, 48)
+	bi.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(bi)
+	builders_label = _label("2/2", 24)
+	builders_label.position = Vector2(860, 24)
+	add_child(builders_label)
 
 	# ---- crest banner (top-left)
 	var crest := Icon.new("crest")
@@ -107,7 +118,8 @@ func _build() -> void:
 	lvl.position = Vector2(10, 196)
 	lvl.size = Vector2(40, 40)
 	add_child(lvl)
-	var lvl_t := _label("12", 18)
+	var lvl_t := _label("1", 18)
+	level_label = lvl_t
 	lvl_t.position = Vector2(20, 203)
 	add_child(lvl_t)
 	_panel(Rect2(52, 212, 44, 8), _style(Color(0.15, 0.2, 0.3), 4, Color(0, 0, 0, 0), 0))
@@ -157,11 +169,13 @@ func _build() -> void:
 	# ---- bottom tabs + unit cards
 	var base_y := vh - 276.0
 	_panel(Rect2(0, base_y, 640, 276), _style(PANEL, 16))
-	var tabs := [["Здания", "castle_icon"], ["Армия", "helmet"], ["Развитие", "hammer"], ["Дипломатия", "hands"], ["Мир", "scales"]]
+	var tabs := [["Здания", "castle_icon", "buildings"], ["Армия", "helmet", "army"], ["Развитие", "hammer", "development"], ["Дипломатия", "hands", "diplomacy"], ["Мир", "scales", "world"]]
+	tab_highlight = _panel(Rect2(8 + 126 + 2, base_y + 6, 120, 76), _style(Color(0.12, 0.2, 0.34), 10, Color(0.35, 0.55, 0.95, 0.9)))
+	tab_highlight.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	for i in tabs.size():
 		var x := 8.0 + i * 126.0
-		if i == 1:
-			_panel(Rect2(x + 128 - 126 + 0, base_y + 6, 120, 76), _style(Color(0.12, 0.2, 0.34), 10, Color(0.35, 0.55, 0.95, 0.9)))
+		var hit := _panel(Rect2(x + 2, base_y + 6, 120, 76), StyleBoxEmpty.new())
+		hit.gui_input.connect(_on_button_input.bind("tab_" + tabs[i][2]))
 		var ic := Icon.new(tabs[i][1])
 		ic.position = Vector2(x + 44, base_y + 14)
 		ic.size = Vector2(36, 34)
@@ -171,26 +185,32 @@ func _build() -> void:
 		t.size = Vector2(108, 24)
 		t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		add_child(t)
+		tab_labels[tabs[i][2]] = t
+	unit_cards = Control.new()
+	unit_cards.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(unit_cards)
 	var units := [["squad_blue", "320", "20"], ["archer", "180", "15"], ["knight_blue", "40", "60"], ["catapult", "12", "80"]]
 	for i in units.size():
 		var x := 14.0 + i * 148.0
 		var card := _panel(Rect2(x, base_y + 92, 136, 172), _style(PANEL_2, 12, Color(0.4, 0.5, 0.65, 0.7)))
+		remove_child(card)
+		unit_cards.add_child(card)
 		var portrait := Portrait.new(units[i][0])
 		portrait.position = Vector2(x + 6, base_y + 98)
 		portrait.size = Vector2(124, 104)
-		add_child(portrait)
+		unit_cards.add_child(portrait)
 		var n := _label(units[i][1], 22)
 		n.position = Vector2(x, base_y + 204)
 		n.size = Vector2(136, 28)
 		n.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		add_child(n)
+		unit_cards.add_child(n)
 		var ci := Icon.new("coin")
 		ci.position = Vector2(x + 40, base_y + 236)
 		ci.size = Vector2(22, 22)
-		add_child(ci)
+		unit_cards.add_child(ci)
 		var c := _label(units[i][2], 18, TEXT)
 		c.position = Vector2(x + 66, base_y + 234)
-		add_child(c)
+		unit_cards.add_child(c)
 
 	# ---- tile info + attack button
 	_panel(Rect2(652, base_y, 280, 140), _style(PANEL, 16))
@@ -228,6 +248,50 @@ func _build() -> void:
 func _on_button_input(e: InputEvent, name: String) -> void:
 	if (e is InputEventScreenTouch and not e.pressed) or (e is InputEventMouseButton and not e.pressed and e.button_index == MOUSE_BUTTON_LEFT):
 		button_pressed.emit(name)
+
+
+static func fmt(v: int) -> String:
+	if absi(v) >= 1000000:
+		return "%.1fM" % (v / 1000000.0)
+	if absi(v) >= 10000:
+		return "%dK" % (v / 1000)
+	if absi(v) >= 1000:
+		return "%.1fK" % (v / 1000.0)
+	return str(v)
+
+
+## Top bar: stored amounts (orange when the warehouse is full), net income per hour, free builders.
+func set_resources(res: Dictionary, per_hour: Dictionary, caps: Dictionary, free_builders: int, builders: int) -> void:
+	for r in res_labels:
+		var v: Label = res_labels[r][0]
+		var d: Label = res_labels[r][1]
+		var amount: int = res.get(r, 0)
+		v.text = fmt(amount)
+		var full: bool = caps.has(r) and amount >= int(caps[r])
+		v.add_theme_color_override("font_color", Color(1.0, 0.7, 0.3) if full else TEXT)
+		if r == "raivite":
+			d.text = ""
+		else:
+			var ph: int = per_hour.get(r, 0)
+			d.text = ("%s%s/ч" % ["+" if ph >= 0 else "", fmt(ph)]) if not full else "склад полон"
+			d.add_theme_color_override("font_color", GOOD if ph >= 0 and not full else Color(1.0, 0.55, 0.4))
+	builders_label.text = "%d/%d" % [free_builders, builders]
+
+
+func set_level(dl: int) -> void:
+	level_label.text = str(dl)
+
+
+func select_tab(key: String) -> void:
+	var keys := tab_labels.keys()
+	var i := keys.find(key)
+	if i < 0:
+		return
+	tab_highlight.position.x = 8 + i * 126 + 2
+	for k in tab_labels:
+		var l: Label = tab_labels[k]
+		l.add_theme_color_override("font_color", TEXT if k == key else MUTED)
+	unit_cards.visible = key == "army"
 
 
 func show_tile(info: Dictionary) -> void:
