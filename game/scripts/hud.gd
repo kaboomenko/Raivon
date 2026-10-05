@@ -23,6 +23,10 @@ var mail_badge: Array = []
 var shop_dot: Panel  # red dot: a free crate is ready
 var tab_highlight: Panel
 var tab_labels := {}
+var _tab_keys := {}  # tab -> translation key of its label
+var _shop_lbl: Label
+var _attack_lbl: Label
+var _tile_set := false  # false while the tile box still shows its placeholder
 var unit_cards: Control  # the Army tab content (hidden while another tab is open)
 
 signal button_pressed(name: String)
@@ -160,7 +164,8 @@ func _build() -> void:
 	si.size = Vector2(44, 44)
 	si.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(si)
-	var sl := _label("Лавка", 14)
+	var sl := _label(tr("hud.shop"), 14)
+	_shop_lbl = sl
 	sl.position = Vector2(16, 572)
 	sl.size = Vector2(64, 22)
 	sl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -197,7 +202,7 @@ func _build() -> void:
 	# ---- bottom tabs + unit cards
 	var base_y := vh - 276.0
 	_panel(Rect2(0, base_y, 640, 276), _style(PANEL, 16))
-	var tabs := [["Здания", "castle_icon", "buildings"], ["Армия", "helmet", "army"], ["Развитие", "hammer", "development"], ["Дипломатия", "hands", "diplomacy"], ["Мир", "scales", "world"]]
+	var tabs := [["tab.buildings", "castle_icon", "buildings"], ["tab.army", "helmet", "army"], ["tab.development", "hammer", "development"], ["tab.diplomacy", "hands", "diplomacy"], ["tab.world", "scales", "world"]]
 	tab_highlight = _panel(Rect2(8 + 126 + 2, base_y + 6, 120, 76), _style(Color(0.12, 0.2, 0.34), 10, Color(0.35, 0.55, 0.95, 0.9)))
 	tab_highlight.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	for i in tabs.size():
@@ -208,12 +213,13 @@ func _build() -> void:
 		ic.position = Vector2(x + 44, base_y + 14)
 		ic.size = Vector2(36, 34)
 		add_child(ic)
-		var t := _label(tabs[i][0], 16, TEXT if i == 1 else MUTED, i == 1)
+		var t := _label(tr(tabs[i][0]), 16, TEXT if i == 1 else MUTED, i == 1)
 		t.position = Vector2(x + 10, base_y + 50)
 		t.size = Vector2(108, 24)
 		t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		add_child(t)
 		tab_labels[tabs[i][2]] = t
+		_tab_keys[tabs[i][2]] = tabs[i][0]
 	unit_cards = Control.new()
 	unit_cards.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(unit_cards)
@@ -246,11 +252,11 @@ func _build() -> void:
 	tile.position = Vector2(664, base_y + 14)
 	tile.size = Vector2(70, 60)
 	add_child(tile)
-	var tn := _label("Равнина", 21)
+	var tn := _label(tr("terrain.plain"), 21)
 	tile_title = tn
 	tn.position = Vector2(746, base_y + 18)
 	add_child(tn)
-	var to := _label("Ваша территория", 17, Color(0.45, 0.7, 1.0), false)
+	var to := _label(tr("tile.your_territory"), 17, Color(0.45, 0.7, 1.0), false)
 	tile_owner = to
 	to.position = Vector2(746, base_y + 48)
 	add_child(to)
@@ -258,7 +264,7 @@ func _build() -> void:
 	shield.position = Vector2(674, base_y + 92)
 	shield.size = Vector2(28, 28)
 	add_child(shield)
-	var bonus := _label("+25% к защите", 18, TEXT, false)
+	var bonus := _label(tr("hud.tile_bonus"), 18, TEXT, false)
 	tile_bonus = bonus
 	bonus.position = Vector2(712, base_y + 92)
 	add_child(bonus)
@@ -268,9 +274,33 @@ func _build() -> void:
 	sw.position = Vector2(684, vh - 104)
 	sw.size = Vector2(54, 54)
 	add_child(sw)
-	var at := _label("Атаковать", 28)
+	var at := _label(tr("hud.attack"), 28)
+	_attack_lbl = at
 	at.position = Vector2(748, vh - 98)
 	add_child(at)
+
+
+## Sets `text`, shrinking the font from `base` (down to 12) until it fits `max_w` px — long hex and state
+## names differ a lot between languages.
+func _fit(l: Label, text: String, max_w: float, base: int) -> void:
+	var f := l.get_theme_font("font")
+	var s := base
+	while s > 12 and f.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, s).x > max_w:
+		s -= 1
+	l.add_theme_font_size_override("font_size", s)
+	l.text = text
+
+
+## Re-applies the static labels after a language switch (the rest is refreshed by the game every tick).
+func retranslate() -> void:
+	_shop_lbl.text = tr("hud.shop")
+	_attack_lbl.text = tr("hud.attack")
+	if not _tile_set:
+		tile_title.text = tr("terrain.plain")
+		tile_owner.text = tr("tile.your_territory")
+		tile_bonus.text = tr("hud.tile_bonus")
+	for k in tab_labels:
+		(tab_labels[k] as Label).text = tr(String(_tab_keys[k]))
 
 
 func _on_button_input(e: InputEvent, name: String) -> void:
@@ -301,7 +331,7 @@ func set_resources(res: Dictionary, per_hour: Dictionary, caps: Dictionary, free
 			d.text = ""
 		else:
 			var ph: int = per_hour.get(r, 0)
-			d.text = ("%s%s/ч" % ["+" if ph >= 0 else "", fmt(ph)]) if not full else "склад полон"
+			d.text = (tr("hud.per_hour") % ["+" if ph >= 0 else "", fmt(ph)]) if not full else tr("hud.storage_full")
 			d.add_theme_color_override("font_color", GOOD if ph >= 0 and not full else Color(1.0, 0.55, 0.4))
 	builders_label.text = "%d/%d" % [free_builders, builders]
 
@@ -329,10 +359,11 @@ func select_tab(key: String) -> void:
 
 
 func show_tile(info: Dictionary) -> void:
-	tile_title.text = info["title"]
-	tile_owner.text = info["owner"]
+	_tile_set = true
+	_fit(tile_title, String(info["title"]), 176.0, 21)
+	_fit(tile_owner, String(info["owner"]), 176.0, 17)
 	tile_owner.add_theme_color_override("font_color", info["owner_color"])
-	tile_bonus.text = info["bonus"]
+	_fit(tile_bonus, String(info["bonus"]), 210.0, 18)
 	attack_btn.modulate = Color(1, 1, 1, 1.0 if info["attackable"] else 0.45)
 
 

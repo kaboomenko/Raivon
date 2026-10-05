@@ -6,6 +6,7 @@ const Types := preload("res://scripts/sim/types.gd")
 const World := preload("res://scripts/sim/world.gd")
 const MapGen := preload("res://scripts/sim/map_gen.gd")
 const Economy := preload("res://scripts/sim/economy.gd")
+const L := preload("res://scripts/l10n.gd")
 
 const SEED := 20261004
 const T0 := 1790000000
@@ -33,6 +34,7 @@ func _init() -> void:
 		["occupied enemy hex yields 50%", _test_occupied],
 		["to_dict / from_dict round trip (also via JSON)", _test_roundtrip],
 		["determinism: same inputs, same outputs; tick granularity", _test_determinism],
+		["refusal reasons are translation keys; l10n.t() renders them in ru / en", _test_reason_text],
 	]
 	for t in tests:
 		_errors.clear()
@@ -199,7 +201,7 @@ func _test_upgrade() -> void:
 	_eq(e.res["gold"], 840, "gold paid")
 	_eq(e.busy_builders(T0), 1, "builder busy")
 	_eq(int(wh["upgrade_end"]), T0 + 5, "timer")
-	_eq(e.can_upgrade(wh, T0 + 1), "Уже улучшается", "second upgrade of same building")
+	_eq(e.can_upgrade(wh, T0 + 1), "err.upgrading", "second upgrade of same building")
 	var ev := e.tick(w, T0 + 4)
 	_eq(ev.size(), 0, "not yet")
 	ev = e.tick(w, T0 + 5)
@@ -228,23 +230,23 @@ func _test_limits() -> void:
 	_check(e.start_upgrade(int(b1["id"]), T0), "barracks")
 	_check(e.start_upgrade(int(b2["id"]), T0), "academy")
 	_eq(e.busy_builders(T0), 2, "2 busy")
-	_eq(e.can_upgrade(b3, T0), "Все строители заняты", "builder limit reason")
+	_eq(e.can_upgrade(b3, T0), "err.builders_busy", "builder limit reason")
 	_check(not e.start_upgrade(int(b3["id"]), T0), "third refused")
 	e.tick(w, T0 + 60)
 	_eq(int(b1["level"]), 2, "barracks 2")
-	_eq(e.can_upgrade(b1, T0 + 60), "Нужна Резиденция ур. 2", "2 × DL cap")
+	_eq(e.can_upgrade(b1, T0 + 60), "err.need_residence|2", "2 × DL cap")
 	e.res["gold"] = 0
-	_eq(e.can_upgrade(b3, T0 + 60), "Не хватает золота", "no gold")
+	_eq(e.can_upgrade(b3, T0 + 60), "err.not_enough|res.gen.gold", "no gold")
 	e.res["gold"] = 1000
-	_eq(e.can_upgrade(e._find_type("port"), T0 + 60), "Нет ни одного порта", "no ports")
-	_eq(e.can_upgrade({}, T0), "Нет такого здания", "unknown building")
+	_eq(e.can_upgrade(e._find_type("port"), T0 + 60), "err.no_port", "no ports")
+	_eq(e.can_upgrade({}, T0), "err.no_building", "unknown building")
 
 
 func _test_residence() -> void:
 	var w := _world()
 	var e := Economy.new(w, T0)
 	var r := e._find_type("residence")
-	_eq(e.can_upgrade(r, T0), "Нужно 10 гексов", "hex gate")
+	_eq(e.can_upgrade(r, T0), "err.need_hexes|10", "hex gate")
 	_grant_hexes(w, 3)
 	e.tick(w, T0)
 	_eq(e.upgrade_cost(r), {"gold": 300, "food": 0, "metal": 100, "seconds": 60}, "DL2 price (11 §6.2)")
@@ -270,7 +272,7 @@ func _test_residence() -> void:
 	e.tick(w, T0 + 60 + 900)
 	_eq(e.dev_level(), 3, "DL3")
 	_check(not e._find_type("embassy").is_empty(), "embassy unlocked")
-	_eq(e.can_upgrade(r, T0 + 2000), "Откроется в главе 2", "chapter I cap DL3")
+	_eq(e.can_upgrade(r, T0 + 2000), "err.chapter_locked|2", "chapter I cap DL3")
 
 
 func _test_speedup() -> void:
@@ -324,24 +326,24 @@ func _test_defense() -> void:
 	_eq(e.build_cost("barracks"), {}, "barracks is not built on a hex")
 	_eq(e.can_build(w, "fort", h, T0), "", "fort allowed")
 	var enemy: int = w.states[MapGen.BARONS]["capital_id"]
-	_eq(e.can_build(w, "fort", enemy, T0), "Гекс не ваш", "enemy hex")
+	_eq(e.can_build(w, "fort", enemy, T0), "err.not_your_hex", "enemy hex")
 	var cap: int = w.states[PLAYER]["capital_id"]
-	_eq(e.can_build(w, "tower", cap, T0), "Башня — только на обычном гексе", "tower on capital")
+	_eq(e.can_build(w, "tower", cap, T0), "err.tower_plain_only", "tower on capital")
 	_check(e.start_build(w, "fort", h, T0), "fort started")
 	_eq(e.res["metal"], 500, "metal paid")
-	_eq(e.can_build(w, "fort", h, T0), "Укрепление уже есть", "one fort per hex")
+	_eq(e.can_build(w, "fort", h, T0), "err.fort_exists", "one fort per hex")
 	e.tick(w, T0 + 10)
 	var f := e.building_at(h)
 	_eq(f.get("type", ""), "fort", "fort on hex")
 	_eq(int(f.get("level", 0)), 1, "fort level 1")
 	_eq(int(w.cells[h]["fort"]), 1, "world cell fort synced")
 	_eq(e.upkeep_per_hour(), 15, "fort upkeep 5 gold/h")
-	_eq(e.can_upgrade(f, T0 + 10), "Нужна Резиденция ур. 2", "fort ≤ DL")
+	_eq(e.can_upgrade(f, T0 + 10), "err.need_residence|2", "fort ≤ DL")
 	# Towers: ≤ 2 × DL.
 	_check(e.start_build(w, "tower", plains[1], T0 + 10), "tower 1")
 	_check(e.start_build(w, "tower", plains[2], T0 + 20), "tower 2")
 	e.tick(w, T0 + 30)
-	_eq(e.can_build(w, "tower", plains[3], T0 + 30), "Не больше 2 башен", "tower limit")
+	_eq(e.can_build(w, "tower", plains[3], T0 + 30), "err.tower_limit|2", "tower limit")
 	# Hex ceded by treaty: fort removed, 100% refund.
 	w.cells[h]["owner"] = MapGen.BARONS
 	w.cells[h]["controller"] = MapGen.BARONS
@@ -455,3 +457,17 @@ func _test_determinism() -> void:
 	_eq(d["stock"], a["stock"], "7 s ticks vs hourly: stock")
 	_eq(d["res"], a["res"], "7 s ticks: storage")
 	_eq(d["stock_rem"], a["stock_rem"], "7 s ticks: remainders")
+
+
+func _test_reason_text() -> void:
+	var lang0 := TranslationServer.get_locale()
+	TranslationServer.set_locale("ru")
+	_eq(L.t("err.need_hexes|10"), "Нужно 10 гексов", "ru: packed reason")
+	_eq(L.t("err.not_enough|res.gen.gold"), "Не хватает золота", "ru: key argument is translated")
+	_eq(L.t(String(Economy.BUILDINGS["warehouse"]["name"])), "Склад", "ru: building name")
+	_eq(L.t("Старый текст"), "Старый текст", "plain text without a key passes through")
+	TranslationServer.set_locale("en")
+	_eq(L.t("err.need_hexes|10"), "Need 10 hexes", "en: packed reason")
+	_eq(L.t("err.not_enough|res.gen.gold"), "Not enough gold", "en: key argument is translated")
+	_eq(L.t("err.need_residence|2"), "Needs Residence Lv 2", "en: residence gate")
+	TranslationServer.set_locale(lang0)

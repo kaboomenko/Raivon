@@ -38,11 +38,11 @@ const CARD_COOLDOWN := 10 * TICKS_PER_SEC
 
 ## card id -> {cost, name, target: "enemy"|"own"}
 const CARDS := {
-	"attack": {"cost": 2, "name": "Атака", "target": "enemy"},
-	"breakthrough": {"cost": 3, "name": "Прорыв", "target": "enemy"},
-	"airstrike": {"cost": 4, "name": "Авиаудар", "target": "enemy"},
-	"encircle": {"cost": 3, "name": "Окружение", "target": "enemy"},
-	"defense": {"cost": 2, "name": "Оборона", "target": "own"},
+	"attack": {"cost": 2, "name": "card.attack", "target": "enemy"},
+	"breakthrough": {"cost": 3, "name": "card.breakthrough", "target": "enemy"},
+	"airstrike": {"cost": 4, "name": "card.airstrike", "target": "enemy"},
+	"encircle": {"cost": 3, "name": "card.encircle", "target": "enemy"},
+	"defense": {"cost": 2, "name": "card.defense", "target": "own"},
 }
 
 var world: World
@@ -285,13 +285,13 @@ func forecast(side: int, army_ids: Array, target: int, breakthrough: bool = fals
 	var def_might := (def_str * _def_mult(target, def_army, f)) / 1000
 	var forms: Array[String] = []
 	if f["wedge"]:
-		forms.append("Клин +20%")
+		forms.append("form.wedge")
 	if f["encircle"]:
-		forms.append("Окружение +30%")
+		forms.append("form.encircle")
 	if f["corridor"]:
-		forms.append("Коридор")
+		forms.append("form.corridor")
 	if f["salient"]:
-		forms.append("Выступ −15%")
+		forms.append("form.salient")
 	var fval := 99.0
 	if def_might > 0 and def_str > 0:
 		fval = sqrt(float(atk_might * atk_str) / float(def_might * def_str))

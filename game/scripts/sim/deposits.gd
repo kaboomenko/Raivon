@@ -11,7 +11,8 @@ const Rng := preload("res://scripts/sim/rng.gd")
 const HexGrid := preload("res://scripts/sim/hexgrid.gd")
 
 const RES_KINDS: Array[String] = ["gold", "food", "metal"]
-const NAMES := {"gold": "Золотая жила", "food": "Хлебное поле", "metal": "Рудная жила"}
+## Translation keys of deposit names.
+const NAMES := {"gold": "dep.gold", "food": "dep.food", "metal": "dep.metal"}
 ## Size → hours of the player's gross production of that resource, and the gather time (canon §5.2).
 const SIZE_HOURS := {"S": 0.5, "M": 1.5, "L": 4.0}
 const SIZE_GATHER := {"S": 15 * 60, "M": 45 * 60, "L": 120 * 60}
@@ -88,14 +89,14 @@ func free_convoys(dev_level: int) -> int:
 func can_send(world: World, hex: int, dev_level: int) -> String:
 	var d := at(hex)
 	if d.is_empty():
-		return "Здесь нет залежи"
+		return "err.no_deposit"
 	if int(d["convoy"]) >= 0:
-		return "Обоз уже в пути"
+		return "err.convoy_en_route"
 	var c: Dictionary = world.cells[hex]
 	if c["controller"] != Types.PLAYER and c["controller"] != Types.NOBODY:
-		return "Чужая земля — сначала займите гекс"
+		return "err.foreign_land"
 	if free_convoys(dev_level) <= 0:
-		return "Все обозы в пути"
+		return "err.convoys_busy"
 	return ""
 
 

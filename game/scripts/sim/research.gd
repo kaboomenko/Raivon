@@ -5,16 +5,16 @@ extends RefCounted
 
 ## id -> {name, branch, max, w, shares: {res: share}, desc, unlock_dl}
 const LINES := {
-	"infantry": {"name": "Пехота", "branch": "Армия", "max": 10, "w": 1.0, "shares": {"gold": 0.6, "food": 0.4}, "desc": "+6% Силы пехоты за уровень", "unlock_dl": 1},
-	"reserve": {"name": "Резерв", "branch": "Армия", "max": 5, "w": 0.8, "shares": {"gold": 0.6, "food": 0.4}, "desc": "+5% к скорости пополнения", "unlock_dl": 1},
-	"drill": {"name": "Строевая подготовка", "branch": "Армия", "max": 5, "w": 0.8, "shares": {"gold": 0.6, "metal": 0.4}, "desc": "−5% времени тренировки", "unlock_dl": 1},
-	"taxes": {"name": "Налоги", "branch": "Экономика", "max": 10, "w": 1.0, "shares": {"gold": 0.4, "food": 0.3, "metal": 0.3}, "desc": "+2% золота с гексов", "unlock_dl": 1},
-	"harvest": {"name": "Урожай", "branch": "Экономика", "max": 10, "w": 0.8, "shares": {"gold": 0.4, "food": 0.3, "metal": 0.3}, "desc": "+2% еды с гексов", "unlock_dl": 1},
-	"metallurgy": {"name": "Металлургия", "branch": "Экономика", "max": 10, "w": 0.8, "shares": {"gold": 0.4, "food": 0.3, "metal": 0.3}, "desc": "+2% металла с гексов", "unlock_dl": 1},
-	"cellars": {"name": "Тайные погреба", "branch": "Экономика", "max": 5, "w": 0.6, "shares": {"gold": 0.4, "food": 0.3, "metal": 0.3}, "desc": "+2% защищённой доли склада", "unlock_dl": 1},
-	"logistics": {"name": "Логистика обозов", "branch": "Экономика", "max": 10, "w": 0.8, "shares": {"gold": 0.4, "food": 0.3, "metal": 0.3}, "desc": "+5% груза обозов", "unlock_dl": 1},
-	"thrift": {"name": "Бережливость", "branch": "Экономика", "max": 5, "w": 0.8, "shares": {"gold": 0.4, "food": 0.3, "metal": 0.3}, "desc": "−3% апкипа", "unlock_dl": 3},
-	"colonization": {"name": "Колонизация", "branch": "Экономика", "max": 3, "w": 0.5, "shares": {"gold": 0.4, "food": 0.3, "metal": 0.3}, "desc": "−10% цены колонизации", "unlock_dl": 1},
+	"infantry": {"name": "rs.infantry", "branch": "rs.branch.army", "max": 10, "w": 1.0, "shares": {"gold": 0.6, "food": 0.4}, "desc": "rs.infantry.desc", "unlock_dl": 1},
+	"reserve": {"name": "rs.reserve", "branch": "rs.branch.army", "max": 5, "w": 0.8, "shares": {"gold": 0.6, "food": 0.4}, "desc": "rs.reserve.desc", "unlock_dl": 1},
+	"drill": {"name": "rs.drill", "branch": "rs.branch.army", "max": 5, "w": 0.8, "shares": {"gold": 0.6, "metal": 0.4}, "desc": "rs.drill.desc", "unlock_dl": 1},
+	"taxes": {"name": "rs.taxes", "branch": "rs.branch.economy", "max": 10, "w": 1.0, "shares": {"gold": 0.4, "food": 0.3, "metal": 0.3}, "desc": "rs.taxes.desc", "unlock_dl": 1},
+	"harvest": {"name": "rs.harvest", "branch": "rs.branch.economy", "max": 10, "w": 0.8, "shares": {"gold": 0.4, "food": 0.3, "metal": 0.3}, "desc": "rs.harvest.desc", "unlock_dl": 1},
+	"metallurgy": {"name": "rs.metallurgy", "branch": "rs.branch.economy", "max": 10, "w": 0.8, "shares": {"gold": 0.4, "food": 0.3, "metal": 0.3}, "desc": "rs.metallurgy.desc", "unlock_dl": 1},
+	"cellars": {"name": "rs.cellars", "branch": "rs.branch.economy", "max": 5, "w": 0.6, "shares": {"gold": 0.4, "food": 0.3, "metal": 0.3}, "desc": "rs.cellars.desc", "unlock_dl": 1},
+	"logistics": {"name": "rs.logistics", "branch": "rs.branch.economy", "max": 10, "w": 0.8, "shares": {"gold": 0.4, "food": 0.3, "metal": 0.3}, "desc": "rs.logistics.desc", "unlock_dl": 1},
+	"thrift": {"name": "rs.thrift", "branch": "rs.branch.economy", "max": 5, "w": 0.8, "shares": {"gold": 0.4, "food": 0.3, "metal": 0.3}, "desc": "rs.thrift.desc", "unlock_dl": 3},
+	"colonization": {"name": "rs.colonization", "branch": "rs.branch.economy", "max": 3, "w": 0.5, "shares": {"gold": 0.4, "food": 0.3, "metal": 0.3}, "desc": "rs.colonization.desc", "unlock_dl": 1},
 }
 const ORDER: Array[String] = ["taxes", "infantry", "harvest", "metallurgy", "reserve", "logistics", "cellars", "colonization", "drill", "thrift"]
 const K: Array[float] = [0.0, 0.15, 0.22, 0.30, 0.48]
@@ -60,21 +60,21 @@ func max_level(line: String, dl: int, academy_level: int) -> int:
 	return mini(int(LINES[line]["max"]), mini(dl, ceili(academy_level / 2.0)))
 
 
-## "" when the next level can start; otherwise a short Russian reason.
+## "" when the next level can start; otherwise a reason key ("key|arg|…", translated by the UI).
 func can_start(line: String, dl: int, academy_level: int, res: Dictionary, now: int) -> String:
 	var spec: Dictionary = LINES[line]
 	if dl < int(spec["unlock_dl"]):
-		return "Откроется на УР%d" % int(spec["unlock_dl"])
+		return "err.unlock_dl|%d" % int(spec["unlock_dl"])
 	if not current.is_empty() and int(current["end"]) > now:
-		return "Академия занята"
+		return "err.academy_busy"
 	if level(line) >= int(spec["max"]):
-		return "Максимум"
+		return "err.max"
 	if level(line) >= max_level(line, dl, academy_level):
-		return "Нужна Академия ур. %d или УР выше" % (2 * (level(line) + 1) - 1)
+		return "err.need_academy|%d" % (2 * (level(line) + 1) - 1)
 	var c := cost(line)
 	for r in c:
 		if int(res.get(r, 0)) < int(c[r]):
-			return "Не хватает %s" % {"gold": "золота", "food": "еды", "metal": "металла"}.get(r, r)
+			return "err.not_enough|res.gen.%s" % r
 	return ""
 
 

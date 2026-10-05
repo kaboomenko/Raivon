@@ -44,7 +44,7 @@ func _initialize() -> void:
 	var dep: Dictionary = d.at(target)
 	var amount: int = dep["amount"]
 	_check(d.send(w, target, 1, t0), "convoy sent")
-	_check(d.can_send(w, target, 1) == "Обоз уже в пути", "one convoy per deposit")
+	_check(d.can_send(w, target, 1) == "err.convoy_en_route", "one convoy per deposit")
 	var cv: Dictionary = d.convoy_for(target)
 	var mid := d.tick(w, gross, int(cv["back"]) - 1)
 	var got := false

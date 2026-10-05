@@ -417,7 +417,7 @@ func _test_cards() -> void:
 	_check(b.issue(PLAYER, {"t": "card", "card": "encircle", "target": target}), "encircle accepted")
 	b.step()
 	_check(not b.is_supplied(target, BARONS), "encircled hex out of supply")
-	_check(b.forecast(PLAYER, [1], target)["forms"].has("Окружение +30%"), "encircle form")
+	_check(b.forecast(PLAYER, [1], target)["forms"].has("form.encircle"), "encircle form")
 	# AI may not use attack cards on the protected player core.
 	var cap: int = b.world.states[PLAYER]["capital_id"]
 	_check(not b.can_target(BARONS, cap), "AI cannot target the player capital")

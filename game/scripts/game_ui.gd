@@ -24,6 +24,8 @@ const VW := 941.0
 const VH := 1672.0
 const CARD_ART := {"attack": "⚔", "breakthrough": "➶", "airstrike": "✈", "encircle": "◎", "defense": "⛨"}
 const CARD_ORDER := ["attack", "breakthrough", "airstrike", "encircle", "defense"]
+const CARD_NAME_KEYS := {"attack": "card.attack", "breakthrough": "card.breakthrough", "airstrike": "card.airstrike", "encircle": "card.encircle", "defense": "card.defense"}
+const L := preload("res://scripts/l10n.gd")
 
 var font_bold: Font
 var root: Control
@@ -37,6 +39,7 @@ var _battle: Control
 var _energy_lbl: Label
 var _energy_segs: Array = []
 var _cards := {}
+var _card_names := {}  # card -> name Label (re-translated on a language switch)
 var _timer_lbl: Label
 var _action: Control
 var _action_lbl: Label
@@ -97,6 +100,16 @@ func _label(text: String, size: int, color := TEXT, bold := true) -> Label:
 	return l
 
 
+## Shrinks the label's font from `base` (down to 12) until its one-line text fits `max_w` px: button captions
+## differ in length between languages (and some Russian ones never fit the 266 px button).
+func _fit(l: Label, base: int, max_w: float) -> void:
+	var f := l.get_theme_font("font")
+	var s := base
+	while s > 12 and f.get_string_size(l.text, HORIZONTAL_ALIGNMENT_LEFT, -1, s).x > max_w:
+		s -= 1
+	l.add_theme_font_size_override("font_size", s)
+
+
 func _panel(parent: Control, rect: Rect2, style: StyleBox, filter := Control.MOUSE_FILTER_STOP) -> Panel:
 	var p := Panel.new()
 	p.position = rect.position
@@ -126,8 +139,8 @@ func _build_control_bar() -> void:
 	_control_fill = _panel(bar, Rect2(2, 2, 290, 26), _style(Color(0.18, 0.45, 1.0), 12, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
 	_control_lbl = _at(_label("50%", 18), _control_bar, Vector2(134, 96)) as Label
 	_control_lbl2 = _at(_label("50%", 18), _control_bar, Vector2(650, 96)) as Label
-	_score_lbl = _at(_label("Военный счёт: 0", 15, MUTED, false), _control_bar, Vector2(126, 128)) as Label
-	_laststand = _at(_label("ВЫ НА ГРАНИ ПОРАЖЕНИЯ! Последний рубеж +25%", 17, Color(1, 0.4, 0.35)), _control_bar, Vector2(350, 128)) as Label
+	_score_lbl = _at(_label(tr("ui.war_score_zero"), 15, MUTED, false), _control_bar, Vector2(126, 128)) as Label
+	_laststand = _at(_label(tr("ui.last_stand"), 17, Color(1, 0.4, 0.35)), _control_bar, Vector2(350, 128)) as Label
 	_control_bar.visible = false
 
 
@@ -138,7 +151,7 @@ func set_control(score: float, control: int, enemy: String, visible_bar: bool) -
 	_control_fill.size.x = 580.0 * clampf(control / 100.0, 0.0, 1.0)
 	_control_lbl.text = "%d%%" % control
 	_control_lbl2.text = "%d%%" % (100 - control)
-	_score_lbl.text = "Война: %s · счёт %+.1f" % [enemy, score]
+	_score_lbl.text = tr("ui.war_status") % [enemy, score]
 	_laststand.visible = control <= 30
 
 
@@ -167,10 +180,12 @@ func _build_battle() -> void:
 		art.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		p.add_child(art)
 		var nm := _label(_card_name(card), 17)
+		_fit(nm, 17, 110.0)
 		nm.position = Vector2(0, 94)
 		nm.size = Vector2(116, 24)
 		nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		p.add_child(nm)
+		_card_names[card] = nm
 		var cost := _panel(p, Rect2(38, 138, 40, 40), _style(Color(0.55, 0.3, 0.95), 20, Color(1, 1, 1, 0.9), 3), Control.MOUSE_FILTER_IGNORE)
 		var cl := _label(str(_card_cost(card)), 20)
 		cl.position = Vector2(0, 5)
@@ -188,7 +203,16 @@ func _build_battle() -> void:
 
 
 func _card_name(c: String) -> String:
-	return {"attack": "Атака", "breakthrough": "Прорыв", "airstrike": "Авиаудар", "encircle": "Окружение", "defense": "Оборона"}[c]
+	return tr(String(CARD_NAME_KEYS[c]))
+
+
+## Static labels built once in _ready, re-applied after a language switch.
+func retranslate() -> void:
+	_laststand.text = tr("ui.last_stand")
+	for c in _card_names:
+		var nm: Label = _card_names[c]
+		nm.text = _card_name(c)
+		_fit(nm, 17, 110.0)
 
 
 func _card_cost(c: String) -> int:
@@ -210,7 +234,7 @@ func set_battle(visible_hand: bool, energy_units: int, unit: int, cooldowns: Dic
 		var cd: int = cooldowns.get(c, 0)
 		p.modulate = Color(1, 1, 1, 0.45 if (pts < _card_cost(c) or cd > 0) else 1.0)
 		(p.get_node("cd") as Label).text = str(int(ceil(cd / 10.0))) if cd > 0 else ""
-	set_action("timer", "%d:%02d" % [seconds_left / 60, seconds_left % 60], "Финальный рывок!" if rush else "до конца наступления", Color(0.5, 0.2, 0.2) if rush else Color(0.2, 0.25, 0.4))
+	set_action("timer", "%d:%02d" % [seconds_left / 60, seconds_left % 60], tr("ui.final_rush") if rush else tr("ui.offensive_left"), Color(0.5, 0.2, 0.2) if rush else Color(0.2, 0.25, 0.4))
 
 
 func _on_card_input(event: InputEvent, card: String) -> void:
@@ -295,6 +319,8 @@ func set_action(kind: String, title: String, sub := "", bg := PANEL) -> void:
 	_action.visible = kind != ""
 	_action_lbl.text = title
 	_action_sub.text = sub
+	_fit(_action_lbl, 34, 264.0)
+	_fit(_action_sub, 18, 264.0)
 	_action.add_theme_stylebox_override("panel", _style(bg, 16))
 
 
@@ -303,6 +329,7 @@ func set_primary(kind: String, title: String, color := Color(0.13, 0.4, 0.9), en
 	_action2_kind = kind if enabled else ""
 	_action2.visible = kind != ""
 	_action2_lbl.text = title
+	_fit(_action2_lbl, 26, 250.0)
 	_action2.add_theme_stylebox_override("panel", _style(color, 16, Color(1, 1, 1, 0.6), 3))
 	_action2.modulate = Color(1, 1, 1, 1.0 if enabled else 0.5)
 
@@ -333,6 +360,7 @@ func _modal_box(rect: Rect2, parchment := false) -> Panel:
 func _button(parent: Control, rect: Rect2, text: String, color: Color, cb: Callable) -> Panel:
 	var b := _panel(parent, rect, _style(color, 14, Color(1, 1, 1, 0.5), 2))
 	var l := _label(text, 22)
+	_fit(l, 22, rect.size.x - 16.0)
 	l.size = rect.size
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -343,7 +371,7 @@ func _button(parent: Control, rect: Rect2, text: String, color: Color, cb: Calla
 
 func show_result(stars: int, captured: int, lost: int, score: float, control: int, reason: String, on_continue: Callable, on_peace: Callable) -> void:
 	var box := _modal_box(Rect2(70, 420, 800, 640))
-	var t := _label("Итоги наступления", 36)
+	var t := _label(tr("result.title"), 36)
 	_at(t, box, Vector2(40, 30))
 	var st := ""
 	for i in 3:
@@ -352,30 +380,30 @@ func show_result(stars: int, captured: int, lost: int, score: float, control: in
 	sl.size = Vector2(800, 110)
 	sl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_at(sl, box, Vector2(0, 90))
-	var rows := [["Причина", reason], ["Захвачено гексов", str(captured)], ["Потеряно своих", str(lost)], ["Военный счёт", "%+.1f" % score], ["Контроль фронта", "%d%%" % control]]
+	var rows := [[tr("result.reason"), reason], [tr("result.captured"), str(captured)], [tr("result.lost"), str(lost)], [tr("result.score"), "%+.1f" % score], [tr("result.control"), "%d%%" % control]]
 	for i in rows.size():
 		_at(_label(rows[i][0], 24, MUTED, false), box, Vector2(60, 230 + i * 50))
 		var v := _label(rows[i][1], 24)
 		v.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		_at(v, box, Vector2(440, 230 + i * 50), Vector2(300, 34))
-	_at(_label("Захваченное оккупировано. Граница сдвинется после мира.", 19, MUTED, false), box, Vector2(60, 490))
-	_button(box, Rect2(40, 540, 350, 76), "Продолжить войну", Color(0.25, 0.3, 0.42), on_continue)
-	_button(box, Rect2(410, 540, 350, 76), "🕊 Мир (%.1f)" % score, Color(0.2, 0.6, 0.3), on_peace)
+	_at(_label(tr("result.note"), 19, MUTED, false), box, Vector2(60, 490))
+	_button(box, Rect2(40, 540, 350, 76), tr("result.continue"), Color(0.25, 0.3, 0.42), on_continue)
+	_button(box, Rect2(410, 540, 350, 76), tr("result.peace") % score, Color(0.2, 0.6, 0.3), on_peace)
 
 
-const PLUNDER_NAMES := ["Пощадить", "Лёгкое 30%", "Среднее 45%", "Тяжёлое 60%"]
+const PLUNDER_NAMES := ["plunder.spare", "plunder.light", "plunder.medium", "plunder.heavy"]
 
 
 func show_peace(enemy: String, budget: float, control: int, demands: Array, chosen: Dictionary, plunder := 1) -> void:
 	var box := _modal_box(Rect2(30, 640, 881, 1010), true)
 	var ink := Color(0.24, 0.16, 0.07)
-	_at(_label("📜 Мирный договор: %s" % enemy, 32, ink, false), box, Vector2(30, 24))
+	_at(_label(tr("peace.title") % enemy, 32, ink, false), box, Vector2(30, 24))
 	var used := 0.0
 	for d in demands:
 		if chosen.has(d["id"]):
 			used += d["cost"]
-	_at(_label("Очки: %.1f / %.1f · Контроль фронта %d%%" % [used, budget, control], 22, ink, false), box, Vector2(30, 78))
-	_at(_label("ИИ согласится, если сумма не больше счёта. Ядро врага требовать нельзя.", 17, Color(0.42, 0.32, 0.18), false), box, Vector2(30, 112))
+	_at(_label(tr("peace.points") % [used, budget, control], 22, ink, false), box, Vector2(30, 78))
+	_at(_label(tr("peace.hint"), 17, Color(0.42, 0.32, 0.18), false), box, Vector2(30, 112))
 	var scroll := ScrollContainer.new()
 	scroll.position = Vector2(26, 150)
 	scroll.size = Vector2(829, 548)
@@ -402,11 +430,11 @@ func show_peace(enemy: String, budget: float, control: int, demands: Array, chos
 		row.gui_input.connect(func(e): if _is_tap(e): demand_toggled.emit(id))
 		list.add_child(row)
 	# plunder: the winner's free right, level chosen by the player (canon §9.14)
-	_at(_label("Разграбление:", 20, ink, false), box, Vector2(30, 722))
+	_at(_label(tr("peace.plunder"), 20, ink, false), box, Vector2(30, 722))
 	for i in 4:
 		var on := i == plunder
 		var pb := _panel(box, Rect2(190 + i * 168, 712, 160, 56), _style(Color(0.55, 0.25, 0.12) if on and i > 0 else (Color(0.25, 0.5, 0.3) if on else Color(0.3, 0.2, 0.1, 0.12)), 12, Color(0.4, 0.25, 0.1, 0.6), 2))
-		var pl := _label(PLUNDER_NAMES[i], 16, Color.WHITE if on else ink, on)
+		var pl := _label(tr(PLUNDER_NAMES[i]), 16, Color.WHITE if on else ink, on)
 		pl.size = Vector2(160, 56)
 		pl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		pl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -415,7 +443,7 @@ func show_peace(enemy: String, budget: float, control: int, demands: Array, chos
 		pb.gui_input.connect(func(e): if _is_tap(e): plunder_selected.emit(lvl))
 	var seal := _panel(box, Rect2(26, 800, 829, 96), _style(Color(0.2, 0.55, 0.28), 16, Color(1, 1, 1, 0.6), 3))
 	_seal_prog = _panel(seal, Rect2(0, 0, 0, 96), _style(Color(1, 1, 1, 0.3), 16, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
-	var sl := _label("🔏 Удерживайте печать — подписать мир", 26)
+	var sl := _label(tr("peace.seal"), 26)
 	sl.size = Vector2(829, 96)
 	sl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	sl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -423,7 +451,7 @@ func show_peace(enemy: String, budget: float, control: int, demands: Array, chos
 	seal.gui_input.connect(func(e):
 		if e is InputEventScreenTouch or e is InputEventMouseButton:
 			_seal_t = 0.0 if e.pressed else -1.0)
-	_button(box, Rect2(26, 908, 829, 70), "Назад к войне", Color(0.45, 0.35, 0.2), func(): action_pressed.emit("back_to_war"))
+	_button(box, Rect2(26, 908, 829, 70), tr("peace.back"), Color(0.45, 0.35, 0.2), func(): action_pressed.emit("back_to_war"))
 
 
 ## Ceremony counters and rewards (canon §10.3 steps 4–5). Buttons appear early but accept taps only
@@ -460,8 +488,8 @@ func show_ceremony_counters(lines: Array, on_done: Callable, on_double := Callab
 	var done := func(): if gate["open"]: on_done.call()
 	if on_double.is_valid():
 		var dbl := func(): if gate["open"]: on_double.call()
-		buttons.append(_button(_modal, Rect2(60, VH - 262, 821, 92), "🎬 ×2 трофеи (реклама)", Color(0.85, 0.55, 0.1), dbl))
-	buttons.append(_button(_modal, Rect2(60, VH - 150, 821, 96), "Продолжить", Color(0.13, 0.4, 0.9), done))
+		buttons.append(_button(_modal, Rect2(60, VH - 262, 821, 92), tr("ceremony.double"), Color(0.85, 0.55, 0.1), dbl))
+	buttons.append(_button(_modal, Rect2(60, VH - 150, 821, 96), tr("ui.continue"), Color(0.13, 0.4, 0.9), done))
 	for b in buttons:
 		b.modulate.a = 0.0
 		var tw2 := create_tween()
@@ -472,10 +500,11 @@ func show_ceremony_counters(lines: Array, on_done: Callable, on_double := Callab
 	get_tree().create_timer(active_after).timeout.connect(func(): gate["open"] = true)
 
 
-## Inbox (mail button): reports of raids, defenses, ultimatums. items: [{title, text, t (unix), read}]
+## Inbox (mail button): reports of raids, defenses, ultimatums. items: [{title, text, t (unix), read}];
+## title / text are translation keys packed with their arguments (l10n.gd `pack`), shown in the current language.
 func show_inbox(items: Array, now: int) -> void:
 	var box := _modal_box(Rect2(50, 300, 841, 1060))
-	_at(_label("✉ Донесения", 34), box, Vector2(36, 26))
+	_at(_label(tr("inbox.title"), 34), box, Vector2(36, 26))
 	var scroll := ScrollContainer.new()
 	scroll.position = Vector2(24, 90)
 	scroll.size = Vector2(793, 830)
@@ -486,7 +515,10 @@ func show_inbox(items: Array, now: int) -> void:
 	col.add_theme_constant_override("separation", 10)
 	scroll.add_child(col)
 	if items.is_empty():
-		col.add_child(_label("Пока тихо. Здесь появятся донесения о набегах и обороне.", 22, MUTED, false))
+		var empty := _label(tr("inbox.empty"), 22, MUTED, false)
+		empty.autowrap_mode = TextServer.AUTOWRAP_WORD
+		empty.custom_minimum_size = Vector2(760, 0)
+		col.add_child(empty)
 	for i in range(items.size() - 1, -1, -1):
 		var it: Dictionary = items[i]
 		var card := PanelContainer.new()
@@ -494,40 +526,52 @@ func show_inbox(items: Array, now: int) -> void:
 		var v := VBoxContainer.new()
 		card.add_child(v)
 		var ago := maxi(0, now - int(it["t"]))
-		var when := "только что" if ago < 60 else ("%d мин назад" % (ago / 60) if ago < 3600 else "%d ч назад" % (ago / 3600))
-		v.add_child(_label("%s  ·  %s" % [it["title"], when], 22))
-		var body := _label(it["text"], 19, MUTED, false)
+		var when := tr("time.just_now") if ago < 60 else (tr("time.min_ago") % (ago / 60) if ago < 3600 else tr("time.h_ago") % (ago / 3600))
+		v.add_child(_label("%s  ·  %s" % [L.t(String(it["title"])), when], 22))
+		var body := _label(L.t(String(it["text"])), 19, MUTED, false)
 		body.autowrap_mode = TextServer.AUTOWRAP_WORD
 		body.custom_minimum_size = Vector2(760, 0)
 		v.add_child(body)
 		col.add_child(card)
-	_button(box, Rect2(24, 950, 793, 84), "Закрыть", Color(0.13, 0.4, 0.9), close_modal)
+	_button(box, Rect2(24, 950, 793, 84), tr("ui.close"), Color(0.13, 0.4, 0.9), close_modal)
 
 
 ## AI ultimatum (canon §9.1): accept (cede the hex), pay tribute, or refuse (war).
 func show_ultimatum(enemy: String, hex_name: String, tribute: int, can_pay: bool, left_sec: int, on_accept: Callable, on_pay: Callable, on_refuse: Callable) -> void:
 	var box := _modal_box(Rect2(50, 380, 841, 860), true)
 	var ink := Color(0.3, 0.08, 0.05)
-	_at(_label("⚔ Ультиматум: %s" % enemy, 32, ink, false), box, Vector2(30, 26))
-	var t := _label("«Отдай нам «%s» — или заплати дань %d золота. Иначе — война.»\n\nНа ответ: %s. Без ответа — война." % [hex_name, tribute, fmt_time(left_sec)], 23, Color(0.25, 0.16, 0.08), false)
+	_at(_label(tr("ult.title") % enemy, 32, ink, false), box, Vector2(30, 26))
+	var t := _label(tr("ult.text") % [hex_name, tribute, fmt_time(left_sec)], 23, Color(0.25, 0.16, 0.08), false)
 	t.autowrap_mode = TextServer.AUTOWRAP_WORD
 	_at(t, box, Vector2(30, 90), Vector2(780, 260))
-	_button(box, Rect2(30, 380, 780, 96), "Принять: отдать «%s» (перемирие 24 ч)" % hex_name, Color(0.45, 0.35, 0.2), on_accept)
-	var pay := _button(box, Rect2(30, 494, 780, 96), "Откупиться: %d золота" % tribute, Color(0.75, 0.55, 0.12), on_pay)
+	_button(box, Rect2(30, 380, 780, 96), tr("ult.accept") % hex_name, Color(0.45, 0.35, 0.2), on_accept)
+	var pay := _button(box, Rect2(30, 494, 780, 96), tr("ult.pay") % tribute, Color(0.75, 0.55, 0.12), on_pay)
 	pay.modulate.a = 1.0 if can_pay else 0.45
-	_button(box, Rect2(30, 608, 780, 96), "⚔ Отказать — война!", Color(0.75, 0.16, 0.12), on_refuse)
-	_button(box, Rect2(30, 722, 780, 84), "Подумать (ответ позже)", Color(0.3, 0.33, 0.42), close_modal)
+	_button(box, Rect2(30, 608, 780, 96), tr("ult.refuse"), Color(0.75, 0.16, 0.12), on_refuse)
+	_button(box, Rect2(30, 722, 780, 84), tr("ult.later"), Color(0.3, 0.33, 0.42), close_modal)
 
 
-func show_settings(sound_on: bool, on_sound: Callable, on_new_game: Callable) -> void:
-	var box := _modal_box(Rect2(90, 470, 761, 600))
-	_at(_label("Настройки", 36), box, Vector2(40, 30))
-	_button(box, Rect2(40, 110, 681, 84), "🔊 Звук: вкл" if sound_on else "🔇 Звук: выкл", Color(0.2, 0.3, 0.45), func():
+## Settings: sound, language (applies at once: `on_lang` gets "ru" / "en" and re-renders the game, then this
+## modal is shown again by the caller), new game, build info.
+func show_settings(sound_on: bool, on_sound: Callable, on_new_game: Callable, on_lang: Callable) -> void:
+	var box := _modal_box(Rect2(90, 420, 761, 704))
+	_at(_label(tr("settings.title"), 36), box, Vector2(40, 30))
+	_button(box, Rect2(40, 110, 681, 84), tr("settings.sound_on") if sound_on else tr("settings.sound_off"), Color(0.2, 0.3, 0.45), func():
 		on_sound.call()
-		show_settings(not sound_on, on_sound, on_new_game))
-	var hold := _panel(box, Rect2(40, 214, 681, 84), _style(Color(0.55, 0.16, 0.14), 14, Color(1, 1, 1, 0.5), 2))
+		show_settings(not sound_on, on_sound, on_new_game, on_lang))
+	var ll := _label(tr("settings.language"), 24)
+	ll.size = Vector2(250, 84)
+	ll.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_at(ll, box, Vector2(40, 214))
+	var cur := L.lang()
+	for i in L.LANGS.size():
+		var code: String = L.LANGS[i]
+		_button(box, Rect2(300 + i * 215, 214, 205, 84), String(L.LANG_NAMES[code]), Color(0.16, 0.42, 0.95) if code == cur else Color(0.14, 0.18, 0.27), func():
+			if code != L.lang():
+				on_lang.call(code))
+	var hold := _panel(box, Rect2(40, 318, 681, 84), _style(Color(0.55, 0.16, 0.14), 14, Color(1, 1, 1, 0.5), 2))
 	var prog := _panel(hold, Rect2(0, 0, 0, 84), _style(Color(1, 1, 1, 0.25), 14, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
-	var hl := _label("Новая игра (удерживайте)", 22)
+	var hl := _label(tr("settings.new_game"), 22)
 	hl.size = Vector2(681, 84)
 	hl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	hl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -544,9 +588,9 @@ func show_settings(sound_on: bool, on_sound: Callable, on_new_game: Callable) ->
 				(state["tw"] as Tween).kill()
 				state["tw"] = null
 				prog.size.x = 0.0)
-	_at(_label("Прогресс сохраняется автоматически на устройстве.", 18, MUTED, false), box, Vector2(40, 330))
-	_at(_label("Raivon: Territory Wars · тестовая сборка %s" % ProjectSettings.get_setting("application/config/version", "0.3"), 18, MUTED, false), box, Vector2(40, 366))
-	_button(box, Rect2(40, 480, 681, 84), "Закрыть", Color(0.13, 0.4, 0.9), close_modal)
+	_at(_label(tr("settings.autosave"), 18, MUTED, false), box, Vector2(40, 434))
+	_at(_label(tr("settings.build") % ProjectSettings.get_setting("application/config/version", "0.3"), 18, MUTED, false), box, Vector2(40, 470))
+	_button(box, Rect2(40, 584, 681, 84), tr("ui.close"), Color(0.13, 0.4, 0.9), close_modal)
 
 
 # ------------------------------------------------------------------ buildings tab (canon §7)
@@ -567,10 +611,10 @@ func _icon(res: String) -> Texture2D:
 
 static func fmt_time(sec: int) -> String:
 	if sec >= 3600:
-		return "%d ч %02d мин" % [sec / 3600, (sec % 3600) / 60]
+		return L.t("time.hm") % [sec / 3600, (sec % 3600) / 60]
 	if sec >= 60:
 		return "%d:%02d" % [sec / 60, sec % 60]
-	return "%d с" % sec
+	return L.t("time.s") % sec
 
 
 ## items: [{id, name, level, max, busy, left, speed, cost: {res: n}, seconds, reason}]
@@ -645,14 +689,14 @@ func _army_card(it: Dictionary) -> Control:
 			t.size = Vector2(150, 40)
 			t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			card.add_child(t)
-			var sub := _label("сбор новобранцев", 15, MUTED, false)
+			var sub := _label(tr("army.recruiting"), 15, MUTED, false)
 			sub.position = Vector2(0, 104)
 			sub.size = Vector2(150, 22)
 			sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			card.add_child(sub)
 			return card
 		if it["locked"]:
-			var m := _label("🔒 с УР%d" % int(it.get("need_dl", 3)), 20, MUTED, false)
+			var m := _label(tr("army.locked_dl") % int(it.get("need_dl", 3)), 20, MUTED, false)
 			m.position = Vector2(8, 70)
 			m.size = Vector2(134, 40)
 			m.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -670,7 +714,7 @@ func _army_card(it: Dictionary) -> Control:
 		var tl := _label("⏱ " + fmt_time(int(it["seconds"])), 15, MUTED, false)
 		tl.position = Vector2(26, 90)
 		card.add_child(tl)
-		_card_button(card, "➕ Собрать", Color(0.2, 0.55, 0.3), func(): army_action.emit(-1, "train"), true)
+		_card_button(card, tr("army.train"), Color(0.2, 0.55, 0.3), func(): army_action.emit(-1, "train"), true)
 		return card
 	var big := _label("⚔ %d" % int(it["str"]), 28)
 	big.position = Vector2(0, 34)
@@ -680,15 +724,15 @@ func _army_card(it: Dictionary) -> Control:
 	var ready := float(it["str"]) / maxf(1.0, float(it["max"]))
 	var bar := _panel(card, Rect2(14, 82, 122, 12), _style(Color(1, 1, 1, 0.1), 6, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
 	_panel(bar, Rect2(0, 0, 122 * ready, 12), _style(Color(0.3, 0.62, 1.0) if ready >= 0.5 else Color(1.0, 0.6, 0.25), 6, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
-	var sub2 := _label("%d отр. · %d%%" % [int(it["slots"]), roundi(ready * 100.0)], 15, MUTED, false)
+	var sub2 := _label(tr("army.squads") % [int(it["slots"]), roundi(ready * 100.0)], 15, MUTED, false)
 	sub2.position = Vector2(0, 100)
 	sub2.size = Vector2(150, 22)
 	sub2.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	card.add_child(sub2)
 	if it["refilling"]:
-		_card_button(card, "🎬 Пополнить", Color(0.85, 0.55, 0.1), func(): army_action.emit(id, "refill"), true)
+		_card_button(card, tr("army.refill"), Color(0.85, 0.55, 0.1), func(): army_action.emit(id, "refill"), true)
 	else:
-		var ok := _label("Готова к бою", 16, Color(0.5, 1.0, 0.6))
+		var ok := _label(tr("army.ready"), 16, Color(0.5, 1.0, 0.6))
 		ok.position = Vector2(0, 142)
 		ok.size = Vector2(150, 24)
 		ok.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -716,7 +760,7 @@ func _diplomacy_card(it: Dictionary) -> Control:
 	ld.clip_text = true
 	card.add_child(ld)
 	var v: float = it["opinion"]
-	var op := _label("Мнение: %+d · %s" % [roundi(v), it["word"]], 16, Color(0.5, 1.0, 0.6) if v > 10.0 else (Color(1.0, 0.55, 0.45) if v < -10.0 else TEXT), false)
+	var op := _label(tr("dipl.opinion") % [roundi(v), it["word"]], 16, Color(0.5, 1.0, 0.6) if v > 10.0 else (Color(1.0, 0.55, 0.45) if v < -10.0 else TEXT), false)
 	op.position = Vector2(12, 56)
 	card.add_child(op)
 	var stt := _label(it["status"], 16, Color(1.0, 0.85, 0.4), false)
@@ -725,7 +769,7 @@ func _diplomacy_card(it: Dictionary) -> Control:
 	var id: int = it["id"]
 	var bw := _panel(card, Rect2(10, 128, 136, 40), _style(Color(0.75, 0.2, 0.15) if it["can_war"] else Color(0.3, 0.33, 0.4), 10, Color(1, 1, 1, 0.45), 2))
 	bw.mouse_filter = Control.MOUSE_FILTER_PASS
-	var lw := _label("⚔ Война", 17)
+	var lw := _label(tr("dipl.war"), 17)
 	lw.size = Vector2(136, 40)
 	lw.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	lw.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -739,7 +783,7 @@ func _diplomacy_card(it: Dictionary) -> Control:
 	var gl: int = it["gift_left"]
 	var bg := _panel(card, Rect2(156, 128, 138, 40), _style(Color(0.2, 0.5, 0.35) if gl == 0 else Color(0.3, 0.33, 0.4), 10, Color(1, 1, 1, 0.45), 2))
 	bg.mouse_filter = Control.MOUSE_FILTER_PASS
-	var lg := _label(("🎁 %d зол." % int(it["gift_cost"])) if gl == 0 else "🎁 " + fmt_time(gl), 16)
+	var lg := _label((tr("dipl.gift") % int(it["gift_cost"])) if gl == 0 else "🎁 " + fmt_time(gl), 16)
 	lg.size = Vector2(138, 40)
 	lg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	lg.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -758,25 +802,25 @@ func _chapter_card(it: Dictionary) -> Control:
 	card.custom_minimum_size = Vector2(250, 178)
 	card.add_theme_stylebox_override("panel", _style(Color(0.1, 0.16, 0.26), 12, Color(0.45, 0.65, 1.0), 3))
 	card.mouse_filter = Control.MOUSE_FILTER_PASS
-	_at(_label("Глава I «Долина»", 18), card, Vector2(12, 6))
+	_at(_label(tr("world.chapter1"), 18), card, Vector2(12, 6))
 	var h: int = it["hexes"]
 	var g: int = it["goal"]
-	_at(_label("Гексов: %d / %d" % [h, g], 17, TEXT, false), card, Vector2(12, 36))
+	_at(_label(tr("world.hexes") % [h, g], 17, TEXT, false), card, Vector2(12, 36))
 	var bar := _panel(card, Rect2(12, 66, 226, 14), _style(Color(1, 1, 1, 0.1), 7, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
 	_panel(bar, Rect2(0, 0, 226.0 * clampf(float(h) / g, 0.0, 1.0), 14), _style(Color(0.3, 0.62, 1.0), 7, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
 	if it["done"]:
-		_at(_label("Пройдена! Глава II — скоро", 16, Color(0.5, 1.0, 0.6)), card, Vector2(12, 96))
+		_at(_label(tr("world.chapter_done"), 16, Color(0.5, 1.0, 0.6)), card, Vector2(12, 96))
 	elif it["can_expand"]:
 		var b := _panel(card, Rect2(10, 128, 230, 40), _style(Color(0.2, 0.55, 0.3), 10, Color(1, 1, 1, 0.5), 2))
 		b.mouse_filter = Control.MOUSE_FILTER_PASS
-		var l := _label("🌍 Мир расширяется", 17)
+		var l := _label(tr("world.expand"), 17)
 		l.size = Vector2(230, 40)
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		b.add_child(l)
 		b.gui_input.connect(func(e): if _is_tap(e): world_action.emit("expand"))
 	else:
-		var hint := _label("Мир или колонизация — каждый гекс на счету", 14, MUTED, false)
+		var hint := _label(tr("world.hint"), 14, MUTED, false)
 		hint.position = Vector2(12, 96)
 		hint.autowrap_mode = TextServer.AUTOWRAP_WORD
 		hint.custom_minimum_size = Vector2(226, 0)  # autowrap needs a fixed width
@@ -804,13 +848,13 @@ func _star_card(it: Dictionary) -> Control:
 	card.add_child(t)
 	var id: String = it["id"]
 	if claimed:
-		var ok := _label("Получено", 16, Color(0.5, 1.0, 0.6))
+		var ok := _label(tr("world.claimed"), 16, Color(0.5, 1.0, 0.6))
 		ok.position = Vector2(0, 140)
 		ok.size = Vector2(150, 24)
 		ok.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		card.add_child(ok)
 	elif done:
-		_card_button(card, "Забрать", Color(0.75, 0.55, 0.12), func(): world_action.emit(id), true)
+		_card_button(card, tr("ui.claim"), Color(0.75, 0.55, 0.12), func(): world_action.emit(id), true)
 	else:
 		var p := _label("%d / %d" % [int(it["progress"]), int(it["need"])], 18, MUTED)
 		p.position = Vector2(0, 138)
@@ -838,7 +882,7 @@ func _building_card(it: Dictionary) -> Control:
 	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	nm.clip_text = true
 	card.add_child(nm)
-	var lv := _label("ур. %d / %d" % [it["level"], it["max"]], 15, MUTED, false)
+	var lv := _label(tr("bld.level") % [it["level"], it["max"]], 15, MUTED, false)
 	lv.position = Vector2(0, 32)
 	lv.size = Vector2(150, 22)
 	lv.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -852,7 +896,7 @@ func _building_card(it: Dictionary) -> Control:
 		card.add_child(t)
 		var sp: int = it["speed"]
 		var stock: int = it.get("stock", 0)
-		var txt := "⚡ бесплатно" if sp == 0 else ("⏩ запас %d мин" % stock if stock > 0 else "⚡ %d" % sp)
+		var txt := tr("bld.free") if sp == 0 else (tr("bld.stock") % stock if stock > 0 else "⚡ %d" % sp)
 		var line_s: String = it.get("line", "")
 		_card_button(card, txt, Color(0.85, 0.55, 0.1), func():
 			if line_s != "":
@@ -888,7 +932,7 @@ func _building_card(it: Dictionary) -> Control:
 	card.add_child(tl)
 	var ok: bool = String(it["reason"]) == ""
 	var line: String = it.get("line", "")
-	_card_button(card, "🔬 Изучить" if line != "" else "⬆ Улучшить", Color(0.2, 0.55, 0.3) if ok else Color(0.3, 0.33, 0.4), func():
+	_card_button(card, tr("bld.research") if line != "" else tr("ui.upgrade"), Color(0.2, 0.55, 0.3) if ok else Color(0.3, 0.33, 0.4), func():
 		if ok and line != "":
 			research_start.emit(line)
 		elif ok:
@@ -902,6 +946,7 @@ func _card_button(card: Control, text: String, color: Color, cb: Callable, _enab
 	var b := _panel(card, Rect2(8, 134, 134, 38), _style(color, 10, Color(1, 1, 1, 0.45), 2))
 	b.mouse_filter = Control.MOUSE_FILTER_PASS
 	var l := _label(text, 17)
+	_fit(l, 17, 128.0)
 	l.size = Vector2(134, 38)
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -994,7 +1039,8 @@ func toast(text: String) -> void:
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	l.autowrap_mode = TextServer.AUTOWRAP_WORD
 	l.custom_minimum_size = Vector2(VW - 80, 0)  # autowrap needs a fixed width
-	var bg := _panel(root, Rect2(30, 290, VW - 60, 70), _style(Color(0.05, 0.08, 0.14, 0.92), 14), Control.MOUSE_FILTER_IGNORE)
+	var lines_h := font_bold.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, VW - 80, 24).y
+	var bg := _panel(root, Rect2(30, 290, VW - 60, maxf(70.0, lines_h + 24.0)), _style(Color(0.05, 0.08, 0.14, 0.92), 14), Control.MOUSE_FILTER_IGNORE)
 	root.add_child(l)
 	var tw := create_tween()
 	tw.tween_interval(2.0)

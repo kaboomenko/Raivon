@@ -6,9 +6,9 @@ extends RefCounted
 ##   {id:int, q:int, r:int, terrain:String ("plain"|"forest"|"hills"|"water"|"mountain"),
 ##    kind:String ("plain"|"farm"|"mine"|"city"|"capital"|"military_base"|"port"),
 ##    value:int (hex_value 1..10), owner:int (official owner, changes by treaty),
-##    controller:int (actual controller, changes during war), fort:int (0..10), name:String ("" = none)}
+##    controller:int (actual controller, changes during war), fort:int (0..10), name:String (translation key, "" = none)}
 ## StateInfo (Dictionary):
-##   {id:int, name:String, color:int (0xRRGGBB), archetype:String, capital_id:int, dev_level:int}
+##   {id:int, name:String (translation key), color:int (0xRRGGBB), archetype:String, capital_id:int, dev_level:int}
 
 const FX := 1000
 

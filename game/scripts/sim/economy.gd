@@ -30,7 +30,8 @@ const _Self := preload("res://scripts/sim/economy.gd")
 const RES := ["gold", "food", "metal"]
 ## Hard currency key (canon §4: no cap, never plundered).
 const RAIVITE := "raivite"
-const RES_NAMES := {"gold": "золота", "food": "еды", "metal": "металла", "oil": "нефти", "raivite": "Райвитов"}
+## Translation keys of resource names in refusal reasons (genitive in Russian: «Не хватает золота»).
+const RES_NAMES := {"gold": "res.gen.gold", "food": "res.gen.food", "metal": "res.gen.metal", "oil": "res.gen.oil", "raivite": "res.gen.raivite"}
 
 const HOUR := 3600
 const SUB := 3600000                 # sub-units per resource unit (milli × s / h)
@@ -63,21 +64,21 @@ const HEX_PRODUCTION := {
 ## class: "capital" (on the capital hex, one per state), "hex_type" (one level per state, on every hex
 ## of `kind`), "defense" (per hex). upkeep = base gold/h (canon §7). unlock_dl = DL that grants it free.
 const BUILDINGS := {
-	"residence": {"name": "Резиденция", "class": "capital", "cb": 0, "upkeep": 0, "unlock_dl": 1},
-	"barracks": {"name": "Казарма", "class": "capital", "cb": 180, "upkeep": 2, "unlock_dl": 1},
-	"academy": {"name": "Академия", "class": "capital", "cb": 220, "upkeep": 2, "unlock_dl": 1},
-	"warehouse": {"name": "Склад", "class": "capital", "cb": 160, "upkeep": 1, "unlock_dl": 1},
-	"infirmary": {"name": "Лазарет", "class": "capital", "cb": 160, "upkeep": 2, "unlock_dl": 1},
-	"convoy_yard": {"name": "Обозный двор", "class": "capital", "cb": 140, "upkeep": 1, "unlock_dl": 1},
-	"market": {"name": "Рынок", "class": "capital", "cb": 140, "upkeep": 1, "unlock_dl": 2},
-	"embassy": {"name": "Посольство", "class": "capital", "cb": 200, "upkeep": 2, "unlock_dl": 3},
-	"quarters": {"name": "Кварталы", "class": "hex_type", "kind": "city", "cb": 260, "upkeep": 3, "unlock_dl": 1},
-	"farm": {"name": "Ферма", "class": "hex_type", "kind": "farm", "cb": 200, "upkeep": 2, "unlock_dl": 1},
-	"mine": {"name": "Шахта", "class": "hex_type", "kind": "mine", "cb": 200, "upkeep": 2, "unlock_dl": 1},
-	"port": {"name": "Порт", "class": "hex_type", "kind": "port", "cb": 180, "upkeep": 2, "unlock_dl": 1},
-	"military_base": {"name": "Военная база", "class": "hex_type", "kind": "military_base", "cb": 260, "upkeep": 5, "unlock_dl": 1},
-	"fort": {"name": "Укрепление", "class": "defense", "cb": 0, "upkeep": 5, "unlock_dl": 1},
-	"tower": {"name": "Башня", "class": "defense", "cb": 0, "upkeep": 3, "unlock_dl": 1},
+	"residence": {"name": "bld.residence", "class": "capital", "cb": 0, "upkeep": 0, "unlock_dl": 1},
+	"barracks": {"name": "bld.barracks", "class": "capital", "cb": 180, "upkeep": 2, "unlock_dl": 1},
+	"academy": {"name": "bld.academy", "class": "capital", "cb": 220, "upkeep": 2, "unlock_dl": 1},
+	"warehouse": {"name": "bld.warehouse", "class": "capital", "cb": 160, "upkeep": 1, "unlock_dl": 1},
+	"infirmary": {"name": "bld.infirmary", "class": "capital", "cb": 160, "upkeep": 2, "unlock_dl": 1},
+	"convoy_yard": {"name": "bld.convoy_yard", "class": "capital", "cb": 140, "upkeep": 1, "unlock_dl": 1},
+	"market": {"name": "bld.market", "class": "capital", "cb": 140, "upkeep": 1, "unlock_dl": 2},
+	"embassy": {"name": "bld.embassy", "class": "capital", "cb": 200, "upkeep": 2, "unlock_dl": 3},
+	"quarters": {"name": "bld.quarters", "class": "hex_type", "kind": "city", "cb": 260, "upkeep": 3, "unlock_dl": 1},
+	"farm": {"name": "bld.farm", "class": "hex_type", "kind": "farm", "cb": 200, "upkeep": 2, "unlock_dl": 1},
+	"mine": {"name": "bld.mine", "class": "hex_type", "kind": "mine", "cb": 200, "upkeep": 2, "unlock_dl": 1},
+	"port": {"name": "bld.port", "class": "hex_type", "kind": "port", "cb": 180, "upkeep": 2, "unlock_dl": 1},
+	"military_base": {"name": "bld.military_base", "class": "hex_type", "kind": "military_base", "cb": 260, "upkeep": 5, "unlock_dl": 1},
+	"fort": {"name": "bld.fort", "class": "defense", "cb": 0, "upkeep": 5, "unlock_dl": 1},
+	"tower": {"name": "bld.tower", "class": "defense", "cb": 0, "upkeep": 3, "unlock_dl": 1},
 }
 ## Order in which capital / hex-type buildings appear (05 §8.7: start set; Рынок at DL2, Посольство at DL3).
 const BUILDING_ORDER: Array[String] = ["residence", "barracks", "academy", "warehouse", "infirmary",
@@ -86,8 +87,8 @@ const BUILDING_ORDER: Array[String] = ["residence", "barracks", "academy", "ware
 ## everything else appears automatically).
 const BUILDABLE: Array[String] = ["fort", "tower"]
 const NO_HEX_REASON := {
-	"quarters": "Нет ни одного города", "farm": "Нет ни одной фермы", "mine": "Нет ни одной шахты",
-	"port": "Нет ни одного порта", "military_base": "Нет ни одной военной базы",
+	"quarters": "err.no_city", "farm": "err.no_farm", "mine": "err.no_mine",
+	"port": "err.no_port", "military_base": "err.no_military_base",
 }
 ## «Казна пуста» forbids starting these (canon §7).
 const TREASURY_LOCKED: Array[String] = ["residence", "barracks", "academy", "infirmary", "embassy",
@@ -326,34 +327,34 @@ func build_cost(type: String) -> Dictionary:
 	return _level_cost(type, 1)
 
 
-## "" when the upgrade can start, else a short Russian reason.
+## "" when the upgrade can start, else a reason: a translation key, or "key|arg|…" (UI: l10n.gd `t()`).
 func can_upgrade(b: Dictionary, now: int) -> String:
 	if b.is_empty() or building(int(b["id"])).is_empty():
-		return "Нет такого здания"
+		return "err.no_building"
 	_complete_due(now)
 	if int(b["upgrade_end"]) != 0:
-		return "Уже улучшается"
+		return "err.upgrading"
 	var t: String = b["type"]
 	var lvl: int = b["level"]
 	if t == "residence":
 		if lvl >= 10:
-			return "Максимальный уровень"
+			return "err.max_level"
 		if lvl >= max_level(b):
-			return "Откроется в главе %d" % (chapter + 1)
+			return "err.chapter_locked|%d" % (chapter + 1)
 		if _synced and _own_kinds.size() < RESIDENCE_HEXES[lvl + 1]:
-			return "Нужно %d гексов" % RESIDENCE_HEXES[lvl + 1]
+			return "err.need_hexes|%d" % RESIDENCE_HEXES[lvl + 1]
 	else:
 		var cls: String = BUILDINGS[t]["class"]
 		var absolute := 10 if cls == "defense" else 20
 		if lvl >= absolute:
-			return "Максимальный уровень"
+			return "err.max_level"
 		if lvl >= max_level(b):
 			var need := lvl + 1 if cls == "defense" else (lvl + 2) / 2
-			return "Нужна Резиденция ур. %d" % need
+			return "err.need_residence|%d" % need
 		if cls == "hex_type" and _synced and _count_kind(String(BUILDINGS[t]["kind"])) == 0:
 			return NO_HEX_REASON[t]
 		if cls == "defense" and _synced and not bool(_own_ctrl.get(int(b["hex"]), false)):
-			return "Гекс оккупирован"
+			return "err.hex_occupied"
 	return _can_pay_and_staff(t, upgrade_cost(b), now)
 
 
@@ -361,28 +362,28 @@ func can_build(world: World, type: String, hex: int, now: int) -> String:
 	_sync(world)
 	_complete_due(now)
 	if not BUILDABLE.has(type):
-		return "Это здание не строится на гексе"
+		return "err.not_hex_building"
 	if hex < 0 or hex >= world.cells.size():
-		return "Нет такого гекса"
+		return "err.no_hex"
 	var c: Dictionary = world.cells[hex]
 	if not Types.is_passable(c):
-		return "Здесь строить нельзя"
+		return "err.cant_build_here"
 	if c["owner"] != Types.PLAYER:
-		return "Гекс не ваш"
+		return "err.not_your_hex"
 	if c["controller"] != Types.PLAYER:
-		return "Гекс оккупирован"
+		return "err.hex_occupied"
 	for b in buildings:
 		if b["hex"] == hex and b["type"] == type:
-			return "Укрепление уже есть" if type == "fort" else "Башня уже есть"
+			return "err.fort_exists" if type == "fort" else "err.tower_exists"
 	if type == "tower":
 		if c["kind"] != "plain":
-			return "Башня — только на обычном гексе"
+			return "err.tower_plain_only"
 		var towers := 0
 		for b in buildings:
 			if b["type"] == "tower":
 				towers += 1
 		if towers >= 2 * dev_level():
-			return "Не больше %d башен" % (2 * dev_level())
+			return "err.tower_limit|%d" % (2 * dev_level())
 	return _can_pay_and_staff(type, build_cost(type), now)
 
 
@@ -701,12 +702,12 @@ func _level_cost(type: String, level: int) -> Dictionary:
 
 func _can_pay_and_staff(type: String, cost: Dictionary, now: int) -> String:
 	if TREASURY_LOCKED.has(type) and treasury_empty():
-		return "Казна пуста"
+		return "err.treasury_empty"
 	if busy_builders(now) >= builders:
-		return "Все строители заняты"
+		return "err.builders_busy"
 	for r in ["gold", "food", "metal", "oil"]:
 		if int(cost.get(r, 0)) > int(res.get(r, 0)):
-			return "Не хватает " + String(RES_NAMES[r])
+			return "err.not_enough|" + String(RES_NAMES[r])
 	return ""
 
 

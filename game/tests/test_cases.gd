@@ -23,6 +23,8 @@ var _checks := 0
 
 
 func _init() -> void:
+	# Names and pity texts are checked in Russian (the reference language); _test_english switches over.
+	TranslationServer.set_locale("ru")
 	var tests: Array[Array] = [
 		["data: every case loads, tier weights match tier p", _test_data],
 		["determinism with a seed", _test_determinism],
@@ -39,6 +41,7 @@ func _init() -> void:
 		["history keeps the last 100", _test_history],
 		["odds_items: rows sum to 100%, pools expand", _test_odds_items],
 		["pity_text and price", _test_texts],
+		["English names and texts (name_en, pity.* keys); name_ru stays Russian", _test_english],
 		["to_dict / from_dict round trip (also via JSON)", _test_roundtrip],
 		["statistics: royal rarity and item frequencies = odds()", _test_stat_royal],
 		["statistics: war crate and arena frequencies = odds()", _test_stat_crate],
@@ -725,3 +728,25 @@ func _test_stat_royal() -> void:
 func _test_stat_crate() -> void:
 	_stat_run("case_war_crate", STAT_CRATE, SEED + 2000)
 	_stat_run("case_arena_chest", STAT_ARENA, SEED + 3000)
+
+
+func _test_english() -> void:
+	TranslationServer.set_locale("en")
+	var c := Cases.new(SEED)
+	_eq(Cases.case_name("case_royal"), "Royal Case", "case name")
+	_eq(Cases.commander_name("cmd_vance"), "Lady Vance", "commander name")
+	_eq(Cases.rarity_name("epic"), "Epic", "rarity name")
+	_eq(Cases.cosmetic_name("cos_capital_skin_steampunk"), "Steampunk", "cosmetic name")
+	_eq(Cases.category_name("cos_border_ink"), "Border Ink", "category name")
+	_eq(c.pity_text("case_royal"), "Epic+ in 10 · Legendary in 50", "royal pity text")
+	_eq(c.pity_text("case_collection"), "8 of 8 left", "collection pity text")
+	var row: Dictionary = c.odds_items("case_trophy_silver", "common")[0]
+	_eq(String(row["name"]), "Gold 6 h", "×3 item name in English")
+	_eq(String(row["name_ru"]), "Золото 6 ч", "name_ru stays Russian")
+	_eq(String(c.odds("case_royal")[0]["name"]), "Common", "odds row name")
+	var r := c.open("case_royal", CTX, T0)
+	_check(not String(r["name"]).is_empty() and String(r["name"]) != String(r["name_ru"]), "open() returns the English item name")
+	for rw in r["rewards"]:
+		if String(rw.get("kind", "")) == "shards":
+			_check(not Cases.data()["commanders"][String(rw["commander"])]["name"] == String(rw["name"]), "shard reward names the commander in English")
+	TranslationServer.set_locale("ru")

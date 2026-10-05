@@ -3,7 +3,7 @@ extends Node3D
 ## the static HUD frame (hud.gd) and the mode UI (game_ui.gd).
 ## Modes: MAP → (declare) WAR → BATTLE (90 s offensive) → RESULT → WAR … → PEACE → CEREMONY → MAP.
 ##
-## Debug / CI args (after `--`): --zoom=0.6  --select=q,r  --shot=PATH
+## Debug / CI args (after `--`): --lang=ru|en (read first, before the UI is built)  --zoom=0.6  --select=q,r  --shot=PATH
 ##   --demo=battle:SECONDS | result | peace | ceremony:SECONDS  — scripted states for headless screenshots.
 
 const Types := preload("res://scripts/sim/types.gd")
@@ -24,6 +24,7 @@ const Deposits := preload("res://scripts/sim/deposits.gd")
 const Cases := preload("res://scripts/sim/cases.gd")
 const Research := preload("res://scripts/sim/research.gd")
 const ShopUI := preload("res://scripts/shop_ui.gd")
+const L := preload("res://scripts/l10n.gd")
 
 enum Mode { MAP, WAR, BATTLE, RESULT, PEACE, CEREMONY }
 
@@ -31,8 +32,9 @@ const MAP_SEED := 20261004
 const HAND := ["attack", "breakthrough", "airstrike", "encircle", "defense"]
 const CHAPTER_GOAL := 20
 const TRUCE_SEC := 30 * 60
-const KIND_NAMES := {"capital": "Столица", "city": "Город", "farm": "Ферма", "mine": "Рудник", "port": "Порт", "military_base": "Военная база"}
-const TERRAIN_NAMES := {"plain": "Равнина", "forest": "Лес", "hills": "Холмы", "water": "Озеро", "mountain": "Горы"}
+## Translation keys of unnamed hexes: by kind, else by terrain.
+const KIND_NAMES := {"capital": "kind.capital", "city": "kind.city", "farm": "kind.farm", "mine": "kind.mine", "port": "kind.port", "military_base": "kind.military_base"}
+const TERRAIN_NAMES := {"plain": "terrain.plain", "forest": "terrain.forest", "hills": "terrain.hills", "water": "terrain.water", "mountain": "terrain.mountain"}
 
 var sim  # sim World
 var armies: Array = []
@@ -76,6 +78,7 @@ var opinion := {}  # AI state -> opinion of the player, decays toward 0 (canon �
 var gift_at := {}  # AI state -> unix time of the last gift
 var _last_opinion := 0
 var ad_counts := {}  # rewarded placement -> [day, views] (daily caps, canon §15.2)
+var lang := ""  # UI language chosen in Settings ("" = follow the device), kept in user://settings.json
 
 var map_view: Node3D
 var rig: Node3D
@@ -108,6 +111,7 @@ func _ready() -> void:
 	cases = Cases.new(int(Time.get_unix_time_from_system()) & 0x7FFFFFFF)
 	research = Research.new()
 	save_enabled = save_enabled and not _scripted_run()
+	_init_language()
 	var loaded := false
 	if save_enabled:
 		var d := Save.read()
@@ -150,12 +154,47 @@ func _ready() -> void:
 	_open_tab("army")
 	_econ_tick()
 	if loaded:
-		ui.toast("С возвращением! Доход ждёт на гексах — коснитесь монеты")
+		ui.toast(tr("toast.welcome_back"))
 	elif save_enabled:
 		ftue = 1
 	_burned_mill()
 	await get_tree().process_frame
 	_handle_args()
+
+
+# ====================================================================== language (scripts/l10n.gd)
+
+## UI language: a `--lang=ru|en` user arg (screenshots) wins, then the choice saved in Settings, then the
+## device language (Russian for ru/uk/be/kk devices, English elsewhere).
+func _init_language() -> void:
+	if save_enabled:
+		lang = String(Save.read_settings().get("lang", ""))
+	var forced := ""
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--lang="):
+			forced = a.substr(7)
+	L.apply(forced if L.LANGS.has(forced) else lang)
+
+
+## Settings → language: applies at once, remembers the choice and re-renders what is on screen.
+func _set_language(code: String) -> void:
+	lang = code
+	L.apply(code)
+	if save_enabled:
+		Save.write_settings({"lang": code})
+	hud.retranslate()
+	ui.retranslate()
+	_ftue_shown = -1  # the coach line comes back in the new language
+	if selected >= 0:
+		hud.show_tile(_describe(selected))
+	_open_tab(tab)
+	_econ_tick()
+	_refresh_ui()
+	_show_settings()
+
+
+func _show_settings() -> void:
+	ui.show_settings(sfx.enabled, func(): sfx.enabled = not sfx.enabled, _new_game, _set_language)
 
 
 # ====================================================================== scene setup
@@ -301,10 +340,10 @@ func _refresh_ui() -> void:
 			ui.set_action("", "")
 			_primary_for_selection()
 		Mode.WAR:
-			ui.set_action("peace", "🕊 Мир", "счёт %+.1f" % ws.get("score", 0.0), Color(0.12, 0.36, 0.2))
-			ui.set_primary("offensive", "⚔ Наступление", Color(0.8, 0.22, 0.16))
+			ui.set_action("peace", tr("ui.peace_btn"), tr("ui.score") % ws.get("score", 0.0), Color(0.12, 0.36, 0.2))
+			ui.set_primary("offensive", tr("ui.offensive"), Color(0.8, 0.22, 0.16))
 		Mode.BATTLE:
-			ui.set_primary("retreat", "↩ Отступить", Color(0.32, 0.36, 0.46))
+			ui.set_primary("retreat", tr("ui.retreat"), Color(0.32, 0.36, 0.46))
 		_:
 			ui.set_action("", "")
 			ui.set_primary("", "")
@@ -312,37 +351,37 @@ func _refresh_ui() -> void:
 
 func _primary_for_selection() -> void:
 	if selected < 0:
-		ui.set_primary("pick_target", "⚔ Выбрать цель", Color(0.8, 0.22, 0.16))
+		ui.set_primary("pick_target", tr("ui.pick_target"), Color(0.8, 0.22, 0.16))
 		return
 	var c: Dictionary = sim.cells[selected]
 	var dep: Dictionary = deposits.at(selected)
 	if not dep.is_empty():
 		var cv: Dictionary = deposits.convoy_for(selected)
 		if not cv.is_empty():
-			ui.set_primary("", "🐴 Обоз · %s" % GameUI.fmt_time(int(cv["back"]) - now_s()), Color(0.3, 0.33, 0.42), false)
+			ui.set_primary("", tr("ui.convoy_status") % GameUI.fmt_time(int(cv["back"]) - now_s()), Color(0.3, 0.33, 0.42), false)
 		else:
 			var reason: String = deposits.can_send(sim, selected, econ.dev_level())
-			ui.set_primary("convoy", "🐴 Отправить обоз" if reason == "" else reason, Color(0.8, 0.6, 0.1), reason == "")
+			ui.set_primary("convoy", tr("ui.send_convoy") if reason == "" else L.t(reason), Color(0.8, 0.6, 0.1), reason == "")
 		return
 	if not Types.is_passable(c):
 		ui.set_primary("", "")
 	elif colonizing.has(selected):
 		var left: int = int(colonizing[selected]) - now_s()
 		var price := Economy.speedup_price(left)
-		ui.set_primary("colonize_now", "⚡ Завершить" if price == 0 else "⚡ Ускорить · %d" % price, Color(0.85, 0.55, 0.1))
+		ui.set_primary("colonize_now", tr("ui.finish") if price == 0 else tr("ui.speedup") % price, Color(0.85, 0.55, 0.1))
 	elif c["owner"] == Types.NOBODY and _touches_player(selected):
 		var cost := _colonize_cost()
-		ui.set_primary("colonize", "⛳ %d зол. · %s" % [cost, GameUI.fmt_time(_colonize_seconds())], Color(0.2, 0.55, 0.3), econ.res["gold"] >= cost and colonizing.is_empty())
+		ui.set_primary("colonize", tr("ui.colonize") % [cost, GameUI.fmt_time(_colonize_seconds())], Color(0.2, 0.55, 0.3), econ.res["gold"] >= cost and colonizing.is_empty())
 	elif c["owner"] != Types.PLAYER and c["owner"] != Types.NOBODY:
 		var left := _truce_left(c["owner"])
 		if left > 0:
-			ui.set_primary("truce", "🕊 Перемирие %d:%02d" % [left / 60, left % 60], Color(0.3, 0.35, 0.45), false)
+			ui.set_primary("truce", tr("ui.truce_timer") % [left / 60, left % 60], Color(0.3, 0.35, 0.45), false)
 		elif MapGen.core_of(sim, c["owner"]).has(selected):
-			ui.set_primary("core", "Ядро неприкосновенно", Color(0.3, 0.35, 0.45), false)
+			ui.set_primary("core", tr("ui.core_protected"), Color(0.3, 0.35, 0.45), false)
 		else:
-			ui.set_primary("declare", "⚔ Объявить войну", Color(0.8, 0.22, 0.16))
+			ui.set_primary("declare", tr("ui.declare_war"), Color(0.8, 0.22, 0.16))
 	elif c["owner"] == Types.PLAYER:
-		ui.set_primary("upgrade", "⬆ Улучшить", Color(0.13, 0.4, 0.9))
+		ui.set_primary("upgrade", tr("ui.upgrade"), Color(0.13, 0.4, 0.9))
 	else:
 		ui.set_primary("", "")
 
@@ -378,7 +417,7 @@ func _on_hud_button(name: String) -> void:
 	match name:
 		"gear":
 			if mode in [Mode.MAP, Mode.WAR]:
-				ui.show_settings(sfx.enabled, func(): sfx.enabled = not sfx.enabled, _new_game)
+				_show_settings()
 		"target":
 			rig.focus(_front_center() if mode == Mode.BATTLE else _war_or_front_center())
 		"pin":
@@ -386,9 +425,9 @@ func _on_hud_button(name: String) -> void:
 		"fort":
 			_fort_action()
 		"trophy":
-			ui.toast("Глава I «Долина»: %d / %d гексов" % [_player_hexes(), CHAPTER_GOAL])
+			ui.toast(tr("toast.chapter_progress") % [_player_hexes(), CHAPTER_GOAL])
 		"book":
-			ui.toast("Летопись откроется после главы I")
+			ui.toast(tr("toast.chronicle_locked"))
 		"mail":
 			if not ultimatum.is_empty():
 				_show_ultimatum()
@@ -450,37 +489,36 @@ func _select(id: int) -> void:
 	if mode == Mode.WAR:
 		var c: Dictionary = sim.cells[id]
 		if c["controller"] != c["owner"]:
-			ui.toast("%s: оккупирован (%s). Станет вашим только по мирному договору." % [_cell_name(id), _state_name(c["controller"])])
+			ui.toast(tr("toast.occupied_hex") % [_cell_name(id), _state_name(c["controller"])])
 
 
 func _describe(id: int) -> Dictionary:
 	var c: Dictionary = sim.cells[id]
 	var own: int = c["owner"]
-	var owner_text: String = "Ваша территория" if own == Types.PLAYER else _state_name(own)
+	var owner_text: String = tr("tile.your_territory") if own == Types.PLAYER else _state_name(own)
 	if c["controller"] != own:
-		owner_text += " · оккупирован"
-	var bonus := "Ценность %d" % c["value"]
+		owner_text = tr("tile.occupied") % owner_text
+	var bonus: String = tr("tile.value") % c["value"]
 	if c["terrain"] == "forest":
-		bonus += " · +25% защ."
+		bonus += " · " + tr("tile.forest_def")
 	elif c["terrain"] == "hills":
-		bonus += " · +50% защ."
+		bonus += " · " + tr("tile.hills_def")
 	if c["fort"] > 0:
-		bonus += " · форт %d" % c["fort"]
+		bonus += " · " + tr("tile.fort") % c["fort"]
 	if not Types.is_passable(c):
-		bonus = "Непроходимо"
+		bonus = tr("tile.impassable")
 	elif c["controller"] == Types.PLAYER:
 		var inc: Dictionary = econ.hex_income(sim, id)
 		var parts := PackedStringArray()
 		for r in inc:
 			if int(inc[r]) > 0:
-				parts.append("+%d %s/ч" % [inc[r], {"gold": "зол.", "food": "еды", "metal": "мет."}.get(r, r)])
+				parts.append(tr("tile.income") % [inc[r], tr("res.short." + String(r))])
 		if parts.size() > 0:
 			bonus = " · ".join(parts)
 	var dep: Dictionary = deposits.at(id) if deposits != null else {}
 	if not dep.is_empty():
-		var rn := {"gold": "золота", "food": "еды", "metal": "металла"}
-		bonus = "Залежь: %d %s · сбор %s" % [int(dep["amount"]), rn.get(String(dep["res"]), ""), GameUI.fmt_time(int(dep["gather_sec"]))]
-		return {"title": "%s (%s)" % [Deposits.NAMES.get(String(dep["res"]), "Залежь"), dep["size"]], "owner": owner_text,
+		bonus = tr("tile.deposit") % [int(dep["amount"]), tr("res.gen." + String(dep["res"])), GameUI.fmt_time(int(dep["gather_sec"]))]
+		return {"title": "%s (%s)" % [tr(String(Deposits.NAMES.get(String(dep["res"]), "tile.deposit_name"))), dep["size"]], "owner": owner_text,
 			"owner_color": Color(1.0, 0.85, 0.3), "bonus": bonus, "attackable": false}
 	return {
 		"title": _cell_name(id),
@@ -491,19 +529,29 @@ func _describe(id: int) -> Dictionary:
 	}
 
 
-func _cell_name(id: int) -> String:
+## Translation key of a hex name (stored in reports so they follow a later language switch).
+func _cell_key(id: int) -> String:
 	var c: Dictionary = sim.cells[id]
 	if c["name"] != "":
 		return c["name"]
 	if KIND_NAMES.has(c["kind"]):
 		return KIND_NAMES[c["kind"]]
-	return TERRAIN_NAMES.get(c["terrain"], "Гекс")
+	return TERRAIN_NAMES.get(c["terrain"], "tile.hex")
 
 
-func _state_name(s: int) -> String:
+func _cell_name(id: int) -> String:
+	return tr(_cell_key(id))
+
+
+func _state_key(s: int) -> String:
 	if s < 0 or s >= sim.states.size():
 		return ""
 	return sim.states[s]["name"]
+
+
+func _state_name(s: int) -> String:
+	var k := _state_key(s)
+	return tr(k) if k != "" else ""
 
 
 func _touches_player(id: int) -> bool:
@@ -537,7 +585,7 @@ func _pick_target() -> void:
 				target = c["id"]
 				break
 	if target < 0:
-		ui.toast("Пока целей нет — дождитесь конца перемирия")
+		ui.toast(tr("toast.no_targets"))
 		return
 	rig.focus(map_view.cell_world(target))
 	_select(target)
@@ -555,17 +603,17 @@ func _colonize_seconds() -> int:
 ## Colonization (canon §12.1): gold and a timer, one at a time, no builder needed.
 func _colonize(id: int) -> void:
 	if not colonizing.is_empty():
-		ui.toast("Уже идёт колонизация")
+		ui.toast(tr("toast.colonizing"))
 		return
 	var cost := _colonize_cost()
 	if econ.res["gold"] < cost:
-		ui.toast("Не хватает золота")
+		ui.toast(tr("toast.no_gold"))
 		return
 	econ.res["gold"] -= cost
 	colonizing[id] = now_s() + _colonize_seconds()
 	sfx.play("coin")
 	map_view.burst(id, Color(1.0, 0.85, 0.3))
-	ui.toast("Поселенцы в пути: «%s» станет вашим через %s" % [_cell_name(id), GameUI.fmt_time(_colonize_seconds())])
+	ui.toast(tr("toast.settlers") % [_cell_name(id), GameUI.fmt_time(_colonize_seconds())])
 	_autosave()
 	_econ_tick()
 
@@ -575,7 +623,7 @@ func _speedup_colonize(id: int) -> void:
 		return
 	var price := Economy.speedup_price(int(colonizing[id]) - now_s())
 	if econ.res["raivite"] < price:
-		ui.toast("Не хватает Райвитов")
+		ui.toast(tr("toast.no_raivite"))
 		return
 	econ.res["raivite"] -= price
 	colonizing[id] = now_s()
@@ -591,14 +639,14 @@ func _finish_colonize(id: int) -> void:
 	c["owner"] = Types.PLAYER
 	c["controller"] = Types.PLAYER
 	map_view.burst(id, MapView.C_PLAYER, true)
-	map_view.floater(id, "+1 гекс", Color(0.75, 0.85, 1.0))
+	map_view.floater(id, tr("floater.plus_hex"), Color(0.75, 0.85, 1.0))
 	sfx.play("coin")
 	sfx.haptic(20)
 	map_view.refresh_hex(id)
 	map_view.pop_hex(id)
 	_autosave()
 	map_view.mark_dirty()
-	ui.toast("Колонизирован «%s» · Глава I: %d / %d" % [_cell_name(id), _player_hexes(), CHAPTER_GOAL])
+	ui.toast(tr("toast.colonized") % [_cell_name(id), _player_hexes(), CHAPTER_GOAL])
 	_select(id)
 
 
@@ -614,7 +662,7 @@ func _declare(enemy: int, goal: int) -> void:
 	map_view.burst(goal, MapView.C_WAR, true)
 	sfx.play("warn")
 	sfx.haptic(60)
-	ui.toast("Война объявлена: %s! Цель — «%s» (+10 к счёту)" % [_state_name(enemy), _cell_name(goal)])
+	ui.toast(tr("toast.war_declared") % [_state_name(enemy), _cell_name(goal)])
 	if ftue == 1:
 		ftue = 2
 	elif ftue == 10:
@@ -645,7 +693,7 @@ func _deploy_to_front(enemy: int) -> void:
 				moved += 1
 				break
 	if moved > 0:
-		ui.toast("Армии выдвинулись к границе")
+		ui.toast(tr("toast.armies_deployed"))
 
 
 ## Every state at war needs field armies; Hamlets have none at the start (port of the TS client).
@@ -720,7 +768,7 @@ func _start_offensive() -> void:
 	_set_mode(Mode.BATTLE)
 	sfx.play("warn")
 	if ftue == 0:
-		ui.toast("В бой! Тяните от армии к врагу или бросьте карту на гекс")
+		ui.toast(tr("toast.to_battle"))
 
 
 ## Middle of the fighting: the player's armies and the flag hex, nudged toward the enemy.
@@ -764,17 +812,17 @@ func _handle_event(ev: Dictionary) -> void:
 			sfx.play("capture" if mine else "lost")
 			map_view.smoke(ev["hex"], 5.0, true)
 			map_view.burst(ev["hex"], MapView.C_PLAYER if mine else MapView.C_WAR, true)
-			map_view.floater(ev["hex"], "Оккупирован!" if mine else "Потерян", Color(0.75, 0.85, 1.0) if mine else Color(1.0, 0.7, 0.7))
+			map_view.floater(ev["hex"], tr("floater.occupied") if mine else tr("floater.lost"), Color(0.75, 0.85, 1.0) if mine else Color(1.0, 0.7, 0.7))
 			if mine and ev["hex"] == war["goal"]:
 				_stat("goals")
-				ui.toast("🚩 Цель войны взята: +10 к счёту")
+				ui.toast(tr("toast.goal_taken"))
 		"repelled":
 			sfx.play("repelled")
-			map_view.floater(ev["hex"], "Атака отбита" if mine else "Отбились!", Color.WHITE)
+			map_view.floater(ev["hex"], tr("floater.repelled") if mine else tr("floater.held"), Color.WHITE)
 		"routed":
 			var a = battle.army_by_id(ev["army"])
 			if a != null:
-				map_view.floater(a["hex"], "Армия разбита", Color(1.0, 0.7, 0.28))
+				map_view.floater(a["hex"], tr("floater.routed"), Color(1.0, 0.7, 0.28))
 		"card":
 			sfx.play("boom" if ev["card"] == "airstrike" else "card")
 			if ev["card"] == "airstrike":
@@ -782,7 +830,7 @@ func _handle_event(ev: Dictionary) -> void:
 			else:
 				map_view.burst(ev["hex"], Color(0.6, 0.82, 1.0) if mine else Color(1.0, 0.6, 0.6))
 			if not mine:
-				map_view.floater(ev["hex"], Battle.CARDS[ev["card"]]["name"], Color(1.0, 0.7, 0.7))
+				map_view.floater(ev["hex"], tr(String(Battle.CARDS[ev["card"]]["name"])), Color(1.0, 0.7, 0.7))
 
 
 func _end_offensive() -> void:
@@ -806,7 +854,7 @@ func _end_offensive() -> void:
 	_normalize_armies()
 	map_view.sync_armies(armies, null)
 	_set_mode(Mode.RESULT)
-	var reason: String = {"retreat": "Вы отступили", "wiped": "Все армии сломлены"}.get(res["reason"], "Время вышло")
+	var reason: String = tr(String({"retreat": "result.retreat", "wiped": "result.wiped"}.get(res["reason"], "result.timeout")))
 	ui.show_result(stars, res["captured"].size(), res["lost"].size(), ws["score"], ws["control"], reason,
 		func(): ui.close_modal(); _set_mode(Mode.WAR),
 		func(): ui.close_modal(); _open_peace())
@@ -845,7 +893,7 @@ func _on_order_drag(phase: int, screen: Vector2) -> void:
 		_battle_tap(from)
 		return
 	if not sim.neighbors[from].has(hex):
-		ui.toast("Только на соседний гекс")
+		ui.toast(tr("toast.adjacent_only"))
 		return
 	if battle.can_target(Types.PLAYER, hex):
 		if battle.issue(Types.PLAYER, {"t": "attack", "army": a["id"], "target": hex}):
@@ -853,10 +901,10 @@ func _on_order_drag(phase: int, screen: Vector2) -> void:
 			sfx.haptic(15)
 			_ftue_attacked()
 		else:
-			ui.toast("Не хватает энергии (нужно 2)")
+			ui.toast(tr("toast.no_energy") % 2)
 	elif sim.cells[hex]["controller"] == Types.PLAYER:
 		if not battle.issue(Types.PLAYER, {"t": "move", "army": a["id"], "to": hex}):
-			ui.toast("Гекс занят")
+			ui.toast(tr("toast.hex_busy"))
 
 
 func _draw_order(from: int, to: int) -> void:
@@ -901,14 +949,14 @@ func _battle_tap(id: int) -> void:
 	var a = battle.army_at(id, Types.PLAYER)
 	if a == null:
 		var c: Dictionary = sim.cells[id]
-		ui.toast("%s · ценность %d · %s" % [_cell_name(id), c["value"], _state_name(c["controller"])])
+		ui.toast(tr("toast.hex_info") % [_cell_name(id), c["value"], _state_name(c["controller"])])
 		return
 	var now := Time.get_ticks_msec()
 	if _last_tap["army"] == a["id"] and now - int(_last_tap["t"]) < 350:
 		battle.issue(Types.PLAYER, {"t": "hold", "army": a["id"]})
-		ui.toast("Держать позицию: +10% к защите" if not a["hold"] else "Позиция снята")
+		ui.toast(tr("toast.hold_on") if not a["hold"] else tr("toast.hold_off"))
 	else:
-		ui.toast("Армия: сила %d / %d · двойной тап — держать позицию" % [roundi(a["str"] / 1000.0), roundi(a["max_str"] / 1000.0)])
+		ui.toast(tr("toast.army_info") % [roundi(a["str"] / 1000.0), roundi(a["max_str"] / 1000.0)])
 	_last_tap = {"army": a["id"], "t": now}
 
 
@@ -932,13 +980,13 @@ func _on_card_drop(card: String, screen: Vector2) -> void:
 	if id < 0:
 		return
 	if battle.energy_points(Types.PLAYER) < Battle.CARDS[card]["cost"]:
-		ui.toast("Не хватает энергии (нужно %d)" % Battle.CARDS[card]["cost"])
+		ui.toast(tr("toast.no_energy") % Battle.CARDS[card]["cost"])
 	elif not battle.card_ready(Types.PLAYER, card):
-		ui.toast("Карта перезаряжается")
+		ui.toast(tr("toast.card_cooldown"))
 	elif battle.issue(Types.PLAYER, {"t": "card", "card": card, "target": id}):
 		_ftue_attacked()
 	else:
-		ui.toast("Сюда нельзя: %s" % ("нужен свой гекс" if Battle.CARDS[card]["target"] == "own" else "нужен вражеский гекс рядом с армией"))
+		ui.toast(tr("toast.cant_target") % (tr("card.need_own") if Battle.CARDS[card]["target"] == "own" else tr("card.need_enemy")))
 
 
 # ====================================================================== peace
@@ -952,7 +1000,9 @@ func _open_peace() -> void:
 	for d in _demands:
 		if d["kind"] == "annex":
 			var h: int = d["hexes"][0]
-			d["label"] = "%s (ценн. %d)" % [_cell_name(h), sim.cells[h]["value"]] + (" 🚩" if h == war["goal"] else "")
+			d["label"] = tr("peace.annex") % [_cell_name(h), sim.cells[h]["value"]] + (" 🚩" if h == war["goal"] else "")
+		else:
+			d["label"] = L.t(String(d["label"]))
 	_chosen = {}
 	for d in War.recommend_package(sim, war, _demands, ws["score"]):
 		_chosen[d["id"]] = true
@@ -989,7 +1039,7 @@ func _on_demand_toggled(id: String) -> void:
 			if d["id"] == id:
 				cost = d["cost"]
 		if used + cost > War.war_score(sim, war)["score"] + 0.0001:
-			ui.toast("Не хватает военного счёта")
+			ui.toast(tr("toast.no_score"))
 			return
 		_chosen[id] = true
 	_show_peace()
@@ -1033,7 +1083,7 @@ func _sign_peace() -> void:
 	if ftue >= 15:
 		ftue = 0
 		ui.coach_hide()
-		ui.toast("Обучение пройдено! Дальше держава ваша.")
+		ui.toast(tr("toast.tutorial_done"))
 	elif ftue > 0:
 		ftue = 0
 		_ftue_next = 7
@@ -1067,9 +1117,14 @@ func _sign_peace() -> void:
 		if sim.cells[id]["kind"] == "city":
 			cities += 1
 	var lines: Array = []
-	lines.append(("+%d гекс." % annexed.size() + (" · +%d город" % cities if cities > 0 else "")) if annexed.size() > 0 else "Земли не присоединены")
-	lines.append("Держава %d → %d" % [before, MapGen.official_value(sim, Types.PLAYER)])
-	lines.append("Глава I: %d → %d из %d" % [hexes_before, _player_hexes(), CHAPTER_GOAL])
+	var land: String = tr("ceremony.no_land")
+	if annexed.size() > 0:
+		land = tr("ceremony.hex") if annexed.size() == 1 else tr("ceremony.hexes") % annexed.size()
+		if cities > 0:
+			land += " · " + (tr("ceremony.city") if cities == 1 else tr("ceremony.cities") % cities)
+	lines.append(land)
+	lines.append(tr("ceremony.realm") % [before, MapGen.official_value(sim, Types.PLAYER)])
+	lines.append(tr("ceremony.chapter") % [hexes_before, _player_hexes(), CHAPTER_GOAL])
 	# plunder (canon §9.14): % of the loser's exposed treasury; the AI economy is not simulated yet, so its
 	# treasury is taken as 8 h of comparable production with the 40% protected share; 12 h loss cap for all
 	var gross: Dictionary = econ.gross_per_hour(sim)
@@ -1084,15 +1139,15 @@ func _sign_peace() -> void:
 			var cap_left: int = ph * 12 - (contrib_gold if r == "gold" else 0)
 			loot[r] = maxi(0, mini(int(exposed * PLUNDER_PCT[plunder_level]), cap_left))
 		econ.add_resources(loot)
-		lines.append("⚒ Разграблено: %d золота, %d еды, %d металла" % [int(loot["gold"]), int(loot["food"]), int(loot["metal"])])
+		lines.append(tr("ceremony.plunder") % [int(loot["gold"]), int(loot["food"]), int(loot["metal"])])
 	_opinion_add(enemy, PLUNDER_OPINION[plunder_level])
 	if res.get("gold_packs", 0) > 0:
 		# a package = 4 h of the enemy's gold production (canon §10.1); the enemy economy is not modelled yet
 		var gold := int(res["gold_packs"]) * 4 * maxi(60, int(econ.gross_per_hour(sim).get("gold", 0)))
 		var got: Dictionary = econ.add_resources({"gold": gold})
-		lines.append("💰 Контрибуция: +%d золота" % int(got.get("gold", 0)))
+		lines.append(tr("ceremony.indemnity") % int(got.get("gold", 0)))
 	if res.get("reparations", false):
-		lines.append("📜 Репарации: 10% производства на 24 ч")
+		lines.append(tr("ceremony.reparations"))
 	# trophy chest for a victorious peace: bronze < 30, silver < 60, gold ≥ 60 war score (canon §15.4)
 	var score: float = _last_score  # war score at signing (the war dict is cleared below)
 	var chest := "case_trophy_gold" if score >= 60.0 else ("case_trophy_silver" if score >= 30.0 else "case_trophy_bronze")
@@ -1162,7 +1217,7 @@ func _step_ceremony(delta: float) -> void:
 
 ## Rewarded ad «×2 трофеи» — SDK stub until monetization lands (canon §14.10).
 func _double_trophies() -> void:
-	ui.toast("Тестовая сборка: реклама не подключена — трофеи удвоены")
+	ui.toast(tr("toast.test_ad_double"))
 	econ.add_resources(_ceremony.get("loot", {}))
 	econ.add_resources({"gold": int(_ceremony["gold_packs"]) * 4 * maxi(60, int(econ.gross_per_hour(sim).get("gold", 0)))})
 	_ceremony["gold_packs"] = 0
@@ -1181,21 +1236,21 @@ func _end_ceremony() -> void:
 	_ceremony = {}
 	_set_mode(Mode.MAP)
 	if _player_hexes() >= CHAPTER_GOAL and not chapter_done:
-		ui.toast("🌍 Цель главы выполнена — вкладка «Мир»")
+		ui.toast(tr("toast.chapter_goal"))
 
 
 func _open_defeat_or_white(score: float) -> void:
 	var enemy: int = war["enemy"]
 	if absf(score) < 10.0:
-		ui.show_result(0, 0, 0, score, War.war_score(sim, war)["control"], "Белый мир: всё вернётся владельцам",
+		ui.show_result(0, 0, 0, score, War.war_score(sim, war)["control"], tr("result.white_peace"),
 			func(): ui.close_modal(); _set_mode(Mode.WAR),
 			func():
 				War.white_peace(sim)
 				_opinion_add(enemy, 25.0)
-				_finish_war(enemy, "🕊 Белый мир подписан"))
+				_finish_war(enemy, tr("toast.white_peace_signed")))
 		return
 	var lost := _defeat_losses(enemy)
-	ui.show_result(0, 0, lost.size(), score, War.war_score(sim, war)["control"], "Поражение: −%d гекс., грабёж 60%%" % lost.size(),
+	ui.show_result(0, 0, lost.size(), score, War.war_score(sim, war)["control"], tr("result.defeat") % lost.size(),
 		func(): ui.close_modal(); _set_mode(Mode.WAR),
 		func(): _apply_defeat(enemy, lost))
 
@@ -1232,9 +1287,9 @@ func _apply_defeat(enemy: int, lost: Array) -> void:
 	for r in ["gold", "food", "metal"]:
 		g12[r] = 12 * maxi(30, int(gph.get(r, 0)))
 	var looted: Dictionary = econ.plunder(0.6, g12)  # Wolf plunders 60%, 12 h loss cap (canon §9.14, decision 20)
-	var msg := "Мир с потерями: −%d гекс., разграблено %d золота, %d еды, %d металла. Щит 24 ч и «Реванш» +15%%" % [lost.size(), int(looted.get("gold", 0)), int(looted.get("food", 0)), int(looted.get("metal", 0))]
-	_post("Поражение в войне", msg)
-	_finish_war(enemy, msg)
+	var msg := L.pack("inbox.defeat.text", [lost.size(), int(looted.get("gold", 0)), int(looted.get("food", 0)), int(looted.get("metal", 0))])
+	_post("inbox.defeat.title", msg)
+	_finish_war(enemy, L.t(msg))
 
 
 func _finish_war(enemy: int, msg: String) -> void:
@@ -1279,7 +1334,7 @@ func _econ_tick() -> void:
 			var cap: int = sim.states[Types.PLAYER]["capital_id"]
 			map_view.floater(cap, "+%d" % n, Color(1.0, 0.88, 0.4))
 			sfx.play("coin")
-			ui.toast("Обоз привёз: +%d %s" % [n, {"gold": "золота", "food": "еды", "metal": "металла"}.get(String(ev["res"]), "")])
+			ui.toast(tr("toast.convoy_back") % [n, tr("res.gen." + String(ev["res"]))])
 	for h in colonizing.keys():
 		if now >= int(colonizing[h]):
 			_finish_colonize(h)
@@ -1313,19 +1368,19 @@ func _econ_event(ev: Dictionary) -> void:
 				map_view.refresh_hex(int(b["hex"]))
 				map_view.pop_hex(int(b["hex"]))
 			var name: String = Economy.BUILDINGS[String(ev.get("building_type", b.get("type", "")))]["name"]
-			ui.toast("%s: уровень %d готов!" % [name, int(ev["level"])])
+			ui.toast(tr("toast.level_done") % [tr(name), int(ev["level"])])
 			sfx.play("capture")
 			if int(b.get("hex", -1)) >= 0:
 				map_view.burst(int(b["hex"]), Color(1.0, 0.85, 0.3), true)
 		"dev_level":
 			_rescale_armies()
-			ui.toast("🏰 Держава достигла УР %d! Новые постройки и уровни" % econ.dev_level())
+			ui.toast(tr("toast.dl_up") % econ.dev_level())
 			sfx.play("fanfare")
 			_dl_ceremony()
 		"building_unlocked":
-			ui.toast("Открыто: %s" % Economy.BUILDINGS[String(ev.get("building_type", "market"))]["name"])
+			ui.toast(tr("toast.unlocked") % tr(String(Economy.BUILDINGS[String(ev.get("building_type", "market"))]["name"])))
 		"fort_refund":
-			ui.toast("Укрепление на потерянном гексе разобрано, металл возвращён")
+			ui.toast(tr("toast.fort_refund"))
 
 
 ## DL-up (canon §6): the capital rebuilds first, then the rest of the land in rings, ~6 s in total.
@@ -1355,7 +1410,7 @@ func _dl_ceremony() -> void:
 ## Fort button: build a fortification on the selected own hex or upgrade the one standing there.
 func _fort_action() -> void:
 	if selected < 0 or sim.cells[selected]["owner"] != Types.PLAYER:
-		ui.toast("Выберите свой гекс, чтобы поставить укрепление")
+		ui.toast(tr("toast.pick_own_hex"))
 		return
 	var now := now_s()
 	econ.tick(sim, now)
@@ -1366,15 +1421,15 @@ func _fort_action() -> void:
 	if fort.is_empty():
 		var reason: String = econ.can_build(sim, "fort", selected, now)
 		if reason != "" or not econ.start_build(sim, "fort", selected, now):
-			ui.toast(reason if reason != "" else "Нельзя построить")
+			ui.toast(L.t(reason) if reason != "" else tr("toast.cant_build"))
 			return
-		ui.toast("Укрепление строится: %s" % GameUI.fmt_time(int(econ.buildings_at(selected)[-1]["upgrade_end"]) - now))
+		ui.toast(tr("toast.fort_building") % GameUI.fmt_time(int(econ.buildings_at(selected)[-1]["upgrade_end"]) - now))
 	else:
 		var reason2: String = econ.can_upgrade(fort, now)
 		if reason2 != "" or not econ.start_upgrade(fort["id"], now):
-			ui.toast(reason2 if reason2 != "" else "Нельзя улучшить")
+			ui.toast(L.t(reason2) if reason2 != "" else tr("toast.cant_upgrade"))
 			return
-		ui.toast("Укрепление → ур. %d" % (int(fort["level"]) + 1))
+		ui.toast(tr("toast.fort_upgrade") % (int(fort["level"]) + 1))
 	sfx.play("coin")
 	map_view.burst(selected, Color(1.0, 0.85, 0.3))
 	_stat("forts")
@@ -1401,7 +1456,7 @@ func _sync_deposits() -> void:
 func _send_convoy(hex: int) -> void:
 	var reason: String = deposits.can_send(sim, hex, econ.dev_level())
 	if reason != "":
-		ui.toast(reason)
+		ui.toast(L.t(reason))
 		return
 	deposits.send(sim, hex, econ.dev_level(), now_s(), not first_convoy_done)
 	first_convoy_done = true
@@ -1409,7 +1464,7 @@ func _send_convoy(hex: int) -> void:
 		ftue = 9
 	var cv: Dictionary = deposits.convoy_for(hex)
 	sfx.play("tap")
-	ui.toast("Обоз в пути: вернётся через %s" % GameUI.fmt_time(int(cv["back"]) - now_s()))
+	ui.toast(tr("toast.convoy_sent") % GameUI.fmt_time(int(cv["back"]) - now_s()))
 	_primary_for_selection()
 	_autosave()
 
@@ -1445,7 +1500,7 @@ func _collect_all() -> void:
 	for r in gained:
 		total += int(gained[r])
 	if total == 0:
-		ui.toast("Склад полон — улучшите Склад")
+		ui.toast(tr("toast.storage_full"))
 		return
 	for h in shown:
 		if map_view.has_bubble(int(h)):
@@ -1457,7 +1512,7 @@ func _collect_all() -> void:
 			map_view.floater(int(h), "+%d" % int(st[best]), Color(1.0, 0.88, 0.4) if best == "gold" else (Color(0.95, 0.85, 0.5) if best == "food" else Color(0.85, 0.9, 1.0)))
 	sfx.play("coin")
 	sfx.haptic(15)
-	ui.toast("Собрано: +%d золота · +%d еды · +%d металла" % [int(gained.get("gold", 0)), int(gained.get("food", 0)), int(gained.get("metal", 0))])
+	ui.toast(tr("toast.collected") % [int(gained.get("gold", 0)), int(gained.get("food", 0)), int(gained.get("metal", 0))])
 	_econ_tick()
 	_autosave()
 
@@ -1509,7 +1564,7 @@ func _on_open_case(case_id: String, times: int, pay: String) -> void:
 	match pay:
 		"free":
 			if not cases.use_free_crate(now):
-				ui.toast("Ящик ещё собирается")
+				ui.toast(tr("toast.crate_not_ready"))
 				return
 		"ad":
 			if not _rewarded("ad_free_crate", 2):
@@ -1517,7 +1572,7 @@ func _on_open_case(case_id: String, times: int, pay: String) -> void:
 		"raivite":
 			var price: int = cases.price_x10(case_id) if times == 10 else cases.price(case_id)
 			if int(econ.res["raivite"]) < price:
-				ui.toast("Не хватает Райвитов")
+				ui.toast(tr("toast.no_raivite"))
 				return
 			econ.res["raivite"] = int(econ.res["raivite"]) - price
 	var results: Array = cases.open_x10(case_id, _case_ctx(), now) if times == 10 else [cases.open(case_id, _case_ctx(), now)]
@@ -1544,7 +1599,7 @@ func _apply_case_rewards(results: Array) -> void:
 ## Store purchases: no billing SDK yet. Debug (test) builds grant the item so flows can be tested.
 func _on_buy_sku(sku: String) -> void:
 	if not OS.is_debug_build():
-		ui.toast("Покупки появятся в релизной версии")
+		ui.toast(tr("toast.purchases_soon"))
 		return
 	var first: bool = not purchases.has(sku)
 	purchases[sku] = int(purchases.get(sku, 0)) + 1
@@ -1552,24 +1607,24 @@ func _on_buy_sku(sku: String) -> void:
 		if row[0] == sku:
 			var n: int = int(row[2]) * (2 if first else 1)
 			econ.res["raivite"] = int(econ.res["raivite"]) + n
-			ui.toast("ТЕСТ: +%d Райвитов без оплаты" % n)
+			ui.toast(tr("toast.test_raivite") % n)
 	match sku:
 		"iap_builder":
 			if first:
 				econ.builders += 1
 				econ.res["raivite"] = int(econ.res["raivite"]) + 300
-				ui.toast("ТЕСТ: 4-й строитель и 300 Райвитов")
+				ui.toast(tr("toast.test_builder"))
 		"iap_starter":
 			econ.res["raivite"] = int(econ.res["raivite"]) + 250
 			var g: Dictionary = econ.gross_per_hour(sim)
 			econ.add_resources({"gold": int(g.get("gold", 0)) * 8, "food": int(g.get("food", 0)) * 8, "metal": int(g.get("metal", 0)) * 8})
-			ui.toast("ТЕСТ: набор новобранца")
+			ui.toast(tr("toast.test_starter"))
 		"iap_no_ads":
 			econ.res["raivite"] = int(econ.res["raivite"]) + 200
-			ui.toast("ТЕСТ: межстраничная реклама отключена")
+			ui.toast(tr("toast.test_no_ads"))
 		"iap_ration":
 			econ.res["raivite"] = int(econ.res["raivite"]) + 300
-			ui.toast("ТЕСТ: паёк державы")
+			ui.toast(tr("toast.test_ration"))
 	sfx.play("coin")
 	if shop:
 		shop.refresh(int(econ.res["raivite"]), now_s())
@@ -1595,11 +1650,11 @@ func _research_items(now: int) -> Array:
 		var busy: bool = not research.current.is_empty() and research.current["line"] == line
 		var left := int(research.current["end"]) - now if busy else 0
 		var maxed: bool = research.level(line) >= int(spec["max"])
-		items.append({"id": -1, "line": line, "name": spec["name"], "level": research.level(line),
+		items.append({"id": -1, "line": line, "name": tr(String(spec["name"])), "level": research.level(line),
 			"max": research.max_level(line, dl, acad), "busy": busy, "left": left,
 			"speed": Economy.speedup_price(left) if busy else 0, "cost": research.cost(line) if not maxed else {},
 			"seconds": research.seconds(line, acad) if not maxed else 0,
-			"reason": research.can_start(line, dl, acad, econ.res, now), "stock": speed_minutes})
+			"reason": L.t(research.can_start(line, dl, acad, econ.res, now)), "stock": speed_minutes})
 	items.sort_custom(func(x, y): return int(x["busy"]) > int(y["busy"]))
 	return items
 
@@ -1607,10 +1662,10 @@ func _research_items(now: int) -> Array:
 func _on_research_start(line: String) -> void:
 	var now := now_s()
 	if not research.start(line, econ.dev_level(), _academy_level(), econ.res, now):
-		ui.toast(research.can_start(line, econ.dev_level(), _academy_level(), econ.res, now))
+		ui.toast(L.t(research.can_start(line, econ.dev_level(), _academy_level(), econ.res, now)))
 		return
 	sfx.play("coin")
-	ui.toast("🔬 %s → ур. %d · %s" % [Research.LINES[line]["name"], research.level(line) + 1, GameUI.fmt_time(int(research.current["end"]) - now)])
+	ui.toast(tr("toast.research_started") % [tr(String(Research.LINES[line]["name"])), research.level(line) + 1, GameUI.fmt_time(int(research.current["end"]) - now)])
 	_econ_tick()
 	_autosave()
 
@@ -1627,7 +1682,7 @@ func _on_research_speedup(_line: String) -> void:
 	else:
 		var price := Economy.speedup_price(left)
 		if int(econ.res["raivite"]) < price:
-			ui.toast("Не хватает Райвитов")
+			ui.toast(tr("toast.no_raivite"))
 			return
 		econ.res["raivite"] = int(econ.res["raivite"]) - price
 		research.current["end"] = now
@@ -1636,7 +1691,7 @@ func _on_research_speedup(_line: String) -> void:
 
 
 func _on_research_done(line: String) -> void:
-	ui.toast("🔬 Изучено: %s, ур. %d — %s" % [Research.LINES[line]["name"], research.level(line), Research.LINES[line]["desc"]])
+	ui.toast(tr("toast.research_done") % [tr(String(Research.LINES[line]["name"])), research.level(line), tr(String(Research.LINES[line]["desc"]))])
 	sfx.play("capture")
 	if line == "infantry":
 		_rescale_armies()
@@ -1646,14 +1701,14 @@ func _on_research_done(line: String) -> void:
 
 ## Chapter I stars: 10 Raivites + 1 h of production each; all stars give a cosmetic (canon §12.1).
 const STARS := [
-	["peace", "Подпишите мир", "peaces", 1],
-	["goal", "Возьмите цель войны", "goals", 1],
-	["pocket", "Заберите котёл по договору", "pockets", 1],
-	["colonize", "Колонизируйте 3 гекса", "colonized", 3],
-	["fort", "Поставьте укрепление", "forts", 1],
-	["convoy", "Привезите 3 обоза", "convoys", 3],
-	["defense", "Отбейте набег или удар", "defenses", 1],
-	["dl3", "Достигните УР3", "", 3],
+	["peace", "star.peace", "peaces", 1],
+	["goal", "star.goal", "goals", 1],
+	["pocket", "star.pocket", "pockets", 1],
+	["colonize", "star.colonize", "colonized", 3],
+	["fort", "star.fort", "forts", 1],
+	["convoy", "star.convoy", "convoys", 3],
+	["defense", "star.defense", "defenses", 1],
+	["dl3", "star.dl3", "", 3],
 ]
 
 
@@ -1672,7 +1727,7 @@ func _world_items() -> Array:
 		"can_expand": _player_hexes() >= CHAPTER_GOAL and war.is_empty() and not chapter_done}]
 	for st in STARS:
 		var prog := mini(_star_progress(st), int(st[3]))
-		items.append({"kind": "star", "id": st[0], "title": st[1], "progress": prog, "need": st[3],
+		items.append({"kind": "star", "id": st[0], "title": tr(String(st[1])), "progress": prog, "need": st[3],
 			"claimed": stars_claimed.has(st[0])})
 	return items
 
@@ -1688,10 +1743,10 @@ func _on_world_action(id: String) -> void:
 			econ.add_resources({"gold": int(gross.get("gold", 0)), "food": int(gross.get("food", 0)), "metal": int(gross.get("metal", 0))})
 			econ.res["raivite"] = int(econ.res["raivite"]) + 10
 			sfx.play("capture")
-			ui.toast("⭐ Звезда главы: +10 Райвитов и час производства")
+			ui.toast(tr("toast.star"))
 			if stars_claimed.size() == STARS.size():
-				_post("Все звёзды главы I", "Награда: чернила границы «Долина» (косметика).")
-				ui.toast("Все звёзды главы! Чернила границы «Долина» — ваши")
+				_post("inbox.all_stars.title", "inbox.all_stars.text")
+				ui.toast(tr("toast.all_stars"))
 	_econ_tick()
 	_autosave()
 
@@ -1704,15 +1759,16 @@ func _complete_chapter() -> void:
 	econ.res["raivite"] = int(econ.res["raivite"]) + 200
 	map_view.fireworks(map_view.cell_world(sim.states[Types.PLAYER]["capital_id"]), 5)
 	sfx.play("fanfare")
-	_post("Глава I «Долина» завершена", "Наследие: Капитан Лира и 200 Райвитов. Глава II «Речной край» скоро — за туманом уже видны паруса.")
-	ui.toast("🌍 Глава I пройдена! +200 Райвитов, Капитан Лира. Глава II — скоро")
+	_post("inbox.chapter_done.title", "inbox.chapter_done.text")
+	ui.toast(tr("toast.chapter_done"))
 	_autosave()
 
 
 # ---------------------------------------------------------------------- diplomacy (canon §10.4–10.6)
 
-const LEADERS := {2: ["Барон Гродек Клык", "Волк", "Мало крепостей, много армий, частые ультиматумы"],
-	3: ["Голова Мирося Златоуст", "Лис", "Богат, любит сделки и золото"]}
+## Leader name, archetype and character (translation keys).
+const LEADERS := {2: ["leader.barons", "archetype.wolf", "leader.barons.desc"],
+	3: ["leader.hamlets", "archetype.fox", "leader.hamlets.desc"]}
 
 
 func _opinion_add(s: int, v: float) -> void:
@@ -1740,30 +1796,31 @@ func _opinion_of(s: int) -> float:
 	return v
 
 
+## Translation key of the opinion word.
 static func _opinion_word(v: float) -> String:
 	if v <= -50.0:
-		return "Враждебен"
+		return "opinion.hostile"
 	if v < -10.0:
-		return "Насторожен"
+		return "opinion.wary"
 	if v <= 10.0:
-		return "Нейтрален"
+		return "opinion.neutral"
 	if v <= 50.0:
-		return "Дружелюбен"
-	return "Друг державы"
+		return "opinion.friendly"
+	return "opinion.ally"
 
 
 func _diplomacy_items(now: int) -> Array:
 	var items: Array = []
 	for s in [MapGen.BARONS, MapGen.HAMLETS]:
-		var status := "Мир"
+		var status: String = tr("dipl.peace")
 		if not war.is_empty() and int(war["enemy"]) == s:
-			status = "⚔ Война"
+			status = tr("dipl.war")
 		elif _truce_left(s) > 0:
-			status = "🕊 Перемирие %s" % GameUI.fmt_time(_truce_left(s))
+			status = tr("dipl.truce") % GameUI.fmt_time(_truce_left(s))
 		var gift_left := maxi(0, int(gift_at.get(s, 0)) + 86400 - now)
 		var v := _opinion_of(s)
-		items.append({"id": s, "state": _state_name(s), "leader": LEADERS[s][0], "archetype": LEADERS[s][1],
-			"opinion": v, "word": _opinion_word(v), "status": status,
+		items.append({"id": s, "state": _state_name(s), "leader": tr(String(LEADERS[s][0])), "archetype": tr(String(LEADERS[s][1])),
+			"opinion": v, "word": tr(_opinion_word(v)), "status": status,
 			"can_war": war.is_empty() and _truce_left(s) == 0, "gift_cost": _gift_cost(), "gift_left": gift_left,
 			"color": map_view.state_color(s)})
 	return items
@@ -1778,18 +1835,18 @@ func _on_diplomacy_action(s: int, kind: String) -> void:
 		"war":
 			var g := War.recommend_goals(sim, s, 1)
 			if g.is_empty():
-				ui.toast("Нет общей границы для войны")
+				ui.toast(tr("toast.no_border"))
 				return
 			rig.focus(map_view.cell_world(g[0]))
 			_select(g[0])
-			ui.toast("Цель выбрана — нажмите «Объявить войну»")
+			ui.toast(tr("toast.target_chosen"))
 		"gift":
 			var cost := _gift_cost()
 			if int(gift_at.get(s, 0)) + 86400 > now_s():
-				ui.toast("Подарок этому соседу — раз в сутки")
+				ui.toast(tr("toast.gift_daily"))
 				return
 			if econ.res["gold"] < cost:
-				ui.toast("Не хватает золота")
+				ui.toast(tr("toast.no_gold"))
 				return
 			econ.res["gold"] -= cost
 			var emb := 0
@@ -1799,9 +1856,9 @@ func _on_diplomacy_action(s: int, kind: String) -> void:
 			_opinion_add(s, 10.0 * (1.0 + 0.05 * emb))
 			gift_at[s] = now_s()
 			sfx.play("coin")
-			ui.toast("%s благодарит за подарок" % LEADERS[s][0])
+			ui.toast(tr("toast.gift_thanks") % tr(String(LEADERS[s][0])))
 		"alliance":
-			ui.toast("Союзы откроются позже")
+			ui.toast(tr("toast.alliances_later"))
 	_econ_tick()
 	_autosave()
 
@@ -1872,19 +1929,19 @@ func _train_cost() -> Dictionary:
 func _train_army() -> void:
 	var dl: int = econ.dev_level()
 	if _player_armies().size() >= ARMY_LIMIT[dl]:
-		ui.toast("Больше армий — на следующем УР")
+		ui.toast(tr("toast.army_limit"))
 		return
 	if not training.is_empty():
-		ui.toast("Армия уже формируется")
+		ui.toast(tr("toast.army_training"))
 		return
 	var cost := _train_cost()
 	if econ.res["food"] < int(cost["food"]):
-		ui.toast("Не хватает еды")
+		ui.toast(tr("toast.no_food"))
 		return
 	econ.res["food"] -= int(cost["food"])
 	training = {"end": now_s() + int(cost["seconds"]), "slots": int(cost["slots"])}
 	sfx.play("coin")
-	ui.toast("Новобранцы собираются: %s" % GameUI.fmt_time(int(cost["seconds"])))
+	ui.toast(tr("toast.recruits") % GameUI.fmt_time(int(cost["seconds"])))
 	_autosave()
 
 
@@ -1901,7 +1958,7 @@ func _finish_training() -> void:
 	_normalize_armies()
 	map_view.burst(cap, MapView.C_PLAYER, true)
 	sfx.play("fanfare")
-	ui.toast("Новая армия готова!")
+	ui.toast(tr("toast.army_ready"))
 	_autosave()
 
 
@@ -1912,11 +1969,11 @@ func _rewarded(key: String, cap: int) -> bool:
 	if int(rec[0]) != day:
 		rec = [day, 0]
 	if int(rec[1]) >= cap:
-		ui.toast("Лимит просмотров на сегодня")
+		ui.toast(tr("toast.ad_limit"))
 		return false
 	rec[1] = int(rec[1]) + 1
 	ad_counts[key] = rec
-	ui.toast("Тестовая сборка: реклама не подключена — награда выдана")
+	ui.toast(tr("toast.test_ad_reward"))
 	return true
 
 
@@ -1924,7 +1981,7 @@ func _army_items(now: int) -> Array:
 	var items: Array = []
 	var i := 1
 	for a in _player_armies():
-		items.append({"id": a["id"], "name": "Армия %d" % i, "str": int(round(float(a["str"]) / 1000.0)), "max": int(round(float(a["max_str"]) / 1000.0)),
+		items.append({"id": a["id"], "name": tr("army.name") % i, "str": int(round(float(a["str"]) / 1000.0)), "max": int(round(float(a["max_str"]) / 1000.0)),
 			"slots": int(a.get("slots", 3)),
 			"refilling": int(a["str"]) < int(a["max_str"])})
 		i += 1
@@ -1933,7 +1990,7 @@ func _army_items(now: int) -> Array:
 	var need := dl
 	while need < 10 and ARMY_LIMIT[need] <= _player_armies().size():
 		need += 1
-	var new_item := {"id": -1, "name": "Новая армия", "locked": _player_armies().size() >= ARMY_LIMIT[dl], "need_dl": need, "food": cost["food"], "seconds": cost["seconds"]}
+	var new_item := {"id": -1, "name": tr("army.new"), "locked": _player_armies().size() >= ARMY_LIMIT[dl], "need_dl": need, "food": cost["food"], "seconds": cost["seconds"]}
 	if not training.is_empty():
 		new_item["left"] = int(training["end"]) - now
 	items.append(new_item)
@@ -1966,9 +2023,9 @@ func _building_items(now: int) -> Array:
 			if int(cost[r]) <= 0:
 				cost.erase(r)
 		var busy: bool = int(b["upgrade_end"]) > now
-		items.append({"id": b["id"], "name": info["name"], "level": b["level"], "max": econ.max_level(b),
+		items.append({"id": b["id"], "name": tr(String(info["name"])), "level": b["level"], "max": econ.max_level(b),
 			"busy": busy, "left": int(b["upgrade_end"]) - now, "speed": econ.speedup_cost(b, now),
-			"cost": cost, "seconds": secs, "reason": reason, "stock": speed_minutes})
+			"cost": cost, "seconds": secs, "reason": L.t(reason), "stock": speed_minutes})
 	items.sort_custom(func(x, y): return int(x["busy"]) > int(y["busy"]))
 	return items
 
@@ -1979,11 +2036,11 @@ func _on_building_upgrade(id: int) -> void:
 	var b: Dictionary = econ.building(id)
 	var reason: String = econ.can_upgrade(b, now)
 	if reason != "" or not econ.start_upgrade(id, now):
-		ui.toast(reason if reason != "" else "Нельзя улучшить")
+		ui.toast(L.t(reason) if reason != "" else tr("toast.cant_upgrade"))
 		return
 	sfx.play("coin")
 	sfx.haptic(20)
-	ui.toast("%s → ур. %d · %s" % [Economy.BUILDINGS[b["type"]]["name"], int(b["level"]) + 1, GameUI.fmt_time(int(b["upgrade_end"]) - now)])
+	ui.toast(tr("toast.upgrade_started") % [tr(String(Economy.BUILDINGS[b["type"]]["name"])), int(b["level"]) + 1, GameUI.fmt_time(int(b["upgrade_end"]) - now)])
 	if ftue == 7 and b["type"] == "residence":
 		ftue = 8
 	_econ_tick()
@@ -1999,12 +2056,12 @@ func _on_building_speedup(id: int) -> void:
 		var use := mini(speed_minutes, int(ceil(left / 60.0)))
 		speed_minutes -= use
 		b["upgrade_end"] = int(b["upgrade_end"]) - use * 60
-		ui.toast("⏩ Ускорение из запаса: −%d мин (осталось в запасе %d мин)" % [use, speed_minutes])
+		ui.toast(tr("toast.stock_used") % [use, speed_minutes])
 		_econ_tick()
 		_autosave()
 		return
 	if econ.res["raivite"] < econ.speedup_cost(b, now):
-		ui.toast("Не хватает Райвитов")
+		ui.toast(tr("toast.no_raivite"))
 		return
 	if econ.finish_now(id, now):
 		_econ_tick()
@@ -2013,6 +2070,8 @@ func _on_building_speedup(id: int) -> void:
 
 # ====================================================================== AI aggression (chapter I: scripted only)
 
+## Inbox report: title / text are translation keys, optionally packed with arguments (L.pack), so old
+## reports follow a later language switch.
 func _post(title: String, text: String) -> void:
 	inbox.append({"t": now_s(), "title": title, "text": text, "read": false})
 	if inbox.size() > 40:
@@ -2034,11 +2093,11 @@ func _ai_tick(now: int) -> void:
 		var h: int = _raid["hex"]
 		_raid = {}
 		map_view.burst(h, Color(1.0, 0.6, 0.3), true)
-		map_view.floater(h, "Набег отбит!", Color(0.75, 0.85, 1.0))
+		map_view.floater(h, tr("floater.raid_repelled"), Color(0.75, 0.85, 1.0))
 		_stat("defenses")
 		sfx.play("repelled")
-		_post("Набег мародёров", "Мародёры с диких земель налетели на «%s» и разбились о плетень. Укрепления защищают гексы и склады." % _cell_name(h))
-		ui.toast("Мародёры разбились о плетень! Укрепления берегут гексы и склады.")
+		_post("inbox.raid.title", L.pack("inbox.raid.text", [_cell_key(h)]))
+		ui.toast(tr("toast.raid_repelled"))
 		if _ftue_next == 10:
 			_ftue_next = 0
 			ftue = 10 if _hamlets_target() >= 0 else 0
@@ -2070,7 +2129,7 @@ func _issue_ultimatum(now: int) -> void:
 		return
 	var tribute := 8 * maxi(60, int(econ.gross_per_hour(sim).get("gold", 0)))
 	ultimatum = {"state": MapGen.BARONS, "hex": best, "tribute": tribute, "deadline": now + 4 * 3600}
-	_post("Ультиматум: %s" % _state_name(MapGen.BARONS), "Требуют «%s» или %d золота. Ответ — 4 ч, иначе война." % [_cell_name(best), tribute])
+	_post(L.pack("inbox.ultimatum.title", [_state_key(MapGen.BARONS)]), L.pack("inbox.ultimatum.text", [_cell_key(best), tribute]))
 	sfx.play("warn")
 	sfx.haptic(60)
 	rig.focus(map_view.cell_world(best))
@@ -2098,14 +2157,14 @@ func _answer_ultimatum(kind: String) -> void:
 			map_view.refresh_hex(hex)
 			map_view.mark_dirty()
 			_normalize_armies()
-			_post("Уступка", "«%s» отдан. Перемирие 24 ч." % _cell_name(hex))
+			_post("inbox.ceded.title", L.pack("inbox.ceded.text", [_cell_key(hex)]))
 		"pay":
 			if econ.res["gold"] < int(ultimatum["tribute"]):
-				ui.toast("Не хватает золота")
+				ui.toast(tr("toast.no_gold"))
 				return
 			econ.res["gold"] -= int(ultimatum["tribute"])
 			truce[enemy] = now + 24 * 3600
-			_post("Дань уплачена", "%d золота. Перемирие 24 ч." % int(ultimatum["tribute"]))
+			_post("inbox.tribute.title", L.pack("inbox.tribute.text", [int(ultimatum["tribute"])]))
 		"refuse":
 			_ensure_armies_for(enemy)
 			_deploy_to_front(enemy)
@@ -2127,7 +2186,7 @@ func _answer_ultimatum(kind: String) -> void:
 			map_view.at_war_with = enemy
 			map_view.mark_dirty()
 			sfx.play("warn")
-			_post("Война!", "%s объявили войну. Удар по «%s» через 20 мин — укрепите гекс или наступайте первыми." % [_state_name(enemy), _cell_name(hex)])
+			_post("inbox.war.title", L.pack("inbox.war.text", [_state_key(enemy), _cell_key(hex)]))
 			ultimatum = {}
 			ui.close_modal()
 			_set_mode(Mode.WAR)
@@ -2151,11 +2210,11 @@ func _resolve_strike() -> void:
 	var gold := int(maxi(60, int(econ.gross_per_hour(sim).get("gold", 0))) / 2.0)
 	econ.add_resources({"gold": gold})
 	map_view.burst(hex, MapView.C_PLAYER, true)
-	map_view.floater(hex, "Отбито!", Color(0.75, 0.85, 1.0))
+	map_view.floater(hex, tr("floater.repelled_short"), Color(0.75, 0.85, 1.0))
 	sfx.play("repelled")
-	var msg := "%s атаковали «%s» — атака отбита! +2 к военному счёту, +%d золота." % [_state_name(int(war["enemy"])), _cell_name(hex), gold]
-	_post("Оборона", msg)
-	ui.toast(msg)
+	var msg := L.pack("inbox.defense.text", [_state_key(int(war["enemy"])), _cell_key(hex), gold])
+	_post("inbox.defense.title", msg)
+	ui.toast(L.t(msg))
 	_refresh_ui()
 	_autosave()
 
@@ -2170,34 +2229,35 @@ func _war_cap() -> void:
 		_chosen = {}
 		for d in War.recommend_package(sim, war, _demands, ws["score"]):
 			_chosen[d["id"]] = true
-		_post("Кап войны", "Война длилась 2 ч — подписан рекомендованный мир.")
+		_post("inbox.war_cap.title", "inbox.war_cap.peace")
 		_sign_peace()
 	elif ws["score"] > -10.0:
 		War.white_peace(sim)
-		_post("Кап войны", "Война длилась 2 ч — белый мир.")
-		_finish_war(enemy, "Кап войны: белый мир")
+		_post("inbox.war_cap.title", "inbox.war_cap.white")
+		_finish_war(enemy, tr("toast.war_cap_white"))
 	else:
 		_apply_defeat(enemy, _defeat_losses(enemy))
 
 
 # ====================================================================== FTUE (canon §14.3)
 
+## Coach lines by FTUE step (translation keys).
 const FTUE_TEXT := {
-	1: "Бароны сожгли нашу пограничную мельницу! Объявите им войну.",
-	7: "Держава растёт! Откройте «Здания» и улучшите Резиденцию — халупы станут избами.",
-	8: "Жёлтый контур — бесплатные ресурсы. Коснитесь жилы и отправьте обоз.",
-	9: "Укрепите границу: выберите свой гекс у Баронов и нажмите кнопку «форт» справа.",
-	10: "Вольные Хутора заняли шахту у нашей границы. Объявите им войну!",
-	11: "Начните наступление.",
-	12: "Карта «Окружение» ◎ режет снабжение: перетащите её на вражеский гекс у ваших армий.",
-	13: "Отлично! Окружённые гексы сдаются быстрее. Захватите шахту!",
-	14: "Подпишите мир с Хуторами.",
-	15: "Пощадить Хутора (+20 к мнению) или разграбить? Выберите и удерживайте печать.",
-	2: "Начните наступление: у вас 60 секунд.",
-	3: "Тяните от своей армии на вражеский гекс — армия пойдёт в атаку.",
-	4: "Отлично! Карта «Атака» бросает в бой все армии рядом. Захватите ещё!",
-	5: "Захваченное пока лишь оккупировано. Подпишите мир — и граница сдвинется.",
-	6: "Удерживайте печать, чтобы подписать договор.",
+	1: "ftue.1",
+	7: "ftue.7",
+	8: "ftue.8",
+	9: "ftue.9",
+	10: "ftue.10",
+	11: "ftue.11",
+	12: "ftue.12",
+	13: "ftue.13",
+	14: "ftue.14",
+	15: "ftue.15",
+	2: "ftue.2",
+	3: "ftue.3",
+	4: "ftue.4",
+	5: "ftue.5",
+	6: "ftue.6",
 }
 
 
@@ -2282,7 +2342,7 @@ func _ftue_tick(delta: float) -> void:
 				ftue = 8
 				return
 			var why: String = econ.can_upgrade(econ.buildings[0], now_s())
-			if why != "" and why.begins_with("Нужно"):
+			if why.begins_with("err.need_hexes"):
 				ftue = 8  # not enough land for DL2 yet — the convoy step comes first
 				return
 			target = Vector2(70, 1440) if tab != "buildings" else Vector2(83, GameUI.VH - 35)
@@ -2314,7 +2374,7 @@ func _ftue_tick(delta: float) -> void:
 	if _ftue_shown != ftue:
 		_ftue_shown = ftue
 		_ftue_t = 0.0
-		ui.coach(FTUE_TEXT[ftue], target)
+		ui.coach(tr(String(FTUE_TEXT[ftue])), target)
 	_ftue_t += delta
 	ui.coach_target(target)
 	if (ftue == 4 or ftue == 13) and _ftue_t > 6.0:
@@ -2383,6 +2443,7 @@ func _update_minimap() -> void:
 
 # ====================================================================== debug / CI
 
+## `--lang=ru|en` is consumed first, by _init_language() in _ready, before the HUD and UI are built.
 func _handle_args() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--shot="):

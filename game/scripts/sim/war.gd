@@ -154,18 +154,18 @@ static func available_demands(w: World, war: Dictionary) -> Array[Dictionary]:
 			in_pocket[id] = true
 			sum += hex_peace_cost(w, war, id)
 		out.append({"id": "pocket:%d" % i, "kind": "pocket", "hexes": g, "cost": Types.round1(0.5 * sum),
-			"label": "Котёл целиком (%d гекс.)" % g.size()})
+			"label": "demand.pocket|%d" % g.size()})
 	for c in w.cells:
 		if c["owner"] != war["enemy"] or c["controller"] != Types.PLAYER or core.has(c["id"]) or in_pocket.has(c["id"]):
 			continue
 		var hexes: Array[int] = [c["id"]]
 		out.append({"id": "annex:%d" % c["id"], "kind": "annex", "hexes": hexes, "cost": hex_peace_cost(w, war, c["id"]),
-			"label": c["name"] if c["name"] != "" else "Гекс"})
+			"label": c["name"] if c["name"] != "" else "tile.hex"})
 	for i in range(1, 4):
 		out.append({"id": "contribution:%d" % i, "kind": "contribution", "hexes": [] as Array[int], "cost": 5.0,
-			"label": "Контрибуция (4 ч золота)"})
+			"label": "demand.contribution"})
 	out.append({"id": "reparations", "kind": "reparations", "hexes": [] as Array[int], "cost": 5.0,
-		"label": "Репарации (10% производства, 24 ч)"})
+		"label": "demand.reparations"})
 	return out
 
 

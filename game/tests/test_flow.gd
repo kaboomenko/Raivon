@@ -213,6 +213,25 @@ func _run() -> void:
 	_check(int(pa["str"]) == int(pa["max_str"]) and econ.res["food"] < food0 + 5000, "army refills in ~20 min, paying food (%d → %d)" % [food0, econ.res["food"]])
 	g._open_tab("army")
 	_check(g._army_items(g.now_s()).size() == g._player_armies().size() + 1, "army tab lists armies plus «new army»")
+	# Settings → language: applies at once to the HUD, the open tab and the inbox, and reopens Settings
+	var lang0 := TranslationServer.get_locale()
+	g._post("inbox.raid.title", g.L.pack("inbox.raid.text", [g._cell_key(g.sim.states[Types.PLAYER]["capital_id"])]))
+	g._open_tab("buildings")
+	g._set_language("en")
+	var names_en: Array = []
+	for it in g._building_items(g.now_s()):
+		names_en.append(it["name"])
+	_check(g.hud.tab_labels["buildings"].text == "Buildings" and names_en.has("Residence") and g.ui._modal != null,
+		"language switch to English re-labels the HUD and the buildings tab")
+	var raid_en := ""
+	for it in g.inbox:
+		if String(it["title"]) == "inbox.raid.title":
+			raid_en = g.L.t(String(it["text"]))
+	_check(raid_en.begins_with("Marauders") and raid_en.contains("“Capital”"), "stored reports follow the language (%s)" % raid_en)
+	g._set_language("ru")
+	_check(g.hud.tab_labels["buildings"].text == "Здания" and g._state_name(MapGen.BARONS) == "Кремнёвые Бароны", "and back to Russian")
+	g.ui.close_modal()
+	TranslationServer.set_locale(lang0)
 	g.queue_free()
 	await process_frame
 
@@ -352,7 +371,7 @@ func _run() -> void:
 		g._econ_tick()
 		var raided := false
 		for it in g.inbox:
-			if String(it["title"]).begins_with("Набег"):
+			if String(it["title"]) == "inbox.raid.title":
 				raided = true
 		_check(raided and g._raid.is_empty(), "FTUE: the raid breaks against the fence")
 		# war 2 with the Hamlets: encirclement card, then spare or plunder (canon §14.3, 6:00–9:30)

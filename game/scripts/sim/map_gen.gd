@@ -20,12 +20,13 @@ const BARONS_SIZE := 14
 const HAMLETS_SIZE := 10
 
 
+## State and cell names are translation keys (game/locale/strings.csv); the UI translates them.
 static func make_states() -> Array[Dictionary]:
 	var out: Array[Dictionary] = [
-		{"id": Types.NOBODY, "name": "Дикие земли", "color": 0xb9b2a3, "archetype": "player", "capital_id": -1, "dev_level": 0},
-		{"id": Types.PLAYER, "name": "Ваша держава", "color": 0x2e6bff, "archetype": "player", "capital_id": -1, "dev_level": 1},
-		{"id": BARONS, "name": "Кремнёвые Бароны", "color": 0xf08a24, "archetype": "wolf", "capital_id": -1, "dev_level": 1},
-		{"id": HAMLETS, "name": "Вольные Хутора", "color": 0x3fa34d, "archetype": "fox", "capital_id": -1, "dev_level": 1},
+		{"id": Types.NOBODY, "name": "state.wild", "color": 0xb9b2a3, "archetype": "player", "capital_id": -1, "dev_level": 0},
+		{"id": Types.PLAYER, "name": "state.player", "color": 0x2e6bff, "archetype": "player", "capital_id": -1, "dev_level": 1},
+		{"id": BARONS, "name": "state.barons", "color": 0xf08a24, "archetype": "wolf", "capital_id": -1, "dev_level": 1},
+		{"id": HAMLETS, "name": "state.hamlets", "color": 0x3fa34d, "archetype": "fox", "capital_id": -1, "dev_level": 1},
 	]
 	return out
 
@@ -127,9 +128,9 @@ static func _try_generate(seed_value: int) -> World:
 		return HexGrid.distance(HexGrid.axial(c), BARONS_CAP) * 10 + HexGrid.distance(HexGrid.axial(c), PLAYER_CAP) * 10)
 
 	# 4. Kinds and terrain.
-	_set_kind(cells[_id_of(w, PLAYER_CAP)], "capital", "Столица")
-	_set_kind(cells[_id_of(w, BARONS_CAP)], "capital", "Кремнёвый замок")
-	_set_kind(cells[_id_of(w, HAMLETS_CAP)], "capital", "Хуторской двор")
+	_set_kind(cells[_id_of(w, PLAYER_CAP)], "capital", "cell.player_capital")
+	_set_kind(cells[_id_of(w, BARONS_CAP)], "capital", "cell.barons_capital")
+	_set_kind(cells[_id_of(w, HAMLETS_CAP)], "capital", "cell.hamlets_capital")
 	w.states[Types.PLAYER]["capital_id"] = _id_of(w, PLAYER_CAP)
 	w.states[BARONS]["capital_id"] = _id_of(w, BARONS_CAP)
 	w.states[HAMLETS]["capital_id"] = _id_of(w, HAMLETS_CAP)
@@ -137,25 +138,25 @@ static func _try_generate(seed_value: int) -> World:
 	var player_free := _free(cells, Types.PLAYER, rng)
 	if player_free.is_empty():
 		return null
-	_set_kind(player_free[0], "farm", "Мельничный луг")
+	_set_kind(player_free[0], "farm", "cell.mill_meadow")
 
 	# Barons: a frontier mine (war goal bait), a city and a farm, preferring hexes near the player.
 	var barons_free := _sort_by_player_distance(_free(cells, BARONS, rng))
 	if barons_free.size() < 3:
 		return null
-	_set_kind(barons_free[0], "mine", "Кремнёвый карьер")
-	_set_kind(barons_free[2], "city", "Ржавый узел")
-	_set_kind(barons_free[barons_free.size() - 1], "farm", "Баронские поля")
+	_set_kind(barons_free[0], "mine", "cell.flint_quarry")
+	_set_kind(barons_free[2], "city", "cell.rusty_junction")
+	_set_kind(barons_free[barons_free.size() - 1], "farm", "cell.barons_fields")
 	var hamlets_free := _sort_by_player_distance(_free(cells, HAMLETS, rng))
 	if hamlets_free.size() < 2:
 		return null
-	_set_kind(hamlets_free[0], "mine", "Медная шахта")
-	_set_kind(hamlets_free[1], "farm", "Хуторские нивы")
+	_set_kind(hamlets_free[0], "mine", "cell.copper_mine")
+	_set_kind(hamlets_free[1], "farm", "cell.hamlets_fields")
 	var wild_free := _free(cells, Types.NOBODY, rng)
 	if wild_free.size() > 0:
-		_set_kind(wild_free[0], "farm", "Заброшенная мельница")
+		_set_kind(wild_free[0], "farm", "cell.abandoned_mill")
 	if wild_free.size() > 1:
-		_set_kind(wild_free[1], "mine", "Старая штольня")
+		_set_kind(wild_free[1], "mine", "cell.old_adit")
 
 	for c in cells:
 		if not Types.is_passable(c) or c["kind"] != "plain" or reserved.has(c["id"]):

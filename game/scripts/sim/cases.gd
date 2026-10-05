@@ -18,10 +18,12 @@ extends RefCounted
 ##   (commanders with shards for level 20 — removed from random pools, canon §8.4)}.
 ##
 ## Reward dicts (open()["rewards"]):
+## Display names ("name", "category_name") are in the language current at the call (is_english()); the
+## Russian "name_ru" / "category_ru" fields stay for compatibility.
 ##   {kind:"res", res:{gold,food,metal[,oil]}, hours, item, name}  — hours × income_per_hour (×res_mult)
 ##   {kind:"speedup", minutes, item, n}                            — minutes = total of n items
 ##   {kind:"shards", commander, name, rarity, n, target}           — commander = cmd_* id
-##   {kind:"cosmetic", id, name, rarity, category, category_ru}
+##   {kind:"cosmetic", id, name, rarity, category, category_ru, category_name}
 ##   {kind:"glitter", n, duplicate:true, id, name, rarity, category} — duplicate cosmetic → Блёстки
 
 const Rng := preload("res://scripts/sim/rng.gd")
@@ -110,17 +112,47 @@ static func _is_collection(case_id: String) -> bool:
 	return bool(_case(case_id).get("collection", false))
 
 
+## True when display names should be English (any locale but Russian, see scripts/l10n.gd). Names are
+## picked at the moment they are produced; the RNG and the saved state never depend on the language.
+static func is_english() -> bool:
+	return not TranslationServer.get_locale().begins_with("ru")
+
+
+## Display name of a cases.json entry: `name_en` in English, else the Russian `name_ru` / `name`.
+static func loc_name(d: Dictionary, fallback: String, english: bool) -> String:
+	if english and d.has("name_en"):
+		return String(d["name_en"])
+	return String(d.get("name_ru", d.get("name", fallback)))
+
+
 static func case_name(case_id: String) -> String:
-	return String(_case(case_id).get("name_ru", case_id))
+	return loc_name(_case(case_id), case_id, is_english())
 
 
-static func rarity_name(rarity: String) -> String:
+## Rarity name in the current language ("Эпическое" / "Epic"); `english` overrides the locale.
+static func rarity_name(rarity: String, english: Variant = null) -> String:
+	var en: bool = is_english() if english == null else bool(english)
 	var rs: Array = data().get("rarities", [])
 	for rv in rs:
 		var r: Dictionary = rv
 		if String(r["id"]) == rarity:
-			return String(r["name_ru"])
+			return loc_name(r, rarity, en)
 	return rarity
+
+
+static func commander_name(id: String) -> String:
+	return loc_name(commander(id), id, is_english())
+
+
+static func cosmetic_name(id: String) -> String:
+	return loc_name(cosmetic(id), id, is_english())
+
+
+## Cosmetic category name in the current language («Чернила границы» / "Border Ink").
+static func category_name(cat: String, english: Variant = null) -> String:
+	var en: bool = is_english() if english == null else bool(english)
+	var cats: Dictionary = data().get("categories_en" if en else "categories", {})
+	return String(cats.get(cat, cat))
 
 
 static func cosmetic(id: String) -> Dictionary:
@@ -343,7 +375,7 @@ func odds(case_id: String) -> Array:
 		if float(base[r]) <= 0.0 and float(cur[r]) <= 0.0:
 			continue
 		out.append({
-			"rarity": r, "name_ru": rarity_name(r), "base": 100.0 * float(base[r]),
+			"rarity": r, "name_ru": rarity_name(r, false), "name": rarity_name(r), "base": 100.0 * float(base[r]),
 			"effective": 100.0 * float(eff[r]), "current": 100.0 * float(cur[r]),
 		})
 	return out
@@ -366,7 +398,7 @@ func odds_items(case_id: String, rarity: String, ctx: Dictionary = {}) -> Array:
 				continue
 			var cur := 100.0 / float(left.size()) if left.has(id) else 0.0
 			out.append({
-				"id": id, "name_ru": String(c.get("name", id)), "rarity": String(c.get("rarity", "")),
+				"id": id, "name_ru": String(c.get("name", id)), "name": cosmetic_name(id), "rarity": String(c.get("rarity", "")),
 				"category": String(c.get("category", "")), "base": 100.0 / float(set_ids.size()),
 				"effective": cur, "current": cur, "owned": collection_opened.has(id),
 				"central": id == String(_case(case_id).get("central", "")),
@@ -389,7 +421,8 @@ func odds_items(case_id: String, rarity: String, ctx: Dictionary = {}) -> Array:
 			var item: Dictionary = (e as Array)[0]
 			var k := float((e as Array)[1]) / wsum
 			var row := {
-				"id": String(item.get("id", "")), "name_ru": _item_name(item, mult), "rarity": r,
+				"id": String(item.get("id", "")), "name_ru": _item_name(item, mult, false),
+				"name": _item_name(item, mult, is_english()), "rarity": r,
 				"base": 100.0 * float(base[r]) * k, "effective": 100.0 * float(eff[r]) * k,
 				"current": 100.0 * float(cur_p[r]) * k,
 			}
@@ -411,7 +444,8 @@ func odds_items(case_id: String, rarity: String, ctx: Dictionary = {}) -> Array:
 		for xv in extra:
 			var x: Dictionary = xv
 			var row := {
-				"id": String(x.get("id", "")), "name_ru": String(x.get("name_ru", "")), "rarity": "epic",
+				"id": String(x.get("id", "")), "name_ru": String(x.get("name_ru", "")),
+				"name": loc_name(x, "", is_english()), "rarity": "epic",
 				"base": 100.0, "effective": 100.0, "current": 100.0, "bonus": true,
 			}
 			var ent := _entry_shares(case_id, x, ctx)
@@ -439,7 +473,7 @@ func _entry_shares(case_id: String, item: Dictionary, ctx: Dictionary) -> Array:
 			var r := String(c.get("rarity", "rare"))
 			var own := owned_cosmetics.has(id)
 			out.append({
-				"id": id, "name_ru": String(c.get("name", id)), "rarity": r,
+				"id": id, "name_ru": String(c.get("name", id)), "name": cosmetic_name(id), "rarity": r,
 				"category": String(c.get("category", "")), "owned": own,
 				"glitter": dup_glitter(r) if own else 0, "share": 1.0 / float(pool.size()),
 			})
@@ -456,7 +490,7 @@ func _entry_shares(case_id: String, item: Dictionary, ctx: Dictionary) -> Array:
 			if tgt != "":
 				sh = (1.0 - ts) * sh + (ts if cmd == tgt else 0.0)
 			out.append({
-				"id": cmd, "name_ru": String(commander(cmd).get("name", cmd)),
+				"id": cmd, "name_ru": String(commander(cmd).get("name", cmd)), "name": commander_name(cmd),
 				"rarity": String(commander(cmd).get("rarity", "")), "target": cmd == tgt, "share": sh,
 			})
 	return out
@@ -466,6 +500,7 @@ func _entry_shares(case_id: String, item: Dictionary, ctx: Dictionary) -> Array:
 
 ## Pity line for the case screen (§9.10.8): «Эпическое+ через 4 · Легендарное через 23» (Королевский),
 ## «Косметика не позже чем через 23» (ящик и трофейные), «Осталось 5 из 8» (коллекция); "" — no pity.
+## Translated with the current locale (locale/strings.csv, keys pity.*).
 func pity_text(case_id: String) -> String:
 	var c := _case(case_id)
 	match String(c.get("pity_text", "none")):
@@ -475,17 +510,17 @@ func pity_text(case_id: String) -> String:
 			var lg: Dictionary = pd.get("legendary", {})
 			var e_left := int(ep.get("every", 10)) - int(pity.get(_counter_name(case_id, "epic_plus"), 0))
 			var l_left := int(lg.get("hard_at", 50)) - int(pity.get(_counter_name(case_id, "legendary"), 0))
-			return "Эпическое+ через %d · Легендарное через %d" % [e_left, l_left]
+			return tr("pity.royal") % [e_left, l_left]
 		"cosmetic":
 			var lg2: Dictionary = (c.get("pity", {}) as Dictionary).get("legendary", {})
 			var left := int(lg2.get("hard_at", 60)) - int(pity.get(_counter_name(case_id, "legendary"), 0))
-			return "Косметика не позже чем через %d" % left
+			return tr("pity.cosmetic") % left
 		"collection":
 			var total: int = (c.get("set", []) as Array).size()
 			var rest := total - collection_opened.size()
 			if rest <= 0:
-				return "Набор собран"
-			return "Осталось %d из %d" % [rest, total]
+				return tr("pity.collection_done")
+			return tr("pity.collection_left") % [rest, total]
 	return ""
 
 
@@ -584,7 +619,7 @@ static func _target_share() -> float:
 
 # ---------------------------------------------------------------- opening
 
-## Opens one case. Returns {case, rarity, item, name_ru, rewards: Array[Dictionary], forced: bool}
+## Opens one case. Returns {case, rarity, item, name_ru, name (current language), rewards: Array[Dictionary], forced: bool}
 ## ({"rarity": "", "rewards": [], "error": ...} for an unknown case or a completed collection).
 ## Does NOT spend currency.
 func open(case_id: String, ctx: Dictionary, now: int) -> Dictionary:
@@ -601,6 +636,7 @@ func open(case_id: String, ctx: Dictionary, now: int) -> Dictionary:
 	var rewards: Array = []
 	var item_id := ""
 	var item_name := ""
+	var item_name_loc := ""
 	if elig.is_empty():
 		# Every item of this rarity is exhausted (e.g. all pool commanders maxed). DEFAULT (invented):
 		# Блёстки at the duplicate rate of that rarity.
@@ -610,7 +646,8 @@ func open(case_id: String, ctx: Dictionary, now: int) -> Dictionary:
 	else:
 		var item := _pick_weighted(elig)
 		item_id = String(item.get("id", ""))
-		item_name = _item_name(item, int(c.get("res_mult", 1)))
+		item_name = _item_name(item, int(c.get("res_mult", 1)), false)
+		item_name_loc = _item_name(item, int(c.get("res_mult", 1)), is_english())
 		_grant(case_id, item, ctx, rewards)
 	var extra: Array = c.get("extra", [])
 	for xv in extra:
@@ -618,8 +655,8 @@ func open(case_id: String, ctx: Dictionary, now: int) -> Dictionary:
 	_advance_pity(case_id, rarity)
 	opened[case_id] = int(opened.get(case_id, 0)) + 1
 	_log(now, case_id, rarity, item_id, rewards)
-	return {"case": case_id, "rarity": rarity, "item": item_id, "name_ru": item_name, "rewards": rewards,
-		"forced": forced}
+	return {"case": case_id, "rarity": rarity, "item": item_id, "name_ru": item_name, "name": item_name_loc,
+		"rewards": rewards, "forced": forced}
 
 
 ## Ten openings in a row (Королевский ×10 for 1 440; its epic+ guarantee follows from the every-10
@@ -645,7 +682,7 @@ func _open_collection(case_id: String, now: int) -> Dictionary:
 	opened[case_id] = int(opened.get(case_id, 0)) + 1
 	_log(now, case_id, rarity, id, rewards)
 	return {"case": case_id, "rarity": rarity, "item": id, "name_ru": String(cosmetic(id).get("name", id)),
-		"rewards": rewards, "forced": left.size() == 1}
+		"name": cosmetic_name(id), "rewards": rewards, "forced": left.size() == 1}
 
 
 ## New season of the collection case: clears the per-season progress (owned items stay owned).
@@ -785,19 +822,23 @@ func _target_for(item: Dictionary, entries: Array) -> String:
 	return ""
 
 
-func _item_name(item: Dictionary, mult: int) -> String:
+## Item name in Russian or English (cases.json name_ru / name_en; ×N resource items are rebuilt from
+## item_formats so the hours match the multiplier).
+func _item_name(item: Dictionary, mult: int, english: bool) -> String:
 	if mult == 1 or not item.has("resources_h"):
-		return String(item.get("name_ru", item.get("id", "")))
-	var names: Dictionary = data().get("res_names", {})
+		return loc_name(item, String(item.get("id", "")), english)
+	var lang := "en" if english else "ru"
+	var names: Dictionary = data().get("res_names_en" if english else "res_names", {})
+	var fmts: Dictionary = data().get("item_formats", {})
 	var h := int(item["resources_h"]) * mult
 	var key := String(item.get("res", "all")).trim_prefix("res_")
 	if key == "all":
-		return "Ресурсы %d ч (все)" % h
-	var s := "%s %d ч" % [String(names.get(key, key)), h]
+		return String((fmts.get("all", {}) as Dictionary).get(lang, "%d")) % h
+	var s := String((fmts.get("one", {}) as Dictionary).get(lang, "%s %d")) % [String(names.get(key, key)), h]
 	if item.has("fallback"):
 		var fb: Dictionary = item["fallback"]
 		var fk := String(fb.get("res", "res_gold")).trim_prefix("res_")
-		s += " (до УР%d — %s %d ч)" % [int(fb.get("below_dev_level", 5)), String(names.get(fk, fk)), h]
+		s += String((fmts.get("fallback", {}) as Dictionary).get(lang, " (%d %s %d)")) % [int(fb.get("below_dev_level", 5)), String(names.get(fk, fk)), h]
 	return s
 
 
@@ -835,7 +876,7 @@ func _grant(case_id: String, item: Dictionary, ctx: Dictionary, rewards: Array) 
 					break
 		var n2 := int(item.get("n", 1))
 		shards[cmd] = int(shards.get(cmd, 0)) + n2
-		rewards.append({"kind": "shards", "commander": cmd, "name": String(commander(cmd).get("name", cmd)),
+		rewards.append({"kind": "shards", "commander": cmd, "name": commander_name(cmd),
 			"rarity": String(commander(cmd).get("rarity", "")), "n": n2, "target": cmd == tgt})
 	elif item.has("cosmetic_pool"):
 		var pool := _pool(String(item["cosmetic_pool"]))
@@ -865,23 +906,22 @@ func _grant_res(case_id: String, item: Dictionary, ctx: Dictionary, rewards: Arr
 	else:
 		res[key] = int(income.get(key, 0)) * hours
 	rewards.append({"kind": "res", "res": res, "hours": hours, "item": String(item.get("id", "")),
-		"name": _item_name(item, mult)})
+		"name": _item_name(item, mult, is_english())})
 
 
 func _grant_cosmetic(id: String, rewards: Array) -> void:
 	var c := cosmetic(id)
 	var r := String(c.get("rarity", "rare"))
-	var cats: Dictionary = data().get("categories", {})
 	var cat := String(c.get("category", ""))
 	if owned_cosmetics.has(id):
 		var g := dup_glitter(r)
 		glitter += g
 		rewards.append({"kind": "glitter", "n": g, "duplicate": true, "id": id,
-			"name": String(c.get("name", id)), "rarity": r, "category": cat})
+			"name": cosmetic_name(id), "rarity": r, "category": cat})
 	else:
 		owned_cosmetics[id] = true
-		rewards.append({"kind": "cosmetic", "id": id, "name": String(c.get("name", id)), "rarity": r,
-			"category": cat, "category_ru": String(cats.get(cat, cat))})
+		rewards.append({"kind": "cosmetic", "id": id, "name": cosmetic_name(id), "rarity": r,
+			"category": cat, "category_ru": category_name(cat, false), "category_name": category_name(cat)})
 
 
 # ---------------------------------------------------------------- save

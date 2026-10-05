@@ -7,6 +7,8 @@ const MapGen := preload("res://scripts/sim/map_gen.gd")
 
 const PATH := "user://save.json"
 const VERSION := 1
+## Player settings that outlive a «Новая игра» (the UI language): {"lang": "ru" | "en"}.
+const SETTINGS_PATH := "user://settings.json"
 
 
 static func save(g: Node) -> void:
@@ -153,6 +155,26 @@ static func apply(g: Node, d: Dictionary) -> bool:
 	return true
 
 
+## Settings saved with write_settings(); {} when there are none.
+static func read_settings() -> Dictionary:
+	if not FileAccess.file_exists(SETTINGS_PATH):
+		return {}
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(SETTINGS_PATH))
+	return parsed if typeof(parsed) == TYPE_DICTIONARY else {}
+
+
+## Merges `d` into the saved settings.
+static func write_settings(d: Dictionary) -> void:
+	var s := read_settings()
+	s.merge(d, true)
+	var f := FileAccess.open(SETTINGS_PATH, FileAccess.WRITE)
+	if f == null:
+		push_warning("settings save failed: %s" % FileAccess.get_open_error())
+		return
+	f.store_string(JSON.stringify(s))
+
+
+## Removes the game progress (settings such as the language stay).
 static func wipe() -> void:
 	if FileAccess.file_exists(PATH):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(PATH))

@@ -1,0 +1,417 @@
+keys,ru,en
+res.gen.gold,золота,gold
+res.gen.food,еды,food
+res.gen.metal,металла,metal
+res.gen.oil,нефти,oil
+res.gen.raivite,Райвитов,Raivites
+res.short.gold,зол.,gold
+res.short.food,еды,food
+res.short.metal,мет.,metal
+bld.residence,Резиденция,Residence
+bld.barracks,Казарма,Barracks
+bld.academy,Академия,Academy
+bld.warehouse,Склад,Warehouse
+bld.infirmary,Лазарет,Infirmary
+bld.convoy_yard,Обозный двор,Convoy Yard
+bld.market,Рынок,Market
+bld.embassy,Посольство,Embassy
+bld.quarters,Кварталы,Quarters
+bld.farm,Ферма,Farm
+bld.mine,Шахта,Mine
+bld.port,Порт,Port
+bld.military_base,Военная база,Military Base
+bld.fort,Укрепление,Fort
+bld.tower,Башня,Tower
+err.no_city,Нет ни одного города,You have no cities
+err.no_farm,Нет ни одной фермы,You have no farms
+err.no_mine,Нет ни одной шахты,You have no mines
+err.no_port,Нет ни одного порта,You have no ports
+err.no_military_base,Нет ни одной военной базы,You have no military bases
+err.no_building,Нет такого здания,No such building
+err.upgrading,Уже улучшается,Already upgrading
+err.max_level,Максимальный уровень,Max level
+err.chapter_locked,Откроется в главе %d,Unlocks in Chapter %d
+err.need_hexes,Нужно %d гексов,Need %d hexes
+err.need_residence,Нужна Резиденция ур. %d,Needs Residence Lv %d
+err.hex_occupied,Гекс оккупирован,Hex is occupied
+err.not_hex_building,Это здание не строится на гексе,This can't be built on a hex
+err.no_hex,Нет такого гекса,No such hex
+err.cant_build_here,Здесь строить нельзя,Can't build here
+err.not_your_hex,Гекс не ваш,Not your hex
+err.fort_exists,Укрепление уже есть,Fort already built
+err.tower_exists,Башня уже есть,Tower already built
+err.tower_plain_only,Башня — только на обычном гексе,Towers go on plain hexes only
+err.tower_limit,Не больше %d башен,%d towers max
+err.treasury_empty,Казна пуста,Treasury is empty
+err.builders_busy,Все строители заняты,All builders are busy
+err.not_enough,Не хватает %s,Not enough %s
+rs.infantry,Пехота,Infantry
+rs.reserve,Резерв,Reserves
+rs.drill,Строевая подготовка,Drill
+rs.taxes,Налоги,Taxes
+rs.harvest,Урожай,Harvest
+rs.metallurgy,Металлургия,Metallurgy
+rs.cellars,Тайные погреба,Secret Cellars
+rs.logistics,Логистика обозов,Convoy Logistics
+rs.thrift,Бережливость,Thrift
+rs.colonization,Колонизация,Colonization
+rs.infantry.desc,+6% Силы пехоты за уровень,+6% infantry Strength per level
+rs.reserve.desc,+5% к скорости пополнения,+5% refill speed
+rs.drill.desc,−5% времени тренировки,−5% training time
+rs.taxes.desc,+2% золота с гексов,+2% gold from hexes
+rs.harvest.desc,+2% еды с гексов,+2% food from hexes
+rs.metallurgy.desc,+2% металла с гексов,+2% metal from hexes
+rs.cellars.desc,+2% защищённой доли склада,+2% protected storage share
+rs.logistics.desc,+5% груза обозов,+5% convoy cargo
+rs.thrift.desc,−3% апкипа,−3% upkeep
+rs.colonization.desc,−10% цены колонизации,−10% colonization cost
+rs.branch.army,Армия,Army
+rs.branch.economy,Экономика,Economy
+err.unlock_dl,Откроется на УР%d,Unlocks at DL%d
+err.academy_busy,Академия занята,Academy is busy
+err.max,Максимум,Maxed out
+err.need_academy,Нужна Академия ур. %d или УР выше,Needs Academy Lv %d or a higher DL
+dep.gold,Золотая жила,Gold Vein
+dep.food,Хлебное поле,Grain Field
+dep.metal,Рудная жила,Ore Vein
+err.no_deposit,Здесь нет залежи,No deposit here
+err.convoy_en_route,Обоз уже в пути,Convoy already en route
+err.foreign_land,Чужая земля — сначала займите гекс,Foreign land: take the hex first
+err.convoys_busy,Все обозы в пути,All convoys are out
+card.attack,Атака,Attack
+card.breakthrough,Прорыв,Breach
+card.airstrike,Авиаудар,Airstrike
+card.encircle,Окружение,Encircle
+card.defense,Оборона,Defense
+form.wedge,Клин +20%,Wedge +20%
+form.encircle,Окружение +30%,Encirclement +30%
+form.corridor,Коридор,Corridor
+form.salient,Выступ −15%,Salient −15%
+demand.pocket,Котёл целиком (%d гекс.),Whole pocket (%d hexes)
+demand.contribution,Контрибуция (4 ч золота),Indemnity (4 h of gold)
+demand.reparations,"Репарации (10% производства, 24 ч)","Reparations (10% of output, 24 h)"
+tile.hex,Гекс,Hex
+state.wild,Дикие земли,Wildlands
+state.player,Ваша держава,Your Realm
+state.barons,Кремнёвые Бароны,Flint Barons
+state.hamlets,Вольные Хутора,Free Hamlets
+cell.player_capital,Столица,Capital
+cell.barons_capital,Кремнёвый замок,Flint Castle
+cell.hamlets_capital,Хуторской двор,Hamlet Court
+cell.mill_meadow,Мельничный луг,Mill Meadow
+cell.flint_quarry,Кремнёвый карьер,Flint Quarry
+cell.rusty_junction,Ржавый узел,Rusty Junction
+cell.barons_fields,Баронские поля,Barons' Fields
+cell.copper_mine,Медная шахта,Copper Mine
+cell.hamlets_fields,Хуторские нивы,Hamlet Fields
+cell.abandoned_mill,Заброшенная мельница,Abandoned Mill
+cell.old_adit,Старая штольня,Old Adit
+pity.royal,Эпическое+ через %d · Легендарное через %d,Epic+ in %d · Legendary in %d
+pity.cosmetic,Косметика не позже чем через %d,Cosmetic in %d openings at most
+pity.collection_done,Набор собран,Set complete
+pity.collection_left,Осталось %d из %d,%d of %d left
+hud.shop,Лавка,Shop
+tab.buildings,Здания,Buildings
+tab.army,Армия,Army
+tab.development,Развитие,Research
+tab.diplomacy,Дипломатия,Diplomacy
+tab.world,Мир,World
+tile.your_territory,Ваша территория,Your territory
+hud.tile_bonus,+25% к защите,+25% defense
+hud.attack,Атаковать,Attack
+hud.per_hour,%s%s/ч,%s%s/h
+hud.storage_full,склад полон,storage full
+ui.war_score_zero,Военный счёт: 0,War score: 0
+ui.last_stand,ВЫ НА ГРАНИ ПОРАЖЕНИЯ! Последний рубеж +25%,ON THE BRINK OF DEFEAT! Last stand +25%
+ui.war_status,Война: %s · счёт %+.1f,War: %s · score %+.1f
+ui.final_rush,Финальный рывок!,Final push!
+ui.offensive_left,до конца наступления,until the offensive ends
+result.title,Итоги наступления,Offensive Results
+result.reason,Причина,Reason
+result.captured,Захвачено гексов,Hexes captured
+result.lost,Потеряно своих,Hexes lost
+result.score,Военный счёт,War score
+result.control,Контроль фронта,Front control
+result.note,Захваченное оккупировано. Граница сдвинется после мира.,Captured hexes are occupied. Borders move after peace.
+result.continue,Продолжить войну,Keep fighting
+result.peace,🕊 Мир (%.1f),🕊 Peace (%.1f)
+plunder.spare,Пощадить,Spare
+plunder.light,Лёгкое 30%,Light 30%
+plunder.medium,Среднее 45%,Medium 45%
+plunder.heavy,Тяжёлое 60%,Heavy 60%
+peace.title,📜 Мирный договор: %s,📜 Peace Treaty: %s
+peace.points,Очки: %.1f / %.1f · Контроль фронта %d%%,Points: %.1f / %.1f · Front control %d%%
+peace.hint,"ИИ согласится, если сумма не больше счёта. Ядро врага требовать нельзя.",The AI agrees if the total fits your score. The enemy core is off-limits.
+peace.plunder,Разграбление:,Plunder:
+peace.seal,🔏 Удерживайте печать — подписать мир,🔏 Hold the seal to sign the peace
+peace.back,Назад к войне,Back to the war
+ceremony.double,🎬 ×2 трофеи (реклама),🎬 ×2 spoils (ad)
+ui.continue,Продолжить,Continue
+ui.close,Закрыть,Close
+ui.claim,Забрать,Claim
+ui.upgrade,⬆ Улучшить,⬆ Upgrade
+inbox.title,✉ Донесения,✉ Reports
+inbox.empty,Пока тихо. Здесь появятся донесения о набегах и обороне.,All quiet. Reports on raids and defenses will show up here.
+time.just_now,только что,just now
+time.min_ago,%d мин назад,%d min ago
+time.h_ago,%d ч назад,%d h ago
+time.hm,%d ч %02d мин,%dh %02dm
+time.s,%d с,%ds
+ult.title,⚔ Ультиматум: %s,⚔ Ultimatum: %s
+ult.text,«Отдай нам «%s» — или заплати дань %d золота. Иначе — война.»\n\nНа ответ: %s. Без ответа — война.,"“Hand over ‘%s’ or pay a tribute of %d gold. Otherwise, it's war.”\n\nTime to answer: %s. No answer means war."
+ult.accept,Принять: отдать «%s» (перемирие 24 ч),Accept: cede “%s” (24 h truce)
+ult.pay,Откупиться: %d золота,Pay them off: %d gold
+ult.refuse,⚔ Отказать — война!,⚔ Refuse: war!
+ult.later,Подумать (ответ позже),Think it over (answer later)
+settings.title,Настройки,Settings
+settings.sound_on,🔊 Звук: вкл,🔊 Sound: on
+settings.sound_off,🔇 Звук: выкл,🔇 Sound: off
+settings.language,🌐 Язык,🌐 Language
+settings.new_game,Новая игра (удерживайте),New game (hold)
+settings.autosave,Прогресс сохраняется автоматически на устройстве.,Progress is saved automatically on this device.
+settings.build,Raivon: Territory Wars · тестовая сборка %s,Raivon: Territory Wars · test build %s
+army.recruiting,сбор новобранцев,recruiting
+army.locked_dl,🔒 с УР%d,🔒 DL%d
+army.train,➕ Собрать,➕ Recruit
+army.squads,%d отр. · %d%%,%d sq. · %d%%
+army.refill,🎬 Пополнить,🎬 Refill
+army.ready,Готова к бою,Battle-ready
+dipl.opinion,Мнение: %+d · %s,Opinion: %+d · %s
+dipl.war,⚔ Война,⚔ War
+dipl.gift,🎁 %d зол.,🎁 %d gold
+world.chapter1,Глава I «Долина»,Chapter I “The Valley”
+world.hexes,Гексов: %d / %d,Hexes: %d / %d
+world.chapter_done,Пройдена! Глава II — скоро,Complete! Chapter II soon
+world.expand,🌍 Мир расширяется,🌍 Expand the world
+world.hint,Мир или колонизация — каждый гекс на счету,Peace or colonization: every hex counts
+world.claimed,Получено,Claimed
+bld.level,ур. %d / %d,Lv %d / %d
+bld.free,⚡ бесплатно,⚡ Free
+bld.stock,⏩ запас %d мин,⏩ %d min stock
+bld.research,🔬 Изучить,🔬 Research
+shop.title,🏪 Лавка,🏪 Shop
+shop.tab.cases,Кейсы,Cases
+shop.tab.raivite,Райвиты,Raivites
+shop.tab.packs,Наборы,Packs
+shop.tab.atelier,Ателье,Atelier
+shop.crate_free,Бесплатно каждые 6 ч (копится до 2).,Free every 6 h (stacks up to 2).
+shop.ready,Готово: %d,Ready: %d
+shop.next_in,Следующий через %s,Next in %s
+shop.open_n,Открыть (%d),Open (%d)
+toast.crate_not_ready,Ящик ещё собирается,The crate isn't ready yet
+shop.ad_plus1,🎬 +1 за рекламу,🎬 +1 for an ad
+shop.target_none,не выбрана,not set
+shop.target,«Цель»: %s (50%% эпических и легендарных осколков),“Target”: %s (50%% of epic and legendary shards)
+shop.open_price,Открыть · %d 💎,Open · %d 💎
+shop.x10_note,×10 гарантирует эпическое и выше,×10 guarantees Epic or better
+shop.collection_desc,Каждое открытие — новый предмет сезона.,Every opening is a new item of the season.
+shop.collection_complete,Набор сезона собран полностью!,Season set complete!
+shop.odds,Шансы,Odds
+shop.odds_sub,Базовые / с учётом гаранта сейчас,Base / with your current pity
+shop.history,История последних открытий хранится в профиле.,Your recent openings are saved in your profile.
+ui.got_it,Понятно,Got it
+shop.rw_res,Ресурсы: %s,Resources: %s
+shop.rw_speedup,Ускорение %d мин,Speed-up %d min
+shop.rw_shards,%d осколков: %s,%d shards: %s
+shop.rw_cosmetic,Косметика: %s,Cosmetic: %s
+shop.rw_glitter,Повтор → %d Блёсток,Duplicate → %d Glitter
+shop.no_payments,"Покупки за деньги недоступны в вашем регионе.\nРайвиты зарабатываются в игре: задания, ящики, жилы.","Real-money purchases aren't available in your region.\nEarn Raivites in the game: quests, crates, veins."
+shop.first_x2,Первая покупка ×2,First purchase ×2
+shop.no_packs,Наборы за деньги недоступны в вашем регионе.,Paid packs aren't available in your region.
+shop.collection,Ваша коллекция: %d предм. · Блёстки: %d,Your collection: %d items · Glitter: %d
+shop.atelier_empty,"Косметика выпадает из кейсов: чернила границы, печати, салюты, узоры заливки.","Cosmetics drop from cases: border inks, seals, fireworks, fill patterns."
+pack.starter,Набор новобранца,Recruit Pack
+pack.starter.desc,"250 Райвитов, ресурсы на 8 ч, Леди Вэнс, рамка флага","250 Raivites, 8 h of resources, Lady Vance, a flag frame"
+pack.builder,Пакет прораба,Foreman Pack
+pack.builder.desc,4-й строитель навсегда + 300 Райвитов,4th builder forever + 300 Raivites
+pack.no_ads,Без рекламы,No Ads
+pack.no_ads.desc,"Без межстраничной рекламы навсегда, 200 Райвитов, рамка «Меценат»","No interstitial ads ever, 200 Raivites, the “Patron” frame"
+pack.ration,Паёк державы,Realm Rations
+pack.ration.desc,300 сразу + 60 в день при ежедневном входе,300 now + 60 a day when you log in daily
+pack.period_30d,/ 30 дн.,/ 30 days
+kind.capital,Столица,Capital
+kind.city,Город,City
+kind.farm,Ферма,Farm
+kind.mine,Рудник,Mine
+kind.port,Порт,Port
+kind.military_base,Военная база,Military Base
+terrain.plain,Равнина,Plains
+terrain.forest,Лес,Forest
+terrain.hills,Холмы,Hills
+terrain.water,Озеро,Lake
+terrain.mountain,Горы,Mountains
+toast.welcome_back,С возвращением! Доход ждёт на гексах — коснитесь монеты,Welcome back! Income is waiting on your hexes. Tap a coin
+ui.peace_btn,🕊 Мир,🕊 Peace
+ui.score,счёт %+.1f,score %+.1f
+ui.offensive,⚔ Наступление,⚔ Offensive
+ui.retreat,↩ Отступить,↩ Retreat
+ui.pick_target,⚔ Выбрать цель,⚔ Pick a target
+ui.convoy_status,🐴 Обоз · %s,🐴 Convoy · %s
+ui.send_convoy,🐴 Отправить обоз,🐴 Send convoy
+ui.finish,⚡ Завершить,⚡ Finish
+ui.speedup,⚡ Ускорить · %d,⚡ Speed up · %d
+ui.colonize,⛳ %d зол. · %s,⛳ %d gold · %s
+ui.truce_timer,🕊 Перемирие %d:%02d,🕊 Truce %d:%02d
+ui.core_protected,Ядро неприкосновенно,Core is off-limits
+ui.declare_war,⚔ Объявить войну,⚔ Declare war
+toast.chapter_progress,Глава I «Долина»: %d / %d гексов,Chapter I “The Valley”: %d / %d hexes
+toast.chronicle_locked,Летопись откроется после главы I,The Chronicle opens after Chapter I
+toast.occupied_hex,%s: оккупирован (%s). Станет вашим только по мирному договору.,%s: occupied (%s). It becomes yours only by a peace treaty.
+tile.occupied,%s · оккупирован,%s · occupied
+tile.value,Ценность %d,Value %d
+tile.forest_def,+25% защ.,+25% def.
+tile.hills_def,+50% защ.,+50% def.
+tile.fort,форт %d,fort %d
+tile.impassable,Непроходимо,Impassable
+tile.income,+%d %s/ч,+%d %s/h
+tile.deposit,Залежь: %d %s · сбор %s,Deposit: %d %s · gather %s
+tile.deposit_name,Залежь,Deposit
+toast.no_targets,Пока целей нет — дождитесь конца перемирия,No targets yet. Wait for the truce to end
+toast.colonizing,Уже идёт колонизация,A colonization is already under way
+toast.no_gold,Не хватает золота,Not enough gold
+toast.settlers,Поселенцы в пути: «%s» станет вашим через %s,Settlers on the way: “%s” will be yours in %s
+toast.no_raivite,Не хватает Райвитов,Not enough Raivites
+floater.plus_hex,+1 гекс,+1 hex
+toast.colonized,Колонизирован «%s» · Глава I: %d / %d,“%s” colonized · Chapter I: %d / %d
+toast.war_declared,Война объявлена: %s! Цель — «%s» (+10 к счёту),War declared on the %s! Goal: “%s” (+10 score)
+toast.armies_deployed,Армии выдвинулись к границе,Armies moved up to the border
+toast.to_battle,В бой! Тяните от армии к врагу или бросьте карту на гекс,Charge! Drag from an army to the enemy or drop a card on a hex
+floater.occupied,Оккупирован!,Occupied!
+floater.lost,Потерян,Lost
+toast.goal_taken,🚩 Цель войны взята: +10 к счёту,🚩 War goal taken: +10 score
+floater.repelled,Атака отбита,Attack repelled
+floater.held,Отбились!,Held!
+floater.routed,Армия разбита,Army routed
+result.retreat,Вы отступили,You retreated
+result.wiped,Все армии сломлены,All armies broken
+result.timeout,Время вышло,Time's up
+toast.adjacent_only,Только на соседний гекс,Adjacent hexes only
+toast.no_energy,Не хватает энергии (нужно %d),Not enough energy (need %d)
+toast.hex_busy,Гекс занят,Hex is taken
+toast.hex_info,%s · ценность %d · %s,%s · value %d · %s
+toast.hold_on,Держать позицию: +10% к защите,Holding position: +10% defense
+toast.hold_off,Позиция снята,Hold released
+toast.army_info,Армия: сила %d / %d · двойной тап — держать позицию,Army: strength %d / %d · double-tap to hold position
+toast.card_cooldown,Карта перезаряжается,Card is recharging
+toast.cant_target,Сюда нельзя: %s,Can't play here: %s
+card.need_own,нужен свой гекс,needs your own hex
+card.need_enemy,нужен вражеский гекс рядом с армией,needs an enemy hex next to an army
+peace.annex,%s (ценн. %d),%s (value %d)
+toast.no_score,Не хватает военного счёта,Not enough war score
+toast.tutorial_done,Обучение пройдено! Дальше держава ваша.,Tutorial complete! The realm is yours now.
+ceremony.no_land,Земли не присоединены,No land annexed
+ceremony.hex,+1 гекс.,+1 hex
+ceremony.hexes,+%d гекс.,+%d hexes
+ceremony.city,+1 город,+1 city
+ceremony.cities,+%d город,+%d cities
+ceremony.realm,Держава %d → %d,Realm %d → %d
+ceremony.chapter,Глава I: %d → %d из %d,Chapter I: %d → %d of %d
+ceremony.plunder,"⚒ Разграблено: %d золота, %d еды, %d металла","⚒ Plundered: %d gold, %d food, %d metal"
+ceremony.indemnity,💰 Контрибуция: +%d золота,💰 Indemnity: +%d gold
+ceremony.reparations,📜 Репарации: 10% производства на 24 ч,📜 Reparations: 10% of output for 24 h
+toast.test_ad_double,Тестовая сборка: реклама не подключена — трофеи удвоены,Test build: ads aren't connected. Spoils doubled
+toast.chapter_goal,🌍 Цель главы выполнена — вкладка «Мир»,🌍 Chapter goal reached: open the World tab
+result.white_peace,Белый мир: всё вернётся владельцам,White peace: everything returns to its owners
+toast.white_peace_signed,🕊 Белый мир подписан,🕊 White peace signed
+result.defeat,"Поражение: −%d гекс., грабёж 60%%","Defeat: −%d hexes, 60%% plundered"
+inbox.defeat.title,Поражение в войне,Defeat in war
+inbox.defeat.text,"Мир с потерями: −%d гекс., разграблено %d золота, %d еды, %d металла. Щит 24 ч и «Реванш» +15%%","Peace with losses: −%d hexes; %d gold, %d food and %d metal plundered. 24 h shield and “Revenge” +15%%"
+toast.convoy_back,Обоз привёз: +%d %s,Convoy brought back: +%d %s
+toast.level_done,%s: уровень %d готов!,%s: level %d ready!
+toast.dl_up,🏰 Держава достигла УР %d! Новые постройки и уровни,🏰 Your realm reached DL %d! New buildings and levels
+toast.unlocked,Открыто: %s,Unlocked: %s
+toast.fort_refund,"Укрепление на потерянном гексе разобрано, металл возвращён","The fort on a lost hex was dismantled, metal refunded"
+toast.pick_own_hex,"Выберите свой гекс, чтобы поставить укрепление",Select one of your hexes to build a fort
+toast.cant_build,Нельзя построить,Can't build
+toast.fort_building,Укрепление строится: %s,Fort under construction: %s
+toast.cant_upgrade,Нельзя улучшить,Can't upgrade
+toast.fort_upgrade,Укрепление → ур. %d,Fort → Lv %d
+toast.convoy_sent,Обоз в пути: вернётся через %s,Convoy on its way: back in %s
+toast.storage_full,Склад полон — улучшите Склад,Storage full: upgrade the Warehouse
+toast.collected,Собрано: +%d золота · +%d еды · +%d металла,Collected: +%d gold · +%d food · +%d metal
+toast.purchases_soon,Покупки появятся в релизной версии,Purchases arrive in the release version
+toast.test_raivite,ТЕСТ: +%d Райвитов без оплаты,"TEST: +%d Raivites, no payment"
+toast.test_builder,ТЕСТ: 4-й строитель и 300 Райвитов,TEST: 4th builder and 300 Raivites
+toast.test_starter,ТЕСТ: набор новобранца,TEST: Recruit Pack
+toast.test_no_ads,ТЕСТ: межстраничная реклама отключена,TEST: interstitial ads disabled
+toast.test_ration,ТЕСТ: паёк державы,TEST: Realm Rations
+toast.research_started,🔬 %s → ур. %d · %s,🔬 %s → Lv %d · %s
+toast.research_done,"🔬 Изучено: %s, ур. %d — %s",🔬 Researched: %s Lv %d: %s
+star.peace,Подпишите мир,Sign a peace
+star.goal,Возьмите цель войны,Take a war goal
+star.pocket,Заберите котёл по договору,Take a pocket by treaty
+star.colonize,Колонизируйте 3 гекса,Colonize 3 hexes
+star.fort,Поставьте укрепление,Build a fort
+star.convoy,Привезите 3 обоза,Bring home 3 convoys
+star.defense,Отбейте набег или удар,Repel a raid or a strike
+star.dl3,Достигните УР3,Reach DL3
+toast.star,⭐ Звезда главы: +10 Райвитов и час производства,⭐ Chapter star: +10 Raivites and 1 h of output
+inbox.all_stars.title,Все звёзды главы I,All Chapter I stars
+inbox.all_stars.text,Награда: чернила границы «Долина» (косметика).,Reward: “Valley” border ink (cosmetic).
+toast.all_stars,Все звёзды главы! Чернила границы «Долина» — ваши,All chapter stars! The “Valley” border ink is yours
+inbox.chapter_done.title,Глава I «Долина» завершена,Chapter I “The Valley” complete
+inbox.chapter_done.text,Наследие: Капитан Лира и 200 Райвитов. Глава II «Речной край» скоро — за туманом уже видны паруса.,Legacy: Captain Lira and 200 Raivites. Chapter II “Riverlands” is coming soon: sails already loom through the fog.
+toast.chapter_done,"🌍 Глава I пройдена! +200 Райвитов, Капитан Лира. Глава II — скоро","🌍 Chapter I complete! +200 Raivites, Captain Lira. Chapter II soon"
+leader.barons,Барон Гродек Клык,Baron Grodek the Fang
+leader.barons.desc,"Мало крепостей, много армий, частые ультиматумы","Few forts, many armies, frequent ultimatums"
+leader.hamlets,Голова Мирося Златоуст,Headwoman Mirosya Goldmouth
+leader.hamlets.desc,"Богат, любит сделки и золото","Rich, loves deals and gold"
+archetype.wolf,Волк,Wolf
+archetype.fox,Лис,Fox
+opinion.hostile,Враждебен,Hostile
+opinion.wary,Насторожен,Wary
+opinion.neutral,Нейтрален,Neutral
+opinion.friendly,Дружелюбен,Friendly
+opinion.ally,Друг державы,Friend of the realm
+dipl.peace,Мир,Peace
+dipl.truce,🕊 Перемирие %s,🕊 Truce %s
+toast.no_border,Нет общей границы для войны,No shared border for a war
+toast.target_chosen,Цель выбрана — нажмите «Объявить войну»,Target selected: tap “Declare war”
+toast.gift_daily,Подарок этому соседу — раз в сутки,One gift per neighbor per day
+toast.gift_thanks,%s благодарит за подарок,%s thanks you for the gift
+toast.alliances_later,Союзы откроются позже,Alliances unlock later
+toast.army_limit,Больше армий — на следующем УР,More armies at the next DL
+toast.army_training,Армия уже формируется,An army is already forming
+toast.no_food,Не хватает еды,Not enough food
+toast.recruits,Новобранцы собираются: %s,Recruits gathering: %s
+toast.army_ready,Новая армия готова!,New army ready!
+toast.ad_limit,Лимит просмотров на сегодня,Daily view limit reached
+toast.test_ad_reward,Тестовая сборка: реклама не подключена — награда выдана,Test build: ads aren't connected. Reward granted
+army.name,Армия %d,Army %d
+army.new,Новая армия,New army
+toast.upgrade_started,%s → ур. %d · %s,%s → Lv %d · %s
+toast.stock_used,⏩ Ускорение из запаса: −%d мин (осталось в запасе %d мин),⏩ Speed-up from stock: −%d min (%d min left in stock)
+floater.raid_repelled,Набег отбит!,Raid repelled!
+inbox.raid.title,Набег мародёров,Marauder raid
+inbox.raid.text,Мародёры с диких земель налетели на «%s» и разбились о плетень. Укрепления защищают гексы и склады.,Marauders from the wildlands struck “%s” and broke against the palisade. Forts protect hexes and storage.
+toast.raid_repelled,Мародёры разбились о плетень! Укрепления берегут гексы и склады.,The marauders broke against the palisade! Forts protect hexes and storage.
+inbox.ultimatum.title,Ультиматум: %s,Ultimatum: %s
+inbox.ultimatum.text,"Требуют «%s» или %d золота. Ответ — 4 ч, иначе война.","They demand “%s” or %d gold. Answer within 4 h, or it's war."
+inbox.ceded.title,Уступка,Concession
+inbox.ceded.text,«%s» отдан. Перемирие 24 ч.,“%s” ceded. 24 h truce.
+inbox.tribute.title,Дань уплачена,Tribute paid
+inbox.tribute.text,%d золота. Перемирие 24 ч.,%d gold. 24 h truce.
+inbox.war.title,Война!,War!
+inbox.war.text,%s объявили войну. Удар по «%s» через 20 мин — укрепите гекс или наступайте первыми.,The %s declared war. They strike “%s” in 20 min: fortify the hex or attack first.
+floater.repelled_short,Отбито!,Repelled!
+inbox.defense.title,Оборона,Defense
+inbox.defense.text,"%s атаковали «%s» — атака отбита! +2 к военному счёту, +%d золота.","The %s attacked “%s”: attack repelled! +2 war score, +%d gold."
+inbox.war_cap.title,Кап войны,War cap
+inbox.war_cap.peace,Война длилась 2 ч — подписан рекомендованный мир.,The war lasted 2 h: the recommended peace was signed.
+inbox.war_cap.white,Война длилась 2 ч — белый мир.,The war lasted 2 h: white peace.
+toast.war_cap_white,Кап войны: белый мир,War cap: white peace
+ftue.1,Бароны сожгли нашу пограничную мельницу! Объявите им войну.,The Barons burned our border mill! Declare war on them.
+ftue.2,Начните наступление: у вас 60 секунд.,Launch an offensive: you have 60 seconds.
+ftue.3,Тяните от своей армии на вражеский гекс — армия пойдёт в атаку.,Drag from your army onto an enemy hex to attack.
+ftue.4,Отлично! Карта «Атака» бросает в бой все армии рядом. Захватите ещё!,Great! The “Attack” card throws every nearby army into battle. Take more!
+ftue.5,Захваченное пока лишь оккупировано. Подпишите мир — и граница сдвинется.,Captured land is only occupied for now. Sign a peace and the border will move.
+ftue.6,"Удерживайте печать, чтобы подписать договор.",Hold the seal to sign the treaty.
+ftue.7,Держава растёт! Откройте «Здания» и улучшите Резиденцию — халупы станут избами.,Your realm is growing! Open “Buildings” and upgrade the Residence: huts will become cottages.
+ftue.8,Жёлтый контур — бесплатные ресурсы. Коснитесь жилы и отправьте обоз.,A yellow outline means free resources. Tap the vein and send a convoy.
+ftue.9,Укрепите границу: выберите свой гекс у Баронов и нажмите кнопку «форт» справа.,Fortify the border: select your hex next to the Barons and tap the “fort” button on the right.
+ftue.10,Вольные Хутора заняли шахту у нашей границы. Объявите им войну!,The Free Hamlets seized a mine on our border. Declare war on them!
+ftue.11,Начните наступление.,Launch an offensive.
+ftue.12,Карта «Окружение» ◎ режет снабжение: перетащите её на вражеский гекс у ваших армий.,The “Encircle” card ◎ cuts supply: drag it onto an enemy hex next to your armies.
+ftue.13,Отлично! Окружённые гексы сдаются быстрее. Захватите шахту!,Great! Encircled hexes fall faster. Capture the mine!
+ftue.14,Подпишите мир с Хуторами.,Sign a peace with the Hamlets.
+ftue.15,Пощадить Хутора (+20 к мнению) или разграбить? Выберите и удерживайте печать.,"Spare the Hamlets (+20 opinion) or plunder them? Choose, then hold the seal."
