@@ -35,6 +35,10 @@ const DEFAULT_TARGET_SHARE := 0.5             # canon §15.4 «Цель»: 50%
 
 static var _data: Dictionary = {}
 static var _eff_cache: Dictionary = {}
+static var _probs_cache: Dictionary = {}
+static var _cmd_sorted: Array[String] = []
+static var _counter_cache: Dictionary = {}
+static var _cand_cache: Dictionary = {}
 
 var rng: Rng
 ## counter name -> openings since the last hit ("crate_cosmetic", "royal_epic", "royal_leg").
@@ -140,6 +144,21 @@ static func dup_glitter(rarity: String) -> int:
 ## since the last hit, before this opening). The same function drives the RNG, odds() and the
 ## stationary «effective» odds (§9.10.5, §9.10.11).
 static func _probs_at(case_id: String, leg_c: int, epic_c: int) -> Dictionary:
+	return _probs_cached(case_id, leg_c, epic_c).duplicate()
+
+
+## Cached _probs_at (read-only result).
+static func _probs_cached(case_id: String, leg_c: int, epic_c: int) -> Dictionary:
+	var key := "%s|%d|%d" % [case_id, leg_c, epic_c]
+	var hit: Variant = _probs_cache.get(key)
+	if hit != null:
+		return hit
+	var p := _probs_compute(case_id, leg_c, epic_c)
+	_probs_cache[key] = p
+	return p
+
+
+static func _probs_compute(case_id: String, leg_c: int, epic_c: int) -> Dictionary:
 	var tiers := _tiers(case_id)
 	var p := {}
 	for r in RARITIES:
@@ -242,7 +261,7 @@ static func effective_probs(case_id: String) -> Dictionary:
 				if m <= 0.0:
 					continue
 				length += m
-				var pr := _probs_at(case_id, leg_c, ec)
+				var pr := _probs_cached(case_id, leg_c, ec)
 				for r in RARITIES:
 					counts[r] = float(counts[r]) + m * float(pr[r])
 				if every > 1:
@@ -259,18 +278,28 @@ static func effective_probs(case_id: String) -> Dictionary:
 
 ## This opening's rarity probabilities (fractions) with the player's current pity counters.
 func current_probs(case_id: String) -> Dictionary:
+	return _current(case_id).duplicate()
+
+
+func _current(case_id: String) -> Dictionary:
 	if _is_collection(case_id):
 		return _collection_probs(case_id, collection_opened)
 	var lc := _counter_name(case_id, "legendary")
 	var ec := _counter_name(case_id, "epic_plus")
-	return _probs_at(case_id, int(pity.get(lc, 0)) if lc != "" else 0, int(pity.get(ec, 0)) if ec != "" else 0)
+	return _probs_cached(case_id, int(pity.get(lc, 0)) if lc != "" else 0, int(pity.get(ec, 0)) if ec != "" else 0)
 
 
 static func _counter_name(case_id: String, kind: String) -> String:
+	var key := case_id + "|" + kind
+	var hit: Variant = _counter_cache.get(key)
+	if hit != null:
+		return hit
 	var pity_d: Dictionary = _case(case_id).get("pity", {})
-	if not pity_d.has(kind):
-		return ""
-	return String((pity_d[kind] as Dictionary).get("counter", case_id + "_" + kind))
+	var name := ""
+	if pity_d.has(kind):
+		name = String((pity_d[kind] as Dictionary).get("counter", case_id + "_" + kind))
+	_counter_cache[key] = name
+	return name
 
 
 static func _collection_probs(case_id: String, opened_ids: Array) -> Dictionary:
@@ -564,8 +593,8 @@ func open(case_id: String, ctx: Dictionary, now: int) -> Dictionary:
 		return {"case": case_id, "rarity": "", "rewards": [], "error": "unknown_case"}
 	if _is_collection(case_id):
 		return _open_collection(case_id, now)
-	var probs := current_probs(case_id)
-	var forced := float(probs["common"]) + float(probs["rare"]) <= 0.0 and float(_base_probs(case_id)["common"]) > 0.0
+	var probs := _current(case_id)
+	var forced := float(probs["common"]) + float(probs["rare"]) <= 0.0
 	var rarity := _pick_rarity(probs)
 	var tier: Dictionary = _tiers(case_id).get(rarity, {})
 	var elig := _eligible(case_id, tier.get("items", []), ctx)
@@ -692,12 +721,12 @@ static func _pool(pool_id: String) -> Array:
 
 
 static func _sorted_commanders() -> Array[String]:
-	var out: Array[String] = []
-	var cmds: Dictionary = data().get("commanders", {})
-	for k in cmds:
-		out.append(String(k))
-	out.sort()
-	return out
+	if _cmd_sorted.is_empty():
+		var cmds: Dictionary = data().get("commanders", {})
+		for k in cmds:
+			_cmd_sorted.append(String(k))
+		_cmd_sorted.sort()
+	return _cmd_sorted
 
 
 func _is_owned_cmd(cmd: String, ctx: Dictionary) -> bool:
@@ -712,20 +741,36 @@ func _is_owned_cmd(cmd: String, ctx: Dictionary) -> bool:
 ## (war crate: common + rare, not yet unlocked ×2, §9.10.2); otherwise the pool of that rarity, equal
 ## weights (Королевский, §9.10.4). Maxed commanders are excluded (canon §8.4).
 func _shard_entries(case_id: String, item: Dictionary, ctx: Dictionary) -> Array:
-	var rarities: Array = []
+	var rarity := String(item.get("rarity", ""))
+	var cands := _shard_candidates(case_id, rarity)
 	var unopened_w := 1.0
-	if item.has("rarity"):
-		rarities = [String(item["rarity"])]
-	else:
+	if rarity == "":
 		var sp: Dictionary = _table_case(case_id).get("shard_pool", {})
-		rarities = sp.get("rarities", ["common", "rare"])
 		unopened_w = float(sp.get("unopened_weight", 1))
 	var maxed: Array = ctx.get("commanders_maxed", [])
 	var out: Array = []
-	for cmd in _sorted_commanders():
-		if not rarities.has(String(commander(cmd).get("rarity", ""))) or maxed.has(cmd):
+	for cmd in cands:
+		if maxed.has(cmd):
 			continue
-		out.append([cmd, 1.0 if _is_owned_cmd(cmd, ctx) else unopened_w])
+		out.append([cmd, 1.0 if unopened_w == 1.0 or _is_owned_cmd(cmd, ctx) else unopened_w])
+	return out
+
+
+## Commanders (sorted ids) of a shard pool before exclusions; rarity "" = the case's shard_pool rarities.
+static func _shard_candidates(case_id: String, rarity: String) -> Array:
+	var key := case_id + "|" + rarity
+	var hit: Variant = _cand_cache.get(key)
+	if hit != null:
+		return hit
+	var rarities: Array = [rarity]
+	if rarity == "":
+		var sp: Dictionary = _table_case(case_id).get("shard_pool", {})
+		rarities = sp.get("rarities", ["common", "rare"])
+	var out: Array = []
+	for cmd in _sorted_commanders():
+		if rarities.has(String(commander(cmd).get("rarity", ""))):
+			out.append(cmd)
+	_cand_cache[key] = out
 	return out
 
 

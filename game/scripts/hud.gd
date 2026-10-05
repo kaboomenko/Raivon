@@ -325,7 +325,7 @@ func select_tab(key: String) -> void:
 	for k in tab_labels:
 		var l: Label = tab_labels[k]
 		l.add_theme_color_override("font_color", TEXT if k == key else MUTED)
-	unit_cards.visible = key == "army"
+	unit_cards.visible = false  # the Army tab content now comes from the game (game_ui.show_armies)
 
 
 func show_tile(info: Dictionary) -> void:

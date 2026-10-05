@@ -9,6 +9,7 @@ signal demand_toggled(id: String)
 signal seal_done
 signal building_upgrade(id: int)
 signal building_speedup(id: int)
+signal army_action(id: int, kind: String)
 
 const PANEL := Color(0.055, 0.085, 0.14, 0.95)
 const EDGE := Color(0.32, 0.42, 0.58, 0.6)
@@ -565,6 +566,84 @@ func show_buildings(items: Array) -> void:
 	for it in items:
 		_brow.add_child(_building_card(it))
 	_bscroll.set_deferred("scroll_horizontal", keep)
+
+
+## Army tab: one card per army (strength, readiness, refill) and a «Новая армия» card (canon §8.1).
+func show_armies(items: Array) -> void:
+	show_buildings([])
+	for c in _brow.get_children():
+		c.queue_free()
+	for it in items:
+		_brow.add_child(_army_card(it))
+
+
+func _army_card(it: Dictionary) -> Control:
+	var card := Panel.new()
+	card.custom_minimum_size = Vector2(150, 178)
+	card.add_theme_stylebox_override("panel", _style(Color(0.1, 0.15, 0.25), 12, Color(0.45, 0.58, 0.8, 0.8), 2))
+	card.mouse_filter = Control.MOUSE_FILTER_PASS
+	var nm := _label(it["name"], 17)
+	nm.position = Vector2(0, 6)
+	nm.size = Vector2(150, 24)
+	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	card.add_child(nm)
+	var id: int = it["id"]
+	if id < 0:
+		if it.has("left"):
+			var t := _label(fmt_time(int(it["left"])), 26, Color(1.0, 0.85, 0.4))
+			t.position = Vector2(0, 60)
+			t.size = Vector2(150, 40)
+			t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			card.add_child(t)
+			var sub := _label("сбор новобранцев", 15, MUTED, false)
+			sub.position = Vector2(0, 104)
+			sub.size = Vector2(150, 22)
+			sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			card.add_child(sub)
+			return card
+		if it["locked"]:
+			var m := _label("🔒 с УР%d" % int(it.get("need_dl", 3)), 20, MUTED, false)
+			m.position = Vector2(8, 70)
+			m.size = Vector2(134, 40)
+			m.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			card.add_child(m)
+			return card
+		var row := HBoxContainer.new()
+		row.position = Vector2(26, 60)
+		var ic := TextureRect.new()
+		ic.texture = _icon("food")
+		ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		ic.custom_minimum_size = Vector2(24, 24)
+		row.add_child(ic)
+		row.add_child(_label(str(it["food"]), 18, TEXT, false))
+		card.add_child(row)
+		var tl := _label("⏱ " + fmt_time(int(it["seconds"])), 15, MUTED, false)
+		tl.position = Vector2(26, 90)
+		card.add_child(tl)
+		_card_button(card, "➕ Собрать", Color(0.2, 0.55, 0.3), func(): army_action.emit(-1, "train"), true)
+		return card
+	var big := _label("⚔ %d" % int(it["str"]), 28)
+	big.position = Vector2(0, 34)
+	big.size = Vector2(150, 40)
+	big.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	card.add_child(big)
+	var ready := float(it["str"]) / maxf(1.0, float(it["max"]))
+	var bar := _panel(card, Rect2(14, 82, 122, 12), _style(Color(1, 1, 1, 0.1), 6, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
+	_panel(bar, Rect2(0, 0, 122 * ready, 12), _style(Color(0.3, 0.62, 1.0) if ready >= 0.5 else Color(1.0, 0.6, 0.25), 6, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
+	var sub2 := _label("%d отр. · %d%%" % [int(it["slots"]), roundi(ready * 100.0)], 15, MUTED, false)
+	sub2.position = Vector2(0, 100)
+	sub2.size = Vector2(150, 22)
+	sub2.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	card.add_child(sub2)
+	if it["refilling"]:
+		_card_button(card, "🎬 Пополнить", Color(0.85, 0.55, 0.1), func(): army_action.emit(id, "refill"), true)
+	else:
+		var ok := _label("Готова к бою", 16, Color(0.5, 1.0, 0.6))
+		ok.position = Vector2(0, 142)
+		ok.size = Vector2(150, 24)
+		ok.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		card.add_child(ok)
+	return card
 
 
 func hide_buildings() -> void:

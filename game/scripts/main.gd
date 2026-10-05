@@ -59,6 +59,9 @@ var ultimatum_at := 0  # 0 = not scheduled yet, -1 = done; unix time of the scri
 const WAR_CAP_SEC := 2 * 3600  # chapter I war cap (canon §9.1)
 const STRIKE_WARN_SEC := 20 * 60  # strike announced 20 min ahead (canon §9.11)
 var _econ_acc := 1.0
+var _last_refill := 0
+var training := {}  # new army being formed: {end, slots}
+var ad_counts := {}  # rewarded placement -> [day, views] (daily caps, canon §15.2)
 
 var map_view: Node3D
 var rig: Node3D
@@ -115,11 +118,13 @@ func _ready() -> void:
 	ui.seal_done.connect(_sign_peace)
 	ui.building_upgrade.connect(_on_building_upgrade)
 	ui.building_speedup.connect(_on_building_speedup)
+	ui.army_action.connect(_on_army_action)
 	_make_selection()
 	_make_drag_marker()
 	_focus_front(0.7)
 	map_view.sync_armies(armies, null)
 	_set_mode(Mode.WAR if not war.is_empty() else Mode.MAP)
+	_open_tab("army")
 	_econ_tick()
 	if loaded:
 		ui.toast("С возвращением! Доход ждёт на гексах — коснитесь монеты")
@@ -259,6 +264,8 @@ func _refresh_ui() -> void:
 		ui.hide_buildings()
 	elif tab == "buildings" and econ != null:
 		ui.show_buildings(_building_items(now_s()))
+	elif tab == "army" and econ != null:
+		ui.show_armies(_army_items(now_s()))
 	match mode:
 		Mode.MAP:
 			ui.set_action("", "")
@@ -362,6 +369,8 @@ func _on_hud_button(name: String) -> void:
 				hud.set_mail(0)
 		"tab_buildings", "tab_army":
 			_open_tab(name.substr(4))
+		"shop":
+			ui.toast("Лавка открывается…")
 		"tab_development":
 			ui.toast("Исследования откроются на УР2")
 		"tab_diplomacy":
@@ -624,8 +633,9 @@ func _normalize_armies() -> void:
 func _start_offensive() -> void:
 	var enemy: int = war["enemy"]
 	for a in armies:
-		# Between offensives both sides rest and refill (full game: readiness timers, canon 11 §15.1).
-		a["str"] = a["max_str"]
+		# The AI refills between offensives (canon 11 §15.1); the player's armies heal over time for food.
+		if a["side"] != Types.PLAYER:
+			a["str"] = a["max_str"]
 		a["routed"] = false
 		a["hold"] = false
 	_normalize_armies()
@@ -722,6 +732,12 @@ func _end_offensive() -> void:
 	var ws := War.war_score(sim, war)
 	battle = null
 	ai = null
+	for a in armies:
+		# a broken army is never lost: it comes back with 10% strength (canon §8.1)
+		if a["side"] == Types.PLAYER and (a["routed"] or int(a["str"]) < int(a["max_str"]) / 10):
+			a["str"] = maxi(int(a["str"]), int(a["max_str"]) / 10)
+			a["routed"] = false
+	_last_refill = now_s()
 	_normalize_armies()
 	map_view.sync_armies(armies, null)
 	_set_mode(Mode.RESULT)
@@ -1129,6 +1145,9 @@ func _econ_tick() -> void:
 	var now := now_s()
 	for ev in econ.tick(sim, now):
 		_econ_event(ev)
+	_army_refill(now)
+	if not training.is_empty() and now >= int(training["end"]):
+		_finish_training()
 	for ev in deposits.tick(sim, econ.gross_per_hour(sim), now):
 		if ev["type"] == "convoy_back":
 			var got: Dictionary = econ.add_resources({String(ev["res"]): int(ev["amount"])})
@@ -1149,6 +1168,8 @@ func _econ_tick() -> void:
 	_update_bubbles()
 	if tab == "buildings" and mode in [Mode.MAP, Mode.WAR]:
 		ui.show_buildings(_building_items(now))
+	elif tab == "army" and mode in [Mode.MAP, Mode.WAR]:
+		ui.show_armies(_army_items(now))
 	if mode == Mode.MAP and selected >= 0:
 		_primary_for_selection()
 
@@ -1166,6 +1187,7 @@ func _econ_event(ev: Dictionary) -> void:
 			if int(b.get("hex", -1)) >= 0:
 				map_view.burst(int(b["hex"]), Color(1.0, 0.85, 0.3), true)
 		"dev_level":
+			_rescale_armies()
 			ui.toast("🏰 Держава достигла УР %d! Новые постройки и уровни" % econ.dev_level())
 			sfx.play("fanfare")
 			_dl_ceremony()
@@ -1312,8 +1334,149 @@ func _open_tab(t: String) -> void:
 	hud.select_tab(t)
 	if t == "buildings":
 		ui.show_buildings(_building_items(now_s()))
+	elif t == "army":
+		ui.show_armies(_army_items(now_s()))
 	else:
 		ui.hide_buildings()
+
+
+# ---------------------------------------------------------------------- armies (canon §8.1)
+
+const ARMY_LIMIT: Array[int] = [2, 2, 2, 3, 3, 3, 4, 4, 5, 5, 6]  # index = DL
+const SLOT_LIMIT: Array[int] = [3, 3, 3, 3, 4, 4, 4, 5, 5, 5, 5]
+const INF_TRAIN_SEC: Array[int] = [20, 20, 60, 180, 360, 600, 900, 1500, 2400, 3000, 3600]
+const REFILL_FULL_SEC: Array[int] = [1200, 1200, 1200, 2400, 2400, 3600, 3600, 5400, 5400, 7200, 7200]
+
+
+func _player_armies() -> Array:
+	var out: Array = []
+	for a in armies:
+		if a["side"] == Types.PLAYER:
+			out.append(a)
+	return out
+
+
+## Healing costs 1 food per point of Strength × М_произв / М_силы; full in 20–120 min by DL; Лазарет +5%/ур.
+func _army_refill(now: int) -> void:
+	if _last_refill == 0:
+		_last_refill = now
+	var dt := now - _last_refill
+	_last_refill = now
+	if dt <= 0 or mode == Mode.BATTLE:
+		return
+	var dl: int = econ.dev_level()
+	var inf_lvl := 1
+	for b in econ.buildings:
+		if b["type"] == "infirmary":
+			inf_lvl = int(b["level"])
+	var speed := 1.0 + 0.05 * inf_lvl
+	var food_per_fx := float(Economy.PROD_MULT100[dl]) / 100.0 / Types.strength_mult(maxi(1, dl)) / 1000.0
+	for a in _player_armies():
+		var missing: int = int(a["max_str"]) - int(a["str"])
+		if missing <= 0:
+			continue
+		var heal := mini(missing, int(float(a["max_str"]) * dt * speed / REFILL_FULL_SEC[dl]))
+		var afford := int(floor(float(econ.res["food"]) / maxf(food_per_fx, 1e-9)))
+		heal = mini(heal, afford)
+		if heal <= 0:
+			continue
+		a["str"] = int(a["str"]) + heal
+		econ.res["food"] = maxi(0, int(econ.res["food"]) - int(ceil(heal * food_per_fx)))
+
+
+## New DL raises max Strength; readiness in % is kept (canon §8.1).
+func _rescale_armies() -> void:
+	var dl: int = econ.dev_level()
+	for a in _player_armies():
+		var slots: int = maxi(1, roundi(float(a["max_str"]) / (Armies.INFANTRY_BASE * Types.FX * Types.strength_mult(maxi(1, dl - 1)))))
+		var ready := float(a["str"]) / maxf(1.0, float(a["max_str"]))
+		var fresh := Armies.infantry_army(a["id"], Types.PLAYER, a["hex"], slots, dl)
+		a["max_str"] = fresh["max_str"]
+		a["str"] = int(round(float(fresh["max_str"]) * ready))
+
+
+func _train_cost() -> Dictionary:
+	var dl: int = econ.dev_level()
+	var slots: int = SLOT_LIMIT[dl]
+	return {"food": int(ceil(40.0 * slots * Economy.PROD_MULT100[dl] / 100.0)), "seconds": INF_TRAIN_SEC[dl] * slots, "slots": slots}
+
+
+func _train_army() -> void:
+	var dl: int = econ.dev_level()
+	if _player_armies().size() >= ARMY_LIMIT[dl]:
+		ui.toast("Больше армий — на следующем УР")
+		return
+	if not training.is_empty():
+		ui.toast("Армия уже формируется")
+		return
+	var cost := _train_cost()
+	if econ.res["food"] < int(cost["food"]):
+		ui.toast("Не хватает еды")
+		return
+	econ.res["food"] -= int(cost["food"])
+	training = {"end": now_s() + int(cost["seconds"]), "slots": int(cost["slots"])}
+	sfx.play("coin")
+	ui.toast("Новобранцы собираются: %s" % GameUI.fmt_time(int(cost["seconds"])))
+	_autosave()
+
+
+func _finish_training() -> void:
+	var cap: int = sim.states[Types.PLAYER]["capital_id"]
+	var id := 1
+	for a in armies:
+		id = maxi(id, int(a["id"]) + 1)
+	armies.append(Armies.infantry_army(id, Types.PLAYER, cap, int(training["slots"]), econ.dev_level()))
+	training = {}
+	_normalize_armies()
+	map_view.burst(cap, MapView.C_PLAYER, true)
+	sfx.play("fanfare")
+	ui.toast("Новая армия готова!")
+	_autosave()
+
+
+## Rewarded placement with a daily cap (canon §15.2). Test builds grant the reward without an SDK.
+func _rewarded(key: String, cap: int) -> bool:
+	var day := now_s() / 86400
+	var rec: Array = ad_counts.get(key, [day, 0])
+	if int(rec[0]) != day:
+		rec = [day, 0]
+	if int(rec[1]) >= cap:
+		ui.toast("Лимит просмотров на сегодня")
+		return false
+	rec[1] = int(rec[1]) + 1
+	ad_counts[key] = rec
+	ui.toast("Тестовая сборка: реклама не подключена — награда выдана")
+	return true
+
+
+func _army_items(now: int) -> Array:
+	var items: Array = []
+	var i := 1
+	for a in _player_armies():
+		items.append({"id": a["id"], "name": "Армия %d" % i, "str": int(round(float(a["str"]) / 1000.0)), "max": int(round(float(a["max_str"]) / 1000.0)),
+			"slots": maxi(1, roundi(float(a["max_str"]) / (Armies.INFANTRY_BASE * Types.FX * Types.strength_mult(maxi(1, econ.dev_level()))))),
+			"refilling": int(a["str"]) < int(a["max_str"])})
+		i += 1
+	var dl: int = econ.dev_level()
+	var cost := _train_cost()
+	var need := dl
+	while need < 10 and ARMY_LIMIT[need] <= _player_armies().size():
+		need += 1
+	var new_item := {"id": -1, "name": "Новая армия", "locked": _player_armies().size() >= ARMY_LIMIT[dl], "need_dl": need, "food": cost["food"], "seconds": cost["seconds"]}
+	if not training.is_empty():
+		new_item["left"] = int(training["end"]) - now
+	items.append(new_item)
+	return items
+
+
+func _on_army_action(id: int, kind: String) -> void:
+	if kind == "train":
+		_train_army()
+	elif kind == "refill" and _rewarded("ad_army_refill", 3):
+		for a in armies:
+			if int(a["id"]) == id:
+				a["str"] = a["max_str"]
+	_econ_tick()
 
 
 func _building_items(now: int) -> Array:

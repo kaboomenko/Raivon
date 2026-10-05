@@ -162,7 +162,15 @@ func _run() -> void:
 		g.time_offset += 61
 		g._econ_tick()
 		_check(econ.res[res_key] > before or before >= econ.storage_cap()[res_key], "convoy brings the deposit home (%s %d → %d)" % [res_key, before, econ.res[res_key]])
+	# armies heal over time for food (canon §8.1)
+	var pa: Dictionary = g._player_armies()[0]
+	pa["str"] = int(pa["max_str"]) / 2
+	var food0: int = econ.res["food"]
+	g.time_offset += 1300
+	g._econ_tick()
+	_check(int(pa["str"]) == int(pa["max_str"]) and econ.res["food"] < food0 + 5000, "army refills in ~20 min, paying food (%d → %d)" % [food0, econ.res["food"]])
 	g._open_tab("army")
+	_check(g._army_items(g.now_s()).size() == g._player_armies().size() + 1, "army tab lists armies plus «new army»")
 	g.queue_free()
 	await process_frame
 
