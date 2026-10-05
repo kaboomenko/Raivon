@@ -38,6 +38,8 @@ jobs:
         run: |
           curl -sSL -o godot.zip "https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
           unzip -q godot.zip
+      - name: Strings (every UI text translated, keys exist)
+        run: python3 tools/check_strings.py
       - name: Import
         run: ./Godot_v${GODOT_VERSION}-stable_linux.x86_64 --headless --path game --import || true
       - name: Test suites

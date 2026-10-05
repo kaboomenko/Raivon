@@ -206,14 +206,14 @@ func _environment() -> void:
 	e.background_color = Color(0.13, 0.16, 0.2)
 	e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	e.ambient_light_color = Color(0.62, 0.7, 0.85)
-	e.ambient_light_energy = 0.5
+	e.ambient_light_energy = 0.45
 	e.ssao_enabled = true
 	e.ssao_radius = 1.2
 	e.ssao_intensity = 2.5
 	e.tonemap_mode = Environment.TONE_MAPPER_ACES
 	e.tonemap_exposure = 1.05
 	e.glow_enabled = true
-	e.glow_intensity = 1.4
+	e.glow_intensity = 1.2
 	e.glow_strength = 1.15
 	e.glow_bloom = 0.08
 	e.glow_hdr_threshold = 0.75
@@ -229,7 +229,7 @@ func _environment() -> void:
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-48, -35, 0)
 	sun.light_color = Color(1.0, 0.93, 0.82)
-	sun.light_energy = 1.5
+	sun.light_energy = 1.35
 	sun.shadow_enabled = true
 	sun.shadow_blur = 1.5
 	sun.directional_shadow_max_distance = 60

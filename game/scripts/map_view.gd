@@ -27,7 +27,8 @@ var _terrain_mi: MeshInstance3D
 var _overlay_root: Node3D
 var _props_root: Node3D
 var _horizon_root: Node3D
-var _hex_props := {}  # hex id -> Node3D holder of that hex's props
+var _hex_props := {}
+var _sails: Array = []  # windmill sail nodes, spun in _process  # hex id -> Node3D holder of that hex's props
 var _army_nodes := {}  # army id -> Node3D
 var _fx: Array = []
 var _dirty := true
@@ -110,6 +111,10 @@ func spawn(name: String, parent: Node, pos: Vector3, rot := 0.0, s := 1.0) -> No
 	n.rotation.y = rot
 	n.scale = Vector3.ONE * s
 	parent.add_child(n)
+	if name == "windmill":
+		var sails := n.get_node_or_null("sails")
+		if sails:
+			_sails.append(sails)
 	return n
 
 
@@ -311,6 +316,8 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 			for i in rng.randi_range(8, 12):
 				var off := Vector3(rng.randf_range(-0.62, 0.62), 0, rng.randf_range(-0.62, 0.62))
 				spawn("tree_pine" if rng.randf() < 0.75 else "tree_round", holder, p + off, rng.randf() * TAU, rng.randf_range(0.85, 1.3))
+			for i in rng.randi_range(1, 2):
+				spawn("bush", holder, p + Vector3(rng.randf_range(-0.6, 0.6), 0, rng.randf_range(-0.6, 0.6)), rng.randf() * TAU, rng.randf_range(1.0, 1.25))
 		"hills":
 			for i in 3:
 				spawn("rock", holder, p + Vector3(rng.randf_range(-0.5, 0.5), 0, rng.randf_range(-0.5, 0.5)), rng.randf() * TAU, rng.randf_range(1.2, 2.0))
@@ -319,6 +326,10 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 			for i in rng.randi_range(1, 4):
 				var off := Vector3(rng.randf_range(-0.6, 0.6), 0, rng.randf_range(-0.6, 0.6))
 				spawn("tree_pine" if rng.randf() < 0.6 else "tree_round", holder, p + off, rng.randf() * TAU, rng.randf_range(0.7, 1.0))
+			if rng.randf() < 0.55:
+				spawn("bush", holder, p + Vector3(rng.randf_range(-0.55, 0.55), 0, rng.randf_range(-0.55, 0.55)), rng.randf() * TAU, rng.randf_range(1.0, 1.3))
+			if rng.randf() < 0.45:
+				spawn("flowers", holder, p + Vector3(rng.randf_range(-0.5, 0.5), 0, rng.randf_range(-0.5, 0.5)), rng.randf() * TAU, rng.randf_range(1.0, 1.3))
 	_place_fort(c, holder)
 	if c["owner"] != Types.NOBODY and rng.randf() < 0.3:
 		spawn("banner_" + side, holder, p + Vector3(rng.randf_range(-0.4, 0.4), 0, rng.randf_range(-0.4, 0.4)))
@@ -1204,6 +1215,12 @@ func _process(delta: float) -> void:
 	for h in _bubbles:
 		var bn: Node3D = _bubbles[h]
 		bn.position.y = 2.0 + 0.07 * sin(bt * 3.0 + h)
+	for i in range(_sails.size() - 1, -1, -1):
+		var sl: Node3D = _sails[i]
+		if not is_instance_valid(sl):
+			_sails.remove_at(i)
+			continue
+		sl.rotate_object_local(Vector3.FORWARD, -1.1 * delta)
 	for h in _dep_nodes:
 		var ic: Node3D = _dep_nodes[h].get_node("icon")
 		ic.position.y = cell_world(h).y + 0.8 + 0.06 * sin(bt * 2.5 + h * 0.7)
