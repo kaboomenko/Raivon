@@ -378,11 +378,11 @@ func _place_armies() -> void:
 		var face := -PI / 2 if owner == Owner.PLAYER else PI / 2
 		var side := "blue" if owner == Owner.PLAYER else "red"
 		if rng.randf() < 0.75:
-			spawn("squad_" + side, p + Vector3(-0.2, 0, -0.15), face, 1.6)
+			spawn("squad_" + side, p + Vector3(-0.2, 0, -0.15), face, 1.15)
 			if rng.randf() < 0.6:
-				spawn("knight_" + side, p + Vector3(0.25, 0, 0.3), face, 1.8)
+				spawn("knight_" + side, p + Vector3(0.3, 0, 0.35), face, 1.3)
 			if rng.randf() < 0.4:
-				spawn("squad_" + side, p + Vector3(0.3, 0, -0.4), face, 1.4)
+				spawn("squad_" + side, p + Vector3(0.35, 0, -0.4), face, 1.0)
 
 
 # ------------------------------------------------------------------ clouds at the edges of the known world

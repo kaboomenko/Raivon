@@ -84,6 +84,8 @@ def bake_asset(objs, size=1024):
 
 
 def export(name):
+    for o in [o for o in bpy.context.scene.objects if o.hide_get()]:
+        bpy.data.objects.remove(o)
     objs = [o for o in bpy.context.scene.objects if o.type == "MESH"]
     objs = [bake_asset(objs, 512 if len(objs) < 12 else 1024)]
     for o in objs:
@@ -147,21 +149,46 @@ def square_house(x, y, w, d, h, roof=ROOF_BLUE, wall=PLASTER, rot=0.0, timber=Tr
 
 
 def soldier(x, y, color, s=1.0, weapon="spear", shield=True):
+    """Armoured footman ~0.44 tall (1:6 proportions), facing −Y: tabard with emblem, cape, nasal helm, kite shield."""
     skin = m("skin", "#e8b48e", 0.7)
-    armor = m("armor", "#aeb5c0", 0.35, 0.65)
+    steel = m("armor", "#b8bec8", 0.3, 0.7)
     cloth = m("cloth" + color, color, 0.7)
-    cyl("legs", 0.035 * s, 0.11 * s, (x, y, 0.055 * s), m("boots", "#3b2c22"), 8, 0.008)
-    cyl("torso", 0.055 * s, 0.13 * s, (x, y, 0.17 * s), cloth, 10, 0.02)
-    cyl("chest", 0.058 * s, 0.07 * s, (x, y, 0.2 * s), armor, 10, 0.015)
-    sphere("head", 0.045 * s, (x, y, 0.28 * s), skin, (1, 1, 1), 2)
-    sphere("helm", 0.05 * s, (x, y, 0.3 * s), armor, (1, 1, 0.85), 2)
+    cape_c = m("cape" + color, "#" + "".join(f"{int(int(color[i:i + 2], 16) * 0.65):02x}" for i in (1, 3, 5)), 0.8)
+    dark = m("trousers", "#3a3330", 0.85)
+    leather = m("boots", "#4a3322", 0.8)
+    white = m("emblem", "#f4f4f4", 0.6)
+    z = lambda v: v * s  # noqa: E731
+    for dx in (-0.022, 0.022):
+        cyl("leg", 0.017 * s, z(0.15), (x + dx * s, y, z(0.085)), dark, 8, 0.004)
+        box("boot", (0.03 * s, 0.045 * s, 0.035 * s), (x + dx * s, y - 0.006 * s, z(0.018)), leather, 0.006)
+    cyl("hips", 0.042 * s, z(0.05), (x, y, z(0.17)), dark, 10, 0.01)
+    cyl("chest", 0.046 * s, z(0.13), (x, y, z(0.25)), steel, 12, 0.015, r2=0.05 * s)
+    box("tabard", (0.07 * s, 0.012 * s, 0.17 * s), (x, y - 0.046 * s, z(0.2)), cloth, 0.004)
+    box("tabard_emblem", (0.03 * s, 0.014 * s, 0.03 * s), (x, y - 0.048 * s, z(0.25)), white, 0.003)
+    box("belt", (0.1 * s, 0.1 * s, 0.014 * s), (x, y, z(0.185)), leather, 0.004)
+    box("cape", (0.085 * s, 0.01 * s, 0.22 * s), (x, y + 0.048 * s, z(0.2)), cape_c, 0.004)
+    for dx in (-0.055, 0.055):
+        sphere("pauldron", 0.024 * s, (x + dx * s, y, z(0.305)), steel, (1, 1, 0.8), 2)
+        arm = cyl("arm", 0.014 * s, z(0.13), (x + dx * 1.08 * s, y - 0.01 * s, z(0.24)), steel, 8, 0.003)
+        arm.rotation_euler.x = 0.25
+    cyl("neck", 0.016 * s, z(0.03), (x, y, z(0.33)), skin, 8, 0.0)
+    sphere("head", 0.032 * s, (x, y, z(0.365)), skin, (1, 1, 1.05), 2)
+    sphere("helm", 0.036 * s, (x, y + 0.002 * s, z(0.378)), steel, (1, 1, 0.95), 2)
+    cyl("helm_rim", 0.038 * s, z(0.008), (x, y, z(0.362)), steel, 12, 0.0)
+    box("nasal", (0.008 * s, 0.01 * s, 0.03 * s), (x, y - 0.035 * s, z(0.36)), steel, 0.002)
     if weapon == "spear":
-        cyl("spear", 0.007 * s, 0.42 * s, (x + 0.06 * s, y, 0.22 * s), m("wood", WOOD), 6, 0.0)
-        cone("tip", 0.016 * s, 0.05 * s, (x + 0.06 * s, y, 0.45 * s), armor, 6, 0.0)
+        cyl("spear", 0.0065 * s, z(0.62), (x + 0.07 * s, y - 0.01 * s, z(0.31)), m("wood", WOOD), 6, 0.0)
+        cone("tip", 0.014 * s, z(0.06), (x + 0.07 * s, y - 0.01 * s, z(0.65)), steel, 6, 0.0)
+    elif weapon == "sword":
+        box("sword", (0.008 * s, 0.006 * s, 0.16 * s), (x + 0.07 * s, y - 0.02 * s, z(0.27)), steel, 0.002)
     if shield:
-        sh = cyl("shield", 0.05 * s, 0.015 * s, (x, y - 0.06 * s, 0.17 * s), cloth, 12, 0.005)
-        sh.rotation_euler.x = math.pi / 2
-        cyl("boss", 0.015 * s, 0.02 * s, (x, y - 0.07 * s, 0.17 * s), m("gold", GOLD, 0.3, 0.7), 8, 0.0).rotation_euler.x = math.pi / 2
+        sx, sy, sz = x - 0.06 * s, y - 0.045 * s, z(0.22)
+        box("shield", (0.07 * s, 0.012 * s, 0.075 * s), (sx, sy, sz + 0.015 * s), cloth, 0.006)
+        c = cone("shield_tip", 0.05 * s, 0.06 * s, (sx, sy, sz - 0.04 * s), cloth, 3, 0.0)
+        c.rotation_euler = (math.pi, 0, math.pi / 2)
+        c.scale = (0.75, 0.25, 1)
+        box("shield_cross_v", (0.012 * s, 0.014 * s, 0.07 * s), (sx, sy - 0.003 * s, sz + 0.005 * s), white, 0.002)
+        box("shield_cross_h", (0.05 * s, 0.014 * s, 0.012 * s), (sx, sy - 0.003 * s, sz + 0.02 * s), white, 0.002)
 
 
 def banner(x, y, color, h=0.9, w=0.22):
@@ -358,24 +385,38 @@ def catapult():
 def mounted_knight(color):
     def build():
         horse = m("horse", "#6b4a2f", 0.75)
-        body = box("horse_body", (0.3, 0.1, 0.11), (0, 0, 0.18), horse, 0.04)
-        box("horse_neck", (0.08, 0.07, 0.14), (0.15, 0, 0.26), horse, 0.03).rotation_euler.y = -0.6
-        box("horse_head", (0.1, 0.06, 0.06), (0.21, 0, 0.32), horse, 0.025).rotation_euler.y = 0.3
-        for dx in (-0.1, 0.1):
+        mane = m("mane", "#2a1d14", 0.85)
+        cloth = m("cloth" + color, color, 0.7)
+        box("horse_body", (0.36, 0.11, 0.13), (0, 0, 0.27), horse, 0.05)
+        neck = box("horse_neck", (0.09, 0.075, 0.18), (0.17, 0, 0.36), horse, 0.035)
+        neck.rotation_euler.y = -0.55
+        head = box("horse_head", (0.14, 0.065, 0.065), (0.25, 0, 0.43), horse, 0.028)
+        head.rotation_euler.y = 0.55
+        mn = box("mane", (0.1, 0.03, 0.05), (0.15, 0, 0.42), mane, 0.015)
+        mn.rotation_euler.y = -0.55
+        tail = cone("tail", 0.03, 0.16, (-0.2, 0, 0.24), mane, 6, 0.0)
+        tail.rotation_euler.y = 2.6
+        for dx in (-0.13, 0.13):
             for dy in (-0.035, 0.035):
-                cyl("leg", 0.018, 0.14, (dx, dy, 0.07), horse, 6, 0.004)
-        box("caparison", (0.24, 0.115, 0.06), (0, 0, 0.16), m("cloth" + color, color, 0.7), 0.02)
-        soldier(0, 0, color, 0.8, weapon="spear", shield=True)
-        for o in list(bpy.context.scene.objects)[-9:]:
-            o.location.z += 0.17
+                cyl("leg", 0.017, 0.21, (dx, dy, 0.105), horse, 8, 0.004)
+                cyl("hoof", 0.02, 0.025, (dx, dy, 0.012), mane, 8, 0.0)
+        box("caparison", (0.3, 0.125, 0.09), (0, 0, 0.24), cloth, 0.03)
+        box("caparison_emblem", (0.06, 0.128, 0.05), (0, 0, 0.25), m("emblem", "#f4f4f4", 0.6), 0.01)
+        soldier(0, 0, color, 0.85, weapon="spear", shield=True)
+        for o in list(bpy.context.scene.objects):
+            if o.name.startswith(("leg", "boot")) and o.location.z < 0.2 and abs(o.location.x) < 0.05:
+                o.hide_set(True)
+                o.select_set(False)
+        for o in [o for o in bpy.context.scene.objects if o.location.z < 0.7 and not o.name.startswith(("horse", "mane", "tail", "leg", "hoof", "caparison"))]:
+            o.location.z += 0.2
     return build
 
 
 def infantry_squad(color):
     def build():
-        for i in range(3):
-            for j in range(2):
-                soldier(-0.15 + i * 0.15, -0.07 + j * 0.15 + (0.04 if i % 2 else 0), color, 1.0)
+        for i in range(4):
+            for j in range(3):
+                soldier(-0.2 + i * 0.13 + (0.06 if j % 2 else 0), -0.12 + j * 0.13, color, 0.95)
     return build
 
 
