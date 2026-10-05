@@ -53,8 +53,11 @@ function duel(atk: number, def: number, defInfantry = 0): { b: Battle; target: n
     if (c.controller !== PLAYER || !isPassable(c)) continue;
     for (const n of w.neighbors[c.id]!) {
       const t = n >= 0 ? w.cells[n]! : undefined;
-      if (!t || t.controller !== BARONS || t.kind !== 'plain' || t.terrain !== 'plain') continue;
+      if (!t || t.controller !== BARONS) continue;
       for (const x of w.cells) x.fort = 0;
+      t.kind = 'plain';
+      t.terrain = 'plain';
+      t.value = 1;
       const attacker = infantryArmy(1, PLAYER, c.id, 1, 1);
       attacker.str = attacker.maxStr = atk * FX;
       const defender = infantryArmy(101, BARONS, t.id, 1, 1);

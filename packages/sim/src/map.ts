@@ -20,8 +20,8 @@ export const HAMLETS = 3;
 
 const RADIUS = 4;
 const PLAYER_CAP: Axial = { q: 0, r: 3 };
-const BARONS_CAP: Axial = { q: 3, r: -1 };
-const HAMLETS_CAP: Axial = { q: -3, r: 1 };
+const BARONS_CAP: Axial = { q: 3, r: -3 };
+const HAMLETS_CAP: Axial = { q: -3, r: 0 };
 const IMPASSABLE = 11;
 const BARONS_SIZE = 14;
 const HAMLETS_SIZE = 10;
@@ -30,7 +30,7 @@ export function makeStates(): StateInfo[] {
   return [
     { id: NOBODY, name: 'Дикие земли', color: 0xb9b2a3, archetype: 'player', capitalId: -1, devLevel: 0 },
     { id: PLAYER, name: 'Ваша держава', color: 0x2e6bff, archetype: 'player', capitalId: -1, devLevel: 1 },
-    { id: BARONS, name: 'Кремнёвые Бароны', color: 0xe0393e, archetype: 'wolf', capitalId: -1, devLevel: 1 },
+    { id: BARONS, name: 'Кремнёвые Бароны', color: 0xf08a24, archetype: 'wolf', capitalId: -1, devLevel: 1 },
     { id: HAMLETS, name: 'Вольные Хутора', color: 0x3fa34d, archetype: 'fox', capitalId: -1, devLevel: 1 },
   ];
 }
@@ -82,7 +82,7 @@ function tryGenerate(seed: number): World {
   // 3. Grow AI states by BFS from their capitals.
   grow(cells, neighbors, idOf(HAMLETS_CAP), HAMLETS, HAMLETS_SIZE, rng, (c) => hexDistance(c, HAMLETS_CAP) * 10);
   // Barons are biased toward the player so the first war has a front.
-  grow(cells, neighbors, idOf(BARONS_CAP), BARONS, BARONS_SIZE, rng, (c) => hexDistance(c, BARONS_CAP) * 10 + hexDistance(c, PLAYER_CAP) * 6);
+  grow(cells, neighbors, idOf(BARONS_CAP), BARONS, BARONS_SIZE, rng, (c) => hexDistance(c, BARONS_CAP) * 10 + hexDistance(c, PLAYER_CAP) * 10);
 
   // 4. Kinds and terrain.
   const setKind = (id: number, kind: HexKind, name?: string): void => {
@@ -183,6 +183,14 @@ export function validateChapterOne(w: World): string[] {
     for (const n of w.neighbors[c.id]!) if (n >= 0 && w.cells[n]!.owner === BARONS) shared++;
   }
   if (shared < 3) problems.push(`player-barons border ${shared} < 3`);
+  // The first war must have something to win: non-core Barons hexes touching the player.
+  const bCore = coreOf(w, BARONS);
+  const annexable = land.filter(
+    (c) => c.owner === BARONS && !bCore.has(c.id) && w.neighbors[c.id]!.some((n) => n >= 0 && w.cells[n]!.owner === PLAYER),
+  ).length;
+  if (annexable < 2) problems.push(`annexable front hexes ${annexable} < 2`);
+  const frontHexes = land.filter((c) => c.owner === BARONS && w.neighbors[c.id]!.some((n) => n >= 0 && w.cells[n]!.owner === PLAYER)).length;
+  if (frontHexes < 3) problems.push(`barons front hexes ${frontHexes} < 3`);
   // Every state is connected.
   for (const s of [PLAYER, BARONS, HAMLETS]) {
     if (!connected(w, land.filter((c) => c.owner === s).map((c) => c.id))) problems.push(`state ${s} disconnected`);

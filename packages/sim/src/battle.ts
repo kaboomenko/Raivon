@@ -471,12 +471,12 @@ export class Battle {
       // Arrive only if the hex is still ours and free; otherwise bounce back.
       if (c.controller === a.side && !this.armyAt(to, a.side)) a.hex = to;
       a.move = null;
-      // Reinforcing a hex under attack: become its defender.
+      // Reinforcing a hex under attack (even while the enemy is entering): become its defender.
       for (const cl of this.clashes) {
-        if (cl.target === a.hex && cl.side !== a.side && cl.defender === null && cl.entering === 0) {
-          cl.defender = a.id;
-          cl.startDef += a.str;
-        }
+        if (cl.target !== a.hex || cl.side === a.side || cl.defender !== null) continue;
+        cl.defender = a.id;
+        cl.startDef = cl.entering > 0 ? a.str : cl.startDef + a.str;
+        cl.entering = 0;
       }
     }
   }
@@ -589,6 +589,10 @@ export class Battle {
   private capture(cl: Clash, attackers: Army[]): void {
     const cell = this.world.cells[cl.target]!;
     const from = cell.controller;
+    // Any enemy army still standing in the hex is pushed out (or routed if it cannot retreat).
+    for (const e of this.armies) {
+      if (e.side !== cl.side && e.hex === cl.target && !e.routed && e.str > 0 && !e.move) this.retreatOrRout(e, false);
+    }
     cell.controller = cl.side;
     this.garrison[cl.target] = this.garrisonFor(cl.target, cl.side);
     this.supplyCache.clear();

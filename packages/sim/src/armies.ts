@@ -24,8 +24,14 @@ export function startingArmies(w: World): Army[] {
   armies.push(infantryArmy(1, PLAYER, pf[0]!, 3, 1));
   armies.push(infantryArmy(2, PLAYER, pf[1] ?? w.states[PLAYER]!.capitalId, 3, 1));
   const baronsDl = w.states[BARONS]!.devLevel;
+  // One Barons army holds the front; the others start in the rear and the AI pulls them toward threats.
+  const cap = w.states[BARONS]!.capitalId;
+  const rear = w.cells
+    .filter((c) => c.owner === BARONS && isPassable(c) && c.id !== cap && !bf.includes(c.id))
+    .sort((a, b) => b.value - a.value || a.id - b.id)
+    .map((c) => c.id);
   armies.push(infantryArmy(101, BARONS, bf[0]!, 3, baronsDl));
-  armies.push(infantryArmy(102, BARONS, bf[1] ?? w.states[BARONS]!.capitalId, 3, baronsDl));
-  armies.push(infantryArmy(103, BARONS, w.states[BARONS]!.capitalId, 3, baronsDl));
+  armies.push(infantryArmy(102, BARONS, rear[0] ?? cap, 3, baronsDl));
+  armies.push(infantryArmy(103, BARONS, cap, 3, baronsDl));
   return armies;
 }
