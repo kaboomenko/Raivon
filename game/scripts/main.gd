@@ -388,6 +388,7 @@ func _refresh_ui() -> void:
 
 
 func _primary_for_selection() -> void:
+	ui.set_action("", "")
 	if selected < 0:
 		ui.set_primary("pick_target", tr("ui.pick_target"), Color(0.8, 0.22, 0.16))
 		return
@@ -436,6 +437,8 @@ func _primary_for_selection() -> void:
 		ui.set_primary("upgrade", tr("ui.upgrade"), Color(0.13, 0.4, 0.9))
 	else:
 		ui.set_primary("", "")
+	if c["owner"] == Types.PLAYER and econ.ruin_left(now_s()) > 0:
+		ui.set_action("ruin_halve", tr("ui.ruin_halve"), tr("ui.ruin_left") % [econ.ruin_pct, GameUI.fmt_time(econ.ruin_left(now_s()))], Color(0.35, 0.22, 0.12))
 
 
 ## «Наступление», or a march timer while every army is still on its way to the front (none touches the enemy).
@@ -572,6 +575,12 @@ func _on_action(kind: String) -> void:
 			_repair(selected, false)
 		"repair_ad":
 			_repair(selected, true)
+		"ruin_halve":
+			if _rewarded("ad_ruin_halve", 1):  # once a day (canon §15.2)
+				econ.halve_ruin(now_s())
+				_econ_tick()
+				_refresh_ui()
+				_autosave()
 		"march_cancel":
 			_march_pick = -1
 			_refresh_ui()
@@ -1508,11 +1517,12 @@ func _apply_defeat(enemy: int, lost: Array) -> void:
 	var gph: Dictionary = econ.gross_per_hour(sim)
 	for r in ["gold", "food", "metal"]:
 		g12[r] = 12 * maxi(30, int(gph.get(r, 0)))
-	var looted: Dictionary = econ.plunder(0.6, g12)  # Wolf plunders 60%, 12 h loss cap (canon §9.14, decision 20)
+	# plunder level by the winner's archetype (canon §10.4): Wolf 60%, Raven 45%, Fox / Turtle / Owl 30%
+	var lvl: int = AI_PLUNDER_LVL.get(String(sim.states[enemy]["archetype"]), 3)
+	var looted: Dictionary = econ.plunder(PLUNDER_PCT[lvl], g12)  # 12 h loss cap (canon §9.14, decision 20)
 	var msg := L.pack("inbox.defeat.text", [lost.size(), int(looted.get("gold", 0)), int(looted.get("food", 0)), int(looted.get("metal", 0))])
 	_post("inbox.defeat.title", msg)
-	# heavy plunder also brings ruin −40% for 8 h and 3 damaged hex buildings (canon §9.14)
-	var lvl := 3
+	# plunder also brings ruin (−20/30/40% for 4/6/8 h) and 1–3 damaged hex buildings (canon §9.14)
 	econ.apply_ruin(RUIN_PCT[lvl], RUIN_HOURS[lvl] * 3600, now_s())
 	var dmg: Array = econ.damage_buildings(sim, lvl)
 	_show_damage()
@@ -1520,6 +1530,7 @@ func _apply_defeat(enemy: int, lost: Array) -> void:
 	_finish_war(enemy, L.t(msg))
 
 
+const AI_PLUNDER_LVL := {"wolf": 3, "raven": 2, "fox": 1, "turtle": 1, "owl": 1}
 const RUIN_PCT: Array[int] = [0, 20, 30, 40]  # by plunder level: light / medium / heavy (canon §9.14)
 const RUIN_HOURS: Array[int] = [0, 4, 6, 8]
 

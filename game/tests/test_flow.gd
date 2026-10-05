@@ -322,7 +322,7 @@ func _run() -> void:
 	g = await _new_game()
 	g.ftue = 1
 	g._ftue_tick(0.1)
-	_check(g.selected >= 0 and g.ui._action2_kind == "declare", "FTUE preselects a war goal")
+	_check(g.selected >= 0 and g.ui._action2_kind == "declare", "FTUE preselects a war goal (sel %d, kind %s)" % [g.selected, g.ui._action2_kind])
 	g._on_action("declare")
 	_check(g.ftue == 2, "FTUE step: declared")
 	g._on_action("offensive")
@@ -479,6 +479,11 @@ func _run() -> void:
 		g.time_offset += 601
 		g._econ_tick()
 		_check(not g.econ.damaged.has(dh), "building repaired after 10 min")
+		var left0: int = g.econ.ruin_left(g.now_s())
+		g._select(g.sim.states[Types.PLAYER]["capital_id"])
+		_check(g.ui._action_kind == "ruin_halve", "own hex offers to halve the ruin")
+		g._on_action("ruin_halve")
+		_check(absi(g.econ.ruin_left(g.now_s()) - left0 / 2) <= 1, "ruin halved (%d -> %d s)" % [left0, g.econ.ruin_left(g.now_s())])
 	g.queue_free()
 	await process_frame
 

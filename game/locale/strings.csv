@@ -465,3 +465,5 @@ tile.ruin,разорение −%d%% · %s,ruin −%d%% · %s
 ui.ad_sub,реклама · бесплатно,ad · free
 toast.tower_building,Башня строится: %s,Tower under construction: %s
 toast.tower_upgrade,Башня → ур. %d,Tower → Lv %d
+ui.ruin_halve,▶ Сократить разорение вдвое,▶ Halve the ruin
+ui.ruin_left,разорение −%d%% · %s,ruin −%d%% · %s
