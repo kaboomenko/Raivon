@@ -3,6 +3,11 @@ extends Node3D
 ## tap to pick a hex. The view is a continuous blend: zoom 1 = strategic (high, wide), 0 = close-up.
 
 signal hex_tapped(cell: Vector2i)
+signal order_drag(phase: int, screen: Vector2)  # 0 = start, 1 = move, 2 = end
+
+## When set and it returns true for the press position, a one-finger drag issues orders instead of panning.
+var order_filter: Callable
+var _ordering := false
 
 const SQ3 := 1.7320508
 
@@ -91,18 +96,28 @@ func _unhandled_input(event: InputEvent) -> void:
 				_press_pos = t.position
 				_drag_moved = 0.0
 				_velocity = Vector3.ZERO
+				_ordering = order_filter.is_valid() and order_filter.call(t.position)
+				if _ordering:
+					order_drag.emit(0, t.position)
 			elif _touches.size() == 2:
 				_pinch_start_dist = _touch_dist()
 				_pinch_start_zoom = zoom_target
 		else:
 			var was_single := _touches.size() == 1
 			_touches.erase(t.index)
+			if _ordering and was_single:
+				_ordering = false
+				order_drag.emit(2, t.position)
+				return
 			if was_single and _drag_moved < 12.0:
 				hex_tapped.emit(world_to_axial(ground_at(t.position)))
 	elif event is InputEventScreenDrag:
 		var d := event as InputEventScreenDrag
 		_touches[d.index] = d.position
-		if _touches.size() == 1:
+		if _touches.size() == 1 and _ordering:
+			_drag_moved += d.relative.length()
+			order_drag.emit(1, d.position)
+		elif _touches.size() == 1:
 			var before := ground_at(d.position - d.relative)
 			var after := ground_at(d.position)
 			var delta := before - after

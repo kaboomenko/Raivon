@@ -431,6 +431,10 @@ def tent(color):
 ASSETS = {
     "castle": castle,
     "castle_red": lambda: castle(ROOF_RED, "#b3272b"),
+    "castle_green": lambda: castle("#2f7d3a", "#2f8f3f"),
+    "house_green": house("#3a7d34"),
+    "banner_green": lambda: banner(0, 0, "#2f8f3f", 1.0, 0.26),
+    "squad_green": infantry_squad("#2f8f3f"),
     "house_blue": house(ROOF_BLUE),
     "house_red": house(ROOF_RED),
     "mine": mine,
