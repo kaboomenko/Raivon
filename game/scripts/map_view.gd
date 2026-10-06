@@ -932,6 +932,12 @@ func sync_armies(armies: Array, battle) -> void:
 		elif fighting.has(id):
 			sway = sin(t * 12.0 + id) * 0.06  # holding against an attack
 		node.position = node.position.lerp(p, 0.3) if node.position.distance_to(p) < 3.0 else p
+		var marching := 1.0 if (a["move"] != null or not mv.is_empty() or (fighting.has(id) and int(fighting[id]) == -3)) else 0.0
+		var in_fight := 1.0 if fighting.has(id) and int(fighting[id]) != -3 else 0.0
+		for mi in node.get_meta("anim", []):
+			if is_instance_valid(mi):
+				(mi as GeometryInstance3D).set_instance_shader_parameter("march", marching)
+				(mi as GeometryInstance3D).set_instance_shader_parameter("fight", in_fight)
 		model.position.y = hop
 		model.rotation.z = sway
 		var ready := float(a["str"]) / maxf(1.0, float(a["max_str"]))
@@ -1070,6 +1076,41 @@ class ArmyNode extends Node3D:
 	var modulate_alpha := 1.0
 
 
+var _troop_shader: Shader
+var _troop_mats := {}  # [texture id, solid] -> ShaderMaterial
+
+
+## Swaps a troop model's baked material for the animated troop shader (march bob, fight thrust); glowing
+## parts keep their own material. The mesh instances go into `out` so sync_armies can drive them.
+func _animate_troops(n: Node, solid: bool, out: Array) -> void:
+	if _troop_shader == null:
+		_troop_shader = load("res://shaders/troops.gdshader")
+	if n is MeshInstance3D:
+		var mi: MeshInstance3D = n
+		var used := false
+		for i in mi.mesh.get_surface_count():
+			var m: Material = mi.get_active_material(i)
+			if not (m is StandardMaterial3D):
+				continue
+			var sm: StandardMaterial3D = m
+			if sm.emission_enabled or sm.albedo_texture == null:
+				continue
+			var key := "%d:%d" % [sm.albedo_texture.get_instance_id(), int(solid)]
+			if not _troop_mats.has(key):
+				var shm := ShaderMaterial.new()
+				shm.shader = _troop_shader
+				shm.set_shader_parameter("albedo_tex", sm.albedo_texture)
+				shm.set_shader_parameter("roughness_v", sm.roughness)
+				shm.set_shader_parameter("solid", solid)
+				_troop_mats[key] = shm
+			mi.set_surface_override_material(i, _troop_mats[key])
+			used = true
+		if used:
+			out.append(mi)
+	for ch in n.get_children():
+		_animate_troops(ch, solid, out)
+
+
 func _make_army(a: Dictionary) -> Node3D:
 	var node := ArmyNode.new()
 	add_child(node)
@@ -1087,11 +1128,18 @@ func _make_army(a: Dictionary) -> Node3D:
 			squad = "squad_dl%d_%s" % [n, side]
 		if assault == "" and has_model("assault_dl%d_%s" % [n, side]):
 			assault = "assault_dl%d_%s" % [n, side]
-	spawn(squad if squad != "" else "squad_" + side, model, Vector3(-0.15, 0, 0.05), 0.0, 1.15)
+	var anim: Array = []
+	var sq := spawn(squad if squad != "" else "squad_" + side, model, Vector3(-0.15, 0, 0.05), 0.0, 1.15)
+	if sq:
+		_animate_troops(sq, false, anim)
+	var rider: Node3D = null
 	if assault != "":
-		spawn(assault, model, Vector3(0.32, 0, 0.25), 0.0, 1.25)
+		rider = spawn(assault, model, Vector3(0.32, 0, 0.25), 0.0, 1.25)
 	elif dl >= 2 or squad == "":
-		spawn("knight_" + ("blue" if side == "blue" else "red"), model, Vector3(0.32, 0, 0.25), 0.0, 1.25)
+		rider = spawn("knight_" + ("blue" if side == "blue" else "red"), model, Vector3(0.32, 0, 0.25), 0.0, 1.25)
+	if rider:
+		_animate_troops(rider, true, anim)
+	node.set_meta("anim", anim)
 	spawn("banner_" + side, model, Vector3(0.05, 0, -0.35), 0.0, 0.9)
 	var lbl := Label3D.new()
 	lbl.name = "label"
