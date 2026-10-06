@@ -73,6 +73,7 @@ static func to_dict(g: Node) -> Dictionary:
 		"threat_at": g.threat_at,
 		"coalition": g.coalition,
 		"coalition_last": g.coalition_last,
+		"swap_at": g.swap_at,
 		"ult_check": g.ult_check,
 		"ai_colonizing": g.ai_colonizing,
 		"ai_wars": g.ai_wars,
@@ -229,6 +230,10 @@ static func apply(g: Node, d: Dictionary) -> bool:
 	g.threat = float(d.get("threat", 0.0))
 	g.threat_at = int(d.get("threat_at", 0))
 	g.coalition_last = int(d.get("coalition_last", 0))
+	var sw_at: Dictionary = d.get("swap_at", {})
+	g.swap_at = {}
+	for k in sw_at:
+		g.swap_at[int(k)] = int(sw_at[k])
 	var co: Dictionary = d.get("coalition", {})
 	g.coalition = {}
 	if not co.is_empty():

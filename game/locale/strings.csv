@@ -723,3 +723,23 @@ story.dl8,"«Над столицей поднялся первый небоск�
 inbox.alarm.title,Соседи шепчутся,The neighbours whisper
 inbox.alarm.text,"%s: «Стая чует, куда дует ветер. Пока — не в вашу сторону». Тревога соседей выше 50%%: мнение всех −10, новых союзов нет.","%s: “The Pack smells which way the wind blows. Not your way, for now.” Neighbours' alarm is above 50%%: opinion −10 for all, no new alliances."
 toast.alarm,Тревога соседей выше 50% — они насторожились,Neighbours' alarm is above 50% — they are wary
+ui.cancel,Отмена,Cancel
+swap.title,Обмен территориями,Territory swap
+swap.chapter,Обмен откроется в главе II,Swaps open in chapter II
+swap.war,"Сначала мир","Make peace first"
+swap.opinion,Мнение %d/0 — обмен не обсуждают,Opinion %d/0 — no swaps
+swap.cooldown,Новый обмен через %s,Next swap in %s
+swap.pick,Обмен с «%s»: тапните свой гекс и его гекс,Swap with “%s”: tap your hex and theirs
+swap.pick_give,Теперь тапните свой гекс — что отдаёте,Now tap your hex — what you give
+swap.pick_get,"Теперь тапните гекс «%s» — что получаете","Now tap a hex of “%s” — what you get"
+swap.bad_hex,"Этот гекс не обменять (Ядро, столица, колонизация или чужой)","This hex can't be swapped (core, capital, colonization or someone else's)"
+swap.give,Отдаёте: %s (ценность %d),You give: %s (value %d)
+swap.get,Получаете: %s (ценность %d),You get: %s (value %d)
+swap.ai_view,"Оценка «%s»: получает %.1f, отдаёт %.1f","“%s” values it: gets %.1f, gives %.1f"
+swap.pay,Доплата: %d золота,Top-up: %d gold
+swap.fair,Обмен равноценный — без доплаты,A fair swap — no top-up
+swap.offer,Предложить,Propose
+toast.swap,"%s теперь наш — обмен с «%s» заключён","%s is ours — the swap with “%s” is done"
+inbox.swap.title,Обмен территориями,Territory swap
+inbox.swap.text,"Обмен с «%s»: отдали %s, получили %s.","Swap with “%s”: gave %s, got %s."
+star.c3_swap,Выгодная сделка: завершите обмен территориями,A good deal: complete a territory swap

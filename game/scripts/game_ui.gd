@@ -1061,6 +1061,21 @@ func _diplomacy_card(it: Dictionary) -> Control:
 			diplomacy_action.emit(id, "war")
 		else:
 			toast(it["status"]))
+	if it.has("swap_reason"):
+		# «Обмен территориями» (06 §15): a compact ⇄ in the corner, greyed with the reason when not possible
+		var why_s: String = it["swap_reason"]
+		var bs := _panel(card, Rect2(250, 6, 44, 34), _style(Color(0.2, 0.45, 0.6) if why_s == "" else Color(0.3, 0.33, 0.4), 9, Color(1, 1, 1, 0.45), 2))
+		bs.mouse_filter = Control.MOUSE_FILTER_PASS
+		var ls := _label("⇄", 20)
+		ls.size = Vector2(44, 34)
+		ls.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		ls.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		bs.add_child(ls)
+		bs.gui_input.connect(func(e): if _is_tap(e):
+			if why_s == "":
+				diplomacy_action.emit(id, "swap")
+			else:
+				toast(why_s))
 	var gl: int = it["gift_left"]
 	var bg := _panel(card, Rect2(156, 128, 138, 40), _style(Color(0.2, 0.5, 0.35) if gl == 0 else Color(0.3, 0.33, 0.4), 10, Color(1, 1, 1, 0.45), 2))
 	bg.mouse_filter = Control.MOUSE_FILTER_PASS

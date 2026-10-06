@@ -778,6 +778,30 @@ func _run() -> void:
 	g._econ_tick()
 	_check(g.econ.factory_pct() == 5 and int(g.econ.build_cost("tower")["seconds"]) == cost0 * 95 / 100, "a factory cuts timers by 5%% (%d -> %d)" % [cost0, int(g.econ.build_cost("tower")["seconds"])])
 	_check(g._star_progress(g.STARS_3[0]) == 1, "«Индустриализация» counts the factory")
+	# Territory swap (canon §10.9, 06 §15): opinion ≥ 0, cores excluded, one per 24 h, the AI's valuation
+	var sw_state := -1
+	var sw_get := -1
+	var sw_give := -1
+	for st in g._ai_states():
+		g.opinion[st] = 30.0
+		for c in g.sim.cells:
+			if sw_state < 0 and g._swappable(c["id"], st) and g._touches_player(c["id"]):
+				sw_state = st
+				sw_get = c["id"]
+	for c in g.sim.cells:
+		if sw_give < 0 and g._swappable(c["id"], Types.PLAYER):
+			sw_give = c["id"]
+	_check(sw_state >= 0 and sw_give >= 0, "a swap pair exists (%d: %d <-> %d)" % [sw_state, sw_give, sw_get])
+	if sw_state >= 0 and sw_give >= 0:
+		_check(g._swap_reason(sw_state) == "", "swap allowed at opinion 30")
+		var cap_s: int = g.sim.states[sw_state]["capital_id"]
+		_check(not g._swappable(cap_s, sw_state) and not g._swappable(g.sim.states[Types.PLAYER]["capital_id"], Types.PLAYER), "capitals never swap")
+		g.econ.res["gold"] = 100000
+		g._swap = {"state": sw_state, "give": sw_give, "get": sw_get}
+		g._swap_do(0, 0.0)
+		_check(int(g.sim.cells[sw_get]["owner"]) == Types.PLAYER and int(g.sim.cells[sw_give]["owner"]) == sw_state, "the hexes changed hands")
+		_check(g._swap_reason(sw_state) != "", "one swap per 24 h")
+		_check(int(g.stats.get("swaps", 0)) >= 1, "«Выгодная сделка» counts the swap")
 	# Threat and coalitions (canon §10.8): threshold 50 in chapter III; ≥50% — wary, 100% — a coalition forms
 	g.truce = {}
 	g.war = {}

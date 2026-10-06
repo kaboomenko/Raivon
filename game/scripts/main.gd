@@ -70,6 +70,8 @@ var threat_at := 0       # last decay time
 var coalition := {}      # forming: {leader, members, at}; the war itself carries war["coalition"]
 var coalition_last := 0  # last formation (not more than once in 5 days)
 var _alarm_warned := false
+var _swap := {}            # territory swap being set up: {state, give, get}
+var swap_at := {}          # state -> last swap time (one swap with a state per 24 h)
 var _ftue_next := 0  # step to resume after the peace ceremony
 var _raid := {}  # FTUE marauder raid: {hex, at}
 var econ  # Economy (scripts/sim/economy.gd)
@@ -997,6 +999,135 @@ func _coalition_war(now: int) -> void:
 	_set_mode(Mode.WAR)
 
 
+# ---------------------------------------------------------------------- territory swap (canon §10.9, 06 §15)
+
+const SWAP_COOLDOWN_SEC := 86400
+
+
+## "" when a swap with `s` can be set up, else why not (06 §15.1: chapter II+, no war, opinion ≥ 0, 1 per 24 h).
+func _swap_reason(s: int) -> String:
+	if chapter < 2:
+		return tr("swap.chapter")
+	if not war.is_empty() and (int(war["enemy"]) == s or (war.get("coalition", []) as Array).has(s)):
+		return tr("swap.war")
+	if _opinion_of(s) < 0.0:
+		return tr("swap.opinion") % roundi(_opinion_of(s))
+	var left := int(swap_at.get(s, 0)) + SWAP_COOLDOWN_SEC - now_s()
+	if left > 0:
+		return tr("swap.cooldown") % GameUI.fmt_time(left)
+	return ""
+
+
+## A hex can change hands in a swap: official land of `side`, not in anyone's core, no colonization on it.
+func _swappable(id: int, side: int) -> bool:
+	var c: Dictionary = sim.cells[id]
+	if c["owner"] != side or c["controller"] != side or not Types.is_passable(c) or c["kind"] == "capital":
+		return false
+	if MapGen.core_of(sim, side).has(id) or colonizing.has(id):
+		return false
+	return true
+
+
+## The AI's valuation (06 §15.2): ×2 within 2 of its capital, ×0.5 for its exclave (giving) or a hex that would
+## be cut off from its land (receiving).
+func _swap_value(s: int, id: int, receiving: bool) -> float:
+	var c: Dictionary = sim.cells[id]
+	var cap: int = sim.states[s]["capital_id"]
+	var v := float(c["value"])
+	if cap >= 0 and HexGrid.distance(HexGrid.axial(c), HexGrid.axial(sim.cells[cap])) <= 2:
+		return v * 2.0
+	if receiving:
+		return v if _touches_owner(id, s) else v * 0.5
+	# giving: an exclave (no path over its own land to its capital) is worth half
+	var seen := {id: true}
+	var stack: Array = [id]
+	while not stack.is_empty():
+		var h: int = stack.pop_back()
+		if h == cap:
+			return v
+		for n in sim.neighbors[h]:
+			if n >= 0 and not seen.has(n) and sim.cells[n]["owner"] == s:
+				seen[n] = true
+				stack.append(n)
+	return v * 0.5
+
+
+func _swap_pick(id: int) -> void:
+	var s: int = _swap["state"]
+	if _swappable(id, Types.PLAYER):
+		_swap["give"] = id
+		map_view.burst(id, MapView.C_PLAYER)
+	elif _swappable(id, s):
+		_swap["get"] = id
+		map_view.burst(id, map_view.state_color(s))
+	else:
+		ui.toast(tr("swap.bad_hex"))
+		return
+	sfx.play("tap")
+	if int(_swap["give"]) < 0:
+		ui.toast(tr("swap.pick_give"))
+		return
+	if int(_swap["get"]) < 0:
+		ui.toast(tr("swap.pick_get") % _state_name(s))
+		return
+	_swap_offer()
+
+
+func _swap_offer() -> void:
+	var s: int = _swap["state"]
+	var give: int = _swap["give"]
+	var get_h: int = _swap["get"]
+	var v_out := _swap_value(s, get_h, false)   # what the AI gives up
+	var v_in := _swap_value(s, give, true)      # what the AI receives
+	var k := 0.8 if allies.has(s) else 0.9      # «≤10% not in its favour», an ally 20%
+	var pay_units := maxf(0.0, ceilf((k * v_out - v_in) * 10.0) / 10.0)
+	var gold := int(ceil(pay_units * 2.0 * maxf(60.0, float(econ.gross_per_hour(sim).get("gold", 0)))))
+	var lines: Array = [
+		tr("swap.give") % [_cell_name(give), int(sim.cells[give]["value"])],
+		tr("swap.get") % [_cell_name(get_h), int(sim.cells[get_h]["value"])],
+		tr("swap.ai_view") % [_state_name(s), v_in, v_out],
+		tr("swap.pay") % gold if gold > 0 else tr("swap.fair"),
+	]
+	ui.show_choice(tr("swap.title"), lines, [
+		[tr("swap.offer"), Color(0.16, 0.42, 0.95), func(): _swap_do(gold, v_in + pay_units - k * v_out)],
+		[tr("ui.cancel"), Color(0.3, 0.33, 0.4), func():
+			ui.close_modal()
+			_swap = {}],
+	])
+
+
+func _swap_do(gold: int, overpay: float) -> void:
+	ui.close_modal()
+	var s: int = _swap["state"]
+	var give: int = _swap["give"]
+	var get_h: int = _swap["get"]
+	_swap = {}
+	if econ.res["gold"] < gold:
+		ui.toast(tr("toast.no_gold"))
+		return
+	econ.res["gold"] -= gold
+	sim.cells[give]["owner"] = s
+	sim.cells[give]["controller"] = s
+	sim.cells[get_h]["owner"] = Types.PLAYER
+	sim.cells[get_h]["controller"] = Types.PLAYER
+	sim.cells[get_h]["fort"] = 0  # the hex comes empty (06 §15.1)
+	swap_at[s] = now_s()
+	_opinion_add(s, minf(10.0, 5.0 + 2.0 * floorf(maxf(0.0, overpay))))  # op_swap: +5, +2 per unit of overpay
+	_stat("swaps")
+	_econ_tick()
+	_normalize_armies()
+	map_view.refresh_hex(give)
+	map_view.refresh_hex(get_h)
+	map_view.mark_dirty()
+	map_view.sync_armies(armies, null)
+	map_view.burst(get_h, MapView.C_PLAYER, true)
+	sfx.play("seal")
+	_post("inbox.swap.title", L.pack("inbox.swap.text", [_state_key(s), _cell_key(give), _cell_key(get_h)]))
+	ui.toast(tr("toast.swap") % [_cell_name(get_h), _state_name(s)])
+	_refresh_ui()
+	_autosave()
+
+
 func _ally_reason(s: int) -> String:
 	if allies.has(s):
 		return tr("dipl.ally")
@@ -1237,6 +1368,9 @@ func _on_hex_tapped(c: Vector2i) -> void:
 		return
 	if _march_pick >= 0 and id >= 0:
 		_march_to(id)
+		return
+	if not _swap.is_empty() and id >= 0:
+		_swap_pick(id)
 		return
 	if id >= 0 and map_view.has_bubble(id):
 		_collect_all()
@@ -2865,6 +2999,7 @@ const STARS_3 := [
 	["c3_hegemon", "star.c3_hegemon", "hegemon_wins", 1],
 	["c3_capital", "star.c3_capital", "capitals_occupied", 1],
 	["c3_triumph", "star.c3_triumph", "coalition_wins", 1],
+	["c3_swap", "star.c3_swap", "swaps", 1],
 	["c3_vein", "star.c3_vein", "@vein3", 1],
 	["c3_colonize", "star.c3_colonize", "colonized", 6],
 	["c3_camps", "star.c3_camps", "camps", 5],
@@ -3198,6 +3333,7 @@ func _diplomacy_items(now: int) -> Array:
 		items.append(it_extra.merged({"id": s, "state": _state_name(s), "leader": tr(String(LEADERS[s][0])), "archetype": tr(String(LEADERS[s][1])),
 			"opinion": v, "word": tr(_opinion_word(v)), "status": status,
 			"can_war": war.is_empty() and _truce_left(s) == 0, "gift_cost": _gift_cost(), "gift_left": gift_left,
+			"swap_reason": _swap_reason(s),
 			"color": map_view.state_color(s)}))
 	return items
 
@@ -3216,6 +3352,15 @@ func _on_diplomacy_action(s: int, kind: String) -> void:
 			rig.focus(map_view.cell_world(g[0]))
 			_select(g[0])
 			ui.toast(tr("toast.target_chosen"))
+		"swap":
+			var why := _swap_reason(s)
+			if why != "":
+				ui.toast(why)
+				return
+			_swap = {"state": s, "give": -1, "get": -1}
+			ui.close_modal()
+			_open_tab("")
+			ui.toast(tr("swap.pick") % _state_name(s))
 		"call":
 			if not _can_call(s):
 				ui.toast(tr("call.cant"))
@@ -4159,6 +4304,29 @@ func _demo(spec: String) -> void:
 				_select(c["id"])
 				rig.focus(map_view.cell_world(c["id"]), 0.4)
 				break
+		return
+	if what == "swap":  # a territory swap offer with the Barons in chapter II
+		await _world_expansion()
+		ui.close_modal()
+		opinion[MapGen.BARONS] = 25.0
+		for c in sim.cells:  # a settled hex outside the core to offer
+			if c["owner"] == Types.NOBODY and Types.is_passable(c) and _touches_player(c["id"]):
+				c["owner"] = Types.PLAYER
+				c["controller"] = Types.PLAYER
+				map_view.refresh_hex(c["id"])
+				break
+		var give := -1
+		var get_h := -1
+		for c in sim.cells:
+			if get_h < 0 and _swappable(c["id"], MapGen.BARONS) and _touches_player(c["id"]):
+				get_h = c["id"]
+		for c in sim.cells:
+			if give < 0 and _swappable(c["id"], Types.PLAYER):
+				give = c["id"]
+		if give >= 0 and get_h >= 0:
+			_swap = {"state": MapGen.BARONS, "give": give, "get": get_h}
+			rig.focus(map_view.cell_world(get_h), 0.5)
+			_swap_offer()
 		return
 	if what == "coalition":  # «Тревога соседей» over 100%: a coalition is forming (Diplomacy tab)
 		await _world_expansion()
