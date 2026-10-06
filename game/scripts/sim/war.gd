@@ -70,16 +70,33 @@ static func declare_war(w: World, enemy: int, goal: int) -> Dictionary:
 	}
 
 
+## The states the player fights: the enemy and, in a coalition war, every remaining member (06 §14.6).
+static func sides(war: Dictionary) -> Array:
+	var out: Array = [int(war["enemy"])]
+	for m in war.get("coalition", []):
+		if not out.has(int(m)):
+			out.append(int(m))
+	return out
+
+
+## The war's denominator D: the enemy's official value at the start, in a coalition war Σ of all members' —
+## fixed for the whole war, separate peaces included (canon §9.12, 06 §14.6).
+static func denominator(war: Dictionary) -> int:
+	return maxi(1, int(war.get("coalition_d", war["enemy_value0"])))
+
+
 ## Enemy hexes inside the player's pockets count as occupation (canon §9.7).
 static func enemy_pocket_hexes(w: World, war: Dictionary) -> Array[int]:
 	var out: Array[int] = []
-	for g in Topology.pockets(w, war["enemy"], Types.PLAYER):
-		out.append_array(g)
+	for sd in sides(war):
+		for g in Topology.pockets(w, sd, Types.PLAYER):
+			out.append_array(g)
 	return out
 
 
 static func war_score(w: World, war: Dictionary) -> Dictionary:
 	var enemy: int = war["enemy"]
+	var all_sides := sides(war)
 	var occ := 0
 	var lost := 0
 	var pocket_set := {}
@@ -88,19 +105,22 @@ static func war_score(w: World, war: Dictionary) -> Dictionary:
 	for c in w.cells:
 		if not Types.is_passable(c):
 			continue
-		if c["owner"] == enemy and (c["controller"] == Types.PLAYER or pocket_set.has(c["id"])):
+		if all_sides.has(int(c["owner"])) and (c["controller"] == Types.PLAYER or pocket_set.has(c["id"])):
 			occ += c["value"]
-		if c["owner"] == Types.PLAYER and c["controller"] == enemy:
+		if c["owner"] == Types.PLAYER and all_sides.has(int(c["controller"])):
 			lost += c["value"]
-	var occupation := Types.round1(float(occ * 100) / float(maxi(1, war["enemy_value0"])))
+	var occupation := Types.round1(float(occ * 100) / float(denominator(war)))
 	var losses := Types.round1(float(lost * 100) / float(maxi(1, war["player_value0"])))
 	var goal := 0
 	if war["goal"] >= 0 and w.cells[war["goal"]]["controller"] == Types.PLAYER:
 		goal += 10
-	if war["ai_goal"] >= 0 and w.cells[war["ai_goal"]]["controller"] == enemy:
+	if war["ai_goal"] >= 0 and all_sides.has(int(w.cells[war["ai_goal"]]["controller"])):
 		goal -= 10
-	var enemy_cap: int = w.states[enemy]["capital_id"]
-	var capital := 20 if enemy_cap >= 0 and w.cells[enemy_cap]["controller"] == Types.PLAYER else 0
+	var capital := 0  # +20 for each capital of the war's sides the player holds (06 §14.6: Столица_M)
+	for sd in all_sides:
+		var cap: int = w.states[sd]["capital_id"]
+		if cap >= 0 and w.cells[cap]["controller"] == Types.PLAYER:
+			capital += 20
 	var battles: int = war["battles"]
 	if war.has("coalition") and battles > 0:
 		battles = mini(20, battles * 2)  # «Триумф» (canon §10.8): won battles count double against a coalition
@@ -135,20 +155,24 @@ static func record_offensive(war: Dictionary, stars: int) -> void:
 # ---------- peace ----------
 
 static func hex_peace_cost(w: World, war: Dictionary, hex: int) -> float:
-	return Types.round1(float(int(w.cells[hex]["value"]) * 100) / float(maxi(1, war["enemy_value0"])))
+	return Types.round1(float(int(w.cells[hex]["value"]) * 100) / float(denominator(war)))
 
 
 static func available_demands(w: World, war: Dictionary) -> Array[Dictionary]:
 	var out: Array[Dictionary] = []
-	var core := MapGen.core_of(w, war["enemy"]) # decision 19: the enemy core is never demanded
+	var all_sides := sides(war)
+	var core := {}  # decision 19: no core is ever demanded
+	for sd in all_sides:
+		core.merge(MapGen.core_of(w, sd))
 	var groups: Array = []
-	for g in Topology.pockets(w, war["enemy"], Types.PLAYER):
-		var kept: Array[int] = []
-		for id in g:
-			if not core.has(id):
-				kept.append(id)
-		if not kept.is_empty():
-			groups.append(kept)
+	for sd in all_sides:
+		for g in Topology.pockets(w, sd, Types.PLAYER):
+			var kept: Array[int] = []
+			for id in g:
+				if not core.has(id):
+					kept.append(id)
+			if not kept.is_empty():
+				groups.append(kept)
 	var in_pocket := {}
 	for i in groups.size():
 		var g: Array[int] = groups[i]
@@ -159,7 +183,7 @@ static func available_demands(w: World, war: Dictionary) -> Array[Dictionary]:
 		out.append({"id": "pocket:%d" % i, "kind": "pocket", "hexes": g, "cost": Types.round1(0.5 * sum),
 			"label": "demand.pocket|%d" % g.size()})
 	for c in w.cells:
-		if c["owner"] != war["enemy"] or c["controller"] != Types.PLAYER or core.has(c["id"]) or in_pocket.has(c["id"]):
+		if not all_sides.has(int(c["owner"])) or c["controller"] != Types.PLAYER or core.has(c["id"]) or in_pocket.has(c["id"]):
 			continue
 		var hexes: Array[int] = [c["id"]]
 		out.append({"id": "annex:%d" % c["id"], "kind": "annex", "hexes": hexes, "cost": hex_peace_cost(w, war, c["id"]),
@@ -212,6 +236,7 @@ static func apply_treaty(w: World, war: Dictionary, chosen: Array) -> Dictionary
 		for id in d["hexes"]:
 			annex[id] = true
 	var returned: Array[int] = []
+	var all_sides := sides(war)
 	for c in w.cells:
 		if not Types.is_passable(c):
 			continue
@@ -219,7 +244,7 @@ static func apply_treaty(w: World, war: Dictionary, chosen: Array) -> Dictionary
 			c["owner"] = Types.PLAYER
 			c["controller"] = Types.PLAYER
 			c["fort"] = 0
-		elif c["controller"] != c["owner"] and (c["owner"] == war["enemy"] or c["owner"] == Types.PLAYER):
+		elif c["controller"] != c["owner"] and (all_sides.has(int(c["owner"])) or c["owner"] == Types.PLAYER):
 			c["controller"] = c["owner"]
 			returned.append(c["id"])
 	var annexed: Array[int] = []

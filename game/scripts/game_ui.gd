@@ -404,7 +404,21 @@ func set_primary(kind: String, title: String, color := Color(0.13, 0.4, 0.9), en
 	_action2_kind = kind if enabled else ""
 	_action2.visible = kind != ""
 	_action2_lbl.text = title
-	_fit(_action2_lbl, 26, 250.0)
+	if title.contains("\n"):  # two lines (e.g. «Наступление / на «Кремнёвые Бароны»»): each fitted to the width
+		var f := _action2_lbl.get_theme_font("font")
+		var fs := 22
+		for line in title.split("\n"):
+			while fs > 14 and f.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > 250.0:
+				fs -= 1
+		_action2_lbl.add_theme_font_size_override("font_size", fs)
+		_action2_lbl.position = Vector2(0, 10)
+		_action2_lbl.size = Vector2(266, 72)
+		_action2_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	else:
+		_action2_lbl.position = Vector2(0, 26)
+		_action2_lbl.size = Vector2(266, 40)
+		_action2_lbl.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+		_fit(_action2_lbl, 26, 250.0)
 	_action2.add_theme_stylebox_override("panel", _style(color, 16, Color(1, 1, 1, 0.6), 3))
 	_action2.modulate = Color(1, 1, 1, 1) if enabled else Color(0.72, 0.72, 0.72, 1)  # opaque: the HUD button below must not show through
 
@@ -819,6 +833,7 @@ func show_choice(title: String, lines: Array, buttons: Array) -> void:
 	var h := 150.0 + text_h + 96.0 * buttons.size()
 	var box := _modal_box(Rect2(60, maxf(200.0, (VH - h) / 2.0 - 80.0), 821, h))
 	var t := _label(title, 34, Color(1.0, 0.85, 0.4))
+	_fit(t, 34, 780.0)
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_at(t, box, Vector2(0, 28), Vector2(821, 46))
 	var y := 96.0
@@ -1189,7 +1204,10 @@ func _diplomacy_card(it: Dictionary) -> Control:
 	var op := _label(tr("dipl.opinion") % [roundi(v), it["word"]], 16, Color(0.5, 1.0, 0.6) if v > 10.0 else (Color(1.0, 0.55, 0.45) if v < -10.0 else TEXT), false)
 	op.position = Vector2(12, 56)
 	card.add_child(op)
-	var stt := _label(it["status"] if String(it.get("ai_ally", "")) == "" else "%s · %s" % [it["status"], tr("dipl.ai_ally") % it["ai_ally"]], 16, Color(1.0, 0.85, 0.4), false)
+	var st_text: String = it["status"] if String(it.get("ai_ally", "")) == "" else "%s · %s" % [it["status"], tr("dipl.ai_ally") % it["ai_ally"]]
+	if it.has("share"):  # a coalition member's share of the war score (06 §14.6)
+		st_text = tr("dipl.share") % float(it["share"])
+	var stt := _label(st_text, 16, Color(1.0, 0.85, 0.4), false)
 	stt.position = Vector2(12, 82)
 	card.add_child(stt)
 	var id: int = it["id"]

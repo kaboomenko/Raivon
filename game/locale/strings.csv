@@ -847,3 +847,18 @@ swap.accept,Согласиться,Accept
 swap.decline,Отказаться,Decline
 inbox.swap_offer.title,«%s» предлагает обмен,“%s” proposes a swap
 inbox.swap_offer.text,"«%s» предлагает обменять гексы, чтобы выпрямить общую границу. Ответить можно в течение суток.",“%s” offers to swap hexes to straighten the common border. You can answer within a day.
+toast.separate_gold,«%s» вышли из коалиции: сепаратный мир и %d золота контрибуции,“%s” left the coalition: a separate peace and %d gold of contribution
+inbox.separate_offer.title,«%s» просят сепаратного мира,“%s” ask for a separate peace
+inbox.separate_offer.text,«%s» устали от войны и готовы выйти из коалиции. Ответить можно на вкладке «Дипломатия».,“%s” are tired of the war and ready to leave the coalition. You can answer on the Diplomacy tab.
+separate.offer_title,«%s» просят сепаратного мира,“%s” ask for a separate peace
+separate.offer_line,«%s» выйдут из войны против вас; армии «%s» потеряют их силу. Перемирие 24 ч.,“%s” will leave the war against you; the armies of “%s” lose their strength. A 24 h truce.
+separate.share,Их доля в счёте войны: %.1f — «%s» уже проигрывают,Their share of the war score: %.1f — “%s” are already losing
+separate.terms,Условия: %d золота контрибуции,Terms: %d gold of contribution
+separate.terms_white,Условия: белый мир,Terms: a white peace
+separate.accept,Принять мир,Accept the peace
+separate.decline,Воевать дальше,Fight on
+dipl.share,Доля в счёте: %.1f,Score share: %.1f
+toast.front,Следующее наступление — на «%s»,The next offensive goes against “%s”
+ui.offensive_on,на «%s»,vs “%s”
+toast.separate_land,"«%s» вышли из коалиции: гексов отошло %d, контрибуция %d золота","“%s” left the coalition: %d hexes ceded, %d gold of contribution"
+separate.terms_land,"Условия: занятые вами гексы (%d) отходят вам, контрибуция %d золота","Terms: the hexes you hold (%d) become yours, %d gold of contribution"

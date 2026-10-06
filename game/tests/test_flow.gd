@@ -890,6 +890,59 @@ func _run() -> void:
 	g._coalition_tick(g.now_s())
 	_check(not g.war.is_empty() and g.war.has("coalition") and g.war.has("strike_at"), "after 12 h the coalition declares war with a first strike")
 	_check(int(g.war["enemy"]) == g._coalition_leader(g.war["coalition"]), "the leader fights the war")
+	# members' shares of the war score (06 §14.6), battles on a member's land and a member asking for a separate
+	# peace (06 §9.1 S8)
+	g.war["battles"] = 4
+	g._set_mode(g.Mode.WAR)
+	g.ui.close_modal()
+	var mem := -1
+	for m in g.war["coalition"]:
+		if int(m) != int(g.war["enemy"]) and (mem < 0 or float(g.SEPARATE_AT.get(String(g.sim.states[int(m)]["archetype"]), 30.0)) < float(g.SEPARATE_AT.get(String(g.sim.states[mem]["archetype"]), 30.0))):
+			mem = int(m)
+	var mem_hex := -1
+	for c in g.sim.cells:
+		if int(c["owner"]) == mem and Types.is_passable(c):
+			mem_hex = c["id"]
+	g._select(mem_hex)
+	_check(g._front() == mem, "a tap on a member's hex makes it the front")
+	g._select(-1)
+	var need_sh: float = g.SEPARATE_AT.get(String(g.sim.states[mem]["archetype"]), 30.0)
+	var mem_core: Dictionary = g.MapGen.core_of(g.sim, mem)
+	var taken: Array = []
+	for core_pass in [false, true]:  # its outer land first, then the core and the capital (occupied, never annexed)
+		for c in g.sim.cells:
+			if g._member_share(mem) >= need_sh:
+				break
+			if int(c["owner"]) == mem and int(c["controller"]) == mem and Types.is_passable(c) and mem_core.has(c["id"]) == core_pass:
+				c["controller"] = Types.PLAYER
+				taken.append(c["id"])
+	var ws_c: float = float(g.War.war_score(g.sim, g.war)["score"])
+	var shares := 0.0
+	for m in g.war["coalition"]:
+		if int(m) != int(g.war["enemy"]):
+			shares += g._member_share(int(m))
+	_check(ws_c > 0.0 and shares > 0.0 and shares <= ws_c + 0.2, "members' shares are part of the score (%.1f of %.1f)" % [shares, ws_c])
+	var reached: bool = g._member_share(mem) >= need_sh
+	g._separate_offer_tick(g.now_s())
+	_check(g.ui.has_modal() == reached, "the member over its threshold asks for a separate peace (%.1f / %.1f)" % [g._member_share(mem), need_sh])
+	_check((g._diplomacy_items(g.now_s()).filter(func(x): return x.has("share")) as Array).size() == (g.war["coalition"] as Array).size(), "Diplomacy shows the members' shares")
+	g.ui.close_modal()
+	if reached:
+		var plan: Dictionary = g._separate_plan(mem)
+		g._separate_peace(mem)
+		var ours := 0
+		for h in plan["annex"]:
+			if int(g.sim.cells[h]["owner"]) == Types.PLAYER:
+				ours += 1
+		_check(ours == (plan["annex"] as Array).size() and int(plan["gold"]) >= 0, "the separate peace cedes %d occupied hexes, %d gold" % [ours, int(plan["gold"])])
+		for h in plan["annex"]:
+			_check(not mem_core.has(h), "no core hex is ceded")
+		var back := true
+		for h in taken:
+			if not (plan["annex"] as Array).has(h) and int(g.sim.cells[h]["controller"]) != mem:
+				back = false
+		_check(back and not (g.war["coalition"] as Array).has(mem), "the rest of its land goes back, it leaves the war")
+	g.war["battles"] = 0
 	# separate peace with a non-leader member: it leaves, the leader's armies lose its share
 	var lead: int = g.war["enemy"]
 	var other := -1

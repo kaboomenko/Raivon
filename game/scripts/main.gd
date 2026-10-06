@@ -508,7 +508,7 @@ func _primary_for_selection() -> void:
 
 ## «Наступление», or a march timer while every army is still on its way to the front (none touches the enemy).
 func _offensive_primary() -> void:
-	var enemy: int = war.get("enemy", -1)
+	var enemy: int = _front()
 	var wait := 0
 	for a in _player_armies():
 		if _touches_owner(int(a["hex"]), enemy) and not March.is_marching(a):
@@ -519,6 +519,8 @@ func _offensive_primary() -> void:
 			wait = left if wait == 0 else mini(wait, left)
 	if wait > 0:
 		ui.set_primary("wait", tr("ui.armies_marching") % GameUI.fmt_time(wait), Color(0.3, 0.35, 0.45), false)
+	elif war.has("coalition"):
+		ui.set_primary("offensive", "%s\n%s" % [tr("ui.offensive"), tr("ui.offensive_on") % _state_name(enemy)], Color(0.8, 0.22, 0.16))
 	else:
 		ui.set_primary("offensive", tr("ui.offensive"), Color(0.8, 0.22, 0.16))
 
@@ -1007,6 +1009,16 @@ func _coalition_war(now: int) -> void:
 	war = War.declare_war(sim, leader, goals[0])
 	war["by_ai"] = 1
 	war["coalition"] = members
+	var v0: Array = []
+	for m in members:
+		v0.append(MapGen.official_value(sim, int(m)))
+	war["coalition_v0"] = v0  # D_M at the war's start: the members' shares of the war score (06 §14.6)
+	var d_all := 0
+	for v in v0:
+		d_all += int(v)
+	if not members.has(leader):
+		d_all += int(war["enemy_value0"])
+	war["coalition_d"] = d_all  # D = Σ official values of all sides at the start, fixed for the whole war
 	# what a separate peace needs to take a member's strength back out of the leader's armies
 	war["coalition_p"] = p_each
 	war["coalition_lead_p"] = p_leader
@@ -1039,6 +1051,45 @@ func _coalition_war(now: int) -> void:
 
 # ---------------------------------------------------------------------- separate peace and subsidies (canon §10.8)
 
+## A member's share of the war score (06 §14.6):
+## доля_M = Оккупация_M + Цель_M + Столица_M + Бои × D_M / D − Потери_M; the leader keeps the rest (Σ = ВС).
+func _member_share(s: int) -> float:
+	if war.is_empty() or not war.has("coalition"):
+		return 0.0
+	var members: Array = war["coalition"]
+	var i := members.find(s)
+	if i < 0:
+		return 0.0
+	if s == int(war["enemy"]):  # the leader's share is the rest (03 §16.4)
+		var rest := float(War.war_score(sim, war)["score"])
+		for m in members:
+			if int(m) != s:
+				rest -= _member_share(int(m))
+		return Types.round1(rest)
+	var v0: Array = war.get("coalition_v0", [])
+	var dm := float(v0[i]) if i < v0.size() else float(MapGen.official_value(sim, s))
+	var d := float(War.denominator(war))
+	var occ := 0
+	var lost := 0
+	for c in sim.cells:
+		if not Types.is_passable(c):
+			continue
+		if int(c["owner"]) == s and c["controller"] == Types.PLAYER:
+			occ += int(c["value"])
+		if c["owner"] == Types.PLAYER and int(c["controller"]) == s:
+			lost += int(c["value"])
+	var ws := War.war_score(sim, war)
+	var share := 100.0 * occ / d - 100.0 * lost / maxf(1.0, float(war["player_value0"])) + float(ws["battles"]) * dm / d
+	if int(war["goal"]) >= 0 and int(sim.cells[war["goal"]]["owner"]) == s and sim.cells[war["goal"]]["controller"] == Types.PLAYER:
+		share += 10.0
+	if int(war["ai_goal"]) >= 0 and int(sim.cells[war["ai_goal"]]["controller"]) == s:
+		share -= 10.0
+	var cap: int = sim.states[s]["capital_id"]
+	if cap >= 0 and sim.cells[cap]["controller"] == Types.PLAYER:
+		share += 20.0
+	return Types.round1(share)
+
+
 ## A coalition member other than the leader can make a separate peace while the war is not lost (score ≥ 0).
 func _can_separate(s: int) -> bool:
 	if war.is_empty() or not war.has("coalition") or int(war["enemy"]) == s:
@@ -1046,12 +1097,55 @@ func _can_separate(s: int) -> bool:
 	return (war["coalition"] as Array).has(s) and float(War.war_score(sim, war)["score"]) >= 0.0
 
 
-## Separate peace (canon §10.8): the member leaves the war with a 24 h truce; its share of the coalition's
-## strength leaves the leader's armies.
+## What a member gives for leaving (06 §14.6): its occupied hexes outside its core by value while their price
+## fits its share, then 1 h of gold per 5 points left, at most 4 h (the contribution package, 06 §3.5).
+func _separate_plan(s: int) -> Dictionary:
+	var budget := maxf(0.0, _member_share(s))
+	var core := MapGen.core_of(sim, s)
+	var occ: Array = []
+	for c in sim.cells:
+		if int(c["owner"]) == s and c["controller"] == Types.PLAYER and Types.is_passable(c) and not core.has(c["id"]):
+			occ.append(c)
+	occ.sort_custom(func(a, b): return int(a["value"]) > int(b["value"]) or (int(a["value"]) == int(b["value"]) and int(a["id"]) < int(b["id"])))
+	var annex: Array = []
+	for c in occ:
+		var cost := War.hex_peace_cost(sim, war, int(c["id"]))
+		if cost <= budget + 1e-9:
+			annex.append(int(c["id"]))
+			budget -= cost
+	var hours := clampi(int(floor(budget / 5.0)), 0, 4)
+	return {"annex": annex, "gold": hours * maxi(60, int(econ.gross_per_hour(sim).get("gold", 0)))}
+
+
+func _separate_gold(s: int) -> int:
+	return int(_separate_plan(s)["gold"])
+
+
+## Separate peace (canon §10.8): the member leaves the war with a 24 h truce and pays its contribution; its share
+## of the coalition's strength leaves the leader's armies.
 func _separate_peace(s: int) -> void:
 	if not _can_separate(s):
 		ui.toast(tr("separate.cant"))
 		return
+	var plan := _separate_plan(s)
+	var gold: int = plan["gold"]
+	var annex: Array = plan["annex"]
+	for c in sim.cells:
+		if not Types.is_passable(c):
+			continue
+		var id: int = c["id"]
+		if annex.has(id):
+			c["owner"] = Types.PLAYER
+			c["controller"] = Types.PLAYER
+			c["fort"] = 0
+		elif int(c["owner"]) == s and c["controller"] != s:
+			c["controller"] = s  # the rest of its land goes back
+		elif c["owner"] == Types.PLAYER and int(c["controller"]) == s:
+			c["controller"] = Types.PLAYER
+		else:
+			continue
+		map_view.refresh_hex(id)
+	map_view.mark_dirty()
 	var members: Array = war["coalition"]
 	var i := members.find(s)
 	var ps: Array = war.get("coalition_p", [])
@@ -1069,15 +1163,71 @@ func _separate_peace(s: int) -> void:
 	members.remove_at(i)
 	if i < ps.size():
 		ps.remove_at(i)
+	var v0: Array = war.get("coalition_v0", [])
+	if i < v0.size():
+		v0.remove_at(i)  # the war's D stays as it was (06 §14.6): only the member's own D_M leaves
 	war["coalition_f"] = roundi(f_new * 1000.0)
 	truce[s] = now_s() + TRUCE_SEC
 	_opinion_add(s, 10.0)
+	if gold > 0:
+		econ.add_resources({"gold": gold})
 	sfx.play("seal")
 	_post(L.pack("inbox.separate.title", [_state_key(s)]), L.pack("inbox.separate.text", [_state_key(s), _state_key(int(war["enemy"]))]))
-	ui.toast(tr("toast.separate") % _state_name(s))
+	if not annex.is_empty():
+		ui.toast(tr("toast.separate_land") % [_state_name(s), annex.size(), gold])
+	else:
+		ui.toast(tr("toast.separate") % _state_name(s) if gold == 0 else tr("toast.separate_gold") % [_state_name(s), gold])
+	if int(war.get("front", -1)) == s:
+		war.erase("front")
+	_normalize_armies()
 	map_view.sync_armies(armies, null)
 	_refresh_ui()
 	_autosave()
+
+
+## Members propose a separate peace themselves (06 §9.1, S8) once their share reaches the archetype's threshold;
+## the leader never does. One proposal per member and 6 h; it waits while a battle or another window is open.
+const SEPARATE_AT := {"wolf": 30.0, "fox": 15.0, "turtle": 20.0, "raven": 10.0, "owl": 25.0}
+const SEPARATE_ASK_SEC := 6 * 3600
+
+
+func _separate_offer_tick(now: int) -> void:
+	if war.is_empty() or not war.has("coalition") or mode != Mode.WAR or ui.has_modal() or shop != null:
+		return
+	for m in (war["coalition"] as Array):
+		var s := int(m)
+		var key := "sep_ask_%d" % s
+		if now < int(war.get(key, 0)) or not _can_separate(s):
+			continue
+		var need: float = SEPARATE_AT.get(String(sim.states[s]["archetype"]), 30.0)
+		var share := _member_share(s)
+		if share < need:
+			continue
+		war[key] = now + SEPARATE_ASK_SEC
+		_post(L.pack("inbox.separate_offer.title", [_state_key(s)]), L.pack("inbox.separate_offer.text", [_state_key(s)]))
+		_show_separate_offer(s)
+		return
+
+
+func _show_separate_offer(s: int) -> void:
+	var plan := _separate_plan(s)
+	var gold: int = plan["gold"]
+	var n: int = (plan["annex"] as Array).size()
+	var terms: String = tr("separate.terms_white")
+	if n > 0:
+		terms = tr("separate.terms_land") % [n, gold]
+	elif gold > 0:
+		terms = tr("separate.terms") % gold
+	ui.show_choice(tr("separate.offer_title") % _state_name(s), [
+		tr("separate.offer_line") % [_state_name(s), _state_name(int(war["enemy"]))],
+		tr("separate.share") % [_member_share(s), _state_name(s)],
+		terms,
+	], [
+		[tr("separate.accept"), Color(0.16, 0.55, 0.3), func():
+			ui.close_modal()
+			_separate_peace(s)],
+		[tr("separate.decline"), Color(0.3, 0.33, 0.4), func(): ui.close_modal()],
+	])
 
 
 ## Subsidies (canon §10.8): with the alarm at 50%+, a neighbour with opinion ≤ −25 may fund the state at war with
@@ -1465,7 +1615,7 @@ func _show_swap_offer() -> void:
 		swap_offer = {}
 		return
 	var t := _swap_terms(s, give, get_l)
-	var lines: Array = [tr("swap.ai_offer_line") % _state_name(s)]
+	var lines: Array = [tr("swap.ai_offer_line")]
 	var sl := _swap_lines(s, give, get_l, t)
 	lines.append_array(sl.slice(0, 3))
 	lines.append(sl[4])
@@ -1734,6 +1884,11 @@ func _on_hex_tapped(c: Vector2i) -> void:
 
 func _select(id: int) -> void:
 	selected = id
+	if id >= 0 and mode == Mode.WAR and war.has("coalition"):
+		var own: int = sim.cells[id]["owner"]
+		if War.sides(war).has(own) and own != _front():
+			war["front"] = own  # the next offensive goes against this member (06 §14.6)
+			ui.toast(tr("toast.front") % _state_name(own))
 	if id < 0:
 		selection.visible = false
 		_refresh_ui()
@@ -2062,8 +2217,18 @@ func _normalize_armies() -> void:
 
 # ====================================================================== battle
 
+## The state the next offensive goes against: in a coalition war the member the player picked on the map
+## (a tap on its hex), else the enemy.
+func _front() -> int:
+	if war.is_empty():
+		return -1
+	var f := int(war.get("front", war["enemy"]))
+	return f if War.sides(war).has(f) else int(war["enemy"])
+
+
 func _start_offensive() -> void:
-	var enemy: int = war["enemy"]
+	var enemy: int = _front()
+	_ensure_armies_for(enemy)
 	_stop_marches()
 	for a in armies:
 		# The AI refills between offensives (canon 11 §15.1); the player's armies heal over time for food.
@@ -4165,6 +4330,8 @@ func _diplomacy_items(now: int) -> Array:
 			"separate": _can_separate(s),
 			"swap_reason": _swap_reason(s),
 			"color": map_view.state_color(s)}))
+		if not war.is_empty() and (war.get("coalition", []) as Array).has(s):
+			(items[items.size() - 1] as Dictionary)["share"] = _member_share(s)
 	return items
 
 
@@ -4587,6 +4754,7 @@ func _ai_tick(now: int) -> void:
 	_ultimatum_rolls(now)
 	_coalition_tick(now)
 	_subsidy_tick(now)
+	_separate_offer_tick(now)
 	if war.is_empty():
 		return
 	if war.has("strike_at"):
@@ -5225,7 +5393,8 @@ func _demo(spec: String) -> void:
 			return
 		_show_swap_offer()
 		return
-	if what == "coalition":  # «Тревога соседей» over 100%: a coalition is forming (Diplomacy tab)
+	if what == "coalition" or what == "separate":  # «Тревога соседей» over 100%: a coalition is forming (Diplomacy tab);
+		# separate — 12 h later the coalition is at war, the player holds a member's land and it asks for peace
 		await _world_expansion()
 		ui.close_modal()
 		await _world_expansion()
@@ -5256,6 +5425,33 @@ func _demo(spec: String) -> void:
 		_coalition_tick(now_s())
 		rig.focus(map_view.cell_world(sim.states[Types.PLAYER]["capital_id"]), 0.6)
 		_open_tab("diplomacy")
+		if what == "separate":
+			time_offset += 12 * 3600 + 60
+			_coalition_tick(now_s())
+			if war.is_empty() or not war.has("coalition"):
+				print("no coalition war")
+				return
+			war.erase("strike_at")
+			war["battles"] = 4
+			var mem := -1
+			for m in war["coalition"]:
+				if int(m) != int(war["enemy"]) and (mem < 0 or float(SEPARATE_AT.get(String(sim.states[int(m)]["archetype"]), 30.0)) < float(SEPARATE_AT.get(String(sim.states[mem]["archetype"]), 30.0))):
+					mem = int(m)
+			var need: float = SEPARATE_AT.get(String(sim.states[mem]["archetype"]), 30.0)
+			var mcore := MapGen.core_of(sim, mem)
+			for core_pass in [false, true]:
+				for c in sim.cells:
+					if _member_share(mem) >= need:
+						break
+					if int(c["owner"]) == mem and int(c["controller"]) == mem and Types.is_passable(c) and mcore.has(c["id"]) == core_pass:
+						c["controller"] = Types.PLAYER
+						map_view.refresh_hex(c["id"])
+			map_view.mark_dirty()
+			_normalize_armies()
+			map_view.sync_armies(armies, null)
+			_set_mode(Mode.WAR)
+			rig.focus(map_view.cell_world(sim.states[mem]["capital_id"]), 0.6)
+			_separate_offer_tick(now_s())
 		return
 	if what == "ch4":  # chapter IV «Индустриальный пояс»: the ceremony; ch4:<biome> — that biome up close
 		await _world_expansion()
