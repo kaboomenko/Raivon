@@ -531,3 +531,8 @@ inbox.ai_war.title,Война соседей,Neighbours at war
 inbox.ai_war.text,"%s напали на %s. Их фронт виден по штриховке; гарнизоны воюющих слабее на других границах.","%s attacked %s. Their front shows as hatching; the warring states have weaker garrisons on their other borders."
 inbox.ai_peace.title,Соседи помирились,Neighbours made peace
 inbox.ai_peace.text,"%s и %s подписали мир: к победителю перешло гексов — %d.","%s and %s signed a peace: %d hexes went to the winner."
+cell.ch2_vein,Речной кристалл,River Crystal
+cell.ch2_dark_lake,Чёрная заводь,Black Backwater
+kind.raivite_vein,Райвитовая жила,Raivite vein
+kind.dark_lake,Тёмное озеро,Dark Lake
+tile.vein,"2 Райвита / 12 ч · накоплено %d/4","2 Raivites / 12 h · stored %d/4"

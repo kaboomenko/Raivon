@@ -26,6 +26,8 @@ const KIND_VALUE := {
 	"military_base": 3,
 	"city": 4,
 	"capital": 10,
+	"raivite_vein": 5,  # 2 Raivites every 12 h, holds up to 4 (canon §5.1)
+	"dark_lake": 1,  # dormant oil in chapters I–II
 }
 
 

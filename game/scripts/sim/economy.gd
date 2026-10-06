@@ -156,6 +156,11 @@ var damaged: Dictionary = {}
 const REPAIR_SEC := 600
 const REPAIR_PCT := 5
 const DAMAGE_KINDS: Array[String] = ["city", "farm", "mine", "port"]
+## Raivite veins (canon §5.1): accumulated production seconds per vein hex; 2 Raivites per 12 h held up to 4,
+## an occupied vein 1 per 12 h up to 2 (counted as half-speed seconds with a halved cap).
+var vein_secs: Dictionary = {}
+const VEIN_SEC_PER_RAIVITE := 21600
+const VEIN_CAP := 4
 var _rate_t: int = -1  # time the temporary modifiers are evaluated at (inside _accrue), else last_tick
 var _events: Array = []
 ## Cache of the player's land, refreshed whenever a world is passed in.
@@ -593,6 +598,7 @@ func to_dict() -> Dictionary:
 		"stock_rem": _stock_rem.duplicate(true),
 		"upkeep_rem": _upkeep_rem,
 		"food_rem": _food_rem,
+		"vein_secs": vein_secs.duplicate(),
 		"ruin_pct": ruin_pct,
 		"ruin_until": ruin_until,
 		"damaged": damaged.duplicate(),
@@ -633,6 +639,9 @@ static func from_dict(d: Dictionary) -> RefCounted:
 	e._stock_rem = _int_keyed(d.get("stock_rem", {}))
 	e._upkeep_rem = int(d.get("upkeep_rem", 0))
 	e._food_rem = int(d.get("food_rem", 0))
+	var vs: Dictionary = d.get("vein_secs", {})
+	for k in vs:
+		e.vein_secs[int(k)] = int(vs[k])
 	e.ruin_pct = int(d.get("ruin_pct", 0))
 	e.ruin_until = int(d.get("ruin_until", 0))
 	var dm: Dictionary = d.get("damaged", {})
@@ -1070,7 +1079,32 @@ func _accrue(world: World, a: int, b: int) -> void:
 	if whole > 0:
 		res["gold"] = maxi(0, int(res["gold"]) - whole)
 	_take_pool_first("food", army_food_milli, dt)
+	for c in world.cells:
+		if c["kind"] != "raivite_vein" or c["controller"] != Types.PLAYER:
+			continue
+		var h: int = c["id"]
+		var occupied: bool = c["owner"] != Types.PLAYER
+		var cap: int = VEIN_CAP * VEIN_SEC_PER_RAIVITE / (2 if occupied else 1)
+		var add := dt / 2 if occupied else dt
+		vein_secs[h] = mini(cap, int(vein_secs.get(h, 0)) + add)
 	_prune_stock()
+
+
+## Raivites waiting on a vein hex.
+func vein_amount(hex: int) -> int:
+	return int(vein_secs.get(hex, 0)) / VEIN_SEC_PER_RAIVITE
+
+
+## Moves every whole Raivite from the veins to the purse (no storage cap for Raivites). Returns how many.
+func collect_veins() -> int:
+	var got := 0
+	for h in vein_secs.keys():
+		var n := vein_amount(int(h))
+		if n > 0:
+			got += n
+			vein_secs[h] = int(vein_secs[h]) - n * VEIN_SEC_PER_RAIVITE
+	res[RAIVITE] = int(res.get(RAIVITE, 0)) + got
+	return got
 
 
 ## Army upkeep (04 §6.1): `milli_per_h` × dt in whole units, first from the uncollected pool (hex id order),

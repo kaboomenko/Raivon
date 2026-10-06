@@ -328,6 +328,69 @@ func _place_camp(hex: int, holder: Node3D) -> void:
 	_camp_icon(hex, holder)
 
 
+## Raivite vein: a cluster of glowing blue crystals on a rocky outcrop (until a baked model exists).
+func _place_vein(holder: Node3D) -> void:
+	var rock := StandardMaterial3D.new()
+	rock.albedo_color = Color(0.45, 0.43, 0.4)
+	var glow := StandardMaterial3D.new()
+	glow.albedo_color = Color(0.12, 0.42, 1.0)
+	glow.metallic = 0.3
+	glow.roughness = 0.15
+	glow.emission_enabled = true
+	glow.emission = Color(0.05, 0.3, 0.95)
+	glow.emission_energy_multiplier = 0.7
+	var base := MeshInstance3D.new()
+	var bm := CylinderMesh.new()
+	bm.top_radius = 0.42
+	bm.bottom_radius = 0.55
+	bm.height = 0.14
+	bm.radial_segments = 7
+	bm.material = rock
+	base.mesh = bm
+	base.position.y = 0.07
+	holder.add_child(base)
+	for i in 7:
+		var cr := MeshInstance3D.new()
+		var cm := CylinderMesh.new()
+		cm.top_radius = 0.0
+		cm.bottom_radius = 0.07 + 0.03 * float(i % 3)
+		cm.height = 0.35 + 0.12 * float((i * 5) % 4)
+		cm.radial_segments = 6
+		cm.material = glow
+		cr.mesh = cm
+		var a := TAU * i / 7.0
+		var r := 0.0 if i == 0 else 0.22
+		cr.position = Vector3(cos(a) * r, 0.14 + cm.height / 2.0, sin(a) * r)
+		cr.rotation = Vector3(sin(a) * 0.35 * (1 if i else 0), 0, cos(a) * 0.35 * (1 if i else 0))
+		holder.add_child(cr)
+	var light := OmniLight3D.new()
+	light.light_color = Color(0.4, 0.75, 1.0)
+	light.omni_range = 1.4
+	light.light_energy = 0.8
+	light.position.y = 0.5
+	holder.add_child(light)
+
+
+## Dark Lake: a still black-violet pool with an oily sheen — dormant oil (canon §5.1).
+func _place_dark_lake(holder: Node3D) -> void:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.07, 0.06, 0.12)
+	m.metallic = 0.6
+	m.roughness = 0.08
+	var pool := MeshInstance3D.new()
+	var pm := CylinderMesh.new()
+	pm.top_radius = 0.62
+	pm.bottom_radius = 0.62
+	pm.height = 0.03
+	pm.radial_segments = 9
+	pm.material = m
+	pool.mesh = pm
+	pool.position.y = 0.02
+	holder.add_child(pool)
+	for o in [Vector3(-0.55, 0, 0.3), Vector3(0.5, 0, -0.35), Vector3(0.1, 0, 0.6)]:
+		spawn("rock", holder, o, rng.randf() * TAU, 0.9)
+
+
 ## Rotation that turns a port model's water inlet (+X in the model) toward the hex's water neighbour.
 func _water_side(c: Dictionary) -> float:
 	for i in 6:
@@ -421,6 +484,14 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 			return
 		"mine":
 			spawn("mine", holder, p, 0.2, 1.1)
+			return
+		"raivite_vein":
+			_place_vein(holder)
+			_place_fort(c, holder)
+			return
+		"dark_lake":
+			_place_dark_lake(holder)
+			_place_fort(c, holder)
 			return
 		"port":
 			if has_model("port"):
@@ -1017,7 +1088,7 @@ func set_bubbles(data: Dictionary) -> void:
 			_bubbles.erase(h)
 	for h in data:
 		var node: Node3D = _bubbles.get(h)
-		var icon_name: String = {"gold": "coin", "food": "food", "metal": "metal"}.get(data[h]["res"], "coin")
+		var icon_name: String = {"gold": "coin", "food": "food", "metal": "metal", "raivite": "raivite"}.get(data[h]["res"], "coin")
 		if node == null:
 			node = Node3D.new()
 			node.position = cell_world(h) + Vector3(0, 2.0, 0)

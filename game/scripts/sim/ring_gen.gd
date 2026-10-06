@@ -25,13 +25,15 @@ const MAX_OLD_EDGES := 3  # a new state touches the old world by ≤3 edges (02 
 const CAP_SPACING := 5
 const AI_START_DL := 3  # previous chapter cap 2 + 1 (canon §9.16)
 ## Ring II special hexes (02 §15.4; veins and Dark Lakes are not in the client yet).
-const QUOTA := {"city": 2, "farm": 3, "mine": 3, "port": 2, "military_base": 1}
+const QUOTA := {"city": 2, "farm": 3, "mine": 3, "port": 2, "military_base": 1, "raivite_vein": 1, "dark_lake": 1}
 const NAMES := {
 	"city": ["cell.ch2_city_ford", "cell.ch2_city_bridge"],
 	"farm": ["cell.ch2_farm_reed", "cell.ch2_farm_willow", "cell.ch2_farm_delta"],
 	"mine": ["cell.ch2_mine_granite", "cell.ch2_mine_slate", "cell.ch2_mine_iron"],
 	"port": ["cell.ch2_port_fish", "cell.ch2_port_salt"],
 	"military_base": ["cell.ch2_base"],
+	"raivite_vein": ["cell.ch2_vein"],
+	"dark_lake": ["cell.ch2_dark_lake"],
 }
 
 
@@ -291,7 +293,7 @@ static func _try(w: World, seed_value: int) -> Dictionary:
 		return {}
 	# special hexes: ports on land next to water, then cities, farms, mines, the base — by score, ties by seed
 	var specials: Array = []
-	for kind in ["port", "city", "military_base", "farm", "mine"]:
+	for kind in ["raivite_vein", "port", "city", "military_base", "farm", "mine", "dark_lake"]:
 		var n_kind: int = QUOTA[kind]
 		var pool: Array = land.filter(func(c): return c["kind"] == "plain" and c != caps[0] and c != caps[1])
 		if kind == "port":

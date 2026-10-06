@@ -40,7 +40,8 @@ const CHAPTER_GOALS: Array[int] = [0, 20, 36]  # official hexes per chapter (can
 const COLONIZE_SEC: Array[int] = [0, 60, 300]  # 1 min in chapter I, 5 min in II (canon §12.1)
 const TRUCE_SEC := 30 * 60
 ## Translation keys of unnamed hexes: by kind, else by terrain.
-const KIND_NAMES := {"capital": "kind.capital", "city": "kind.city", "farm": "kind.farm", "mine": "kind.mine", "port": "kind.port", "military_base": "kind.military_base"}
+const KIND_NAMES := {"capital": "kind.capital", "city": "kind.city", "farm": "kind.farm", "mine": "kind.mine", "port": "kind.port", "military_base": "kind.military_base",
+	"raivite_vein": "kind.raivite_vein", "dark_lake": "kind.dark_lake"}
 const TERRAIN_NAMES := {"plain": "terrain.plain", "forest": "terrain.forest", "hills": "terrain.hills", "water": "terrain.water", "mountain": "terrain.mountain"}
 
 var sim  # sim World
@@ -934,6 +935,8 @@ func _describe(id: int) -> Dictionary:
 				parts.append(tr("tile.income") % [inc[r], tr("res.short." + String(r))])
 		if parts.size() > 0:
 			bonus = " · ".join(parts)
+		if c["kind"] == "raivite_vein":
+			bonus = tr("tile.vein") % econ.vein_amount(id)
 		if own == Types.PLAYER and econ.damaged.has(id):
 			bonus += " · " + tr("tile.damaged")
 		if own == Types.PLAYER and econ.ruin_left(now_s()) > 0:
@@ -2164,6 +2167,9 @@ func _update_bubbles() -> void:
 		var amount: int = st[best]
 		if amount >= 10 and amount * 4 >= int(inc.get(best, 0)):
 			data[int(h)] = {"res": best, "amount": amount}
+	for h in econ.vein_secs:
+		if econ.vein_amount(int(h)) >= 1:
+			data[int(h)] = {"res": "raivite", "amount": econ.vein_amount(int(h))}
 	map_view.set_bubbles(data)
 
 
@@ -2173,8 +2179,15 @@ func _collect_all() -> void:
 	var shown := {}
 	for h in econ.stock:
 		shown[h] = econ.stock[h].duplicate()
+	var veins := {}
+	for h in econ.vein_secs:
+		if econ.vein_amount(int(h)) > 0:
+			veins[int(h)] = econ.vein_amount(int(h))
 	var gained: Dictionary = econ.collect_all()
-	var total := 0
+	var crystals: int = econ.collect_veins()
+	for h in veins:
+		map_view.floater(int(h), "+%d" % int(veins[h]), Color(0.55, 0.85, 1.0))
+	var total := crystals
 	for r in gained:
 		total += int(gained[r])
 	if total == 0:
@@ -3537,7 +3550,10 @@ func _demo(spec: String) -> void:
 		_on_hud_button("gear")
 		return
 	if what == "ch2":
-		_world_expansion()
+		if parts.size() > 1:
+			await _world_expansion()
+		else:
+			_world_expansion()
 		if parts.size() > 1:  # ch2:port / ch2:military_base / ch2:camp — look at a ring II feature
 			ui.close_modal()
 			for c in sim.cells:

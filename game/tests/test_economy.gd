@@ -38,6 +38,7 @@ func _init() -> void:
 		["refusal reasons are translation keys; l10n.t() renders them in ru / en", _test_reason_text],
 		["army food upkeep: pool first, then storage, no debt, 8 h pause", _test_army_food],
 		["ruin and damaged buildings: −%, no stacking, repair, save", _test_ruin],
+		["raivite vein: 2 per 12 h up to 4, occupied 1 up to 2", _test_vein],
 		["market: rates, floor, warehouse cut, no raivites", _test_market],
 		["market trader: daily lots, one buy each, 04:00 refresh, save", _test_trader],
 	]
@@ -655,3 +656,41 @@ func _test_ruin() -> void:
 	var e2: Economy = Economy.from_dict(JSON.parse_string(JSON.stringify(e.to_dict())))
 	_eq([e2.ruin_pct, e2.ruin_until, e2.damaged], [e.ruin_pct, e.ruin_until, e.damaged], "round trip keeps ruin and damage")
 	_check(farm >= -1, "ok")
+
+
+func _test_vein() -> void:
+	var w := _world()
+	var e := Economy.new(w, T0)
+	var cap: int = w.states[PLAYER]["capital_id"]
+	var vh := -1
+	for n in w.neighbors[cap]:
+		if n >= 0 and w.cells[n]["kind"] == "plain":
+			vh = n
+			break
+	w.cells[vh]["kind"] = "raivite_vein"
+	e.collect_all()
+	e.tick(w, T0 + 6 * 3600)
+	_eq(e.vein_amount(vh), 1, "1 Raivite after 6 h")
+	e.tick(w, T0 + 7 * 3600)
+	var r0: int = e.res["raivite"]
+	_eq(e.collect_veins(), 1, "collected 1")
+	_eq(int(e.res["raivite"]), r0 + 1, "credited")
+	_eq(e.vein_amount(vh), 0, "remainder kept below one")
+	e.collect_all()
+	e.tick(w, T0 + 7 * 3600 + 8 * 3600)  # inside the 8 h window
+	e.collect_all()
+	e.tick(w, T0 + 7 * 3600 + 16 * 3600)
+	e.collect_all()
+	e.tick(w, T0 + 7 * 3600 + 24 * 3600)
+	_eq(e.vein_amount(vh), 4, "holds up to 4")
+	e.collect_veins()
+	w.cells[vh]["owner"] = 2  # an enemy vein the player occupies
+	e.collect_all()
+	e.tick(w, T0 + 7 * 3600 + 32 * 3600)
+	e.collect_all()
+	e.tick(w, T0 + 7 * 3600 + 40 * 3600)
+	e.collect_all()
+	e.tick(w, T0 + 7 * 3600 + 48 * 3600)
+	_eq(e.vein_amount(vh), 2, "occupied vein holds up to 2")
+	var e2: Economy = Economy.from_dict(JSON.parse_string(JSON.stringify(e.to_dict())))
+	_eq(e2.vein_amount(vh), 2, "round trip")
