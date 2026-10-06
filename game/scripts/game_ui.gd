@@ -1104,6 +1104,8 @@ func show_armies(items: Array) -> void:
 
 
 func _army_card(it: Dictionary) -> Control:
+	if it.has("hand"):
+		return _hand_card(it)
 	var card := Panel.new()
 	card.custom_minimum_size = Vector2(150, 178)
 	card.add_theme_stylebox_override("panel", _style(Color(0.1, 0.15, 0.25), 12, Color(0.45, 0.58, 0.8, 0.8), 2))
@@ -1179,6 +1181,53 @@ func _army_card(it: Dictionary) -> Control:
 
 
 ## Diplomacy tab: a card per neighbour — leader, opinion, status, war / gift buttons (canon §10.6).
+## The Army tab's «Рука» card: the cards of the hand and «Настроить» (03 §5.2: «Атака» + 4 slots, 5 from DL6).
+func _hand_card(it: Dictionary) -> Control:
+	var card := Panel.new()
+	card.custom_minimum_size = Vector2(150, 178)
+	card.add_theme_stylebox_override("panel", _style(Color(0.16, 0.12, 0.24), 12, Color(0.75, 0.6, 1.0, 0.8), 2))
+	card.mouse_filter = Control.MOUSE_FILTER_PASS
+	var nm := _label(it["name"], 17)
+	nm.position = Vector2(0, 6)
+	nm.size = Vector2(150, 24)
+	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	card.add_child(nm)
+	var glyphs := PackedStringArray()
+	for c in it["hand"]:
+		glyphs.append(String(CARD_ART.get(c, "?")))
+	var g := _label(" ".join(glyphs), 24, Color(1.0, 0.85, 0.4))
+	g.autowrap_mode = TextServer.AUTOWRAP_WORD
+	g.custom_minimum_size = Vector2(140, 0)
+	g.position = Vector2(5, 40)
+	g.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	card.add_child(g)
+	_card_button(card, tr("hand.edit"), Color(0.45, 0.3, 0.75), func(): army_action.emit(-2, "hand"), true)
+	return card
+
+
+## Hand picker (03 §5.2): every open card as a toggle; «Атака» is fixed, `slots` more can be chosen.
+func show_hand_picker(cards: Array, chosen: Array, slots: int, on_toggle: Callable) -> void:
+	var rows := ceili(cards.size() / 2.0)
+	var h := 200.0 + rows * 96.0 + 110.0
+	var box := _modal_box(Rect2(60, maxf(200.0, (VH - h) / 2.0 - 80.0), 821, h))
+	var t := _label(tr("hand.title_full"), 32, Color(1.0, 0.85, 0.4))
+	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_at(t, box, Vector2(0, 24), Vector2(821, 44))
+	var sub := _label(tr("hand.rule") % [chosen.size(), slots], 19, MUTED, false)
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sub.autowrap_mode = TextServer.AUTOWRAP_WORD
+	_at(sub, box, Vector2(30, 76), Vector2(761, 60))
+	for i in cards.size():
+		var c: String = cards[i]
+		var on := chosen.has(c) or c == "attack"
+		var r := Rect2(30 + (i % 2) * 391, 150 + (i / 2) * 96, 370, 80)
+		var col := Color(0.2, 0.42, 0.28) if on else Color(0.14, 0.18, 0.27)
+		var b := _button(box, r, "%s  %s%s" % [String(CARD_ART.get(c, "?")), _card_name(c), "  ✓" if on else ""], col, func(): on_toggle.call(c))
+		if c == "attack":
+			b.modulate = Color(1, 1, 1, 0.75)  # fixed
+	_button(box, Rect2(30, h - 100, 761, 76), tr("ui.close"), Color(0.13, 0.4, 0.9), close_modal)
+
+
 func show_diplomacy(items: Array) -> void:
 	_fill_panel("d", items, _diplomacy_card)
 

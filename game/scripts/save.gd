@@ -94,6 +94,7 @@ static func to_dict(g: Node) -> Dictionary:
 		"pass": g.bp.to_dict() if g.bp != null else {},
 		"weekly": g.weekly.to_dict() if g.weekly != null else {},
 		"calendar": g.calendar.to_dict() if g.calendar != null else {},
+		"hand_pick": g.hand_pick,
 		"camps": g.camps.to_dict() if g.camps != null else {},
 	}
 	if g.get("econ") != null:
@@ -297,6 +298,9 @@ static func apply(g: Node, d: Dictionary) -> bool:
 		if g.weekly == null:
 			g.weekly = load("res://scripts/sim/weekly.gd").new()
 		g.weekly.load_dict(d["weekly"])
+	g.hand_pick = []
+	for c in d.get("hand_pick", []):
+		g.hand_pick.append(String(c))
 	if typeof(d.get("calendar")) == TYPE_DICTIONARY:
 		if g.calendar == null:
 			g.calendar = load("res://scripts/sim/calendar.gd").new()

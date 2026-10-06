@@ -94,6 +94,7 @@ var pass_xp := 0  # legacy: pass XP saved before the pass existed, moved into `b
 var bp  # «Военный пропуск» (scripts/sim/battlepass.gd)
 var weekly  # weekly tasks (scripts/sim/weekly.gd)
 var calendar  # the 28-day login calendar (scripts/sim/calendar.gd)
+var hand_pick: Array = []  # the player's slot cards (03 §5.2); empty — the default hand
 var _cal_auto := false  # a new calendar day waits to be shown once the player is free (08 §8.8.1)
 var _collect_counted := 0  # last «Собрать всё» counted for order_collect_3 (≥30 min apart)
 var camps  # marauder camps (scripts/sim/camps.gd)
@@ -1204,6 +1205,8 @@ func _separate_peace(s: int) -> void:
 		econ.add_resources({"gold": gold})
 	sfx.play("seal")
 	_post(L.pack("inbox.separate.title", [_state_key(s)]), L.pack("inbox.separate.text", [_state_key(s), _state_key(int(war["enemy"]))]))
+	if lose.is_empty() and (not annex.is_empty() or gold > 0):
+		_coalition_win()
 	if not lose.is_empty():
 		war["sep_defeat"] = 1  # a lost separate peace: no «Триумф» for this war (06 §14.6)
 		ui.toast(tr("toast.separate_lost") % [_state_name(s), lose.size()])
@@ -1227,6 +1230,15 @@ func _separate_peace(s: int) -> void:
 	map_view.sync_armies(armies, null)
 	_refresh_ui()
 	_autosave()
+
+
+## A victorious treaty in a coalition war; the second one counts «Война на два фронта» (07 §3.8).
+func _coalition_win() -> void:
+	if war.is_empty() or not war.has("coalition"):
+		return
+	war["wins"] = int(war.get("wins", 0)) + 1
+	if int(war["wins"]) == 2:
+		_stat("two_fronts")
 
 
 ## Members propose a separate peace themselves (06 §9.1, S8) once their share reaches the archetype's threshold;
@@ -2316,9 +2328,30 @@ func _start_offensive() -> void:
 
 
 ## The war cards in hand: the base five, plus «Союзный корпус» while an ally fights in this war (canon §9.9).
-## The cards on the table this offensive (canon §9.9: «Атака» + 4 slots, 5 from DL6). Before DL6 the hand teases
-## the airstrike; from DL6 the 5th slot takes the landing (DL7 opens it), at DL8 the missile replaces the encirclement.
+## Every slot card (03 §5.2) and how many slots the hand has: 4, from DL6 5 (canon §9.9).
+const SLOT_CARDS := ["breakthrough", "airstrike", "encircle", "defense", "landing", "missile"]
+
+
+func _hand_slots() -> int:
+	return 5 if econ.dev_level() >= 6 else 4
+
+
+## The player's own hand (03 §5.2) once they pick it: «Атака» + the chosen open cards in slot order; until then
+## the default below.
 func _hand_display() -> Array:
+	if not hand_pick.is_empty():
+		var out: Array = ["attack"]
+		for c in hand_pick:
+			if out.size() <= _hand_slots() and econ.dev_level() >= int(CARD_DL.get(c, 1)):
+				out.append(c)
+		if out.size() > 1:
+			return out
+	return _default_hand()
+
+
+## The default hand: before DL6 it teases the airstrike; from DL6 the 5th slot takes the landing (DL7 opens it),
+## at DL8 the missile replaces the encirclement.
+func _default_hand() -> Array:
 	var dl: int = econ.dev_level()
 	if dl < 6:
 		return ["attack", "breakthrough", "airstrike", "encircle", "defense"]
@@ -2821,6 +2854,7 @@ func _sign_peace() -> void:
 	if _last_score > 0.0:
 		bp.gain("peace", now_s())
 		_stat("peace_wins")
+		_coalition_win()
 	if enemy == RingNext.ALVARIA and _last_score >= 30.0:
 		_stat("hegemon_wins")  # «Укротитель волков»
 	if enemy == RingNext.CONCLAVE and _last_score >= 30.0:
@@ -3701,9 +3735,11 @@ const STARS_3 := [
 ]
 
 
-## Chapter IV stars (07 §3.8; «Война на два фронта» needs two wars at once, not in this build).
+## Chapter IV stars (07 §3.8). «Война на два фронта»: two victorious treaties in one coalition war — each member's
+## separate peace is a war of its own that ran alongside the rest (06 §14.6).
 const STARS_4 := [
 	["c4_conclave", "star.c4_conclave", "conclave_wins", 1],
+	["c4_two_fronts", "star.c4_two_fronts", "two_fronts", 1],
 	["c4_landing", "star.c4_landing", "landings_held", 1],
 	["c4_missile", "star.c4_missile", "missile_towers", 1],
 	["c4_ultrafence", "star.c4_ultrafence", "@fort8", 1],
@@ -4583,6 +4619,40 @@ func _finish_training() -> void:
 	_autosave()
 
 
+func _open_hand_picker() -> void:
+	var open: Array = ["attack"]
+	for c in SLOT_CARDS:
+		if econ.dev_level() >= int(CARD_DL.get(c, 1)):
+			open.append(c)
+	var chosen: Array = _hand_display().slice(1)
+	ui.show_hand_picker(open, chosen, _hand_slots(), func(c: String):
+		if c == "attack":
+			ui.toast(tr("hand.attack_fixed"))
+			return
+		var cur: Array = _hand_display().slice(1)
+		if cur.has(c):
+			if cur.size() <= 1:
+				ui.toast(tr("hand.min_one"))
+				return
+			cur.erase(c)
+		elif cur.size() >= _hand_slots():
+			ui.toast(tr("hand.full") % _hand_slots())
+			return
+		else:
+			cur.append(c)
+		var ordered: Array = []
+		for k in SLOT_CARDS:  # keep the slots in the canonical order (the oil is paid left to right, 03 §12.1)
+			if cur.has(k):
+				ordered.append(k)
+		hand_pick = ordered
+		sfx.play("tap")
+		_show_hand()
+		_autosave()
+		_open_hand_picker()
+		if tab == "army":
+			ui.show_armies(_army_items(now_s())))
+
+
 ## Rewarded placement with a daily cap (canon §15.2). Test builds grant the reward without an SDK.
 func _rewarded(key: String, cap: int) -> bool:
 	var day := now_s() / 86400
@@ -4616,10 +4686,15 @@ func _army_items(now: int) -> Array:
 	if not training.is_empty():
 		new_item["left"] = int(training["end"]) - now
 	items.append(new_item)
+	if ftue == 0:
+		items.append({"id": -2, "name": tr("hand.title"), "hand": _hand_display()})
 	return items
 
 
 func _on_army_action(id: int, kind: String) -> void:
+	if kind == "hand":
+		_open_hand_picker()
+		return
 	if kind == "train":
 		_train_army()
 	elif kind == "refill" and _rewarded("ad_army_refill", 3):
@@ -5397,6 +5472,14 @@ func _demo(spec: String) -> void:
 		bp.add_xp(4600, now_s())
 		bp.claim(1, "free")
 		_open_pass()
+		return
+	if what == "hand":  # the hand picker at DL6 (5 slots, the airstrike open); hand:tab — the Army tab card
+		econ._find_type("residence")["level"] = 6
+		hand_pick = ["breakthrough", "airstrike", "defense", "encircle"]
+		_open_tab("army")
+		_econ_tick()
+		if parts.size() < 2:
+			_open_hand_picker()
 		return
 	if what == "calendar":  # the login calendar on day 5 (days 1–4 taken)
 		var t := now_s()

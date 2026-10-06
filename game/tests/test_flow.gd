@@ -213,7 +213,7 @@ func _run() -> void:
 	g._econ_tick()
 	_check(int(pa["str"]) == int(pa["max_str"]) and econ.res["food"] < food0 + 5000, "army refills in ~20 min, paying food (%d → %d)" % [food0, econ.res["food"]])
 	g._open_tab("army")
-	_check(g._army_items(g.now_s()).size() == g._player_armies().size() + 1, "army tab lists armies plus «new army»")
+	_check(g._army_items(g.now_s()).size() == g._player_armies().size() + (1 if g.ftue > 0 else 2), "army tab lists armies plus «new army» (and the hand after the tutorial)")
 	# Settings → language: applies at once to the HUD, the open tab and the inbox, and reopens Settings
 	var lang0 := TranslationServer.get_locale()
 	g._post("inbox.raid.title", g.L.pack("inbox.raid.text", [g._cell_key(g.sim.states[Types.PLAYER]["capital_id"])]))
@@ -545,6 +545,19 @@ func _run() -> void:
 	_check(not bool(g._order_items()[1].get("swap", true)), "one free swap a day")
 	g._orders_chip()
 	_check(g.hud._orders_chip.visible and g.hud._orders_lbl.text.ends_with("/3"), "the HUD chip shows today's orders")
+	# the hand (03 §5.2): «Атака» + 4 slots of the player's choice
+	var hand0: Array = g._hand_display()
+	_check(hand0[0] == "attack" and hand0.size() <= 1 + g._hand_slots(), "the default hand: «Атака» + slots")
+	g._open_hand_picker()
+	_check(g.ui.has_modal(), "the hand picker opens")
+	g.ui.close_modal()
+	g.hand_pick = ["defense"]
+	_check(g._hand_display() == ["attack", "defense"], "a chosen hand replaces the default")
+	g.hand_pick = ["missile", "defense"]
+	_check(not g._hand_display().has("missile") or g.econ.dev_level() >= 8, "cards above the DL stay out of the hand")
+	var hitems: Array = g._army_items(g.now_s()).filter(func(x): return x.has("hand"))
+	_check(hitems.size() == 1 and (hitems[0]["hand"] as Array)[0] == "attack", "the Army tab shows the hand card")
+	g.hand_pick = []
 	g.calendar = g.Calendar.new()
 	g._calendar_tick(g.now_s())
 	_check(g.calendar.pending and not g.ui.has_modal(), "a calendar day is credited (no auto screen in tests)")
@@ -942,6 +955,10 @@ func _run() -> void:
 			if not (plan["annex"] as Array).has(h) and int(g.sim.cells[h]["controller"]) != mem:
 				back = false
 		_check(back and not (g.war["coalition"] as Array).has(mem), "the rest of its land goes back, it leaves the war")
+		_check(int(g.war.get("wins", 0)) == 1, "a victorious separate peace counts as one won war")
+		var tf0 := int(g.stats.get("two_fronts", 0))
+		g._coalition_win()
+		_check(int(g.stats.get("two_fronts", 0)) == tf0 + 1, "a second win in the same coalition war: «Война на два фронта»")
 	g.war["battles"] = 0
 	# separate peace with a non-leader member: it leaves, the leader's armies lose its share
 	var lead: int = g.war["enemy"]
