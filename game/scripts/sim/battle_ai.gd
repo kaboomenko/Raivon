@@ -7,6 +7,7 @@ const Types := preload("res://scripts/sim/types.gd")
 const Battle := preload("res://scripts/sim/battle.gd")
 
 var side: int
+var airstrike := false  # plays «Авиаудар» (Wolf / Raven at DL6+, 03 §19.4); off in the TS port
 var _last_move: Dictionary = {} # army id -> tick of the last move order
 
 
@@ -30,6 +31,13 @@ func think(b: Battle) -> void:
 			if fc["f"] >= 0.95 and (cl["defender"] != -1 or cell["value"] >= 2):
 				b.issue(side, {"t": "card", "card": "defense", "target": cl["target"]})
 				return
+
+	# 1b. Airstrike where the enemy has gathered: Σ max Strength in the 7 hexes ≥ 1.5 average own army (03 §19.4).
+	if airstrike and energy >= int(Battle.CARDS["airstrike"]["cost"]) * Battle.ENERGY_UNIT and b.card_ready(side, "airstrike"):
+		var t := airstrike_target(b, side)
+		if t >= 0:
+			b.issue(side, {"t": "card", "card": "airstrike", "target": t})
+			return
 
 	# 2. Attack the best target.
 	if energy >= int(Battle.CARDS["attack"]["cost"]) * Battle.ENERGY_UNIT:
@@ -116,3 +124,37 @@ func _step_toward(b: Battle, a: Dictionary, goals: Dictionary) -> int:
 			prev[n] = id
 			queue.append(n)
 	return -1
+
+
+## Best airstrike centre for `me`, or -1: the most enemy max Strength in the 7 hexes (halved under air defence),
+## if it reaches 1.5 × the average max Strength of my armies. Ties go to the lower hex id.
+static func airstrike_target(b: Battle, me: int) -> int:
+	var enemy := b.enemy_of(me)
+	var own := 0
+	var n := 0
+	for a in b.armies:
+		if a["side"] == me and not a["routed"]:
+			own += int(a["max_str"])
+			n += 1
+	var need := own * 3 / maxi(1, 2 * n)
+	var best := -1
+	var best_v := 0
+	var seen := {}
+	for e in b.armies:
+		if e["side"] != enemy or e["routed"]:
+			continue
+		for c in b.airstrike_area(int(e["hex"])):
+			if seen.has(c):
+				continue
+			seen[c] = true
+			if not b.validate(me, {"t": "card", "card": "airstrike", "target": c}):
+				continue
+			var v := 0
+			for h in b.airstrike_area(c):
+				for a in b.armies:
+					if a["hex"] == h and a["side"] == enemy and not a["routed"]:
+						v += int(a["max_str"]) / (2 if b.air_defended(h, enemy) else 1)
+			if v >= need and (v > best_v or (v == best_v and c < best)):
+				best = c
+				best_v = v
+	return best

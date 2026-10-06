@@ -25,6 +25,7 @@ const VW := 941.0
 const VH := 1672.0
 const CARD_ART := {"attack": "⚔", "breakthrough": "➶", "airstrike": "✈", "encircle": "◎", "defense": "⛨", "corps": "⚑"}
 const CARD_ORDER := ["attack", "breakthrough", "airstrike", "encircle", "defense"]
+var _locked := {}  # card -> DL it opens at
 const CARD_NAME_KEYS := {"attack": "card.attack", "breakthrough": "card.breakthrough", "airstrike": "card.airstrike", "encircle": "card.encircle", "defense": "card.defense", "corps": "card.corps"}
 const L := preload("res://scripts/l10n.gd")
 
@@ -231,6 +232,14 @@ func _build_battle() -> void:
 	_battle.visible = false
 
 
+## Cards not open yet: {card: DL it opens at} — shown greyed with «УР N» in place of the name; a tap explains.
+func set_locked(locked: Dictionary) -> void:
+	_locked = locked
+	for c in _card_names:
+		var nm: Label = _card_names[c]
+		nm.text = tr("dl.short") % int(locked[c]) if locked.has(c) else _card_name(c)
+
+
 ## Shows the «Союзный корпус» card when an ally fights in this war and it was not played yet.
 func set_corps(available: bool) -> void:
 	if _cards.has("corps"):
@@ -246,7 +255,7 @@ func retranslate() -> void:
 	_laststand.text = tr("ui.last_stand")
 	for c in _card_names:
 		var nm: Label = _card_names[c]
-		nm.text = _card_name(c)
+		nm.text = tr("dl.short") % int(_locked[c]) if _locked.has(c) else _card_name(c)
 		_fit(nm, 17, 110.0)
 
 
@@ -267,12 +276,21 @@ func set_battle(visible_hand: bool, energy_units: int, unit: int, cooldowns: Dic
 	for c in _cards:
 		var p: Panel = _cards[c]
 		var cd: int = cooldowns.get(c, 0)
+		if _locked.has(c):
+			p.modulate = Color(0.6, 0.6, 0.6, 0.8)
+			(p.get_node("cd") as Label).text = ""  # greyed, «УР N» in place of the name
+			continue
 		p.modulate = Color(1, 1, 1, 0.45 if (pts < _card_cost(c) or cd > 0) else 1.0)
 		(p.get_node("cd") as Label).text = str(int(ceil(cd / 10.0))) if cd > 0 else ""
 	set_action("timer", "%d:%02d" % [seconds_left / 60, seconds_left % 60], tr("ui.final_rush") if rush else tr("ui.offensive_left"), Color(0.5, 0.2, 0.2) if rush else Color(0.2, 0.25, 0.4))
 
 
 func _on_card_input(event: InputEvent, card: String) -> void:
+	if _locked.has(card):
+		if event is InputEventScreenTouch or event is InputEventMouseButton:
+			if event.pressed:
+				toast(tr("err.unlock_dl") % int(_locked[card]))
+		return
 	if event is InputEventScreenTouch or event is InputEventMouseButton:
 		var pressed: bool = event.pressed
 		var pos: Vector2 = (event as InputEventScreenTouch).position if event is InputEventScreenTouch else (event as InputEventMouseButton).position

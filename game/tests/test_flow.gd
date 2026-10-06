@@ -268,6 +268,9 @@ func _run() -> void:
 	g.truce = {}
 	g._declare(MapGen.BARONS, War.recommend_goals(g.sim, MapGen.BARONS, 1)[0])
 	g._start_offensive()
+	# Airstrike opens at DL6 (canon §9.9): locked in the hand before; the Barons (Wolf) play it only from DL6
+	_check(not g._hand().has("airstrike") and g.ui._locked.has("airstrike"), "airstrike locked below DL6")
+	_check(not g.ai.airstrike, "DL1 Barons don't fly")
 	var army: Dictionary = {}
 	for a in g.armies:
 		if a["side"] == Types.PLAYER:

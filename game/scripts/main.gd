@@ -37,6 +37,8 @@ enum Mode { MAP, WAR, BATTLE, RESULT, PEACE, CEREMONY }
 
 const MAP_SEED := 20261004
 const HAND := ["attack", "breakthrough", "airstrike", "encircle", "defense"]
+const AIRSTRIKE_DL := 6
+const AIR_ARCHETYPES := ["wolf", "raven"]  # AI hands with «Авиаудар» (03 §19.4)
 const CHAPTER_GOALS: Array[int] = [0, 20, 36]  # official hexes per chapter (canon §12.1)
 const COLONIZE_SEC: Array[int] = [0, 60, 300]  # 1 min in chapter I, 5 min in II (canon §12.1)
 const TRUCE_SEC := 30 * 60
@@ -58,6 +60,7 @@ var ftue := 0  # first-war tutorial step (canon §14.3); 0 = finished / off
 var _ftue_shown := -1
 var _ftue_t := 0.0
 var _mill := -1
+var _flak_tick := -1
 var _ftue_next := 0  # step to resume after the peace ceremony
 var _raid := {}  # FTUE marauder raid: {hex, at}
 var econ  # Economy (scripts/sim/economy.gd)
@@ -1408,6 +1411,8 @@ func _start_offensive() -> void:
 		ftue = 12 if ftue >= 10 else 3
 	battle = Battle.new(sim, armies, opts)
 	ai = BattleAI.new(enemy)
+	ai.airstrike = ftue == 0 and _state_dl(enemy) >= AIRSTRIKE_DL and String(sim.states[enemy]["archetype"]) in AIR_ARCHETYPES
+	ui.set_locked({} if _hand().has("airstrike") else {"airstrike": AIRSTRIKE_DL})
 	var other := ai_war_of(enemy)
 	if other >= 0:
 		# window of opportunity (canon §10.10): fighting another AI, its other borders hold 30% weaker garrisons
@@ -1426,10 +1431,17 @@ func _start_offensive() -> void:
 
 ## The war cards in hand: the base five, plus «Союзный корпус» while an ally fights in this war (canon §9.9).
 func _hand() -> Array:
+	var hand: Array = HAND.duplicate()
+	if econ.dev_level() < AIRSTRIKE_DL:
+		hand.erase("airstrike")  # aviation arrives with DL6 (canon §9.9)
 	for k in war:
 		if String(k).begins_with("ally_"):
-			return HAND + ["corps"]
-	return HAND
+			return hand + ["corps"]
+	return hand
+
+
+func _state_dl(side: int) -> int:
+	return econ.dev_level() if side == Types.PLAYER else int(sim.states[side]["dev_level"])
 
 
 ## Middle of the fighting: the player's armies and the flag hex, nudged toward the enemy.
@@ -1483,6 +1495,11 @@ func _handle_event(ev: Dictionary) -> void:
 				ui.toast(tr("toast.goal_taken"))
 		"tower_hit":
 			map_view.tower_volley(int(ev["hex"]), int(ev["target"]))
+		"flak":
+			map_view.flak(int(ev["hex"]))
+			if int(ev["tick"]) != _flak_tick:  # one «ПВО −50%» per strike, over its first defended hex
+				_flak_tick = int(ev["tick"])
+				map_view.floater(int(ev["hex"]), tr("floater.air_defense"), Color(0.75, 0.9, 1.0))
 		"repelled":
 			sfx.play("repelled")
 			map_view.floater(ev["hex"], tr("floater.repelled") if mine else tr("floater.held"), Color.WHITE)
@@ -1493,7 +1510,9 @@ func _handle_event(ev: Dictionary) -> void:
 		"card":
 			sfx.play("boom" if ev["card"] == "airstrike" else "card")
 			if ev["card"] == "airstrike":
-				map_view.burst(ev["hex"], Color(1.0, 0.65, 0.2), true)
+				var side: int = int(ev.get("side", Types.PLAYER))
+				map_view.airstrike(int(ev["hex"]), battle.airstrike_area(int(ev["hex"])), _state_dl(side),
+					map_view.state_color(side))
 			else:
 				map_view.burst(ev["hex"], Color(0.6, 0.82, 1.0) if mine else Color(1.0, 0.6, 0.6))
 			if not mine:
@@ -2287,7 +2306,9 @@ func _tower_action() -> void:
 		if reason2 != "" or not econ.start_upgrade(tower["id"], now):
 			ui.toast(L.t(reason2) if reason2 != "" else tr("toast.cant_upgrade"))
 			return
-		ui.toast(tr("toast.tower_upgrade") % (int(tower["level"]) + 1))
+		var to_lvl: int = int(tower["level"]) + 1
+		# from lvl 6 the tower is also air defence (canon §7)
+		ui.toast(tr("toast.tower_aa" if to_lvl == Battle.AIR_DEFENSE_LVL else "toast.tower_upgrade") % to_lvl)
 	sfx.play("coin")
 	map_view.burst(selected, Color(1.0, 0.85, 0.3))
 	_stat("towers")
@@ -3886,6 +3907,24 @@ func _demo(spec: String) -> void:
 	if what == "war":
 		return
 	_start_offensive()
+	if what == "air":  # the player's airstrike into a Barons tower's air defence
+		var tgt := -1
+		for c in sim.cells:
+			if tgt < 0 and battle.can_target(Types.PLAYER, c["id"]) and not battle.adjacent_idle_armies(Types.PLAYER, c["id"]).is_empty():
+				tgt = c["id"]
+		for n in sim.neighbors[tgt]:
+			if n >= 0 and sim.cells[n]["owner"] == enemy and sim.cells[n]["controller"] == enemy and int(sim.cells[n]["fort"]) == 0:
+				sim.cells[n]["tower"] = 6
+				map_view.refresh_hex(n)
+				break
+		ui.set_locked({})
+		rig.focus(map_view.cell_world(tgt), 0.5)
+		rig.zoom = rig.zoom_target
+		# headless start-up frames are slow: strike 3 s in so `--shot-delay` can catch the flight
+		get_tree().create_timer(float(parts[1]) if parts.size() > 1 else 3.0).timeout.connect(func():
+			battle.energy[Types.PLAYER] = 6 * Battle.ENERGY_UNIT
+			battle.issue(Types.PLAYER, {"t": "card", "card": "airstrike", "target": tgt}))
+		return
 	var ticks := Battle.OFFENSIVE_TICKS + 1 if what != "battle" else int(float(parts[1] if parts.size() > 1 else "30") * Battle.TICKS_PER_SEC)
 	while battle != null and not battle.over and battle.tick < ticks:
 		if battle.tick % 20 == 0:

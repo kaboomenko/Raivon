@@ -1236,7 +1236,11 @@ func _make_army(a: Dictionary) -> Node3D:
 # ------------------------------------------------------------------ FX
 
 func burst(hex: int, color: Color, big := false) -> void:
-	var p := cell_world(hex) + Vector3(0, 0.1, 0)
+	burst_at(cell_world(hex), color, big)
+
+
+func burst_at(pos: Vector3, color: Color, big := false) -> void:
+	var p := pos + Vector3(0, 0.1, 0)
 	var mi := MeshInstance3D.new()
 	var tm := TorusMesh.new()
 	tm.inner_radius = 0.8
@@ -1879,6 +1883,226 @@ func clear_smoke(hex: int) -> void:
 	tw.tween_callback(root.queue_free)
 
 
+# ------------------------------------------------------------------ airstrike & air defence
+
+var _planes: Array = []  # [{node, from, to, t, dur}]
+
+
+func _flat_mat(c: Color) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = c
+	m.roughness = 0.6
+	return m
+
+
+func _box(parent: Node3D, size: Vector3, pos: Vector3, m: Material) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = size
+	mi.mesh = bm
+	mi.material_override = m
+	mi.position = pos
+	parent.add_child(mi)
+	return mi
+
+
+## A low-poly aircraft of the era (canon §10 table): biplane at DL6, propeller attack plane at DL7, jet from DL8.
+## Faces −Z; `tint` is the side's colour on the wings.
+func _aircraft(dl: int, tint: Color) -> Node3D:
+	var root := Node3D.new()
+	var body := _flat_mat(Color(0.42, 0.45, 0.4) if dl <= 7 else Color(0.62, 0.65, 0.7))
+	var wing := _flat_mat(tint)
+	var dark := _flat_mat(Color(0.12, 0.12, 0.14))
+	if dl <= 6:
+		_box(root, Vector3(0.12, 0.12, 0.62), Vector3.ZERO, body)
+		_box(root, Vector3(0.9, 0.025, 0.16), Vector3(0, 0.1, -0.08), wing)
+		_box(root, Vector3(0.82, 0.025, 0.15), Vector3(0, -0.05, -0.06), wing)
+		for x in [-0.32, 0.32]:
+			_box(root, Vector3(0.015, 0.15, 0.015), Vector3(x, 0.025, -0.08), dark)
+		_box(root, Vector3(0.32, 0.02, 0.1), Vector3(0, 0.02, 0.27), wing)
+		_box(root, Vector3(0.02, 0.13, 0.1), Vector3(0, 0.08, 0.27), wing)
+		_box(root, Vector3(0.3, 0.03, 0.02), Vector3(0, 0, -0.32), dark).name = "prop"
+	elif dl == 7:
+		_box(root, Vector3(0.13, 0.13, 0.7), Vector3.ZERO, body)
+		_box(root, Vector3(1.0, 0.03, 0.18), Vector3(0, -0.02, -0.05), wing)
+		_box(root, Vector3(0.36, 0.02, 0.1), Vector3(0, 0.02, 0.3), wing)
+		_box(root, Vector3(0.02, 0.16, 0.12), Vector3(0, 0.09, 0.3), wing)
+		_box(root, Vector3(0.08, 0.06, 0.14), Vector3(0, 0.08, -0.08), _flat_mat(Color(0.5, 0.75, 0.9)))
+		_box(root, Vector3(0.34, 0.03, 0.02), Vector3(0, 0, -0.36), dark).name = "prop"
+	else:
+		_box(root, Vector3(0.11, 0.11, 0.8), Vector3.ZERO, body)
+		for sx in [-1.0, 1.0]:
+			var w := _box(root, Vector3(0.45, 0.025, 0.3), Vector3(sx * 0.24, -0.01, 0.08), wing)
+			w.rotation.y = sx * 0.45
+		_box(root, Vector3(0.02, 0.2, 0.16), Vector3(0, 0.1, 0.32), wing)
+		_box(root, Vector3(0.07, 0.05, 0.16), Vector3(0, 0.07, -0.2), _flat_mat(Color(0.5, 0.75, 0.9)))
+		var exhaust := _box(root, Vector3(0.07, 0.07, 0.05), Vector3(0, 0, 0.42), _flat_mat(Color(1.0, 0.6, 0.2)))
+		(exhaust.material_override as StandardMaterial3D).emission_enabled = true
+		(exhaust.material_override as StandardMaterial3D).emission = Color(1.0, 0.5, 0.15)
+		(exhaust.material_override as StandardMaterial3D).emission_energy_multiplier = 3.0
+	return root
+
+
+## «Авиаудар» (03 §12.2, 10 §airstrike): a flight of three crosses the map over the target, bombs burst over the
+## 7 hexes one after another. `dl` picks the era of the aircraft, `tint` the side's colour.
+func airstrike(target: int, area: Array, dl: int, tint: Color) -> void:
+	var c := cell_world(target)
+	var dir := Vector3(0.8, 0, -0.6).normalized()
+	var dur := 2.0
+	var perp := Vector3(-dir.z, 0, dir.x)
+	var offsets: Array[Vector3] = [Vector3.ZERO, perp * 0.65 - dir * 0.55, -perp * 0.65 - dir * 0.55]  # a «V» of three
+	for i in 3:
+		var off := offsets[i]
+		var plane := _aircraft(dl, tint)
+		add_child(plane)
+		var from := c - dir * 7.0 + off + Vector3(0, 1.9, 0)
+		var to := c + dir * 7.0 + off + Vector3(0, 1.9, 0)
+		plane.position = from
+		plane.look_at(to, Vector3.UP)
+		plane.scale = Vector3.ONE * 0.95
+		_planes.append({"node": plane, "from": from, "to": to, "t": 0.0, "dur": dur})
+	# bombs fall as the flight passes overhead (mid-path), centre first
+	var tw := create_tween()
+	tw.tween_interval(dur * 0.45)
+	for k in area.size():
+		var h: int = area[k]
+		tw.tween_callback(func(): explosion(cell_world(h)))
+		tw.tween_interval(0.09)
+
+
+func _step_planes(delta: float) -> void:
+	for pl in _planes.duplicate():
+		pl["t"] += delta
+		var n: Node3D = pl["node"]
+		var k: float = clampf(float(pl["t"]) / float(pl["dur"]), 0.0, 1.0)
+		n.visible = float(pl["t"]) >= 0.0
+		n.position = (pl["from"] as Vector3).lerp(pl["to"], k)
+		var prop: Node3D = n.get_node_or_null("prop")
+		if prop:
+			prop.rotate_object_local(Vector3.FORWARD, 40.0 * delta)
+		if k >= 1.0:
+			n.queue_free()
+			_planes.erase(pl)
+
+
+## A bomb burst on the ground: a fireball, a shock ring and a puff of dark smoke.
+func explosion(pos: Vector3) -> void:
+	var root := Node3D.new()
+	root.position = pos + Vector3(0, 0.15, 0)
+	add_child(root)
+	var fb := CPUParticles3D.new()
+	fb.one_shot = true
+	fb.explosiveness = 0.9
+	fb.amount = 16
+	fb.lifetime = 0.55
+	fb.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	fb.emission_sphere_radius = 0.15
+	fb.direction = Vector3.UP
+	fb.spread = 70.0
+	fb.initial_velocity_min = 0.8
+	fb.initial_velocity_max = 1.6
+	fb.gravity = Vector3(0, 0.5, 0)
+	fb.damping_min = 2.0
+	fb.damping_max = 3.0
+	fb.scale_amount_curve = _curve(0.6, 1.4)
+	fb.color_ramp = _ramp([0.0, 0.3, 1.0], [Color(1.0, 0.95, 0.6, 1.0), Color(1.0, 0.5, 0.1, 0.9), Color(0.4, 0.1, 0.05, 0.0)])
+	var fq := QuadMesh.new()
+	fq.size = Vector2(0.55, 0.55)
+	fq.material = _fx_mat(_puff_tex(), true)
+	fb.mesh = fq
+	fb.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(fb)
+	var sm := CPUParticles3D.new()
+	sm.one_shot = true
+	sm.explosiveness = 0.7
+	sm.amount = 10
+	sm.lifetime = 1.6
+	sm.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	sm.emission_sphere_radius = 0.2
+	sm.direction = Vector3.UP
+	sm.spread = 40.0
+	sm.initial_velocity_min = 0.3
+	sm.initial_velocity_max = 0.7
+	sm.gravity = Vector3(0.1, 0.1, 0)
+	sm.scale_amount_curve = _curve(0.5, 1.6)
+	sm.color_ramp = _ramp([0.0, 0.2, 1.0], [Color(0.2, 0.17, 0.15, 0.0), Color(0.22, 0.2, 0.18, 0.75), Color(0.5, 0.5, 0.5, 0.0)])
+	var sq := QuadMesh.new()
+	sq.size = Vector2(0.6, 0.6)
+	sq.material = _fx_mat(_puff_tex(), false)
+	sm.mesh = sq
+	sm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(sm)
+	fb.emitting = true
+	sm.emitting = true
+	burst_at(pos, Color(1.0, 0.6, 0.2))
+	var tw := root.create_tween()
+	tw.tween_interval(2.0)
+	tw.tween_callback(root.queue_free)
+
+
+## Air defence fire (04 §AA): tracers from the ground and dark flak bursts in the air over a defended hex.
+func flak(hex: int) -> void:
+	var c := cell_world(hex)
+	# the guns: the defending tower (lvl ≥ 6) on this hex or next to it
+	var gun := c + Vector3(0, 0.5, 0)
+	var around: Array = [hex]
+	around.append_array(sim.neighbors[hex])
+	for h in around:
+		if h >= 0 and int(sim.cells[h].get("tower", 0)) >= 6 and sim.cells[h]["controller"] == sim.cells[hex]["controller"]:
+			gun = cell_world(h) + Vector3(0.42, 1.1, -0.36)  # the tower stands at the back-right of its hex
+			break
+	for i in 6:
+		var p := c + Vector3(rng.randf_range(-0.7, 0.7), rng.randf_range(1.5, 2.3), rng.randf_range(-0.6, 0.6))
+		var from := gun + Vector3(rng.randf_range(-0.08, 0.08), 0, rng.randf_range(-0.08, 0.08))
+		var tw := create_tween()
+		tw.tween_interval(0.45 + 0.16 * i)
+		tw.tween_callback(func(): _flak_puff(p, from))
+
+
+func _flak_puff(p: Vector3, from: Vector3) -> void:
+	var tracer := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(0.025, 0.025, from.distance_to(p))
+	tracer.mesh = bm
+	var tm := StandardMaterial3D.new()
+	tm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	tm.albedo_color = Color(1.0, 0.85, 0.4)
+	tracer.material_override = tm
+	tracer.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(tracer)
+	tracer.position = from.lerp(p, 0.5)
+	tracer.look_at(p, Vector3.UP)
+	var root := Node3D.new()
+	root.position = p
+	add_child(root)
+	var puff := CPUParticles3D.new()
+	puff.one_shot = true
+	puff.explosiveness = 1.0
+	puff.amount = 6
+	puff.lifetime = 1.1
+	puff.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	puff.emission_sphere_radius = 0.08
+	puff.spread = 180.0
+	puff.initial_velocity_min = 0.1
+	puff.initial_velocity_max = 0.3
+	puff.gravity = Vector3.ZERO
+	puff.scale_amount_curve = _curve(0.5, 1.3)
+	puff.color_ramp = _ramp([0.0, 0.08, 0.2, 1.0], [Color(1.0, 0.7, 0.3, 1.0), Color(0.3, 0.25, 0.22, 0.9),
+		Color(0.16, 0.15, 0.15, 0.85), Color(0.3, 0.3, 0.3, 0.0)])
+	var q := QuadMesh.new()
+	q.size = Vector2(0.4, 0.4)
+	q.material = _fx_mat(_puff_tex(), false)
+	puff.mesh = q
+	puff.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	root.add_child(puff)
+	puff.emitting = true
+	var tw := root.create_tween()
+	tw.tween_interval(0.08)
+	tw.tween_callback(tracer.queue_free)
+	tw.tween_interval(1.2)
+	tw.tween_callback(root.queue_free)
+
+
 ## Fireworks («салют», canon §10.3) over a point: `volleys` bursts 0.45 s apart.
 func fireworks(pos: Vector3, volleys: int) -> void:
 	var palette := [Color(1.0, 0.85, 0.3), Color(0.45, 0.75, 1.0), Color(1.0, 0.45, 0.4), Color(0.6, 1.0, 0.6), Color(1.0, 1.0, 1.0)]
@@ -1947,6 +2171,7 @@ func _process(delta: float) -> void:
 		var bn: Node3D = _bubbles[h]
 		bn.position.y = 2.0 + 0.07 * sin(bt * 3.0 + h)
 	_step_volleys(delta)
+	_step_planes(delta)
 	_step_flames(bt)
 	for i in range(_sails.size() - 1, -1, -1):
 		var obj: Variant = _sails[i]

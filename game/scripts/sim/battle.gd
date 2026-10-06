@@ -35,6 +35,7 @@ const ENTER_TICKS := 15
 const ENTER_TICKS_CORRIDOR := 8
 const MOVE_TICKS := 15
 const CARD_COOLDOWN := 10 * TICKS_PER_SEC
+const AIR_DEFENSE_LVL := 6  # a tower from this level is also air defence (canon §7)
 
 ## card id -> {cost, name, target: "enemy"|"own"}
 const CARDS := {
@@ -449,19 +450,41 @@ func _play_card(side: int, card: String, target: int) -> void:
 			var dir: int = world.neighbors[army["hex"]].find(target)
 			_start_or_join(side, target, [army], {"army": army["id"], "dir": dir, "steps": 1})
 		"airstrike":
+			# target and its 6 neighbours: −20% max Strength of enemy armies and garrisons, forts −1 for 15 s;
+			# hexes under the enemy's air defence take half the damage (canon §7, 03 §12.2)
 			var enemy := enemy_of(side)
-			var area: Array[int] = [target]
-			for n in world.neighbors[target]:
-				if n >= 0:
-					area.append(n)
-			for hex in area:
+			for hex in airstrike_area(target):
+				var div := 10 if air_defended(hex, enemy) else 5
+				var hit := false
 				for a in armies:
 					if a["hex"] == hex and a["side"] == enemy and not a["routed"]:
-						a["str"] = maxi(1, int(a["str"]) - int(a["max_str"]) / 5)
+						a["str"] = maxi(1, int(a["str"]) - int(a["max_str"]) / div)
+						hit = true
 				var cell: Dictionary = world.cells[hex]
 				if cell["controller"] == enemy:
-					garrison[hex] = maxi(0, garrison[hex] - garrison_for(hex, enemy) / 5)
+					garrison[hex] = maxi(0, garrison[hex] - garrison_for(hex, enemy) / div)
 					_effects.append({"kind": "airFort", "hex": hex, "left": 15 * TICKS_PER_SEC})
+					hit = true
+				if div == 10 and hit:
+					events.append({"type": "flak", "tick": tick, "hex": hex, "side": enemy})
+
+
+## The airstrike's 7 hexes: the target and its neighbours on the map.
+func airstrike_area(target: int) -> Array[int]:
+	var area: Array[int] = [target]
+	for n in world.neighbors[target]:
+		if n >= 0:
+			area.append(n)
+	return area
+
+
+## Air defence (canon §7): `hex` is within radius 1 of a working tower of level ≥ 6 held by `side`.
+func air_defended(hex: int, side: int) -> bool:
+	for h in airstrike_area(hex):
+		var c: Dictionary = world.cells[h]
+		if int(c.get("tower", 0)) >= AIR_DEFENSE_LVL and c["owner"] == side and c["controller"] == side:
+			return true
+	return false
 
 
 func _find_clash(target: int, side: int) -> Variant:

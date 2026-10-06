@@ -46,6 +46,7 @@ func _init() -> void:
 		["AI counteroffensive identical to TS, core safe (seeds 1..10)", _test_ai_counter],
 		["cards: defense, airstrike, encircle, breakthrough", _test_cards],
 		["towers hit adjacent enemy armies in clashes", _test_towers],
+		["air defence: towers lvl 6+ halve airstrikes; AI airstrike targeting", _test_air_defense],
 		["rivers: attacking across a river is 25% weaker", _test_river],
 		["«Союзный корпус»: a temporary army for 30 s, once per offensive", _test_corps],
 		["war: treaty never takes the enemy core", _test_treaty],
@@ -537,6 +538,48 @@ func _test_stars() -> void:
 	War.record_offensive(war, 0)
 	_eq(war["battles"], 9, "no capture −1")
 	_eq(war["offensives"], 2, "offensive count")
+
+
+func _test_air_defense() -> void:
+	# Barons' army at the target with a tower next door: lvl 5 — full damage, lvl 6 — half and a flak event.
+	for lvl in [5, 6]:
+		var d := _duel(100, 60)
+		var b: Battle = d["b"]
+		var target: int = d["target"]
+		var tower_hex := -1
+		for n in b.world.neighbors[target]:
+			if n >= 0 and b.world.cells[n]["controller"] == BARONS and b.world.cells[n]["owner"] == BARONS:
+				tower_hex = n
+				break
+		_check(tower_hex >= 0, "a Barons hex next to the target")
+		b.world.cells[tower_hex]["tower"] = lvl
+		var def_army: Dictionary = b.army_by_id(101)
+		b.energy[PLAYER] = 3000
+		_check(b.air_defended(target, BARONS) == (lvl >= 6), "tower lvl %d air defence" % lvl)
+		_check(not b.air_defended(target, PLAYER), "the enemy tower doesn't defend the player")
+		_check(b.issue(PLAYER, {"t": "card", "card": "airstrike", "target": target}), "airstrike accepted")
+		b.step()
+		var lost: int = 60 * FX - int(def_army["str"])
+		_eq(lost, (12 if lvl < 6 else 6) * FX, "airstrike damage under tower lvl %d" % lvl)
+		var flak := b.events.filter(func(e: Dictionary) -> bool: return e["type"] == "flak")
+		_check(flak.is_empty() == (lvl < 6), "flak event only under air defence (lvl %d)" % lvl)
+	# AI picks a centre with enough enemy Strength; nothing when the player is spread thin.
+	var d2 := _duel(100, 60)
+	var b2: Battle = d2["b"]
+	b2.energy[BARONS] = 3000
+	var t := BattleAI.airstrike_target(b2, BARONS)
+	_check(t >= 0, "AI finds an airstrike centre near a big army (100 vs avg 60)")
+	_check(b2.airstrike_area(t).has(int(d2["attacker"]["hex"])), "the centre covers the player's army")
+	d2["attacker"]["max_str"] = 80 * FX
+	_eq(BattleAI.airstrike_target(b2, BARONS), -1, "no airstrike below 1.5 × own average (80 < 90)")
+	var ai := BattleAI.new(BARONS)
+	ai.airstrike = true
+	d2["attacker"]["max_str"] = 100 * FX
+	b2.tick = 4
+	b2.step()
+	ai.think(b2)
+	b2.step()
+	_check(not b2.card_ready(BARONS, "airstrike"), "AI with the card plays the airstrike")
 
 
 func _test_towers() -> void:

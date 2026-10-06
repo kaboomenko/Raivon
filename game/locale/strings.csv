@@ -278,6 +278,7 @@ toast.armies_deployed,Армии выдвинулись к границе,Armies
 toast.to_battle,В бой! Тяните от армии к врагу или бросьте карту на гекс,Charge! Drag from an army to the enemy or drop a card on a hex
 floater.occupied,Оккупирован!,Occupied!
 floater.lost,Потерян,Lost
+floater.air_defense,ПВО −50%,AA −50%
 toast.goal_taken,🚩 Цель войны взята: +10 к счёту,🚩 War goal taken: +10 score
 floater.repelled,Атака отбита,Attack repelled
 floater.held,Отбились!,Held!
@@ -465,6 +466,7 @@ tile.ruin,разорение −%d%% · %s,ruin −%d%% · %s
 ui.ad_sub,реклама · бесплатно,ad · free
 toast.tower_building,Башня строится: %s,Tower under construction: %s
 toast.tower_upgrade,Башня → ур. %d,Tower → Lv %d
+toast.tower_aa,"Башня → ур. %d: теперь и ПВО, авиаудары рядом с ней вдвое слабее","Tower → Lv %d: now also air defence, airstrikes around it deal half damage"
 ui.ruin_halve,▶ Сократить разорение вдвое,▶ Halve the ruin
 ui.ruin_left,разорение −%d%% · %s,ruin −%d%% · %s
 ui.attack_camp,⚔ Разбить лагерь,⚔ Raid the camp
