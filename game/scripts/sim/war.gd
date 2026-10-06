@@ -101,13 +101,16 @@ static func war_score(w: World, war: Dictionary) -> Dictionary:
 		goal -= 10
 	var enemy_cap: int = w.states[enemy]["capital_id"]
 	var capital := 20 if enemy_cap >= 0 and w.cells[enemy_cap]["controller"] == Types.PLAYER else 0
-	var raw: float = occupation - losses + war["battles"] + goal + capital
+	var battles: int = war["battles"]
+	if war.has("coalition") and battles > 0:
+		battles = mini(20, battles * 2)  # «Триумф» (canon §10.8): won battles count double against a coalition
+	var raw: float = occupation - losses + battles + goal + capital
 	var score := Types.round1(clampf(raw, -100.0, 100.0))
 	return {
 		"score": score,
 		"occupation": occupation,
 		"losses": losses,
-		"battles": war["battles"],
+		"battles": battles,
 		"goal": goal,
 		"capital": capital,
 		"control": Types.js_round(50.0 + score / 2.0),

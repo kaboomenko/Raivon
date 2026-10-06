@@ -752,3 +752,11 @@ pact.opinion,Мнение %d/%d — на пакт не согласны,Opinion 
 toast.pact,"Пакт о ненападении с «%s» на 48 ч","A 48 h non-aggression pact with “%s”"
 inbox.pact.title,Пакт с «%s»,Pact with “%s”
 inbox.pact.text,"«%s» подписали пакт о ненападении на 48 ч: ни войны, ни ультиматумов, в коалиции против нас они не вступают.","“%s” signed a 48 h non-aggression pact: no war, no ultimatums, and they stay out of coalitions against us."
+dipl.separate,Сепаратный мир,Separate peace
+separate.cant,"Сепаратный мир — только с участником коалиции и пока война не проиграна","A separate peace is only for a coalition member while the war isn't lost"
+toast.separate,«%s» вышли из коалиции: сепаратный мир,“%s” left the coalition: a separate peace
+inbox.separate.title,Сепаратный мир с «%s»,Separate peace with “%s”
+inbox.separate.text,"«%s» вышли из войны: перемирие 24 ч. Армии «%s» больше не несут их силу.","“%s” left the war: a 24 h truce. The armies of “%s” no longer carry their strength."
+toast.subsidy,«%s» спонсируют «%s»: их армии +10%% на 12 ч,“%s” fund “%s”: their armies +10%% for 12 h
+inbox.subsidy.title,Субсидия врагу,A subsidy to the enemy
+inbox.subsidy.text,"«%s» тревожатся нашим ростом и спонсируют «%s»: армии врага +10%% на 12 ч.","“%s” are alarmed by our growth and fund “%s”: enemy armies +10%% for 12 h."

@@ -1020,7 +1020,17 @@ func _diplomacy_card(it: Dictionary) -> Control:
 	stt.position = Vector2(12, 82)
 	card.add_child(stt)
 	var id: int = it["id"]
-	if it.get("can_call", false):
+	if it.get("separate", false):
+		# «Сепаратный мир» with a coalition member (canon §10.8)
+		var bsp := _panel(card, Rect2(176, 78, 118, 36), _style(Color(0.2, 0.55, 0.35), 10, Color(1, 1, 1, 0.45), 2))
+		bsp.mouse_filter = Control.MOUSE_FILTER_PASS
+		var lsp := _label(tr("dipl.separate"), 14)
+		lsp.size = Vector2(118, 36)
+		lsp.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lsp.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		bsp.add_child(lsp)
+		bsp.gui_input.connect(func(e): if _is_tap(e): diplomacy_action.emit(id, "separate"))
+	elif it.get("can_call", false):
 		var bc := _panel(card, Rect2(196, 78, 98, 36), _style(Color(0.85, 0.55, 0.1), 10, Color(1, 1, 1, 0.45), 2))
 		bc.mouse_filter = Control.MOUSE_FILTER_PASS
 		var lc := _label(tr("dipl.call"), 15)

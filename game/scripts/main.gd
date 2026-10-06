@@ -959,6 +959,13 @@ func _coalition_war(now: int) -> void:
 	var k: float = [1.1, 1.1, 1.1, 1.2, 1.3][mini(members.size(), 4)]
 	var mc := clampf(k * float(p_player) / maxf(1.0, float(p_sum)), 0.5, 1.5)
 	var f := clampf(float(p_sum) * mc / maxf(1.0, float(p_leader)), 1.0, 2.5)
+	var p_each: Array = []
+	for m in members:
+		var pm := 0
+		for a in armies:
+			if int(a["side"]) == int(m):
+				pm += int(a["max_str"])
+		p_each.append(pm)
 	for a in armies:
 		if int(a["side"]) == leader:
 			a["max_str"] = roundi(float(a["max_str"]) * f)
@@ -977,6 +984,11 @@ func _coalition_war(now: int) -> void:
 	war = War.declare_war(sim, leader, goals[0])
 	war["by_ai"] = 1
 	war["coalition"] = members
+	# what a separate peace needs to take a member's strength back out of the leader's armies
+	war["coalition_p"] = p_each
+	war["coalition_lead_p"] = p_leader
+	war["coalition_mc"] = roundi(mc * 1000.0)
+	war["coalition_f"] = roundi(f * 1000.0)
 	war["started"] = now
 	if target >= 0:
 		war["ai_goal"] = target
@@ -1000,6 +1012,88 @@ func _coalition_war(now: int) -> void:
 	_post("inbox.coalition_war.title", L.pack("inbox.coalition_war.text", [_state_key(leader), members.size()]))
 	ui.toast(tr("toast.coalition_war") % ", ".join(names))
 	_set_mode(Mode.WAR)
+
+
+# ---------------------------------------------------------------------- separate peace and subsidies (canon §10.8)
+
+## A coalition member other than the leader can make a separate peace while the war is not lost (score ≥ 0).
+func _can_separate(s: int) -> bool:
+	if war.is_empty() or not war.has("coalition") or int(war["enemy"]) == s:
+		return false
+	return (war["coalition"] as Array).has(s) and float(War.war_score(sim, war)["score"]) >= 0.0
+
+
+## Separate peace (canon §10.8): the member leaves the war with a 24 h truce; its share of the coalition's
+## strength leaves the leader's armies.
+func _separate_peace(s: int) -> void:
+	if not _can_separate(s):
+		ui.toast(tr("separate.cant"))
+		return
+	var members: Array = war["coalition"]
+	var i := members.find(s)
+	var ps: Array = war.get("coalition_p", [])
+	var p_sum := 0
+	for v in ps:
+		p_sum += int(v)
+	var p_out: int = int(ps[i]) if i < ps.size() else 0
+	var f_old := float(war.get("coalition_f", 1000)) / 1000.0
+	var mc := float(war.get("coalition_mc", 1000)) / 1000.0
+	var f_new := clampf(float(p_sum - p_out) * mc / maxf(1.0, float(war.get("coalition_lead_p", 1))), 1.0, 2.5)
+	for a in armies:
+		if int(a["side"]) == int(war["enemy"]):
+			a["max_str"] = roundi(float(a["max_str"]) * f_new / f_old)
+			a["str"] = mini(int(a["str"]), int(a["max_str"]))
+	members.remove_at(i)
+	if i < ps.size():
+		ps.remove_at(i)
+	war["coalition_f"] = roundi(f_new * 1000.0)
+	truce[s] = now_s() + TRUCE_SEC
+	_opinion_add(s, 10.0)
+	sfx.play("seal")
+	_post(L.pack("inbox.separate.title", [_state_key(s)]), L.pack("inbox.separate.text", [_state_key(s), _state_key(int(war["enemy"]))]))
+	ui.toast(tr("toast.separate") % _state_name(s))
+	map_view.sync_armies(armies, null)
+	_refresh_ui()
+	_autosave()
+
+
+## Subsidies (canon §10.8): with the alarm at 50%+, a neighbour with opinion ≤ −25 may fund the state at war with
+## the player — its armies +10% for 12 h, at most once a day per war; daily chance by archetype (06 §9).
+const SUBSIDY_CHANCE := {"wolf": 0, "fox": 20, "turtle": 10, "raven": 10, "owl": 30}
+const SUBSIDY_SEC := 12 * 3600
+
+
+func _subsidy_tick(now: int) -> void:
+	if war.is_empty():
+		return
+	var enemy: int = war["enemy"]
+	if war.has("subsidy_until") and now >= int(war["subsidy_until"]):
+		for a in armies:
+			if int(a["side"]) == enemy:
+				a["max_str"] = int(a["max_str"]) * 10 / 11
+				a["str"] = mini(int(a["str"]), int(a["max_str"]))
+		war.erase("subsidy_until")
+		war.erase("subsidy_by")
+		map_view.sync_armies(armies, null)
+	if war.has("subsidy_until") or alarm() < 0.5 or now - int(war.get("subsidy_day", 0)) < 86400:
+		return
+	war["subsidy_day"] = now
+	for s in _ai_states():
+		if s == enemy or (war.get("coalition", []) as Array).has(s) or allies.has(s) or _opinion_of(s) > -25.0:
+			continue
+		var chance: int = SUBSIDY_CHANCE.get(String(sim.states[s]["archetype"]), 10)
+		if _roll("subsidy:%d:%d" % [s, now / 86400], 100) >= chance:
+			continue
+		for a in armies:
+			if int(a["side"]) == enemy:
+				a["max_str"] = int(a["max_str"]) * 11 / 10
+				a["str"] = int(a["str"]) * 11 / 10
+		war["subsidy_until"] = now + SUBSIDY_SEC
+		war["subsidy_by"] = s
+		map_view.sync_armies(armies, null)
+		_post("inbox.subsidy.title", L.pack("inbox.subsidy.text", [_state_key(s), _state_key(enemy)]))
+		ui.toast(tr("toast.subsidy") % [_state_name(s), _state_name(enemy)])
+		return
 
 
 # ---------------------------------------------------------------------- non-aggression pact (canon §10.8, 06 §11)
@@ -2540,6 +2634,17 @@ func _finish_war(enemy: int, msg: String) -> void:
 	truce[enemy] = Time.get_unix_time_from_system() + TRUCE_SEC
 	for m in war.get("coalition", []):
 		truce[int(m)] = Time.get_unix_time_from_system() + TRUCE_SEC  # the coalition makes peace together
+	# the war's borrowed strength goes home with it: the coalition's share and a running subsidy
+	var k := 1.0
+	if war.has("coalition_f"):
+		k /= float(war["coalition_f"]) / 1000.0
+	if war.has("subsidy_until"):
+		k /= 1.1
+	if k < 0.999:
+		for a in armies:
+			if int(a["side"]) == enemy:
+				a["max_str"] = maxi(1, roundi(float(a["max_str"]) * k))
+				a["str"] = mini(int(a["str"]), int(a["max_str"]))
 	war = {}
 	_normalize_armies()
 	map_view.sync_armies(armies, null)
@@ -3376,6 +3481,7 @@ func _diplomacy_items(now: int) -> Array:
 			"opinion": v, "word": tr(_opinion_word(v)), "status": status,
 			"can_war": war.is_empty() and _truce_left(s) == 0 and _pact_left(s) == 0, "gift_cost": _gift_cost(), "gift_left": gift_left,
 			"pact_reason": _pact_reason(s), "pact_left": _pact_left(s),
+			"separate": _can_separate(s),
 			"swap_reason": _swap_reason(s),
 			"color": map_view.state_color(s)}))
 	return items
@@ -3395,6 +3501,8 @@ func _on_diplomacy_action(s: int, kind: String) -> void:
 			rig.focus(map_view.cell_world(g[0]))
 			_select(g[0])
 			ui.toast(tr("toast.target_chosen"))
+		"separate":
+			_separate_peace(s)
 		"pact":
 			var whyp := _pact_reason(s)
 			if whyp != "":
@@ -3793,6 +3901,7 @@ func _ai_tick(now: int) -> void:
 		_answer_ultimatum("refuse")
 	_ultimatum_rolls(now)
 	_coalition_tick(now)
+	_subsidy_tick(now)
 	if war.is_empty():
 		return
 	if war.has("strike_at"):

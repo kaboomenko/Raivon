@@ -831,6 +831,29 @@ func _run() -> void:
 	g._coalition_tick(g.now_s())
 	_check(not g.war.is_empty() and g.war.has("coalition") and g.war.has("strike_at"), "after 12 h the coalition declares war with a first strike")
 	_check(int(g.war["enemy"]) == g._coalition_leader(g.war["coalition"]), "the leader fights the war")
+	# separate peace with a non-leader member: it leaves, the leader's armies lose its share
+	var lead: int = g.war["enemy"]
+	var other := -1
+	for m in g.war["coalition"]:
+		if int(m) != lead:
+			other = int(m)
+	var lead_str_before := 0
+	for a in g.armies:
+		if int(a["side"]) == lead:
+			lead_str_before += int(a["max_str"])
+	_check(other >= 0 and g._can_separate(other), "a member can make a separate peace")
+	if other >= 0:
+		g._separate_peace(other)
+		var lead_str_after := 0
+		for a in g.armies:
+			if int(a["side"]) == lead:
+				lead_str_after += int(a["max_str"])
+		_check(not (g.war["coalition"] as Array).has(other) and g._truce_left(other) > 0, "the member left with a truce")
+		_check(lead_str_after <= lead_str_before, "the leader's armies lose its share (%d -> %d)" % [lead_str_before, lead_str_after])
+	# a won coalition war counts its battles double («Триумф»)
+	g.war["battles"] = 4
+	_check(int(g.War.war_score(g.sim, g.war)["battles"]) == 8, "Triumph: battles count double")
+	g.war["battles"] = 0
 	Save.save(g)
 	var gc: Node = load("res://scenes/main.tscn").instantiate()
 	gc.save_enabled = false
