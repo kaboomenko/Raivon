@@ -608,6 +608,27 @@ func _run() -> void:
 	_check(issued, "a stronger neighbour issues an ultimatum by its archetype chance")
 	g.ultimatum = {}
 	g.ui.close_modal()
+	# AI colonization: one wild hex per state every 3 h (02 §10.2)
+	g.stats["peaces"] = maxi(1, int(g.stats.get("peaces", 0)))
+	g.ftue = 0
+	var ai_land0 := 0
+	for c in g.sim.cells:
+		if int(c["owner"]) >= 2:
+			ai_land0 += 1
+	g._ai_colonize(g.now_s())
+	_check(g.ai_colonizing.size() >= 1, "AI states start settling wild hexes (%d)" % g.ai_colonizing.size())
+	var claimed: int = g.ai_colonizing.values()[0]["hex"] if g.ai_colonizing.size() > 0 else -1
+	if claimed >= 0:
+		var gold_pre: int = g.econ.res["gold"]
+		g._colonize(claimed)
+		_check(not g.colonizing.has(claimed) and int(g.econ.res["gold"]) == gold_pre, "a hex the AI settles is reserved")
+	g.time_offset += 3 * 3600 + 1
+	g._ai_colonize(g.now_s())
+	var ai_land1 := 0
+	for c in g.sim.cells:
+		if int(c["owner"]) >= 2:
+			ai_land1 += 1
+	_check(ai_land1 > ai_land0, "AI land grows by colonization (%d -> %d)" % [ai_land0, ai_land1])
 	Save.save(g)
 	var g3: Node = load("res://scenes/main.tscn").instantiate()
 	g3.save_enabled = false

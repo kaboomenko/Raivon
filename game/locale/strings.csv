@@ -519,3 +519,4 @@ peace_offer.quote,Довольно крови. Назовите ваши усл�
 peace_offer.go,К мирной конференции,To the peace conference
 inbox.peace_offer.title,%s предлагают мир,%s offer peace
 inbox.peace_offer.text,"%s предлагают мир: вы держите %d%% фронта.","%s offer peace: you hold %d%% of the front."
+toast.ai_claimed,Этот гекс уже осваивают %s,%s are already settling this hex

@@ -82,6 +82,7 @@ var inbox: Array = []  # reports: {t, title, text, read}
 var ultimatum := {}  # active AI ultimatum: {state, hex, tribute, deadline}
 var ultimatum_at := 0  # 0 = not scheduled yet, -1 = done; unix time of the scripted Barons ultimatum
 var ult_check := {}  # AI state -> unix time of its next daily ultimatum roll (canon §10.4)
+var ai_colonizing := {}  # AI state -> {hex, at}: one settlement at a time, 3 h per hex (02 §10.2)
 const WAR_CAP_SEC := 2 * 3600  # chapter I war cap (canon §9.1)
 const STRIKE_WARN_SEC := 20 * 60  # strike announced 20 min ahead (canon §9.11)
 var _econ_acc := 1.0
@@ -669,6 +670,64 @@ const AI_DL_CAP: Array[int] = [0, 2, 4, 6, 8, 9, 10]  # by chapter (canon §9.16
 const AI_DL_STEP_SEC := 6 * 86400
 
 
+const AI_COLONIZE_SEC := 3 * 3600
+
+
+## AI state settling `hex` right now, or -1.
+func _ai_claimed(hex: int) -> int:
+	for s in ai_colonizing:
+		if int(ai_colonizing[s]["hex"]) == hex:
+			return int(s)
+	return -1
+
+
+## AI colonization (02 §10.2): one wild hex next to its official land at a time, 3 h each; the target scores
+## value × 2 + 1 next to a deposit − 2 next to the player; ties by hex id. Starts after the first peace.
+func _ai_colonize(now: int) -> void:
+	if ftue != 0 or int(stats.get("peaces", 0)) < 1:
+		return
+	for s in _ai_states():
+		var cur: Dictionary = ai_colonizing.get(s, {})
+		if not cur.is_empty():
+			var h: int = cur["hex"]
+			var c: Dictionary = sim.cells[h]
+			if c["owner"] != Types.NOBODY or c["controller"] != Types.NOBODY:
+				ai_colonizing.erase(s)
+				map_view.hex_label(h, "")
+				continue
+			if now >= int(cur["at"]):
+				c["owner"] = s
+				c["controller"] = s
+				ai_colonizing.erase(s)
+				map_view.hex_label(h, "")
+				map_view.refresh_hex(h)
+				map_view.mark_dirty()
+				map_view.burst(h, map_view.state_color(s), false)
+			else:
+				map_view.hex_label(h, "⛳ " + GameUI.fmt_time(int(cur["at"]) - now), map_view.state_color(s).lightened(0.35))
+			continue
+		var best := -1
+		var best_s := -1000
+		for c in sim.cells:
+			var id: int = c["id"]
+			if c["owner"] != Types.NOBODY or c["controller"] != Types.NOBODY or not Types.is_passable(c):
+				continue
+			if colonizing.has(id) or _ai_claimed(id) >= 0 or not camps.at(id).is_empty() or not _touches_owner(id, s):
+				continue
+			var sc: int = int(c["value"]) * 2
+			for n in sim.neighbors[id]:
+				if n >= 0 and not deposits.at(n).is_empty():
+					sc += 1
+					break
+			if _touches_owner(id, Types.PLAYER):
+				sc -= 2
+			if sc > best_s:
+				best_s = sc
+				best = id
+		if best >= 0:
+			ai_colonizing[s] = {"hex": best, "at": now + AI_COLONIZE_SEC}
+
+
 ## The chapter a state was born in: Barons and Hamlets — I, League and Order — II.
 func _native_chapter(s: int) -> int:
 	return 1 if s <= MapGen.HAMLETS else 2
@@ -897,6 +956,9 @@ func _ai_states() -> Array:
 
 ## Colonization (canon §12.1): gold and a timer, one at a time, no builder needed.
 func _colonize(id: int) -> void:
+	if _ai_claimed(id) >= 0:
+		ui.toast(tr("toast.ai_claimed") % _state_name(_ai_claimed(id)))
+		return
 	if not camps.at(id).is_empty():
 		ui.toast(tr("camp.blocks"))
 		return
@@ -1818,6 +1880,7 @@ func _econ_tick() -> void:
 			ui.toast(tr("toast.convoy_back") % [n, tr("res.gen." + String(ev["res"]))])
 	_camps_tick(now)
 	_ai_growth(now)
+	_ai_colonize(now)
 	for h in colonizing.keys():
 		if now >= int(colonizing[h]):
 			_finish_colonize(h)

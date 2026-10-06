@@ -67,6 +67,7 @@ static func to_dict(g: Node) -> Dictionary:
 		"chapter": g.chapter,
 		"ai_dl_at": g.ai_dl_at,
 		"ult_check": g.ult_check,
+		"ai_colonizing": g.ai_colonizing,
 		"cases": g.cases.to_dict(),
 		"speed_minutes": g.speed_minutes,
 		"purchases": g.purchases,
@@ -172,6 +173,11 @@ static func apply(g: Node, d: Dictionary) -> bool:
 	g.stars_claimed = d.get("stars_claimed", {})
 	g.chapter_done = bool(d.get("chapter_done", false))
 	g.chapter = int(d.get("chapter", 1))
+	var aic: Dictionary = d.get("ai_colonizing", {})
+	g.ai_colonizing = {}
+	for k in aic:
+		var v: Dictionary = aic[k]
+		g.ai_colonizing[int(k)] = {"hex": int(v.get("hex", -1)), "at": int(v.get("at", 0))}
 	var ulc: Dictionary = d.get("ult_check", {})
 	g.ult_check = {}
 	for k in ulc:
