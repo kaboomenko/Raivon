@@ -81,6 +81,7 @@ var tab := "army"
 var inbox: Array = []  # reports: {t, title, text, read}
 var ultimatum := {}  # active AI ultimatum: {state, hex, tribute, deadline}
 var ultimatum_at := 0  # 0 = not scheduled yet, -1 = done; unix time of the scripted Barons ultimatum
+var ult_check := {}  # AI state -> unix time of its next daily ultimatum roll (canon §10.4)
 const WAR_CAP_SEC := 2 * 3600  # chapter I war cap (canon §9.1)
 const STRIKE_WARN_SEC := 20 * 60  # strike announced 20 min ahead (canon §9.11)
 var _econ_acc := 1.0
@@ -1264,6 +1265,8 @@ func _end_offensive() -> void:
 	_last_refill = now_s()
 	_normalize_armies()
 	map_view.sync_armies(armies, null)
+	if ftue == 0:
+		_schedule_counter()
 	_set_mode(Mode.RESULT)
 	var reason: String = tr(String({"retreat": "result.retreat", "wiped": "result.wiped"}.get(res["reason"], "result.timeout")))
 	ui.show_result(stars, res["captured"].size(), res["lost"].size(), ws["score"], ws["control"], reason,
@@ -2774,6 +2777,7 @@ func _ai_tick(now: int) -> void:
 		_issue_ultimatum(now)
 	if not ultimatum.is_empty() and now >= int(ultimatum["deadline"]) and mode in [Mode.MAP, Mode.WAR]:
 		_answer_ultimatum("refuse")
+	_ultimatum_rolls(now)
 	if war.is_empty():
 		return
 	if war.has("strike_at"):
@@ -2786,19 +2790,57 @@ func _ai_tick(now: int) -> void:
 		_war_cap()
 
 
-func _issue_ultimatum(now: int) -> void:
-	ultimatum_at = -1
+## Archetype ultimatums (canon §10.4): once a day each neighbour that is stronger than the player rolls its chance
+## (Wolf 35%, Raven 25% while the player is at war, Fox and Owl 10%, Turtle 5%). New neighbours wait 12 h.
+const ULT_CHANCE := {"wolf": 35, "raven": 25, "fox": 10, "owl": 10, "turtle": 5}
+
+
+func _ultimatum_rolls(now: int) -> void:
+	if ultimatum_at >= 0 or not ultimatum.is_empty() or not war.is_empty() or mode != Mode.MAP or ftue != 0:
+		return
+	for s in _ai_states():
+		if not ult_check.has(s):
+			ult_check[s] = now + (12 * 3600 if _native_chapter(s) >= 2 else 6 * 3600)
+			continue
+		if now < int(ult_check[s]):
+			continue
+		ult_check[s] = now + 86400
+		if _truce_left(s) > 0 or _ai_power(s) <= _player_power():
+			continue
+		var chance: int = ULT_CHANCE.get(String(sim.states[s]["archetype"]), 10)
+		var roll: int = absi(hash("ult:%d:%d" % [s, now / 86400])) % 100
+		if roll < chance:
+			_issue_ultimatum(now, s)
+			return
+
+
+## Field power: the player's armies vs what the AI state would field at its DL (2 armies, Wolf +1, Turtle −1).
+func _player_power() -> int:
+	var p := 0
+	for a in _player_armies():
+		p += int(a["max_str"])
+	return p
+
+
+func _ai_power(s: int) -> int:
+	var n: int = 2 + int({"wolf": 1, "turtle": -1}.get(String(sim.states[s]["archetype"]), 0))
+	return n * Armies.infantry_army(0, s, 0, 3, int(sim.states[s]["dev_level"]))["max_str"]
+
+
+func _issue_ultimatum(now: int, state: int = MapGen.BARONS) -> void:
+	if state == MapGen.BARONS:
+		ultimatum_at = -1
 	var core := MapGen.core_of(sim, Types.PLAYER)
 	var best := -1
 	for c in sim.cells:
-		if c["owner"] == Types.PLAYER and Types.is_passable(c) and not core.has(c["id"]) and _touches_owner(c["id"], MapGen.BARONS):
+		if c["owner"] == Types.PLAYER and Types.is_passable(c) and not core.has(c["id"]) and _touches_owner(c["id"], state):
 			if best < 0 or int(c["value"]) > int(sim.cells[best]["value"]):
 				best = c["id"]
 	if best < 0:
 		return
 	var tribute := 8 * maxi(60, int(econ.gross_per_hour(sim).get("gold", 0)))
-	ultimatum = {"state": MapGen.BARONS, "hex": best, "tribute": tribute, "deadline": now + 4 * 3600}
-	_post(L.pack("inbox.ultimatum.title", [_state_key(MapGen.BARONS)]), L.pack("inbox.ultimatum.text", [_cell_key(best), tribute]))
+	ultimatum = {"state": state, "hex": best, "tribute": tribute, "deadline": now + 4 * 3600}
+	_post(L.pack("inbox.ultimatum.title", [_state_key(state)]), L.pack("inbox.ultimatum.text", [_cell_key(best), tribute]))
 	sfx.play("warn")
 	sfx.haptic(60)
 	rig.focus(map_view.cell_world(best))
@@ -2874,6 +2916,9 @@ func _resolve_strike() -> void:
 	war.erase("strike_hex")
 	war.erase("strike_from")
 	map_view.strike_arrow(-1, -1, "")
+	if int(stats.get("defenses", 0)) >= 1:
+		_auto_defense(hex)
+		return
 	war["battles"] = clampi(int(war["battles"]) + 2, -10, 10)
 	_stat("defenses")
 	var gold := int(maxi(60, int(econ.gross_per_hour(sim).get("gold", 0))) / 2.0)
@@ -2886,6 +2931,92 @@ func _resolve_strike() -> void:
 	ui.toast(L.t(msg))
 	_refresh_ui()
 	_autosave()
+
+
+## Auto-defense (canon §9.11): the AI's 90 s offensive is played out at once on the same engine; the player's
+## armies, garrisons, forts and towers defend by themselves. Hexes it takes become occupied; a held line pays
+## 30 min of gold income. The player's core is never a target.
+func _auto_defense(hex: int) -> void:
+	var enemy: int = war["enemy"]
+	_ensure_armies_for(enemy)
+	_stop_marches()
+	for a in armies:
+		a["routed"] = false
+		a["hold"] = false
+		if a["side"] != Types.PLAYER:
+			a["str"] = a["max_str"]
+	_normalize_armies()
+	var b := Battle.new(sim, armies, {"attacker": enemy, "defender": Types.PLAYER, "ai_energy_mult": 0, "cards": HAND})
+	var bot := BattleAI.new(enemy)
+	while not b.over:
+		bot.think(b)
+		b.step()
+	var res: Dictionary = b.result()
+	var taken: Array = res["captured"]
+	for a in armies:
+		if a["side"] == Types.PLAYER and (a["routed"] or int(a["str"]) < int(a["max_str"]) / 10):
+			a["str"] = maxi(int(a["str"]), int(a["max_str"]) / 10)
+			a["routed"] = false
+	_normalize_armies()
+	map_view.sync_armies(armies, null)
+	map_view.mark_dirty()
+	if taken.is_empty():
+		war["battles"] = clampi(int(war["battles"]) + 2, -10, 10)
+		_stat("defenses")
+		var gold := int(maxi(60, int(econ.gross_per_hour(sim).get("gold", 0))) / 2.0)
+		econ.add_resources({"gold": gold})
+		map_view.burst(hex, MapView.C_PLAYER, true)
+		map_view.floater(hex, tr("floater.repelled_short"), Color(0.75, 0.85, 1.0))
+		sfx.play("repelled")
+		var msg := L.pack("inbox.defense.text", [_state_key(enemy), _cell_key(hex), gold])
+		_post("inbox.defense.title", msg)
+		ui.toast(L.t(msg))
+	else:
+		war["battles"] = clampi(int(war["battles"]) - 2, -10, 10)
+		for h in taken:
+			map_view.smoke(int(h), 5.0, true)
+		sfx.play("lost")
+		var msg2 := L.pack("inbox.defense_lost.text", [_state_key(enemy), taken.size()])
+		_post("inbox.defense_lost.title", msg2)
+		ui.toast(L.t(msg2))
+	_refresh_ui()
+	_autosave()
+
+
+## After the player's offensive the AI answers with an announced counter-strike (canon §9.11): it aims at the
+## hexes it lost first, else the most valuable non-core hex on the front.
+func _schedule_counter() -> void:
+	if war.is_empty() or war.has("strike_at"):
+		return
+	var enemy: int = war["enemy"]
+	var core := MapGen.core_of(sim, Types.PLAYER)
+	var best := -1
+	var best_s := -1
+	for c in sim.cells:
+		if c["controller"] != Types.PLAYER or not Types.is_passable(c) or core.has(c["id"]) or not _touches_controller(c["id"], enemy):
+			continue
+		var s: int = int(c["value"]) + (10 if c["owner"] == enemy else 0)
+		if s > best_s:
+			best_s = s
+			best = c["id"]
+	if best < 0:
+		return
+	var from := best
+	for n in sim.neighbors[best]:
+		if n >= 0 and sim.cells[n]["controller"] == enemy:
+			from = n
+			break
+	war["strike_hex"] = best
+	war["strike_from"] = from
+	war["strike_at"] = now_s() + STRIKE_WARN_SEC
+	_post("inbox.counter.title", L.pack("inbox.counter.text", [_state_key(enemy), _cell_key(best), STRIKE_WARN_SEC / 60]))
+
+
+func _touches_controller(id: int, side: int) -> bool:
+	for n in sim.neighbors[id]:
+		if n >= 0 and sim.cells[n]["controller"] == side:
+			return true
+	return false
 
 
 ## War cap (canon §9.13): the recommended package at ВС ≥ +10, white peace at |ВС| < 10, defeat at ≤ −10.

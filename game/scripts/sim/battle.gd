@@ -88,7 +88,7 @@ func _init(p_world: World, p_armies: Array, p_opts: Dictionary) -> void:
 		a["attrition"] = 0
 		a["move"] = null
 	# The AI never targets the player's core in any battle (canon §9.11, decision 19).
-	_protected_core = MapGen.core_of(world, attacker())
+	_protected_core = MapGen.core_of(world, Types.PLAYER)  # the player's core, whoever attacks
 
 
 # ---------- helpers ----------
@@ -178,7 +178,7 @@ func can_target(side: int, target: int) -> bool:
 		return false
 	if opts.has("camp") and target != int(opts["camp"]):
 		return false  # marauder fight (03 §5.7): only the camp hex
-	if side != attacker() and _protected_core.has(target):
+	if side != Types.PLAYER and _protected_core.has(target):
 		return false
 	return true
 

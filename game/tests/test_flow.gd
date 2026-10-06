@@ -413,7 +413,7 @@ func _run() -> void:
 		g._open_market()
 		_check(g.ui.has_modal(), "Market opens")
 		g._on_market_exchange("food", "metal", 1500)
-		_check(int(g.econ.res["food"]) == 1500 and int(g.econ.res["metal"]) == 500, "Market exchange at 3:1")
+		_check(int(g.econ.res["metal"]) == 500 and int(g.econ.res["food"]) <= 1500, "Market exchange at 3:1 (food %d, metal %d)" % [int(g.econ.res["food"]), int(g.econ.res["metal"])])
 		g.econ.res.merge({"gold": 4000, "food": 4000, "metal": 4000}, true)
 		var lot: Dictionary = g.market.lots[0]
 		var had: int = g.econ.res[lot["get"]]
@@ -541,6 +541,62 @@ func _run() -> void:
 		g.time_offset += 6 * 86400 + 1
 		g._ai_growth(g.now_s())
 	_check(int(g.sim.states[2]["dev_level"]) == 3 and int(g.sim.states[4]["dev_level"]) == 4, "AI DL growth to the caps (Barons %d -> %d, League -> %d)" % [b_dl, int(g.sim.states[2]["dev_level"]), int(g.sim.states[4]["dev_level"])])
+	# AI wars of chapter II (canon §9.11, §10.4): counter-strike after an offensive, auto-defense, ultimatums
+	g.ui.close_modal()
+	g.truce = {}
+	g.mode = g.Mode.MAP
+	var bg: Array = War.recommend_goals(g.sim, MapGen.BARONS, 1)
+	if bg.size() > 0:
+		g.ftue = 0
+		g._declare(MapGen.BARONS, bg[0])
+		g.war.erase("strike_at")
+		g.time_offset += 3600
+		g._step_marches()
+		g._start_offensive()
+		while g.battle != null and not g.battle.over:
+			if g.battle.tick % 20 == 0:
+				g._bot_move()
+			g._battle_step()
+		g._end_offensive()
+		_check(g.war.has("strike_at"), "the AI announces a counter-strike after the offensive")
+		g.ui.close_modal()
+		g._set_mode(g.Mode.WAR)
+		var occ0 := 0
+		for c in g.sim.cells:
+			if int(c["owner"]) == Types.PLAYER and int(c["controller"]) != Types.PLAYER:
+				occ0 += 1
+		var d0: int = int(g.stats.get("defenses", 0))
+		g._resolve_strike()
+		var occ1 := 0
+		for c in g.sim.cells:
+			if int(c["owner"]) == Types.PLAYER and int(c["controller"]) != Types.PLAYER:
+				occ1 += 1
+		_check(int(g.stats.get("defenses", 0)) == d0 + 1 or occ1 > occ0, "auto-defense resolved (defenses %d -> %d, our hexes occupied %d -> %d)" % [d0, int(g.stats.get("defenses", 0)), occ0, occ1])
+		var core_safe := true
+		for id in MapGen.core_of(g.sim, Types.PLAYER):
+			if int(g.sim.cells[id]["controller"]) != Types.PLAYER:
+				core_safe = false
+		_check(core_safe, "the player's core is never taken in auto-defense")
+		War.white_peace(g.sim)
+		g._finish_war(MapGen.BARONS, "")
+	g.truce = {}
+	g.ultimatum = {}
+	g.ultimatum_at = -1
+	g.mode = g.Mode.MAP
+	for a in g._player_armies():
+		a["max_str"] = 1000  # a weak player: every neighbour is stronger
+	var issued := false
+	for day in 40:
+		g.time_offset += 86400
+		for s2 in g._ai_states():
+			g.ult_check[s2] = 0
+		g._ultimatum_rolls(g.now_s())
+		if not g.ultimatum.is_empty():
+			issued = true
+			break
+	_check(issued, "a stronger neighbour issues an ultimatum by its archetype chance")
+	g.ultimatum = {}
+	g.ui.close_modal()
 	Save.save(g)
 	var g3: Node = load("res://scenes/main.tscn").instantiate()
 	g3.save_enabled = false

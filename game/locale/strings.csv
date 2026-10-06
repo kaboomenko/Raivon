@@ -509,3 +509,7 @@ inbox.expansion.text,"Открыт «Речной край»: мир вырос 
 dl.short,УР%d,DL%d
 inbox.ai_dl.title,Сосед окреп,A neighbour grows stronger
 inbox.ai_dl.text,"%s достигли УР%d: армии сильнее, облик меняется.","%s reached DL%d: stronger armies and a new look."
+inbox.defense_lost.title,Оборона прорвана,Defence broken
+inbox.defense_lost.text,"%s прорвали оборону: занято гексов — %d. Верните их наступлением.","%s broke through: %d hexes occupied. Win them back with an offensive."
+inbox.counter.title,Готовится контрудар,A counter-strike is coming
+inbox.counter.text,"%s готовят удар по «%s» через %d мин. Усильте оборону: армия, укрепление, башня.","%s will strike “%s” in %d min. Strengthen it: an army, a fort, a tower."
