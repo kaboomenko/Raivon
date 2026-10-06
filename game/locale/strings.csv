@@ -527,3 +527,7 @@ star.c2_ultimatum,Не на тех напали: отклоните ультим
 star.c2_colonize,Освойте 4 диких гекса в главе II,Settle 4 wild hexes in chapter II
 star.c2_camps,Разбейте 3 лагеря мародёров,Destroy 3 marauder camps
 star.c2_dl5,Доведите державу до УР5,Bring the realm to DL5
+inbox.ai_war.title,Война соседей,Neighbours at war
+inbox.ai_war.text,"%s напали на %s. Их фронт виден по штриховке; гарнизоны воюющих слабее на других границах.","%s attacked %s. Their front shows as hatching; the warring states have weaker garrisons on their other borders."
+inbox.ai_peace.title,Соседи помирились,Neighbours made peace
+inbox.ai_peace.text,"%s и %s подписали мир: к победителю перешло гексов — %d.","%s and %s signed a peace: %d hexes went to the winner."

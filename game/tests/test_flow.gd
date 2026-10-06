@@ -636,6 +636,53 @@ func _run() -> void:
 		if int(c["owner"]) >= 2:
 			ai_land1 += 1
 	_check(ai_land1 > ai_land0, "AI land grows by colonization (%d -> %d)" % [ai_land0, ai_land1])
+	# AI against AI (canon §10.10): a war between neighbours moves border hexes, peace annexes them
+	g.war = {}
+	if not g._states_touch(MapGen.BARONS, MapGen.HAMLETS):
+		# give the two a shared border for the test: a non-core wild/AI hex next to the Barons goes to the Hamlets
+		var pcore := MapGen.core_of(g.sim, Types.PLAYER)
+		for c in g.sim.cells:
+			if int(c["owner"]) == MapGen.BARONS and not MapGen.core_of(g.sim, MapGen.BARONS).has(c["id"]):
+				for n in g.sim.neighbors[c["id"]]:
+					if n >= 0 and Types.is_passable(g.sim.cells[n]) and int(g.sim.cells[n]["owner"]) in [Types.NOBODY, MapGen.HAMLETS] and not pcore.has(n):
+						g.sim.cells[n]["owner"] = MapGen.HAMLETS
+						g.sim.cells[n]["controller"] = MapGen.HAMLETS
+						break
+				if g._states_touch(MapGen.BARONS, MapGen.HAMLETS):
+					break
+	var started_aw := false
+	for k in 60:
+		g.ai_war_check = 0
+		g.time_offset += 6 * 3600
+		g._ai_wars_tick(g.now_s())
+		if not g.ai_wars.is_empty():
+			started_aw = true
+			break
+	_check(started_aw, "neighbouring AI states go to war")
+	if started_aw:
+		var aw: Dictionary = g.ai_wars[0]
+		var aa: int = aw["a"]
+		var bb: int = aw["b"]
+		var occ := 0
+		g.time_offset += 7 * 3600
+		g._ai_wars_tick(g.now_s())
+		for c in g.sim.cells:
+			if (int(c["owner"]) == aa and int(c["controller"]) == bb) or (int(c["owner"]) == bb and int(c["controller"]) == aa):
+				occ += 1
+		_check(occ >= 1, "the AI front moves (%d hexes occupied)" % occ)
+		var cores_ok := true
+		for s3 in [aa, bb]:
+			for id in MapGen.core_of(g.sim, s3):
+				if int(g.sim.cells[id]["controller"]) != s3:
+					cores_ok = false
+		_check(cores_ok, "AI cores never change hands")
+		g.time_offset += 50 * 3600
+		g._ai_wars_tick(g.now_s())
+		var still := 0
+		for c in g.sim.cells:
+			if int(c["owner"]) != int(c["controller"]) and int(c["owner"]) >= 2 and int(c["controller"]) >= 2:
+				still += 1
+		_check(g.ai_wars.is_empty() and still == 0, "AI peace annexes the occupied hexes")
 	Save.save(g)
 	var g3: Node = load("res://scenes/main.tscn").instantiate()
 	g3.save_enabled = false

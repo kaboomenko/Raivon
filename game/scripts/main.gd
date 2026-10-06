@@ -83,6 +83,8 @@ var inbox: Array = []  # reports: {t, title, text, read}
 var ultimatum := {}  # active AI ultimatum: {state, hex, tribute, deadline}
 var ultimatum_at := 0  # 0 = not scheduled yet, -1 = done; unix time of the scripted Barons ultimatum
 var ult_check := {}  # AI state -> unix time of its next daily ultimatum roll (canon §10.4)
+var ai_wars: Array = []  # [{a, b, until, next}] AI-vs-AI wars (canon §10.10)
+var ai_war_check := 0  # unix time of the next 6-hourly evaluation
 var ai_colonizing := {}  # AI state -> {hex, at}: one settlement at a time, 3 h per hex (02 §10.2)
 const WAR_CAP_SEC := 2 * 3600  # chapter I war cap (canon §9.1)
 const STRIKE_WARN_SEC := 20 * 60  # strike announced 20 min ahead (canon §9.11)
@@ -672,6 +674,87 @@ const AI_DL_CAP: Array[int] = [0, 2, 4, 6, 8, 9, 10]  # by chapter (canon §9.16
 const AI_DL_STEP_SEC := 6 * 86400
 
 
+## AI against AI (canon §10.10): every 6 h neighbouring AI states may go to war (one such war at a time,
+## chance by the aggressor's archetype); every 2 h 1–3 border hexes change hands by strength, never cores;
+## peace after 12–48 h annexes what is occupied. The player sees a foreign front with hatching and reports.
+func _ai_wars_tick(now: int) -> void:
+	if ftue != 0 or int(stats.get("peaces", 0)) < 1:
+		return
+	for w in ai_wars.duplicate():
+		var a: int = w["a"]
+		var b: int = w["b"]
+		if now >= int(w["until"]):
+			_ai_peace(w)
+			continue
+		while now >= int(w["next"]) and now < int(w["until"]):
+			w["next"] = int(w["next"]) + 2 * 3600
+			var strong := a if _ai_power(a) >= _ai_power(b) else b
+			var weak := b if strong == a else a
+			var n := 1 + absi(hash("aiw:%d:%d:%d" % [a, b, int(w["next"])])) % 3
+			var core := MapGen.core_of(sim, weak)
+			var front: Array = []
+			for c in sim.cells:
+				if c["controller"] == weak and Types.is_passable(c) and not core.has(c["id"]) and _touches_controller(c["id"], strong):
+					front.append(c)
+			front.sort_custom(func(x, y): return int(x["value"]) < int(y["value"]) if int(x["value"]) != int(y["value"]) else int(x["id"]) < int(y["id"]))
+			for c in front.slice(0, n):
+				c["controller"] = strong
+				map_view.refresh_hex(int(c["id"]))
+			map_view.mark_dirty()
+	if now < ai_war_check:
+		return
+	ai_war_check = now + 6 * 3600
+	if not ai_wars.is_empty():
+		return
+	var at_war_with_player: int = war.get("enemy", -1)
+	for a in _ai_states():
+		for b in _ai_states():
+			if a >= b or a == at_war_with_player or b == at_war_with_player or not _states_touch(a, b):
+				continue
+			var agg: int = a if _ai_power(a) >= _ai_power(b) else b
+			var chance: int = int(ULT_CHANCE.get(String(sim.states[agg]["archetype"]), 10)) / 2
+			if absi(hash("aiwar:%d:%d:%d" % [a, b, now / (6 * 3600)])) % 100 < chance:
+				var dur := (12 + absi(hash("aiwd:%d:%d" % [a, b])) % 37) * 3600
+				ai_wars.append({"a": agg, "b": b if agg == a else a, "until": now + dur, "next": now + 2 * 3600})
+				_post("inbox.ai_war.title", L.pack("inbox.ai_war.text", [_state_key(agg), _state_key(b if agg == a else a)]))
+				return
+
+
+func _ai_peace(w: Dictionary) -> void:
+	ai_wars.erase(w)
+	var a: int = w["a"]
+	var b: int = w["b"]
+	var moved := {a: 0, b: 0}
+	for c in sim.cells:
+		var o: int = c["owner"]
+		var k: int = c["controller"]
+		if (o == a and k == b) or (o == b and k == a):
+			c["owner"] = k  # the treaty annexes what is occupied
+			moved[k] = int(moved[k]) + 1
+			map_view.refresh_hex(int(c["id"]))
+	map_view.mark_dirty()
+	var winner := a if int(moved[a]) >= int(moved[b]) else b
+	var loser := b if winner == a else a
+	_post("inbox.ai_peace.title", L.pack("inbox.ai_peace.text", [_state_key(winner), _state_key(loser), int(moved[winner])]))
+
+
+func _states_touch(a: int, b: int) -> bool:
+	for c in sim.cells:
+		if c["owner"] == a and _touches_owner(c["id"], b):
+			return true
+	return false
+
+
+## AI state fighting another AI state right now, or -1 (garrisons on the other borders −30%, canon §10.10).
+func ai_war_of(s: int) -> int:
+	for w in ai_wars:
+		if int(w["a"]) == s:
+			return int(w["b"])
+		if int(w["b"]) == s:
+			return int(w["a"])
+	return -1
+
+
 const AI_COLONIZE_SEC := 3 * 3600
 
 
@@ -1140,6 +1223,12 @@ func _start_offensive() -> void:
 		ftue = 12 if ftue >= 10 else 3
 	battle = Battle.new(sim, armies, opts)
 	ai = BattleAI.new(enemy)
+	var other := ai_war_of(enemy)
+	if other >= 0:
+		# window of opportunity (canon §10.10): fighting another AI, its other borders hold 30% weaker garrisons
+		for c in sim.cells:
+			if c["controller"] == enemy and not _touches_controller(c["id"], other):
+				battle.garrison[c["id"]] = int(battle.garrison[c["id"]]) * 7 / 10
 	_acc = 0.0
 	_ev_i = 0
 	_select(-1)
@@ -1887,6 +1976,7 @@ func _econ_tick() -> void:
 	_camps_tick(now)
 	_ai_growth(now)
 	_ai_colonize(now)
+	_ai_wars_tick(now)
 	for h in colonizing.keys():
 		if now >= int(colonizing[h]):
 			_finish_colonize(h)
