@@ -942,7 +942,8 @@ func sync_armies(armies: Array, battle) -> void:
 		model.rotation.z = sway
 		var ready := float(a["str"]) / maxf(1.0, float(a["max_str"]))
 		var lbl: Label3D = node.get_node("label")
-		lbl.text = str(int(round(a["str"] / 1000.0))) if not a["routed"] else "✖"
+		var hidden: bool = a["side"] != Types.PLAYER and not fog_visible.is_empty() and not fog_visible.has(int(a["hex"]))
+		lbl.text = ("?" if hidden else str(int(round(a["str"] / 1000.0)))) if not a["routed"] else "✖"
 		lbl.modulate = Color(1, 1, 1) if ready >= 0.5 else Color(1.0, 0.75, 0.4)
 		var bar: Node3D = node.get_node("bar")
 		bar.visible = battle != null and not a["routed"]
@@ -1256,6 +1257,7 @@ func has_bubble(hex: int) -> bool:
 
 ## Text floating over a hex (colonization timers); "" removes it.
 var _march_paths := {}  # army id -> {"key": String, "node": Node3D}
+var fog_visible := {}  # hexes in the player's sight (canon §3.1); empty = everything visible
 var camp_hexes := {}  # hex -> resource shown over the tents (marauder camps, canon §5.1)
 
 

@@ -520,6 +520,10 @@ func _run() -> void:
 	for r in ["gold", "food", "metal"]:
 		gained += int(g.econ.res[r]) - int(res_before[r])
 	_check(gained > 0, "camp loot credited (+%d)" % gained)
+	# fog of war (canon §3.1): far enemy hexes are out of sight, near ones in sight
+	var fog: Dictionary = g._fog_visible()
+	var cap0: int = g.sim.states[Types.PLAYER]["capital_id"]
+	_check(fog.has(cap0) and fog.size() < g.sim.cells.size(), "fog of war: %d of %d hexes in sight" % [fog.size(), g.sim.cells.size()])
 	# Chapter II: «Мир расширяется» (canon §12.1, 02 §17)
 	g.ui.close_modal()
 	var n_before: int = 61

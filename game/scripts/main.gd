@@ -675,6 +675,32 @@ func _war_or_front_center() -> Vector3:
 	return map_view.cell_world(g[0]) if g.size() > 0 else rig.target
 
 
+## Fog of war (canon §3.1, 02 §14.1): what the player sees — 2 hexes around every hex it controls and every army,
+## 3 around a working tower (on its own, unoccupied land). Enemy army strength outside shows as «?».
+func _fog_visible() -> Dictionary:
+	var seen := {}
+	var sources: Array = []  # [hex, radius]
+	for c in sim.cells:
+		if c["controller"] == Types.PLAYER:
+			sources.append([int(c["id"]), 3 if int(c.get("tower", 0)) > 0 and c["owner"] == Types.PLAYER else 2])
+	for a in _player_armies():
+		sources.append([int(a["hex"]), 2])
+	for src in sources:
+		var frontier := [int(src[0])]
+		var local := {int(src[0]): true}
+		seen[int(src[0])] = true
+		for step in int(src[1]):
+			var nxt: Array = []
+			for h in frontier:
+				for n in sim.neighbors[h]:
+					if n >= 0 and not local.has(n):
+						local[n] = true
+						seen[n] = true
+						nxt.append(n)
+			frontier = nxt
+	return seen
+
+
 ## At DL5 every Dark Lake of the world wakes up as an Oil hex (canon §5.1).
 func _wake_oil() -> void:
 	if econ.dev_level() < Economy.OIL_DL:
@@ -2145,6 +2171,7 @@ func _econ_tick() -> void:
 			sfx.play("coin")
 			ui.toast(tr("toast.convoy_back") % [n, tr("res.gen." + String(ev["res"]))])
 	_camps_tick(now)
+	map_view.fog_visible = _fog_visible()
 	_wake_oil()
 	_ai_growth(now)
 	_ai_colonize(now)
