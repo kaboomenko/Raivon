@@ -783,6 +783,19 @@ func _run() -> void:
 	g4.save_enabled = false
 	_check(Save.apply(g4, Save.read()) and g4.sim.cells.size() == g.sim.cells.size() and g4.chapter == 3 and g4.sim.states.size() == 9, "chapter III save restores ring III (%d cells)" % g4.sim.cells.size())
 	g4.free()
+	# Chapter IV «Индустриальный пояс» — the last chapter of the launch (canon §12.1)
+	g.war = {}
+	g.ai_wars = []
+	g._world_expansion()
+	g.ui.close_modal()
+	_check(g.chapter == 4 and g.sim.states.size() == 12 and g._land_count() == 250, "world expanded to 250 land hexes, 3 more states (%d)" % g._land_count())
+	_check(g._chapter_goal() == 88 and g._colonize_seconds() == 1800, "chapter IV goal 88, colonization 30 min")
+	_check(String(g._world_items()[1]["id"]) == "c4_conclave", "World tab lists chapter IV stars first")
+	Save.save(g)
+	var g5: Node = load("res://scenes/main.tscn").instantiate()
+	g5.save_enabled = false
+	_check(Save.apply(g5, Save.read()) and g5.sim.cells.size() == g.sim.cells.size() and g5.chapter == 4, "chapter IV save restores ring IV (%d cells)" % g5.sim.cells.size())
+	g5.free()
 	g.queue_free()
 	await process_frame
 

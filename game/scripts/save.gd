@@ -68,6 +68,7 @@ static func to_dict(g: Node) -> Dictionary:
 		"ai_dl_at": g.ai_dl_at,
 		"stats_base": g.stats_base,
 		"stats_base3": g.stats_base3,
+		"stats_base4": g.stats_base4,
 		"ult_check": g.ult_check,
 		"ai_colonizing": g.ai_colonizing,
 		"ai_wars": g.ai_wars,
@@ -105,6 +106,8 @@ static func apply(g: Node, d: Dictionary) -> bool:
 		load("res://scripts/sim/ring_gen.gd").extend_chapter_two(w, int(w.map_seed) ^ 0x2)
 	if int(d.get("chapter", 1)) >= 3:
 		load("res://scripts/sim/ring_next.gd").extend_chapter_three(w, int(w.map_seed) ^ 0x3)
+	if int(d.get("chapter", 1)) >= 4:
+		load("res://scripts/sim/ring_next.gd").extend_chapter_four(w, int(w.map_seed) ^ 0x4)
 	var cells: Array = d["cells"]
 	if cells.size() != w.cells.size():
 		return false
@@ -213,6 +216,10 @@ static func apply(g: Node, d: Dictionary) -> bool:
 	g.stats_base3 = {}
 	for k in sb3:
 		g.stats_base3[String(k)] = int(sb3[k])
+	var sb4: Dictionary = d.get("stats_base4", {})
+	g.stats_base4 = {}
+	for k in sb4:
+		g.stats_base4[String(k)] = int(sb4[k])
 	var dla: Dictionary = d.get("ai_dl_at", {})
 	g.ai_dl_at = {}
 	for k in dla:

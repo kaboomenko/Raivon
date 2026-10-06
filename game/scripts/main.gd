@@ -40,9 +40,9 @@ const MAP_SEED := 20261004
 const HAND := ["attack", "breakthrough", "airstrike", "encircle", "defense"]
 const AIRSTRIKE_DL := 6
 const AIR_ARCHETYPES := ["wolf", "raven"]  # AI hands with «Авиаудар» (03 §19.4)
-const CHAPTER_GOALS: Array[int] = [0, 20, 36, 56]  # official hexes per chapter (canon §12.1)
-const COLONIZE_SEC: Array[int] = [0, 60, 300, 900]  # 1 min in chapter I, 5 min in II, 15 min in III (canon §12.1)
-const LAST_CHAPTER := 3  # the content wall: chapter IV is not out yet
+const CHAPTER_GOALS: Array[int] = [0, 20, 36, 56, 88]  # official hexes per chapter (canon §12.1)
+const COLONIZE_SEC: Array[int] = [0, 60, 300, 900, 1800]  # 1 min in chapter I, 5 / 15 / 30 min later (canon §12.1)
+const LAST_CHAPTER := 4  # the launch's content wall: chapter V comes with v1.2
 const TRUCE_SEC := 30 * 60
 ## Translation keys of unnamed hexes: by kind, else by terrain.
 const KIND_NAMES := {"capital": "kind.capital", "city": "kind.city", "farm": "kind.farm", "mine": "kind.mine", "port": "kind.port", "military_base": "kind.military_base",
@@ -64,6 +64,7 @@ var _ftue_t := 0.0
 var _mill := -1
 var _flak_tick := -1
 var stats_base3 := {}  # stats at the opening of chapter III (its stars count from there)
+var stats_base4 := {}  # … and of chapter IV
 var _ftue_next := 0  # step to resume after the peace ceremony
 var _raid := {}  # FTUE marauder raid: {hex, at}
 var econ  # Economy (scripts/sim/economy.gd)
@@ -989,7 +990,11 @@ func _ai_colonize(now: int) -> void:
 
 ## The chapter a state was born in: Barons and Hamlets — I, League and Order — II, Alvaria, Saren, the Pack — III.
 func _native_chapter(s: int) -> int:
-	return 1 if s <= MapGen.HAMLETS else (2 if s <= RingGen.ORDER else 3)
+	if s <= MapGen.HAMLETS:
+		return 1
+	if s <= RingGen.ORDER:
+		return 2
+	return 3 if s <= RingNext.PACK else 4
 
 
 ## DL cap of an AI state: its own chapter's cap, or the open chapter's cap minus the chapters between (§9.16).
@@ -1037,8 +1042,14 @@ func _fit_camera_bounds() -> void:
 
 ## The next chapter's ring (canon §12.1): the world grows around the old one; the map, camera and minimap follow.
 func _expand_world() -> void:
-	var ok := RingGen.extend_chapter_two(sim, int(sim.map_seed) ^ 0x2) if chapter <= 1 \
-		else RingNext.extend_chapter_three(sim, int(sim.map_seed) ^ 0x3)
+	var ok := false
+	match chapter:
+		1:
+			ok = RingGen.extend_chapter_two(sim, int(sim.map_seed) ^ 0x2)
+		2:
+			ok = RingNext.extend_chapter_three(sim, int(sim.map_seed) ^ 0x3)
+		3:
+			ok = RingNext.extend_chapter_four(sim, int(sim.map_seed) ^ 0x4)
 	if not ok:
 		return
 	map_view.set_world(sim)
@@ -1898,8 +1909,10 @@ func _sign_peace() -> void:
 			annexed_value += int(sim.cells[h]["value"])
 	_opinion_add(enemy, -2.0 * annexed_value)
 	_stat("peaces")
-	if bool(sim.states[enemy].get("hegemon", false)) and _last_score >= 30.0:
+	if enemy == RingNext.ALVARIA and _last_score >= 30.0:
 		_stat("hegemon_wins")  # «Укротитель волков»
+	if enemy == RingNext.CONCLAVE and _last_score >= 30.0:
+		_stat("conclave_wins")  # «Сталь против стали»
 	if war.has("ult_refused"):
 		_stat("ult_wins")  # «Не на тех напали»: refused an ultimatum and won the war
 	for d in chosen:
@@ -1907,6 +1920,8 @@ func _sign_peace() -> void:
 			_stat("pockets")
 			if (d["hexes"] as Array).size() >= 4:
 				_stat("pockets4")
+				if (d["hexes"] as Array).size() >= 8:
+					_stat("pockets8")  # «Большой котёл»
 	var res: Dictionary = War.apply_treaty(sim, war, chosen)
 	sfx.play("seal")
 	sfx.haptic(120)
@@ -2676,19 +2691,39 @@ const STARS_3 := [
 ]
 
 
+## Chapter IV stars (07 §3.8; two fronts, Landing and Missile come with those cards).
+const STARS_4 := [
+	["c4_conclave", "star.c4_conclave", "conclave_wins", 1],
+	["c4_ultrafence", "star.c4_ultrafence", "@fort8", 1],
+	["c4_pocket8", "star.c4_pocket8", "pockets8", 1],
+	["c4_cities6", "star.c4_cities6", "@cities", 6],
+	["c4_vein", "star.c4_vein", "@vein4", 1],
+	["c4_colonize", "star.c4_colonize", "colonized", 8],
+	["c4_camps", "star.c4_camps", "camps", 6],
+	["c4_dl8", "star.c4_dl8", "", 8],
+]
+
+
 func _stars() -> Array:
-	return STARS + (STARS_2 if chapter >= 2 else []) + (STARS_3 if chapter >= 3 else [])
+	return STARS + (STARS_2 if chapter >= 2 else []) + (STARS_3 if chapter >= 3 else []) + (STARS_4 if chapter >= 4 else [])
 
 
 func _star_progress(st: Array) -> int:
 	var key: String = st[2]
 	if key == "":
 		return econ.dev_level()
+	if key == "@fort8":
+		var best := 0
+		for c in sim.cells:
+			if c["owner"] == Types.PLAYER:
+				best = maxi(best, int(c["fort"]))
+		return 1 if best >= 8 else 0
 	if key.begins_with("@"):
-		var want: String = {"@ports": "port", "@factories": "factory", "@oil": "oil", "@vein3": "raivite_vein"}[key]
+		var want: String = {"@ports": "port", "@factories": "factory", "@oil": "oil", "@vein3": "raivite_vein", "@vein4": "raivite_vein", "@cities": "city"}[key]
+		var vein_name: String = {"@vein3": "cell.ch3_vein", "@vein4": "cell.ch4_vein"}.get(key, "")
 		var n := 0
 		for c in sim.cells:
-			if c["owner"] == Types.PLAYER and c["kind"] == want and (key != "@vein3" or String(c["name"]) == "cell.ch3_vein"):
+			if c["owner"] == Types.PLAYER and c["kind"] == want and (vein_name == "" or String(c["name"]) == vein_name):
 				n += 1
 		return n
 	var base := 0
@@ -2696,6 +2731,8 @@ func _star_progress(st: Array) -> int:
 		base = int(stats_base.get(key, 0))
 	elif String(st[0]).begins_with("c3_"):
 		base = int(stats_base3.get(key, 0))
+	elif String(st[0]).begins_with("c4_"):
+		base = int(stats_base4.get(key, 0))
 	return int(stats.get(key, 0)) - base
 
 
@@ -2703,8 +2740,10 @@ func _world_items() -> Array:
 	var items: Array = [{"kind": "chapter", "hexes": _player_hexes(), "goal": _chapter_goal(), "done": chapter_done,
 		"can_expand": _player_hexes() >= _chapter_goal() and war.is_empty() and not chapter_done}]
 	var list := _stars()
-	if chapter >= 3:
-		list = STARS_3 + STARS_2 + STARS  # the open chapter first; older stars never expire
+	if chapter >= 4:
+		list = STARS_4 + STARS_3 + STARS_2 + STARS  # the open chapter first; older stars never expire
+	elif chapter >= 3:
+		list = STARS_3 + STARS_2 + STARS
 	elif chapter >= 2:
 		list = STARS_2 + STARS
 	for st in list:
@@ -2772,8 +2811,10 @@ func _world_expansion() -> void:
 	econ.chapter = next_ch
 	if next_ch == 2:
 		stats_base = stats.duplicate()
-	else:
+	elif next_ch == 3:
 		stats_base3 = stats.duplicate()
+	else:
+		stats_base4 = stats.duplicate()
 	_ai_forts(fresh)
 	map_view.refresh_props()
 	map_view.set_camps(camps.active)
@@ -2857,7 +2898,10 @@ const LEADERS := {2: ["leader.barons", "archetype.wolf", "leader.barons.desc"],
 	5: ["leader.order", "archetype.turtle", "leader.order.desc"],
 	6: ["leader.alvaria", "archetype.hegemon", "leader.alvaria.desc"],
 	7: ["leader.saren", "archetype.fox", "leader.saren.desc"],
-	8: ["leader.pack", "archetype.raven", "leader.pack.desc"]}
+	8: ["leader.pack", "archetype.raven", "leader.pack.desc"],
+	9: ["leader.conclave", "archetype.hegemon_turtle", "leader.conclave.desc"],
+	10: ["leader.veilmark", "archetype.raven", "leader.veilmark.desc"],
+	11: ["leader.lakes", "archetype.owl", "leader.lakes.desc"]}
 
 
 func _opinion_add(s: int, v: float) -> void:
@@ -3872,6 +3916,13 @@ func _demo(spec: String) -> void:
 				_select(c["id"])
 				rig.focus(map_view.cell_world(c["id"]), 0.4)
 				break
+		return
+	if what == "ch4":  # chapter IV «Индустриальный пояс»: the ceremony over the whole launch world
+		await _world_expansion()
+		ui.close_modal()
+		await _world_expansion()
+		ui.close_modal()
+		_world_expansion()
 		return
 	if what == "ch3":  # chapter III «Континент»: ch3 — the ceremony, ch3:<kind> — a ring III feature up close
 		await _world_expansion()

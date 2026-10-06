@@ -42,6 +42,31 @@ const CH3 := {
 	},
 }
 
+## Chapter IV «Индустриальный пояс» (canon §12.1, 02 §15.3–15.4, 07 §3.8): +90 land, Стальной Конклав 26
+## (Turtle-hegemon), Вейлмарк 20 (Raven), Республика Озёр 21 (Owl), 23 wild; ~10% mountains (passes), ~10% water.
+const CONCLAVE := 9
+const VEILMARK := 10
+const LAKES := 11
+const CH4 := {
+	"land": 90, "water": 11, "mountains": 11, "reach": 8, "dl": 7,  # dl: chapter III cap 6 + 1
+	"states": [
+		{"id": CONCLAVE, "name": "state.conclave", "color": 0x8a6b4f, "archetype": "turtle", "hegemon": true, "size": 26, "capital": "cell.conclave_capital"},
+		{"id": VEILMARK, "name": "state.veilmark", "color": 0x5fa65a, "archetype": "raven", "size": 20, "capital": "cell.veilmark_capital"},
+		{"id": LAKES, "name": "state.lakes", "color": 0x3aa7b8, "archetype": "owl", "size": 21, "capital": "cell.lakes_capital"},
+	],
+	"quota": [["raivite_vein", 1], ["port", 4], ["oil", 4], ["city", 5], ["factory", 3], ["military_base", 3], ["farm", 7], ["mine", 7]],
+	"names": {
+		"city": ["cell.ch4_city_smelter", "cell.ch4_city_rail", "cell.ch4_city_canyon", "cell.ch4_city_dynamo", "cell.ch4_city_mesa"],
+		"farm": ["cell.ch4_farm_terrace", "cell.ch4_farm_oasis", "cell.ch4_farm_cactus", "cell.ch4_farm_greenhouse", "cell.ch4_farm_ranch", "cell.ch4_farm_orchard", "cell.ch4_farm_dust"],
+		"mine": ["cell.ch4_mine_copper", "cell.ch4_mine_iron", "cell.ch4_mine_bauxite", "cell.ch4_mine_nickel", "cell.ch4_mine_open", "cell.ch4_mine_rust", "cell.ch4_mine_cobalt"],
+		"port": ["cell.ch4_port_lake", "cell.ch4_port_ferry", "cell.ch4_port_dock", "cell.ch4_port_canal"],
+		"oil": ["cell.ch4_oil_rig", "cell.ch4_oil_flare", "cell.ch4_oil_shale", "cell.ch4_oil_basin"],
+		"factory": ["cell.ch4_factory_steel", "cell.ch4_factory_conveyor", "cell.ch4_factory_arms"],
+		"military_base": ["cell.ch4_base_canyon", "cell.ch4_base_rail", "cell.ch4_base_lake"],
+		"raivite_vein": ["cell.ch4_vein"],
+	},
+}
+
 static var last_fail := ""
 
 
@@ -63,11 +88,15 @@ static func extend_chapter_three(w: World, seed_value: int) -> bool:
 	return extend(w, CH3, seed_value)
 
 
+static func extend_chapter_four(w: World, seed_value: int) -> bool:
+	return extend(w, CH4, seed_value)
+
+
 ## Adds the ring to the world. Returns true on success (the world is unchanged on failure).
 static func extend(w: World, cfg: Dictionary, seed_value: int) -> bool:
 	if has_ring(w, cfg):
 		return true
-	for attempt in 60:
+	for attempt in 100:
 		var s := seed_value + attempt * 104729
 		var add := _try(w, cfg, s)
 		if not add.is_empty():
@@ -184,10 +213,20 @@ static func _try(w: World, cfg: Dictionary, seed_value: int) -> Dictionary:
 	# grow each lobe from its own stretch of the old rim, nearest to its direction first
 	var picked: Array = []
 	var owner_of := {}  # key -> lobe
+	var old_pass := {}
+	for oc in w.cells:
+		if Types.is_passable(oc):
+			old_pass[_key(int(oc["q"]), int(oc["r"]))] = true
+	var by_land := func(k: String) -> bool:  # by later rings the old rim is mostly sea and mountains
+		var c: Dictionary = cand[k]
+		for dv in HexGrid.DIRS:
+			if old_pass.has(_key(int(c["q"]) + dv.x, int(c["r"]) + dv.y)):
+				return true
+		return false
 	for i in n_lobes:
 		var frontier := {}
 		for k in cand:
-			if int(cand[k]["d"]) == 1 and not owner_of.has(k):
+			if int(cand[k]["d"]) == 1 and not owner_of.has(k) and by_land.call(k):
 				frontier[k] = true
 		var score := func(k: String) -> float:
 			var c: Dictionary = cand[k]
@@ -232,6 +271,26 @@ static func _try(w: World, cfg: Dictionary, seed_value: int) -> Dictionary:
 			if by_key.has(nk):
 				out.append(by_key[nk])
 		return out
+	# all land of the world stays one piece: a bay or a mountain that would cut a lobe off is not placed
+	var all_land_connected := func() -> bool:
+		var nodes := {}
+		for k in old_pass:
+			nodes[k] = true
+		for c in picked:
+			if c["terrain"] == "plain":
+				nodes[_key(int(c["q"]), int(c["r"]))] = true
+		var first: String = nodes.keys()[0]
+		var seen := {first: true}
+		var stack: Array = [first]
+		while not stack.is_empty():
+			var k: String = stack.pop_back()
+			var parts := k.split(",")
+			for dv in HexGrid.DIRS:
+				var nk := _key(int(parts[0]) + dv.x, int(parts[1]) + dv.y)
+				if nodes.has(nk) and not seen.has(nk):
+					seen[nk] = true
+					stack.append(nk)
+		return seen.size() == nodes.size()
 	# water: a sea bay on the far edge of one lobe and a smaller one on another (ports need two coasts)
 	for bi in 2:
 		# the bay sits on the lobe's flank, away from its axis, so the deep middle stays land for the capital
@@ -258,6 +317,9 @@ static func _try(w: World, cfg: Dictionary, seed_value: int) -> Dictionary:
 				return {}
 			nxt["terrain"] = "water"
 			bay.append(nxt)
+		if not all_land_connected.call():
+			last_fail = "bay cuts land"
+			return {}
 	# mountains: on the rim next to the old world, two per lobe off-centre (narrow necks), the rest inland
 	var m_left: int = cfg["mountains"]
 	for li in n_lobes:
@@ -266,15 +328,25 @@ static func _try(w: World, cfg: Dictionary, seed_value: int) -> Dictionary:
 			var ea := RingGen._ang_diff(RingGen._angle(int(a["q"]), int(a["r"])), lobes[li])
 			var eb := RingGen._ang_diff(RingGen._angle(int(b["q"]), int(b["r"])), lobes[li])
 			return ea > eb if ea != eb else _key(int(a["q"]), int(a["r"])) < _key(int(b["q"]), int(b["r"])))
-		for c in rim.slice(0, mini(2, m_left)):
+		var placed_here := 0
+		for c in rim:
+			if placed_here >= 2 or m_left <= 0:
+				break
 			c["terrain"] = "mountain"
-			m_left -= 1
+			if all_land_connected.call():
+				placed_here += 1
+				m_left -= 1
+			else:
+				c["terrain"] = "plain"
 	var inland: Array = rng.shuffle(picked.filter(func(c): return c["terrain"] == "plain" and int(c["d"]) >= 3 and int(c["lobe"]) == 0))
 	for c in inland:
 		if m_left <= 0:
 			break
 		c["terrain"] = "mountain"
-		m_left -= 1
+		if all_land_connected.call():
+			m_left -= 1
+		else:
+			c["terrain"] = "plain"
 	var land: Array = picked.filter(func(c): return c["terrain"] == "plain")
 	if land.size() != land_goal:
 		last_fail = "land %d" % land.size()
@@ -358,10 +430,6 @@ static func _try(w: World, cfg: Dictionary, seed_value: int) -> Dictionary:
 			grown[i].append(pk)
 			any_active = true
 	# repair the 3-edge contact rule (F6): touching hexes go back to the wild, deeper wild hexes join instead
-	var old_pass := {}
-	for oc in w.cells:
-		if Types.is_passable(oc):
-			old_pass[_key(int(oc["q"]), int(oc["r"]))] = true
 	var old_edges := func(c: Dictionary) -> int:
 		var e := 0
 		for dv in HexGrid.DIRS:

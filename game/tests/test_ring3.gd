@@ -1,5 +1,5 @@
 extends SceneTree
-## Chapter III ring «Континент» (canon §12.1, 02 §15.3–15.5). Run: godot --headless --path game --script res://tests/test_ring3.gd
+## Rings III «Континент» and IV «Индустриальный пояс» (canon §12.1, 02 §15.3–15.5). Run: godot --headless --path game --script res://tests/test_ring3.gd
 
 const MapGen := preload("res://scripts/sim/map_gen.gd")
 const RingGen := preload("res://scripts/sim/ring_gen.gd")
@@ -118,5 +118,33 @@ func _initialize() -> void:
 		else:
 			print("  seed %d: %s" % [1000 + s, RingNext.last_fail])
 	_check(ok == 6, "6 of 6 other seeds give a valid ring")
+	# Chapter IV «Индустриальный пояс» on top (canon §12.1, 02 §15.3–15.4)
+	var n3: int = w.cells.size()
+	t = Time.get_ticks_msec()
+	_check(RingNext.extend_chapter_four(w, 20261004 ^ 0x4), "ring IV generated in %d ms (%s)" % [Time.get_ticks_msec() - t, RingNext.last_fail])
+	var land4 := 0
+	var sizes4 := {}
+	var kinds4 := {}
+	for i in w.cells.size():
+		var c: Dictionary = w.cells[i]
+		if Types.is_passable(c):
+			land4 += 1
+			if i >= n3:
+				sizes4[int(c["owner"])] = int(sizes4.get(int(c["owner"]), 0)) + 1
+		if i >= n3:
+			kinds4[String(c["kind"])] = int(kinds4.get(String(c["kind"]), 0)) + 1
+	_check(land4 == 250, "world land 160 + 90 = %d" % land4)
+	_check(sizes4.get(RingNext.CONCLAVE, 0) == 26 and sizes4.get(RingNext.VEILMARK, 0) == 20 and sizes4.get(RingNext.LAKES, 0) == 21 and sizes4.get(Types.NOBODY, 0) == 23,
+		"Conclave 26, Veilmark 20, Lakes 21, 23 wild (%s)" % str(sizes4))
+	_check(kinds4.get("port", 0) == 4 and kinds4.get("oil", 0) == 4 and kinds4.get("factory", 0) == 3 and kinds4.get("city", 0) == 5 \
+		and kinds4.get("military_base", 0) == 3 and kinds4.get("farm", 0) == 7 and kinds4.get("mine", 0) == 7, "ring IV quotas %s" % str(kinds4))
+	_check(bool(w.states[RingNext.CONCLAVE]["hegemon"]) and int(w.states[RingNext.CONCLAVE]["dev_level"]) == 8 and int(w.states[RingNext.LAKES]["dev_level"]) == 7, "the Conclave hegemon at DL8, the others at DL7")
+	var ok4 := 0
+	for s4 in 4:
+		var x4 = _world(2000 + s4)
+		RingNext.extend_chapter_three(x4, (2000 + s4) ^ 0x3)
+		if RingNext.extend_chapter_four(x4, (2000 + s4) ^ 0x4):
+			ok4 += 1
+	_check(ok4 == 4, "4 of 4 other seeds give a valid ring IV")
 	print("ALL RING III CHECKS PASSED" if fails == 0 else "%d FAILED" % fails)
 	quit(1 if fails > 0 else 0)

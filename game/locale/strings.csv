@@ -627,3 +627,62 @@ star.c3_vein,Кристалл континента: присоедините ж�
 star.c3_colonize,Освойте 6 диких гексов в главе III,Settle 6 wild hexes in chapter III
 star.c3_camps,Разбейте 5 лагерей мародёров в главе III,Destroy 5 marauder camps in chapter III
 star.c3_dl7,Доведите державу до УР7,Bring the realm to DL7
+state.conclave,Стальной Конклав,Steel Conclave
+state.veilmark,Вейлмарк,Veilmark
+state.lakes,Республика Озёр,Lake Republic
+archetype.hegemon_turtle,Черепаха-гегемон,Turtle hegemon
+leader.conclave,Архимастер Ормдек Каменный,Archmaster Ormdek the Stone
+leader.conclave.desc,"Гегемон: ультразаборы, редко нападает сам, требует дань","Hegemon: ultra-fences, rarely attacks itself, demands tribute"
+leader.veilmark,Маркграфиня Ведана Тёмное Крыло,Margravine Vedana Darkwing
+leader.veilmark.desc,"Бьёт, когда вы воюете на другом фронте","Strikes when you fight on another front"
+leader.lakes,Консул Арман Ночной,Consul Arman the Nocturne
+leader.lakes.desc,"Ищет союза, держит порты на озёрах","Seeks alliances, holds the lake ports"
+cell.conclave_capital,Наковальня,The Anvil
+cell.veilmark_capital,Тёмный Шпиль,Dark Spire
+cell.lakes_capital,Озёрный Форум,Lake Forum
+cell.ch4_city_smelter,Плавильня,Smeltertown
+cell.ch4_city_rail,Узловая,Railjunction
+cell.ch4_city_canyon,Каньонград,Canyon City
+cell.ch4_city_dynamo,Динамо,Dynamo
+cell.ch4_city_mesa,Столовая гора,Mesa
+cell.ch4_farm_terrace,Террасы,Terraces
+cell.ch4_farm_oasis,Оазис,Oasis
+cell.ch4_farm_cactus,Кактусовая долина,Cactus Vale
+cell.ch4_farm_greenhouse,Теплицы,Greenhouses
+cell.ch4_farm_ranch,Ранчо,Ranch
+cell.ch4_farm_orchard,Сады у плотины,Dam Orchards
+cell.ch4_farm_dust,Пыльные поля,Dust Fields
+cell.ch4_mine_copper,Медный карьер,Copper Pit
+cell.ch4_mine_iron,Железная гора,Iron Mountain
+cell.ch4_mine_bauxite,Бокситовый разрез,Bauxite Cut
+cell.ch4_mine_nickel,Никелевая шахта,Nickel Shaft
+cell.ch4_mine_open,Открытый карьер,Open Pit
+cell.ch4_mine_rust,Ржавые отвалы,Rust Heaps
+cell.ch4_mine_cobalt,Кобальтовая жила,Cobalt Lode
+cell.ch4_port_lake,Озёрный порт,Lake Port
+cell.ch4_port_ferry,Паромная переправа,Ferry Crossing
+cell.ch4_port_dock,Сухой док,Dry Dock
+cell.ch4_port_canal,Канальный порт,Canal Port
+cell.ch4_oil_rig,Буровая,Drill Site
+cell.ch4_oil_flare,Факельное поле,Flare Field
+cell.ch4_oil_shale,Сланцевая нефть,Shale Oil
+cell.ch4_oil_basin,Нефтяной бассейн,Oil Basin
+cell.ch4_factory_steel,Сталелитейный завод,Steelworks
+cell.ch4_factory_conveyor,Конвейерный завод,Assembly Plant
+cell.ch4_factory_arms,Оружейный завод,Arms Factory
+cell.ch4_base_canyon,Каньонная база,Canyon Base
+cell.ch4_base_rail,Бронепоездное депо,Armoured Train Depot
+cell.ch4_base_lake,Озёрная база,Lake Base
+cell.ch4_vein,Кристалл пояса,Belt Crystal
+expansion.states4,+3 государства:,+3 states:
+expansion.goal4,Цель главы IV «Индустриальный пояс»: %d гексов (у вас %d),Chapter IV “Industrial Belt” goal: %d hexes (you have %d)
+expansion.advisor4,«Континент склонил знамёна. Дым на горизонте — это заводы Индустриального пояса».,“The continent has lowered its banners. The smoke on the horizon is the factories of the Industrial Belt.”
+inbox.expansion4.text,"Открыт «Индустриальный пояс»: мир вырос с %d до %d гексов, новые соседи — Стальной Конклав, Вейлмарк и Республика Озёр. Цель главы IV — %d гексов.","“Industrial Belt” is open: the world grew from %d to %d hexes, and our new neighbours are the Steel Conclave, Veilmark and the Lake Republic. Chapter IV goal: %d hexes."
+star.c4_conclave,Сталь против стали: победный мир с Конклавом,Steel against steel: a victorious peace with the Conclave
+star.c4_ultrafence,Ультразабор: постройте укрепление ур. 8,Ultra-fence: build a level 8 fort
+star.c4_pocket8,Большой котёл: заберите котёл из 8+ гексов,Great pocket: take a pocket of 8+ hexes
+star.c4_cities6,Город небоскрёбов: владейте 6 городами,Skyscraper city: hold 6 cities
+star.c4_vein,Кристалл пояса: присоедините жилу кольца IV,Belt crystal: annex the ring IV vein
+star.c4_colonize,Освойте 8 диких гексов в главе IV,Settle 8 wild hexes in chapter IV
+star.c4_camps,Разбейте 6 лагерей мародёров в главе IV,Destroy 6 marauder camps in chapter IV
+star.c4_dl8,Доведите державу до УР8,Bring the realm to DL8
