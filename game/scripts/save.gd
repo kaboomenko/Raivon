@@ -67,6 +67,7 @@ static func to_dict(g: Node) -> Dictionary:
 		"chapter": g.chapter,
 		"ai_dl_at": g.ai_dl_at,
 		"stats_base": g.stats_base,
+		"stats_base3": g.stats_base3,
 		"ult_check": g.ult_check,
 		"ai_colonizing": g.ai_colonizing,
 		"ai_wars": g.ai_wars,
@@ -102,6 +103,8 @@ static func apply(g: Node, d: Dictionary) -> bool:
 	var w = MapGen.generate_chapter_one(int(d["seed"]))
 	if int(d.get("chapter", 1)) >= 2:
 		load("res://scripts/sim/ring_gen.gd").extend_chapter_two(w, int(w.map_seed) ^ 0x2)
+	if int(d.get("chapter", 1)) >= 3:
+		load("res://scripts/sim/ring_next.gd").extend_chapter_three(w, int(w.map_seed) ^ 0x3)
 	var cells: Array = d["cells"]
 	if cells.size() != w.cells.size():
 		return false
@@ -206,6 +209,10 @@ static func apply(g: Node, d: Dictionary) -> bool:
 	g.stats_base = {}
 	for k in sb:
 		g.stats_base[String(k)] = int(sb[k])
+	var sb3: Dictionary = d.get("stats_base3", {})
+	g.stats_base3 = {}
+	for k in sb3:
+		g.stats_base3[String(k)] = int(sb3[k])
 	var dla: Dictionary = d.get("ai_dl_at", {})
 	g.ai_dl_at = {}
 	for k in dla:

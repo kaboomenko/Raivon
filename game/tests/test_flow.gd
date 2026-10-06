@@ -747,6 +747,42 @@ func _run() -> void:
 	g3.save_enabled = false
 	_check(Save.apply(g3, Save.read()) and g3.sim.cells.size() == g.sim.cells.size() and g3.chapter == 2, "chapter II save restores the ring (%d -> %d cells)" % [n_before, g3.sim.cells.size()])
 	g3.free()
+	# Chapter III «Континент» (canon §12.1, 07 §3.7)
+	g.war = {}
+	g.ai_wars = []
+	g.ui.close_modal()
+	g._world_expansion()
+	g.ui.close_modal()
+	_check(g.chapter == 3 and g.sim.states.size() == 9 and g._land_count() == 160, "world expanded to 160 land hexes, 3 new states (%d)" % g._land_count())
+	_check(g._chapter_goal() == 56 and g._colonize_seconds() == 900, "chapter III goal 56, colonization 15 min")
+	_check(bool(g.sim.states[6]["hegemon"]) and int(g.sim.states[6]["dev_level"]) == 6 and int(g.sim.states[7]["dev_level"]) == 5, "Alvaria the hegemon at DL6, Saren at DL5")
+	var wi3: Array = g._world_items()
+	_check(String(wi3[1]["id"]) == "c3_factory", "World tab lists chapter III stars first")
+	g._ensure_armies_for(6)
+	var heg_ok := false
+	for a in g.armies:
+		if int(a["side"]) == 6:
+			heg_ok = int(a["max_str"]) > 0
+	_check(heg_ok, "the hegemon fields armies")
+	# a factory of ours: 10 metal/h and −5% timers from DL5
+	var fac := -1
+	for c in g.sim.cells:
+		if c["kind"] == "factory":
+			fac = c["id"]
+			break
+	_check(fac >= 0, "ring III has factories")
+	var cost0: int = int(g.econ.build_cost("tower")["seconds"])
+	g.sim.cells[fac]["owner"] = Types.PLAYER
+	g.sim.cells[fac]["controller"] = Types.PLAYER
+	g.econ._find_type("residence")["level"] = 5
+	g._econ_tick()
+	_check(g.econ.factory_pct() == 5 and int(g.econ.build_cost("tower")["seconds"]) == cost0 * 95 / 100, "a factory cuts timers by 5%% (%d -> %d)" % [cost0, int(g.econ.build_cost("tower")["seconds"])])
+	_check(g._star_progress(g.STARS_3[0]) == 1, "«Индустриализация» counts the factory")
+	Save.save(g)
+	var g4: Node = load("res://scenes/main.tscn").instantiate()
+	g4.save_enabled = false
+	_check(Save.apply(g4, Save.read()) and g4.sim.cells.size() == g.sim.cells.size() and g4.chapter == 3 and g4.sim.states.size() == 9, "chapter III save restores ring III (%d cells)" % g4.sim.cells.size())
+	g4.free()
 	g.queue_free()
 	await process_frame
 

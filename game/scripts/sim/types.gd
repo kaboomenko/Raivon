@@ -29,6 +29,7 @@ const KIND_VALUE := {
 	"raivite_vein": 5,  # 2 Raivites every 12 h, holds up to 4 (canon §5.1)
 	"dark_lake": 1,  # dormant oil in chapters I–II
 	"oil": 3,  # 25 oil/h from DL5
+	"factory": 4,  # 10 metal/h, −5% build and training timers each (max −30%), asleep before DL5 (canon §5.1)
 }
 
 

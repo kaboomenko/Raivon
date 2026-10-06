@@ -573,3 +573,57 @@ toast.enemy_backed,"Союзник врага помогает: «%s» силь�
 inbox.ai_alliance.title,Союз соседей,Neighbours ally
 inbox.ai_alliance.text,"%s и %s заключили союз: в войне с одним из них другой поддержит союзника (+10%% Силы).","%s and %s signed an alliance: in a war with one of them the other backs its ally (+10%% strength)."
 card.corps,Союзный корпус,Allied Corps
+state.alvaria,Альвария,Alvaria
+state.saren,Сарен,Saren
+state.pack,Серая Стая,Grey Pack
+archetype.raven,Ворон,Raven
+archetype.hegemon,Волк-гегемон,Wolf hegemon
+leader.alvaria,Владычица Сайрин Железная,Sovereign Sairin the Iron
+leader.alvaria.desc,"Гегемон: армии +20%, требует дань, танки с первого дня","Hegemon: armies +20%, demands tribute, tanks from day one"
+leader.saren,Дож Велиан Хитрый,Doge Velian the Cunning
+leader.saren.desc,"Богат, торгует, первым гонит обозы","Rich, trades, first to send caravans"
+leader.pack,Вожак Бьорульф Чёрное Перо,Chieftain Bjorulf Blackfeather
+leader.pack.desc,"Нападает на ослабленных, жадно грабит","Preys on the weakened, plunders greedily"
+cell.alvaria_capital,Железный Престол,Iron Throne
+cell.saren_capital,Золотой Сарен,Golden Saren
+cell.pack_capital,Чёрное Гнездо,Black Nest
+cell.ch3_city_steppe,Ковылград,Feathergrass
+cell.ch3_city_cedar,Кедровец,Cedarholm
+cell.ch3_city_crossroads,Перекрёсток,Crossroads
+cell.ch3_city_tannery,Кожевники,Tannery
+cell.ch3_farm_feather,Ковыльная степь,Feathergrass Steppe
+cell.ch3_farm_millet,Просяные поля,Millet Fields
+cell.ch3_farm_horse,Конские пастбища,Horse Pastures
+cell.ch3_farm_honey,Медовые луга,Honey Meadows
+cell.ch3_farm_barley,Ячменный клин,Barley Strip
+cell.ch3_farm_berry,Ягодные пустоши,Berry Heath
+cell.ch3_mine_coal,Угольный разрез,Coal Cut
+cell.ch3_mine_tin,Оловянная копь,Tin Pit
+cell.ch3_mine_red,Красный карьер,Red Quarry
+cell.ch3_mine_deep,Глубокая штольня,Deep Adit
+cell.ch3_mine_salt,Соляные копи,Salt Mines
+cell.ch3_mine_quartz,Кварцевый рудник,Quartz Mine
+cell.ch3_port_amber,Янтарный порт,Amber Port
+cell.ch3_port_seal,Тюленья гавань,Seal Harbour
+cell.ch3_port_north,Северная пристань,North Wharf
+cell.ch3_oil_black,Чёрные ключи,Black Springs
+cell.ch3_oil_tar,Смоляное поле,Tar Field
+cell.ch3_oil_steppe,Степная нефть,Steppe Oil
+cell.ch3_factory_brick,Кирпичный завод,Brickworks
+cell.ch3_factory_forge,Кузнечный цех,Forge Works
+cell.ch3_base_steppe,Степной форт,Steppe Fort
+cell.ch3_base_taiga,Таёжный кордон,Taiga Cordon
+cell.ch3_vein,Кристалл континента,Continental Crystal
+kind.factory,Завод,Factory
+expansion.states3,+3 государства:,+3 states:
+expansion.goal3,Цель главы III «Континент»: %d гексов (у вас %d),Chapter III “Continent” goal: %d hexes (you have %d)
+expansion.advisor3,«Реки наши. За устьем лежит континент — и правит там Альвария».,“The rivers are ours. Past the river mouth lies the continent — and Alvaria rules it.”
+inbox.expansion3.text,"Открыт «Континент»: мир вырос с %d до %d гексов, новые соседи — Альвария, Сарен и Серая Стая. Цель главы III — %d гексов.","“Continent” is open: the world grew from %d to %d hexes, and our new neighbours are Alvaria, Saren and the Grey Pack. Chapter III goal: %d hexes."
+star.c3_factory,Индустриализация: присоедините завод,Industrialisation: annex a factory
+star.c3_oil2,Нефтяной пояс: владейте 2 нефтяными гексами,Oil belt: hold 2 oil hexes
+star.c3_hegemon,Укротитель волков: победный мир с Альварией,Wolf tamer: a victorious peace with Alvaria
+star.c3_capital,У ворот столицы: оккупируйте вражескую столицу,At the gates: occupy an enemy capital
+star.c3_vein,Кристалл континента: присоедините жилу кольца III,Continental crystal: annex the ring III vein
+star.c3_colonize,Освойте 6 диких гексов в главе III,Settle 6 wild hexes in chapter III
+star.c3_camps,Разбейте 5 лагерей мародёров в главе III,Destroy 5 marauder camps in chapter III
+star.c3_dl7,Доведите державу до УР7,Bring the realm to DL7

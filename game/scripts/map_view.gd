@@ -515,6 +515,64 @@ func _place_derrick(holder: Node3D) -> void:
 	holder.add_child(cap)
 
 
+## Factory (canon §5.1, «кирпичный цех» of the early eras): a brick hall under a sawtooth roof, two chimneys
+## with a lazy plume of light smoke.
+func _place_factory(holder: Node3D) -> void:
+	var brick := _flat_mat(Color(0.62, 0.3, 0.22))
+	var roof := _flat_mat(Color(0.32, 0.33, 0.36))
+	var trim := _flat_mat(Color(0.86, 0.8, 0.68))
+	var glass := _flat_mat(Color(0.95, 0.8, 0.45))
+	var root := Node3D.new()
+	root.rotation.y = 0.35
+	holder.add_child(root)
+	_box(root, Vector3(0.86, 0.34, 0.5), Vector3(0.05, 0.17, 0.05), brick)
+	_box(root, Vector3(0.9, 0.04, 0.54), Vector3(0.05, 0.35, 0.05), trim)
+	for i in 3:
+		var tooth := MeshInstance3D.new()
+		var pm := PrismMesh.new()
+		pm.left_to_right = 0.0  # a sawtooth: the steep side faces the light
+		pm.size = Vector3(0.28, 0.18, 0.5)
+		pm.material = roof
+		tooth.mesh = pm
+		tooth.position = Vector3(-0.24 + 0.29 * i, 0.46, 0.05)
+		root.add_child(tooth)
+	for i in 4:
+		_box(root, Vector3(0.12, 0.12, 0.01), Vector3(-0.28 + 0.2 * i, 0.17, 0.305), glass)
+	for i in 2:
+		var ch := MeshInstance3D.new()
+		var cm := CylinderMesh.new()
+		cm.top_radius = 0.05
+		cm.bottom_radius = 0.07
+		cm.height = 0.85
+		cm.radial_segments = 10
+		cm.material = brick
+		ch.mesh = cm
+		var cp := Vector3(-0.3 + 0.18 * i, 0.425, -0.22)
+		ch.position = cp
+		root.add_child(ch)
+		_box(root, Vector3(0.13, 0.04, 0.13), cp + Vector3(0, 0.42, 0), trim)
+		var sm := CPUParticles3D.new()
+		sm.amount = 7
+		sm.lifetime = 2.6
+		sm.direction = Vector3(0.3, 1, 0)
+		sm.spread = 8.0
+		sm.initial_velocity_min = 0.18
+		sm.initial_velocity_max = 0.28
+		sm.gravity = Vector3(0.08, 0.03, 0)
+		sm.scale_amount_curve = _curve(0.3, 1.2)
+		sm.color_ramp = _ramp([0.0, 0.2, 1.0], [Color(0.75, 0.74, 0.72, 0.0), Color(0.78, 0.77, 0.76, 0.5), Color(0.9, 0.9, 0.92, 0.0)])
+		var q := QuadMesh.new()
+		q.size = Vector2(0.4, 0.4)
+		if _smoke_mat == null:
+			_smoke_mat = _fx_mat(_puff_tex(), false)
+		q.material = _smoke_mat
+		sm.mesh = q
+		sm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		sm.position = cp + Vector3(0, 0.46, 0)
+		sm.preprocess = 2.6
+		root.add_child(sm)
+
+
 ## Rotation that turns a port model's water inlet (+X in the model) toward the hex's water neighbour.
 func _water_side(c: Dictionary) -> float:
 	for i in 6:
@@ -632,6 +690,10 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 		"oil":
 			_place_dark_lake(holder)
 			_place_derrick(holder)
+			_place_fort(c, holder)
+			return
+		"factory":
+			_place_factory(holder)
 			_place_fort(c, holder)
 			return
 		"port":

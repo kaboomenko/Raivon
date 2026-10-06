@@ -63,7 +63,11 @@ const HEX_PRODUCTION := {
 	"oil": {"res": {"oil": 25}, "lvl": ""},   # 25 oil/h from DL5 (canon §5.1)
 	"raivite_vein": {"res": {}, "lvl": ""},   # Raivites accrue separately (vein_secs)
 	"dark_lake": {"res": {}, "lvl": ""},   # dormant oil until DL5
+	"factory": {"res": {"metal": 10}, "lvl": ""},   # asleep before the owner's DL5 (canon §5.1, C53)
 }
+const FACTORY_DL := 5
+const FACTORY_PCT := 5       # −5% build and training timers per factory…
+const FACTORY_PCT_MAX := 30  # …at most −30% (canon §5.1)
 
 ## Building catalogue (canon §7; C_B — 05 §8.4 / 11 §7.3, author's proposal adopted by 11).
 ## class: "capital" (on the capital hex, one per state), "hex_type" (one level per state, on every hex
@@ -753,7 +757,19 @@ func _level_cost(type: String, level: int) -> Dictionary:
 			out["gold"] = _ceil_div(3 * num, 4 * den)
 			out["metal"] = _ceil_div(num, 4 * den)
 		out["seconds"] = BUILD_SECONDS[lv]
+	out["seconds"] = int(out["seconds"]) * (100 - factory_pct()) / 100
 	return out
+
+
+## Timer cut from the realm's factories (canon §5.1): −5% each, at most −30%, nothing before DL5.
+func factory_pct() -> int:
+	if dev_level() < FACTORY_DL:
+		return 0
+	var n := 0
+	for h in _own_kinds:
+		if String(_own_kinds[h]) == "factory":
+			n += 1
+	return mini(FACTORY_PCT_MAX, FACTORY_PCT * n)
 
 
 func _can_pay_and_staff(type: String, cost: Dictionary, now: int) -> String:
@@ -854,7 +870,7 @@ func _sync_world(world: World) -> void:
 func _hex_rate_milli(c: Dictionary, occupied: bool) -> Dictionary:
 	var out := {}
 	var spec: Dictionary = HEX_PRODUCTION.get(String(c["kind"]), {})
-	if spec.is_empty():
+	if spec.is_empty() or (c["kind"] == "factory" and dev_level() < FACTORY_DL):
 		return out
 	var lvl_type: String = spec["lvl"]
 	var lm := 100 if lvl_type == "" else _level_mult100(_type_level(lvl_type))
