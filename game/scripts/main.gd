@@ -27,6 +27,7 @@ const Market := preload("res://scripts/sim/market.gd")
 const March := preload("res://scripts/sim/march.gd")
 const Camps := preload("res://scripts/sim/camps.gd")
 const RingGen := preload("res://scripts/sim/ring_gen.gd")
+const Rng := preload("res://scripts/sim/rng.gd")
 const HexGrid := preload("res://scripts/sim/hexgrid.gd")
 const Net := preload("res://scripts/net.gd")
 const ShopUI := preload("res://scripts/shop_ui.gd")
@@ -85,6 +86,8 @@ var ultimatum := {}  # active AI ultimatum: {state, hex, tribute, deadline}
 var ultimatum_at := 0  # 0 = not scheduled yet, -1 = done; unix time of the scripted Barons ultimatum
 var ult_check := {}  # AI state -> unix time of its next daily ultimatum roll (canon §10.4)
 var allies: Array = []  # AI states allied with the player (canon §10.7)
+var ai_alliances := {}  # AI state -> its AI ally (one each)
+var ai_alliance_check := 0
 var ai_wars: Array = []  # [{a, b, until, next}] AI-vs-AI wars (canon §10.10)
 var ai_war_check := 0  # unix time of the next 6-hourly evaluation
 var ai_colonizing := {}  # AI state -> {hex, at}: one settlement at a time, 3 h per hex (02 §10.2)
@@ -711,7 +714,7 @@ func _ai_wars_tick(now: int) -> void:
 			var pb: int = _ai_power(b) * (11 if int(w.get("boost", -1)) == b else 10)
 			var strong := a if pa >= pb else b
 			var weak := b if strong == a else a
-			var n := 1 + absi(hash("aiw:%d:%d:%d" % [a, b, int(w["next"])])) % 3
+			var n := 1 + _roll("aiw:%d:%d:%d" % [a, b, int(w["next"])], 3)
 			var core := MapGen.core_of(sim, weak)
 			var front: Array = []
 			for c in sim.cells:
@@ -732,10 +735,12 @@ func _ai_wars_tick(now: int) -> void:
 		for b in _ai_states():
 			if a >= b or a == at_war_with_player or b == at_war_with_player or not _states_touch(a, b):
 				continue
+			if int(ai_alliances.get(a, -1)) == b:
+				continue  # allies don't fight each other
 			var agg: int = a if _ai_power(a) >= _ai_power(b) else b
 			var chance: int = int(ULT_CHANCE.get(String(sim.states[agg]["archetype"]), 10)) / 2
-			if absi(hash("aiwar:%d:%d:%d" % [a, b, now / (6 * 3600)])) % 100 < chance:
-				var dur := (12 + absi(hash("aiwd:%d:%d" % [a, b])) % 37) * 3600
+			if _roll("aiwar:%d:%d:%d" % [a, b, now / (6 * 3600)], 100) < chance:
+				var dur := (12 + _roll("aiwd:%d:%d" % [a, b], 37)) * 3600
 				var victim: int = b if agg == a else a
 				ai_wars.append({"a": agg, "b": victim, "until": now + dur, "next": now + 2 * 3600})
 				_post("inbox.ai_war.title", L.pack("inbox.ai_war.text", [_state_key(agg), _state_key(victim)]))
@@ -814,6 +819,41 @@ func _ally_reason(s: int) -> String:
 	return ""
 
 
+## Deterministic roll 0..n−1 for a key. Godot's String hash barely mixes neighbouring keys (consecutive days
+## gave consecutive values), so the key seeds xoshiro, whose splitmix seeding spreads it properly.
+static func _roll(key: String, n: int) -> int:
+	return Rng.new(hash(key)).next_int(n)
+
+
+## «Призыв» (canon §10.7): an ally with opinion ≥60 can be called into the player's offensive war (−5 opinion).
+func _can_call(s: int) -> bool:
+	return allies.has(s) and not war.is_empty() and not war.has("by_ai") and not war.has("called_%d" % s) \
+		and int(war["enemy"]) != s and _opinion_of(s) >= 60.0
+
+
+## AI–AI alliances, minimal model (canon §10.7): each AI state has at most one AI ally; once a day two AI
+## neighbours that are not at war and not allied with the player may sign (Owl and Fox like it more).
+func _ai_alliances_tick(now: int) -> void:
+	if now < ai_alliance_check or int(stats.get("peaces", 0)) < 1:
+		return
+	ai_alliance_check = now + 86400
+	for a in _ai_states():
+		for b in _ai_states():
+			if a >= b or ai_alliances.has(a) or ai_alliances.has(b) or allies.has(a) or allies.has(b) or not _states_touch(a, b):
+				continue
+			if ai_war_of(a) == b:
+				continue
+			var chance := 8
+			for s in [a, b]:
+				if String(sim.states[s]["archetype"]) in ["owl", "fox"]:
+					chance += 6
+			if _roll("aia:%d:%d:%d" % [a, b, now / 86400], 100) < chance:
+				ai_alliances[a] = b
+				ai_alliances[b] = a
+				_post("inbox.ai_alliance.title", L.pack("inbox.ai_alliance.text", [_state_key(a), _state_key(b)]))
+				return
+
+
 ## Allies at war on the player's side take 1–2 enemy border hexes outside its core every 2 h; they keep them
 ## at peace (canon §10.7). Defensive wars always, offensive ones when their opinion is ≥60.
 func _allies_tick(now: int) -> void:
@@ -823,8 +863,8 @@ func _allies_tick(now: int) -> void:
 	for s in allies:
 		if s == enemy or not _states_touch(s, enemy):
 			continue
-		if not war.has("by_ai") and _opinion_of(s) < 60.0:
-			continue
+		if not war.has("by_ai") and not war.has("called_%d" % s):
+			continue  # offensive wars only on a «Призыв» (canon §10.7)
 		var key := "ally_%d" % s
 		if not war.has(key):
 			war[key] = now + 2 * 3600
@@ -839,7 +879,7 @@ func _allies_tick(now: int) -> void:
 			if c["controller"] == enemy and Types.is_passable(c) and not core.has(c["id"]) and _touches_controller(c["id"], s):
 				front.append(c)
 		front.sort_custom(func(x, y): return int(x["id"]) < int(y["id"]))
-		var n := 1 + absi(hash("ally:%d:%d" % [s, now / 7200])) % 2
+		var n := 1 + _roll("ally:%d:%d" % [s, now / 7200], 2)
 		for c in front.slice(0, n):
 			c["controller"] = s
 			map_view.refresh_hex(int(c["id"]))
@@ -1208,6 +1248,16 @@ func _declare(enemy: int, goal: int) -> void:
 	_deploy_to_front(enemy)
 	war = War.declare_war(sim, enemy, goal)
 	war["started"] = now_s()
+	if ai_alliances.has(enemy):
+		# the enemy's AI ally stays out but backs it: +10% army strength for the war, and it dislikes us (§10.7)
+		var backer: int = ai_alliances[enemy]
+		war["backer"] = backer
+		for a in armies:
+			if a["side"] == enemy:
+				a["max_str"] = int(a["max_str"]) * 11 / 10
+				a["str"] = int(a["str"]) * 11 / 10
+		_opinion_add(backer, -15.0)
+		ui.toast(tr("toast.enemy_backed") % [_state_name(enemy), _state_name(backer)])
 	_opinion_add(enemy, -50.0)
 	map_view.at_war_with = enemy
 	map_view.mark_dirty()
@@ -2099,6 +2149,7 @@ func _econ_tick() -> void:
 	_ai_growth(now)
 	_ai_colonize(now)
 	_ai_wars_tick(now)
+	_ai_alliances_tick(now)
 	for h in colonizing.keys():
 		if now >= int(colonizing[h]):
 			_finish_colonize(h)
@@ -2748,7 +2799,7 @@ func _diplomacy_items(now: int) -> Array:
 			status = tr("dipl.truce") % GameUI.fmt_time(_truce_left(s))
 		var gift_left := maxi(0, int(gift_at.get(s, 0)) + 86400 - now)
 		var v := _opinion_of(s)
-		var it_extra := {"ally": allies.has(s), "ally_reason": _ally_reason(s)}
+		var it_extra := {"ally": allies.has(s), "ally_reason": _ally_reason(s), "can_call": _can_call(s), "ai_ally": _state_name(int(ai_alliances[s])) if ai_alliances.has(s) else ""}
 		items.append(it_extra.merged({"id": s, "state": _state_name(s), "leader": tr(String(LEADERS[s][0])), "archetype": tr(String(LEADERS[s][1])),
 			"opinion": v, "word": tr(_opinion_word(v)), "status": status,
 			"can_war": war.is_empty() and _truce_left(s) == 0, "gift_cost": _gift_cost(), "gift_left": gift_left,
@@ -2770,6 +2821,15 @@ func _on_diplomacy_action(s: int, kind: String) -> void:
 			rig.focus(map_view.cell_world(g[0]))
 			_select(g[0])
 			ui.toast(tr("toast.target_chosen"))
+		"call":
+			if not _can_call(s):
+				ui.toast(tr("call.cant"))
+				return
+			war["called_%d" % s] = 1
+			_opinion_add(s, -5.0)
+			sfx.play("warn")
+			ui.toast(tr("toast.ally_called") % _state_name(s))
+			_refresh_ui()
 		"ally":
 			if _ally_reason(s) != "":
 				ui.toast(_ally_reason(s))
@@ -3163,7 +3223,7 @@ func _ultimatum_rolls(now: int) -> void:
 		if _truce_left(s) > 0 or _ai_power(s) <= _player_power():
 			continue
 		var chance: int = ULT_CHANCE.get(String(sim.states[s]["archetype"]), 10)
-		var roll: int = absi(hash("ult:%d:%d" % [s, now / 86400])) % 100
+		var roll: int = _roll("ult:%d:%d" % [s, now / 86400], 100)
 		if roll < chance:
 			_issue_ultimatum(now, s)
 			return

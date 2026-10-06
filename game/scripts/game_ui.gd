@@ -946,11 +946,20 @@ func _diplomacy_card(it: Dictionary) -> Control:
 	var op := _label(tr("dipl.opinion") % [roundi(v), it["word"]], 16, Color(0.5, 1.0, 0.6) if v > 10.0 else (Color(1.0, 0.55, 0.45) if v < -10.0 else TEXT), false)
 	op.position = Vector2(12, 56)
 	card.add_child(op)
-	var stt := _label(it["status"], 16, Color(1.0, 0.85, 0.4), false)
+	var stt := _label(it["status"] if String(it.get("ai_ally", "")) == "" else "%s · %s" % [it["status"], tr("dipl.ai_ally") % it["ai_ally"]], 16, Color(1.0, 0.85, 0.4), false)
 	stt.position = Vector2(12, 82)
 	card.add_child(stt)
 	var id: int = it["id"]
-	if it.get("ally", false):
+	if it.get("can_call", false):
+		var bc := _panel(card, Rect2(196, 78, 98, 36), _style(Color(0.85, 0.55, 0.1), 10, Color(1, 1, 1, 0.45), 2))
+		bc.mouse_filter = Control.MOUSE_FILTER_PASS
+		var lc := _label(tr("dipl.call"), 15)
+		lc.size = Vector2(98, 36)
+		lc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lc.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		bc.add_child(lc)
+		bc.gui_input.connect(func(e): if _is_tap(e): diplomacy_action.emit(id, "call"))
+	elif it.get("ally", false):
 		var al := _label(tr("dipl.ally"), 16, Color(0.5, 1.0, 0.6))
 		al.position = Vector2(190, 82)
 		al.size = Vector2(104, 24)

@@ -553,6 +553,36 @@ func _run() -> void:
 	_check(g.ui.has_modal(), "the ally asks for help")
 	g.ui.close_modal()
 	g.ai_wars = []
+	# «Призыв»: an ally with opinion 60+ joins our offensive war for −5 opinion
+	var wg: Array = War.recommend_goals(g.sim, 2, 1)
+	g.war = War.declare_war(g.sim, 2, wg[0] if wg.size() > 0 else 0)
+	g.opinion[4] = 70.0
+	_check(g._can_call(4), "the ally can be called into our war")
+	g._on_diplomacy_action(4, "call")
+	_check(g.war.has("called_4") and absf(g._opinion_of(4) - 65.0) < 0.6, "ally called in (opinion %.0f)" % g._opinion_of(4))
+	g.war = {}
+	# AI–AI alliances (minimal model)
+	if not g._states_touch(MapGen.BARONS, MapGen.HAMLETS):
+		var pc := MapGen.core_of(g.sim, Types.PLAYER)
+		for c in g.sim.cells:
+			if int(c["owner"]) == MapGen.BARONS and not MapGen.core_of(g.sim, MapGen.BARONS).has(c["id"]):
+				for n in g.sim.neighbors[c["id"]]:
+					if n >= 0 and Types.is_passable(g.sim.cells[n]) and int(g.sim.cells[n]["owner"]) == Types.NOBODY and not pc.has(n):
+						g.sim.cells[n]["owner"] = MapGen.HAMLETS
+						g.sim.cells[n]["controller"] = MapGen.HAMLETS
+						break
+				if g._states_touch(MapGen.BARONS, MapGen.HAMLETS):
+					break
+	g.ai_wars = []
+	var aia := false
+	for k in 60:
+		g.ai_alliance_check = 0
+		g.time_offset += 86400
+		g._ai_alliances_tick(g.now_s())
+		if not g.ai_alliances.is_empty():
+			aia = true
+			break
+	_check(aia, "AI neighbours sign an alliance (%s)" % str(g.ai_alliances))
 	var dip: Array = g._diplomacy_items(g.now_s())
 	_check(dip.size() == 4, "diplomacy lists 4 neighbours")
 	var forts := 0
@@ -658,6 +688,8 @@ func _run() -> void:
 	_check(ai_land1 > ai_land0, "AI land grows by colonization (%d -> %d)" % [ai_land0, ai_land1])
 	# AI against AI (canon §10.10): a war between neighbours moves border hexes, peace annexes them
 	g.war = {}
+	g.ai_alliances = {}
+	g.ai_alliance_check = 1 << 40  # no new alliances during this check
 	if not g._states_touch(MapGen.BARONS, MapGen.HAMLETS):
 		# give the two a shared border for the test: a non-core wild/AI hex next to the Barons goes to the Hamlets
 		var pcore := MapGen.core_of(g.sim, Types.PLAYER)

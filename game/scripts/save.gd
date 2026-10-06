@@ -71,6 +71,8 @@ static func to_dict(g: Node) -> Dictionary:
 		"ai_colonizing": g.ai_colonizing,
 		"ai_wars": g.ai_wars,
 		"allies": g.allies,
+		"ai_alliances": g.ai_alliances,
+		"ai_alliance_check": g.ai_alliance_check,
 		"ai_war_check": g.ai_war_check,
 		"cases": g.cases.to_dict(),
 		"speed_minutes": g.speed_minutes,
@@ -181,6 +183,11 @@ static func apply(g: Node, d: Dictionary) -> bool:
 	for a in d.get("allies", []):
 		g.allies.append(int(a))
 		w.player_allies[int(a)] = true
+	var aia: Dictionary = d.get("ai_alliances", {})
+	g.ai_alliances = {}
+	for k in aia:
+		g.ai_alliances[int(k)] = int(aia[k])
+	g.ai_alliance_check = int(d.get("ai_alliance_check", 0))
 	g.ai_wars = []
 	for aw in d.get("ai_wars", []):
 		if typeof(aw) == TYPE_DICTIONARY:
