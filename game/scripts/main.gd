@@ -379,6 +379,7 @@ func _refresh_ui() -> void:
 	var ws := War.war_score(sim, war) if not war.is_empty() else {}
 	ui.set_control(ws.get("score", 0.0), ws.get("control", 50), _state_name(enemy), not war.is_empty() and mode in [Mode.WAR, Mode.BATTLE, Mode.RESULT])
 	ui.set_battle(mode == Mode.BATTLE and battle != null, battle.energy[Types.PLAYER] if battle else 0, Battle.ENERGY_UNIT, _cooldowns(), battle.seconds_left() if battle else 0, battle != null and battle.is_rush())
+	ui.set_corps(battle != null and (battle.opts.get("cards", []) as Array).has("corps") and not battle._corps_used.has(Types.PLAYER))
 	if mode not in [Mode.MAP, Mode.WAR]:
 		ui.hide_buildings()
 	elif tab == "buildings" and econ != null:
@@ -1399,7 +1400,7 @@ func _start_offensive() -> void:
 	if flag_hex < 0:
 		var g := War.recommend_goals(sim, enemy, 1)
 		flag_hex = g[0] if g.size() > 0 else -1
-	var opts := {"attacker": Types.PLAYER, "defender": enemy, "ai_energy_mult": 600, "cards": HAND}
+	var opts := {"attacker": Types.PLAYER, "defender": enemy, "ai_energy_mult": 600, "cards": _hand()}
 	if ftue > 0:
 		# tutorial offensives are short and the enemy plays no cards (canon §14.3)
 		opts["ai_energy_mult"] = 0
@@ -1423,6 +1424,14 @@ func _start_offensive() -> void:
 		ui.toast(tr("toast.to_battle"))
 
 
+## The war cards in hand: the base five, plus «Союзный корпус» while an ally fights in this war (canon §9.9).
+func _hand() -> Array:
+	for k in war:
+		if String(k).begins_with("ally_"):
+			return HAND + ["corps"]
+	return HAND
+
+
 ## Middle of the fighting: the player's armies and the flag hex, nudged toward the enemy.
 func _front_center() -> Vector3:
 	var p := Vector3.ZERO
@@ -1440,7 +1449,7 @@ func _front_center() -> Vector3:
 func _cooldowns() -> Dictionary:
 	var out := {}
 	if battle:
-		for c in HAND:
+		for c in _hand():
 			out[c] = int(battle.cooldown.get("%d:%s" % [Types.PLAYER, c], 0))
 	return out
 

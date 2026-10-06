@@ -47,6 +47,7 @@ func _init() -> void:
 		["cards: defense, airstrike, encircle, breakthrough", _test_cards],
 		["towers hit adjacent enemy armies in clashes", _test_towers],
 		["rivers: attacking across a river is 25% weaker", _test_river],
+		["«Союзный корпус»: a temporary army for 30 s, once per offensive", _test_corps],
 		["war: treaty never takes the enemy core", _test_treaty],
 		["war: identical to TS (score, demands, package)", _test_treaty_matches_ts],
 		["war: stars follow the canon", _test_stars],
@@ -590,3 +591,35 @@ func _test_river() -> void:
 	var f1: float = b.forecast(PLAYER, [d["attacker"]["id"]], d["target"])["f"]
 	b.world.rivers = {}
 	_check(f1 < f0 and absf(f1 * f1 / (f0 * f0) - 0.75) < 0.02, "F across a river %.3f vs %.3f (W ×0.75)" % [f1, f0])
+
+
+func _test_corps() -> void:
+	var d := _duel(100, 91)
+	var b: Battle = d["b"]
+	var t: int = d["target"]
+	var spot := -1
+	for n in b.world.neighbors[t]:
+		if n >= 0 and b.world.cells[n]["controller"] == PLAYER and b.army_at(n, PLAYER) == null and Types.is_passable(b.world.cells[n]):
+			spot = n
+			break
+	if spot < 0:
+		print("      (no free front hex for the corps on this map)")
+		return
+	_check(not b.validate(PLAYER, {"t": "card", "card": "corps", "target": spot}), "no corps without an ally in the war")
+	b.opts["cards"] = ["attack", "corps"]
+	b.energy[PLAYER] = 10 * Battle.ENERGY_UNIT
+	var n0 := b.armies.size()
+	_check(b.issue(PLAYER, {"t": "card", "card": "corps", "target": spot}), "corps card accepted on a free front hex")
+	b.step()
+	_check(b.armies.size() == n0 + 1 and b.army_at(spot, PLAYER) != null, "temporary army appears")
+	var corps: Dictionary = b.army_at(spot, PLAYER)
+	_check(int(corps["max_str"]) == 30 * FX, "strength = 30%% of the average (%d)" % int(corps["max_str"]))
+	b.energy[PLAYER] = 10 * Battle.ENERGY_UNIT
+	var other := -1
+	for n in b.world.neighbors[t]:
+		if n >= 0 and n != spot and b.world.cells[n]["controller"] == PLAYER and b.army_at(n, PLAYER) == null:
+			other = n
+	_check(other < 0 or not b.validate(PLAYER, {"t": "card", "card": "corps", "target": other}), "only once per offensive")
+	for i in Battle.CORPS_TICKS:
+		b.step()
+	_check(b.armies.size() == n0, "the corps leaves after 30 s")

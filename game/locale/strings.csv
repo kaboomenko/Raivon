@@ -570,3 +570,4 @@ toast.ally_called,«%s» выступают на нашей стороне,“%s
 toast.enemy_backed,"Союзник врага помогает: «%s» сильнее на 10%% благодаря «%s»","The enemy has a backer: “%s” is 10%% stronger thanks to “%s”"
 inbox.ai_alliance.title,Союз соседей,Neighbours ally
 inbox.ai_alliance.text,"%s и %s заключили союз: в войне с одним из них другой поддержит союзника (+10%% Силы).","%s and %s signed an alliance: in a war with one of them the other backs its ally (+10%% strength)."
+card.corps,Союзный корпус,Allied Corps

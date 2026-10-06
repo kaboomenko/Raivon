@@ -43,7 +43,10 @@ const CARDS := {
 	"airstrike": {"cost": 4, "name": "card.airstrike", "target": "enemy"},
 	"encircle": {"cost": 3, "name": "card.encircle", "target": "enemy"},
 	"defense": {"cost": 2, "name": "card.defense", "target": "own"},
+	"corps": {"cost": 3, "name": "card.corps", "target": "own"},  # «Союзный корпус», only with an ally in the war
 }
+const CORPS_TICKS := 30 * TICKS_PER_SEC
+const CORPS_SHARE_PM := 300  # 30% of the average max Strength of the side's armies
 
 var world: World
 var armies: Array
@@ -73,6 +76,7 @@ var _captured: Dictionary = {}
 var _lost: Dictionary = {}
 var _routed_player: int = 0
 var _protected_core: Dictionary = {}
+var _corps_used: Dictionary = {}  # side -> true once «Союзный корпус» was played this offensive
 
 
 func _init(p_world: World, p_armies: Array, p_opts: Dictionary) -> void:
@@ -369,6 +373,14 @@ func validate(side: int, cmd: Dictionary) -> bool:
 			var c: Dictionary = world.cells[target]
 			if not Types.is_passable(c):
 				return false
+			if card == "corps":
+				if not (opts.get("cards", []) as Array).has("corps") or _corps_used.has(side) or army_at(target, side) != null:
+					return false
+				var front := false
+				for n in world.neighbors[target]:
+					if n >= 0 and world.cells[n]["controller"] == enemy_of(side):
+						front = true
+				return c["controller"] == side and front
 			if CARDS[card]["target"] == "own":
 				return c["controller"] == side
 			if card == "airstrike":
@@ -409,6 +421,19 @@ func _play_card(side: int, card: String, target: int) -> void:
 	match card:
 		"attack":
 			_start_or_join(side, target, adjacent_idle_armies(side, target), null)
+		"corps":
+			# a temporary allied army without traits on an empty front hex, for 30 s (03 §11)
+			var total := 0
+			var n := 0
+			for a in armies:
+				if a["side"] == side and not a.has("temp_until"):
+					total += int(a["max_str"])
+					n += 1
+			var s: int = (total / maxi(1, n)) * CORPS_SHARE_PM / 1000
+			armies.append({"id": 900 + tick % 1000, "side": side, "hex": target, "str": s, "max_str": s, "infantry": 0,
+				"hold": false, "move": null, "start_str": s, "attrition": 0, "routed": false, "temp_until": tick + CORPS_TICKS, "corps": true})
+			_corps_used[side] = true
+			events.append({"type": "corps", "tick": tick, "hex": target, "side": side})
 		"defense":
 			_effects.append({"kind": "defense", "hex": target, "left": 15 * TICKS_PER_SEC})
 			var a: Variant = army_at(target, side)
@@ -515,6 +540,7 @@ func step() -> void:
 
 	_step_moves()
 	_step_clashes()
+	_step_temp_armies()
 	_step_towers()
 	_step_effects()
 	if tick % TICKS_PER_SEC == 0:
@@ -633,6 +659,25 @@ func _step_clashes() -> void:
 			if clashes[i]["id"] == id:
 				clashes.remove_at(i)
 				break
+
+
+## Temporary armies («Союзный корпус») vanish when their time is up, even mid-clash (03 §11).
+func _step_temp_armies() -> void:
+	for a in armies.duplicate():
+		if a.has("temp_until") and tick >= int(a["temp_until"]):
+			_remove_army(a)
+
+
+func _remove_army(a: Dictionary) -> void:
+	for cl in clashes:
+		var kept: Array[int] = []
+		for id in cl["attackers"]:
+			if id != a["id"]:
+				kept.append(id)
+		cl["attackers"] = kept
+		if cl["defender"] == a["id"]:
+			cl["defender"] = -1
+	armies.erase(a)
 
 
 ## М_силы by level, permille (canon §6.2) — towers hit by their own level.
@@ -844,6 +889,9 @@ func _finish(reason: String) -> void:
 	over = true
 	end_reason = reason
 	clashes.clear()
+	for a in armies.duplicate():
+		if a.has("temp_until"):
+			armies.erase(a)
 	for a in armies:
 		a["move"] = null
 		a["routed"] = false

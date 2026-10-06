@@ -23,9 +23,9 @@ const TEXT := Color(0.96, 0.97, 1.0)
 const MUTED := Color(0.62, 0.68, 0.78)
 const VW := 941.0
 const VH := 1672.0
-const CARD_ART := {"attack": "⚔", "breakthrough": "➶", "airstrike": "✈", "encircle": "◎", "defense": "⛨"}
+const CARD_ART := {"attack": "⚔", "breakthrough": "➶", "airstrike": "✈", "encircle": "◎", "defense": "⛨", "corps": "⚑"}
 const CARD_ORDER := ["attack", "breakthrough", "airstrike", "encircle", "defense"]
-const CARD_NAME_KEYS := {"attack": "card.attack", "breakthrough": "card.breakthrough", "airstrike": "card.airstrike", "encircle": "card.encircle", "defense": "card.defense"}
+const CARD_NAME_KEYS := {"attack": "card.attack", "breakthrough": "card.breakthrough", "airstrike": "card.airstrike", "encircle": "card.encircle", "defense": "card.defense", "corps": "card.corps"}
 const L := preload("res://scripts/l10n.gd")
 
 var font_bold: Font
@@ -200,7 +200,41 @@ func _build_battle() -> void:
 		cd.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		p.add_child(cd)
 		_cards[card] = p
+	# «Союзный корпус»: a compact extra card above the hand, shown only with an ally in the war
+	var cp := _panel(_battle, Rect2(512, VH - 352, 116, 120), _style(Color(0.14, 0.24, 0.2), 14, Color(0.5, 1.0, 0.7, 0.9), 2))
+	cp.gui_input.connect(_on_card_input.bind("corps"))
+	var ca := _label(CARD_ART["corps"], 40)
+	ca.position = Vector2(0, 4)
+	ca.size = Vector2(116, 50)
+	ca.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	cp.add_child(ca)
+	var cn := _label(_card_name("corps"), 15)
+	_fit(cn, 15, 110.0)
+	cn.position = Vector2(0, 54)
+	cn.size = Vector2(116, 22)
+	cn.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	cp.add_child(cn)
+	_card_names["corps"] = cn
+	var cc := _panel(cp, Rect2(43, 80, 30, 30), _style(Color(0.55, 0.3, 0.95), 15, Color(1, 1, 1, 0.9), 2), Control.MOUSE_FILTER_IGNORE)
+	var ccl := _label("3", 16)
+	ccl.size = Vector2(30, 30)
+	ccl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	ccl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	cc.add_child(ccl)
+	var ccd := _label("", 26)
+	ccd.name = "cd"
+	ccd.size = Vector2(116, 60)
+	ccd.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	cp.add_child(ccd)
+	cp.visible = false
+	_cards["corps"] = cp
 	_battle.visible = false
+
+
+## Shows the «Союзный корпус» card when an ally fights in this war and it was not played yet.
+func set_corps(available: bool) -> void:
+	if _cards.has("corps"):
+		(_cards["corps"] as Control).visible = available
 
 
 func _card_name(c: String) -> String:
@@ -217,7 +251,7 @@ func retranslate() -> void:
 
 
 func _card_cost(c: String) -> int:
-	return {"attack": 2, "breakthrough": 3, "airstrike": 4, "encircle": 3, "defense": 2}[c]
+	return {"attack": 2, "breakthrough": 3, "airstrike": 4, "encircle": 3, "defense": 2, "corps": 3}[c]
 
 
 func set_battle(visible_hand: bool, energy_units: int, unit: int, cooldowns: Dictionary, seconds_left: int, rush: bool) -> void:
