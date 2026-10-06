@@ -1090,17 +1090,21 @@ func _member_share(s: int) -> float:
 	return Types.round1(share)
 
 
-## A coalition member other than the leader can make a separate peace while the war is not lost (score ≥ 0).
+## Any coalition member other than the leader can make a separate peace; its terms follow its share (06 §14.6).
 func _can_separate(s: int) -> bool:
 	if war.is_empty() or not war.has("coalition") or int(war["enemy"]) == s:
 		return false
-	return (war["coalition"] as Array).has(s) and float(War.war_score(sim, war)["score"]) >= 0.0
+	return (war["coalition"] as Array).has(s)
 
 
 ## What a member gives for leaving (06 §14.6): its occupied hexes outside its core by value while their price
 ## fits its share, then 1 h of gold per 5 points left, at most 4 h (the contribution package, 06 §3.5).
 func _separate_plan(s: int) -> Dictionary:
-	var budget := maxf(0.0, _member_share(s))
+	var share := _member_share(s)
+	var white_floor := -30.0 if String(sim.states[s]["archetype"]) == "turtle" else -10.0
+	if share <= white_floor:
+		return _separate_defeat_plan(s, -share)
+	var budget := maxf(0.0, share)
 	var core := MapGen.core_of(sim, s)
 	var occ: Array = []
 	for c in sim.cells:
@@ -1114,7 +1118,29 @@ func _separate_plan(s: int) -> Dictionary:
 			annex.append(int(c["id"]))
 			budget -= cost
 	var hours := clampi(int(floor(budget / 5.0)), 0, 4)
-	return {"annex": annex, "gold": hours * maxi(60, int(econ.gross_per_hour(sim).get("gold", 0)))}
+	return {"annex": annex, "gold": hours * maxi(60, int(econ.gross_per_hour(sim).get("gold", 0))), "lose": []}
+
+
+## A separate peace while losing to that member (share ≤ −10, the Turtle ≤ −30): it annexes what it occupies of
+## the player's land outside the core, by value, while the price fits |share| — ≤1 city, as in a defeat (canon §9.14).
+func _separate_defeat_plan(s: int, budget: float) -> Dictionary:
+	var core := MapGen.core_of(sim, Types.PLAYER)
+	var cands: Array = []
+	for c in sim.cells:
+		if c["owner"] == Types.PLAYER and int(c["controller"]) == s and Types.is_passable(c) and not core.has(c["id"]):
+			cands.append(c)
+	cands.sort_custom(func(a, b): return int(a["value"]) > int(b["value"]) or (int(a["value"]) == int(b["value"]) and int(a["id"]) < int(b["id"])))
+	var lose: Array = []
+	var cities := 0
+	for c in cands:
+		var cost := 100.0 * int(c["value"]) / maxf(1.0, float(war["player_value0"]))
+		if cost > budget + 1e-9 or (c["kind"] == "city" and cities >= 1):
+			continue
+		if c["kind"] == "city":
+			cities += 1
+		lose.append(int(c["id"]))
+		budget -= cost
+	return {"annex": [], "gold": 0, "lose": lose}
 
 
 func _separate_gold(s: int) -> int:
@@ -1130,11 +1156,16 @@ func _separate_peace(s: int) -> void:
 	var plan := _separate_plan(s)
 	var gold: int = plan["gold"]
 	var annex: Array = plan["annex"]
+	var lose: Array = plan["lose"]
 	for c in sim.cells:
 		if not Types.is_passable(c):
 			continue
 		var id: int = c["id"]
-		if annex.has(id):
+		if lose.has(id):
+			c["owner"] = s
+			c["controller"] = s
+			c["fort"] = 0
+		elif annex.has(id):
 			c["owner"] = Types.PLAYER
 			c["controller"] = Types.PLAYER
 			c["fort"] = 0
@@ -1173,12 +1204,25 @@ func _separate_peace(s: int) -> void:
 		econ.add_resources({"gold": gold})
 	sfx.play("seal")
 	_post(L.pack("inbox.separate.title", [_state_key(s)]), L.pack("inbox.separate.text", [_state_key(s), _state_key(int(war["enemy"]))]))
-	if not annex.is_empty():
+	if not lose.is_empty():
+		war["sep_defeat"] = 1  # a lost separate peace: no «Триумф» for this war (06 §14.6)
+		ui.toast(tr("toast.separate_lost") % [_state_name(s), lose.size()])
+	elif not annex.is_empty():
 		ui.toast(tr("toast.separate_land") % [_state_name(s), annex.size(), gold])
 	else:
 		ui.toast(tr("toast.separate") % _state_name(s) if gold == 0 else tr("toast.separate_gold") % [_state_name(s), gold])
 	if int(war.get("front", -1)) == s:
 		war.erase("front")
+	# the player's goal stood on its land: the first recommended goal on the leader's (06 §14.6)
+	if int(war["goal"]) >= 0 and int(sim.cells[war["goal"]]["owner"]) != int(war["enemy"]):
+		var goals := War.recommend_goals(sim, int(war["enemy"]), 1)
+		war["goal"] = goals[0] if goals.size() > 0 else -1
+	if int(war["ai_goal"]) >= 0 and int(sim.cells[war["ai_goal"]]["owner"]) != Types.PLAYER:
+		war["ai_goal"] = -1
+	if int(war.get("strike_by", -1)) == s:
+		for k in ["strike_at", "strike_hex", "strike_from", "strike_by"]:
+			war.erase(k)
+		map_view.strike_arrow(-1, -1, "")
 	_normalize_armies()
 	map_view.sync_armies(armies, null)
 	_refresh_ui()
@@ -1209,7 +1253,8 @@ func _separate_offer_tick(now: int) -> void:
 		return
 
 
-func _show_separate_offer(s: int) -> void:
+## The separate peace window: `asked` — the member proposes it; else the player opens it from Diplomacy.
+func _show_separate_offer(s: int, asked := true) -> void:
 	var plan := _separate_plan(s)
 	var gold: int = plan["gold"]
 	var n: int = (plan["annex"] as Array).size()
@@ -1218,15 +1263,17 @@ func _show_separate_offer(s: int) -> void:
 		terms = tr("separate.terms_land") % [n, gold]
 	elif gold > 0:
 		terms = tr("separate.terms") % gold
-	ui.show_choice(tr("separate.offer_title") % _state_name(s), [
+	elif not (plan["lose"] as Array).is_empty():
+		terms = tr("separate.terms_lose") % (plan["lose"] as Array).size()
+	ui.show_choice(tr("separate.offer_title" if asked else "separate.ask_title") % _state_name(s), [
 		tr("separate.offer_line") % [_state_name(s), _state_name(int(war["enemy"]))],
-		tr("separate.share") % [_member_share(s), _state_name(s)],
+		tr("separate.share" if asked else "separate.share_own") % [_member_share(s), _state_name(s)],
 		terms,
 	], [
-		[tr("separate.accept"), Color(0.16, 0.55, 0.3), func():
+		[tr("separate.accept" if asked else "separate.sign"), Color(0.16, 0.55, 0.3), func():
 			ui.close_modal()
 			_separate_peace(s)],
-		[tr("separate.decline"), Color(0.3, 0.33, 0.4), func(): ui.close_modal()],
+		[tr("separate.decline" if asked else "ui.cancel"), Color(0.3, 0.33, 0.4), func(): ui.close_modal()],
 	])
 
 
@@ -2856,7 +2903,7 @@ func _sign_peace() -> void:
 	for id in annexed:
 		annexed_threat += float(sim.cells[id]["value"]) + (4.0 if sim.cells[id]["kind"] == "city" else 0.0)
 	threat += annexed_threat + 5.0 * plunder_level
-	if war.has("coalition") and _last_score > 0.0:
+	if war.has("coalition") and _last_score > 0.0 and not war.has("sep_defeat"):
 		# «Триумф» (canon §10.8): a won coalition war pays a golden trophy chest
 		var chest := 6 * maxi(60, int(gross.get("gold", 0)))
 		econ.add_resources({"gold": chest})
@@ -4350,7 +4397,8 @@ func _on_diplomacy_action(s: int, kind: String) -> void:
 			_select(g[0])
 			ui.toast(tr("toast.target_chosen"))
 		"separate":
-			_separate_peace(s)
+			if _can_separate(s):
+				_show_separate_offer(s, false)
 		"pact":
 			var whyp := _pact_reason(s)
 			if whyp != "":
@@ -4763,6 +4811,7 @@ func _ai_tick(now: int) -> void:
 			_resolve_strike()
 		elif left > 0:
 			map_view.strike_arrow(int(war["strike_from"]), int(war["strike_hex"]), "⚔ " + GameUI.fmt_time(left))
+	_member_strikes(now)
 	if war.has("started") and now - int(war["started"]) >= WAR_CAP_SEC and mode in [Mode.MAP, Mode.WAR]:
 		_war_cap()
 		return
@@ -4893,12 +4942,14 @@ func _answer_ultimatum(kind: String) -> void:
 ## is always repelled (canon §9.11); the deterministic auto-defense battle comes with chapter II.
 func _resolve_strike() -> void:
 	var hex: int = war["strike_hex"]
+	var by := int(war.get("strike_by", war["enemy"]))
 	war.erase("strike_at")
 	war.erase("strike_hex")
 	war.erase("strike_from")
+	war.erase("strike_by")
 	map_view.strike_arrow(-1, -1, "")
 	if int(stats.get("defenses", 0)) >= 1:
-		_auto_defense(hex)
+		_auto_defense(hex, by)
 		return
 	war["battles"] = clampi(int(war["battles"]) + 2, -10, 10)
 	_stat("defenses")
@@ -4908,7 +4959,7 @@ func _resolve_strike() -> void:
 	map_view.burst(hex, MapView.C_PLAYER, true)
 	map_view.floater(hex, tr("floater.repelled_short"), Color(0.75, 0.85, 1.0))
 	sfx.play("repelled")
-	var msg := L.pack("inbox.defense.text", [_state_key(int(war["enemy"])), _cell_key(hex), gold])
+	var msg := L.pack("inbox.defense.text", [_state_key(by), _cell_key(hex), gold])
 	_post("inbox.defense.title", msg)
 	ui.toast(L.t(msg))
 	_refresh_ui()
@@ -4942,8 +4993,8 @@ func _peace_offer() -> void:
 ## Auto-defense (canon §9.11): the AI's 90 s offensive is played out at once on the same engine; the player's
 ## armies, garrisons, forts and towers defend by themselves. Hexes it takes become occupied; a held line pays
 ## 30 min of gold income. The player's core is never a target.
-func _auto_defense(hex: int) -> void:
-	var enemy: int = war["enemy"]
+func _auto_defense(hex: int, by := -1) -> void:
+	var enemy: int = by if by >= 0 and War.sides(war).has(by) else int(war["enemy"])
 	_ensure_armies_for(enemy)
 	_stop_marches()
 	for a in armies:
@@ -4990,12 +5041,43 @@ func _auto_defense(hex: int) -> void:
 	_autosave()
 
 
+## Every coalition member strikes too (06 §14.6): every 4 h of the war the next member that borders the player's
+## land announces its own strike, in turn.
+const MEMBER_STRIKE_SEC := 4 * 3600
+
+
+func _member_strikes(now: int) -> void:
+	if war.is_empty() or not war.has("coalition") or war.has("strike_at") or mode not in [Mode.MAP, Mode.WAR]:
+		return
+	if not war.has("member_strike_at"):
+		war["member_strike_at"] = int(war.get("started", now)) + MEMBER_STRIKE_SEC
+	if now < int(war["member_strike_at"]):
+		return
+	war["member_strike_at"] = now + MEMBER_STRIKE_SEC
+	var sides := War.sides(war)
+	var i0 := int(war.get("member_strike_i", 0))
+	for k in sides.size():
+		var sd: int = sides[(i0 + k) % sides.size()]
+		var touching := false
+		for c in sim.cells:
+			if c["controller"] == Types.PLAYER and _touches_controller(c["id"], sd):
+				touching = true
+				break
+		if not touching:
+			continue
+		war["member_strike_i"] = (i0 + k + 1) % sides.size()
+		_ensure_armies_for(sd)
+		_schedule_counter(sd)
+		return
+
+
 ## After the player's offensive the AI answers with an announced counter-strike (canon §9.11): it aims at the
 ## hexes it lost first, else the most valuable non-core hex on the front.
-func _schedule_counter() -> void:
+func _schedule_counter(by := -1) -> void:
 	if war.is_empty() or war.has("strike_at"):
 		return
-	var enemy: int = war["enemy"]
+	# in a coalition war the member whose land was attacked answers (06 §14.6), else the leader
+	var enemy: int = by if by >= 0 else _front()
 	var core := MapGen.core_of(sim, Types.PLAYER)
 	var best := -1
 	var best_s := -1
@@ -5016,6 +5098,7 @@ func _schedule_counter() -> void:
 	war["strike_hex"] = best
 	war["strike_from"] = from
 	war["strike_at"] = now_s() + STRIKE_WARN_SEC
+	war["strike_by"] = enemy
 	_post("inbox.counter.title", L.pack("inbox.counter.text", [_state_key(enemy), _cell_key(best), STRIKE_WARN_SEC / 60]))
 
 
@@ -5437,6 +5520,19 @@ func _demo(spec: String) -> void:
 			for m in war["coalition"]:
 				if int(m) != int(war["enemy"]) and (mem < 0 or float(SEPARATE_AT.get(String(sim.states[int(m)]["archetype"]), 30.0)) < float(SEPARATE_AT.get(String(sim.states[mem]["archetype"]), 30.0))):
 					mem = int(m)
+			if parts.size() > 1 and parts[1] == "lose":  # the member holds the player's land: a losing separate peace
+				var pcore := MapGen.core_of(sim, Types.PLAYER)
+				var n := 0
+				for c in sim.cells:
+					if n < 3 and c["owner"] == Types.PLAYER and Types.is_passable(c) and not pcore.has(c["id"]) and _touches_owner(c["id"], mem):
+						c["controller"] = mem
+						map_view.refresh_hex(c["id"])
+						n += 1
+				war["battles"] = -10
+				map_view.mark_dirty()
+				_set_mode(Mode.WAR)
+				_show_separate_offer(mem, false)
+				return
 			var need: float = SEPARATE_AT.get(String(sim.states[mem]["archetype"]), 30.0)
 			var mcore := MapGen.core_of(sim, mem)
 			for core_pass in [false, true]:

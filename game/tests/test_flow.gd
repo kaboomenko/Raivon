@@ -954,8 +954,47 @@ func _run() -> void:
 		if int(a["side"]) == lead:
 			lead_str_before += int(a["max_str"])
 	_check(other >= 0 and g._can_separate(other), "a member can make a separate peace")
+	# every member strikes in turn (06 §14.6)
+	for k in ["strike_at", "strike_hex", "strike_from", "strike_by"]:
+		g.war.erase(k)
+	g.war["member_strike_at"] = 0
+	g._member_strikes(g.now_s())
+	_check(not g.war.has("strike_at") or g.War.sides(g.war).has(int(g.war.get("strike_by", -1))), "a coalition side announces its strike (%d)" % int(g.war.get("strike_by", -1)))
+	var first_by := int(g.war.get("strike_by", -1))
+	for k in ["strike_at", "strike_hex", "strike_from", "strike_by"]:
+		g.war.erase(k)
+	g.war["member_strike_at"] = 0
+	g._member_strikes(g.now_s())
+	_check(first_by < 0 or int(g.war.get("strike_by", -1)) != first_by or g.War.sides(g.war).size() == 1, "the next strike comes from another member")
+	for k in ["strike_at", "strike_hex", "strike_from", "strike_by"]:
+		g.war.erase(k)
 	if other >= 0:
+		# a losing separate peace (06 §14.6: share ≤ −10): it keeps the player's land it holds, no «Триумф»
+		var pcore: Dictionary = g.MapGen.core_of(g.sim, Types.PLAYER)
+		var held: Array = []
+		for c in g.sim.cells:
+			if held.size() >= 3:
+				break
+			if int(c["owner"]) == Types.PLAYER and Types.is_passable(c) and not pcore.has(c["id"]) and c["kind"] != "city":
+				c["controller"] = other
+				held.append(c["id"])
+		var sep_battles: int = g.war["battles"]
+		g.war["battles"] = -10
+		var lplan: Dictionary = g._separate_plan(other)
+		_check(g._member_share(other) <= -10.0 and not (lplan["lose"] as Array).is_empty(), "share %.1f: a defeat, %d hexes to give" % [g._member_share(other), (lplan["lose"] as Array).size()])
+		g._on_diplomacy_action(other, "separate")
+		_check(g.ui.has_modal(), "the player's separate peace shows its terms first")
+		g.ui.close_modal()
 		g._separate_peace(other)
+		var gone := 0
+		for h in lplan["lose"]:
+			if int(g.sim.cells[h]["owner"]) == other:
+				gone += 1
+		_check(gone == (lplan["lose"] as Array).size() and g.war.has("sep_defeat"), "the member annexes them, no «Триумф» this war")
+		for h in held:
+			if int(g.sim.cells[h]["owner"]) == Types.PLAYER:
+				g.sim.cells[h]["controller"] = Types.PLAYER
+		g.war["battles"] = sep_battles
 		var lead_str_after := 0
 		for a in g.armies:
 			if int(a["side"]) == lead:

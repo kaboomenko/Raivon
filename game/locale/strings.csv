@@ -862,3 +862,8 @@ toast.front,Следующее наступление — на «%s»,The next o
 ui.offensive_on,на «%s»,vs “%s”
 toast.separate_land,"«%s» вышли из коалиции: гексов отошло %d, контрибуция %d золота","“%s” left the coalition: %d hexes ceded, %d gold of contribution"
 separate.terms_land,"Условия: занятые вами гексы (%d) отходят вам, контрибуция %d золота","Terms: the hexes you hold (%d) become yours, %d gold of contribution"
+toast.separate_lost,"«%s» вышли из коалиции: сепаратный мир-поражение, отдано гексов: %d","“%s” left the coalition: a losing separate peace, %d hexes ceded"
+separate.terms_lose,"Условия: вы отдаёте занятые ими гексы (%d) — это поражение, «Триумфа» не будет","Terms: you cede the hexes they hold (%d) — a defeat, no «Triumph»"
+separate.ask_title,Сепаратный мир с «%s»,Separate peace with “%s”
+separate.share_own,Их доля в счёте войны: %.1f · «%s»,Their share of the war score: %.1f · “%s”
+separate.sign,Заключить мир,Sign the peace
