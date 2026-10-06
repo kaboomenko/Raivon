@@ -63,6 +63,8 @@
 		"cos_border_ink_neon": {"name": "Неон", "name_en": "Neon", "category": "cos_border_ink", "rarity": "epic", "price": 800},
 		"cos_border_ink_aurora": {"name": "Северное сияние", "name_en": "Aurora", "category": "cos_border_ink", "rarity": "legendary", "price": 0},
 		"cos_border_ink_river": {"name": "Речные", "name_en": "River", "category": "cos_border_ink", "rarity": "rare", "price": 0, "source": "legacy_ch2"},
+		"cos_border_ink_battle_banner": {"name": "Боевое знамя", "name_en": "Battle Banner", "category": "cos_border_ink", "rarity": "epic", "price": 0, "source": "pass_s1"},
+		"cos_border_ink_season1_anim": {"name": "Знамя сезона I (анимированные)", "name_en": "Season I Banner (animated)", "category": "cos_border_ink", "rarity": "legendary", "price": 0, "source": "pass_s1_elite"},
 		"cos_peace_seal_wax": {"name": "Сургуч", "name_en": "Sealing Wax", "category": "cos_peace_seal", "rarity": "rare", "price": 600},
 		"cos_peace_seal_gold_stamp": {"name": "Золотой штамп", "name_en": "Gold Stamp", "category": "cos_peace_seal", "rarity": "epic", "price": 900},
 		"cos_peace_seal_dragon_paw": {"name": "Драконья лапа", "name_en": "Dragon Paw", "category": "cos_peace_seal", "rarity": "epic", "price": 1000},

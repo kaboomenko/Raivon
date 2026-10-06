@@ -787,3 +787,22 @@ pass.xp,ОП,XP
 orders.all,Все три приказа: Военный ящик + 10 Райвитов,All three orders: a War crate + 10 Raivites
 toast.order_done,Приказ выполнен: +%d ОП пропуска,Order done: +%d pass XP
 toast.orders_all,Все приказы дня выполнены: Военный ящик и 10 Райвитов,All daily orders done: a War crate and 10 Raivites
+ui.open,Открыть,Open
+pass.title,Военный пропуск · сезон %d,War Pass · season %d
+pass.days_left,До конца сезона: %d дн.,Season ends in %d d
+pass.level,Уровень %d / 40,Level %d / 40
+pass.card,Военный пропуск · уровень %d,War Pass · level %d
+pass.free,Бесплатно,Free
+pass.premium,Премиум,Premium
+pass.buy,Премиум · %s,Premium · %s
+pass.buy_elite,Элитный (+15 уровней) · %s,Elite (+15 levels) · %s
+pass.premium_on,Премиум-ветка открыта,The premium track is open
+pass.elite_on,Элитный пропуск: премиум-ветка и анимированные чернила сезона,Elite pass: the premium track and the animated season ink
+pass.rw_res,Ресурсы %d ч,Resources %d h
+pass.rw_crate,Военный ящик,War crate
+pass.rw_crates,Военных ящиков: %d,War crates: %d
+pass.rw_raivite,%d Райвитов,%d Raivites
+pass.rw_shards,%d осколков: %s,%d shards: %s
+pass.rw_speed,Ускорение %d ч,Speed-up %d h
+toast.pass_claim,Награда пропуска: %s,Pass reward: %s
+toast.pass_bought,Премиум-ветка пропуска открыта,The pass premium track is open

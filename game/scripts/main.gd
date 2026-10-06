@@ -25,6 +25,7 @@ const Cases := preload("res://scripts/sim/cases.gd")
 const Research := preload("res://scripts/sim/research.gd")
 const Market := preload("res://scripts/sim/market.gd")
 const Orders := preload("res://scripts/sim/orders.gd")
+const BattlePass := preload("res://scripts/sim/battlepass.gd")
 const March := preload("res://scripts/sim/march.gd")
 const Camps := preload("res://scripts/sim/camps.gd")
 const RingGen := preload("res://scripts/sim/ring_gen.gd")
@@ -85,7 +86,8 @@ var cases  # Cases (scripts/sim/cases.gd)
 var research  # Research (scripts/sim/research.gd)
 var market  # Market trader state (scripts/sim/market.gd)
 var orders  # «Приказы дня» (scripts/sim/orders.gd)
-var pass_xp := 0  # Военный пропуск experience (1 level = 1 000, canon §15.6)
+var pass_xp := 0  # legacy: pass XP saved before the pass existed, moved into `bp` on load
+var bp  # «Военный пропуск» (scripts/sim/battlepass.gd)
 var _collect_counted := 0  # last «Собрать всё» counted for order_collect_3 (≥30 min apart)
 var camps  # marauder camps (scripts/sim/camps.gd)
 var _camp_fight := {}  # running camp fight: hex, fort before, army hexes before
@@ -161,6 +163,7 @@ func _ready() -> void:
 	research = Research.new()
 	market = Market.new()
 	orders = Orders.new()
+	bp = BattlePass.new()
 	camps = Camps.new(MAP_SEED ^ 0xCA4B)
 	save_enabled = save_enabled and not _scripted_run()
 	_init_language()
@@ -1706,6 +1709,7 @@ func _speedup_colonize(id: int) -> void:
 
 func _finish_colonize(id: int) -> void:
 	_stat("colonized")
+	bp.gain("colonize", now_s())
 	colonizing.erase(id)
 	map_view.hex_label(id, "")
 	colonized += 1
@@ -2093,6 +2097,7 @@ func _end_camp_fight() -> void:
 		map_view.burst(hex, Color(1.0, 0.85, 0.3), true)
 		sfx.play("fanfare")
 		_stat("camps")
+		bp.gain("camp", now_s())
 		var amt: int = int(rw.get("amount", 0))
 		if amt > 0:
 			var got: Dictionary = econ.add_resources({String(rw["res"]): amt})
@@ -2118,6 +2123,7 @@ func _end_offensive() -> void:
 		ftue = 5 if stars > 0 else 2
 	War.record_offensive(war, stars)
 	_stat("offensives")
+	bp.gain("offensive3" if stars >= 3 else ("offensive2" if stars >= 2 else "offensive"), now_s())
 	if stars >= 2:
 		_stat("stars2")
 	if stars >= 3:
@@ -2392,6 +2398,8 @@ func _sign_peace() -> void:
 			annexed_value += int(sim.cells[h]["value"])
 	_opinion_add(enemy, -2.0 * annexed_value)
 	_stat("peaces")
+	if _last_score > 0.0:
+		bp.gain("peace", now_s())
 	if enemy == RingNext.ALVARIA and _last_score >= 30.0:
 		_stat("hegemon_wins")  # «Укротитель волков»
 	if enemy == RingNext.CONCLAVE and _last_score >= 30.0:
@@ -3070,6 +3078,13 @@ func _on_buy_sku(sku: String) -> void:
 			econ.res["raivite"] = int(econ.res["raivite"]) + n
 			ui.toast(tr("toast.test_raivite") % n)
 	match sku:
+		"iap_pass", "iap_pass_elite":
+			bp.refresh(now_s())
+			bp.buy(sku)
+			if sku == "iap_pass_elite":
+				cases.owned_cosmetics[String(BattlePass.data().get("elite_cosmetic", ""))] = true
+			ui.toast(tr("toast.pass_bought"))
+			_open_pass()
 		"iap_builder":
 			if first:
 				econ.builders += 1
@@ -3258,6 +3273,10 @@ func _star_progress(st: Array) -> int:
 func _world_items() -> Array:
 	var items: Array = [{"kind": "chapter", "hexes": _player_hexes(), "goal": _chapter_goal(), "done": chapter_done,
 		"can_expand": _player_hexes() >= _chapter_goal() and war.is_empty() and not chapter_done}]
+	if _orders_open():
+		bp.refresh(now_s())
+		items.append({"kind": "star", "id": "pass", "icon": "🎖", "open": true, "claimed": false,
+			"title": tr("pass.card") % bp.level(), "progress": bp.xp % BattlePass.XP_LEVEL, "need": BattlePass.XP_LEVEL})
 	items.append_array(_order_items())
 	var list := _stars()
 	if chapter >= 4:
@@ -3279,6 +3298,9 @@ func _on_world_action(id: String) -> void:
 		return
 	if id.begins_with("order"):
 		_claim_order(id)
+		return
+	if id == "pass":
+		_open_pass()
 		return
 	for st in _stars():
 		if st[0] == id and not stars_claimed.has(id) and _star_progress(st) >= int(st[3]):
@@ -3341,6 +3363,71 @@ func _grant_legacy(ch: int) -> String:
 	return tr("legacy.line") % [ch, ", ".join(parts)]
 
 
+# ---------------------------------------------------------------------- «Военный пропуск» (canon §15.6, 09 §9.12)
+
+func _pass_text(r: Array) -> String:
+	if r.is_empty():
+		return ""
+	match String(r[0]):
+		"res":
+			return tr("pass.rw_res") % int(r[1])
+		"crate":
+			return tr("pass.rw_crate") if int(r[1]) == 1 else tr("pass.rw_crates") % int(r[1])
+		"raivite":
+			return tr("pass.rw_raivite") % int(r[1])
+		"shards":
+			return tr("pass.rw_shards") % [int(r[2]), Cases.commander_name(String(r[1]))]
+		"speed":
+			return tr("pass.rw_speed") % int(r[1])
+		"cosmetic":
+			var co: Dictionary = Cases.cosmetic(String(r[1]))
+			return "%s «%s»" % [Cases.category_name(String(co.get("category", ""))), String(co.get("name_en" if Cases.is_english() else "name", ""))]
+	return ""
+
+
+func _pay_pass(r: Array) -> void:
+	match String(r[0]):
+		"res":
+			var gross: Dictionary = econ.gross_per_hour(sim)
+			var h: int = r[1]
+			econ.add_resources({"gold": h * maxi(60, int(gross.get("gold", 0))), "food": h * maxi(30, int(gross.get("food", 0))),
+				"metal": h * maxi(30, int(gross.get("metal", 0)))})
+		"crate":
+			cases.free_crates += int(r[1])
+		"raivite":
+			econ.res["raivite"] = int(econ.res["raivite"]) + int(r[1])
+		"shards":
+			cases.shards[String(r[1])] = int(cases.shards.get(String(r[1]), 0)) + int(r[2])
+		"speed":
+			speed_minutes += int(r[1]) * 60
+		"cosmetic":
+			cases.owned_cosmetics[String(r[1])] = true
+
+
+func _open_pass() -> void:
+	var now := now_s()
+	bp.refresh(now)
+	var rows: Array = []
+	for lvl in range(1, BattlePass.LEVELS + 1):
+		var fs := "claimed" if bp.claimed_free.has(lvl) else ("claim" if bp.can_claim(lvl, "free") else "locked")
+		var ps := "claimed" if bp.claimed_prem.has(lvl) else ("claim" if bp.can_claim(lvl, "premium") else "locked")
+		rows.append({"lvl": lvl, "free_text": _pass_text(bp.reward(lvl, "free")), "free_state": fs,
+			"prem_text": _pass_text(bp.reward(lvl, "premium")), "prem_state": ps})
+	ui.show_pass({"season": bp.season + 1, "days_left": int(ceil(float(BattlePass.season_end(now) - now) / 86400.0)),
+		"level": bp.level(), "xp_in_level": bp.xp % BattlePass.XP_LEVEL if bp.level() < BattlePass.LEVELS else BattlePass.XP_LEVEL,
+		"premium": bp.premium, "elite": bp.elite, "can_buy": _payments_enabled(), "price": "$7.99", "price_elite": "$14.99", "rows": rows},
+		func(lvl: int, track: String):
+			var r: Array = bp.claim(lvl, track)
+			if not r.is_empty():
+				_pay_pass(r)
+				sfx.play("coin")
+				ui.toast(tr("toast.pass_claim") % _pass_text(r))
+				_econ_tick()
+				_autosave()
+			_open_pass(),
+		func(sku: String): _on_buy_sku(sku))
+
+
 # ---------------------------------------------------------------------- «Приказы дня» (canon §14.5, 08 §8.6)
 
 func _orders_open() -> bool:
@@ -3394,7 +3481,7 @@ func _claim_order(id: String) -> void:
 	else:
 		var xp: int = orders.claim(int(id.split(":")[1]), stats)
 		if xp > 0:
-			pass_xp += xp
+			bp.add_xp(xp, now_s())
 			sfx.play("coin")
 			ui.toast(tr("toast.order_done") % xp)
 	_open_tab("world")
@@ -4015,6 +4102,7 @@ func _ai_tick(now: int) -> void:
 		map_view.burst(h, Color(1.0, 0.6, 0.3), true)
 		map_view.floater(h, tr("floater.raid_repelled"), Color(0.75, 0.85, 1.0))
 		_stat("defenses")
+		bp.gain("defense", now_s())
 		sfx.play("repelled")
 		_post("inbox.raid.title", L.pack("inbox.raid.text", [_cell_key(h)]))
 		ui.toast(tr("toast.raid_repelled"))
@@ -4175,6 +4263,7 @@ func _resolve_strike() -> void:
 		return
 	war["battles"] = clampi(int(war["battles"]) + 2, -10, 10)
 	_stat("defenses")
+	bp.gain("defense", now_s())
 	var gold := int(maxi(60, int(econ.gross_per_hour(sim).get("gold", 0))) / 2.0)
 	econ.add_resources({"gold": gold})
 	map_view.burst(hex, MapView.C_PLAYER, true)
@@ -4241,6 +4330,7 @@ func _auto_defense(hex: int) -> void:
 	if taken.is_empty():
 		war["battles"] = clampi(int(war["battles"]) + 2, -10, 10)
 		_stat("defenses")
+		bp.gain("defense", now_s())
 		var gold := int(maxi(60, int(econ.gross_per_hour(sim).get("gold", 0))) / 2.0)
 		econ.add_resources({"gold": gold})
 		map_view.burst(hex, MapView.C_PLAYER, true)
@@ -4579,6 +4669,12 @@ func _demo(spec: String) -> void:
 		_open_shop()
 		if what == "royal":
 			_on_open_case("case_royal", 10, "raivite")
+		return
+	if what == "pass":  # the War Pass screen at level 4 with a reward claimed
+		bp.refresh(now_s())
+		bp.add_xp(4600, now_s())
+		bp.claim(1, "free")
+		_open_pass()
 		return
 	if what == "settings":
 		_on_hud_button("gear")

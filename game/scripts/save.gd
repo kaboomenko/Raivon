@@ -89,6 +89,7 @@ static func to_dict(g: Node) -> Dictionary:
 		"market": g.market.to_dict() if g.market != null else {},
 		"orders": g.orders.to_dict() if g.orders != null else {},
 		"pass_xp": g.pass_xp,
+		"pass": g.bp.to_dict() if g.bp != null else {},
 		"camps": g.camps.to_dict() if g.camps != null else {},
 	}
 	if g.get("econ") != null:
@@ -274,7 +275,13 @@ static func apply(g: Node, d: Dictionary) -> bool:
 		if g.orders == null:
 			g.orders = load("res://scripts/sim/orders.gd").new()
 		g.orders.load_dict(d["orders"])
-	g.pass_xp = int(d.get("pass_xp", 0))
+	if g.bp == null:
+		g.bp = load("res://scripts/sim/battlepass.gd").new()
+	if typeof(d.get("pass")) == TYPE_DICTIONARY and not (d["pass"] as Dictionary).is_empty():
+		g.bp.load_dict(d["pass"])
+	elif int(d.get("pass_xp", 0)) > 0:
+		g.bp.refresh(int(d.get("saved_at", 0)))
+		g.bp.xp = int(d.get("pass_xp", 0))  # XP from daily orders saved before the pass existed
 	g._last_refill = int(d.get("saved_at", 0))  # armies heal while the app is closed
 	if d.has("econ") and g.get("econ") != null:
 		g.econ = g.econ.get_script().from_dict(d["econ"])

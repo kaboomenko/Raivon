@@ -534,7 +534,7 @@ func _run() -> void:
 		g._world_expansion()
 	_check(g.chapter == 2 and g.sim.states.size() == 6 and g._land_count() == 90, "world expanded to 90 land hexes, 2 new states")
 	_check(g._chapter_goal() == 36 and g._colonize_seconds() == 300, "chapter II goal 36, colonization 5 min")
-	var wi: Array = g._world_items().filter(func(x): return not String(x.get("id", "")).begins_with("order"))
+	var wi: Array = g._world_items().filter(func(x): return not (String(x.get("id", "")).begins_with("order") or String(x.get("id", "")) == "pass"))
 	_check(wi.size() == 1 + 8 + 9 and String(wi[1]["id"]) == "c2_port", "World tab lists chapter II stars first (%d items)" % wi.size())
 	var oi: Array = g._world_items().filter(func(x): return String(x.get("id", "")).begins_with("order"))
 	_check(oi.size() == 4, "the World tab opens with today's 3 orders and the bonus")
@@ -758,7 +758,7 @@ func _run() -> void:
 	_check(g.chapter == 3 and g.sim.states.size() == 9 and g._land_count() == 160, "world expanded to 160 land hexes, 3 new states (%d)" % g._land_count())
 	_check(g._chapter_goal() == 56 and g._colonize_seconds() == 900, "chapter III goal 56, colonization 15 min")
 	_check(bool(g.sim.states[6]["hegemon"]) and int(g.sim.states[6]["dev_level"]) == 6 and int(g.sim.states[7]["dev_level"]) == 5, "Alvaria the hegemon at DL6, Saren at DL5")
-	var wi3: Array = g._world_items().filter(func(x): return not String(x.get("id", "")).begins_with("order"))
+	var wi3: Array = g._world_items().filter(func(x): return not (String(x.get("id", "")).begins_with("order") or String(x.get("id", "")) == "pass"))
 	_check(String(wi3[1]["id"]) == "c3_factory", "World tab lists chapter III stars first")
 	g._ensure_armies_for(6)
 	var heg_ok := false
@@ -876,7 +876,7 @@ func _run() -> void:
 	g.ui.close_modal()
 	_check(g.chapter == 4 and g.sim.states.size() == 12 and g._land_count() == 250, "world expanded to 250 land hexes, 3 more states (%d)" % g._land_count())
 	_check(g._chapter_goal() == 88 and g._colonize_seconds() == 1800, "chapter IV goal 88, colonization 30 min")
-	_check(String(g._world_items().filter(func(x): return not String(x.get("id", "")).begins_with("order"))[1]["id"]) == "c4_conclave", "World tab lists chapter IV stars first")
+	_check(String(g._world_items().filter(func(x): return not (String(x.get("id", "")).begins_with("order") or String(x.get("id", "")) == "pass"))[1]["id"]) == "c4_conclave", "World tab lists chapter IV stars first")
 	Save.save(g)
 	var g5: Node = load("res://scenes/main.tscn").instantiate()
 	g5.save_enabled = false

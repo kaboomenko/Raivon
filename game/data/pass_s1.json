@@ -1,0 +1,419 @@
+{
+ "_doc": "Военный пропуск, сезон 1 (09 §9.12.4, canon §15.6). Reward: [kind, …]: res hours | crate n | raivite n | shards cmd n | cosmetic id | speed hours.",
+ "season": 1,
+ "days": 28,
+ "xp_per_level": 1000,
+ "elite_levels": 15,
+ "elite_cosmetic": "cos_border_ink_season1_anim",
+ "levels": [
+  {
+   "free": [
+    "res",
+    2
+   ],
+   "premium": [
+    "cosmetic",
+    "cos_frame_season_1"
+   ]
+  },
+  {
+   "free": [
+    "crate",
+    1
+   ],
+   "premium": [
+    "res",
+    3
+   ]
+  },
+  {
+   "free": [
+    "res",
+    2
+   ],
+   "premium": [
+    "raivite",
+    150
+   ]
+  },
+  {
+   "free": [
+    "raivite",
+    50
+   ],
+   "premium": [
+    "res",
+    3
+   ]
+  },
+  {
+   "free": [
+    "res",
+    2
+   ],
+   "premium": [
+    "shards",
+    "cmd_rai",
+    5
+   ]
+  },
+  {
+   "free": [
+    "crate",
+    1
+   ],
+   "premium": [
+    "speed",
+    3
+   ]
+  },
+  {
+   "free": [
+    "res",
+    2
+   ],
+   "premium": [
+    "res",
+    3
+   ]
+  },
+  {
+   "free": [
+    "shards",
+    "cmd_seir",
+    10
+   ],
+   "premium": [
+    "raivite",
+    150
+   ]
+  },
+  {
+   "free": [
+    "res",
+    2
+   ],
+   "premium": [
+    "res",
+    3
+   ]
+  },
+  {
+   "free": [
+    "raivite",
+    50
+   ],
+   "premium": [
+    "res",
+    3
+   ]
+  },
+  {
+   "free": [
+    "res",
+    2
+   ],
+   "premium": [
+    "shards",
+    "cmd_rai",
+    5
+   ]
+  },
+  {
+   "free": [
+    "res",
+    2
+   ],
+   "premium": [
+    "res",
+    3
+   ]
+  },
+  {
+   "free": [
+    "crate",
+    1
+   ],
+   "premium": [
+    "raivite",
+    150
+   ]
+  },
+  {
+   "free": [
+    "res",
+    3
+   ],
+   "premium": [
+    "res",
+    3
+   ]
+  },
+  {
+   "free": [
+    "res",
+    3
+   ],
+   "premium": [
+    "speed",
+    3
+   ]
+  },
+  {
+   "free": [
+    "raivite",
+    50
+   ],
+   "premium": [
+    "shards",
+    "cmd_rai",
+    5
+   ]
+  },
+  {
+   "free": [
+    "res",
+    3
+   ],
+   "premium": [
+    "res",
+    3
+   ]
+  },
+  {
+   "free": [
+    "crate",
+    1
+   ],
+   "premium": [
+    "raivite",
+    150
+   ]
+  },
+  {
+   "free": [
+    "res",
+    3
+   ],
+   "premium": [
+    "res",
+    3
+   ]
+  },
+  {
+   "free": [
+    "shards",
+    "cmd_seir",
+    10
+   ],
+   "premium": [
+    "cosmetic",
+    "cos_emote_card_up_sleeve"
+   ]
+  },
+  {
+   "free": [
+    "res",
+    3
+   ],
+   "premium": [
+    "shards",
+    "cmd_rai",
+    5
+   ]
+  },
+  {
+   "free": [
+    "raivite",
+    50
+   ],
+   "premium": [
+    "res",
+    4
+   ]
+  },
+  {
+   "free": [
+    "crate",
+    1
+   ],
+   "premium": [
+    "raivite",
+    150
+   ]
+  },
+  {
+   "free": [
+    "res",
+    3
+   ],
+   "premium": [
+    "res",
+    4
+   ]
+  },
+  {
+   "free": [
+    "cosmetic",
+    "cos_emote_applause"
+   ],
+   "premium": [
+    "res",
+    4
+   ]
+  },
+  {
+   "free": [
+    "res",
+    3
+   ],
+   "premium": [
+    "speed",
+    3
+   ]
+  },
+  {
+   "free": [
+    "crate",
+    1
+   ],
+   "premium": [
+    "res",
+    4
+   ]
+  },
+  {
+   "free": [
+    "raivite",
+    50
+   ],
+   "premium": [
+    "raivite",
+    150
+   ]
+  },
+  {
+   "free": [
+    "res",
+    3
+   ],
+   "premium": [
+    "res",
+    4
+   ]
+  },
+  {
+   "free": [
+    "res",
+    4
+   ],
+   "premium": [
+    "shards",
+    "cmd_rai",
+    5
+   ]
+  },
+  {
+   "free": [
+    "crate",
+    1
+   ],
+   "premium": [
+    "res",
+    4
+   ]
+  },
+  {
+   "free": [
+    "shards",
+    "cmd_seir",
+    10
+   ],
+   "premium": [
+    "res",
+    4
+   ]
+  },
+  {
+   "free": [
+    "res",
+    4
+   ],
+   "premium": [
+    "raivite",
+    150
+   ]
+  },
+  {
+   "free": [
+    "raivite",
+    50
+   ],
+   "premium": [
+    "res",
+    4
+   ]
+  },
+  {
+   "free": [
+    "res",
+    4
+   ],
+   "premium": [
+    "shards",
+    "cmd_rai",
+    5
+   ]
+  },
+  {
+   "free": [
+    "crate",
+    1
+   ],
+   "premium": [
+    "res",
+    6
+   ]
+  },
+  {
+   "free": [
+    "res",
+    4
+   ],
+   "premium": [
+    "speed",
+    3
+   ]
+  },
+  {
+   "free": [
+    "res",
+    4
+   ],
+   "premium": [
+    "raivite",
+    150
+   ]
+  },
+  {
+   "free": [
+    "crate",
+    1
+   ],
+   "premium": [
+    "res",
+    6
+   ]
+  },
+  {
+   "free": [
+    "crate",
+    2
+   ],
+   "premium": [
+    "cosmetic",
+    "cos_border_ink_battle_banner"
+   ]
+  }
+ ]
+}

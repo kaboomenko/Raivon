@@ -615,6 +615,88 @@ func show_inbox(items: Array, now: int) -> void:
 	_button(box, Rect2(24, 950, 793, 84), tr("ui.close"), Color(0.13, 0.4, 0.9), close_modal)
 
 
+## «Военный пропуск» (canon §15.6): season header with the level bar, buy buttons (only where payments work), and
+## the 40 levels — free and premium rewards side by side with their claim buttons.
+## info: {season, days_left, level, xp_in_level, premium, elite, can_buy, price, price_elite,
+##   rows: [{lvl, free_text, free_state, prem_text, prem_state}]} — state: "claim" | "claimed" | "locked"
+func show_pass(info: Dictionary, on_claim: Callable, on_buy: Callable) -> void:
+	var box := _modal_box(Rect2(30, 170, 881, 1330))
+	_at(_label(tr("pass.title") % int(info["season"]), 32, Color(1.0, 0.85, 0.4)), box, Vector2(30, 22))
+	var dl := _label(tr("pass.days_left") % int(info["days_left"]), 18, MUTED, false)
+	_at(dl, box, Vector2(30, 66))
+	var lv := _label(tr("pass.level") % int(info["level"]), 26)
+	lv.position = Vector2(560, 24)
+	lv.size = Vector2(290, 36)
+	lv.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	box.add_child(lv)
+	var bar := _panel(box, Rect2(30, 100, 821, 18), _style(Color(1, 1, 1, 0.1), 9, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
+	_panel(bar, Rect2(0, 0, 821.0 * clampf(int(info["xp_in_level"]) / 1000.0, 0.0, 1.0), 18), _style(Color(0.95, 0.72, 0.2), 9, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
+	var xl := _label("%d / 1000 %s" % [int(info["xp_in_level"]), tr("pass.xp")], 15, TEXT, false)
+	xl.position = Vector2(30, 120)
+	box.add_child(xl)
+	var top := 150.0
+	if not info["premium"] and info["can_buy"]:
+		_button(box, Rect2(30, top, 400, 64), tr("pass.buy") % String(info["price"]), Color(0.75, 0.5, 0.1), func(): on_buy.call("iap_pass"))
+		_button(box, Rect2(451, top, 400, 64), tr("pass.buy_elite") % String(info["price_elite"]), Color(0.55, 0.25, 0.8), func(): on_buy.call("iap_pass_elite"))
+		top += 78.0
+	elif info["premium"]:
+		var pl := _label(tr("pass.elite_on") if info["elite"] else tr("pass.premium_on"), 18, Color(1.0, 0.82, 0.3), false)
+		_at(pl, box, Vector2(30, top))
+		top += 34.0
+	var head_f := _label(tr("pass.free"), 18, MUTED)
+	_at(head_f, box, Vector2(140, top))
+	var head_p := _label(tr("pass.premium"), 18, Color(1.0, 0.82, 0.3))
+	_at(head_p, box, Vector2(505, top))
+	top += 32.0
+	var scroll := ScrollContainer.new()
+	scroll.position = Vector2(20, top)
+	scroll.size = Vector2(841, 1330 - top - 110)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	box.add_child(scroll)
+	var col := VBoxContainer.new()
+	col.custom_minimum_size = Vector2(830, 0)
+	col.add_theme_constant_override("separation", 8)
+	scroll.add_child(col)
+	for r in info["rows"]:
+		var row := Panel.new()
+		row.custom_minimum_size = Vector2(830, 76)
+		var reached: bool = int(r["lvl"]) <= int(info["level"])
+		row.add_theme_stylebox_override("panel", _style(Color(0.14, 0.2, 0.32) if reached else Color(0.09, 0.12, 0.2), 12, EDGE, 1))
+		var ln := _label(str(int(r["lvl"])), 26, Color(1.0, 0.85, 0.4) if reached else MUTED)
+		ln.position = Vector2(0, 18)
+		ln.size = Vector2(90, 40)
+		ln.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		row.add_child(ln)
+		for k in 2:
+			var track: String = ["free", "premium"][k]
+			var x := 100.0 + 365.0 * k
+			var txt: String = r["free_text" if k == 0 else "prem_text"]
+			var state: String = r["free_state" if k == 0 else "prem_state"]
+			var t := _label(txt, 16, TEXT if state != "locked" else MUTED, false)
+			t.autowrap_mode = TextServer.AUTOWRAP_WORD
+			t.custom_minimum_size = Vector2(210, 0)
+			t.position = Vector2(x, 10)
+			row.add_child(t)
+			var lvl: int = r["lvl"]
+			if state == "claim":
+				var b := _panel(row, Rect2(x + 220, 16, 130, 44), _style(Color(0.75, 0.55, 0.12), 10, Color(1, 1, 1, 0.45), 2))
+				var bl := _label(tr("ui.claim"), 17)
+				bl.size = Vector2(130, 44)
+				bl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+				bl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+				b.add_child(bl)
+				b.mouse_filter = Control.MOUSE_FILTER_PASS
+				b.gui_input.connect(func(e): if _is_tap(e): on_claim.call(lvl, track))
+			else:
+				var m := _label("✓" if state == "claimed" else "🔒", 22, Color(0.5, 1.0, 0.6) if state == "claimed" else MUTED)
+				m.position = Vector2(x + 220, 18)
+				m.size = Vector2(130, 40)
+				m.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+				row.add_child(m)
+		col.add_child(row)
+	_button(box, Rect2(30, 1330 - 96, 821, 76), tr("ui.close"), Color(0.13, 0.4, 0.9), close_modal)
+
+
 ## AI ultimatum (canon §9.1): accept (cede the hex), pay tribute, or refuse (war).
 func show_ultimatum(enemy: String, hex_name: String, tribute: int, can_pay: bool, left_sec: int, on_accept: Callable, on_pay: Callable, on_refuse: Callable) -> void:
 	var box := _modal_box(Rect2(50, 380, 841, 860), true)
@@ -1227,7 +1309,14 @@ func _star_card(it: Dictionary) -> Control:
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	card.add_child(t)
 	var id: String = it["id"]
-	if claimed:
+	if it.get("open", false):
+		_card_button(card, tr("ui.open"), Color(0.55, 0.25, 0.8), func(): world_action.emit(id), true)
+		var pr := _label("%d / %d" % [int(it["progress"]), int(it["need"])], 15, MUTED)
+		pr.position = Vector2(0, 112)
+		pr.size = Vector2(150, 22)
+		pr.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		card.add_child(pr)
+	elif claimed:
 		var ok := _label(tr("world.claimed"), 16, Color(0.5, 1.0, 0.6))
 		ok.position = Vector2(0, 140)
 		ok.size = Vector2(150, 24)
