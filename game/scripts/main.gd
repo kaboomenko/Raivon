@@ -27,6 +27,7 @@ const Market := preload("res://scripts/sim/market.gd")
 const March := preload("res://scripts/sim/march.gd")
 const Camps := preload("res://scripts/sim/camps.gd")
 const RingGen := preload("res://scripts/sim/ring_gen.gd")
+const HexGrid := preload("res://scripts/sim/hexgrid.gd")
 const Net := preload("res://scripts/net.gd")
 const ShopUI := preload("res://scripts/shop_ui.gd")
 const L := preload("res://scripts/l10n.gd")
@@ -2353,21 +2354,37 @@ func _complete_chapter() -> void:
 ## League and the Order of Stone, their forts by the AI norm, the new goal; the camera pulls back over the new world.
 func _world_expansion() -> void:
 	var hexes_before := _land_count()
+	var old_n: int = sim.cells.size()
 	econ.res["raivite"] = int(econ.res["raivite"]) + 200  # chapter I legacy
 	_expand_world()
+	# the ceremony map (02 §17.1): clouds over the new ring part from the old border outward
+	var ring: Array = []
+	for i in range(old_n, sim.cells.size()):
+		ring.append(i)
+	ring.sort_custom(func(a, b): return HexGrid.distance(HexGrid.axial(sim.cells[a]), Vector2i.ZERO) < HexGrid.distance(HexGrid.axial(sim.cells[b]), Vector2i.ZERO) if HexGrid.distance(HexGrid.axial(sim.cells[a]), Vector2i.ZERO) != HexGrid.distance(HexGrid.axial(sim.cells[b]), Vector2i.ZERO) else a < b)
+	map_view.veil_hexes(ring)
+	map_view.part_clouds(ring, 3.2)
 	chapter = 2
 	econ.chapter = 2
 	_ai_forts([RingGen.LEAGUE, RingGen.ORDER])
 	map_view.refresh_props()
 	map_view.set_camps(camps.active)
 	var hexes_after := _land_count()
-	rig.focus(Vector3(0, 0, -1.0), 1.0)
+	var mid := Vector3.ZERO
+	for c in sim.cells:
+		mid += MapView.axial_to_world(int(c["q"]), int(c["r"]))
+	mid /= float(sim.cells.size())
+	rig.focus(mid + Vector3(0, 0, 1.5), 2.3)  # pull back until the new world fits
+	var t := 2.2
 	for s in [RingGen.LEAGUE, RingGen.ORDER]:
 		var cap: int = sim.states[s]["capital_id"]
-		map_view.burst(cap, map_view.state_color(s), true)
-		map_view.floater(cap, _state_name(s), map_view.state_color(s).lightened(0.4))
-	map_view.fireworks(map_view.cell_world(sim.states[Types.PLAYER]["capital_id"]), 5)
+		get_tree().create_timer(t).timeout.connect(func():
+			map_view.burst(cap, map_view.state_color(s), true)
+			map_view.floater(cap, _state_name(s), map_view.state_color(s).lightened(0.4))
+			sfx.play("capture"))
+		t += 1.0
 	sfx.play("fanfare")
+	await get_tree().create_timer(t + 1.4).timeout
 	_post("inbox.expansion.title", L.pack("inbox.expansion.text", [hexes_before, hexes_after, _chapter_goal()]))
 	ui.show_info(tr("expansion.title"), [
 		tr("expansion.world") % [hexes_before, hexes_after],
@@ -3515,6 +3532,9 @@ func _bot_move() -> void:
 func _shot(path: String) -> void:
 	for i in 10:
 		await get_tree().process_frame
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--shot-delay="):  # capture an animation part-way (seconds)
+			await get_tree().create_timer(float(a.substr(13))).timeout
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png(path)
 	print("shot saved ", path)

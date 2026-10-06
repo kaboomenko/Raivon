@@ -494,7 +494,36 @@ func _build_horizon() -> void:
 
 var _cloud_mat: StandardMaterial3D
 
-func _cloud(pos: Vector3, size: float) -> void:
+## World expansion (02 §17.1): every new hex starts under a cloud; `part_clouds` blows them away from the
+## old border outward (`order`: hex ids, nearest first) over `seconds`.
+var _veil := {}  # hex -> cloud node
+
+
+func veil_hexes(ids: Array) -> void:
+	for h in ids:
+		var p := cell_world(int(h))
+		var mi := _cloud(p + Vector3(0, 0.9, 0), 3.2, false)
+		mi.material_override = _cloud_mat.duplicate()
+		(mi.material_override as StandardMaterial3D).albedo_color = Color(0.93, 0.95, 0.98, 1.0)
+		_veil[int(h)] = mi
+
+
+func part_clouds(order: Array, seconds: float) -> void:
+	var n := maxi(1, order.size())
+	for i in order.size():
+		var mi: MeshInstance3D = _veil.get(int(order[i]))
+		if mi == null:
+			continue
+		_veil.erase(int(order[i]))
+		var tw := mi.create_tween()
+		tw.tween_interval(seconds * float(i) / float(n))
+		var out := (mi.position - Vector3(0, mi.position.y, 0)).normalized() * 1.6
+		tw.tween_property(mi, "position", mi.position + out + Vector3(0, 0.8, 0), 0.6).set_ease(Tween.EASE_IN)
+		tw.parallel().tween_property(mi.material_override, "albedo_color:a", 0.0, 0.6)
+		tw.tween_callback(mi.queue_free)
+
+
+func _cloud(pos: Vector3, size: float, horizon := true) -> MeshInstance3D:
 	if _cloud_mat == null:
 		var tex := GradientTexture2D.new()
 		var g := Gradient.new()
@@ -517,7 +546,8 @@ func _cloud(pos: Vector3, size: float) -> void:
 	mi.material_override = _cloud_mat
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mi.position = pos
-	_horizon_root.add_child(mi)
+	(_horizon_root if horizon else _props_root.get_parent()).add_child(mi)
+	return mi
 
 
 # ------------------------------------------------------------------ territory overlay (rebuilt on change)
