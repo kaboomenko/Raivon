@@ -72,6 +72,7 @@ var coalition_last := 0  # last formation (not more than once in 5 days)
 var _alarm_warned := false
 var _swap := {}            # territory swap being set up: {state, give, get}
 var swap_at := {}          # state -> last swap time (one swap with a state per 24 h)
+var pacts := {}            # state -> non-aggression pact end (canon §10.8, 06 §11)
 var _ftue_next := 0  # step to resume after the peace ceremony
 var _raid := {}  # FTUE marauder raid: {hex, at}
 var econ  # Economy (scripts/sim/economy.gd)
@@ -468,6 +469,8 @@ func _primary_for_selection() -> void:
 		var left := _truce_left(c["owner"])
 		if left > 0:
 			ui.set_primary("truce", tr("ui.truce_timer") % [left / 60, left % 60], Color(0.3, 0.35, 0.45), false)
+		elif _pact_left(c["owner"]) > 0:  # a pact is unbreakable for both sides (06 D5)
+			ui.set_primary("truce", tr("dipl.pact") % GameUI.fmt_time(_pact_left(c["owner"])), Color(0.3, 0.35, 0.45), false)
 		elif MapGen.core_of(sim, c["owner"]).has(selected):
 			ui.set_primary("core", tr("ui.core_protected"), Color(0.3, 0.35, 0.45), false)
 		else:
@@ -864,7 +867,7 @@ func alarm() -> float:
 func _coalition_candidates() -> Array:
 	var out: Array = []
 	for s in _ai_states():
-		if allies.has(s) or _truce_left(s) > 0 or _opinion_of(s) > 0.0:
+		if allies.has(s) or _truce_left(s) > 0 or _pact_left(s) > 0 or _opinion_of(s) > 0.0:
 			continue
 		var touches := false
 		for c in sim.cells:
@@ -911,7 +914,7 @@ func _coalition_tick(now: int) -> void:
 		# members who warmed up (gifts) or made friends leave; fewer than 2 — the coalition falls apart
 		var still: Array = []
 		for m in coalition["members"]:
-			if not allies.has(int(m)) and _opinion_of(int(m)) <= 0.0:
+			if not allies.has(int(m)) and _pact_left(int(m)) == 0 and _opinion_of(int(m)) <= 0.0:
 				still.append(int(m))
 		if still.size() < 2:
 			coalition = {}
@@ -997,6 +1000,43 @@ func _coalition_war(now: int) -> void:
 	_post("inbox.coalition_war.title", L.pack("inbox.coalition_war.text", [_state_key(leader), members.size()]))
 	ui.toast(tr("toast.coalition_war") % ", ".join(names))
 	_set_mode(Mode.WAR)
+
+
+# ---------------------------------------------------------------------- non-aggression pact (canon §10.8, 06 §11)
+
+const PACT_SEC := 48 * 3600
+const PACT_REPEAT_SEC := 72 * 3600
+## The lowest opinion each archetype signs a pact at (06 §9 table).
+const PACT_OPINION := {"wolf": 0.0, "fox": -25.0, "turtle": -50.0, "raven": -25.0, "owl": -25.0}
+
+
+func _pact_left(s: int) -> int:
+	return maxi(0, int(pacts.get(s, 0)) - now_s())
+
+
+func _pact_cost() -> int:
+	return 8 * maxi(60, int(econ.gross_per_hour(sim).get("gold", 0)))  # 8 h of gross gold (canon)
+
+
+## "" when a pact can be signed with `s`: no war or open ultimatum with it, its archetype's opinion threshold,
+## one active pact at a time, the same state again 72 h after the last pact ended.
+func _pact_reason(s: int) -> String:
+	if _pact_left(s) > 0:
+		return tr("dipl.pact") % GameUI.fmt_time(_pact_left(s))
+	if not war.is_empty() and (int(war["enemy"]) == s or (war.get("coalition", []) as Array).has(s)):
+		return tr("swap.war")
+	if not ultimatum.is_empty() and int(ultimatum["state"]) == s:
+		return tr("pact.ultimatum")
+	for o in pacts:
+		if _pact_left(int(o)) > 0:
+			return tr("pact.one")
+	var again := int(pacts.get(s, 0)) + PACT_REPEAT_SEC - now_s()
+	if pacts.has(s) and again > 0:
+		return tr("pact.again") % GameUI.fmt_time(again)
+	var need: float = PACT_OPINION.get(String(sim.states[s]["archetype"]), -25.0)
+	if _opinion_of(s) < need:
+		return tr("pact.opinion") % [roundi(_opinion_of(s)), roundi(need)]
+	return ""
 
 
 # ---------------------------------------------------------------------- territory swap (canon §10.9, 06 §15)
@@ -3325,6 +3365,8 @@ func _diplomacy_items(now: int) -> Array:
 			status = tr("dipl.war")
 		elif not coalition.is_empty() and (coalition["members"] as Array).has(s):
 			status = tr("dipl.in_coalition")
+		elif _pact_left(s) > 0:
+			status = tr("dipl.pact") % GameUI.fmt_time(_pact_left(s))
 		elif _truce_left(s) > 0:
 			status = tr("dipl.truce") % GameUI.fmt_time(_truce_left(s))
 		var gift_left := maxi(0, int(gift_at.get(s, 0)) + 86400 - now)
@@ -3332,7 +3374,8 @@ func _diplomacy_items(now: int) -> Array:
 		var it_extra := {"ally": allies.has(s), "ally_reason": _ally_reason(s), "can_call": _can_call(s), "ai_ally": _state_name(int(ai_alliances[s])) if ai_alliances.has(s) else ""}
 		items.append(it_extra.merged({"id": s, "state": _state_name(s), "leader": tr(String(LEADERS[s][0])), "archetype": tr(String(LEADERS[s][1])),
 			"opinion": v, "word": tr(_opinion_word(v)), "status": status,
-			"can_war": war.is_empty() and _truce_left(s) == 0, "gift_cost": _gift_cost(), "gift_left": gift_left,
+			"can_war": war.is_empty() and _truce_left(s) == 0 and _pact_left(s) == 0, "gift_cost": _gift_cost(), "gift_left": gift_left,
+			"pact_reason": _pact_reason(s), "pact_left": _pact_left(s),
 			"swap_reason": _swap_reason(s),
 			"color": map_view.state_color(s)}))
 	return items
@@ -3352,6 +3395,25 @@ func _on_diplomacy_action(s: int, kind: String) -> void:
 			rig.focus(map_view.cell_world(g[0]))
 			_select(g[0])
 			ui.toast(tr("toast.target_chosen"))
+		"pact":
+			var whyp := _pact_reason(s)
+			if whyp != "":
+				ui.toast(whyp)
+				return
+			var cost := _pact_cost()
+			if econ.res["gold"] < cost:
+				ui.toast(tr("toast.no_gold"))
+				return
+			econ.res["gold"] -= cost
+			pacts[s] = now_s() + PACT_SEC
+			if not coalition.is_empty() and (coalition["members"] as Array).has(s):
+				(coalition["members"] as Array).erase(s)  # it leaves the forming coalition at once
+			sfx.play("seal")
+			_post(L.pack("inbox.pact.title", [_state_key(s)]), L.pack("inbox.pact.text", [_state_key(s)]))
+			ui.toast(tr("toast.pact") % _state_name(s))
+			_coalition_tick(now_s())
+			_refresh_ui()
+			_autosave()
 		"swap":
 			var why := _swap_reason(s)
 			if why != "":
@@ -3761,7 +3823,7 @@ func _ultimatum_rolls(now: int) -> void:
 		if now < int(ult_check[s]):
 			continue
 		ult_check[s] = now + 86400
-		if _truce_left(s) > 0 or _ai_power(s) <= _player_power():
+		if _truce_left(s) > 0 or _pact_left(s) > 0 or _ai_power(s) <= _player_power():
 			continue
 		var chance: int = int(ULT_CHANCE.get(String(sim.states[s]["archetype"]), 10)) + (10 if bool(sim.states[s].get("hegemon", false)) else 0)
 		var roll: int = _roll("ult:%d:%d" % [s, now / 86400], 100)

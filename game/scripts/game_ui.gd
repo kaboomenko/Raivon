@@ -1004,7 +1004,8 @@ func _diplomacy_card(it: Dictionary) -> Control:
 	card.add_theme_stylebox_override("panel", _style(Color(0.1, 0.14, 0.22), 12, col, 3))
 	card.mouse_filter = Control.MOUSE_FILTER_PASS
 	var st := _label(it["state"], 18, col.lightened(0.3))
-	st.position = Vector2(12, 6)
+	_fit(st, 18, 160.0)  # room for the Pact and ⇄ buttons on the right
+	st.position = Vector2(12, 8)
 	card.add_child(st)
 	var ld := _label("%s · %s" % [it["leader"], it["archetype"]], 14, MUTED, false)
 	ld.position = Vector2(12, 32)
@@ -1061,6 +1062,22 @@ func _diplomacy_card(it: Dictionary) -> Control:
 			diplomacy_action.emit(id, "war")
 		else:
 			toast(it["status"]))
+	if it.has("pact_reason"):
+		# «Пакт о ненападении» (06 §11): a small button left of ⇄; shows its timer while it holds
+		var why_p: String = it["pact_reason"]
+		var pl: int = it.get("pact_left", 0)
+		var bp := _panel(card, Rect2(176, 6, 70, 34), _style(Color(0.55, 0.42, 0.2) if why_p == "" else Color(0.3, 0.33, 0.4), 9, Color(1, 1, 1, 0.45), 2))
+		bp.mouse_filter = Control.MOUSE_FILTER_PASS
+		var lp := _label(tr("dipl.pact_btn") if pl == 0 else fmt_time(pl), 14)
+		lp.size = Vector2(70, 34)
+		lp.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lp.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		bp.add_child(lp)
+		bp.gui_input.connect(func(e): if _is_tap(e):
+			if why_p == "":
+				diplomacy_action.emit(id, "pact")
+			else:
+				toast(why_p))
 	if it.has("swap_reason"):
 		# «Обмен территориями» (06 §15): a compact ⇄ in the corner, greyed with the reason when not possible
 		var why_s: String = it["swap_reason"]

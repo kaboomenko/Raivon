@@ -743,3 +743,12 @@ toast.swap,"%s теперь наш — обмен с «%s» заключён","%
 inbox.swap.title,Обмен территориями,Territory swap
 inbox.swap.text,"Обмен с «%s»: отдали %s, получили %s.","Swap with “%s”: gave %s, got %s."
 star.c3_swap,Выгодная сделка: завершите обмен территориями,A good deal: complete a territory swap
+dipl.pact_btn,Пакт,Pact
+dipl.pact,Пакт о ненападении: %s,Non-aggression pact: %s
+pact.ultimatum,Сначала ответьте на ультиматум,Answer the ultimatum first
+pact.one,Пакт может быть только один,Only one pact at a time
+pact.again,Новый пакт с ним через %s,A new pact with them in %s
+pact.opinion,Мнение %d/%d — на пакт не согласны,Opinion %d/%d — they won't sign a pact
+toast.pact,"Пакт о ненападении с «%s» на 48 ч","A 48 h non-aggression pact with “%s”"
+inbox.pact.title,Пакт с «%s»,Pact with “%s”
+inbox.pact.text,"«%s» подписали пакт о ненападении на 48 ч: ни войны, ни ультиматумов, в коалиции против нас они не вступают.","“%s” signed a 48 h non-aggression pact: no war, no ultimatums, and they stay out of coalitions against us."

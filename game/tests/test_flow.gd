@@ -802,6 +802,15 @@ func _run() -> void:
 		_check(int(g.sim.cells[sw_get]["owner"]) == Types.PLAYER and int(g.sim.cells[sw_give]["owner"]) == sw_state, "the hexes changed hands")
 		_check(g._swap_reason(sw_state) != "", "one swap per 24 h")
 		_check(int(g.stats.get("swaps", 0)) >= 1, "«Выгодная сделка» counts the swap")
+	# Non-aggression pact (06 §11): 8 h of gold, 48 h, archetype threshold, one at a time, no war in the pair
+	var pst: int = g._ai_states()[0]
+	g.opinion[pst] = 10.0
+	g.econ.res["gold"] = 100000
+	_check(g._pact_reason(pst) == "", "a pact can be signed at opinion 10")
+	g._on_diplomacy_action(pst, "pact")
+	_check(g._pact_left(pst) > 0 and not bool(g._diplomacy_items(g.now_s()).filter(func(x): return int(x.get("id", -1)) == pst)[0]["can_war"]), "the pact holds: no war with them")
+	_check(g._pact_reason(g._ai_states()[1]) != "", "only one pact at a time")
+	g.pacts = {}
 	# Threat and coalitions (canon §10.8): threshold 50 in chapter III; ≥50% — wary, 100% — a coalition forms
 	g.truce = {}
 	g.war = {}
