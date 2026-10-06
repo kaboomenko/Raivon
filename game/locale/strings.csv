@@ -816,3 +816,21 @@ weekly.weekly_camps,За неделю: разбейте лагеря или ос
 weekly.chest1,"Сундук недели, ступень 1 (4 из 7): 2 Военных ящика и 2 ч ускорений","Weekly chest, step 1 (4 of 7): 2 War crates and 2 h of speed-ups"
 weekly.chest2,"Сундук недели, ступень 2 (6 из 7): ресурсы 8 ч, ускорение 3 ч, 10 осколков, ящик","Weekly chest, step 2 (6 of 7): 8 h of resources, a 3 h speed-up, 10 shards, a crate"
 toast.weekly_chest,Сундук недели открыт!,The weekly chest is open!
+toast.order_swapped,Приказ заменён (бесплатная замена на сегодня потрачена),Order swapped (today's free swap is used)
+toast.pass_owned,Этот пропуск уже открыт в текущем сезоне,This pass is already open this season
+pass.upgrade,Улучшить до элитного (+15 уровней) · %s,Upgrade to Elite (+15 levels) · %s
+cal.card,Календарь входа · день %d,Login calendar · day %d
+cal.title1,Календарь «Новобранец»,«Recruit» calendar
+cal.title2,Державный календарь,Sovereign calendar
+cal.rule,День засчитывается при первом входе в сутки (сброс в 04:00). Пропуск ставит календарь на паузу — серия не сгорает. ★ — ключевые дни.,A day counts on your first visit of the day (reset at 04:00). Missing a day only pauses the calendar — the streak never burns. ★ marks key days.
+cal.double,×2 за рекламу,×2 for an ad
+cal.tomorrow,Следующая награда — завтра после 04:00,Next reward — tomorrow after 04:00
+cal.rw_speeds,%d ускорения по %d ч,%d speed-ups of %d h
+cal.rw_builder,3-й строитель навсегда,A 3rd builder for good
+cal.rw_cmd,Командир: %s,Commander: %s
+cal.rw_shards_pick,%d осколков командира,%d commander shards
+cal.rw_season,Рамка или эмоция сезона,A season frame or emote
+toast.cal_claim,Награда календаря: %s,Calendar reward: %s
+pack.pass,Военный пропуск,War Pass
+pack.pass.desc,"Премиум-ветка сезона: 40 наград сверх бесплатных — ящики, Райвиты, осколки и косметика.","The season's premium track: 40 rewards on top of the free ones — crates, Raivites, shards and cosmetics."
+pack.period_season,/ сезон,/ season

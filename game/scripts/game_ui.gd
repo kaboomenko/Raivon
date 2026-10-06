@@ -643,6 +643,9 @@ func show_pass(info: Dictionary, on_claim: Callable, on_buy: Callable) -> void:
 		var pl := _label(tr("pass.elite_on") if info["elite"] else tr("pass.premium_on"), 18, Color(1.0, 0.82, 0.3), false)
 		_at(pl, box, Vector2(30, top))
 		top += 34.0
+		if not info["elite"] and info["can_buy"]:  # premium → elite for the difference (09 §9.12)
+			_button(box, Rect2(30, top, 821, 60), tr("pass.upgrade") % String(info["price_up"]), Color(0.55, 0.25, 0.8), func(): on_buy.call("iap_pass_elite_up"))
+			top += 72.0
 	var head_f := _label(tr("pass.free"), 18, MUTED)
 	_at(head_f, box, Vector2(140, top))
 	var head_p := _label(tr("pass.premium"), 18, Color(1.0, 0.82, 0.3))
@@ -695,6 +698,72 @@ func show_pass(info: Dictionary, on_claim: Callable, on_buy: Callable) -> void:
 				row.add_child(m)
 		col.add_child(row)
 	_button(box, Rect2(30, 1330 - 96, 821, 76), tr("ui.close"), Color(0.13, 0.4, 0.9), close_modal)
+
+
+## The 28-day login calendar (08 §8.8): a 7 × 4 grid — taken days ticked, today's glowing, key days (no ×2) in
+## gold; «Take» and, where allowed, «×2 for an ad».
+func show_calendar(info: Dictionary, on_claim: Callable) -> void:
+	var box := _modal_box(Rect2(30, 250, 881, 1150))
+	var title := _label(tr("cal.title1") if int(info["cycle"]) == 1 else tr("cal.title2"), 32, Color(1.0, 0.85, 0.4))
+	_fit(title, 32, 821)
+	_at(title, box, Vector2(30, 22))
+	var sub := _label(tr("cal.rule"), 17, MUTED, false)
+	sub.autowrap_mode = TextServer.AUTOWRAP_WORD
+	sub.custom_minimum_size = Vector2(821, 0)
+	_at(sub, box, Vector2(30, 68))
+	var cw := 110.0
+	var ch := 196.0
+	for d in info["days"]:
+		var i: int = int(d["day"]) - 1
+		var st: String = d["state"]
+		var key: bool = d["key"]
+		var bg := Color(0.09, 0.12, 0.2)
+		var edge := Color(0.4, 0.5, 0.68, 0.7)
+		if st == "today":
+			bg = Color(0.2, 0.17, 0.08)
+			edge = Color(1.0, 0.85, 0.3)
+		elif key:
+			edge = Color(0.85, 0.65, 0.25, 0.9)
+		if st == "claimed":
+			bg = Color(0.08, 0.16, 0.12)
+		var cell := _panel(box, Rect2(30 + (i % 7) * (cw + 8.5), 130 + (i / 7) * (ch + 8), cw, ch), _style(bg, 12, edge, 3 if st == "today" else 2), Control.MOUSE_FILTER_IGNORE)
+		var n := _label(str(int(d["day"])), 20, Color(1.0, 0.85, 0.4) if key else (TEXT if st != "future" else MUTED))
+		n.size = Vector2(cw, 30)
+		n.position = Vector2(0, 6)
+		n.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		cell.add_child(n)
+		var t := _label(d["text"], 14, TEXT if st != "future" else Color(0.75, 0.8, 0.88), false)
+		t.autowrap_mode = TextServer.AUTOWRAP_WORD
+		t.custom_minimum_size = Vector2(cw - 10, 0)
+		t.position = Vector2(5, 40)
+		t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		cell.add_child(t)
+		if st == "claimed":
+			var ok := _label("✓", 30, Color(0.45, 1.0, 0.55))
+			ok.size = Vector2(cw, 40)
+			ok.position = Vector2(0, ch - 46)
+			ok.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			cell.add_child(ok)
+		elif key:
+			var kx := _label("★", 22, Color(1.0, 0.8, 0.3))
+			kx.size = Vector2(cw, 30)
+			kx.position = Vector2(0, ch - 38)
+			kx.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			cell.add_child(kx)
+	var by := 130.0 + 4 * (ch + 8) + 12
+	if info["pending"]:
+		if info["can_double"]:
+			_button(box, Rect2(30, by, 400, 76), tr("ui.claim"), Color(0.75, 0.55, 0.12), func(): on_claim.call(false))
+			_button(box, Rect2(451, by, 400, 76), tr("cal.double"), Color(0.2, 0.55, 0.3), func(): on_claim.call(true))
+		else:
+			_button(box, Rect2(30, by, 821, 76), tr("ui.claim"), Color(0.75, 0.55, 0.12), func(): on_claim.call(false))
+	else:
+		var nx := _label(tr("cal.tomorrow"), 20, MUTED, false)
+		nx.size = Vector2(821, 76)
+		nx.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		nx.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		_at(nx, box, Vector2(30, by))
+	_button(box, Rect2(30, by + 90, 821, 76), tr("ui.close"), Color(0.13, 0.4, 0.9), close_modal)
 
 
 ## AI ultimatum (canon §9.1): accept (cede the hex), pay tribute, or refuse (war).
@@ -1309,6 +1378,17 @@ func _star_card(it: Dictionary) -> Control:
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	card.add_child(t)
 	var id: String = it["id"]
+	if it.get("swap", false):  # the day's one free swap of an order (08 §8.6)
+		var sw := _panel(card, Rect2(112, 6, 32, 32), _style(Color(0.2, 0.28, 0.42), 8, Color(0.6, 0.72, 0.95, 0.8), 1))
+		var sl := _label("⇄", 18)
+		sl.size = Vector2(32, 32)
+		sl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		sl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		sw.add_child(sl)
+		sw.gui_input.connect(func(e): if _is_tap(e): world_action.emit("swap:" + id))
+	if it.get("ready", false):  # something waits inside (the calendar's day)
+		var dot := _panel(card, Rect2(124, 8, 18, 18), _style(Color(0.9, 0.2, 0.15), 9, Color(1, 1, 1, 0.9), 2), Control.MOUSE_FILTER_IGNORE)
+		dot.name = "ReadyDot"
 	if it.get("open", false):
 		_card_button(card, tr("ui.open"), Color(0.55, 0.25, 0.8), func(): world_action.emit(id), true)
 		var pr := _label("%d / %d" % [int(it["progress"]), int(it["need"])], 15, MUTED)

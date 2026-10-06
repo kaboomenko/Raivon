@@ -111,7 +111,7 @@ func claim(lvl: int, track: String) -> Array:
 
 func buy(sku: String) -> void:
 	premium = true
-	if sku == "iap_pass_elite" and not elite:
+	if sku.begins_with("iap_pass_elite") and not elite:
 		elite = true
 		xp += int(data().get("elite_levels", 15)) * XP_LEVEL
 

@@ -22,6 +22,9 @@ var builders_label: Label
 var level_label: Label
 var mail_badge: Array = []
 var shop_dot: Panel  # red dot: a free crate is ready
+var _orders_chip: Panel  # «⚑ 1/3» — today's orders (08 §8.6)
+var _orders_lbl: Label
+var _orders_dot: Panel
 var tab_highlight: Panel
 var tab_labels := {}
 var _tab_keys := {}  # tab -> translation key of its label
@@ -178,6 +181,30 @@ func _build() -> void:
 	shop_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	shop_dot.visible = false
 	add_child(shop_dot)
+
+	# ---- daily orders chip (below the store)
+	_orders_chip = _panel(Rect2(16, 612, 64, 74), _style(PANEL, 14, Color(0.85, 0.7, 0.35, 0.9), 2))
+	_orders_chip.gui_input.connect(_on_button_input.bind("orders"))
+	var og := _label("⚑", 28, Color(1.0, 0.82, 0.3))
+	og.position = Vector2(0, 2)
+	og.size = Vector2(64, 38)
+	og.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	og.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_orders_chip.add_child(og)
+	_orders_lbl = _label("0/3", 18)
+	_orders_lbl.position = Vector2(0, 42)
+	_orders_lbl.size = Vector2(64, 26)
+	_orders_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_orders_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_orders_chip.add_child(_orders_lbl)
+	_orders_dot = Panel.new()
+	_orders_dot.add_theme_stylebox_override("panel", _style(Color(0.9, 0.2, 0.15), 9, Color(1, 1, 1, 0.9), 2))
+	_orders_dot.position = Vector2(66, 606)
+	_orders_dot.size = Vector2(18, 18)
+	_orders_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_orders_dot)
+	_orders_chip.visible = false
+	_orders_dot.visible = false
 
 	# ---- minimap (top-right)
 	var mm_panel := _panel(Rect2(730, 90, 198, 206), _style(PANEL, 12, Color(0.4, 0.5, 0.65, 0.8)))
@@ -370,6 +397,12 @@ func set_mail(unread: int) -> void:
 	for n in mail_badge:
 		(n as Control).visible = unread > 0
 	(mail_badge[1] as Label).text = str(mini(unread, 9))
+
+
+func set_orders(text: String, ready: bool, shown: bool) -> void:
+	_orders_chip.visible = shown
+	_orders_lbl.text = text
+	_orders_dot.visible = shown and ready
 
 
 func set_level(dl: int) -> void:

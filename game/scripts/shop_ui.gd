@@ -26,6 +26,7 @@ const PACK_SKUS := [
 	["iap_builder", "pack.builder", "$4,99", "pack.builder.desc", ""],
 	["iap_no_ads", "pack.no_ads", "$4,99", "pack.no_ads.desc", ""],
 	["iap_ration", "pack.ration", "$4,99", "pack.ration.desc", "pack.period_30d"],
+	["iap_pass", "pack.pass", "$7,99", "pack.pass.desc", "pack.period_season"],
 ]
 
 var ui: GameUI  # styles, labels, buttons, toast

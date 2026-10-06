@@ -53,6 +53,12 @@ func _initialize() -> void:
 	e.refresh(t)
 	e.buy("iap_pass_elite")
 	_check(e.premium and e.elite and e.level() == 15, "elite: premium + 15 levels")
+	var u := BattlePass.new()
+	u.refresh(t)
+	u.add_xp(2000, t)
+	u.buy("iap_pass")
+	u.buy("iap_pass_elite_up")
+	_check(u.elite and u.level() == 17, "premium → elite upgrade adds the 15 levels")
 	bp.add_xp(100000, t)
 	_check(bp.level() == 40, "the level caps at 40")
 	# a new season resets everything

@@ -87,6 +87,8 @@
 		"cos_frame_season_1": {"name": "Сезон I", "name_en": "Season I", "category": "cos_frame", "rarity": "rare", "price": 0},
 		"cos_frame_ice": {"name": "Ледяная", "name_en": "Icy", "category": "cos_frame", "rarity": "rare", "price": 0},
 		"cos_frame_veteran": {"name": "Ветеран", "name_en": "Veteran", "category": "cos_frame", "rarity": "epic", "price": 0, "source": "legacy_ch4"},
+		"cos_frame_recruit": {"name": "Новобранец", "name_en": "Recruit", "category": "cos_frame", "rarity": "rare", "price": 0, "source": "calendar"},
+		"cos_flag_part_recruit_star": {"name": "Звезда новобранца", "name_en": "Recruit's Star", "category": "cos_flag_part", "rarity": "rare", "price": 0, "source": "calendar"},
 		"cos_unit_skin_snow_jaegers": {"name": "Снежные егеря", "name_en": "Snow Jaegers", "category": "cos_unit_skin", "rarity": "rare", "price": 0},
 		"cos_unit_skin_scarlet_guard": {"name": "Алая гвардия", "name_en": "Scarlet Guard", "category": "cos_unit_skin", "rarity": "epic", "price": 500},
 		"cos_unit_skin_sand_foxes": {"name": "Песчаные лисы", "name_en": "Sand Foxes", "category": "cos_unit_skin", "rarity": "rare", "price": 400},
@@ -95,7 +97,8 @@
 		"cos_emote_laugh": {"name": "Хохот", "name_en": "Laugh", "category": "cos_emote", "rarity": "rare", "price": 200},
 		"cos_emote_applause": {"name": "Аплодисменты", "name_en": "Applause", "category": "cos_emote", "rarity": "rare", "price": 0},
 		"cos_emote_card_up_sleeve": {"name": "Карта в рукаве", "name_en": "Card Up the Sleeve", "category": "cos_emote", "rarity": "epic", "price": 0},
-		"cos_emote_snowman": {"name": "Снеговик", "name_en": "Snowman", "category": "cos_emote", "rarity": "rare", "price": 0}
+		"cos_emote_snowman": {"name": "Снеговик", "name_en": "Snowman", "category": "cos_emote", "rarity": "rare", "price": 0},
+		"cos_emote_drumroll": {"name": "Барабанная дробь", "name_en": "Drumroll", "category": "cos_emote", "rarity": "rare", "price": 0, "source": "calendar"}
 	},
 	"pools": {
 		"pool_crate": ["cos_border_ink_copper", "cos_fill_pattern_honeycomb", "cos_fill_pattern_parquet",

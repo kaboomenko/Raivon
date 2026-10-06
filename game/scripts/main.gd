@@ -27,6 +27,7 @@ const Market := preload("res://scripts/sim/market.gd")
 const Orders := preload("res://scripts/sim/orders.gd")
 const BattlePass := preload("res://scripts/sim/battlepass.gd")
 const Weekly := preload("res://scripts/sim/weekly.gd")
+const Calendar := preload("res://scripts/sim/calendar.gd")
 const March := preload("res://scripts/sim/march.gd")
 const Camps := preload("res://scripts/sim/camps.gd")
 const RingGen := preload("res://scripts/sim/ring_gen.gd")
@@ -90,6 +91,8 @@ var orders  # «Приказы дня» (scripts/sim/orders.gd)
 var pass_xp := 0  # legacy: pass XP saved before the pass existed, moved into `bp` on load
 var bp  # «Военный пропуск» (scripts/sim/battlepass.gd)
 var weekly  # weekly tasks (scripts/sim/weekly.gd)
+var calendar  # the 28-day login calendar (scripts/sim/calendar.gd)
+var _cal_auto := false  # a new calendar day waits to be shown once the player is free (08 §8.8.1)
 var _collect_counted := 0  # last «Собрать всё» counted for order_collect_3 (≥30 min apart)
 var camps  # marauder camps (scripts/sim/camps.gd)
 var _camp_fight := {}  # running camp fight: hex, fort before, army hexes before
@@ -167,6 +170,7 @@ func _ready() -> void:
 	orders = Orders.new()
 	bp = BattlePass.new()
 	weekly = Weekly.new()
+	calendar = Calendar.new()
 	camps = Camps.new(MAP_SEED ^ 0xCA4B)
 	save_enabled = save_enabled and not _scripted_run()
 	_init_language()
@@ -693,6 +697,8 @@ func _on_hud_button(name: String) -> void:
 			_open_tab(name.substr(4))
 		"shop":
 			_open_shop()
+		"orders":
+			_open_tab("world")
 		"tab_diplomacy":
 			_open_tab("diplomacy")
 		"tab_development":
@@ -2765,6 +2771,8 @@ func _econ_tick() -> void:
 	_market_hint()
 	_apply_remote_if_any()
 	hud.shop_dot.visible = cases.claim_free_crates(now) > 0
+	_calendar_tick(now)
+	_orders_chip()
 	_ai_tick(now)
 	_update_bubbles()
 	if tab == "buildings" and mode in [Mode.MAP, Mode.WAR]:
@@ -3082,10 +3090,13 @@ func _on_buy_sku(sku: String) -> void:
 			econ.res["raivite"] = int(econ.res["raivite"]) + n
 			ui.toast(tr("toast.test_raivite") % n)
 	match sku:
-		"iap_pass", "iap_pass_elite":
+		"iap_pass", "iap_pass_elite", "iap_pass_elite_up":
 			bp.refresh(now_s())
+			if (bp.premium and sku == "iap_pass") or bp.elite:
+				ui.toast(tr("toast.pass_owned"))  # a store would not sell it twice in a season
+				return
 			bp.buy(sku)
-			if sku == "iap_pass_elite":
+			if sku != "iap_pass":
 				cases.owned_cosmetics[String(BattlePass.data().get("elite_cosmetic", ""))] = true
 			ui.toast(tr("toast.pass_bought"))
 			_open_pass()
@@ -3281,6 +3292,9 @@ func _world_items() -> Array:
 		bp.refresh(now_s())
 		items.append({"kind": "star", "id": "pass", "icon": "🎖", "open": true, "claimed": false,
 			"title": tr("pass.card") % bp.level(), "progress": bp.xp % BattlePass.XP_LEVEL, "need": BattlePass.XP_LEVEL})
+		var cd: int = maxi(1, calendar.credited)
+		items.append({"kind": "star", "id": "calendar", "icon": "🗓", "open": true, "claimed": false, "ready": calendar.pending,
+			"title": tr("cal.card") % Calendar.day_in_cycle(cd), "progress": Calendar.day_in_cycle(cd), "need": Calendar.LENGTH})
 	items.append_array(_order_items())
 	items.append_array(_weekly_items())
 	var list := _stars()
@@ -3301,8 +3315,18 @@ func _on_world_action(id: String) -> void:
 	if id == "expand":
 		_complete_chapter()
 		return
+	if id.begins_with("swap:order:"):
+		if orders.swap(int(id.split(":")[2]), _orders_ctx()):
+			sfx.play("tap")
+			ui.toast(tr("toast.order_swapped"))
+			_open_tab("world")
+			_autosave()
+		return
 	if id.begins_with("order"):
 		_claim_order(id)
+		return
+	if id == "calendar":
+		_open_calendar()
 		return
 	if id.begins_with("weekly"):
 		_claim_weekly(id)
@@ -3423,7 +3447,8 @@ func _open_pass() -> void:
 			"prem_text": _pass_text(bp.reward(lvl, "premium")), "prem_state": ps})
 	ui.show_pass({"season": bp.season + 1, "days_left": int(ceil(float(BattlePass.season_end(now) - now) / 86400.0)),
 		"level": bp.level(), "xp_in_level": bp.xp % BattlePass.XP_LEVEL if bp.level() < BattlePass.LEVELS else BattlePass.XP_LEVEL,
-		"premium": bp.premium, "elite": bp.elite, "can_buy": _payments_enabled(), "price": "$7.99", "price_elite": "$14.99", "rows": rows},
+		"premium": bp.premium, "elite": bp.elite, "can_buy": _payments_enabled(), "price": "$7.99", "price_elite": "$14.99",
+		"price_up": "$6.99", "rows": rows},
 		func(lvl: int, track: String):
 			var r: Array = bp.claim(lvl, track)
 			if not r.is_empty():
@@ -3469,7 +3494,8 @@ func _order_items() -> Array:
 	for i in orders.list.size():
 		var o: Dictionary = orders.list[i]
 		out.append({"kind": "star", "id": "order:%d" % i, "icon": "⚑", "title": "%s · +%d %s" % [tr("order." + String(o["code"])), int(o["xp"]), tr("pass.xp")],
-			"progress": orders.progress(i, stats), "need": int(o["need"]), "claimed": bool(o["claimed"])})
+			"progress": orders.progress(i, stats), "need": int(o["need"]), "claimed": bool(o["claimed"]),
+			"swap": not orders.swapped and not o["claimed"] and not orders.done(i, stats)})
 	var claimed_n := 0
 	for o in orders.list:
 		if o["claimed"]:
@@ -3527,10 +3553,7 @@ func _claim_weekly(id: String) -> void:
 				speed_minutes += 3 * 60
 				cases.free_crates += 1
 				# 10 shards of a common or rare commander not yet at level 20 (08 §8.7.2): the least advanced one
-				var best := "cmd_bram"
-				for c in ["cmd_bram", "cmd_lira", "cmd_olm", "cmd_vik", "cmd_vega", "cmd_kort", "cmd_seir", "cmd_frey"]:
-					if int(cases.shards.get(c, 0)) < int(cases.shards.get(best, 0)):
-						best = c
+				var best := _least_commander()
 				cases.shards[best] = int(cases.shards.get(best, 0)) + 10
 			sfx.play("fanfare")
 			ui.toast(tr("toast.weekly_chest"))
@@ -3543,6 +3566,147 @@ func _claim_weekly(id: String) -> void:
 	_open_tab("world")
 	_refresh_ui()
 	_autosave()
+
+
+## The common or rare commander with the fewest shards (the weekly chest and the calendar's «on choice» shards).
+func _least_commander() -> String:
+	var best := "cmd_bram"
+	for c in ["cmd_bram", "cmd_lira", "cmd_olm", "cmd_vik", "cmd_vega", "cmd_kort", "cmd_seir", "cmd_frey"]:
+		if int(cases.shards.get(c, 0)) < int(cases.shards.get(best, 0)):
+			best = c
+	return best
+
+
+## HUD chip «⚑ 1/3» (08 §8.6): today's claimed orders; the dot means something waits to be taken (an order, the
+## bonus for all three, or the calendar's day). Tapping it opens the World tab.
+func _orders_chip() -> void:
+	if not _orders_open():
+		hud.set_orders("", false, false)
+		return
+	orders.refresh(now_s(), _orders_ctx())
+	var claimed_n := 0
+	var ready: bool = calendar.pending
+	for i in orders.list.size():
+		if orders.list[i]["claimed"]:
+			claimed_n += 1
+		elif orders.done(i, stats):
+			ready = true
+	if orders.all_done() and not orders.all_claimed:
+		ready = true
+	hud.set_orders("%d/%d" % [claimed_n, orders.list.size()], ready, true)
+
+
+# ---------------------------------------------------------------------- login calendar (canon §14.5, 08 §8.8)
+
+const SEASON_COSMETICS := ["cos_frame_season_1", "cos_frame_ice", "cos_emote_applause", "cos_emote_snowman",
+	"cos_emote_card_up_sleeve", "cos_emote_salute", "cos_emote_white_flag", "cos_emote_laugh"]
+
+
+## Credits a new calendar day on the first tick of a game day after the tutorial; the screen opens by itself
+## once the player is on the map with nothing else open (08 §8.8.1: after «while you were away», outside battles).
+func _calendar_tick(now: int) -> void:
+	if not _orders_open():
+		return
+	if calendar.visit(now):
+		_cal_auto = save_enabled
+	if _cal_auto and mode == Mode.MAP and not ui.has_modal() and shop == null:
+		_cal_auto = false
+		_open_calendar()
+
+
+func _cal_text(r: Array) -> String:
+	match String(r[0]):
+		"speed":
+			return tr("cal.rw_speeds") % [int(r[2]), int(r[1])] if int(r[2]) > 1 else tr("pass.rw_speed") % int(r[1])
+		"builder":
+			return tr("cal.rw_builder")
+		"cmd":
+			return tr("cal.rw_cmd") % Cases.commander_name(String(r[1]))
+		"shards_pick":
+			return tr("cal.rw_shards_pick") % int(r[1])
+		"season_cosmetic":
+			return tr("cal.rw_season")
+	return _pass_text(r)
+
+
+## Pays one calendar reward (×mult) and returns its line for the toast.
+func _pay_calendar(r: Array, mult: int) -> String:
+	match String(r[0]):
+		"res", "crate", "raivite":
+			var x := [r[0], int(r[1]) * mult]
+			_pay_pass(x)
+			return _pass_text(x)
+		"shards":
+			var x := ["shards", r[1], int(r[2]) * mult]
+			_pay_pass(x)
+			return _pass_text(x)
+		"shards_pick":
+			var x := ["shards", _least_commander(), int(r[1]) * mult]
+			_pay_pass(x)
+			return _pass_text(x)
+		"speed":
+			speed_minutes += int(r[1]) * int(r[2]) * mult * 60
+			return _cal_text([r[0], r[1], int(r[2]) * mult])
+		"builder":
+			if econ.builders < 5:  # 5 permanent builders at most (08 §8.8.4)
+				econ.builders += 1
+				return tr("cal.rw_builder")
+			econ.res["raivite"] = int(econ.res["raivite"]) + 600
+			return tr("pass.rw_raivite") % 600
+		"cmd":
+			# the unlock price in shards; an already open commander gets the same shards (08 §8.8.4)
+			var cmd: String = r[1]
+			var rarity: String = Cases.commander(cmd).get("rarity", "rare")
+			var need: int = int(Cases.data().get("commander_unlock_shards", {}).get(rarity, 20))
+			cases.shards[cmd] = int(cases.shards.get(cmd, 0)) + need
+			return tr("cal.rw_cmd") % Cases.commander_name(cmd)
+		"cosmetic":
+			_pay_pass(r)
+			return _pass_text(r)
+		"season_cosmetic":
+			for id in SEASON_COSMETICS:
+				if not cases.owned_cosmetics.has(id):
+					cases.owned_cosmetics[id] = true
+					return _pass_text(["cosmetic", id])
+			econ.res["raivite"] = int(econ.res["raivite"]) + 50
+			return tr("pass.rw_raivite") % 50
+	return ""
+
+
+func _open_calendar() -> void:
+	var n: int = calendar.credited
+	var cyc := Calendar.cycle_of(maxi(1, n))
+	var first := (cyc - 1) * Calendar.LENGTH
+	var days: Array = []
+	for d in range(1, Calendar.LENGTH + 1):
+		var k := first + d
+		var e: Array = Calendar.entry(k)
+		var parts := PackedStringArray()
+		for r in e[0]:
+			parts.append(_cal_text(r))
+		var state := "future"
+		if k < n or (k == n and not calendar.pending):
+			state = "claimed"
+		elif k == n:
+			state = "today"
+		days.append({"day": d, "text": " + ".join(parts), "state": state, "key": not bool(e[1])})
+	ui.show_calendar({"cycle": cyc, "days": days, "pending": calendar.pending, "can_double": calendar.can_double()},
+		func(double: bool): _claim_calendar(double))
+
+
+func _claim_calendar(double: bool) -> void:
+	if not calendar.pending:
+		return
+	if double and not (calendar.can_double() and _rewarded("ad_daily_double", 1)):
+		return
+	var parts := PackedStringArray()
+	for r in calendar.claim():
+		parts.append(_pay_calendar(r, 2 if double else 1))
+	sfx.play("fanfare")
+	ui.toast(tr("toast.cal_claim") % ", ".join(parts))
+	_econ_tick()
+	_autosave()
+	_open_calendar()
 
 
 ## Content wall (canon §12.1): chapter II is not out yet — the legacy is paid and a teaser shown.
@@ -4731,6 +4895,19 @@ func _demo(spec: String) -> void:
 		bp.add_xp(4600, now_s())
 		bp.claim(1, "free")
 		_open_pass()
+		return
+	if what == "calendar":  # the login calendar on day 5 (days 1–4 taken)
+		var t := now_s()
+		for d in 5:
+			calendar.visit(t - (4 - d) * 86400)
+			if d < 4:
+				calendar.claim()
+		_open_calendar()
+		return
+	if what == "world":  # the World tab: pass, calendar, orders (one swap left) and the HUD chip
+		calendar.visit(now_s())
+		_open_tab("world")
+		_econ_tick()
 		return
 	if what == "settings":
 		_on_hud_button("gear")
