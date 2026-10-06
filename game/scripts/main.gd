@@ -90,6 +90,7 @@ var stats := {}  # chapter counters for the stars: peaces, goals, pockets, colon
 var stars_claimed := {}
 var chapter_done := false
 var chapter := 1  # open chapter: 1 «Долина», 2 «Речной край»
+var ai_dl_at := {}  # AI state -> unix time of its last DL step (canon §9.16: +1 every 6 days)
 var opinion := {}  # AI state -> opinion of the player, decays toward 0 (canon §10.5)
 var gift_at := {}  # AI state -> unix time of the last gift
 var _last_opinion := 0
@@ -663,6 +664,44 @@ func _war_or_front_center() -> Vector3:
 	return map_view.cell_world(g[0]) if g.size() > 0 else rig.target
 
 
+const AI_DL_CAP: Array[int] = [0, 2, 4, 6, 8, 9, 10]  # by chapter (canon §9.16)
+const AI_DL_STEP_SEC := 6 * 86400
+
+
+## The chapter a state was born in: Barons and Hamlets — I, League and Order — II.
+func _native_chapter(s: int) -> int:
+	return 1 if s <= MapGen.HAMLETS else 2
+
+
+## DL cap of an AI state: its own chapter's cap, or the open chapter's cap minus the chapters between (§9.16).
+func _ai_dl_cap(s: int) -> int:
+	var nat := _native_chapter(s)
+	return maxi(AI_DL_CAP[nat], AI_DL_CAP[mini(chapter, AI_DL_CAP.size() - 1)] - (chapter - nat))
+
+
+## AI states grow by one DL every 6 days up to their cap; their armies and looks follow.
+func _ai_growth(now: int) -> void:
+	var grew := false
+	for s in _ai_states():
+		if not ai_dl_at.has(s):
+			ai_dl_at[s] = now
+			continue
+		var dl: int = sim.states[s]["dev_level"]
+		if dl >= _ai_dl_cap(s) or now - int(ai_dl_at[s]) < AI_DL_STEP_SEC:
+			continue
+		sim.states[s]["dev_level"] = dl + 1
+		ai_dl_at[s] = now
+		var k := Types.strength_mult(dl + 1) / maxf(0.01, Types.strength_mult(dl))
+		for a in armies:
+			if a["side"] == s:
+				a["max_str"] = roundi(float(a["max_str"]) * k)
+				a["str"] = roundi(float(a["str"]) * k)
+		_post("inbox.ai_dl.title", L.pack("inbox.ai_dl.text", [sim.states[s]["name"], dl + 1]))
+		grew = true
+	if grew:
+		map_view.refresh_props()
+
+
 ## Camera limits around the open world (chapter I: the original −6.5…6.5 × −7.5…4.5 box).
 func _fit_camera_bounds() -> void:
 	var lo := Vector2(-6.5, -7.5)
@@ -974,10 +1013,18 @@ func _ensure_armies_for(state: int) -> void:
 	var cap: int = sim.states[state]["capital_id"]
 	var dl: int = sim.states[state]["dev_level"]
 	var id := 100 + state * 10
-	var first: int = front[0] if front.size() > 0 else cap
-	armies.append(Armies.infantry_army(id, state, first, 3, dl))
-	if front.size() > 1:
-		armies.append(Armies.infantry_army(id + 1, state, front[1], 3, dl))
+	# as many armies as a player of that DL (2), Wolf +1, Turtle −1 (canon §9.16)
+	var n: int = 2 + int({"wolf": 1, "turtle": -1}.get(String(sim.states[state]["archetype"]), 0))
+	var spots: Array = front.duplicate()
+	if spots.is_empty():
+		spots.append(cap)
+	for c in sim.cells:
+		if spots.size() >= n:
+			break
+		if c["owner"] == state and Types.is_passable(c) and not spots.has(c["id"]):
+			spots.append(c["id"])
+	for i in mini(n, spots.size()):
+		armies.append(Armies.infantry_army(id + i, state, int(spots[i]), 3, dl))
 
 
 ## Put every army back on a free hex its side controls (after treaties, routs, colonization).
@@ -1767,6 +1814,7 @@ func _econ_tick() -> void:
 			sfx.play("coin")
 			ui.toast(tr("toast.convoy_back") % [n, tr("res.gen." + String(ev["res"]))])
 	_camps_tick(now)
+	_ai_growth(now)
 	for h in colonizing.keys():
 		if now >= int(colonizing[h]):
 			_finish_colonize(h)

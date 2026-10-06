@@ -534,6 +534,13 @@ func _run() -> void:
 		if int(c["owner"]) == 5 and int(c["fort"]) > 0:
 			forts += 1
 	_check(forts >= 2, "the Order of Stone builds forts (%d)" % forts)
+	# AI DL grows by 1 every 6 days up to the cap (canon §9.16): Barons in chapter II cap at 3, the League at 4
+	g._ai_growth(g.now_s())
+	var b_dl: int = g.sim.states[2]["dev_level"]
+	for i in 6:
+		g.time_offset += 6 * 86400 + 1
+		g._ai_growth(g.now_s())
+	_check(int(g.sim.states[2]["dev_level"]) == 3 and int(g.sim.states[4]["dev_level"]) == 4, "AI DL growth to the caps (Barons %d -> %d, League -> %d)" % [b_dl, int(g.sim.states[2]["dev_level"]), int(g.sim.states[4]["dev_level"])])
 	Save.save(g)
 	var g3: Node = load("res://scenes/main.tscn").instantiate()
 	g3.save_enabled = false

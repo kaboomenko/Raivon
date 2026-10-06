@@ -65,6 +65,7 @@ static func to_dict(g: Node) -> Dictionary:
 		"stars_claimed": g.stars_claimed,
 		"chapter_done": g.chapter_done,
 		"chapter": g.chapter,
+		"ai_dl_at": g.ai_dl_at,
 		"cases": g.cases.to_dict(),
 		"speed_minutes": g.speed_minutes,
 		"purchases": g.purchases,
@@ -170,6 +171,10 @@ static func apply(g: Node, d: Dictionary) -> bool:
 	g.stars_claimed = d.get("stars_claimed", {})
 	g.chapter_done = bool(d.get("chapter_done", false))
 	g.chapter = int(d.get("chapter", 1))
+	var dla: Dictionary = d.get("ai_dl_at", {})
+	g.ai_dl_at = {}
+	for k in dla:
+		g.ai_dl_at[int(k)] = int(dla[k])
 	if d.has("cases"):
 		g.cases = load("res://scripts/sim/cases.gd").from_dict(d["cases"])
 	g.speed_minutes = int(d.get("speed_minutes", 0))

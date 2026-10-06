@@ -507,3 +507,5 @@ expansion.advisor,«Долина признала наш флаг. Но за х�
 inbox.expansion.title,Мир расширяется,The world expands
 inbox.expansion.text,"Открыт «Речной край»: мир вырос с %d до %d гексов, у нас новые соседи — Речная Лига и Орден Камня. Цель главы II — %d гексов.","“River Country” is open: the world grew from %d to %d hexes, and we have new neighbours, the River League and the Order of Stone. Chapter II goal: %d hexes."
 dl.short,УР%d,DL%d
+inbox.ai_dl.title,Сосед окреп,A neighbour grows stronger
+inbox.ai_dl.text,"%s достигли УР%d: армии сильнее, облик меняется.","%s reached DL%d: stronger armies and a new look."
