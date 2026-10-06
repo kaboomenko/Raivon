@@ -69,6 +69,7 @@ var threat := 0.0        # «Угроза» (canon §10.8): annexations, plunder
 var threat_at := 0       # last decay time
 var coalition := {}      # forming: {leader, members, at}; the war itself carries war["coalition"]
 var coalition_last := 0  # last formation (not more than once in 5 days)
+var _alarm_warned := false
 var _ftue_next := 0  # step to resume after the peace ceremony
 var _raid := {}  # FTUE marauder raid: {hex, at}
 var econ  # Economy (scripts/sim/economy.gd)
@@ -892,6 +893,14 @@ func _coalition_leader(members: Array) -> int:
 func _coalition_tick(now: int) -> void:
 	if threat_at == 0:
 		threat_at = now
+	if alarm() >= 0.5 and not _alarm_warned:
+		_alarm_warned = true
+		# «Тревога соседей» 50%: the neighbours start whispering (07 §3.7 — the Grey Pack's leader once it exists)
+		var who := RingNext.PACK if sim.states.size() > RingNext.PACK else MapGen.BARONS
+		_post("inbox.alarm.title", L.pack("inbox.alarm.text", [String(LEADERS[who][0])]))
+		ui.toast(tr("toast.alarm"))
+	elif alarm() < 0.4:
+		_alarm_warned = false
 	var hours := float(now - threat_at) / 3600.0
 	if hours >= 1.0:
 		threat = maxf(0.0, threat - 0.5 * floorf(hours))
@@ -2449,6 +2458,8 @@ func _econ_event(ev: Dictionary) -> void:
 			ui.toast(tr("toast.dl_up") % econ.dev_level())
 			sfx.play("fanfare")
 			_dl_ceremony()
+			if STORY_DL.has(econ.dev_level()):  # the advisor marks the big eras (07 §3.6–3.8)
+				_post("inbox.advisor.title", String(STORY_DL[econ.dev_level()]))
 		"building_unlocked":
 			ui.toast(tr("toast.unlocked") % tr(String(Economy.BUILDINGS[String(ev.get("building_type", "market"))]["name"])))
 		"fort_refund":
@@ -2951,6 +2962,8 @@ const LEGACY := {
 	3: {"cmd": "cmd_hawk", "builder": true},
 	4: {"cmd": "cmd_rai", "cosmetic": "cos_frame_veteran"},
 }
+## The advisor on the era steps (07 §3.6–3.8).
+const STORY_DL := {4: "story.dl4", 5: "story.dl5", 6: "story.dl6", 8: "story.dl8"}
 ## The new neighbours greet the player when a chapter opens (07 §3.6–3.8): [state, line key].
 const STORY_OPENING := {
 	2: [[4, "story.ch2_league"], [5, "story.ch2_order"]],

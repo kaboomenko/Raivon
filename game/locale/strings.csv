@@ -715,3 +715,11 @@ story.ch3_alvaria,"Альвария не просит. Альвария напо
 story.ch3_saren,"Торговать выгоднее, чем воевать. Но мы умеем и то и другое.","Trade pays better than war. But we are good at both."
 story.ch4_conclave,"Конклав не воюет. Конклав ждёт, пока вы разобьёте лоб о наши стены.","The Conclave does not wage war. It waits for you to break your head on our walls."
 story.ch4_lakes,"Республика ценит сильных соседей — особенно тех, кто умеет остановиться.","The Republic values strong neighbours — especially those who know when to stop."
+inbox.advisor.title,Советник,The advisor
+story.dl4,"«За туманом есть другие державы. Их правители испытывают друг друга на Рубежах. Хотите попробовать?»","“Beyond the fog there are other realms. Their rulers test one another on the Frontiers. Shall we try?”"
+story.dl5,"«Тёмные озёра закипели. Это нефть — и теперь за неё будут воевать все».","“The dark lakes are boiling. That is oil — and now everyone will fight for it.”"
+story.dl6,"«С конвейера сошли первые танки. Альвария больше не единственная, у кого есть сталь».","“The first tanks have rolled off the line. Alvaria is no longer the only one with steel.”"
+story.dl8,"«Над столицей поднялся первый небоскрёб. Ультразабор гудит энергосетью».","“The first skyscraper has risen over the capital. The ultra-fence hums with power.”"
+inbox.alarm.title,Соседи шепчутся,The neighbours whisper
+inbox.alarm.text,"%s: «Стая чует, куда дует ветер. Пока — не в вашу сторону». Тревога соседей выше 50%%: мнение всех −10, новых союзов нет.","%s: “The Pack smells which way the wind blows. Not your way, for now.” Neighbours' alarm is above 50%%: opinion −10 for all, no new alliances."
+toast.alarm,Тревога соседей выше 50% — они насторожились,Neighbours' alarm is above 50% — they are wary
