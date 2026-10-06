@@ -706,3 +706,12 @@ inbox.coalition_war.title,Война с коалицией,War with a coalition
 inbox.coalition_war.text,"%s ведёт коалицию из %d государств. Их армии сильнее, но победа принесёт Триумф.","%s leads a coalition of %d states. Their armies are stronger, but victory brings a Triumph."
 ceremony.triumph,Триумф! Трофейный сундук: %d золота и 30 Райвитов,Triumph! Trophy chest: %d gold and 30 Raivites
 star.c3_triumph,Триумф: выиграйте войну с коалицией,Triumph: win a war against a coalition
+legacy.line,Наследие главы %d: %s,Chapter %d legacy: %s
+legacy.builder,4-й строитель,the 4th builder
+legacy.raivite,%d Райвитов,%d Raivites
+story.ch2_league,"Лига приветствует нового соседа. Надеюсь, вы умеете не только воевать.","The League welcomes a new neighbour. I hope you can do more than fight."
+story.ch2_order,"Мы строили стены сто лет. Посмотрим, сколько строили вы.","We built our walls for a hundred years. Let us see how long you built yours."
+story.ch3_alvaria,"Альвария не просит. Альвария напоминает: дань до заката.","Alvaria does not ask. Alvaria reminds: tribute by sunset."
+story.ch3_saren,"Торговать выгоднее, чем воевать. Но мы умеем и то и другое.","Trade pays better than war. But we are good at both."
+story.ch4_conclave,"Конклав не воюет. Конклав ждёт, пока вы разобьёте лоб о наши стены.","The Conclave does not wage war. It waits for you to break your head on our walls."
+story.ch4_lakes,"Республика ценит сильных соседей — особенно тех, кто умеет остановиться.","The Republic values strong neighbours — especially those who know when to stop."

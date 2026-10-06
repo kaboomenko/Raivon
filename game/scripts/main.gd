@@ -2942,6 +2942,50 @@ func _on_world_action(id: String) -> void:
 	_autosave()
 
 
+## Chapter legacy (07 §3, canon §12.1), paid once when the chapter's goal is met: I — Captain Lira + 200 Raivites,
+## II — Colonel Frey + «River» border ink, III — General Hawk + the 4th builder (600 Raivites if already there),
+## IV — Emperor Rai (80 shards — his unlock price) + the «Veteran» frame. A commander is unlocked with shards.
+const LEGACY := {
+	1: {"cmd": "cmd_lira", "raivite": 200},
+	2: {"cmd": "cmd_frey", "cosmetic": "cos_border_ink_river"},
+	3: {"cmd": "cmd_hawk", "builder": true},
+	4: {"cmd": "cmd_rai", "cosmetic": "cos_frame_veteran"},
+}
+## The new neighbours greet the player when a chapter opens (07 §3.6–3.8): [state, line key].
+const STORY_OPENING := {
+	2: [[4, "story.ch2_league"], [5, "story.ch2_order"]],
+	3: [[6, "story.ch3_alvaria"], [7, "story.ch3_saren"]],
+	4: [[9, "story.ch4_conclave"], [11, "story.ch4_lakes"]],
+}
+
+
+func _grant_legacy(ch: int) -> String:
+	var lg: Dictionary = LEGACY.get(ch, {})
+	if lg.is_empty():
+		return ""
+	var parts: Array = []
+	var cmd: String = lg["cmd"]
+	var rarity: String = Cases.commander(cmd).get("rarity", "rare")
+	var need: int = int(Cases.data().get("commander_unlock_shards", {}).get(rarity, 20))
+	cases.shards[cmd] = int(cases.shards.get(cmd, 0)) + need
+	parts.append(Cases.commander_name(cmd))
+	var rv: int = lg.get("raivite", 0)
+	if lg.has("builder"):
+		if econ.builders < 4:
+			econ.builders += 1
+			parts.append(tr("legacy.builder"))
+		else:
+			rv += 600
+	if lg.has("cosmetic"):
+		cases.owned_cosmetics[String(lg["cosmetic"])] = true
+		var co: Dictionary = Cases.cosmetic(String(lg["cosmetic"]))
+		parts.append("%s «%s»" % [Cases.category_name(String(co.get("category", ""))), String(co.get("name_en" if Cases.is_english() else "name", ""))])
+	if rv > 0:
+		econ.res["raivite"] = int(econ.res["raivite"]) + rv
+		parts.append(tr("legacy.raivite") % rv)
+	return tr("legacy.line") % [ch, ", ".join(parts)]
+
+
 ## Content wall (canon §12.1): chapter II is not out yet — the legacy is paid and a teaser shown.
 func _complete_chapter() -> void:
 	if chapter_done or _player_hexes() < _chapter_goal() or not war.is_empty():
@@ -2950,7 +2994,7 @@ func _complete_chapter() -> void:
 		_world_expansion()
 		return
 	chapter_done = true
-	econ.res["raivite"] = int(econ.res["raivite"]) + 200
+	ui.toast(_grant_legacy(chapter))
 	map_view.fireworks(map_view.cell_world(sim.states[Types.PLAYER]["capital_id"]), 5)
 	sfx.play("fanfare")
 	_post("inbox.chapter_done.title", "inbox.chapter_done.text")
@@ -2964,7 +3008,7 @@ func _world_expansion() -> void:
 	var hexes_before := _land_count()
 	var old_n: int = sim.cells.size()
 	var old_states: int = sim.states.size()
-	econ.res["raivite"] = int(econ.res["raivite"]) + 200  # the chapter's legacy
+	var legacy := _grant_legacy(chapter)
 	_expand_world()
 	if sim.cells.size() == old_n:
 		return
@@ -3018,6 +3062,9 @@ func _world_expansion() -> void:
 	for s in fresh:
 		lines.append("· %s — %s, %s" % [_state_name(s), tr(String(LEADERS[s][1])), tr("dl.short") % int(sim.states[s]["dev_level"])])
 	lines.append(tr("expansion.goal" + sfx_key) % [_chapter_goal(), _player_hexes()])
+	lines.append(legacy)
+	for q in STORY_OPENING.get(next_ch, []):
+		lines.append("%s: «%s»" % [tr(String(LEADERS[int(q[0])][0])), tr(String(q[1]))])
 	lines.append(tr("expansion.advisor" + sfx_key))
 	ui.show_info(tr("expansion.title"), lines, tr("ui.continue"), func():
 		ui.close_modal()

@@ -609,9 +609,21 @@ func show_ultimatum(enemy: String, hex_name: String, tribute: int, can_pay: bool
 
 
 ## Simple announcement: title, lines of text, one button (world expansion, chapter cards).
+## Height of a wrapped 22 px line block, so long lines (leaders' quotes) push the next ones down.
+func _line_h(text: String) -> float:
+	var probe := _label(text, 22, TEXT, false)
+	var f := probe.get_theme_font("font")
+	var sz := f.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, 741.0, 22, -1, TextServer.BREAK_MANDATORY | TextServer.BREAK_WORD_BOUND)
+	probe.free()
+	return maxf(52.0, sz.y + 22.0)
+
+
 func show_info(title: String, lines: Array, button: String, on_button: Callable) -> void:
-	var h := 230.0 + 52.0 * lines.size()
-	var box := _modal_box(Rect2(60, maxf(200.0, (VH - h) / 2.0 - 80.0), 821, h))
+	var text_h := 0.0
+	for ln in lines:
+		text_h += _line_h(String(ln))
+	var h := 230.0 + text_h
+	var box := _modal_box(Rect2(60, maxf(120.0, (VH - h) / 2.0 - 80.0), 821, h))
 	var t := _label(title, 36, Color(1.0, 0.85, 0.4))
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_at(t, box, Vector2(0, 28), Vector2(821, 48))
@@ -622,13 +634,16 @@ func show_info(title: String, lines: Array, button: String, on_button: Callable)
 		l.custom_minimum_size = Vector2(741, 0)
 		l.position = Vector2(40, y)
 		box.add_child(l)
-		y += 52.0
+		y += _line_h(String(ln))
 	_button(box, Rect2(40, h - 110, 741, 84), button, Color(0.13, 0.4, 0.9), on_button)
 
 
 ## A choice: title, lines, several buttons [[text, color, callable], …] stacked under the text.
 func show_choice(title: String, lines: Array, buttons: Array) -> void:
-	var h := 150.0 + 52.0 * lines.size() + 96.0 * buttons.size()
+	var text_h := 0.0
+	for ln in lines:
+		text_h += _line_h(String(ln))
+	var h := 150.0 + text_h + 96.0 * buttons.size()
 	var box := _modal_box(Rect2(60, maxf(200.0, (VH - h) / 2.0 - 80.0), 821, h))
 	var t := _label(title, 34, Color(1.0, 0.85, 0.4))
 	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -640,7 +655,7 @@ func show_choice(title: String, lines: Array, buttons: Array) -> void:
 		l.custom_minimum_size = Vector2(741, 0)
 		l.position = Vector2(40, y)
 		box.add_child(l)
-		y += 52.0
+		y += _line_h(String(ln))
 	y += 16.0
 	for b in buttons:
 		_button(box, Rect2(40, y, 741, 80), String(b[0]), b[1], b[2])
