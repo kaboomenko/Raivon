@@ -3835,6 +3835,12 @@ func _demo(spec: String) -> void:
 		map_view.refresh_props()
 		rig.focus(map_view.cell_world(cap), 0.3)
 		return
+	if what == "fire":  # the burned FTUE mill up close
+		ftue = 1
+		_burned_mill()
+		_select(_mill)
+		rig.focus(map_view.cell_world(_mill), 0.3)
+		return
 	if what == "tower":
 		var cap: int = sim.states[Types.PLAYER]["capital_id"]
 		for n in sim.neighbors[cap]:

@@ -28,8 +28,9 @@ var _terrain_mi: MeshInstance3D
 var _overlay_root: Node3D
 var _props_root: Node3D
 var _horizon_root: Node3D
-var _hex_props := {}
-var _sails: Array = []  # windmill sail nodes, spun in _process  # hex id -> Node3D holder of that hex's props
+var _hex_props := {}  # hex id -> Node3D holder of that hex's props
+var _sails: Array = []  # windmill sail nodes, spun in _process (meta "still" = a burning mill)
+var _blazing := {}  # hex id -> true while a long fire burns there
 var _army_nodes := {}  # army id -> Node3D
 var _fx: Array = []
 var _dirty := true
@@ -567,6 +568,18 @@ func _place_hex_props(c: Dictionary) -> void:
 	_props_root.add_child(holder)
 	_hex_props[c["id"]] = holder
 	_place_hex_props_into(c, holder)
+	if _blazing.has(c["id"]):
+		_still_sails(c["id"], true)
+
+
+## A burning windmill stops turning.
+func _still_sails(hex: int, still: bool) -> void:
+	var holder: Node3D = _hex_props.get(hex)
+	if holder == null:
+		return
+	for obj in _sails:
+		if is_instance_valid(obj) and holder.is_ancestor_of(obj as Node):
+			(obj as Node).set_meta("still", still)
 
 
 func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
@@ -1598,76 +1611,258 @@ func _soft_tex() -> GradientTexture2D:
 	return tex
 
 
-## Rising smoke column over a hex (with embers when `fire`). `seconds` < 0 keeps it until clear_smoke().
+var _puff: ImageTexture
+var _flame: ImageTexture
+var _flames: Array = []  # [{light, glow, base, phase}] flickering fire lights
+
+
+## Billowy smoke puff: a few soft blobs inside a round falloff, lit from the upper left (fixed seed).
+func _puff_tex() -> ImageTexture:
+	if _puff != null:
+		return _puff
+	var n := 64
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var blobs: Array = []
+	for i in 7:
+		var a := rng.randf() * TAU
+		var r := rng.randf_range(0.0, 0.42) * (0.0 if i == 0 else 1.0)
+		blobs.append([0.5 + cos(a) * r * 0.5, 0.5 + sin(a) * r * 0.5, rng.randf_range(0.2, 0.3)])
+	for y in n:
+		for x in n:
+			var u := (x + 0.5) / n
+			var v := (y + 0.5) / n
+			var d := 0.0
+			for b in blobs:
+				var dx: float = (u - float(b[0])) / float(b[2])
+				var dy: float = (v - float(b[1])) / float(b[2])
+				d = maxf(d, clampf(1.0 - (dx * dx + dy * dy), 0.0, 1.0))
+			var edge := clampf(1.0 - Vector2(u - 0.5, v - 0.5).length() * 2.0, 0.0, 1.0)
+			var a := smoothstep(0.0, 0.6, d) * smoothstep(0.0, 0.25, edge)
+			var lit := clampf(1.05 - 0.45 * (u + v - 0.6), 0.7, 1.0)
+			img.set_pixel(x, y, Color(lit, lit, lit, a))
+	_puff = ImageTexture.create_from_image(img)
+	return _puff
+
+
+## Flame tongue: a teardrop, wide and hot at the bottom, a thin flickering tip at the top.
+func _flame_tex() -> ImageTexture:
+	if _flame != null:
+		return _flame
+	var w := 32
+	var h := 64
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	for y in h:
+		var t := 1.0 - (y + 0.5) / h  # 0 bottom .. 1 top
+		var half := 0.5 * sqrt(clampf(t * 5.0, 0.0, 1.0)) * pow(1.0 - t, 0.9)
+		for x in w:
+			var u := absf((x + 0.5) / w - 0.5)
+			var a := 0.0 if half <= 0.0 else clampf(1.0 - u / half, 0.0, 1.0)
+			a = pow(a, 0.7) * smoothstep(0.0, 0.12, t)
+			var core := clampf(1.0 - u / maxf(0.001, half * 0.5), 0.0, 1.0) * (1.0 - t)
+			img.set_pixel(x, y, Color(1.0, 0.62 + 0.38 * core, 0.3 + 0.6 * core, a))  # red-orange rim, yellow-white core
+	_flame = ImageTexture.create_from_image(img)
+	return _flame
+
+
+func _fx_mat(tex: Texture2D, additive: bool) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	# BILLBOARD_PARTICLES draws not-yet-spawned particles as black quads at the emitter; keep_scale avoids it
+	m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+	m.billboard_keep_scale = true
+	m.vertex_color_use_as_albedo = true
+	m.albedo_texture = tex
+	if additive:
+		m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	return m
+
+
+func _curve(a: float, b: float) -> Curve:
+	var c := Curve.new()
+	c.max_value = maxf(2.0, maxf(a, b))
+	c.add_point(Vector2(0, a))
+	c.add_point(Vector2(1, b))
+	return c
+
+
+## Smoke over a hex; with `fire` a real blaze: flame tongues at the building, rising sparks, thick dark smoke,
+## a scorched patch and a flickering warm light. `seconds` < 0 keeps it until clear_smoke().
 func smoke(hex: int, seconds: float, fire := false) -> void:
 	if _smoke_mat == null:
-		_smoke_mat = StandardMaterial3D.new()
-		_smoke_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		_smoke_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		# BILLBOARD_PARTICLES draws not-yet-spawned particles as black quads at the emitter; keep_scale avoids it
-		_smoke_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-		_smoke_mat.billboard_keep_scale = true
-		_smoke_mat.vertex_color_use_as_albedo = true
-		_smoke_mat.albedo_texture = _soft_tex()
+		_smoke_mat = _fx_mat(_puff_tex(), false)
 	var root := Node3D.new()
-	root.position = cell_world(hex) + Vector3(0.15, 0.2, -0.1)
+	root.position = cell_world(hex) + _fire_spot(hex) if fire else cell_world(hex) + Vector3(0.15, 0.2, -0.1)
 	add_child(root)
 	var sm := CPUParticles3D.new()
-	sm.amount = 22
-	sm.lifetime = 3.2
+	sm.amount = 30 if fire else 18
+	sm.lifetime = 3.6 if fire else 3.0
+	sm.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	sm.emission_sphere_radius = 0.12
 	sm.direction = Vector3(0.25, 1, 0)
-	sm.spread = 12.0
-	sm.initial_velocity_min = 0.35
-	sm.initial_velocity_max = 0.6
-	sm.gravity = Vector3(0.12, 0.05, 0)
-	sm.scale_amount_min = 0.6
-	sm.scale_amount_max = 1.0
-	var curve := Curve.new()
-	curve.add_point(Vector2(0, 0.35))
-	curve.add_point(Vector2(1, 1.6))
-	sm.scale_amount_curve = curve
-	var ramp := _ramp([0.0, 0.15, 0.6, 1.0], [Color(0.5, 0.47, 0.44, 0.0), Color(0.5, 0.48, 0.46, 0.34), Color(0.7, 0.7, 0.72, 0.18), Color(0.85, 0.85, 0.88, 0.0)])
-	sm.color_ramp = ramp
+	sm.spread = 10.0
+	sm.initial_velocity_min = 0.4 if fire else 0.3
+	sm.initial_velocity_max = 0.65 if fire else 0.5
+	sm.gravity = Vector3(0.14, 0.06, 0)
+	sm.damping_min = 0.05
+	sm.damping_max = 0.12
+	sm.scale_amount_min = 0.7
+	sm.scale_amount_max = 1.1
+	sm.scale_amount_curve = _curve(0.4, 1.9)
+	if fire:
+		sm.color_ramp = _ramp([0.0, 0.1, 0.45, 1.0], [Color(0.16, 0.13, 0.12, 0.0), Color(0.2, 0.17, 0.15, 0.7),
+			Color(0.36, 0.34, 0.33, 0.42), Color(0.55, 0.55, 0.57, 0.0)])
+	else:
+		sm.color_ramp = _ramp([0.0, 0.15, 0.6, 1.0], [Color(0.5, 0.47, 0.44, 0.0), Color(0.5, 0.48, 0.46, 0.4),
+			Color(0.68, 0.68, 0.7, 0.2), Color(0.85, 0.85, 0.88, 0.0)])
 	var q := QuadMesh.new()
-	q.size = Vector2(0.7, 0.7)
+	q.size = Vector2(0.75, 0.75)
 	q.material = _smoke_mat
 	sm.mesh = q
 	sm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	sm.position.y = 0.7 if fire else 0.0  # fire smoke starts above the flames instead of veiling them
 	root.add_child(sm)
 	if fire:
-		var fl := CPUParticles3D.new()
-		fl.amount = 26
-		fl.lifetime = 0.7
-		fl.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
-		fl.emission_sphere_radius = 0.18
-		fl.direction = Vector3.UP
-		fl.spread = 15.0
-		fl.initial_velocity_min = 0.5
-		fl.initial_velocity_max = 0.9
-		fl.gravity = Vector3(0, 0.6, 0)
-		fl.scale_amount_min = 0.3
-		fl.scale_amount_max = 0.55
-		var fr := _ramp([0.0, 0.4, 1.0], [Color(1.0, 0.95, 0.5, 0.95), Color(1.0, 0.45, 0.1, 0.8), Color(0.6, 0.1, 0.05, 0.0)])
-		fl.color_ramp = fr
-		var fm := _smoke_mat.duplicate() as StandardMaterial3D
-		fm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-		var fq := QuadMesh.new()
-		fq.size = Vector2(0.45, 0.45)
-		fq.material = fm
-		fl.mesh = fq
-		fl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		root.add_child(fl)
+		_add_blaze(root, hex)
 	if seconds >= 0.0:
 		var tw := root.create_tween()
 		tw.tween_interval(seconds)
-		tw.tween_callback(func():
-			for c in root.get_children():
-				(c as CPUParticles3D).emitting = false)
-		tw.tween_interval(3.3)
+		tw.tween_callback(func(): _douse(root))
+		tw.tween_interval(3.7)
 		tw.tween_callback(root.queue_free)
 	else:
 		clear_smoke(hex)
 		_smokes[hex] = root
+		if fire:
+			_blazing[hex] = true
+			_still_sails(hex, true)
+
+
+## Where a hex burns: on its building (a farm's windmill), else at the back of the hex — the army stands in
+## the middle and would hide the flames.
+func _fire_spot(hex: int) -> Vector3:
+	if String(sim.cells[hex]["kind"]) == "farm":
+		return Vector3(-0.45, 0.2, -0.3)
+	return Vector3(0.2, 0.2, -0.42)
+
+
+func _add_blaze(root: Node3D, hex: int) -> void:
+	# alpha-blended, not additive: on sunlit ground additive flames wash out to white
+	var fm := _fx_mat(_flame_tex(), false)
+	fm.render_priority = 1  # over the smoke
+	# on the roof and the camera-facing walls, so the building itself doesn't hide them
+	var spots: Array[Vector3] = [Vector3(0, 0.42, 0.12), Vector3(-0.2, 0.18, 0.2), Vector3(0.18, 0.24, 0.18)]
+	for i in spots.size():
+		var fl := CPUParticles3D.new()
+		fl.amount = 18 if i == 0 else 12
+		fl.lifetime = 0.65 if i == 0 else 0.5
+		fl.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+		fl.emission_sphere_radius = 0.07
+		fl.direction = Vector3.UP
+		fl.spread = 8.0
+		fl.initial_velocity_min = 0.3
+		fl.initial_velocity_max = 0.5
+		fl.gravity = Vector3(0, 0.9, 0)
+		fl.scale_amount_min = 0.75
+		fl.scale_amount_max = 1.15
+		fl.scale_amount_curve = _curve(1.0, 0.25)
+		fl.color_ramp = _ramp([0.0, 0.18, 0.6, 1.0], [Color(1.0, 0.8, 0.35, 0.0), Color(1.0, 0.62, 0.14, 1.0),
+			Color(0.95, 0.3, 0.04, 0.9), Color(0.6, 0.08, 0.02, 0.0)])
+		var fq := QuadMesh.new()
+		fq.size = Vector2(0.5, 0.8) * (1.0 if i == 0 else 0.8)
+		fq.material = fm
+		fl.mesh = fq
+		fl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		fl.position = spots[i]
+		fl.preprocess = 0.6
+		root.add_child(fl)
+	var sp := CPUParticles3D.new()
+	sp.amount = 12
+	sp.lifetime = 1.5
+	sp.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+	sp.emission_sphere_radius = 0.2
+	sp.direction = Vector3(0.15, 1, 0)
+	sp.spread = 25.0
+	sp.initial_velocity_min = 0.6
+	sp.initial_velocity_max = 1.1
+	sp.gravity = Vector3(0.2, 0.15, 0)
+	sp.damping_min = 0.3
+	sp.damping_max = 0.6
+	sp.scale_amount_min = 0.6
+	sp.scale_amount_max = 1.0
+	sp.color_ramp = _ramp([0.0, 0.5, 1.0], [Color(1.0, 0.95, 0.6, 1.0), Color(1.0, 0.55, 0.15, 0.9), Color(0.9, 0.25, 0.05, 0.0)])
+	var spq := QuadMesh.new()
+	spq.size = Vector2(0.06, 0.06)
+	spq.material = _fx_mat(_soft_tex(), true)
+	sp.mesh = spq
+	sp.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	sp.position.y = 0.2
+	root.add_child(sp)
+	# scorched ground and the warm glow of the fire on it
+	var scorch := MeshInstance3D.new()
+	scorch.name = "scorch"
+	var sq := PlaneMesh.new()
+	sq.size = Vector2(1.1, 1.1)
+	scorch.mesh = sq
+	var scm := StandardMaterial3D.new()
+	scm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	scm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	scm.albedo_texture = _soft_tex()
+	scm.albedo_color = Color(0.08, 0.06, 0.05, 0.5)
+	scm.render_priority = -1
+	scorch.material_override = scm
+	scorch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	scorch.position.y = 0.025
+	root.add_child(scorch)
+	var glow := MeshInstance3D.new()
+	var gq := PlaneMesh.new()
+	gq.size = Vector2(1.3, 1.3)
+	glow.mesh = gq
+	var gm := StandardMaterial3D.new()
+	gm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	gm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	gm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	gm.albedo_texture = _soft_tex()
+	gm.albedo_color = Color(1.0, 0.45, 0.12, 0.45)
+	glow.material_override = gm
+	glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	glow.position.y = 0.04
+	root.add_child(glow)
+	var light := OmniLight3D.new()
+	light.light_color = Color(1.0, 0.55, 0.2)
+	light.omni_range = 1.8
+	light.light_energy = 1.4
+	light.position.y = 0.45
+	root.add_child(light)
+	_flames.append({"light": light, "glow": gm, "base": 1.4, "phase": float(hex) * 1.7})
+
+
+## Stops a fire: flames, sparks and smoke stop emitting, the glow dies down, the scorch stays until freed.
+func _douse(root: Node3D) -> void:
+	for c in root.get_children():
+		if c is CPUParticles3D:
+			(c as CPUParticles3D).emitting = false
+	for f in _flames:
+		var l: Variant = f["light"]
+		if is_instance_valid(l) and (l as Node).get_parent() == root:
+			f["base"] = 0.0
+
+
+func _step_flames(t: float) -> void:
+	for i in range(_flames.size() - 1, -1, -1):
+		var f: Dictionary = _flames[i]
+		var obj: Variant = f["light"]
+		if not is_instance_valid(obj):
+			_flames.remove_at(i)
+			continue
+		var l := obj as OmniLight3D
+		var ph: float = f["phase"]
+		var k := 0.82 + 0.1 * sin(t * 11.0 + ph) + 0.08 * sin(t * 23.0 + ph * 2.3)
+		var target: float = float(f["base"]) * k
+		l.light_energy = lerpf(l.light_energy, target, 0.35)
+		(f["glow"] as StandardMaterial3D).albedo_color.a = 0.45 * l.light_energy / 1.4
 
 
 func clear_smoke(hex: int) -> void:
@@ -1675,10 +1870,12 @@ func clear_smoke(hex: int) -> void:
 	if root == null:
 		return
 	_smokes.erase(hex)
-	for c in root.get_children():
-		(c as CPUParticles3D).emitting = false
+	if _blazing.has(hex):
+		_blazing.erase(hex)
+		_still_sails(hex, false)
+	_douse(root)
 	var tw := root.create_tween()
-	tw.tween_interval(3.3)
+	tw.tween_interval(3.7)
 	tw.tween_callback(root.queue_free)
 
 
@@ -1750,12 +1947,14 @@ func _process(delta: float) -> void:
 		var bn: Node3D = _bubbles[h]
 		bn.position.y = 2.0 + 0.07 * sin(bt * 3.0 + h)
 	_step_volleys(delta)
+	_step_flames(bt)
 	for i in range(_sails.size() - 1, -1, -1):
 		var obj: Variant = _sails[i]
 		if not is_instance_valid(obj):
 			_sails.remove_at(i)
 			continue
-		(obj as Node3D).rotate_object_local(Vector3.FORWARD, -1.1 * delta)
+		if not (obj as Node3D).get_meta("still", false):
+			(obj as Node3D).rotate_object_local(Vector3.FORWARD, -1.1 * delta)
 	for h in _dep_nodes:
 		var ic: Node3D = _dep_nodes[h].get_node("icon")
 		ic.position.y = cell_world(h).y + 0.8 + 0.06 * sin(bt * 2.5 + h * 0.7)
