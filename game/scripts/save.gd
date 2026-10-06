@@ -90,6 +90,7 @@ static func to_dict(g: Node) -> Dictionary:
 		"orders": g.orders.to_dict() if g.orders != null else {},
 		"pass_xp": g.pass_xp,
 		"pass": g.bp.to_dict() if g.bp != null else {},
+		"weekly": g.weekly.to_dict() if g.weekly != null else {},
 		"camps": g.camps.to_dict() if g.camps != null else {},
 	}
 	if g.get("econ") != null:
@@ -275,6 +276,10 @@ static func apply(g: Node, d: Dictionary) -> bool:
 		if g.orders == null:
 			g.orders = load("res://scripts/sim/orders.gd").new()
 		g.orders.load_dict(d["orders"])
+	if typeof(d.get("weekly")) == TYPE_DICTIONARY:
+		if g.weekly == null:
+			g.weekly = load("res://scripts/sim/weekly.gd").new()
+		g.weekly.load_dict(d["weekly"])
 	if g.bp == null:
 		g.bp = load("res://scripts/sim/battlepass.gd").new()
 	if typeof(d.get("pass")) == TYPE_DICTIONARY and not (d["pass"] as Dictionary).is_empty():

@@ -1312,7 +1312,7 @@ func _star_card(it: Dictionary) -> Control:
 	if it.get("open", false):
 		_card_button(card, tr("ui.open"), Color(0.55, 0.25, 0.8), func(): world_action.emit(id), true)
 		var pr := _label("%d / %d" % [int(it["progress"]), int(it["need"])], 15, MUTED)
-		pr.position = Vector2(0, 112)
+		pr.position = Vector2(0, 116)
 		pr.size = Vector2(150, 22)
 		pr.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		card.add_child(pr)

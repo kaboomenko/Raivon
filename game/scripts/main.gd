@@ -26,6 +26,7 @@ const Research := preload("res://scripts/sim/research.gd")
 const Market := preload("res://scripts/sim/market.gd")
 const Orders := preload("res://scripts/sim/orders.gd")
 const BattlePass := preload("res://scripts/sim/battlepass.gd")
+const Weekly := preload("res://scripts/sim/weekly.gd")
 const March := preload("res://scripts/sim/march.gd")
 const Camps := preload("res://scripts/sim/camps.gd")
 const RingGen := preload("res://scripts/sim/ring_gen.gd")
@@ -88,6 +89,7 @@ var market  # Market trader state (scripts/sim/market.gd)
 var orders  # «Приказы дня» (scripts/sim/orders.gd)
 var pass_xp := 0  # legacy: pass XP saved before the pass existed, moved into `bp` on load
 var bp  # «Военный пропуск» (scripts/sim/battlepass.gd)
+var weekly  # weekly tasks (scripts/sim/weekly.gd)
 var _collect_counted := 0  # last «Собрать всё» counted for order_collect_3 (≥30 min apart)
 var camps  # marauder camps (scripts/sim/camps.gd)
 var _camp_fight := {}  # running camp fight: hex, fort before, army hexes before
@@ -164,6 +166,7 @@ func _ready() -> void:
 	market = Market.new()
 	orders = Orders.new()
 	bp = BattlePass.new()
+	weekly = Weekly.new()
 	camps = Camps.new(MAP_SEED ^ 0xCA4B)
 	save_enabled = save_enabled and not _scripted_run()
 	_init_language()
@@ -2400,6 +2403,7 @@ func _sign_peace() -> void:
 	_stat("peaces")
 	if _last_score > 0.0:
 		bp.gain("peace", now_s())
+		_stat("peace_wins")
 	if enemy == RingNext.ALVARIA and _last_score >= 30.0:
 		_stat("hegemon_wins")  # «Укротитель волков»
 	if enemy == RingNext.CONCLAVE and _last_score >= 30.0:
@@ -3278,6 +3282,7 @@ func _world_items() -> Array:
 		items.append({"kind": "star", "id": "pass", "icon": "🎖", "open": true, "claimed": false,
 			"title": tr("pass.card") % bp.level(), "progress": bp.xp % BattlePass.XP_LEVEL, "need": BattlePass.XP_LEVEL})
 	items.append_array(_order_items())
+	items.append_array(_weekly_items())
 	var list := _stars()
 	if chapter >= 4:
 		list = STARS_4 + STARS_3 + STARS_2 + STARS  # the open chapter first; older stars never expire
@@ -3298,6 +3303,9 @@ func _on_world_action(id: String) -> void:
 		return
 	if id.begins_with("order"):
 		_claim_order(id)
+		return
+	if id.begins_with("weekly"):
+		_claim_weekly(id)
 		return
 	if id == "pass":
 		_open_pass()
@@ -3474,6 +3482,7 @@ func _order_items() -> Array:
 func _claim_order(id: String) -> void:
 	if id == "orders_all":
 		if orders.claim_all():
+			_stat("orders_all_days")
 			cases.free_crates += 1  # a War crate (canon §14.5) waits in the Shop
 			econ.res["raivite"] = int(econ.res["raivite"]) + Orders.ALL_RAIVITE
 			sfx.play("fanfare")
@@ -3482,6 +3491,53 @@ func _claim_order(id: String) -> void:
 		var xp: int = orders.claim(int(id.split(":")[1]), stats)
 		if xp > 0:
 			bp.add_xp(xp, now_s())
+			sfx.play("coin")
+			ui.toast(tr("toast.order_done") % xp)
+	_open_tab("world")
+	_refresh_ui()
+	_autosave()
+
+
+## Weekly tasks (08 §8.7) after the orders: 7 cards with their XP, then the chest's two steps.
+func _weekly_items() -> Array:
+	if not _orders_open():
+		return []
+	weekly.refresh(now_s(), econ.dev_level(), stats)
+	var out: Array = []
+	for i in Weekly.TASKS.size():
+		var t: Array = Weekly.TASKS[i]
+		out.append({"kind": "star", "id": "weekly:%d" % i, "icon": "📅", "title": "%s · +%d %s" % [tr("weekly." + String(t[0])), int(t[3]), tr("pass.xp")],
+			"progress": weekly.progress(i, stats), "need": int(weekly.need[i]), "claimed": weekly.claimed.has(i)})
+	for step in 2:
+		out.append({"kind": "star", "id": "weekly_chest:%d" % step, "icon": "🎁", "title": tr(["weekly.chest1", "weekly.chest2"][step]),
+			"progress": weekly.done_count(), "need": int(Weekly.STEP_NEED[step]), "claimed": weekly.chest.has(step)})
+	return out
+
+
+func _claim_weekly(id: String) -> void:
+	var now := now_s()
+	if id.begins_with("weekly_chest:"):
+		var step := int(id.split(":")[1])
+		if weekly.claim_chest(step):
+			if step == 0:
+				cases.free_crates += 2
+				speed_minutes += 2 * 60
+			else:
+				_pay_pass(["res", 8])
+				speed_minutes += 3 * 60
+				cases.free_crates += 1
+				# 10 shards of a common or rare commander not yet at level 20 (08 §8.7.2): the least advanced one
+				var best := "cmd_bram"
+				for c in ["cmd_bram", "cmd_lira", "cmd_olm", "cmd_vik", "cmd_vega", "cmd_kort", "cmd_seir", "cmd_frey"]:
+					if int(cases.shards.get(c, 0)) < int(cases.shards.get(best, 0)):
+						best = c
+				cases.shards[best] = int(cases.shards.get(best, 0)) + 10
+			sfx.play("fanfare")
+			ui.toast(tr("toast.weekly_chest"))
+	else:
+		var xp: int = weekly.claim(int(id.split(":")[1]), stats)
+		if xp > 0:
+			bp.add_xp(xp, now)
 			sfx.play("coin")
 			ui.toast(tr("toast.order_done") % xp)
 	_open_tab("world")

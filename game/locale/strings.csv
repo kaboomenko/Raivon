@@ -791,7 +791,7 @@ ui.open,Открыть,Open
 pass.title,Военный пропуск · сезон %d,War Pass · season %d
 pass.days_left,До конца сезона: %d дн.,Season ends in %d d
 pass.level,Уровень %d / 40,Level %d / 40
-pass.card,Военный пропуск · уровень %d,War Pass · level %d
+pass.card,Военный пропуск · ур. %d,War Pass · lvl %d
 pass.free,Бесплатно,Free
 pass.premium,Премиум,Premium
 pass.buy,Премиум · %s,Premium · %s
@@ -806,3 +806,13 @@ pass.rw_shards,%d осколков: %s,%d shards: %s
 pass.rw_speed,Ускорение %d ч,Speed-up %d h
 toast.pass_claim,Награда пропуска: %s,Pass reward: %s
 toast.pass_bought,Премиум-ветка пропуска открыта,The pass premium track is open
+weekly.weekly_peace,За неделю: подпишите победные миры,This week: sign victorious peaces
+weekly.weekly_capture,За неделю: захватите гексы в наступлениях,This week: capture hexes in offensives
+weekly.weekly_orders,За неделю: закройте все «Приказы дня» за 4 дня,This week: finish all daily orders on 4 days
+weekly.weekly_deposits,За неделю: соберите залежи,This week: collect deposits
+weekly.weekly_builds,За неделю: начните улучшения и исследования,This week: start upgrades and research
+weekly.weekly_forms,За неделю: заберите котлы,This week: take pockets
+weekly.weekly_camps,За неделю: разбейте лагеря или освойте дикие гексы,This week: destroy camps or settle wild hexes
+weekly.chest1,"Сундук недели, ступень 1 (4 из 7): 2 Военных ящика и 2 ч ускорений","Weekly chest, step 1 (4 of 7): 2 War crates and 2 h of speed-ups"
+weekly.chest2,"Сундук недели, ступень 2 (6 из 7): ресурсы 8 ч, ускорение 3 ч, 10 осколков, ящик","Weekly chest, step 2 (6 of 7): 8 h of resources, a 3 h speed-up, 10 shards, a crate"
+toast.weekly_chest,Сундук недели открыт!,The weekly chest is open!
