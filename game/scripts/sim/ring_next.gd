@@ -22,7 +22,7 @@ const CAP_DEPTH := 3      # F6: rings III+ — a new capital ≥3 hexes from the
 ## Chapter III «Континент» (canon §12.1, 02 §15.3–15.4): +70 land, Альвария 22 (Wolf-hegemon), Сарен 15 (Fox),
 ## Серая Стая 15 (Raven), 18 wild; ~8% mountains and ~10% water; 3 lobes.
 const CH3 := {
-	"land": 70, "water": 9, "mountains": 7, "reach": 7, "dl": 5,  # dl: chapter II cap 4 + 1
+	"land": 70, "water": 9, "mountains": 7, "reach": 7, "dl": 5, "biome": "steppe_taiga",  # dl: chapter II cap 4 + 1
 	"states": [
 		{"id": ALVARIA, "name": "state.alvaria", "color": 0xe8873a, "archetype": "wolf", "hegemon": true, "size": 22, "capital": "cell.alvaria_capital"},
 		{"id": SAREN, "name": "state.saren", "color": 0xd9669b, "archetype": "fox", "size": 15, "capital": "cell.saren_capital"},
@@ -48,7 +48,7 @@ const CONCLAVE := 9
 const VEILMARK := 10
 const LAKES := 11
 const CH4 := {
-	"land": 90, "water": 11, "mountains": 11, "reach": 8, "dl": 7,  # dl: chapter III cap 6 + 1
+	"land": 90, "water": 11, "mountains": 11, "reach": 8, "dl": 7, "biome": "badlands",  # dl: chapter III cap 6 + 1
 	"states": [
 		{"id": CONCLAVE, "name": "state.conclave", "color": 0x8a6b4f, "archetype": "turtle", "hegemon": true, "size": 26, "capital": "cell.conclave_capital"},
 		{"id": VEILMARK, "name": "state.veilmark", "color": 0x5fa65a, "archetype": "raven", "size": 20, "capital": "cell.veilmark_capital"},
@@ -622,6 +622,17 @@ static func validate(w: World, cfg: Dictionary, add: Dictionary) -> Array[String
 	return problems
 
 
+## Visual biome of a ring cell (02 §4.2): chapter III — steppe in the south, taiga in the north (by the screen
+## y with a ~3-hex wobble); chapter IV — badlands. Only looks; no rule reads it.
+static func _biome(cfg: Dictionary, q: int, r: int) -> String:
+	var kind: String = cfg.get("biome", "meadow")
+	if kind != "steppe_taiga":
+		return kind
+	var z := sqrt(3.0) * (r + q / 2.0)
+	var wobble := 1.6 * sin(q * 0.9 + 1.3) + 1.1 * sin(q * 0.37 + r * 0.5)
+	return "steppe" if z + wobble > 0.0 else "taiga"
+
+
 static func _apply(w: World, cfg: Dictionary, add: Dictionary) -> void:
 	for st in states(cfg):
 		w.states.append(st)
@@ -634,7 +645,7 @@ static func _apply(w: World, cfg: Dictionary, add: Dictionary) -> void:
 		w.cells.append({
 			"id": base + i, "q": int(c["q"]), "r": int(c["r"]), "terrain": String(c["terrain"]), "kind": String(c["kind"]),
 			"value": int(Types.KIND_VALUE.get(String(c["kind"]), 1)), "owner": int(c["owner"]), "controller": int(c["owner"]),
-			"fort": 0, "name": String(c["name"]),
+			"fort": 0, "name": String(c["name"]), "biome": _biome(cfg, int(c["q"]), int(c["r"])),
 		})
 		var k := caps.find(c)
 		if k >= 0:

@@ -224,6 +224,15 @@ func _hex_pts(center: Vector3, radius: float) -> Array:
 	return pts
 
 
+## Ground colours of the biomes (02 §4.2): meadow is the default palette above; the taiga is darker and cooler,
+## the steppe golden, the badlands rust-red.
+const BIOME_GROUND := {
+	"taiga": {"plain": Color(0.24, 0.43, 0.24), "forest": Color(0.15, 0.33, 0.18), "hills": Color(0.36, 0.41, 0.31), "mountain": Color(0.4, 0.41, 0.42)},
+	"steppe": {"plain": Color(0.6, 0.58, 0.27), "forest": Color(0.42, 0.5, 0.22), "hills": Color(0.62, 0.52, 0.3)},
+	"badlands": {"plain": Color(0.72, 0.47, 0.29), "forest": Color(0.58, 0.47, 0.26), "hills": Color(0.74, 0.39, 0.23), "mountain": Color(0.56, 0.36, 0.28)},
+}
+
+
 func _build_terrain() -> void:
 	if _terrain_mi:
 		_terrain_mi.queue_free()
@@ -233,6 +242,7 @@ func _build_terrain() -> void:
 		var center := axial_to_world(c["q"], c["r"])
 		var top := 0.0
 		var col := Color(0.29, 0.52, 0.18)
+		var pal: Dictionary = BIOME_GROUND.get(String(c.get("biome", "meadow")), {})
 		match c["terrain"]:
 			"forest":
 				col = Color(0.22, 0.44, 0.16)
@@ -243,6 +253,7 @@ func _build_terrain() -> void:
 			"water":
 				col = Color(0.12, 0.36, 0.52)
 				top = -0.2
+		col = pal.get(String(c["terrain"]), col)
 		col = col * (0.94 + rng.randf() * 0.12)
 		col.a = 1.0
 		var pts := _hex_pts(center + Vector3(0, top, 0), 0.995)
@@ -706,6 +717,13 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 				spawn("military_base", holder, p, 0.3, 1.0)
 				_place_fort(c, holder)
 				return
+	var biome: String = c.get("biome", "meadow")
+	if biome != "meadow" and String(c["terrain"]) in ["plain", "forest", "hills"]:
+		_place_biome_props(c, holder, p, biome)
+		_place_fort(c, holder)
+		if c["owner"] != Types.NOBODY and rng.randf() < 0.3:
+			spawn("banner_" + side, holder, p + Vector3(rng.randf_range(-0.4, 0.4), 0, rng.randf_range(-0.4, 0.4)))
+		return
 	match c["terrain"]:
 		"forest":
 			for i in rng.randi_range(8, 12):
@@ -728,6 +746,43 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 	_place_fort(c, holder)
 	if c["owner"] != Types.NOBODY and rng.randf() < 0.3:
 		spawn("banner_" + side, holder, p + Vector3(rng.randf_range(-0.4, 0.4), 0, rng.randf_range(-0.4, 0.4)))
+
+
+## Plain / forest / hills props of a non-meadow biome: dense dark pines in the taiga; grass, shrubs and a few
+## broad-leaved trees in the steppe; rocks and dry scrub in the badlands.
+func _place_biome_props(c: Dictionary, holder: Node3D, p: Vector3, biome: String) -> void:
+	var t: String = c["terrain"]
+	var rnd := func(r: float) -> Vector3:
+		return p + Vector3(rng.randf_range(-r, r), 0, rng.randf_range(-r, r))
+	match biome:
+		"taiga":
+			var n := rng.randi_range(10, 14) if t == "forest" else (rng.randi_range(3, 5) if t == "plain" else 2)
+			for i in n:
+				spawn("tree_pine", holder, rnd.call(0.64), rng.randf() * TAU, rng.randf_range(0.9, 1.45))
+			if t == "hills" or rng.randf() < 0.4:
+				for i in (3 if t == "hills" else 1):
+					spawn("rock", holder, rnd.call(0.5), rng.randf() * TAU, rng.randf_range(1.0, 1.8))
+		"steppe":
+			if t == "forest":
+				for i in rng.randi_range(4, 6):
+					spawn("tree_round", holder, rnd.call(0.6), rng.randf() * TAU, rng.randf_range(0.8, 1.15))
+			elif t == "hills":
+				for i in 3:
+					spawn("rock", holder, rnd.call(0.5), rng.randf() * TAU, rng.randf_range(1.1, 1.8))
+			if t != "hills" or rng.randf() < 0.5:
+				for i in rng.randi_range(1, 3):
+					spawn("bush", holder, rnd.call(0.58), rng.randf() * TAU, rng.randf_range(0.8, 1.2))
+			if t == "plain" and rng.randf() < 0.6:
+				spawn("flowers", holder, rnd.call(0.5), rng.randf() * TAU, rng.randf_range(1.0, 1.4))
+		"badlands":
+			var rocks := 4 if t == "hills" else (2 if t == "plain" else 1)
+			for i in rocks:
+				spawn("rock", holder, rnd.call(0.55), rng.randf() * TAU, rng.randf_range(1.2, 2.3))
+			var scrub := rng.randi_range(3, 5) if t == "forest" else rng.randi_range(0, 1)
+			for i in scrub:
+				spawn("bush", holder, rnd.call(0.6), rng.randf() * TAU, rng.randf_range(0.7, 1.0))
+			if t == "forest" and rng.randf() < 0.6:
+				spawn("tree_round", holder, rnd.call(0.5), rng.randf() * TAU, rng.randf_range(0.6, 0.85))
 
 
 func _build_horizon() -> void:

@@ -4192,11 +4192,22 @@ func _demo(spec: String) -> void:
 		rig.focus(map_view.cell_world(sim.states[Types.PLAYER]["capital_id"]), 0.6)
 		_open_tab("diplomacy")
 		return
-	if what == "ch4":  # chapter IV «Индустриальный пояс»: the ceremony over the whole launch world
+	if what == "ch4":  # chapter IV «Индустриальный пояс»: the ceremony; ch4:<biome> — that biome up close
 		await _world_expansion()
 		ui.close_modal()
 		await _world_expansion()
 		ui.close_modal()
+		if parts.size() > 1:
+			await _world_expansion()
+			ui.close_modal()
+			var best := -1
+			for c in sim.cells:
+				if String(c.get("biome", "")) == parts[1] and c["terrain"] != "water" and c["owner"] == Types.NOBODY:
+					best = c["id"]
+					break
+			if best >= 0:
+				rig.focus(map_view.cell_world(best), 0.45)
+			return
 		_world_expansion()
 		return
 	if what == "ch3":  # chapter III «Континент»: ch3 — the ceremony, ch3:<kind> — a ring III feature up close

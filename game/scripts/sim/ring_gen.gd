@@ -516,6 +516,7 @@ static func _apply(w: World, add: Dictionary) -> void:
 			"id": base + i, "q": int(c["q"]), "r": int(c["r"]), "terrain": String(c["terrain"]), "kind": String(c["kind"]),
 			"value": int(Types.KIND_VALUE.get(String(c["kind"]), 1)), "owner": int(c["owner"]), "controller": int(c["owner"]),
 			"fort": 0, "name": String(c["name"]),
+			"biome": "taiga" if int(c.get("lobe", 1)) == 0 else "meadow",  # 02 §4.2: taiga on the north lobe
 		}
 		w.cells.append(cell)
 		if c == add["caps"][0]:
