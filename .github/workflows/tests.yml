@@ -46,7 +46,7 @@ jobs:
         run: |
           set -e
           G=./Godot_v${GODOT_VERSION}-stable_linux.x86_64
-          for t in test_sim test_economy test_deposits test_march test_camps test_ring test_ring3 test_cases test_flow; do
+          for t in test_sim test_economy test_deposits test_march test_camps test_ring test_ring3 test_cases test_orders test_flow; do
             echo "== $t"
             $G --headless --path game --script res://tests/$t.gd
           done

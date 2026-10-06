@@ -1214,7 +1214,8 @@ func _star_card(it: Dictionary) -> Control:
 	var claimed: bool = it["claimed"]
 	card.add_theme_stylebox_override("panel", _style(Color(0.16, 0.14, 0.08) if done and not claimed else Color(0.1, 0.15, 0.25), 12, Color(1.0, 0.8, 0.3) if done else Color(0.45, 0.58, 0.8, 0.7), 2))
 	card.mouse_filter = Control.MOUSE_FILTER_PASS
-	var star := _label("★" if claimed else "☆", 30, Color(1.0, 0.82, 0.25) if done else MUTED)
+	var glyph: String = it.get("icon", "")  # «Приказы дня» carry their own icon instead of the star
+	var star := _label(glyph if glyph != "" else ("★" if claimed else "☆"), 30, Color(1.0, 0.82, 0.25) if done else MUTED)
 	star.position = Vector2(0, 4)
 	star.size = Vector2(150, 40)
 	star.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER

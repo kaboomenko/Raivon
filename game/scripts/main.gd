@@ -24,6 +24,7 @@ const Deposits := preload("res://scripts/sim/deposits.gd")
 const Cases := preload("res://scripts/sim/cases.gd")
 const Research := preload("res://scripts/sim/research.gd")
 const Market := preload("res://scripts/sim/market.gd")
+const Orders := preload("res://scripts/sim/orders.gd")
 const March := preload("res://scripts/sim/march.gd")
 const Camps := preload("res://scripts/sim/camps.gd")
 const RingGen := preload("res://scripts/sim/ring_gen.gd")
@@ -83,6 +84,9 @@ var first_convoy_done := false
 var cases  # Cases (scripts/sim/cases.gd)
 var research  # Research (scripts/sim/research.gd)
 var market  # Market trader state (scripts/sim/market.gd)
+var orders  # «Приказы дня» (scripts/sim/orders.gd)
+var pass_xp := 0  # Военный пропуск experience (1 level = 1 000, canon §15.6)
+var _collect_counted := 0  # last «Собрать всё» counted for order_collect_3 (≥30 min apart)
 var camps  # marauder camps (scripts/sim/camps.gd)
 var _camp_fight := {}  # running camp fight: hex, fort before, army hexes before
 var market_sel := {"give": "food", "get": "metal", "pct": 25}
@@ -156,6 +160,7 @@ func _ready() -> void:
 	cases = Cases.new(int(Time.get_unix_time_from_system()) & 0x7FFFFFFF)
 	research = Research.new()
 	market = Market.new()
+	orders = Orders.new()
 	camps = Camps.new(MAP_SEED ^ 0xCA4B)
 	save_enabled = save_enabled and not _scripted_run()
 	_init_language()
@@ -2112,6 +2117,12 @@ func _end_offensive() -> void:
 	elif ftue > 0:
 		ftue = 5 if stars > 0 else 2
 	War.record_offensive(war, stars)
+	_stat("offensives")
+	if stars >= 2:
+		_stat("stars2")
+	if stars >= 3:
+		_stat("stars3")
+	stats["captures"] = int(stats.get("captures", 0)) + (res["captured"] as Array).size()
 	if battle.landing_held(Types.PLAYER):
 		_stat("landings_held")  # «Высадка»: the landing hex is still ours at the end
 	var ws := War.war_score(sim, war)
@@ -2279,6 +2290,8 @@ func _on_card_drop(card: String, screen: Vector2) -> void:
 	elif not battle.card_ready(Types.PLAYER, card):
 		ui.toast(tr("toast.card_cooldown"))
 	elif battle.issue(Types.PLAYER, {"t": "card", "card": card, "target": id}):
+		if card != "attack":
+			_stat("cards")
 		_ftue_attacked()
 	else:
 		ui.toast(tr("toast.cant_target") % (tr("card.need_own") if Battle.CARDS[card]["target"] == "own" else tr("card.need_enemy")))
@@ -2938,6 +2951,9 @@ func _collect_all() -> void:
 			veins[int(h)] = econ.vein_amount(int(h))
 	var gained: Dictionary = econ.collect_all()
 	var crystals: int = econ.collect_veins()
+	if now_s() - _collect_counted >= 1800:  # order_collect_3 counts collections ≥30 min apart (08 §8.6.3)
+		_collect_counted = now_s()
+		_stat("collects")
 	for h in veins:
 		map_view.floater(int(h), "+%d" % int(veins[h]), Color(0.55, 0.85, 1.0))
 	var total := crystals
@@ -3010,6 +3026,7 @@ func _on_open_case(case_id: String, times: int, pay: String) -> void:
 			if not cases.use_free_crate(now):
 				ui.toast(tr("toast.crate_not_ready"))
 				return
+			_stat("crates")
 		"ad":
 			if not _rewarded("ad_free_crate", 2):
 				return
@@ -3108,6 +3125,7 @@ func _on_research_start(line: String) -> void:
 	if not research.start(line, econ.dev_level(), _academy_level(), econ.res, now):
 		ui.toast(L.t(research.can_start(line, econ.dev_level(), _academy_level(), econ.res, now)))
 		return
+	_stat("research_starts")
 	sfx.play("coin")
 	ui.toast(tr("toast.research_started") % [tr(String(Research.LINES[line]["name"])), research.level(line) + 1, GameUI.fmt_time(int(research.current["end"]) - now)])
 	_econ_tick()
@@ -3240,6 +3258,7 @@ func _star_progress(st: Array) -> int:
 func _world_items() -> Array:
 	var items: Array = [{"kind": "chapter", "hexes": _player_hexes(), "goal": _chapter_goal(), "done": chapter_done,
 		"can_expand": _player_hexes() >= _chapter_goal() and war.is_empty() and not chapter_done}]
+	items.append_array(_order_items())
 	var list := _stars()
 	if chapter >= 4:
 		list = STARS_4 + STARS_3 + STARS_2 + STARS  # the open chapter first; older stars never expire
@@ -3257,6 +3276,9 @@ func _world_items() -> Array:
 func _on_world_action(id: String) -> void:
 	if id == "expand":
 		_complete_chapter()
+		return
+	if id.begins_with("order"):
+		_claim_order(id)
 		return
 	for st in _stars():
 		if st[0] == id and not stars_claimed.has(id) and _star_progress(st) >= int(st[3]):
@@ -3317,6 +3339,67 @@ func _grant_legacy(ch: int) -> String:
 		econ.res["raivite"] = int(econ.res["raivite"]) + rv
 		parts.append(tr("legacy.raivite") % rv)
 	return tr("legacy.line") % [ch, ", ".join(parts)]
+
+
+# ---------------------------------------------------------------------- «Приказы дня» (canon §14.5, 08 §8.6)
+
+func _orders_open() -> bool:
+	return ftue == 0  # after the tutorial (08 §8.6.1: first session after chapter I or D1 — the tutorial ends first)
+
+
+func _orders_ctx() -> Dictionary:
+	var wild := false
+	for c in sim.cells:
+		if c["owner"] == Types.NOBODY and Types.is_passable(c) and _touches_player(c["id"]):
+			wild = true
+			break
+	var camp := false
+	for cm in camps.active:
+		if Camps.attackable(sim, int(cm["hex"])):
+			camp = true
+	var can_war := not war.is_empty()
+	for s in _ai_states():
+		if not can_war and _truce_left(s) == 0 and _pact_left(s) == 0 and War.recommend_goals(sim, s, 1).size() > 0:
+			can_war = true
+	return {"dl": econ.dev_level(), "stats": stats, "tags": {"camp": camp, "wild": wild, "market": Market.market_level(econ) > 0,
+		"ch2": chapter >= 2, "war": can_war}}
+
+
+## The World tab's first cards: today's three orders and the bonus for all three.
+func _order_items() -> Array:
+	if not _orders_open():
+		return []
+	orders.refresh(now_s(), _orders_ctx())
+	var out: Array = []
+	for i in orders.list.size():
+		var o: Dictionary = orders.list[i]
+		out.append({"kind": "star", "id": "order:%d" % i, "icon": "⚑", "title": "%s · +%d %s" % [tr("order." + String(o["code"])), int(o["xp"]), tr("pass.xp")],
+			"progress": orders.progress(i, stats), "need": int(o["need"]), "claimed": bool(o["claimed"])})
+	var claimed_n := 0
+	for o in orders.list:
+		if o["claimed"]:
+			claimed_n += 1
+	out.append({"kind": "star", "id": "orders_all", "icon": "🎁", "title": tr("orders.all"), "progress": claimed_n, "need": 3,
+		"claimed": orders.all_claimed})
+	return out
+
+
+func _claim_order(id: String) -> void:
+	if id == "orders_all":
+		if orders.claim_all():
+			cases.free_crates += 1  # a War crate (canon §14.5) waits in the Shop
+			econ.res["raivite"] = int(econ.res["raivite"]) + Orders.ALL_RAIVITE
+			sfx.play("fanfare")
+			ui.toast(tr("toast.orders_all"))
+	else:
+		var xp: int = orders.claim(int(id.split(":")[1]), stats)
+		if xp > 0:
+			pass_xp += xp
+			sfx.play("coin")
+			ui.toast(tr("toast.order_done") % xp)
+	_open_tab("world")
+	_refresh_ui()
+	_autosave()
 
 
 ## Content wall (canon §12.1): chapter II is not out yet — the legacy is paid and a teaser shown.
@@ -3607,6 +3690,7 @@ func _on_diplomacy_action(s: int, kind: String) -> void:
 				if b["type"] == "embassy":
 					emb = int(b["level"])
 			_opinion_add(s, 10.0 * (1.0 + 0.05 * emb))
+			_stat("gifts")
 			gift_at[s] = now_s()
 			sfx.play("coin")
 			ui.toast(tr("toast.gift_thanks") % tr(String(LEADERS[s][0])))
@@ -3718,6 +3802,7 @@ func _finish_training() -> void:
 	armies.append(fresh)
 	_rescale_armies()
 	training = {}
+	_stat("trainings")
 	_normalize_armies()
 	map_view.burst(cap, MapView.C_PLAYER, true)
 	sfx.play("fanfare")
@@ -3872,6 +3957,7 @@ func _on_building_upgrade(id: int) -> void:
 	if reason != "" or not econ.start_upgrade(id, now):
 		ui.toast(L.t(reason) if reason != "" else tr("toast.cant_upgrade"))
 		return
+	_stat("upgrades")
 	sfx.play("coin")
 	sfx.haptic(20)
 	ui.toast(tr("toast.upgrade_started") % [tr(String(Economy.BUILDINGS[b["type"]]["name"])), int(b["level"]) + 1, GameUI.fmt_time(int(b["upgrade_end"]) - now)])

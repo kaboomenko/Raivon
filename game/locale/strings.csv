@@ -765,3 +765,25 @@ card.missile,Ракета,Missile
 floater.landing,Десант!,Landing!
 star.c4_landing,Высадка: удержите гекс Десанта до конца наступления,Landing: hold a Landing hex to the end of the offensive
 star.c4_missile,Точный удар: выведите башню Ракетным ударом,Precision strike: knock out a tower with a Missile strike
+order.order_collect_3,Соберите доход 3 раза (раз в 30 мин),Collect income 3 times (30 min apart)
+order.order_deposits,Соберите залежи,Collect deposits
+order.order_raider_camp,Разбейте лагерь мародёров,Destroy a marauder camp
+order.order_colonize,Присоедините дикий гекс,Settle a wild hex
+order.order_upgrades_2,Начните 2 улучшения,Start 2 upgrades
+order.order_fort,Улучшите укрепление,Upgrade a fort
+order.order_research,Начните исследование,Start a research
+order.order_train,Обучите армию,Train an army
+order.order_market,Обменяйте ресурсы на Рынке,Trade at the Market
+order.order_gift,Сделайте подарок соседу,Send a neighbour a gift
+order.order_crates_2,Откройте 2 Военных ящика,Open 2 War crates
+order.order_offensives_2,Проведите 2 наступления,Fight 2 offensives
+order.order_stars_2,Получите ★★ в наступлении,Earn ★★ in an offensive
+order.order_capture,Захватите гексы в наступлениях,Capture hexes in offensives
+order.order_cards,Разыграйте карты (кроме «Атаки»),Play cards (other than Attack)
+order.order_stars_3,Получите ★★★ в наступлении,Earn ★★★ in an offensive
+order.order_pocket,Окружите и заберите котёл,Encircle and take a pocket
+order.order_peace_win,Подпишите победный мир,Sign a victorious peace
+pass.xp,ОП,XP
+orders.all,Все три приказа: Военный ящик + 10 Райвитов,All three orders: a War crate + 10 Raivites
+toast.order_done,Приказ выполнен: +%d ОП пропуска,Order done: +%d pass XP
+toast.orders_all,Все приказы дня выполнены: Военный ящик и 10 Райвитов,All daily orders done: a War crate and 10 Raivites
