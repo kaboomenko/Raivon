@@ -929,6 +929,26 @@ func _diplomacy_card(it: Dictionary) -> Control:
 	stt.position = Vector2(12, 82)
 	card.add_child(stt)
 	var id: int = it["id"]
+	if it.get("ally", false):
+		var al := _label(tr("dipl.ally"), 16, Color(0.5, 1.0, 0.6))
+		al.position = Vector2(190, 82)
+		al.size = Vector2(104, 24)
+		al.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		card.add_child(al)
+	elif it.has("ally_reason"):
+		var why: String = it["ally_reason"]
+		var ba := _panel(card, Rect2(196, 78, 98, 36), _style(Color(0.16, 0.42, 0.95) if why == "" else Color(0.3, 0.33, 0.4), 10, Color(1, 1, 1, 0.45), 2))
+		ba.mouse_filter = Control.MOUSE_FILTER_PASS
+		var la := _label(tr("dipl.alliance"), 15)
+		la.size = Vector2(98, 36)
+		la.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		la.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		ba.add_child(la)
+		ba.gui_input.connect(func(e): if _is_tap(e):
+			if why == "":
+				diplomacy_action.emit(id, "ally")
+			else:
+				toast(why))
 	var bw := _panel(card, Rect2(10, 128, 136, 40), _style(Color(0.75, 0.2, 0.15) if it["can_war"] else Color(0.3, 0.33, 0.4), 10, Color(1, 1, 1, 0.45), 2))
 	bw.mouse_filter = Control.MOUSE_FILTER_PASS
 	var lw := _label(tr("dipl.war"), 17)

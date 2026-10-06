@@ -528,11 +528,21 @@ func _run() -> void:
 	_check(g.chapter == 2 and g.sim.states.size() == 6 and g._land_count() == 90, "world expanded to 90 land hexes, 2 new states")
 	_check(g._chapter_goal() == 36 and g._colonize_seconds() == 300, "chapter II goal 36, colonization 5 min")
 	var wi: Array = g._world_items()
-	_check(wi.size() == 1 + 8 + 8 and String(wi[1]["id"]) == "c2_port", "World tab lists chapter II stars first (%d items)" % wi.size())
+	_check(wi.size() == 1 + 8 + 9 and String(wi[1]["id"]) == "c2_port", "World tab lists chapter II stars first (%d items)" % wi.size())
 	g.stats["camps"] = int(g.stats_base.get("camps", 0)) + 3
 	var rvs: int = g.econ.res["raivite"]
 	g._on_world_action("c2_camps")
 	_check(g.stars_claimed.has("c2_camps") and int(g.econ.res["raivite"]) == rvs + 10, "chapter II star claimed")
+	# alliance with the River League (canon §10.7): opinion 50+ (Owl 40+), DL3+
+	g.truce = {}
+	g.war = {}
+	if g.econ.dev_level() < 3:
+		g.econ._find_type("residence")["level"] = 3
+	g.opinion[4] = 10.0
+	_check(g._ally_reason(4) != "", "no alliance at low opinion")
+	g.opinion[4] = 45.0
+	g._on_diplomacy_action(4, "ally")
+	_check(g.allies.has(4) and int(g.stats.get("alliances", 0)) >= 1, "alliance with the River League signed")
 	var dip: Array = g._diplomacy_items(g.now_s())
 	_check(dip.size() == 4, "diplomacy lists 4 neighbours")
 	var forts := 0

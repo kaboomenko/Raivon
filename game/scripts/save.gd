@@ -70,6 +70,7 @@ static func to_dict(g: Node) -> Dictionary:
 		"ult_check": g.ult_check,
 		"ai_colonizing": g.ai_colonizing,
 		"ai_wars": g.ai_wars,
+		"allies": g.allies,
 		"ai_war_check": g.ai_war_check,
 		"cases": g.cases.to_dict(),
 		"speed_minutes": g.speed_minutes,
@@ -176,6 +177,9 @@ static func apply(g: Node, d: Dictionary) -> bool:
 	g.stars_claimed = d.get("stars_claimed", {})
 	g.chapter_done = bool(d.get("chapter_done", false))
 	g.chapter = int(d.get("chapter", 1))
+	g.allies = []
+	for a in d.get("allies", []):
+		g.allies.append(int(a))
 	g.ai_wars = []
 	for aw in d.get("ai_wars", []):
 		if typeof(aw) == TYPE_DICTIONARY:

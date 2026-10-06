@@ -84,6 +84,7 @@ var inbox: Array = []  # reports: {t, title, text, read}
 var ultimatum := {}  # active AI ultimatum: {state, hex, tribute, deadline}
 var ultimatum_at := 0  # 0 = not scheduled yet, -1 = done; unix time of the scripted Barons ultimatum
 var ult_check := {}  # AI state -> unix time of its next daily ultimatum roll (canon §10.4)
+var allies: Array = []  # AI states allied with the player (canon §10.7)
 var ai_wars: Array = []  # [{a, b, until, next}] AI-vs-AI wars (canon §10.10)
 var ai_war_check := 0  # unix time of the next 6-hourly evaluation
 var ai_colonizing := {}  # AI state -> {hex, at}: one settlement at a time, 3 h per hex (02 §10.2)
@@ -763,6 +764,57 @@ func _states_touch(a: int, b: int) -> bool:
 	return false
 
 
+## Alliances (canon §10.7): opinion ≥50 (an Owl ≥40), no war or truce between you, as many allies as the
+## Embassy allows by DL (1 at DL3, 2 at DL5, 3 at DL7). "" when an alliance can be offered, else the reason.
+func _ally_reason(s: int) -> String:
+	if allies.has(s):
+		return tr("dipl.ally")
+	var dl: int = econ.dev_level()
+	var limit := 3 if dl >= 7 else (2 if dl >= 5 else (1 if dl >= 3 else 0))
+	if limit == 0:
+		return tr("ally.need_dl")
+	if allies.size() >= limit:
+		return tr("ally.limit") % limit
+	if not war.is_empty() and int(war["enemy"]) == s or _truce_left(s) > 0:
+		return tr("ally.not_now")
+	var need := 40.0 if String(sim.states[s]["archetype"]) == "owl" else 50.0
+	if _opinion_of(s) < need:
+		return tr("ally.opinion") % roundi(need)
+	return ""
+
+
+## Allies at war on the player's side take 1–2 enemy border hexes outside its core every 2 h; they keep them
+## at peace (canon §10.7). Defensive wars always, offensive ones when their opinion is ≥60.
+func _allies_tick(now: int) -> void:
+	if war.is_empty():
+		return
+	var enemy: int = war["enemy"]
+	for s in allies:
+		if s == enemy or not _states_touch(s, enemy):
+			continue
+		if not war.has("by_ai") and _opinion_of(s) < 60.0:
+			continue
+		var key := "ally_%d" % s
+		if not war.has(key):
+			war[key] = now + 2 * 3600
+			_post(L.pack("inbox.ally_joins.title", [_state_key(s)]), L.pack("inbox.ally_joins.text", [_state_key(s), _state_key(enemy)]))
+			continue
+		if now < int(war[key]):
+			continue
+		war[key] = now + 2 * 3600
+		var core := MapGen.core_of(sim, enemy)
+		var front: Array = []
+		for c in sim.cells:
+			if c["controller"] == enemy and Types.is_passable(c) and not core.has(c["id"]) and _touches_controller(c["id"], s):
+				front.append(c)
+		front.sort_custom(func(x, y): return int(x["id"]) < int(y["id"]))
+		var n := 1 + absi(hash("ally:%d:%d" % [s, now / 7200])) % 2
+		for c in front.slice(0, n):
+			c["controller"] = s
+			map_view.refresh_hex(int(c["id"]))
+		map_view.mark_dirty()
+
+
 ## AI state fighting another AI state right now, or -1 (garrisons on the other borders −30%, canon §10.10).
 func ai_war_of(s: int) -> int:
 	for w in ai_wars:
@@ -1116,6 +1168,10 @@ func _finish_colonize(id: int) -> void:
 
 
 func _declare(enemy: int, goal: int) -> void:
+	if allies.has(enemy):
+		allies.erase(enemy)  # war on an ally ends the alliance
+		_opinion_add(enemy, -30.0)
+		_post(L.pack("inbox.alliance_broken.title", [_state_key(enemy)]), L.pack("inbox.alliance_broken.text", [_state_key(enemy)]))
 	_ensure_armies_for(enemy)
 	_deploy_to_front(enemy)
 	war = War.declare_war(sim, enemy, goal)
@@ -1661,7 +1717,17 @@ const PLUNDER_PCT := [0.0, 0.30, 0.45, 0.60]
 const PLUNDER_OPINION := [20.0, -10.0, -20.0, -30.0]
 
 
+## Hexes the allies took from the enemy become theirs at peace (canon §10.7).
+func _allies_annex(enemy: int) -> void:
+	for c in sim.cells:
+		if c["owner"] == enemy and allies.has(int(c["controller"])):
+			c["owner"] = c["controller"]
+			map_view.refresh_hex(int(c["id"]))
+
+
 func _sign_peace() -> void:
+	if not war.is_empty():
+		_allies_annex(int(war["enemy"]))
 	_last_score = War.war_score(sim, war)["score"] if not war.is_empty() else 0.0
 	var before := MapGen.official_value(sim, Types.PLAYER)
 	var hexes_before := _player_hexes()
@@ -1951,6 +2017,7 @@ func _repaired(hex: int) -> void:
 
 
 func _finish_war(enemy: int, msg: String) -> void:
+	_allies_annex(enemy)
 	ui.close_modal()
 	if ftue >= 10:
 		ftue = 0  # the tutorial war ended without a treaty — let the player go on freely
@@ -2432,6 +2499,7 @@ func _stat(key: String) -> void:
 const STARS_2 := [
 	["c2_port", "star.c2_port", "@ports", 1],
 	["c2_river", "star.c2_river", "river_crossings", 1],
+	["c2_alliance", "star.c2_alliance", "alliances", 1],
 	["c2_defense", "star.c2_defense", "defenses", 1],
 	["c2_pocket4", "star.c2_pocket4", "pockets4", 1],
 	["c2_ultimatum", "star.c2_ultimatum", "ult_wins", 1],
@@ -2648,10 +2716,11 @@ func _diplomacy_items(now: int) -> Array:
 			status = tr("dipl.truce") % GameUI.fmt_time(_truce_left(s))
 		var gift_left := maxi(0, int(gift_at.get(s, 0)) + 86400 - now)
 		var v := _opinion_of(s)
-		items.append({"id": s, "state": _state_name(s), "leader": tr(String(LEADERS[s][0])), "archetype": tr(String(LEADERS[s][1])),
+		var it_extra := {"ally": allies.has(s), "ally_reason": _ally_reason(s)}
+		items.append(it_extra.merged({"id": s, "state": _state_name(s), "leader": tr(String(LEADERS[s][0])), "archetype": tr(String(LEADERS[s][1])),
 			"opinion": v, "word": tr(_opinion_word(v)), "status": status,
 			"can_war": war.is_empty() and _truce_left(s) == 0, "gift_cost": _gift_cost(), "gift_left": gift_left,
-			"color": map_view.state_color(s)})
+			"color": map_view.state_color(s)}))
 	return items
 
 
@@ -2669,6 +2738,18 @@ func _on_diplomacy_action(s: int, kind: String) -> void:
 			rig.focus(map_view.cell_world(g[0]))
 			_select(g[0])
 			ui.toast(tr("toast.target_chosen"))
+		"ally":
+			if _ally_reason(s) != "":
+				ui.toast(_ally_reason(s))
+				return
+			allies.append(s)
+			_stat("alliances")
+			sfx.play("seal")
+			map_view.burst(int(sim.states[s]["capital_id"]), map_view.state_color(s), true)
+			_post(L.pack("inbox.alliance.title", [_state_key(s)]), L.pack("inbox.alliance.text", [_state_key(s)]))
+			ui.toast(tr("toast.alliance") % _state_name(s))
+			_refresh_ui()
+			_autosave()
 		"gift":
 			var cost := _gift_cost()
 			if int(gift_at.get(s, 0)) + 86400 > now_s():
@@ -3028,6 +3109,7 @@ func _ai_tick(now: int) -> void:
 		_war_cap()
 		return
 	_peace_offer()
+	_allies_tick(now)
 
 
 ## Archetype ultimatums (canon §10.4): once a day each neighbour that is stronger than the player rolls its chance
@@ -3569,6 +3651,14 @@ func _demo(spec: String) -> void:
 		return
 	if what == "settings":
 		_on_hud_button("gear")
+		return
+	if what == "dip2":
+		await _world_expansion()
+		ui.close_modal()
+		econ._find_type("residence")["level"] = 3
+		opinion[4] = 46.0
+		allies = [3]
+		_open_tab("diplomacy")
 		return
 	if what == "oil":
 		await _world_expansion()

@@ -542,3 +542,17 @@ res.name.oil,Нефть,Oil
 inbox.oil.title,Нефть!,Oil!
 inbox.oil.text,"Держава доросла до УР5: Тёмные озёра (%d) проснулись нефтью. Нефтяные гексы дают 25 нефти в час — она нужна для УР6 и крепостей 8+ уровня.","The realm reached DL5: %d Dark Lakes woke up as oil. Oil hexes give 25 oil an hour, needed for DL6 and level 8+ forts."
 toast.oil_awake,Тёмные озёра проснулись — нефть!,The Dark Lakes woke up: oil!
+dipl.ally,Союзник,Ally
+dipl.alliance,Союз,Alliance
+ally.need_dl,Союзы — с УР3 (Посольство),Alliances open at DL3 (Embassy)
+ally.limit,Посольство держит не больше %d союзов,The Embassy allows at most %d alliances
+ally.not_now,Сначала закончите войну и перемирие,End the war and the truce first
+ally.opinion,Нужно мнение %d+ (подарки помогают),You need opinion %d+ (gifts help)
+toast.alliance,Союз с «%s» заключён!,Alliance with “%s” signed!
+inbox.alliance.title,Союз: %s,Alliance: %s
+inbox.alliance.text,"%s — наш союзник: вступит в наши оборонительные войны, а при мнении 60+ — и в наступательные; занятые союзником гексы врага достанутся ему при мире.","%s is our ally: it joins our defensive wars, and offensive ones at opinion 60+; enemy hexes it takes stay with it at peace."
+inbox.alliance_broken.title,Союз разорван: %s,Alliance broken: %s
+inbox.alliance_broken.text,"Мы объявили войну союзнику — %s больше не с нами.","We declared war on an ally: %s no longer stands with us."
+inbox.ally_joins.title,%s вступают в войну,%s join the war
+inbox.ally_joins.text,"Союзник %s выступил против %s и будет брать их пограничные гексы.","Our ally %s marches on %s and will take its border hexes."
+star.c2_alliance,Рукопожатие: заключите союз с ИИ,Handshake: ally with an AI state
