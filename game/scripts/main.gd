@@ -78,6 +78,8 @@ var coalition_last := 0  # last formation (not more than once in 5 days)
 var _alarm_warned := false
 var _swap := {}            # territory swap being set up: {state, give, get}
 var swap_at := {}          # state -> last swap time (one swap with a state per 24 h)
+var swap_offer_at := {}    # state -> when it next looks for a swap to propose (06 §9.1)
+var swap_offer := {}       # the AI's pending proposal {state, give, get, until, auto}
 var pacts := {}            # state -> non-aggression pact end (canon §10.8, 06 §11)
 var _ftue_next := 0  # step to resume after the peace ceremony
 var _raid := {}  # FTUE marauder raid: {hex, at}
@@ -1157,6 +1159,9 @@ func _pact_reason(s: int) -> String:
 # ---------------------------------------------------------------------- territory swap (canon §10.9, 06 §15)
 
 const SWAP_COOLDOWN_SEC := 86400
+const SWAP_MAX := 5  # hexes a side (06 §15.1)
+## How often an archetype proposes a swap itself (06 §9.1): the Fox every 48 h, the Turtle and the Owl every 7 days.
+const SWAP_OFFER_SEC := {"fox": 48 * 3600, "turtle": 7 * 86400, "owl": 7 * 86400}
 
 
 ## "" when a swap with `s` can be set up, else why not (06 §15.1: chapter II+, no war, opinion ≥ 0, 1 per 24 h).
@@ -1184,15 +1189,20 @@ func _swappable(id: int, side: int) -> bool:
 
 
 ## The AI's valuation (06 §15.2): ×2 within 2 of its capital, ×0.5 for its exclave (giving) or a hex that would
-## be cut off from its land (receiving).
-func _swap_value(s: int, id: int, receiving: bool) -> float:
+## be cut off from its land (receiving; a hex next to another one of the same package counts as joined).
+func _swap_value(s: int, id: int, receiving: bool, package: Array = []) -> float:
 	var c: Dictionary = sim.cells[id]
 	var cap: int = sim.states[s]["capital_id"]
 	var v := float(c["value"])
 	if cap >= 0 and HexGrid.distance(HexGrid.axial(c), HexGrid.axial(sim.cells[cap])) <= 2:
 		return v * 2.0
 	if receiving:
-		return v if _touches_owner(id, s) else v * 0.5
+		if _touches_owner(id, s):
+			return v
+		for n in sim.neighbors[id]:
+			if n >= 0 and package.has(n) and _touches_owner(n, s):
+				return v
+		return v * 0.5
 	# giving: an exclave (no path over its own land to its capital) is worth half
 	var seen := {id: true}
 	var stack: Array = [id]
@@ -1207,80 +1217,269 @@ func _swap_value(s: int, id: int, receiving: bool) -> float:
 	return v * 0.5
 
 
+## Edges between the player's land and `s`'s, with `over` (hex -> new owner) applied — the swap panel's
+## «Граница: 21 → 15 рёбер» (06 §15.1).
+func _border_len(s: int, over: Dictionary = {}) -> int:
+	var n := 0
+	for c in sim.cells:
+		var id: int = c["id"]
+		if int(over.get(id, c["owner"])) != Types.PLAYER:
+			continue
+		for nb in sim.neighbors[id]:
+			if nb >= 0 and int(over.get(nb, sim.cells[nb]["owner"])) == s:
+				n += 1
+	return n
+
+
+func _swap_over(s: int, give: Array, get_l: Array) -> Dictionary:
+	var over := {}
+	for h in give:
+		over[h] = s
+	for h in get_l:
+		over[h] = Types.PLAYER
+	return over
+
+
+## The AI's verdict on a package (06 §15.2): its valuation both ways, the top-up in value units and gold, and the
+## overpay it returns as opinion.
+func _swap_terms(s: int, give: Array, get_l: Array) -> Dictionary:
+	var v_out := 0.0   # what the AI gives up
+	var v_in := 0.0    # what the AI receives
+	for h in get_l:
+		v_out += _swap_value(s, h, false)
+	for h in give:
+		v_in += _swap_value(s, h, true, give)
+	var k := 0.8 if allies.has(s) else 0.9      # «≤10% not in its favour», an ally 20%
+	var pay_units := maxf(0.0, ceilf((k * v_out - v_in) * 10.0) / 10.0)
+	var gold := int(ceil(pay_units * 2.0 * maxf(60.0, float(econ.gross_per_hour(sim).get("gold", 0)))))
+	return {"v_in": v_in, "v_out": v_out, "pay": pay_units, "gold": gold, "overpay": v_in + pay_units - k * v_out}
+
+
+func _hex_list(ids: Array) -> String:
+	var names := PackedStringArray()
+	var v := 0
+	for h in ids:
+		names.append(_cell_name(h))
+		v += int(sim.cells[h]["value"])
+	return "%s (%s %d)" % [", ".join(names), tr("swap.value"), v]
+
+
+## A tap in swap mode toggles the hex in the package: ours → «give», theirs → «get», up to 5 a side (06 §15.1).
 func _swap_pick(id: int) -> void:
 	var s: int = _swap["state"]
+	var give: Array = _swap["give"]
+	var get_l: Array = _swap["get"]
+	if give.has(id) or get_l.has(id):
+		give.erase(id)
+		get_l.erase(id)
+		map_view.hex_label(id, "")
+		sfx.play("tap")
+		return
 	if _swappable(id, Types.PLAYER):
-		_swap["give"] = id
+		if give.size() >= SWAP_MAX:
+			ui.toast(tr("swap.max") % SWAP_MAX)
+			return
+		give.append(id)
 		map_view.burst(id, MapView.C_PLAYER)
+		map_view.hex_label(id, "⇄ " + tr("swap.tag_give"))
 	elif _swappable(id, s):
-		_swap["get"] = id
+		if get_l.size() >= SWAP_MAX:
+			ui.toast(tr("swap.max") % SWAP_MAX)
+			return
+		get_l.append(id)
 		map_view.burst(id, map_view.state_color(s))
+		map_view.hex_label(id, "⇄ " + tr("swap.tag_get"))
 	else:
 		ui.toast(tr("swap.bad_hex"))
 		return
 	sfx.play("tap")
-	if int(_swap["give"]) < 0:
+	if give.is_empty():
 		ui.toast(tr("swap.pick_give"))
 		return
-	if int(_swap["get"]) < 0:
+	if get_l.is_empty():
 		ui.toast(tr("swap.pick_get") % _state_name(s))
 		return
 	_swap_offer()
 
 
+func _swap_lines(s: int, give: Array, get_l: Array, t: Dictionary) -> Array:
+	return [
+		tr("swap.give") % _hex_list(give),
+		tr("swap.get") % _hex_list(get_l),
+		tr("swap.border") % [_state_name(s), _border_len(s), _border_len(s, _swap_over(s, give, get_l))],
+		tr("swap.ai_view") % [_state_name(s), float(t["v_in"]), float(t["v_out"])],
+		tr("swap.pay") % int(t["gold"]) if int(t["gold"]) > 0 else tr("swap.fair"),
+	]
+
+
+func _swap_clear_labels() -> void:
+	if _swap.is_empty():
+		return
+	for h in (_swap["give"] as Array) + (_swap["get"] as Array):
+		map_view.hex_label(h, "")
+
+
 func _swap_offer() -> void:
 	var s: int = _swap["state"]
-	var give: int = _swap["give"]
-	var get_h: int = _swap["get"]
-	var v_out := _swap_value(s, get_h, false)   # what the AI gives up
-	var v_in := _swap_value(s, give, true)      # what the AI receives
-	var k := 0.8 if allies.has(s) else 0.9      # «≤10% not in its favour», an ally 20%
-	var pay_units := maxf(0.0, ceilf((k * v_out - v_in) * 10.0) / 10.0)
-	var gold := int(ceil(pay_units * 2.0 * maxf(60.0, float(econ.gross_per_hour(sim).get("gold", 0)))))
-	var lines: Array = [
-		tr("swap.give") % [_cell_name(give), int(sim.cells[give]["value"])],
-		tr("swap.get") % [_cell_name(get_h), int(sim.cells[get_h]["value"])],
-		tr("swap.ai_view") % [_state_name(s), v_in, v_out],
-		tr("swap.pay") % gold if gold > 0 else tr("swap.fair"),
-	]
-	ui.show_choice(tr("swap.title"), lines, [
-		[tr("swap.offer"), Color(0.16, 0.42, 0.95), func(): _swap_do(gold, v_in + pay_units - k * v_out)],
-		[tr("ui.cancel"), Color(0.3, 0.33, 0.4), func():
+	var give: Array = _swap["give"]
+	var get_l: Array = _swap["get"]
+	var t := _swap_terms(s, give, get_l)
+	var buttons: Array = [[tr("swap.offer"), Color(0.16, 0.42, 0.95), func():
+		ui.close_modal()
+		_swap_clear_labels()
+		_swap = {}
+		_swap_execute(s, give, get_l, int(t["gold"]), float(t["overpay"]))]]
+	if give.size() < SWAP_MAX or get_l.size() < SWAP_MAX:
+		buttons.append([tr("swap.more"), Color(0.2, 0.45, 0.35), func():
 			ui.close_modal()
-			_swap = {}],
-	])
+			ui.toast(tr("swap.more_hint"))])
+	buttons.append([tr("ui.cancel"), Color(0.3, 0.33, 0.4), func():
+		ui.close_modal()
+		_swap_clear_labels()
+		_swap = {}])
+	ui.show_choice(tr("swap.title"), _swap_lines(s, give, get_l, t), buttons)
 
 
-func _swap_do(gold: int, overpay: float) -> void:
-	ui.close_modal()
-	var s: int = _swap["state"]
-	var give: int = _swap["give"]
-	var get_h: int = _swap["get"]
-	_swap = {}
+func _swap_execute(s: int, give: Array, get_l: Array, gold: int, overpay: float) -> bool:
+	for h in give:
+		if not _swappable(h, Types.PLAYER):
+			return false
+	for h in get_l:
+		if not _swappable(h, s):
+			return false
 	if econ.res["gold"] < gold:
 		ui.toast(tr("toast.no_gold"))
-		return
+		return false
 	econ.res["gold"] -= gold
-	sim.cells[give]["owner"] = s
-	sim.cells[give]["controller"] = s
-	sim.cells[get_h]["owner"] = Types.PLAYER
-	sim.cells[get_h]["controller"] = Types.PLAYER
-	sim.cells[get_h]["fort"] = 0  # the hex comes empty (06 §15.1)
+	for h in give:
+		sim.cells[h]["owner"] = s
+		sim.cells[h]["controller"] = s
+		sim.cells[h]["fort"] = 0  # forts are taken down, the hex goes empty (06 §15.1)
+	for h in get_l:
+		sim.cells[h]["owner"] = Types.PLAYER
+		sim.cells[h]["controller"] = Types.PLAYER
+		sim.cells[h]["fort"] = 0
 	swap_at[s] = now_s()
 	_opinion_add(s, minf(10.0, 5.0 + 2.0 * floorf(maxf(0.0, overpay))))  # op_swap: +5, +2 per unit of overpay
 	_stat("swaps")
 	_econ_tick()
 	_normalize_armies()
-	map_view.refresh_hex(give)
-	map_view.refresh_hex(get_h)
+	for h in give + get_l:
+		map_view.hex_label(h, "")
+		map_view.refresh_hex(h)
 	map_view.mark_dirty()
 	map_view.sync_armies(armies, null)
-	map_view.burst(get_h, MapView.C_PLAYER, true)
+	for h in get_l:
+		map_view.burst(h, MapView.C_PLAYER, true)
 	sfx.play("seal")
-	_post("inbox.swap.title", L.pack("inbox.swap.text", [_state_key(s), _cell_key(give), _cell_key(get_h)]))
-	ui.toast(tr("toast.swap") % [_cell_name(get_h), _state_name(s)])
+	_post("inbox.swap.title", L.pack("inbox.swap.text", [_state_key(s), _cell_key(give[0]), _cell_key(get_l[0]), give.size(), get_l.size()]))
+	ui.toast(tr("toast.swap") % [get_l.size(), _state_name(s)])
 	_refresh_ui()
 	_autosave()
+	return true
+
+
+## Swap offers from the AI (06 §9.1 S4): the Fox every 48 h, the Turtle and the Owl every 7 days — the best package
+## of ≤2 hexes a side that shortens the player's border with it by ≥2 edges and leaves the AI's valuation
+## (06 §15.2) not in deficit — with a top-up of at most 1 value unit (2 h of gold) where needed, the traders' way. The offer waits 24 h; the screen opens once the player is free.
+func _ai_swap_tick(now: int) -> void:
+	if not swap_offer.is_empty():
+		if now > int(swap_offer["until"]):
+			swap_offer = {}
+		elif bool(swap_offer.get("auto", false)) and mode == Mode.MAP and not ui.has_modal() and shop == null and _swap.is_empty():
+			swap_offer["auto"] = false
+			_show_swap_offer()
+		return
+	if chapter < 2:
+		return
+	for s in _ai_states():
+		var period: int = SWAP_OFFER_SEC.get(String(sim.states[s]["archetype"]), 0)
+		if period == 0:
+			continue
+		if not swap_offer_at.has(s):
+			swap_offer_at[s] = now + period / 2  # the first offer comes a while after meeting
+			continue
+		if now < int(swap_offer_at[s]):
+			continue
+		swap_offer_at[s] = now + period
+		if _swap_reason(s) != "":
+			continue
+		var best := _ai_swap_package(s)
+		if best.is_empty():
+			continue
+		swap_offer = {"state": s, "give": best["give"], "get": best["get"], "until": now + 86400, "auto": save_enabled}
+		_post(L.pack("inbox.swap_offer.title", [_state_key(s)]), L.pack("inbox.swap_offer.text", [_state_key(s)]))
+		return
+
+
+## The package the AI proposes, or {}: `give` is what the player gives.
+func _ai_swap_package(s: int) -> Dictionary:
+	var mine: Array = []
+	var theirs: Array = []
+	for c in sim.cells:
+		var id: int = c["id"]
+		if _swappable(id, Types.PLAYER) and _touches_owner(id, s):
+			mine.append(id)
+		elif _swappable(id, s) and _touches_owner(id, Types.PLAYER):
+			theirs.append(id)
+	var base := _border_len(s)
+	var best := {}
+	var best_score := -INF
+	var packs: Array = []
+	for a in mine:
+		for b in theirs:
+			packs.append([[a], [b]])
+	# two a side: pairs of neighbouring hexes on each side
+	for i in mine.size():
+		for j in range(i + 1, mine.size()):
+			if not (sim.neighbors[mine[i]] as Array).has(mine[j]):
+				continue
+			for k in theirs.size():
+				for l in range(k + 1, theirs.size()):
+					if (sim.neighbors[theirs[k]] as Array).has(theirs[l]):
+						packs.append([[mine[i], mine[j]], [theirs[k], theirs[l]]])
+	for p in packs:
+		var t := _swap_terms(s, p[0], p[1])
+		if float(t["pay"]) > 1.0:
+			continue
+		var cut := base - _border_len(s, _swap_over(s, p[0], p[1]))
+		var gain := 0
+		for h in p[1]:
+			gain += int(sim.cells[h]["value"])
+		for h in p[0]:
+			gain -= int(sim.cells[h]["value"])
+		var score := float(cut) + 0.25 * gain - float(t["pay"])
+		if cut >= 2 and score > best_score:
+			best_score = score
+			best = {"give": p[0], "get": p[1]}
+	return best
+
+
+func _show_swap_offer() -> void:
+	if swap_offer.is_empty():
+		return
+	var s: int = swap_offer["state"]
+	var give: Array = swap_offer["give"]
+	var get_l: Array = swap_offer["get"]
+	if _swap_reason(s) != "":
+		swap_offer = {}
+		return
+	var t := _swap_terms(s, give, get_l)
+	var lines: Array = [tr("swap.ai_offer_line") % _state_name(s)]
+	var sl := _swap_lines(s, give, get_l, t)
+	lines.append_array(sl.slice(0, 3))
+	lines.append(sl[4])
+	rig.focus(map_view.cell_world(get_l[0]), 0.5)
+	ui.show_choice(tr("swap.ai_offer_title") % _state_name(s), lines, [
+		[tr("swap.accept"), Color(0.16, 0.55, 0.3), func():
+			ui.close_modal()
+			swap_offer = {}
+			_swap_execute(s, give, get_l, int(t["gold"]), float(t["overpay"]))],
+		[tr("swap.decline"), Color(0.3, 0.33, 0.4), func():
+			ui.close_modal()
+			swap_offer = {}
+			_autosave()],
+	])
 
 
 func _ally_reason(s: int) -> String:
@@ -2760,6 +2959,7 @@ func _econ_tick() -> void:
 	_ai_colonize(now)
 	_ai_wars_tick(now)
 	_ai_alliances_tick(now)
+	_ai_swap_tick(now)
 	for h in colonizing.keys():
 		if now >= int(colonizing[h]):
 			_finish_colonize(h)
@@ -3075,6 +3275,57 @@ func _apply_case_rewards(results: Array) -> void:
 					speed_minutes += int(rw["minutes"])
 				_:
 					pass  # shards, cosmetics and glitter are kept by the cases module itself
+
+
+## Demo helper: the player settles a corridor up to a hex of `s` and wraps around it, so their border bends.
+func _demo_salient(s: int) -> void:
+	var core := MapGen.core_of(sim, s)
+	var q := -1
+	var best := 0
+	for c in sim.cells:
+		if c["owner"] != s or core.has(c["id"]) or not _swappable(c["id"], s):
+			continue
+		var free := 0
+		for n in sim.neighbors[c["id"]]:
+			if n >= 0 and sim.cells[n]["owner"] == Types.NOBODY and Types.is_passable(sim.cells[n]):
+				free += 1
+		if free > best:
+			best = free
+			q = c["id"]
+	if q < 0:
+		return
+	var ring: Array = []
+	for n in sim.neighbors[q]:
+		if n >= 0 and sim.cells[n]["owner"] == Types.NOBODY and Types.is_passable(sim.cells[n]):
+			ring.append(n)
+	# breadth-first over wild land from the player's hexes to the ring
+	var prev := {}
+	var queue: Array = []
+	for c in sim.cells:
+		if c["owner"] == Types.PLAYER:
+			prev[c["id"]] = -1
+			queue.append(c["id"])
+	var hit := -1
+	while not queue.is_empty() and hit < 0:
+		var h: int = queue.pop_front()
+		for n in sim.neighbors[h]:
+			if n < 0 or prev.has(n) or sim.cells[n]["owner"] != Types.NOBODY or not Types.is_passable(sim.cells[n]):
+				continue
+			prev[n] = h
+			if ring.has(n):
+				hit = n
+				break
+			queue.append(n)
+	var claim: Array = ring.duplicate()
+	var h2 := hit
+	while h2 >= 0 and sim.cells[h2]["owner"] != Types.PLAYER:
+		claim.append(h2)
+		h2 = prev[h2]
+	for h in claim:
+		sim.cells[h]["owner"] = Types.PLAYER
+		sim.cells[h]["controller"] = Types.PLAYER
+		map_view.refresh_hex(h)
+	map_view.mark_dirty()
 
 
 ## Store purchases: no billing SDK yet. Debug (test) builds grant the item so flows can be tested.
@@ -3957,7 +4208,7 @@ func _on_diplomacy_action(s: int, kind: String) -> void:
 			if why != "":
 				ui.toast(why)
 				return
-			_swap = {"state": s, "give": -1, "get": -1}
+			_swap = {"state": s, "give": [], "get": []}
 			ui.close_modal()
 			_open_tab("")
 			ui.toast(tr("swap.pick") % _state_name(s))
@@ -4950,9 +5201,29 @@ func _demo(spec: String) -> void:
 			if give < 0 and _swappable(c["id"], Types.PLAYER):
 				give = c["id"]
 		if give >= 0 and get_h >= 0:
-			_swap = {"state": MapGen.BARONS, "give": give, "get": get_h}
+			_swap = {"state": MapGen.BARONS, "give": [], "get": []}
+			_swap_pick(give)
+			_swap_pick(get_h)
 			rig.focus(map_view.cell_world(get_h), 0.5)
-			_swap_offer()
+		return
+	if what == "swap_ai":  # a neighbour (Fox, Owl or Turtle) proposes a swap that straightens the border
+		await _world_expansion()
+		ui.close_modal()
+		for s in _ai_states():
+			opinion[s] = 30.0
+		for s in _ai_states():
+			if not SWAP_OFFER_SEC.has(String(sim.states[s]["archetype"])):
+				continue
+			_demo_salient(s)
+			for t in _ai_states():
+				swap_offer_at[t] = 0 if t == s else now_s() + 86400
+			_ai_swap_tick(now_s())
+			if not swap_offer.is_empty():
+				break
+		if swap_offer.is_empty():
+			print("no AI swap offer found")
+			return
+		_show_swap_offer()
 		return
 	if what == "coalition":  # «Тревога соседей» over 100%: a coalition is forming (Diplomacy tab)
 		await _world_expansion()

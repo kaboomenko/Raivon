@@ -479,11 +479,11 @@ camp.won_no_loot,Лагерь разбит — награды на сегодн�
 camp.lost,Мародёры отбились — лагерь стоит,The marauders held. The camp still stands
 camp.blocks,Сначала разбейте лагерь мародёров,Destroy the marauder camp first
 tile.camp,Лагерь мародёров,Marauder camp
-tile.camp_loot,"добыча: %s · наград сегодня %d/3","loot: %s · rewards today %d/3"
+tile.camp_loot,добыча: %s · наград сегодня %d/3,loot: %s · rewards today %d/3
 state.league,Речная Лига,River League
 state.order,Орден Камня,Order of Stone
 leader.league,Канцлер Ивета Мудрая,Chancellor Iveta the Wise
-leader.league.desc,"Дипломат, ищет союзников, держит порт","A diplomat who seeks allies and holds a port"
+leader.league.desc,"Дипломат, ищет союзников, держит порт",A diplomat who seeks allies and holds a port
 leader.order,Магистр Торвальд Терпеливый,Magister Torvald the Patient
 leader.order.desc,"Высокие стены, редко нападает","High walls, rarely attacks"
 archetype.owl,Сова,Owl
@@ -510,17 +510,17 @@ inbox.expansion.title,Мир расширяется,The world expands
 inbox.expansion.text,"Открыт «Речной край»: мир вырос с %d до %d гексов, у нас новые соседи — Речная Лига и Орден Камня. Цель главы II — %d гексов.","“River Country” is open: the world grew from %d to %d hexes, and we have new neighbours, the River League and the Order of Stone. Chapter II goal: %d hexes."
 dl.short,УР%d,DL%d
 inbox.ai_dl.title,Сосед окреп,A neighbour grows stronger
-inbox.ai_dl.text,"%s достигли УР%d: армии сильнее, облик меняется.","%s reached DL%d: stronger armies and a new look."
+inbox.ai_dl.text,"%s достигли УР%d: армии сильнее, облик меняется.",%s reached DL%d: stronger armies and a new look.
 inbox.defense_lost.title,Оборона прорвана,Defence broken
-inbox.defense_lost.text,"%s прорвали оборону: занято гексов — %d. Верните их наступлением.","%s broke through: %d hexes occupied. Win them back with an offensive."
+inbox.defense_lost.text,%s прорвали оборону: занято гексов — %d. Верните их наступлением.,%s broke through: %d hexes occupied. Win them back with an offensive.
 inbox.counter.title,Готовится контрудар,A counter-strike is coming
 inbox.counter.text,"%s готовят удар по «%s» через %d мин. Усильте оборону: армия, укрепление, башня.","%s will strike “%s” in %d min. Strengthen it: an army, a fort, a tower."
 peace_offer.title,%s просят мира,%s ask for peace
-peace_offer.text,"%s готовы говорить о мире: вы держите %d%% фронта.","%s are ready to talk peace: you hold %d%% of the front."
+peace_offer.text,%s готовы говорить о мире: вы держите %d%% фронта.,%s are ready to talk peace: you hold %d%% of the front.
 peace_offer.quote,Довольно крови. Назовите ваши условия,Enough blood. Name your terms
 peace_offer.go,К мирной конференции,To the peace conference
 inbox.peace_offer.title,%s предлагают мир,%s offer peace
-inbox.peace_offer.text,"%s предлагают мир: вы держите %d%% фронта.","%s offer peace: you hold %d%% of the front."
+inbox.peace_offer.text,%s предлагают мир: вы держите %d%% фронта.,%s offer peace: you hold %d%% of the front.
 toast.ai_claimed,Этот гекс уже осваивают %s,%s are already settling this hex
 star.c2_port,Выход к морю: присоедините порт,To the sea: annex a port
 star.c2_defense,Стена держит: отбейте удар ИИ в главе II,The wall holds: repel an AI strike in chapter II
@@ -530,19 +530,19 @@ star.c2_colonize,Освойте 4 диких гекса в главе II,Settle 
 star.c2_camps,Разбейте 3 лагеря мародёров,Destroy 3 marauder camps
 star.c2_dl5,Доведите державу до УР5,Bring the realm to DL5
 inbox.ai_war.title,Война соседей,Neighbours at war
-inbox.ai_war.text,"%s напали на %s. Их фронт виден по штриховке; гарнизоны воюющих слабее на других границах.","%s attacked %s. Their front shows as hatching; the warring states have weaker garrisons on their other borders."
+inbox.ai_war.text,%s напали на %s. Их фронт виден по штриховке; гарнизоны воюющих слабее на других границах.,%s attacked %s. Their front shows as hatching; the warring states have weaker garrisons on their other borders.
 inbox.ai_peace.title,Соседи помирились,Neighbours made peace
-inbox.ai_peace.text,"%s и %s подписали мир: к победителю перешло гексов — %d.","%s and %s signed a peace: %d hexes went to the winner."
+inbox.ai_peace.text,%s и %s подписали мир: к победителю перешло гексов — %d.,%s and %s signed a peace: %d hexes went to the winner.
 cell.ch2_vein,Речной кристалл,River Crystal
 cell.ch2_dark_lake,Чёрная заводь,Black Backwater
 kind.raivite_vein,Райвитовая жила,Raivite vein
 kind.dark_lake,Тёмное озеро,Dark Lake
-tile.vein,"2 Райвита / 12 ч · накоплено %d/4","2 Raivites / 12 h · stored %d/4"
+tile.vein,2 Райвита / 12 ч · накоплено %d/4,2 Raivites / 12 h · stored %d/4
 star.c2_river,Форсирование: возьмите гекс атакой через реку,River crossing: take a hex attacking across a river
 kind.oil,Нефть,Oil
 res.name.oil,Нефть,Oil
 inbox.oil.title,Нефть!,Oil!
-inbox.oil.text,"Держава доросла до УР5: Тёмные озёра (%d) проснулись нефтью. Нефтяные гексы дают 25 нефти в час — она нужна для УР6 и крепостей 8+ уровня.","The realm reached DL5: %d Dark Lakes woke up as oil. Oil hexes give 25 oil an hour, needed for DL6 and level 8+ forts."
+inbox.oil.text,Держава доросла до УР5: Тёмные озёра (%d) проснулись нефтью. Нефтяные гексы дают 25 нефти в час — она нужна для УР6 и крепостей 8+ уровня.,"The realm reached DL5: %d Dark Lakes woke up as oil. Oil hexes give 25 oil an hour, needed for DL6 and level 8+ forts."
 toast.oil_awake,Тёмные озёра проснулись — нефть!,The Dark Lakes woke up: oil!
 dipl.ally,Союзник,Ally
 dipl.alliance,Союз,Alliance
@@ -554,12 +554,12 @@ toast.alliance,Союз с «%s» заключён!,Alliance with “%s” signe
 inbox.alliance.title,Союз: %s,Alliance: %s
 inbox.alliance.text,"%s — наш союзник: вступит в наши оборонительные войны, а при мнении 60+ — и в наступательные; занятые союзником гексы врага достанутся ему при мире.","%s is our ally: it joins our defensive wars, and offensive ones at opinion 60+; enemy hexes it takes stay with it at peace."
 inbox.alliance_broken.title,Союз разорван: %s,Alliance broken: %s
-inbox.alliance_broken.text,"Мы объявили войну союзнику — %s больше не с нами.","We declared war on an ally: %s no longer stands with us."
+inbox.alliance_broken.text,Мы объявили войну союзнику — %s больше не с нами.,We declared war on an ally: %s no longer stands with us.
 inbox.ally_joins.title,%s вступают в войну,%s join the war
-inbox.ally_joins.text,"Союзник %s выступил против %s и будет брать их пограничные гексы.","Our ally %s marches on %s and will take its border hexes."
+inbox.ally_joins.text,Союзник %s выступил против %s и будет брать их пограничные гексы.,Our ally %s marches on %s and will take its border hexes.
 star.c2_alliance,Рукопожатие: заключите союз с ИИ,Handshake: ally with an AI state
 inbox.ally_asks.title,%s просят помощи,%s ask for help
-inbox.ally_asks.text,"На нашего союзника %s напали %s.","Our ally %s was attacked by %s."
+inbox.ally_asks.text,На нашего союзника %s напали %s.,Our ally %s was attacked by %s.
 ally_ask.title,Союзник в беде: %s,An ally in trouble: %s
 ally_ask.text,"%s напали на %s. Поддержим золотом — армии союзника станут сильнее на 10%%, и он запомнит нашу помощь.","%s attacked %s. Back them with gold: the ally's armies get 10%% stronger, and they will remember it."
 ally_ask.support,Поддержать (%d зол.),Support (%d gold)
@@ -569,9 +569,9 @@ dipl.call,Призыв,Call in
 dipl.ai_ally,союз с «%s»,allied with “%s”
 call.cant,Призвать можно союзника с мнением 60+ в нашу войну,You can call in an ally with opinion 60+ to our war
 toast.ally_called,«%s» выступают на нашей стороне,“%s” march on our side
-toast.enemy_backed,"Союзник врага помогает: «%s» сильнее на 10%% благодаря «%s»","The enemy has a backer: “%s” is 10%% stronger thanks to “%s”"
+toast.enemy_backed,Союзник врага помогает: «%s» сильнее на 10%% благодаря «%s»,The enemy has a backer: “%s” is 10%% stronger thanks to “%s”
 inbox.ai_alliance.title,Союз соседей,Neighbours ally
-inbox.ai_alliance.text,"%s и %s заключили союз: в войне с одним из них другой поддержит союзника (+10%% Силы).","%s and %s signed an alliance: in a war with one of them the other backs its ally (+10%% strength)."
+inbox.ai_alliance.text,%s и %s заключили союз: в войне с одним из них другой поддержит союзника (+10%% Силы).,%s and %s signed an alliance: in a war with one of them the other backs its ally (+10%% strength).
 card.corps,Союзный корпус,Allied Corps
 state.alvaria,Альвария,Alvaria
 state.saren,Сарен,Saren
@@ -634,7 +634,7 @@ archetype.hegemon_turtle,Черепаха-гегемон,Turtle hegemon
 leader.conclave,Архимастер Ормдек Каменный,Archmaster Ormdek the Stone
 leader.conclave.desc,"Гегемон: ультразаборы, редко нападает сам, требует дань","Hegemon: ultra-fences, rarely attacks itself, demands tribute"
 leader.veilmark,Маркграфиня Ведана Тёмное Крыло,Margravine Vedana Darkwing
-leader.veilmark.desc,"Бьёт, когда вы воюете на другом фронте","Strikes when you fight on another front"
+leader.veilmark.desc,"Бьёт, когда вы воюете на другом фронте",Strikes when you fight on another front
 leader.lakes,Консул Арман Ночной,Consul Arman the Nocturne
 leader.lakes.desc,"Ищет союза, держит порты на озёрах","Seeks alliances, holds the lake ports"
 cell.conclave_capital,Наковальня,The Anvil
@@ -692,16 +692,16 @@ alarm.wary,"Соседи насторожены: мнение всех −10, н
 alarm.high,Соседи готовы объединиться против вас,The neighbours are ready to unite against you
 alarm.forming,Коалиция формируется: %s и ещё %d · %s,Coalition forming: %s with %d members · %s
 alarm.at_war,Война с коалицией из %d государств,At war with a coalition of %d states
-alarm.hint,"Угроза растёт от присоединений и грабежа, спадает на 0,5 в час. Подарки и мир разваливают коалицию.","Threat grows with annexations and plunder and drops by 0.5 an hour. Gifts and peace break a coalition."
+alarm.hint,"Угроза растёт от присоединений и грабежа, спадает на 0,5 в час. Подарки и мир разваливают коалицию.",Threat grows with annexations and plunder and drops by 0.5 an hour. Gifts and peace break a coalition.
 dipl.in_coalition,В коалиции,In a coalition
 ally.alarm,Соседи насторожены — новых союзов нет,The neighbours are wary — no new alliances
 toast.coalition,Коалиция формируется: %s собирает %d государства против вас!,A coalition is forming: %s gathers %d states against you!
 toast.coalition_broken,Коалиция распалась,The coalition has fallen apart
 toast.coalition_war,Коалиция объявила войну: %s,The coalition declared war: %s
 inbox.coalition.title,Коалиция формируется,A coalition is forming
-inbox.coalition.text,"%s собирает коалицию из %d государств: через 12 ч они ударят вместе. Подарки участникам могут её развалить.","%s is gathering a coalition of %d states: they will strike together in 12 h. Gifts to the members can break it up."
+inbox.coalition.text,%s собирает коалицию из %d государств: через 12 ч они ударят вместе. Подарки участникам могут её развалить.,%s is gathering a coalition of %d states: they will strike together in 12 h. Gifts to the members can break it up.
 inbox.coalition_broken.title,Коалиция распалась,The coalition has fallen apart
-inbox.coalition_broken.text,"Участники передумали — коалиции больше нет.","The members changed their minds — there is no coalition any more."
+inbox.coalition_broken.text,Участники передумали — коалиции больше нет.,The members changed their minds — there is no coalition any more.
 inbox.coalition_war.title,Война с коалицией,War with a coalition
 inbox.coalition_war.text,"%s ведёт коалицию из %d государств. Их армии сильнее, но победа принесёт Триумф.","%s leads a coalition of %d states. Their armies are stronger, but victory brings a Triumph."
 ceremony.triumph,Триумф! Трофейный сундук: %d золота и 30 Райвитов,Triumph! Trophy chest: %d gold and 30 Raivites
@@ -709,39 +709,39 @@ star.c3_triumph,Триумф: выиграйте войну с коалицие�
 legacy.line,Наследие главы %d: %s,Chapter %d legacy: %s
 legacy.builder,4-й строитель,the 4th builder
 legacy.raivite,%d Райвитов,%d Raivites
-story.ch2_league,"Лига приветствует нового соседа. Надеюсь, вы умеете не только воевать.","The League welcomes a new neighbour. I hope you can do more than fight."
-story.ch2_order,"Мы строили стены сто лет. Посмотрим, сколько строили вы.","We built our walls for a hundred years. Let us see how long you built yours."
-story.ch3_alvaria,"Альвария не просит. Альвария напоминает: дань до заката.","Alvaria does not ask. Alvaria reminds: tribute by sunset."
-story.ch3_saren,"Торговать выгоднее, чем воевать. Но мы умеем и то и другое.","Trade pays better than war. But we are good at both."
-story.ch4_conclave,"Конклав не воюет. Конклав ждёт, пока вы разобьёте лоб о наши стены.","The Conclave does not wage war. It waits for you to break your head on our walls."
-story.ch4_lakes,"Республика ценит сильных соседей — особенно тех, кто умеет остановиться.","The Republic values strong neighbours — especially those who know when to stop."
+story.ch2_league,"Лига приветствует нового соседа. Надеюсь, вы умеете не только воевать.",The League welcomes a new neighbour. I hope you can do more than fight.
+story.ch2_order,"Мы строили стены сто лет. Посмотрим, сколько строили вы.",We built our walls for a hundred years. Let us see how long you built yours.
+story.ch3_alvaria,Альвария не просит. Альвария напоминает: дань до заката.,Alvaria does not ask. Alvaria reminds: tribute by sunset.
+story.ch3_saren,"Торговать выгоднее, чем воевать. Но мы умеем и то и другое.",Trade pays better than war. But we are good at both.
+story.ch4_conclave,"Конклав не воюет. Конклав ждёт, пока вы разобьёте лоб о наши стены.",The Conclave does not wage war. It waits for you to break your head on our walls.
+story.ch4_lakes,"Республика ценит сильных соседей — особенно тех, кто умеет остановиться.",The Republic values strong neighbours — especially those who know when to stop.
 inbox.advisor.title,Советник,The advisor
-story.dl4,"«За туманом есть другие державы. Их правители испытывают друг друга на Рубежах. Хотите попробовать?»","“Beyond the fog there are other realms. Their rulers test one another on the Frontiers. Shall we try?”"
-story.dl5,"«Тёмные озёра закипели. Это нефть — и теперь за неё будут воевать все».","“The dark lakes are boiling. That is oil — and now everyone will fight for it.”"
-story.dl6,"«С конвейера сошли первые танки. Альвария больше не единственная, у кого есть сталь».","“The first tanks have rolled off the line. Alvaria is no longer the only one with steel.”"
-story.dl8,"«Над столицей поднялся первый небоскрёб. Ультразабор гудит энергосетью».","“The first skyscraper has risen over the capital. The ultra-fence hums with power.”"
+story.dl4,«За туманом есть другие державы. Их правители испытывают друг друга на Рубежах. Хотите попробовать?»,“Beyond the fog there are other realms. Their rulers test one another on the Frontiers. Shall we try?”
+story.dl5,«Тёмные озёра закипели. Это нефть — и теперь за неё будут воевать все».,“The dark lakes are boiling. That is oil — and now everyone will fight for it.”
+story.dl6,"«С конвейера сошли первые танки. Альвария больше не единственная, у кого есть сталь».",“The first tanks have rolled off the line. Alvaria is no longer the only one with steel.”
+story.dl8,«Над столицей поднялся первый небоскрёб. Ультразабор гудит энергосетью».,“The first skyscraper has risen over the capital. The ultra-fence hums with power.”
 inbox.alarm.title,Соседи шепчутся,The neighbours whisper
 inbox.alarm.text,"%s: «Стая чует, куда дует ветер. Пока — не в вашу сторону». Тревога соседей выше 50%%: мнение всех −10, новых союзов нет.","%s: “The Pack smells which way the wind blows. Not your way, for now.” Neighbours' alarm is above 50%%: opinion −10 for all, no new alliances."
 toast.alarm,Тревога соседей выше 50% — они насторожились,Neighbours' alarm is above 50% — they are wary
 ui.cancel,Отмена,Cancel
 swap.title,Обмен территориями,Territory swap
 swap.chapter,Обмен откроется в главе II,Swaps open in chapter II
-swap.war,"Сначала мир","Make peace first"
+swap.war,Сначала мир,Make peace first
 swap.opinion,Мнение %d/0 — обмен не обсуждают,Opinion %d/0 — no swaps
 swap.cooldown,Новый обмен через %s,Next swap in %s
-swap.pick,Обмен с «%s»: тапните свой гекс и его гекс,Swap with “%s”: tap your hex and theirs
+swap.pick,Обмен с «%s»: тапайте свои и его гексы (до 5 с каждой стороны),Swap with “%s”: tap your hexes and theirs (up to 5 a side)
 swap.pick_give,Теперь тапните свой гекс — что отдаёте,Now tap your hex — what you give
-swap.pick_get,"Теперь тапните гекс «%s» — что получаете","Now tap a hex of “%s” — what you get"
+swap.pick_get,Теперь тапните гекс «%s» — что получаете,Now tap a hex of “%s” — what you get
 swap.bad_hex,"Этот гекс не обменять (Ядро, столица, колонизация или чужой)","This hex can't be swapped (core, capital, colonization or someone else's)"
-swap.give,Отдаёте: %s (ценность %d),You give: %s (value %d)
-swap.get,Получаете: %s (ценность %d),You get: %s (value %d)
+swap.give,Отдаёте: %s,You give: %s
+swap.get,Получаете: %s,You get: %s
 swap.ai_view,"Оценка «%s»: получает %.1f, отдаёт %.1f","“%s” values it: gets %.1f, gives %.1f"
 swap.pay,Доплата: %d золота,Top-up: %d gold
 swap.fair,Обмен равноценный — без доплаты,A fair swap — no top-up
 swap.offer,Предложить,Propose
-toast.swap,"%s теперь наш — обмен с «%s» заключён","%s is ours — the swap with “%s” is done"
+toast.swap,+%d гекс. — обмен с «%s» заключён,+%d hexes — the swap with “%s” is done
 inbox.swap.title,Обмен территориями,Territory swap
-inbox.swap.text,"Обмен с «%s»: отдали %s, получили %s.","Swap with “%s”: gave %s, got %s."
+inbox.swap.text,"Обмен с «%s»: отдали %s, получили %s (гексов: %d → %d).","Swap with “%s”: gave %s, got %s (hexes: %d → %d)."
 star.c3_swap,Выгодная сделка: завершите обмен территориями,A good deal: complete a territory swap
 dipl.pact_btn,Пакт,Pact
 dipl.pact,Пакт о ненападении: %s,Non-aggression pact: %s
@@ -749,17 +749,17 @@ pact.ultimatum,Сначала ответьте на ультиматум,Answer 
 pact.one,Пакт может быть только один,Only one pact at a time
 pact.again,Новый пакт с ним через %s,A new pact with them in %s
 pact.opinion,Мнение %d/%d — на пакт не согласны,Opinion %d/%d — they won't sign a pact
-toast.pact,"Пакт о ненападении с «%s» на 48 ч","A 48 h non-aggression pact with “%s”"
+toast.pact,Пакт о ненападении с «%s» на 48 ч,A 48 h non-aggression pact with “%s”
 inbox.pact.title,Пакт с «%s»,Pact with “%s”
 inbox.pact.text,"«%s» подписали пакт о ненападении на 48 ч: ни войны, ни ультиматумов, в коалиции против нас они не вступают.","“%s” signed a 48 h non-aggression pact: no war, no ultimatums, and they stay out of coalitions against us."
 dipl.separate,Сепаратный мир,Separate peace
-separate.cant,"Сепаратный мир — только с участником коалиции и пока война не проиграна","A separate peace is only for a coalition member while the war isn't lost"
+separate.cant,Сепаратный мир — только с участником коалиции и пока война не проиграна,A separate peace is only for a coalition member while the war isn't lost
 toast.separate,«%s» вышли из коалиции: сепаратный мир,“%s” left the coalition: a separate peace
 inbox.separate.title,Сепаратный мир с «%s»,Separate peace with “%s”
-inbox.separate.text,"«%s» вышли из войны: перемирие 24 ч. Армии «%s» больше не несут их силу.","“%s” left the war: a 24 h truce. The armies of “%s” no longer carry their strength."
+inbox.separate.text,«%s» вышли из войны: перемирие 24 ч. Армии «%s» больше не несут их силу.,“%s” left the war: a 24 h truce. The armies of “%s” no longer carry their strength.
 toast.subsidy,«%s» спонсируют «%s»: их армии +10%% на 12 ч,“%s” fund “%s”: their armies +10%% for 12 h
 inbox.subsidy.title,Субсидия врагу,A subsidy to the enemy
-inbox.subsidy.text,"«%s» тревожатся нашим ростом и спонсируют «%s»: армии врага +10%% на 12 ч.","“%s” are alarmed by our growth and fund “%s”: enemy armies +10%% for 12 h."
+inbox.subsidy.text,«%s» тревожатся нашим ростом и спонсируют «%s»: армии врага +10%% на 12 ч.,“%s” are alarmed by our growth and fund “%s”: enemy armies +10%% for 12 h.
 card.landing,Десант,Landing
 card.missile,Ракета,Missile
 floater.landing,Десант!,Landing!
@@ -834,3 +834,16 @@ toast.cal_claim,Награда календаря: %s,Calendar reward: %s
 pack.pass,Военный пропуск,War Pass
 pack.pass.desc,"Премиум-ветка сезона: 40 наград сверх бесплатных — ящики, Райвиты, осколки и косметика.","The season's premium track: 40 rewards on top of the free ones — crates, Raivites, shards and cosmetics."
 pack.period_season,/ сезон,/ season
+swap.value,ценность,value
+swap.max,Не больше %d гексов с каждой стороны,No more than %d hexes a side
+swap.tag_give,отдаём,give
+swap.tag_get,берём,get
+swap.border,Граница с «%s»: %d → %d рёбер,Border with “%s”: %d → %d edges
+swap.more,Добавить гексы,Add hexes
+swap.more_hint,Тапайте ещё гексы; повторный тап убирает гекс из обмена,Tap more hexes; tap again to drop a hex from the swap
+swap.ai_offer_title,«%s» предлагает обмен,“%s” proposes a swap
+swap.ai_offer_line,Выпрямим границу — обоим проще её держать. Предложение действует сутки.,Let's straighten the border — easier for both of us to hold. The offer stands for a day.
+swap.accept,Согласиться,Accept
+swap.decline,Отказаться,Decline
+inbox.swap_offer.title,«%s» предлагает обмен,“%s” proposes a swap
+inbox.swap_offer.text,"«%s» предлагает обменять гексы, чтобы выпрямить общую границу. Ответить можно в течение суток.",“%s” offers to swap hexes to straighten the common border. You can answer within a day.

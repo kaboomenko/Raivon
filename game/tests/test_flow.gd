@@ -822,11 +822,44 @@ func _run() -> void:
 		var cap_s: int = g.sim.states[sw_state]["capital_id"]
 		_check(not g._swappable(cap_s, sw_state) and not g._swappable(g.sim.states[Types.PLAYER]["capital_id"], Types.PLAYER), "capitals never swap")
 		g.econ.res["gold"] = 100000
-		g._swap = {"state": sw_state, "give": sw_give, "get": sw_get}
-		g._swap_do(0, 0.0)
+		g._swap = {"state": sw_state, "give": [], "get": []}
+		g._swap_pick(sw_give)
+		g._swap_pick(sw_give)
+		_check((g._swap["give"] as Array).is_empty(), "a second tap drops the hex from the package")
+		g._swap_pick(sw_give)
+		g._swap_pick(sw_get)
+		_check(g.ui.has_modal() and (g._swap["give"] as Array) == [sw_give], "both sides picked: the offer panel")
+		var b0: int = g._border_len(sw_state)
+		var b1: int = g._border_len(sw_state, g._swap_over(sw_state, [sw_give], [sw_get]))
+		_check(b0 > 0 and b1 >= 0, "border length before %d, after %d" % [b0, b1])
+		g.ui.close_modal()
+		g._swap = {}
+		var terms: Dictionary = g._swap_terms(sw_state, [sw_give], [sw_get])
+		_check(g._swap_execute(sw_state, [sw_give], [sw_get], int(terms["gold"]), float(terms["overpay"])), "the swap goes through")
 		_check(int(g.sim.cells[sw_get]["owner"]) == Types.PLAYER and int(g.sim.cells[sw_give]["owner"]) == sw_state, "the hexes changed hands")
 		_check(g._swap_reason(sw_state) != "", "one swap per 24 h")
 		_check(int(g.stats.get("swaps", 0)) >= 1, "«Выгодная сделка» counts the swap")
+	# AI swap offers (06 §9.1 S4): the Fox looks every 48 h for a border-straightening package
+	var fox := -1
+	for st in g._ai_states():
+		if String(g.sim.states[st]["archetype"]) == "fox" and g._swap_reason(st) == "":
+			fox = st
+	_check(not g.SWAP_OFFER_SEC.has("wolf") and int(g.SWAP_OFFER_SEC["fox"]) == 48 * 3600, "the Fox offers every 48 h, the Wolf never")
+	if fox >= 0:
+		var pk: Dictionary = g._ai_swap_package(fox)
+		if not pk.is_empty():
+			var cut: int = g._border_len(fox) - g._border_len(fox, g._swap_over(fox, pk["give"], pk["get"]))
+			_check(cut >= 2 and (pk["give"] as Array).size() <= 2 and float(g._swap_terms(fox, pk["give"], pk["get"])["pay"]) <= 1.0,
+				"the AI package shortens the border by %d edges, top-up ≤ 1 unit" % cut)
+			g.swap_offer = {"state": fox, "give": pk["give"], "get": pk["get"], "until": g.now_s() + 86400, "auto": false}
+			g._show_swap_offer()
+			_check(g.ui.has_modal(), "the AI offer opens")
+			g.ui.close_modal()
+		g.swap_offer_at[fox] = 0
+		g.swap_offer = {}
+		g._ai_swap_tick(g.now_s())
+		_check(int(g.swap_offer_at[fox]) > g.now_s(), "the Fox's next look is scheduled")
+		g.swap_offer = {}
 	# Non-aggression pact (06 §11): 8 h of gold, 48 h, archetype threshold, one at a time, no war in the pair
 	var pst: int = g._ai_states()[0]
 	g.ultimatum = {}  # an open ultimatum blocks a pact with its sender; the daily rolls depend on the clock

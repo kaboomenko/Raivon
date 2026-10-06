@@ -74,6 +74,8 @@ static func to_dict(g: Node) -> Dictionary:
 		"coalition": g.coalition,
 		"coalition_last": g.coalition_last,
 		"swap_at": g.swap_at,
+		"swap_offer_at": g.swap_offer_at,
+		"swap_offer": g.swap_offer,
 		"pacts": g.pacts,
 		"ult_check": g.ult_check,
 		"ai_colonizing": g.ai_colonizing,
@@ -240,6 +242,20 @@ static func apply(g: Node, d: Dictionary) -> bool:
 	g.pacts = {}
 	for k in pc:
 		g.pacts[int(k)] = int(pc[k])
+	g.swap_offer_at = {}
+	var so_at: Dictionary = d.get("swap_offer_at", {})
+	for k in so_at:
+		g.swap_offer_at[int(k)] = int(so_at[k])
+	g.swap_offer = {}
+	var swo: Dictionary = d.get("swap_offer", {})
+	if not swo.is_empty():
+		var swo_give: Array = []
+		var swo_get: Array = []
+		for h in swo.get("give", []):
+			swo_give.append(int(h))
+		for h in swo.get("get", []):
+			swo_get.append(int(h))
+		g.swap_offer = {"state": int(swo.get("state", -1)), "give": swo_give, "get": swo_get, "until": int(swo.get("until", 0)), "auto": bool(swo.get("auto", false))}
 	var sw_at: Dictionary = d.get("swap_at", {})
 	g.swap_at = {}
 	for k in sw_at:
