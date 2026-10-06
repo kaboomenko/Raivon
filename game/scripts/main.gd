@@ -2788,6 +2788,8 @@ func _ai_tick(now: int) -> void:
 			map_view.strike_arrow(int(war["strike_from"]), int(war["strike_hex"]), "⚔ " + GameUI.fmt_time(left))
 	if war.has("started") and now - int(war["started"]) >= WAR_CAP_SEC and mode in [Mode.MAP, Mode.WAR]:
 		_war_cap()
+		return
+	_peace_offer()
 
 
 ## Archetype ultimatums (canon §10.4): once a day each neighbour that is stronger than the player rolls its chance
@@ -2931,6 +2933,30 @@ func _resolve_strike() -> void:
 	ui.toast(L.t(msg))
 	_refresh_ui()
 	_autosave()
+
+
+## The AI asks for peace when the player holds the front (canon §10.4): Fox ≥60%, Owl and Turtle ≥65%,
+## Raven ≥70%, Wolf ≥75% of control. Once per war; the conference opens with the recommended package.
+const PEACE_AT := {"fox": 60, "owl": 65, "turtle": 65, "raven": 70, "wolf": 75}
+
+
+func _peace_offer() -> void:
+	if war.has("offered") or mode != Mode.WAR or ftue != 0 or ui.has_modal():
+		return
+	var enemy: int = war["enemy"]
+	var ws := War.war_score(sim, war)
+	var need: int = PEACE_AT.get(String(sim.states[enemy]["archetype"]), 70)
+	if int(ws["control"]) < need or float(ws["score"]) < 10.0:
+		return
+	war["offered"] = 1
+	sfx.play("seal")
+	_post(L.pack("inbox.peace_offer.title", [_state_key(enemy)]), L.pack("inbox.peace_offer.text", [_state_key(enemy), int(ws["control"])]))
+	ui.show_info(tr("peace_offer.title") % _state_name(enemy), [
+		tr("peace_offer.text") % [_state_name(enemy), int(ws["control"])],
+		"%s — «%s»" % [tr(String(LEADERS.get(enemy, ["", "", ""])[0])) if LEADERS.has(enemy) else _state_name(enemy), tr("peace_offer.quote")],
+	], tr("peace_offer.go"), func():
+		ui.close_modal()
+		_open_peace())
 
 
 ## Auto-defense (canon §9.11): the AI's 90 s offensive is played out at once on the same engine; the player's

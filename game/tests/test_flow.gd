@@ -577,6 +577,17 @@ func _run() -> void:
 			if int(g.sim.cells[id]["controller"]) != Types.PLAYER:
 				core_safe = false
 		_check(core_safe, "the player's core is never taken in auto-defense")
+		# the Barons (Wolf) ask for peace once the player holds ≥75% of the front
+		var bcore := MapGen.core_of(g.sim, MapGen.BARONS)
+		for c in g.sim.cells:
+			if (int(c["owner"]) == MapGen.BARONS and not bcore.has(c["id"]) or int(c["owner"]) == Types.PLAYER) and Types.is_passable(c):
+				c["controller"] = Types.PLAYER
+		g.ui.close_modal()
+		g._set_mode(g.Mode.WAR)
+		g.war["battles"] = 10
+		g._peace_offer()
+		_check(g.war.has("offered") and g.ui.has_modal(), "the Wolf offers peace at %d%% control" % int(War.war_score(g.sim, g.war)["control"]))
+		g.ui.close_modal()
 		War.white_peace(g.sim)
 		g._finish_war(MapGen.BARONS, "")
 	g.truce = {}
