@@ -536,3 +536,4 @@ cell.ch2_dark_lake,Чёрная заводь,Black Backwater
 kind.raivite_vein,Райвитовая жила,Raivite vein
 kind.dark_lake,Тёмное озеро,Dark Lake
 tile.vein,"2 Райвита / 12 ч · накоплено %d/4","2 Raivites / 12 h · stored %d/4"
+star.c2_river,Форсирование: возьмите гекс атакой через реку,River crossing: take a hex attacking across a river

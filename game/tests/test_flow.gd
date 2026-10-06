@@ -528,7 +528,7 @@ func _run() -> void:
 	_check(g.chapter == 2 and g.sim.states.size() == 6 and g._land_count() == 90, "world expanded to 90 land hexes, 2 new states")
 	_check(g._chapter_goal() == 36 and g._colonize_seconds() == 300, "chapter II goal 36, colonization 5 min")
 	var wi: Array = g._world_items()
-	_check(wi.size() == 1 + 8 + 7 and String(wi[1]["id"]) == "c2_port", "World tab lists chapter II stars first (%d items)" % wi.size())
+	_check(wi.size() == 1 + 8 + 8 and String(wi[1]["id"]) == "c2_port", "World tab lists chapter II stars first (%d items)" % wi.size())
 	g.stats["camps"] = int(g.stats_base.get("camps", 0)) + 3
 	var rvs: int = g.econ.res["raivite"]
 	g._on_world_action("c2_camps")

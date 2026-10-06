@@ -327,4 +327,5 @@ static func clone_world(w: World) -> World:
 		out.cells.append(c.duplicate())
 	for s in w.states:
 		out.states.append(s.duplicate())
+	out.rivers = w.rivers
 	return out

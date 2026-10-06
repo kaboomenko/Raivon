@@ -46,6 +46,7 @@ func _init() -> void:
 		["AI counteroffensive identical to TS, core safe (seeds 1..10)", _test_ai_counter],
 		["cards: defense, airstrike, encircle, breakthrough", _test_cards],
 		["towers hit adjacent enemy armies in clashes", _test_towers],
+		["rivers: attacking across a river is 25% weaker", _test_river],
 		["war: treaty never takes the enemy core", _test_treaty],
 		["war: identical to TS (score, demands, package)", _test_treaty_matches_ts],
 		["war: stars follow the canon", _test_stars],
@@ -578,3 +579,14 @@ func _test_towers() -> void:
 	for i in 20:
 		b3.step()
 	_check(str0 - int(def2["str"]) == int(def3["max_str"]) - int(def3["str"]), "tower on an occupied hex is silent")
+
+
+func _test_river() -> void:
+	var d := _duel(100, 91)
+	var b: Battle = d["b"]
+	var src: int = d["attacker"]["hex"]
+	var f0: float = b.forecast(PLAYER, [d["attacker"]["id"]], d["target"])["f"]
+	b.world.rivers[World.edge_key(src, d["target"])] = true
+	var f1: float = b.forecast(PLAYER, [d["attacker"]["id"]], d["target"])["f"]
+	b.world.rivers = {}
+	_check(f1 < f0 and absf(f1 * f1 / (f0 * f0) - 0.75) < 0.02, "F across a river %.3f vs %.3f (W ×0.75)" % [f1, f0])

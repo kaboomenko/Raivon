@@ -67,10 +67,19 @@ func _initialize() -> void:
 		for n in w.neighbors[id]:
 			if n >= 0 and int(w.cells[n]["owner"]) in [RingGen.LEAGUE, RingGen.ORDER]:
 				_check(false, "player core touches a new state at %d" % n)
+	# rivers: chains of edges between two land hexes, never along the player core
+	_check(w.rivers.size() >= 4, "rivers generated (%d edges)" % w.rivers.size())
+	var core1 := MapGen.core_of(w, Types.PLAYER)
+	for e in w.rivers:
+		var ab: PackedStringArray = String(e).split(":")
+		var a := int(ab[0])
+		var b := int(ab[1])
+		if not (w.neighbors[a].has(b) and Types.is_passable(w.cells[a]) and Types.is_passable(w.cells[b])) or core1.has(a) or core1.has(b):
+			_check(false, "bad river edge %s" % e)
 	# deterministic
 	var w2 := MapGen.generate_chapter_one(20261004)
 	RingGen.extend_chapter_two(w2, 20261004 ^ 0x2)
-	var eq := w2.cells.size() == w.cells.size()
+	var eq := w2.cells.size() == w.cells.size() and w2.rivers == w.rivers
 	for i in mini(w.cells.size(), w2.cells.size()):
 		if w.cells[i] != w2.cells[i]:
 			eq = false

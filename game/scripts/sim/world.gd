@@ -11,6 +11,16 @@ var neighbors: Array[PackedInt32Array] = []
 var by_key: Dictionary = {}
 ## Indexed by StateId (0 = nobody/wild, 1 = player, 2 = Barons, 3 = Hamlets).
 var states: Array[Dictionary] = []
+## River edges (canon §5.1: a river runs along hex edges, attacks across it −25%): "a:b" (a < b) -> true.
+var rivers: Dictionary = {}
+
+
+static func edge_key(a: int, b: int) -> String:
+	return "%d:%d" % [mini(a, b), maxi(a, b)]
+
+
+func is_river(a: int, b: int) -> bool:
+	return not rivers.is_empty() and rivers.has(edge_key(a, b))
 
 
 func cell(id: int) -> Dictionary:

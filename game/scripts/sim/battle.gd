@@ -210,6 +210,7 @@ func forms_for(side: int, target: int, attacker_hexes: Array) -> Dictionary:
 	for h in attacker_hexes:
 		distinct[h] = true
 	return {
+		"target": target,
 		"wedge": distinct.size() >= 2,
 		"encircle": _controlled_neighbors(target, side) >= 4 or not is_supplied(target, enemy),
 		"corridor": _controlled_neighbors(target, side) == 1,
@@ -227,6 +228,8 @@ func _atk_mult(army: Dictionary, f: Dictionary, breakthrough: bool) -> int:
 		m += 500
 	if not is_supplied(army["hex"], army["side"]):
 		m -= 200
+	if f.has("target") and world.is_river(int(army["hex"]), int(f["target"])):
+		m -= 250  # attacking across a river (canon §5.1)
 	return maxi(200, m)
 
 
@@ -742,7 +745,11 @@ func _capture(cl: Dictionary, atk: Array) -> void:
 		_captured.erase(target)
 		if cell["owner"] == attacker():
 			_lost[target] = true
-	events.append({"type": "capture", "tick": tick, "hex": target, "side": side, "from": from})
+	var across := false
+	for a in atk:
+		if world.is_river(int(a["hex"]), target):
+			across = true
+	events.append({"type": "capture", "tick": tick, "hex": target, "side": side, "from": from, "river": across})
 	if cl["corridor"]:
 		_effects.append({"kind": "weak", "hex": target, "left": 20 * TICKS_PER_SEC})
 

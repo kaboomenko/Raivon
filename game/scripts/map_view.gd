@@ -55,10 +55,60 @@ func set_world(w) -> void:
 	for c in _horizon_root.get_children():
 		c.queue_free()
 	_build_terrain()
+	_build_rivers()
 	refresh_props()
 	rng.seed = 11
 	_build_horizon()
 	_dirty = true
+
+
+var _river_mi: MeshInstance3D
+
+
+## Rivers run along hex edges (canon §5.1): a blue ribbon on every river edge with round joints.
+func _build_rivers() -> void:
+	if _river_mi:
+		_river_mi.queue_free()
+		_river_mi = null
+	if sim.rivers.is_empty():
+		return
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var y := 0.05
+	var w := 0.11
+	for e in sim.rivers:
+		var ab: PackedStringArray = String(e).split(":")
+		var ca := cell_world(int(ab[0]))
+		var cb := cell_world(int(ab[1]))
+		var mid := (ca + cb) / 2.0
+		var across := (cb - ca).normalized()
+		var along := Vector3(-across.z, 0, across.x)
+		var p := mid - along * 0.5
+		var q := mid + along * 0.5
+		var quad := [p - across * w, q - across * w, q + across * w, p + across * w]
+		for i in [0, 1, 2, 0, 2, 3]:
+			st.set_normal(Vector3.UP)
+			st.add_vertex((quad[i] as Vector3) + Vector3(0, y, 0))
+		for c in [p, q]:
+			for k in 8:
+				var a0 := TAU * k / 8.0
+				var a1 := TAU * (k + 1) / 8.0
+				st.set_normal(Vector3.UP)
+				st.add_vertex(c + Vector3(0, y, 0))
+				st.add_vertex(c + Vector3(cos(a1) * w, y, sin(a1) * w))
+				st.add_vertex(c + Vector3(cos(a0) * w, y, sin(a0) * w))
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.22, 0.58, 0.95)
+	m.roughness = 0.12
+	m.metallic = 0.2
+	m.emission_enabled = true
+	m.emission = Color(0.05, 0.25, 0.5)
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_river_mi = MeshInstance3D.new()
+	_river_mi.mesh = st.commit()
+	_river_mi.material_override = m
+	_river_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_river_mi)
 
 
 func cell_world(id: int) -> Vector3:

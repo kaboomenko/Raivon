@@ -1283,6 +1283,8 @@ func _handle_event(ev: Dictionary) -> void:
 			sfx.play("clash", 0, -6.0)
 		"capture":
 			sfx.play("capture" if mine else "lost")
+			if mine and bool(ev.get("river", false)):
+				_stat("river_crossings")  # «Форсирование»
 			map_view.smoke(ev["hex"], 5.0, true)
 			map_view.burst(ev["hex"], MapView.C_PLAYER if mine else MapView.C_WAR, true)
 			map_view.floater(ev["hex"], tr("floater.occupied") if mine else tr("floater.lost"), Color(0.75, 0.85, 1.0) if mine else Color(1.0, 0.7, 0.7))
@@ -2411,6 +2413,7 @@ func _stat(key: String) -> void:
 ## opening (`stats_base`), «@ports» counts the ports the player owns.
 const STARS_2 := [
 	["c2_port", "star.c2_port", "@ports", 1],
+	["c2_river", "star.c2_river", "river_crossings", 1],
 	["c2_defense", "star.c2_defense", "defenses", 1],
 	["c2_pocket4", "star.c2_pocket4", "pockets4", 1],
 	["c2_ultimatum", "star.c2_ultimatum", "ult_wins", 1],

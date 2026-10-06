@@ -56,7 +56,9 @@ static func extend_chapter_two(w: World, seed_value: int) -> bool:
 	for attempt in 50:
 		var add := _try(w, seed_value + attempt * 104729)
 		if not add.is_empty():
+			var first_new := w.cells.size()
 			_apply(w, add)
+			_rivers(w, first_new, seed_value + attempt * 104729)
 			return true
 	push_error("ring II generator: no valid ring found")
 	return false
@@ -400,6 +402,107 @@ static func validate(w: World, add: Dictionary) -> Array[String]:
 		if seen.size() != mset.size():
 			problems.append("disconnected: %s" % ("all land" if s == -1 else "state %d" % s))
 	return problems
+
+
+## Rivers (02 §15.2 step 5): 2–3 chains of hex edges in the ring that start by the mountains and run outward
+## to the sea or the edge of the world; only edges between two land hexes count. Never along the player's core.
+static func _rivers(w: World, first_new: int, seed_value: int) -> void:
+	var rng := Rng.new(seed_value ^ 0x51AE)
+	var corners := {}  # corner key -> {pos: Vector2, links: {corner key: [cell a, cell b]}}
+	for c in w.cells:
+		var ctr := _center(int(c["q"]), int(c["r"]))
+		var pts: Array = []
+		for k in 6:
+			pts.append(ctr + Vector2(cos(PI / 3.0 * k), sin(PI / 3.0 * k)))
+		for k in 6:
+			var p: Vector2 = pts[k]
+			var q: Vector2 = pts[(k + 1) % 6]
+			var mid := (p + q) / 2.0
+			var other := _cell_at(w, ctr + 2.0 * (mid - ctr))
+			var kp := _ckey(p)
+			var kq := _ckey(q)
+			for pair in [[kp, p, kq], [kq, q, kp]]:
+				if not corners.has(pair[0]):
+					corners[pair[0]] = {"pos": pair[1], "links": {}}
+				corners[pair[0]]["links"][pair[2]] = [int(c["id"]), other]
+	var core := MapGen.core_of(w, Types.PLAYER)
+	var land := func(id: int) -> bool:
+		return id >= 0 and Types.is_passable(w.cells[id])
+	var starts: Array = []
+	for k in corners:
+		var near_mountain := false
+		var ring_land := 0
+		for ok in corners[k]["links"]:
+			for id in corners[k]["links"][ok]:
+				if id >= first_new and w.cells[id]["terrain"] == "mountain":
+					near_mountain = true
+				if id >= first_new and land.call(id):
+					ring_land += 1
+		if near_mountain and ring_land >= 2:
+			starts.append(k)
+	starts.sort()
+	starts = rng.shuffle(starts)
+	var made := 0
+	for s0 in starts:
+		if made >= 3:
+			break
+		var path_edges: Array = []
+		var seen := {s0: true}
+		var cur: String = s0
+		for step in 14:
+			var best := ""
+			var best_d := -1.0
+			for nk in corners[cur]["links"]:
+				if seen.has(nk):
+					continue
+				var cells_e: Array = corners[cur]["links"][nk]
+				if cells_e[1] < 0 and cells_e[0] < first_new:
+					continue
+				var d: float = (corners[nk]["pos"] as Vector2).length() + float(rng.next_int(100)) / 250.0
+				if d > best_d:
+					best_d = d
+					best = nk
+			if best == "":
+				break
+			var pair: Array = corners[cur]["links"][best]
+			var a: int = pair[0]
+			var b: int = pair[1]
+			seen[best] = true
+			cur = best
+			if a < 0 or b < 0 or not land.call(a) or not land.call(b):
+				if (a >= 0 and w.cells[a]["terrain"] == "water") or (b >= 0 and w.cells[b]["terrain"] == "water") or a < 0 or b < 0:
+					break  # reached the sea or the edge of the world
+				continue
+			if core.has(a) or core.has(b) or (a < first_new and b < first_new):
+				continue
+			path_edges.append(World.edge_key(a, b))
+		var fresh := path_edges.filter(func(e): return not w.rivers.has(e))
+		if fresh.size() >= 4:
+			for e in fresh:
+				w.rivers[e] = true
+			made += 1
+
+
+static func _center(q: int, r: int) -> Vector2:
+	return Vector2(1.5 * q, sqrt(3.0) * (r + q / 2.0))
+
+
+static func _ckey(p: Vector2) -> String:
+	return "%d,%d" % [roundi(p.x * 100.0), roundi(p.y * 100.0)]
+
+
+static func _cell_at(w: World, p: Vector2) -> int:
+	var q := p.x / 1.5
+	var r := p.y / sqrt(3.0) - q / 2.0
+	var s := -q - r
+	var rq := roundf(q)
+	var rr := roundf(r)
+	var rs := roundf(s)
+	if absf(rq - q) > absf(rr - r) and absf(rq - q) > absf(rs - s):
+		rq = -rr - rs
+	elif absf(rr - r) > absf(rs - s):
+		rr = -rq - rs
+	return w.id_at(int(rq), int(rr))
 
 
 static func _apply(w: World, add: Dictionary) -> void:
