@@ -590,8 +590,8 @@ func _run() -> void:
 			aia = true
 			break
 	_check(aia, "AI neighbours sign an alliance (%s)" % str(g.ai_alliances))
-	var dip: Array = g._diplomacy_items(g.now_s())
-	_check(dip.size() == 4, "diplomacy lists 4 neighbours")
+	var dip: Array = g._diplomacy_items(g.now_s()).filter(func(x): return not x.has("kind"))
+	_check(dip.size() == 4, "diplomacy lists 4 neighbours (after the alarm bar)")
 	var forts := 0
 	for c in g.sim.cells:
 		if int(c["owner"]) == 5 and int(c["fort"]) > 0:
@@ -778,6 +778,33 @@ func _run() -> void:
 	g._econ_tick()
 	_check(g.econ.factory_pct() == 5 and int(g.econ.build_cost("tower")["seconds"]) == cost0 * 95 / 100, "a factory cuts timers by 5%% (%d -> %d)" % [cost0, int(g.econ.build_cost("tower")["seconds"])])
 	_check(g._star_progress(g.STARS_3[0]) == 1, "«Индустриализация» counts the factory")
+	# Threat and coalitions (canon §10.8): threshold 50 in chapter III; ≥50% — wary, 100% — a coalition forms
+	g.truce = {}
+	g.war = {}
+	g.allies = []
+	g._set_mode(g.Mode.MAP)
+	g.threat = 30.0
+	g.threat_at = g.now_s()
+	_check(absf(g.alarm() - 0.6) < 0.01 and g._ally_reason(4) == g.tr("ally.alarm"), "alarm 60 percent: no new alliances")
+	for st in g._ai_states():
+		g.opinion[st] = -40.0
+	g.threat = 60.0
+	g.coalition_last = 0
+	g._coalition_tick(g.now_s())
+	_check(not g.coalition.is_empty() and (g.coalition["members"] as Array).size() >= 2, "a coalition forms at 120%% (%s)" % str(g.coalition.get("members", [])))
+	var dipc: Array = g._diplomacy_items(g.now_s())
+	_check(String(dipc[0].get("kind", "")) == "alarm" and int(dipc[0]["pct"]) == 120, "Diplomacy shows the alarm bar first")
+	g.time_offset += 12 * 3600 + 60
+	g._coalition_tick(g.now_s())
+	_check(not g.war.is_empty() and g.war.has("coalition") and g.war.has("strike_at"), "after 12 h the coalition declares war with a first strike")
+	_check(int(g.war["enemy"]) == g._coalition_leader(g.war["coalition"]), "the leader fights the war")
+	Save.save(g)
+	var gc: Node = load("res://scenes/main.tscn").instantiate()
+	gc.save_enabled = false
+	_check(Save.apply(gc, Save.read()) and (gc.war.get("coalition", []) as Array).size() == (g.war["coalition"] as Array).size(), "a coalition war survives a save")
+	gc.free()
+	g._finish_war(int(g.war["enemy"]), "test")
+	_check(g.war.is_empty(), "the coalition war ends")
 	Save.save(g)
 	var g4: Node = load("res://scenes/main.tscn").instantiate()
 	g4.save_enabled = false

@@ -981,6 +981,8 @@ func show_diplomacy(items: Array) -> void:
 
 
 func _diplomacy_card(it: Dictionary) -> Control:
+	if String(it.get("kind", "")) == "alarm":
+		return _alarm_card(it)
 	var card := Panel.new()
 	card.custom_minimum_size = Vector2(304, 178)
 	var col: Color = it["color"]
@@ -1053,6 +1055,40 @@ func _diplomacy_card(it: Dictionary) -> Control:
 	lg.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	bg.add_child(lg)
 	bg.gui_input.connect(func(e): if _is_tap(e): diplomacy_action.emit(id, "gift"))
+	return card
+
+
+## «Тревога соседей» (canon §10.8): threat / coalition threshold as a bar, what it means now, how to calm it.
+func _alarm_card(it: Dictionary) -> Control:
+	var card := Panel.new()
+	card.custom_minimum_size = Vector2(304, 178)
+	var pct: int = it["pct"]
+	var hot := Color(0.95, 0.3, 0.25) if pct >= 100 else (Color(1.0, 0.7, 0.2) if pct >= 50 else Color(0.4, 0.8, 0.5))
+	card.add_theme_stylebox_override("panel", _style(Color(0.1, 0.14, 0.22), 12, hot, 3))
+	card.mouse_filter = Control.MOUSE_FILTER_PASS
+	var t := _label(tr("alarm.title"), 18, hot.lightened(0.3))
+	t.position = Vector2(12, 6)
+	card.add_child(t)
+	var pl := _label("%d%%" % mini(pct, 999), 18, hot.lightened(0.3))
+	pl.position = Vector2(220, 6)
+	pl.size = Vector2(72, 26)
+	pl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	card.add_child(pl)
+	var bar := _panel(card, Rect2(12, 38, 280, 14), _style(Color(1, 1, 1, 0.1), 7, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
+	_panel(bar, Rect2(0, 0, 280.0 * clampf(pct / 100.0, 0.0, 1.0), 14), _style(hot, 7, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
+	_panel(bar, Rect2(139, -3, 2, 20), _style(Color(1, 1, 1, 0.55), 1, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)  # 50%
+	var ln := _label(it["line"], 15, TEXT, false)
+	ln.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	ln.custom_minimum_size = Vector2(284, 0)
+	ln.position = Vector2(12, 60)
+	ln.size = Vector2(284, 44)
+	card.add_child(ln)
+	var h := _label(tr("alarm.hint"), 13, MUTED, false)
+	h.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	h.custom_minimum_size = Vector2(284, 0)
+	h.position = Vector2(12, 108)
+	h.size = Vector2(284, 64)
+	card.add_child(h)
 	return card
 
 

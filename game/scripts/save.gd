@@ -69,6 +69,10 @@ static func to_dict(g: Node) -> Dictionary:
 		"stats_base": g.stats_base,
 		"stats_base3": g.stats_base3,
 		"stats_base4": g.stats_base4,
+		"threat": g.threat,
+		"threat_at": g.threat_at,
+		"coalition": g.coalition,
+		"coalition_last": g.coalition_last,
 		"ult_check": g.ult_check,
 		"ai_colonizing": g.ai_colonizing,
 		"ai_wars": g.ai_wars,
@@ -134,7 +138,13 @@ static func apply(g: Node, d: Dictionary) -> bool:
 	var war := {}
 	var sw: Dictionary = d.get("war", {})
 	for k in sw:
-		war[k] = int(sw[k])
+		if typeof(sw[k]) == TYPE_ARRAY:  # war["coalition"]: the member states
+			var arr: Array = []
+			for v in sw[k]:
+				arr.append(int(v))
+			war[k] = arr
+		else:
+			war[k] = int(sw[k])
 	var truce := {}
 	var st: Dictionary = d.get("truce", {})
 	for k in st:
@@ -216,6 +226,16 @@ static func apply(g: Node, d: Dictionary) -> bool:
 	g.stats_base3 = {}
 	for k in sb3:
 		g.stats_base3[String(k)] = int(sb3[k])
+	g.threat = float(d.get("threat", 0.0))
+	g.threat_at = int(d.get("threat_at", 0))
+	g.coalition_last = int(d.get("coalition_last", 0))
+	var co: Dictionary = d.get("coalition", {})
+	g.coalition = {}
+	if not co.is_empty():
+		var mem: Array = []
+		for m in co.get("members", []):
+			mem.append(int(m))
+		g.coalition = {"leader": int(co.get("leader", -1)), "members": mem, "at": int(co.get("at", 0))}
 	var sb4: Dictionary = d.get("stats_base4", {})
 	g.stats_base4 = {}
 	for k in sb4:

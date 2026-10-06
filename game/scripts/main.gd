@@ -65,6 +65,10 @@ var _mill := -1
 var _flak_tick := -1
 var stats_base3 := {}  # stats at the opening of chapter III (its stars count from there)
 var stats_base4 := {}  # … and of chapter IV
+var threat := 0.0        # «Угроза» (canon §10.8): annexations, plunder, treachery; −0.5 per hour
+var threat_at := 0       # last decay time
+var coalition := {}      # forming: {leader, members, at}; the war itself carries war["coalition"]
+var coalition_last := 0  # last formation (not more than once in 5 days)
 var _ftue_next := 0  # step to resume after the peace ceremony
 var _raid := {}  # FTUE marauder raid: {hex, at}
 var econ  # Economy (scripts/sim/economy.gd)
@@ -836,6 +840,154 @@ func _states_touch(a: int, b: int) -> bool:
 
 ## Alliances (canon §10.7): opinion ≥50 (an Owl ≥40), no war or truce between you, as many allies as the
 ## Embassy allows by DL (1 at DL3, 2 at DL5, 3 at DL7). "" when an alliance can be offered, else the reason.
+# ---------------------------------------------------------------------- threat and coalitions (canon §10.8)
+
+const COALITION_THRESHOLD: Array[int] = [0, 0, 60, 50]  # by chapter; none in chapter I
+const COALITION_FORM_SEC := 12 * 3600
+const COALITION_COOLDOWN_SEC := 5 * 86400
+
+
+func _coalition_threshold() -> int:
+	return COALITION_THRESHOLD[mini(chapter, COALITION_THRESHOLD.size() - 1)]
+
+
+## «Тревога соседей» = threat / threshold: <0.5 calm, 0.5–1 wary (opinion −10, no new alliances), 1 — coalition.
+func alarm() -> float:
+	var th := _coalition_threshold()
+	return 0.0 if th <= 0 else threat / float(th)
+
+
+## Who would join now: AI states with opinion ≤ 0 bordering the player or an ally, not allied with us (2–4).
+func _coalition_candidates() -> Array:
+	var out: Array = []
+	for s in _ai_states():
+		if allies.has(s) or _truce_left(s) > 0 or _opinion_of(s) > 0.0:
+			continue
+		var touches := false
+		for c in sim.cells:
+			if c["owner"] == s and Types.is_passable(c):
+				for n in sim.neighbors[c["id"]]:
+					if n >= 0 and (sim.cells[n]["owner"] == Types.PLAYER or allies.has(int(sim.cells[n]["owner"]))):
+						touches = true
+						break
+			if touches:
+				break
+		if touches:
+			out.append(s)
+	out.sort_custom(func(a, b): return _opinion_of(a) < _opinion_of(b) if _opinion_of(a) != _opinion_of(b) else a < b)
+	return out.slice(0, 4)
+
+
+## The leader: the hegemon if it joined, else the member with the highest official value.
+func _coalition_leader(members: Array) -> int:
+	var best: int = members[0]
+	for m in members:
+		if bool(sim.states[m].get("hegemon", false)):
+			return m
+		if MapGen.official_value(sim, m) > MapGen.official_value(sim, best):
+			best = m
+	return best
+
+
+func _coalition_tick(now: int) -> void:
+	if threat_at == 0:
+		threat_at = now
+	var hours := float(now - threat_at) / 3600.0
+	if hours >= 1.0:
+		threat = maxf(0.0, threat - 0.5 * floorf(hours))
+		threat_at += int(floorf(hours)) * 3600
+	if not coalition.is_empty():
+		# members who warmed up (gifts) or made friends leave; fewer than 2 — the coalition falls apart
+		var still: Array = []
+		for m in coalition["members"]:
+			if not allies.has(int(m)) and _opinion_of(int(m)) <= 0.0:
+				still.append(int(m))
+		if still.size() < 2:
+			coalition = {}
+			_post("inbox.coalition_broken.title", "inbox.coalition_broken.text")
+			ui.toast(tr("toast.coalition_broken"))
+			return
+		coalition["members"] = still
+		if now >= int(coalition["at"]) and war.is_empty() and mode == Mode.MAP:
+			_coalition_war(now)
+		return
+	if _coalition_threshold() <= 0 or alarm() < 1.0 or not war.is_empty() or now - coalition_last < COALITION_COOLDOWN_SEC:
+		return
+	var members := _coalition_candidates()
+	if members.size() < 2:
+		return
+	var leader := _coalition_leader(members)
+	coalition = {"leader": leader, "members": members, "at": now + COALITION_FORM_SEC}
+	coalition_last = now
+	_post("inbox.coalition.title", L.pack("inbox.coalition.text", [_state_key(leader), members.size()]))
+	ui.toast(tr("toast.coalition") % [_state_name(leader), members.size()])
+	sfx.play("warn")
+
+
+## The coalition strikes (canon §10.8): one war led by the leader; the others back it — the leader's armies carry
+## the members' strength × m_c, m_c = clamp(k × P_player / ΣP, 0.5, 1.5), k = 1.1 / 1.2 / 1.3 for 2 / 3 / 4.
+func _coalition_war(now: int) -> void:
+	var members: Array = coalition["members"]
+	var leader: int = coalition["leader"] if members.has(coalition["leader"]) else _coalition_leader(members)
+	coalition = {}
+	for m in members:
+		_ensure_armies_for(int(m))
+	var p_player := 0
+	var p_sum := 0
+	var p_leader := 0
+	for a in armies:
+		if a["side"] == Types.PLAYER:
+			p_player += int(a["max_str"])
+		elif members.has(int(a["side"])):
+			p_sum += int(a["max_str"])
+			if int(a["side"]) == leader:
+				p_leader += int(a["max_str"])
+	var k: float = [1.1, 1.1, 1.1, 1.2, 1.3][mini(members.size(), 4)]
+	var mc := clampf(k * float(p_player) / maxf(1.0, float(p_sum)), 0.5, 1.5)
+	var f := clampf(float(p_sum) * mc / maxf(1.0, float(p_leader)), 1.0, 2.5)
+	for a in armies:
+		if int(a["side"]) == leader:
+			a["max_str"] = roundi(float(a["max_str"]) * f)
+			a["str"] = a["max_str"]
+	_deploy_to_front(leader)
+	var goals := War.recommend_goals(sim, leader, 1)
+	if goals.is_empty():
+		return
+	var target := -1
+	var best_v := -1
+	var core := MapGen.core_of(sim, Types.PLAYER)
+	for c in sim.cells:
+		if c["owner"] == Types.PLAYER and not core.has(int(c["id"])) and _touches_owner(c["id"], leader) and int(c["value"]) > best_v:
+			best_v = int(c["value"])
+			target = c["id"]
+	war = War.declare_war(sim, leader, goals[0])
+	war["by_ai"] = 1
+	war["coalition"] = members
+	war["started"] = now
+	if target >= 0:
+		war["ai_goal"] = target
+		war["strike_hex"] = target
+		var from := target
+		for n in sim.neighbors[target]:
+			if n >= 0 and sim.cells[n]["owner"] == leader:
+				from = n
+				break
+		war["strike_from"] = from
+		war["strike_at"] = now + STRIKE_WARN_SEC
+	for m in members:
+		_opinion_add(int(m), -20.0)
+	map_view.at_war_with = leader
+	map_view.mark_dirty()
+	map_view.sync_armies(armies, null)
+	sfx.play("warn")
+	var names: Array = []
+	for m in members:
+		names.append(_state_name(int(m)))
+	_post("inbox.coalition_war.title", L.pack("inbox.coalition_war.text", [_state_key(leader), members.size()]))
+	ui.toast(tr("toast.coalition_war") % ", ".join(names))
+	_set_mode(Mode.WAR)
+
+
 func _ally_reason(s: int) -> String:
 	if allies.has(s):
 		return tr("dipl.ally")
@@ -847,6 +999,8 @@ func _ally_reason(s: int) -> String:
 		return tr("ally.limit") % limit
 	if not war.is_empty() and int(war["enemy"]) == s or _truce_left(s) > 0:
 		return tr("ally.not_now")
+	if alarm() >= 0.5:
+		return tr("ally.alarm")  # no new alliances while the neighbours are alarmed (canon §10.8)
 	var need := 40.0 if String(sim.states[s]["archetype"]) == "owl" else 50.0
 	if _opinion_of(s) < need:
 		return tr("ally.opinion") % roundi(need)
@@ -1289,6 +1443,7 @@ func _declare(enemy: int, goal: int) -> void:
 		allies.erase(enemy)  # war on an ally ends the alliance
 		sim.player_allies.erase(enemy)
 		_opinion_add(enemy, -30.0)
+		threat += 5.0  # treachery (canon §10.8)
 		_post(L.pack("inbox.alliance_broken.title", [_state_key(enemy)]), L.pack("inbox.alliance_broken.text", [_state_key(enemy)]))
 	_ensure_armies_for(enemy)
 	_deploy_to_front(enemy)
@@ -1986,6 +2141,18 @@ func _sign_peace() -> void:
 		econ.add_resources(loot)
 		lines.append(tr("ceremony.plunder") % [int(loot["gold"]), int(loot["food"]), int(loot["metal"])])
 	_opinion_add(enemy, PLUNDER_OPINION[plunder_level])
+	# «Угроза» (canon §10.8): the value of every annexed hex (a city +4 more), plunder +5 / +10 / +15
+	var annexed_threat := 0.0
+	for id in annexed:
+		annexed_threat += float(sim.cells[id]["value"]) + (4.0 if sim.cells[id]["kind"] == "city" else 0.0)
+	threat += annexed_threat + 5.0 * plunder_level
+	if war.has("coalition") and _last_score > 0.0:
+		# «Триумф» (canon §10.8): a won coalition war pays a golden trophy chest
+		var chest := 6 * maxi(60, int(gross.get("gold", 0)))
+		econ.add_resources({"gold": chest})
+		econ.res["raivite"] = int(econ.res["raivite"]) + 30
+		lines.append(tr("ceremony.triumph") % chest)
+		_stat("coalition_wins")
 	if res.get("gold_packs", 0) > 0:
 		# a package = 4 h of the enemy's gold production (canon §10.1); the enemy economy is not modelled yet
 		var gold := int(res["gold_packs"]) * 4 * maxi(60, int(econ.gross_per_hour(sim).get("gold", 0)))
@@ -2188,6 +2355,8 @@ func _finish_war(enemy: int, msg: String) -> void:
 		ftue = 0  # the tutorial war ended without a treaty — let the player go on freely
 	map_view.strike_arrow(-1, -1, "")
 	truce[enemy] = Time.get_unix_time_from_system() + TRUCE_SEC
+	for m in war.get("coalition", []):
+		truce[int(m)] = Time.get_unix_time_from_system() + TRUCE_SEC  # the coalition makes peace together
 	war = {}
 	_normalize_armies()
 	map_view.sync_armies(armies, null)
@@ -2684,6 +2853,7 @@ const STARS_3 := [
 	["c3_oil2", "star.c3_oil2", "@oil", 2],
 	["c3_hegemon", "star.c3_hegemon", "hegemon_wins", 1],
 	["c3_capital", "star.c3_capital", "capitals_occupied", 1],
+	["c3_triumph", "star.c3_triumph", "coalition_wins", 1],
 	["c3_vein", "star.c3_vein", "@vein3", 1],
 	["c3_colonize", "star.c3_colonize", "colonized", 6],
 	["c3_camps", "star.c3_camps", "camps", 5],
@@ -2923,6 +3093,8 @@ func _opinion_decay(now: int) -> void:
 
 func _opinion_of(s: int) -> float:
 	var v: float = opinion.get(s, 0.0)
+	if alarm() >= 0.5:
+		v -= 10.0  # «Тревога соседей» 50%+: everyone is wary (canon §10.8)
 	for c in sim.cells:
 		if c["owner"] == Types.PLAYER and _touches_owner(c["id"], s):
 			return v - 10.0  # a shared border, permanently
@@ -2944,10 +3116,20 @@ static func _opinion_word(v: float) -> String:
 
 func _diplomacy_items(now: int) -> Array:
 	var items: Array = []
+	if _coalition_threshold() > 0:
+		var a := alarm()
+		var line: String = tr("alarm.calm") if a < 0.5 else (tr("alarm.wary") if a < 1.0 else tr("alarm.high"))
+		if not coalition.is_empty():
+			line = tr("alarm.forming") % [_state_name(int(coalition["leader"])), (coalition["members"] as Array).size() - 1, GameUI.fmt_time(maxi(0, int(coalition["at"]) - now))]
+		elif not war.is_empty() and war.has("coalition"):
+			line = tr("alarm.at_war") % (war["coalition"] as Array).size()
+		items.append({"kind": "alarm", "pct": roundi(100.0 * a), "line": line})
 	for s in _ai_states():
 		var status: String = tr("dipl.peace")
-		if not war.is_empty() and int(war["enemy"]) == s:
+		if not war.is_empty() and (int(war["enemy"]) == s or (war.get("coalition", []) as Array).has(s)):
 			status = tr("dipl.war")
+		elif not coalition.is_empty() and (coalition["members"] as Array).has(s):
+			status = tr("dipl.in_coalition")
 		elif _truce_left(s) > 0:
 			status = tr("dipl.truce") % GameUI.fmt_time(_truce_left(s))
 		var gift_left := maxi(0, int(gift_at.get(s, 0)) + 86400 - now)
@@ -3343,6 +3525,7 @@ func _ai_tick(now: int) -> void:
 	if not ultimatum.is_empty() and now >= int(ultimatum["deadline"]) and mode in [Mode.MAP, Mode.WAR]:
 		_answer_ultimatum("refuse")
 	_ultimatum_rolls(now)
+	_coalition_tick(now)
 	if war.is_empty():
 		return
 	if war.has("strike_at"):
@@ -3916,6 +4099,38 @@ func _demo(spec: String) -> void:
 				_select(c["id"])
 				rig.focus(map_view.cell_world(c["id"]), 0.4)
 				break
+		return
+	if what == "coalition":  # «Тревога соседей» over 100%: a coalition is forming (Diplomacy tab)
+		await _world_expansion()
+		ui.close_modal()
+		await _world_expansion()
+		ui.close_modal()
+		# a grown realm: it reaches the Hamlets too (a coalition needs 2+ neighbours)
+		var hcap: Vector3 = map_view.cell_world(sim.states[MapGen.HAMLETS]["capital_id"])
+		for step in 4:
+			var touching := false
+			for c in sim.cells:
+				if c["owner"] == Types.PLAYER and _touches_owner(c["id"], MapGen.HAMLETS):
+					touching = true
+			if touching:
+				break
+			var pick := -1
+			for c in sim.cells:
+				if c["owner"] == Types.NOBODY and Types.is_passable(c) and _touches_player(c["id"]) \
+						and (pick < 0 or map_view.cell_world(c["id"]).distance_to(hcap) < map_view.cell_world(pick).distance_to(hcap)):
+					pick = c["id"]
+			if pick < 0:
+				break
+			sim.cells[pick]["owner"] = Types.PLAYER
+			sim.cells[pick]["controller"] = Types.PLAYER
+			map_view.refresh_hex(pick)
+		for st in _ai_states():
+			opinion[st] = -40.0
+		threat = 63.0
+		threat_at = now_s()
+		_coalition_tick(now_s())
+		rig.focus(map_view.cell_world(sim.states[Types.PLAYER]["capital_id"]), 0.6)
+		_open_tab("diplomacy")
 		return
 	if what == "ch4":  # chapter IV «Индустриальный пояс»: the ceremony over the whole launch world
 		await _world_expansion()

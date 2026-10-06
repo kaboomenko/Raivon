@@ -686,3 +686,23 @@ star.c4_vein,Кристалл пояса: присоедините жилу ко
 star.c4_colonize,Освойте 8 диких гексов в главе IV,Settle 8 wild hexes in chapter IV
 star.c4_camps,Разбейте 6 лагерей мародёров в главе IV,Destroy 6 marauder camps in chapter IV
 star.c4_dl8,Доведите державу до УР8,Bring the realm to DL8
+alarm.title,Тревога соседей,Neighbours' alarm
+alarm.calm,Соседи спокойны,The neighbours are calm
+alarm.wary,"Соседи насторожены: мнение всех −10, новых союзов нет","The neighbours are wary: opinion −10 for all, no new alliances"
+alarm.high,Соседи готовы объединиться против вас,The neighbours are ready to unite against you
+alarm.forming,Коалиция формируется: %s и ещё %d · %s,Coalition forming: %s with %d members · %s
+alarm.at_war,Война с коалицией из %d государств,At war with a coalition of %d states
+alarm.hint,"Угроза растёт от присоединений и грабежа, спадает на 0,5 в час. Подарки и мир разваливают коалицию.","Threat grows with annexations and plunder and drops by 0.5 an hour. Gifts and peace break a coalition."
+dipl.in_coalition,В коалиции,In a coalition
+ally.alarm,Соседи насторожены — новых союзов нет,The neighbours are wary — no new alliances
+toast.coalition,Коалиция формируется: %s собирает %d государства против вас!,A coalition is forming: %s gathers %d states against you!
+toast.coalition_broken,Коалиция распалась,The coalition has fallen apart
+toast.coalition_war,Коалиция объявила войну: %s,The coalition declared war: %s
+inbox.coalition.title,Коалиция формируется,A coalition is forming
+inbox.coalition.text,"%s собирает коалицию из %d государств: через 12 ч они ударят вместе. Подарки участникам могут её развалить.","%s is gathering a coalition of %d states: they will strike together in 12 h. Gifts to the members can break it up."
+inbox.coalition_broken.title,Коалиция распалась,The coalition has fallen apart
+inbox.coalition_broken.text,"Участники передумали — коалиции больше нет.","The members changed their minds — there is no coalition any more."
+inbox.coalition_war.title,Война с коалицией,War with a coalition
+inbox.coalition_war.text,"%s ведёт коалицию из %d государств. Их армии сильнее, но победа принесёт Триумф.","%s leads a coalition of %d states. Their armies are stronger, but victory brings a Triumph."
+ceremony.triumph,Триумф! Трофейный сундук: %d золота и 30 Райвитов,Triumph! Trophy chest: %d gold and 30 Raivites
+star.c3_triumph,Триумф: выиграйте войну с коалицией,Triumph: win a war against a coalition
