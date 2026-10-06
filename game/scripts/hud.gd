@@ -16,6 +16,7 @@ var tile_owner: Label
 var tile_bonus: Label
 var attack_btn: Panel
 var minimap: Control
+var _tab_icons := {}  # tab key -> Icon
 var res_labels := {}  # res -> [value Label, rate Label]
 var builders_label: Label
 var level_label: Label
@@ -212,7 +213,9 @@ func _build() -> void:
 		var ic := Icon.new(tabs[i][1])
 		ic.position = Vector2(x + 44, base_y + 14)
 		ic.size = Vector2(36, 34)
+		ic.lit = i == 1
 		add_child(ic)
+		_tab_icons[tabs[i][2]] = ic
 		var t := _label(tr(tabs[i][0]), 16, TEXT if i == 1 else MUTED, i == 1)
 		t.position = Vector2(x + 10, base_y + 50)
 		t.size = Vector2(108, 24)
@@ -388,6 +391,9 @@ func select_tab(key: String) -> void:
 			l.add_theme_font_override("font", font_bold)
 		else:
 			l.remove_theme_font_override("font")
+		if _tab_icons.has(k):
+			(_tab_icons[k] as Icon).lit = k == key
+			(_tab_icons[k] as Icon).queue_redraw()
 	unit_cards.visible = false  # the Army tab content now comes from the game (game_ui.show_armies)
 
 
@@ -404,6 +410,7 @@ func show_tile(info: Dictionary) -> void:
 
 class Icon extends Control:
 	var kind: String
+	var lit := false  # tab icons: bright when their tab is selected
 
 	func _init(k: String) -> void:
 		kind = k
@@ -486,7 +493,7 @@ class Icon extends Control:
 				draw_colored_polygon(PackedVector2Array([Vector2(w * .1, h * .8), Vector2(w * .35, h * .45), Vector2(w * .65, h * .45), Vector2(w * .9, h * .8)]), Color(0.55, 0.62, 0.72))
 				draw_circle(Vector2(w * .5, h * .3), w * .16, TEXT_C)
 			"fort", "castle_icon":
-				var col := TEXT_C if kind == "fort" else MUTED_C
+				var col := TEXT_C if kind == "fort" or lit else MUTED_C
 				draw_rect(Rect2(w * .2, h * .35, w * .6, h * .5), col)
 				for i in 3:
 					draw_rect(Rect2(w * (.2 + i * .23), h * .2, w * .14, h * .16), col)
@@ -498,20 +505,24 @@ class Icon extends Control:
 					draw_rect(Rect2(w * (.26 + i * .18), h * .06, w * .12, h * .12), TEXT_C)
 				draw_rect(Rect2(w * .46, h * .42, w * .08, h * .18), Color(0.06, 0.08, 0.13))
 			"helmet":
-				draw_circle(Vector2(w * .5, h * .5), w * .34, TEXT_C)
-				draw_rect(Rect2(w * .16, h * .5, w * .68, h * .35), TEXT_C)
+				var hc := TEXT_C if lit else MUTED_C
+				draw_circle(Vector2(w * .5, h * .5), w * .34, hc)
+				draw_rect(Rect2(w * .16, h * .5, w * .68, h * .35), hc)
 				draw_rect(Rect2(w * .42, h * .45, w * .16, h * .4), Color(0.06, 0.08, 0.13))
 			"hammer":
-				draw_line(Vector2(w * .3, h * .85), Vector2(w * .62, h * .35), MUTED_C, 5)
-				draw_colored_polygon(PackedVector2Array([Vector2(w * .45, h * .2), Vector2(w * .8, h * .1), Vector2(w * .9, h * .3), Vector2(w * .6, h * .45)]), MUTED_C)
+				var mc := TEXT_C if lit else MUTED_C
+				draw_line(Vector2(w * .3, h * .85), Vector2(w * .62, h * .35), mc, 5)
+				draw_colored_polygon(PackedVector2Array([Vector2(w * .45, h * .2), Vector2(w * .8, h * .1), Vector2(w * .9, h * .3), Vector2(w * .6, h * .45)]), mc)
 			"hands":
-				draw_arc(Vector2(w * .5, h * .55), w * .3, PI, TAU, 16, MUTED_C, 6)
-				draw_line(Vector2(w * .2, h * .55), Vector2(w * .8, h * .55), MUTED_C, 4)
+				var dc := TEXT_C if lit else MUTED_C
+				draw_arc(Vector2(w * .5, h * .55), w * .3, PI, TAU, 16, dc, 6)
+				draw_line(Vector2(w * .2, h * .55), Vector2(w * .8, h * .55), dc, 4)
 			"scales":
-				draw_line(Vector2(w * .5, h * .1), Vector2(w * .5, h * .85), MUTED_C, 3)
-				draw_line(Vector2(w * .15, h * .25), Vector2(w * .85, h * .25), MUTED_C, 3)
-				draw_arc(Vector2(w * .22, h * .5), w * .14, 0, PI, 12, MUTED_C, 3)
-				draw_arc(Vector2(w * .78, h * .5), w * .14, 0, PI, 12, MUTED_C, 3)
+				var sc := TEXT_C if lit else MUTED_C
+				draw_line(Vector2(w * .5, h * .1), Vector2(w * .5, h * .85), sc, 3)
+				draw_line(Vector2(w * .15, h * .25), Vector2(w * .85, h * .25), sc, 3)
+				draw_arc(Vector2(w * .22, h * .5), w * .14, 0, PI, 12, sc, 3)
+				draw_arc(Vector2(w * .78, h * .5), w * .14, 0, PI, 12, sc, 3)
 			"tile":
 				draw_colored_polygon(_hexagon(c, w * .48), Color(0.35, 0.6, 0.25))
 				draw_colored_polygon(_hexagon(c + Vector2(0, h * .08), w * .4), Color(0.45, 0.7, 0.3))
