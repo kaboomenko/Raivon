@@ -543,6 +543,16 @@ func _run() -> void:
 	g.opinion[4] = 45.0
 	g._on_diplomacy_action(4, "ally")
 	_check(g.allies.has(4) and int(g.stats.get("alliances", 0)) >= 1, "alliance with the River League signed")
+	_check(g.sim.player_allies.has(4), "the ally's land opens to our marches")
+	g.ui.close_modal()
+	g.mode = g.Mode.MAP
+	g.ai_wars = [{"a": 2, "b": 4, "until": g.now_s() + 86400, "next": g.now_s() + 7200}]
+	g.econ.res["gold"] = maxi(int(g.econ.res["gold"]), 5000)
+	var op4: float = g._opinion_of(4)
+	g._ally_asks(4, 2)
+	_check(g.ui.has_modal(), "the ally asks for help")
+	g.ui.close_modal()
+	g.ai_wars = []
 	var dip: Array = g._diplomacy_items(g.now_s())
 	_check(dip.size() == 4, "diplomacy lists 4 neighbours")
 	var forts := 0

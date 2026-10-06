@@ -99,6 +99,10 @@ def main() -> int:
             errors.append("strings.csv:%d: duplicate key %r" % (num, k))
         if not ru.strip() or not en.strip():
             errors.append("strings.csv:%d: %s has an empty ru or en cell" % (num, k))
+        for lang, cell in (("ru", ru), ("en", en)):
+            # a formatted string (it has placeholders) must escape every other % as %%
+            if placeholders(cell) and "%" in PLACEHOLDER.sub("", cell):
+                errors.append("strings.csv:%d: %s (%s) has a bare %% next to placeholders: write %%%%" % (num, k, lang))
         if placeholders(ru) != placeholders(en):
             errors.append("strings.csv:%d: %s placeholders differ: ru %s vs en %s"
                           % (num, k, placeholders(ru), placeholders(en)))

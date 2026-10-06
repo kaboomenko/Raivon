@@ -20,6 +20,8 @@ static func leg_seconds(world: World, side: int, hex: int) -> int:
 		return OWN_SEC
 	if c["controller"] == side or (c["owner"] == Types.NOBODY and c["controller"] == Types.NOBODY):
 		return OTHER_SEC
+	if side == Types.PLAYER and world.player_allies.has(int(c["controller"])):
+		return OTHER_SEC  # passage through an ally's land (canon §10.7)
 	return -1
 
 

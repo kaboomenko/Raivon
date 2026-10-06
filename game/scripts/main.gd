@@ -707,7 +707,9 @@ func _ai_wars_tick(now: int) -> void:
 			continue
 		while now >= int(w["next"]) and now < int(w["until"]):
 			w["next"] = int(w["next"]) + 2 * 3600
-			var strong := a if _ai_power(a) >= _ai_power(b) else b
+			var pa: int = _ai_power(a) * (11 if int(w.get("boost", -1)) == a else 10)
+			var pb: int = _ai_power(b) * (11 if int(w.get("boost", -1)) == b else 10)
+			var strong := a if pa >= pb else b
 			var weak := b if strong == a else a
 			var n := 1 + absi(hash("aiw:%d:%d:%d" % [a, b, int(w["next"])])) % 3
 			var core := MapGen.core_of(sim, weak)
@@ -734,9 +736,38 @@ func _ai_wars_tick(now: int) -> void:
 			var chance: int = int(ULT_CHANCE.get(String(sim.states[agg]["archetype"]), 10)) / 2
 			if absi(hash("aiwar:%d:%d:%d" % [a, b, now / (6 * 3600)])) % 100 < chance:
 				var dur := (12 + absi(hash("aiwd:%d:%d" % [a, b])) % 37) * 3600
-				ai_wars.append({"a": agg, "b": b if agg == a else a, "until": now + dur, "next": now + 2 * 3600})
-				_post("inbox.ai_war.title", L.pack("inbox.ai_war.text", [_state_key(agg), _state_key(b if agg == a else a)]))
+				var victim: int = b if agg == a else a
+				ai_wars.append({"a": agg, "b": victim, "until": now + dur, "next": now + 2 * 3600})
+				_post("inbox.ai_war.title", L.pack("inbox.ai_war.text", [_state_key(agg), _state_key(victim)]))
+				if allies.has(victim):
+					_ally_asks(victim, agg)
 				return
+
+
+## Our ally is attacked by another AI (canon §10.7): support it with 4 h of gold (its armies +10% in that war,
+## opinion +15) or refuse (opinion −15).
+func _ally_asks(ally: int, attacker: int) -> void:
+	var cost := 4 * maxi(60, int(econ.gross_per_hour(sim).get("gold", 0)))
+	_post(L.pack("inbox.ally_asks.title", [_state_key(ally)]), L.pack("inbox.ally_asks.text", [_state_key(ally), _state_key(attacker)]))
+	if mode != Mode.MAP or ui.has_modal():
+		return
+	ui.show_choice(tr("ally_ask.title") % _state_name(ally), [tr("ally_ask.text") % [_state_name(attacker), _state_name(ally)]], [
+		[tr("ally_ask.support") % cost, Color(0.2, 0.55, 0.3), func():
+			if econ.res["gold"] < cost:
+				ui.toast(tr("toast.no_gold"))
+				return
+			econ.res["gold"] -= cost
+			for w in ai_wars:
+				if int(w["b"]) == ally or int(w["a"]) == ally:
+					w["boost"] = ally
+			_opinion_add(ally, 15.0)
+			ui.close_modal()
+			ui.toast(tr("toast.ally_supported") % _state_name(ally))
+			_autosave()],
+		[tr("ally_ask.refuse"), Color(0.45, 0.2, 0.18), func():
+			_opinion_add(ally, -15.0)
+			ui.close_modal()],
+	])
 
 
 func _ai_peace(w: Dictionary) -> void:
@@ -1170,6 +1201,7 @@ func _finish_colonize(id: int) -> void:
 func _declare(enemy: int, goal: int) -> void:
 	if allies.has(enemy):
 		allies.erase(enemy)  # war on an ally ends the alliance
+		sim.player_allies.erase(enemy)
 		_opinion_add(enemy, -30.0)
 		_post(L.pack("inbox.alliance_broken.title", [_state_key(enemy)]), L.pack("inbox.alliance_broken.text", [_state_key(enemy)]))
 	_ensure_armies_for(enemy)
@@ -2743,6 +2775,7 @@ func _on_diplomacy_action(s: int, kind: String) -> void:
 				ui.toast(_ally_reason(s))
 				return
 			allies.append(s)
+			sim.player_allies[s] = true
 			_stat("alliances")
 			sfx.play("seal")
 			map_view.burst(int(sim.states[s]["capital_id"]), map_view.state_color(s), true)

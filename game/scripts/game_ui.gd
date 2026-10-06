@@ -574,6 +574,27 @@ func show_info(title: String, lines: Array, button: String, on_button: Callable)
 	_button(box, Rect2(40, h - 110, 741, 84), button, Color(0.13, 0.4, 0.9), on_button)
 
 
+## A choice: title, lines, several buttons [[text, color, callable], …] stacked under the text.
+func show_choice(title: String, lines: Array, buttons: Array) -> void:
+	var h := 150.0 + 52.0 * lines.size() + 96.0 * buttons.size()
+	var box := _modal_box(Rect2(60, maxf(200.0, (VH - h) / 2.0 - 80.0), 821, h))
+	var t := _label(title, 34, Color(1.0, 0.85, 0.4))
+	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_at(t, box, Vector2(0, 28), Vector2(821, 46))
+	var y := 96.0
+	for ln in lines:
+		var l := _label(String(ln), 22, TEXT, false)
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD
+		l.custom_minimum_size = Vector2(741, 0)
+		l.position = Vector2(40, y)
+		box.add_child(l)
+		y += 52.0
+	y += 16.0
+	for b in buttons:
+		_button(box, Rect2(40, y, 741, 80), String(b[0]), b[1], b[2])
+		y += 96.0
+
+
 ## Settings: sound, language (applies at once: `on_lang` gets "ru" / "en" and re-renders the game, then this
 ## modal is shown again by the caller), new game, build info.
 func show_settings(sound_on: bool, on_sound: Callable, on_new_game: Callable, on_lang: Callable) -> void:

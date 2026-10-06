@@ -50,6 +50,11 @@ func _initialize() -> void:
 	w.cells[occ]["controller"] = Types.PLAYER
 	_check(March.leg_seconds(w, Types.PLAYER, occ) == March.OTHER_SEC, "occupied hex costs 40 s")
 	w.cells[occ]["controller"] = MapGen.BARONS
+	# an ally's land is open to the player's marches (canon §10.7)
+	_check(March.leg_seconds(w, Types.PLAYER, enemy) < 0, "no passage through foreign land")
+	w.player_allies[MapGen.BARONS] = true
+	_check(March.leg_seconds(w, Types.PLAYER, enemy) == March.OTHER_SEC, "passage through an ally's land (40 s)")
+	w.player_allies.erase(MapGen.BARONS)
 	# march step by step
 	var army := {"id": 1, "side": Types.PLAYER, "hex": cap, "str": 75000, "max_str": 75000}
 	var t0 := 1_800_000_000

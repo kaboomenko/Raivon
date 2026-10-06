@@ -13,6 +13,8 @@ var by_key: Dictionary = {}
 var states: Array[Dictionary] = []
 ## River edges (canon §5.1: a river runs along hex edges, attacks across it −25%): "a:b" (a < b) -> true.
 var rivers: Dictionary = {}
+## AI states allied with the player (canon §10.7): their land is open to the player's marches. state id -> true.
+var player_allies: Dictionary = {}
 
 
 static func edge_key(a: int, b: int) -> String:

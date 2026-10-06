@@ -556,3 +556,10 @@ inbox.alliance_broken.text,"Мы объявили войну союзнику �
 inbox.ally_joins.title,%s вступают в войну,%s join the war
 inbox.ally_joins.text,"Союзник %s выступил против %s и будет брать их пограничные гексы.","Our ally %s marches on %s and will take its border hexes."
 star.c2_alliance,Рукопожатие: заключите союз с ИИ,Handshake: ally with an AI state
+inbox.ally_asks.title,%s просят помощи,%s ask for help
+inbox.ally_asks.text,"На нашего союзника %s напали %s.","Our ally %s was attacked by %s."
+ally_ask.title,Союзник в беде: %s,An ally in trouble: %s
+ally_ask.text,"%s напали на %s. Поддержим золотом — армии союзника станут сильнее на 10%%, и он запомнит нашу помощь.","%s attacked %s. Back them with gold: the ally's armies get 10%% stronger, and they will remember it."
+ally_ask.support,Поддержать (%d зол.),Support (%d gold)
+ally_ask.refuse,Отказать (мнение −15),Refuse (opinion −15)
+toast.ally_supported,«%s» получили нашу поддержку,“%s” received our support
