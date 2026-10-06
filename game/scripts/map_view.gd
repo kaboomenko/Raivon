@@ -56,6 +56,7 @@ func set_world(w) -> void:
 		c.queue_free()
 	_build_terrain()
 	_build_rivers()
+	_build_water()
 	refresh_props()
 	rng.seed = 11
 	_build_horizon()
@@ -63,6 +64,49 @@ func set_world(w) -> void:
 
 
 var _river_mi: MeshInstance3D
+var _water_mi: MeshInstance3D
+
+
+## Water surface over water hexes (animated ripples, foam where an edge meets land).
+func _build_water() -> void:
+	if _water_mi:
+		_water_mi.queue_free()
+		_water_mi = null
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var any := false
+	for c in sim.cells:
+		if c["terrain"] != "water":
+			continue
+		any = true
+		var center := axial_to_world(c["q"], c["r"]) + Vector3(0, -0.07, 0)
+		var pts := _hex_pts(center, 1.0)
+		# land on each edge k (between corners k and k+1)
+		var land: Array = []
+		for k in 6:
+			var mid: Vector3 = (pts[k] + pts[(k + 1) % 6]) / 2.0
+			var other := id_at_world(center + 2.0 * (mid - center))
+			land.append(other < 0 or sim.cells[other]["terrain"] != "water")
+		for k in 6:
+			var ca := 1.0 if (land[k] or land[(k + 5) % 6]) else 0.0  # corner k touches edges k−1 and k
+			var cb := 1.0 if (land[k] or land[(k + 1) % 6]) else 0.0
+			st.set_normal(Vector3.UP)
+			st.set_color(Color(0, 0, 0))
+			st.add_vertex(center)
+			st.set_color(Color(ca, 0, 0))
+			st.add_vertex(pts[k])
+			st.set_color(Color(cb, 0, 0))
+			st.add_vertex(pts[(k + 1) % 6])
+	if not any:
+		return
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://shaders/water.gdshader")
+	mat.set_shader_parameter("noise_tex", _noise_tex(2.0, 3, 303))
+	_water_mi = MeshInstance3D.new()
+	_water_mi.mesh = st.commit()
+	_water_mi.material_override = mat
+	_water_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_water_mi)
 
 
 ## Rivers run along hex edges (canon §5.1): a blue ribbon on every river edge with round joints.
