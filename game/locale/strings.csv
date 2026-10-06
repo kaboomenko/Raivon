@@ -520,3 +520,10 @@ peace_offer.go,К мирной конференции,To the peace conference
 inbox.peace_offer.title,%s предлагают мир,%s offer peace
 inbox.peace_offer.text,"%s предлагают мир: вы держите %d%% фронта.","%s offer peace: you hold %d%% of the front."
 toast.ai_claimed,Этот гекс уже осваивают %s,%s are already settling this hex
+star.c2_port,Выход к морю: присоедините порт,To the sea: annex a port
+star.c2_defense,Стена держит: отбейте удар ИИ в главе II,The wall holds: repel an AI strike in chapter II
+star.c2_pocket4,Клещи: заберите котёл из 4+ гексов,Pincers: take a pocket of 4+ hexes
+star.c2_ultimatum,Не на тех напали: отклоните ультиматум и победите,Picked the wrong fight: refuse an ultimatum and win
+star.c2_colonize,Освойте 4 диких гекса в главе II,Settle 4 wild hexes in chapter II
+star.c2_camps,Разбейте 3 лагеря мародёров,Destroy 3 marauder camps
+star.c2_dl5,Доведите державу до УР5,Bring the realm to DL5

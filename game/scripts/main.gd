@@ -93,6 +93,7 @@ var stats := {}  # chapter counters for the stars: peaces, goals, pockets, colon
 var stars_claimed := {}
 var chapter_done := false
 var chapter := 1  # open chapter: 1 «Долина», 2 «Речной край»
+var stats_base := {}  # stats when the open chapter began (chapter stars count from there)
 var ai_dl_at := {}  # AI state -> unix time of its last DL step (canon §9.16: +1 every 6 days)
 var opinion := {}  # AI state -> opinion of the player, decays toward 0 (canon §10.5)
 var gift_at := {}  # AI state -> unix time of the last gift
@@ -1572,9 +1573,13 @@ func _sign_peace() -> void:
 			annexed_value += int(sim.cells[h]["value"])
 	_opinion_add(enemy, -2.0 * annexed_value)
 	_stat("peaces")
+	if war.has("ult_refused"):
+		_stat("ult_wins")  # «Не на тех напали»: refused an ultimatum and won the war
 	for d in chosen:
 		if d["kind"] == "pocket":
 			_stat("pockets")
+			if (d["hexes"] as Array).size() >= 4:
+				_stat("pockets4")
 	var res: Dictionary = War.apply_treaty(sim, war, chosen)
 	sfx.play("seal")
 	sfx.haptic(120)
@@ -2299,16 +2304,44 @@ func _stat(key: String) -> void:
 	stats[key] = int(stats.get(key, 0)) + 1
 
 
+## Chapter II stars (07 §3.3; rivers, oil, veins and alliances come later): progress counts from the chapter's
+## opening (`stats_base`), «@ports» counts the ports the player owns.
+const STARS_2 := [
+	["c2_port", "star.c2_port", "@ports", 1],
+	["c2_defense", "star.c2_defense", "defenses", 1],
+	["c2_pocket4", "star.c2_pocket4", "pockets4", 1],
+	["c2_ultimatum", "star.c2_ultimatum", "ult_wins", 1],
+	["c2_colonize", "star.c2_colonize", "colonized", 4],
+	["c2_camps", "star.c2_camps", "camps", 3],
+	["c2_dl5", "star.c2_dl5", "", 5],
+]
+
+
+func _stars() -> Array:
+	return STARS + (STARS_2 if chapter >= 2 else [])
+
+
 func _star_progress(st: Array) -> int:
-	if String(st[2]) == "":
+	var key: String = st[2]
+	if key == "":
 		return econ.dev_level()
-	return int(stats.get(String(st[2]), 0))
+	if key == "@ports":
+		var n := 0
+		for c in sim.cells:
+			if c["owner"] == Types.PLAYER and c["kind"] == "port":
+				n += 1
+		return n
+	var base := int(stats_base.get(key, 0)) if String(st[0]).begins_with("c2_") else 0
+	return int(stats.get(key, 0)) - base
 
 
 func _world_items() -> Array:
 	var items: Array = [{"kind": "chapter", "hexes": _player_hexes(), "goal": _chapter_goal(), "done": chapter_done,
 		"can_expand": _player_hexes() >= _chapter_goal() and war.is_empty() and not chapter_done}]
-	for st in STARS:
+	var list := _stars()
+	if chapter >= 2:
+		list = STARS_2 + STARS  # the open chapter first; chapter I stars never expire
+	for st in list:
 		var prog := mini(_star_progress(st), int(st[3]))
 		items.append({"kind": "star", "id": st[0], "title": tr(String(st[1])), "progress": prog, "need": st[3],
 			"claimed": stars_claimed.has(st[0])})
@@ -2319,7 +2352,7 @@ func _on_world_action(id: String) -> void:
 	if id == "expand":
 		_complete_chapter()
 		return
-	for st in STARS:
+	for st in _stars():
 		if st[0] == id and not stars_claimed.has(id) and _star_progress(st) >= int(st[3]):
 			stars_claimed[id] = true
 			var gross: Dictionary = econ.gross_per_hour(sim)
@@ -2327,7 +2360,7 @@ func _on_world_action(id: String) -> void:
 			econ.res["raivite"] = int(econ.res["raivite"]) + 10
 			sfx.play("capture")
 			ui.toast(tr("toast.star"))
-			if stars_claimed.size() == STARS.size():
+			if stars_claimed.size() == _stars().size():
 				_post("inbox.all_stars.title", "inbox.all_stars.text")
 				ui.toast(tr("toast.all_stars"))
 	_econ_tick()
@@ -2366,6 +2399,7 @@ func _world_expansion() -> void:
 	map_view.part_clouds(ring, 3.2)
 	chapter = 2
 	econ.chapter = 2
+	stats_base = stats.duplicate()
 	_ai_forts([RingGen.LEAGUE, RingGen.ORDER])
 	map_view.refresh_props()
 	map_view.set_camps(camps.active)
@@ -2965,6 +2999,7 @@ func _answer_ultimatum(kind: String) -> void:
 			war = War.declare_war(sim, enemy, goals[0] if goals.size() > 0 else hex)
 			war["ai_goal"] = hex
 			war["by_ai"] = 1
+			war["ult_refused"] = 1
 			war["started"] = now
 			# the AI's first strike is announced at the start of a war it began (canon §9.11)
 			war["strike_hex"] = hex

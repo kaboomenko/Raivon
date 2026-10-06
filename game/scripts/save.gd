@@ -66,6 +66,7 @@ static func to_dict(g: Node) -> Dictionary:
 		"chapter_done": g.chapter_done,
 		"chapter": g.chapter,
 		"ai_dl_at": g.ai_dl_at,
+		"stats_base": g.stats_base,
 		"ult_check": g.ult_check,
 		"ai_colonizing": g.ai_colonizing,
 		"cases": g.cases.to_dict(),
@@ -182,6 +183,10 @@ static func apply(g: Node, d: Dictionary) -> bool:
 	g.ult_check = {}
 	for k in ulc:
 		g.ult_check[int(k)] = int(ulc[k])
+	var sb: Dictionary = d.get("stats_base", {})
+	g.stats_base = {}
+	for k in sb:
+		g.stats_base[String(k)] = int(sb[k])
 	var dla: Dictionary = d.get("ai_dl_at", {})
 	g.ai_dl_at = {}
 	for k in dla:

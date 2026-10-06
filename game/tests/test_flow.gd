@@ -527,6 +527,12 @@ func _run() -> void:
 		g._world_expansion()
 	_check(g.chapter == 2 and g.sim.states.size() == 6 and g._land_count() == 90, "world expanded to 90 land hexes, 2 new states")
 	_check(g._chapter_goal() == 36 and g._colonize_seconds() == 300, "chapter II goal 36, colonization 5 min")
+	var wi: Array = g._world_items()
+	_check(wi.size() == 1 + 8 + 7 and String(wi[1]["id"]) == "c2_port", "World tab lists chapter II stars first (%d items)" % wi.size())
+	g.stats["camps"] = int(g.stats_base.get("camps", 0)) + 3
+	var rvs: int = g.econ.res["raivite"]
+	g._on_world_action("c2_camps")
+	_check(g.stars_claimed.has("c2_camps") and int(g.econ.res["raivite"]) == rvs + 10, "chapter II star claimed")
 	var dip: Array = g._diplomacy_items(g.now_s())
 	_check(dip.size() == 4, "diplomacy lists 4 neighbours")
 	var forts := 0
@@ -611,11 +617,12 @@ func _run() -> void:
 	# AI colonization: one wild hex per state every 3 h (02 §10.2)
 	g.stats["peaces"] = maxi(1, int(g.stats.get("peaces", 0)))
 	g.ftue = 0
+	g._ai_colonize(g.now_s())  # finishes settlements left from earlier time jumps
+	g._ai_colonize(g.now_s())  # and starts new ones
 	var ai_land0 := 0
 	for c in g.sim.cells:
 		if int(c["owner"]) >= 2:
 			ai_land0 += 1
-	g._ai_colonize(g.now_s())
 	_check(g.ai_colonizing.size() >= 1, "AI states start settling wild hexes (%d)" % g.ai_colonizing.size())
 	var claimed: int = g.ai_colonizing.values()[0]["hex"] if g.ai_colonizing.size() > 0 else -1
 	if claimed >= 0:
