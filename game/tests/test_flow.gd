@@ -804,9 +804,10 @@ func _run() -> void:
 		_check(int(g.stats.get("swaps", 0)) >= 1, "«Выгодная сделка» counts the swap")
 	# Non-aggression pact (06 §11): 8 h of gold, 48 h, archetype threshold, one at a time, no war in the pair
 	var pst: int = g._ai_states()[0]
+	g.ultimatum = {}  # an open ultimatum blocks a pact with its sender; the daily rolls depend on the clock
 	g.opinion[pst] = 10.0
 	g.econ.res["gold"] = 100000
-	_check(g._pact_reason(pst) == "", "a pact can be signed at opinion 10")
+	_check(g._pact_reason(pst) == "", "a pact can be signed at opinion 10 (%s, %.1f)" % [g._pact_reason(pst), g._opinion_of(pst)])
 	g._on_diplomacy_action(pst, "pact")
 	_check(g._pact_left(pst) > 0 and not bool(g._diplomacy_items(g.now_s()).filter(func(x): return int(x.get("id", -1)) == pst)[0]["can_war"]), "the pact holds: no war with them")
 	_check(g._pact_reason(g._ai_states()[1]) != "", "only one pact at a time")

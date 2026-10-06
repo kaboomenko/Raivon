@@ -23,10 +23,11 @@ const TEXT := Color(0.96, 0.97, 1.0)
 const MUTED := Color(0.62, 0.68, 0.78)
 const VW := 941.0
 const VH := 1672.0
-const CARD_ART := {"attack": "⚔", "breakthrough": "➶", "airstrike": "✈", "encircle": "◎", "defense": "⛨", "corps": "⚑"}
+const CARD_ART := {"attack": "⚔", "breakthrough": "➶", "airstrike": "✈", "encircle": "◎", "defense": "⛨", "corps": "⚑", "landing": "⇓", "missile": "✦"}
 const CARD_ORDER := ["attack", "breakthrough", "airstrike", "encircle", "defense"]
 var _locked := {}  # card -> DL it opens at
-const CARD_NAME_KEYS := {"attack": "card.attack", "breakthrough": "card.breakthrough", "airstrike": "card.airstrike", "encircle": "card.encircle", "defense": "card.defense", "corps": "card.corps"}
+var _hand_order: Array = []
+const CARD_NAME_KEYS := {"attack": "card.attack", "breakthrough": "card.breakthrough", "airstrike": "card.airstrike", "encircle": "card.encircle", "defense": "card.defense", "corps": "card.corps", "landing": "card.landing", "missile": "card.missile"}
 const L := preload("res://scripts/l10n.gd")
 
 var font_bold: Font
@@ -171,36 +172,7 @@ func _build_battle() -> void:
 		var seg := _panel(_battle, Rect2(72 + i * 55, VH - 256, 50, 20), _style(Color(1, 1, 1, 0.1), 6, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
 		var fill := _panel(seg, Rect2(0, 0, 50, 20), _style(Color(0.62, 0.38, 1.0), 6, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
 		_energy_segs.append(fill)
-	for i in CARD_ORDER.size():
-		var card: String = CARD_ORDER[i]
-		var x := 12.0 + i * 125.0
-		var p := _panel(_battle, Rect2(x, VH - 222, 116, 196), _style(Color(0.12, 0.17, 0.28), 14, Color(0.5, 0.62, 0.85, 0.8), 2))
-		p.gui_input.connect(_on_card_input.bind(card))
-		var art := _label(CARD_ART[card], 54)
-		art.position = Vector2(0, 14)
-		art.size = Vector2(116, 70)
-		art.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		p.add_child(art)
-		var nm := _label(_card_name(card), 17)
-		_fit(nm, 17, 110.0)
-		nm.position = Vector2(0, 94)
-		nm.size = Vector2(116, 24)
-		nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		p.add_child(nm)
-		_card_names[card] = nm
-		var cost := _panel(p, Rect2(38, 138, 40, 40), _style(Color(0.55, 0.3, 0.95), 20, Color(1, 1, 1, 0.9), 3), Control.MOUSE_FILTER_IGNORE)
-		var cl := _label(str(_card_cost(card)), 20)
-		cl.position = Vector2(0, 5)
-		cl.size = Vector2(40, 30)
-		cl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		cost.add_child(cl)
-		var cd := _label("", 34)
-		cd.name = "cd"
-		cd.position = Vector2(0, 40)
-		cd.size = Vector2(116, 60)
-		cd.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		p.add_child(cd)
-		_cards[card] = p
+	_build_cards(CARD_ORDER)
 	# «Союзный корпус»: a compact extra card above the hand, shown only with an ally in the war
 	var cp := _panel(_battle, Rect2(512, VH - 352, 116, 120), _style(Color(0.14, 0.24, 0.2), 14, Color(0.5, 1.0, 0.7, 0.9), 2))
 	cp.gui_input.connect(_on_card_input.bind("corps"))
@@ -232,6 +204,56 @@ func _build_battle() -> void:
 	_battle.visible = false
 
 
+## The hand's card row (canon §9.9: «Атака» + 4 slots, 5 from DL6): the cards share the 628 px row.
+func _build_cards(order: Array) -> void:
+	for c in _cards.keys():
+		if c != "corps":
+			(_cards[c] as Control).queue_free()
+			_cards.erase(c)
+			_card_names.erase(c)
+	_hand_order = order.duplicate()
+	var n := order.size()
+	var step := 628.0 / n
+	var w := step - 9.0
+	for i in n:
+		var card: String = order[i]
+		var x := 12.0 + i * step
+		var p := _panel(_battle, Rect2(x, VH - 222, w, 196), _style(Color(0.12, 0.17, 0.28), 14, Color(0.5, 0.62, 0.85, 0.8), 2))
+		p.gui_input.connect(_on_card_input.bind(card))
+		var art := _label(CARD_ART[card], 54 if n <= 5 else 46)
+		art.position = Vector2(0, 14)
+		art.size = Vector2(w, 70)
+		art.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		p.add_child(art)
+		var nm := _label(_card_name(card), 17)
+		_fit(nm, 17, w - 6.0)
+		nm.position = Vector2(0, 94)
+		nm.size = Vector2(w, 24)
+		nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		p.add_child(nm)
+		_card_names[card] = nm
+		var cost := _panel(p, Rect2(w / 2.0 - 20.0, 138, 40, 40), _style(Color(0.55, 0.3, 0.95), 20, Color(1, 1, 1, 0.9), 3), Control.MOUSE_FILTER_IGNORE)
+		var cl := _label(str(_card_cost(card)), 20)
+		cl.position = Vector2(0, 5)
+		cl.size = Vector2(40, 30)
+		cl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		cost.add_child(cl)
+		var cd := _label("", 34)
+		cd.name = "cd"
+		cd.position = Vector2(0, 40)
+		cd.size = Vector2(w, 60)
+		cd.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		p.add_child(cd)
+		_cards[card] = p
+
+
+## The offensive's hand in order (cards not open yet included, shown locked); rebuilt only when it changes.
+func set_hand(order: Array) -> void:
+	if order != _hand_order:
+		_build_cards(order)
+		set_locked(_locked)
+
+
 ## Cards not open yet: {card: DL it opens at} — shown greyed with «УР N» in place of the name; a tap explains.
 func set_locked(locked: Dictionary) -> void:
 	_locked = locked
@@ -260,7 +282,7 @@ func retranslate() -> void:
 
 
 func _card_cost(c: String) -> int:
-	return {"attack": 2, "breakthrough": 3, "airstrike": 4, "encircle": 3, "defense": 2, "corps": 3}[c]
+	return {"attack": 2, "breakthrough": 3, "airstrike": 4, "encircle": 3, "defense": 2, "corps": 3, "landing": 4, "missile": 5}[c]
 
 
 func set_battle(visible_hand: bool, energy_units: int, unit: int, cooldowns: Dictionary, seconds_left: int, rush: bool) -> void:

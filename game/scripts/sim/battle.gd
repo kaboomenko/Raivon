@@ -19,6 +19,7 @@ extends RefCounted
 ## Options (Dictionary): {attacker:int (player side), defender:int, ai_energy_mult:int (‰), cards:Array[String],
 ##   ticks:int (optional offensive length, default OFFENSIVE_TICKS)}
 
+const HexGridLib := preload("res://scripts/sim/hexgrid.gd")
 const Types := preload("res://scripts/sim/types.gd")
 const MapGen := preload("res://scripts/sim/map_gen.gd")
 const Topology := preload("res://scripts/sim/topology.gd")
@@ -44,7 +45,9 @@ const CARDS := {
 	"airstrike": {"cost": 4, "name": "card.airstrike", "target": "enemy"},
 	"encircle": {"cost": 3, "name": "card.encircle", "target": "enemy"},
 	"defense": {"cost": 2, "name": "card.defense", "target": "own"},
-	"corps": {"cost": 3, "name": "card.corps", "target": "own"},  # «Союзный корпус», only with an ally in the war
+	"corps": {"cost": 3, "name": "card.corps", "target": "own"},
+	"landing": {"cost": 4, "name": "card.landing", "target": "enemy"},  # «Десант», DL7 (03 §12.2)
+	"missile": {"cost": 5, "name": "card.missile", "target": "enemy"},  # «Ракетный удар», DL8  # «Союзный корпус», only with an ally in the war
 }
 const CORPS_TICKS := 30 * TICKS_PER_SEC
 const CORPS_SHARE_PM := 300  # 30% of the average max Strength of the side's armies
@@ -78,6 +81,11 @@ var _lost: Dictionary = {}
 var _routed_player: int = 0
 var _protected_core: Dictionary = {}
 var _corps_used: Dictionary = {}  # side -> true once «Союзный корпус» was played this offensive
+var _landings: Array = []          # [{army, at}] landed copies waiting 1.5 s before they attack
+var _landing_hexes: Dictionary = {} # hex -> side: hexes a landing took (the «Высадка» star needs them held)
+var _missile_hit: Dictionary = {}   # hex -> true: fort −3 and the tower out until the battle ends
+const LANDING_SHARE_PM := 400       # the copy has 40% of the strongest army's max Strength
+const LANDING_DELAY := 15           # 1.5 s after the drop it attacks
 
 
 func _init(p_world: World, p_armies: Array, p_opts: Dictionary) -> void:
@@ -238,13 +246,21 @@ func _atk_mult(army: Dictionary, f: Dictionary, breakthrough: bool) -> int:
 	return maxi(200, m)
 
 
+## Fort level after the cards: «Авиаудар» −1 for 15 s, «Ракетный удар» −3 to the end of the battle.
+func effective_fort(hex: int) -> int:
+	var fort: int = world.cells[hex]["fort"]
+	if has_effect("airFort", hex):
+		fort -= 1
+	if _missile_hit.has(hex):
+		fort -= 3
+	return maxi(0, fort)
+
+
 func _def_mult(target: int, def_army: Variant, f: Dictionary) -> int:
 	var c: Dictionary = world.cells[target]
 	var side: int = c["controller"]
 	var m := 1100 # base + defender +10%
-	var fort: int = c["fort"]
-	if has_effect("airFort", target):
-		fort = maxi(0, fort - 1)
+	var fort := effective_fort(target)
 	m += 150 * fort
 	if c["terrain"] == "forest" or c["terrain"] == "hills":
 		m += 250
@@ -386,6 +402,10 @@ func validate(side: int, cmd: Dictionary) -> bool:
 				return c["controller"] == side
 			if card == "airstrike":
 				return c["controller"] == enemy_of(side) or c["controller"] == side
+			if card == "missile":
+				return can_target(side, target)
+			if card == "landing":
+				return can_land(side, target)
 			if not can_target(side, target):
 				return false
 			if card == "attack" or card == "breakthrough":
@@ -449,6 +469,27 @@ func _play_card(side: int, card: String, target: int) -> void:
 			var army: Dictionary = cands[0]
 			var dir: int = world.neighbors[army["hex"]].find(target)
 			_start_or_join(side, target, [army], {"army": army["id"], "dir": dir, "steps": 1})
+		"missile":
+			# army and garrison −50% of current Strength; the tower is out and the fort −3 to the end (03 §12.2)
+			var foe := enemy_of(side)
+			for a in armies:
+				if a["hex"] == target and a["side"] == foe and not a["routed"]:
+					a["str"] = maxi(1, int(a["str"]) / 2)
+			garrison[target] = int(garrison[target]) / 2
+			_missile_hit[target] = true
+			events.append({"type": "missile", "tick": tick, "hex": target, "side": side})
+		"landing":
+			# a copy of the strongest own army at 40% of its max Strength drops on the hex and attacks in 1.5 s
+			var best: Variant = null
+			for a in armies:
+				if a["side"] == side and not a.has("temp_until") and not a["routed"] and (best == null or int(a["max_str"]) > int(best["max_str"])):
+					best = a
+			var s: int = int(best["max_str"]) * LANDING_SHARE_PM / 1000
+			var copy := {"id": 960 + tick % 1000, "side": side, "hex": target, "str": s, "max_str": s, "infantry": int(best.get("infantry", 0)),
+				"hold": false, "move": null, "start_str": s, "attrition": 0, "routed": false, "temp_until": 1 << 30, "landing": true}
+			armies.append(copy)
+			_landings.append({"army": copy["id"], "at": tick + LANDING_DELAY})
+			events.append({"type": "landing", "tick": tick, "hex": target, "side": side})
 		"airstrike":
 			# target and its 6 neighbours: −20% max Strength of enemy armies and garrisons, forts −1 for 15 s;
 			# hexes under the enemy's air defence take half the damage (canon §7, 03 §12.2)
@@ -467,6 +508,28 @@ func _play_card(side: int, card: String, target: int) -> void:
 					hit = true
 				if div == 10 and hit:
 					events.append({"type": "flak", "tick": tick, "hex": hex, "side": enemy})
+
+
+## «Десант» (03 §12.2): an enemy hex with no army and an effective fort of 0, within 2 hexes of a hex the side
+## controls (or 4 of its port); the side needs a regular army to copy.
+func can_land(side: int, target: int) -> bool:
+	if not can_target(side, target) or army_at(target, enemy_of(side)) != null or effective_fort(target) > 0:
+		return false
+	var has_army := false
+	for a in armies:
+		if a["side"] == side and not a.has("temp_until") and not a["routed"]:
+			has_army = true
+	if not has_army:
+		return false
+	var t: Dictionary = world.cells[target]
+	var tv := Vector2i(int(t["q"]), int(t["r"]))
+	for c in world.cells:
+		if c["controller"] != side:
+			continue
+		var d := HexGridLib.distance(tv, Vector2i(int(c["q"]), int(c["r"])))
+		if d <= 2 or (d <= 4 and c["kind"] == "port"):
+			return true
+	return false
 
 
 ## The airstrike's 7 hexes: the target and its neighbours on the map.
@@ -561,6 +624,7 @@ func step() -> void:
 		if over:
 			return
 
+	_step_landings()
 	_step_moves()
 	_step_clashes()
 	_step_temp_armies()
@@ -684,6 +748,30 @@ func _step_clashes() -> void:
 				break
 
 
+## Landed copies attack their hex 1.5 s after the drop; a copy that loses its clash is gone (03 §12.2).
+func _step_landings() -> void:
+	for l in _landings.duplicate():
+		if tick < int(l["at"]):
+			continue
+		_landings.erase(l)
+		var a: Variant = army_by_id(int(l["army"]))
+		if a != null:
+			_start_or_join(int(a["side"]), int(a["hex"]), [a], null)
+	for a in armies.duplicate():
+		if a.has("landing") and int(world.cells[int(a["hex"])]["controller"]) == int(a["side"]):
+			_landing_hexes[int(a["hex"])] = int(a["side"])
+		elif a.has("landing") and _landings.filter(func(x): return int(x["army"]) == int(a["id"])).is_empty() and _find_clash(int(a["hex"]), int(a["side"])) == null:
+			_remove_army(a)  # repelled: the copy is gone
+
+
+## The «Высадка» star: a hex taken by a landing is still held by its side when the battle ends.
+func landing_held(side: int) -> bool:
+	for h in _landing_hexes:
+		if int(_landing_hexes[h]) == side and int(world.cells[int(h)]["controller"]) == side:
+			return true
+	return false
+
+
 ## Temporary armies («Союзный корпус») vanish when their time is up, even mid-clash (03 §11).
 func _step_temp_armies() -> void:
 	for a in armies.duplicate():
@@ -720,7 +808,7 @@ func _step_towers() -> void:
 		return
 	for c in world.cells:
 		var lvl: int = int(c.get("tower", 0))
-		if lvl <= 0 or c["controller"] != c["owner"]:
+		if lvl <= 0 or c["controller"] != c["owner"] or _missile_hit.has(int(c["id"])):
 			continue
 		var side: int = c["owner"]
 		var dmg: int = (150 * STR_MULT_PM[clampi(lvl, 1, 10)]) / 1000

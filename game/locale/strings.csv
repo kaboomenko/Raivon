@@ -760,3 +760,8 @@ inbox.separate.text,"«%s» вышли из войны: перемирие 24 ч
 toast.subsidy,«%s» спонсируют «%s»: их армии +10%% на 12 ч,“%s” fund “%s”: their armies +10%% for 12 h
 inbox.subsidy.title,Субсидия врагу,A subsidy to the enemy
 inbox.subsidy.text,"«%s» тревожатся нашим ростом и спонсируют «%s»: армии врага +10%% на 12 ч.","“%s” are alarmed by our growth and fund “%s”: enemy armies +10%% for 12 h."
+card.landing,Десант,Landing
+card.missile,Ракета,Missile
+floater.landing,Десант!,Landing!
+star.c4_landing,Высадка: удержите гекс Десанта до конца наступления,Landing: hold a Landing hex to the end of the offensive
+star.c4_missile,Точный удар: выведите башню Ракетным ударом,Precision strike: knock out a tower with a Missile strike

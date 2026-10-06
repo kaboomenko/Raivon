@@ -2102,6 +2102,56 @@ func _step_planes(delta: float) -> void:
 			_planes.erase(pl)
 
 
+## «Ракетный удар»: a missile climbs from `from` in a high arc with a smoke trail and bursts on the hex, which
+## then burns for a while.
+func missile(from: Vector3, hex: int) -> void:
+	var to := cell_world(hex)
+	var body := Node3D.new()
+	add_child(body)
+	_box(body, Vector3(0.09, 0.09, 0.42), Vector3.ZERO, _flat_mat(Color(0.85, 0.86, 0.88)))
+	var tip := _box(body, Vector3(0.1, 0.1, 0.1), Vector3(0, 0, -0.24), _flat_mat(Color(0.8, 0.15, 0.1)))
+	tip.rotation.z = PI / 4.0
+	var flame := _box(body, Vector3(0.07, 0.07, 0.12), Vector3(0, 0, 0.27), _flat_mat(Color(1.0, 0.7, 0.25)))
+	(flame.material_override as StandardMaterial3D).emission_enabled = true
+	(flame.material_override as StandardMaterial3D).emission = Color(1.0, 0.55, 0.15)
+	(flame.material_override as StandardMaterial3D).emission_energy_multiplier = 4.0
+	var trail := CPUParticles3D.new()
+	trail.amount = 30
+	trail.lifetime = 0.9
+	trail.local_coords = false
+	trail.direction = Vector3.UP
+	trail.spread = 20.0
+	trail.initial_velocity_min = 0.05
+	trail.initial_velocity_max = 0.15
+	trail.gravity = Vector3(0, 0.15, 0)
+	trail.scale_amount_curve = _curve(0.4, 1.4)
+	trail.color_ramp = _ramp([0.0, 0.2, 1.0], [Color(0.9, 0.9, 0.9, 0.0), Color(0.85, 0.85, 0.85, 0.6), Color(0.7, 0.7, 0.72, 0.0)])
+	var tq := QuadMesh.new()
+	tq.size = Vector2(0.3, 0.3)
+	tq.material = _fx_mat(_puff_tex(), false)
+	trail.mesh = tq
+	trail.position = Vector3(0, 0, 0.3)
+	body.add_child(trail)
+	var dur := 1.3
+	var tw := create_tween()
+	tw.tween_method(func(k: float):
+		var p := from.lerp(to, k) + Vector3(0, 0.6 + 4.0 * sin(PI * k), 0)
+		var p2 := from.lerp(to, minf(1.0, k + 0.02)) + Vector3(0, 0.6 + 4.0 * sin(PI * minf(1.0, k + 0.02)), 0)
+		body.position = p
+		if p2.distance_to(p) > 0.0001:
+			body.look_at(p2, Vector3.UP), 0.0, 1.0, dur)
+	tw.tween_callback(func():
+		explosion(to)
+		explosion(to + Vector3(0.25, 0, 0.15))
+		smoke(hex, 6.0, true)
+		trail.emitting = false
+		body.get_child(0).visible = false
+		body.get_child(1).visible = false
+		body.get_child(2).visible = false)
+	tw.tween_interval(1.0)
+	tw.tween_callback(body.queue_free)
+
+
 ## A bomb burst on the ground: a fireball, a shock ring and a puff of dark smoke.
 func explosion(pos: Vector3) -> void:
 	var root := Node3D.new()

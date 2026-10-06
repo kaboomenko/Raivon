@@ -47,6 +47,7 @@ func _init() -> void:
 		["cards: defense, airstrike, encircle, breakthrough", _test_cards],
 		["towers hit adjacent enemy armies in clashes", _test_towers],
 		["air defence: towers lvl 6+ halve airstrikes; AI airstrike targeting", _test_air_defense],
+		["missile and landing cards", _test_missile_landing],
 		["rivers: attacking across a river is 25% weaker", _test_river],
 		["«Союзный корпус»: a temporary army for 30 s, once per offensive", _test_corps],
 		["war: treaty never takes the enemy core", _test_treaty],
@@ -538,6 +539,49 @@ func _test_stars() -> void:
 	War.record_offensive(war, 0)
 	_eq(war["battles"], 9, "no capture −1")
 	_eq(war["offensives"], 2, "offensive count")
+
+
+func _test_missile_landing() -> void:
+	# «Ракетный удар»: army and garrison −50% current, fort −3 and the tower out to the end of the battle
+	var d := _duel(100, 60)
+	var b: Battle = d["b"]
+	var target: int = d["target"]
+	b.world.cells[target]["fort"] = 4
+	b.world.cells[target]["tower"] = 3
+	b.garrison[target] = 20 * FX
+	var def_army: Dictionary = b.army_by_id(101)
+	b.energy[PLAYER] = 5000
+	_check(b.issue(PLAYER, {"t": "card", "card": "missile", "target": target}), "missile accepted")
+	b.step()
+	_eq(def_army["str"], 30 * FX, "missile halves the army")
+	_eq(b.garrison[target], 10 * FX, "missile halves the garrison")
+	_eq(b.effective_fort(target), 1, "fort 4 − 3 to the end of the battle")
+	for i in 400:
+		b.step()
+	_eq(b.effective_fort(target), 1, "still −3 after 40 s")
+	# «Десант»: an empty hex without a fort within 2 of our land; a 40% copy lands and attacks in 1.5 s
+	var d2 := _duel(100, 60)
+	var b2: Battle = d2["b"]
+	var near := -1
+	for c in b2.world.cells:
+		if c["controller"] == BARONS and b2.army_at(c["id"], BARONS) == null and int(c["fort"]) == 0 and b2.can_land(PLAYER, c["id"]):
+			near = c["id"]
+			break
+	_check(near >= 0, "a landing hex exists")
+	b2.world.cells[d2["target"]]["fort"] = 2
+	_check(not b2.can_land(PLAYER, d2["target"]), "no landing on a hex with an army or a fort")
+	b2.energy[PLAYER] = 5000
+	b2.garrison[near] = 5 * FX
+	_check(b2.issue(PLAYER, {"t": "card", "card": "landing", "target": near}), "landing accepted")
+	b2.step()
+	var copy: Variant = null
+	for a in b2.armies:
+		if a.has("landing"):
+			copy = a
+	_check(copy != null and int(copy["max_str"]) == 40 * FX, "a 40%% copy lands")
+	for i in 120:
+		b2.step()
+	_check(int(b2.world.cells[near]["controller"]) == PLAYER and b2.landing_held(PLAYER), "the landing takes and holds the hex")
 
 
 func _test_air_defense() -> void:

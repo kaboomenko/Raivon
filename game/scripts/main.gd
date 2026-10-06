@@ -39,6 +39,8 @@ enum Mode { MAP, WAR, BATTLE, RESULT, PEACE, CEREMONY }
 const MAP_SEED := 20261004
 const HAND := ["attack", "breakthrough", "airstrike", "encircle", "defense"]
 const AIRSTRIKE_DL := 6
+## When each card opens (canon §9.9) — cards outside the list are open from DL1 in this build.
+const CARD_DL := {"airstrike": 6, "landing": 7, "missile": 8}
 const AIR_ARCHETYPES := ["wolf", "raven"]  # AI hands with «Авиаудар» (03 §19.4)
 const CHAPTER_GOALS: Array[int] = [0, 20, 36, 56, 88]  # official hexes per chapter (canon §12.1)
 const COLONIZE_SEC: Array[int] = [0, 60, 300, 900, 1800]  # 1 min in chapter I, 5 / 15 / 30 min later (canon §12.1)
@@ -1865,7 +1867,7 @@ func _start_offensive() -> void:
 	battle = Battle.new(sim, armies, opts)
 	ai = BattleAI.new(enemy)
 	ai.airstrike = ftue == 0 and _state_dl(enemy) >= AIRSTRIKE_DL and String(sim.states[enemy]["archetype"]) in AIR_ARCHETYPES
-	ui.set_locked({} if _hand().has("airstrike") else {"airstrike": AIRSTRIKE_DL})
+	_show_hand()
 	var other := ai_war_of(enemy)
 	if other >= 0:
 		# window of opportunity (canon §10.10): fighting another AI, its other borders hold 30% weaker garrisons
@@ -1883,10 +1885,32 @@ func _start_offensive() -> void:
 
 
 ## The war cards in hand: the base five, plus «Союзный корпус» while an ally fights in this war (canon §9.9).
+## The cards on the table this offensive (canon §9.9: «Атака» + 4 slots, 5 from DL6). Before DL6 the hand teases
+## the airstrike; from DL6 the 5th slot takes the landing (DL7 opens it), at DL8 the missile replaces the encirclement.
+func _hand_display() -> Array:
+	var dl: int = econ.dev_level()
+	if dl < 6:
+		return ["attack", "breakthrough", "airstrike", "encircle", "defense"]
+	if dl < 8:
+		return ["attack", "breakthrough", "airstrike", "encircle", "defense", "landing"]
+	return ["attack", "breakthrough", "airstrike", "landing", "missile", "defense"]
+
+
+## The hand row of the battle UI: the cards of this DL, those not open yet greyed with their DL.
+func _show_hand() -> void:
+	var locked := {}
+	for c in _hand_display():
+		if econ.dev_level() < int(CARD_DL.get(c, 1)):
+			locked[c] = int(CARD_DL.get(c, 1))
+	ui.set_hand(_hand_display())
+	ui.set_locked(locked)
+
+
 func _hand() -> Array:
-	var hand: Array = HAND.duplicate()
-	if econ.dev_level() < AIRSTRIKE_DL:
-		hand.erase("airstrike")  # aviation arrives with DL6 (canon §9.9)
+	var hand: Array = []
+	for c in _hand_display():
+		if econ.dev_level() >= int(CARD_DL.get(c, 1)):
+			hand.append(c)
 	for k in war:
 		if String(k).begins_with("ally_"):
 			return hand + ["corps"]
@@ -1950,6 +1974,15 @@ func _handle_event(ev: Dictionary) -> void:
 				ui.toast(tr("toast.goal_taken"))
 		"tower_hit":
 			map_view.tower_volley(int(ev["hex"]), int(ev["target"]))
+		"missile":
+			if mine and int(sim.cells[int(ev["hex"])].get("tower", 0)) > 0:
+				_stat("missile_towers")  # «Точный удар»: a tower knocked out
+			var from_cap: int = sim.states[int(ev.get("side", Types.PLAYER))]["capital_id"]
+			map_view.missile(map_view.cell_world(from_cap), int(ev["hex"]))
+		"landing":
+			var ls: int = int(ev.get("side", Types.PLAYER))
+			map_view.airstrike(int(ev["hex"]), [], _state_dl(ls), map_view.state_color(ls) if ls != Types.PLAYER else MapView.C_PLAYER)
+			map_view.floater(int(ev["hex"]), tr("floater.landing"), Color(0.75, 0.9, 1.0))
 		"flak":
 			map_view.flak(int(ev["hex"]))
 			if int(ev["tick"]) != _flak_tick:  # one «ПВО −50%» per strike, over its first defended hex
@@ -2011,8 +2044,9 @@ func _start_camp_fight(hex: int) -> void:
 	_camp_fight = {"hex": hex, "fort": int(sim.cells[hex]["fort"]), "homes": homes}
 	sim.cells[hex]["fort"] = Camps.fort_level(econ.dev_level())
 	battle = Battle.new(sim, armies, {"attacker": Types.PLAYER, "defender": Types.NOBODY, "ai_energy_mult": 0,
-		"cards": HAND, "camp": hex, "ticks": Camps.FIGHT_TICKS})
+		"cards": _hand(), "camp": hex, "ticks": Camps.FIGHT_TICKS})
 	battle.garrison[hex] = camps.garrison(total / maxi(1, n), now_s())
+	_show_hand()
 	ai = null
 	flag_hex = hex
 	_acc = 0.0
@@ -2076,6 +2110,8 @@ func _end_offensive() -> void:
 	elif ftue > 0:
 		ftue = 5 if stars > 0 else 2
 	War.record_offensive(war, stars)
+	if battle.landing_held(Types.PLAYER):
+		_stat("landings_held")  # «Высадка»: the landing hex is still ours at the end
 	var ws := War.war_score(sim, war)
 	battle = null
 	ai = null
@@ -2215,7 +2251,7 @@ func _on_card_drag(card: String, screen: Vector2, active: bool) -> void:
 	var ok: bool = battle.validate(Types.PLAYER, {"t": "card", "card": card, "target": id})
 	sel_mat.albedo_color = Color(0.45, 1.0, 0.5) if ok else Color(1.0, 0.35, 0.3)
 	_drag_lbl.visible = false
-	if ok and Battle.CARDS[card]["target"] == "enemy" and card != "airstrike":
+	if ok and card in ["attack", "breakthrough", "encircle"]:
 		var ids: Array = []
 		for a in battle.adjacent_idle_armies(Types.PLAYER, id):
 			ids.append(a["id"])
@@ -3152,9 +3188,11 @@ const STARS_3 := [
 ]
 
 
-## Chapter IV stars (07 §3.8; two fronts, Landing and Missile come with those cards).
+## Chapter IV stars (07 §3.8; «Война на два фронта» needs two wars at once, not in this build).
 const STARS_4 := [
 	["c4_conclave", "star.c4_conclave", "conclave_wins", 1],
+	["c4_landing", "star.c4_landing", "landings_held", 1],
+	["c4_missile", "star.c4_missile", "missile_towers", 1],
 	["c4_ultrafence", "star.c4_ultrafence", "@fort8", 1],
 	["c4_pocket8", "star.c4_pocket8", "pockets8", 1],
 	["c4_cities6", "star.c4_cities6", "@cities", 6],
@@ -4652,6 +4690,25 @@ func _demo(spec: String) -> void:
 	if what == "war":
 		return
 	_start_offensive()
+	if what == "missile":  # DL8 hand: a missile on a Barons tower and a landing behind the front
+		econ._find_type("residence")["level"] = 8
+		var tgt := -1
+		for c in sim.cells:
+			if tgt < 0 and battle.can_target(Types.PLAYER, c["id"]) and not battle.adjacent_idle_armies(Types.PLAYER, c["id"]).is_empty():
+				tgt = c["id"]
+		sim.cells[tgt]["tower"] = 3
+		map_view.refresh_hex(tgt)
+		_show_hand()
+		rig.focus(map_view.cell_world(tgt), 0.55)
+		rig.zoom = rig.zoom_target
+		get_tree().create_timer(float(parts[1]) if parts.size() > 1 else 3.0).timeout.connect(func():
+			battle.energy[Types.PLAYER] = 10 * Battle.ENERGY_UNIT
+			battle.issue(Types.PLAYER, {"t": "card", "card": "missile", "target": tgt})
+			for c in sim.cells:
+				if battle.can_land(Types.PLAYER, c["id"]) and c["id"] != tgt:
+					battle.issue(Types.PLAYER, {"t": "card", "card": "landing", "target": c["id"]})
+					break)
+		return
 	if what == "air":  # the player's airstrike into a Barons tower's air defence
 		var tgt := -1
 		for c in sim.cells:
