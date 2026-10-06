@@ -332,7 +332,7 @@ func set_primary(kind: String, title: String, color := Color(0.13, 0.4, 0.9), en
 	_action2_lbl.text = title
 	_fit(_action2_lbl, 26, 250.0)
 	_action2.add_theme_stylebox_override("panel", _style(color, 16, Color(1, 1, 1, 0.6), 3))
-	_action2.modulate = Color(1, 1, 1, 1.0 if enabled else 0.5)
+	_action2.modulate = Color(1, 1, 1, 1) if enabled else Color(0.72, 0.72, 0.72, 1)  # opaque: the HUD button below must not show through
 
 
 # ------------------------------------------------------------------ modals

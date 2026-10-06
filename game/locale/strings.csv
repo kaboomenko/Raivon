@@ -537,3 +537,8 @@ kind.raivite_vein,Райвитовая жила,Raivite vein
 kind.dark_lake,Тёмное озеро,Dark Lake
 tile.vein,"2 Райвита / 12 ч · накоплено %d/4","2 Raivites / 12 h · stored %d/4"
 star.c2_river,Форсирование: возьмите гекс атакой через реку,River crossing: take a hex attacking across a river
+kind.oil,Нефть,Oil
+res.name.oil,Нефть,Oil
+inbox.oil.title,Нефть!,Oil!
+inbox.oil.text,"Держава доросла до УР5: Тёмные озёра (%d) проснулись нефтью. Нефтяные гексы дают 25 нефти в час — она нужна для УР6 и крепостей 8+ уровня.","The realm reached DL5: %d Dark Lakes woke up as oil. Oil hexes give 25 oil an hour, needed for DL6 and level 8+ forts."
+toast.oil_awake,Тёмные озёра проснулись — нефть!,The Dark Lakes woke up: oil!

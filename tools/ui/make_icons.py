@@ -76,6 +76,17 @@ def crystal(d, shadow):
     d.polygon([(150, 170), (210, 110), (230, 130)], fill=(220, 240, 255, 230))
 
 
+def oil_drop(d, shadow):
+    pts = [(256, 40), (420, 300)] + [(256 + 165 * math.cos(math.radians(k)), 300 + 165 * math.sin(math.radians(k))) for k in range(0, 181, 10)] + [(92, 300)]
+    if shadow:
+        d.polygon(pts, fill=(0, 0, 0, 120)); return
+    d.polygon(pts, fill=(28, 24, 40, 255))
+    inner = [(256, 90), (380, 300)] + [(256 + 125 * math.cos(math.radians(k)), 300 + 125 * math.sin(math.radians(k))) for k in range(0, 181, 10)] + [(132, 300)]
+    d.polygon(inner, fill=(58, 48, 86, 255))
+    d.ellipse((165, 250, 225, 350), fill=(160, 140, 220, 220))
+    d.ellipse((180, 190, 205, 230), fill=(200, 190, 240, 200))
+
+
 def hammer(d, shadow):
     c1 = (0, 0, 0, 110) if shadow else (150, 100, 50, 255)
     c2 = (0, 0, 0, 110) if shadow else (170, 180, 195, 255)
@@ -93,6 +104,6 @@ def bubble(d, shadow):
 
 
 os.makedirs(OUT, exist_ok=True)
-for name, fn in [("coin", coin), ("food", wheat), ("metal", ingot), ("raivite", crystal), ("builder", hammer), ("bubble", bubble)]:
+for name, fn in [("coin", coin), ("food", wheat), ("metal", ingot), ("raivite", crystal), ("oil", oil_drop), ("builder", hammer), ("bubble", bubble)]:
     save(shadowed(fn), name)
 print("icons ->", OUT)

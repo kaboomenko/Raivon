@@ -41,7 +41,7 @@ const COLONIZE_SEC: Array[int] = [0, 60, 300]  # 1 min in chapter I, 5 min in II
 const TRUCE_SEC := 30 * 60
 ## Translation keys of unnamed hexes: by kind, else by terrain.
 const KIND_NAMES := {"capital": "kind.capital", "city": "kind.city", "farm": "kind.farm", "mine": "kind.mine", "port": "kind.port", "military_base": "kind.military_base",
-	"raivite_vein": "kind.raivite_vein", "dark_lake": "kind.dark_lake"}
+	"raivite_vein": "kind.raivite_vein", "dark_lake": "kind.dark_lake", "oil": "kind.oil"}
 const TERRAIN_NAMES := {"plain": "terrain.plain", "forest": "terrain.forest", "hills": "terrain.hills", "water": "terrain.water", "mountain": "terrain.mountain"}
 
 var sim  # sim World
@@ -669,6 +669,23 @@ func _war_or_front_center() -> Vector3:
 		return map_view.cell_world(war["goal"])
 	var g := War.recommend_goals(sim, MapGen.BARONS, 1)
 	return map_view.cell_world(g[0]) if g.size() > 0 else rig.target
+
+
+## At DL5 every Dark Lake of the world wakes up as an Oil hex (canon §5.1).
+func _wake_oil() -> void:
+	if econ.dev_level() < Economy.OIL_DL:
+		return
+	var woke := 0
+	for c in sim.cells:
+		if c["kind"] == "dark_lake":
+			c["kind"] = "oil"
+			c["value"] = int(Types.KIND_VALUE["oil"])
+			map_view.refresh_hex(int(c["id"]))
+			woke += 1
+	if woke > 0:
+		map_view.mark_dirty()
+		_post("inbox.oil.title", L.pack("inbox.oil.text", [woke]))
+		ui.toast(tr("toast.oil_awake"))
 
 
 const AI_DL_CAP: Array[int] = [0, 2, 4, 6, 8, 9, 10]  # by chapter (canon §9.16)
@@ -1979,6 +1996,7 @@ func _econ_tick() -> void:
 			sfx.play("coin")
 			ui.toast(tr("toast.convoy_back") % [n, tr("res.gen." + String(ev["res"]))])
 	_camps_tick(now)
+	_wake_oil()
 	_ai_growth(now)
 	_ai_colonize(now)
 	_ai_wars_tick(now)
@@ -3551,6 +3569,17 @@ func _demo(spec: String) -> void:
 		return
 	if what == "settings":
 		_on_hud_button("gear")
+		return
+	if what == "oil":
+		await _world_expansion()
+		ui.close_modal()
+		econ._find_type("residence")["level"] = 5
+		_econ_tick()
+		for c in sim.cells:
+			if c["kind"] == "oil":
+				_select(c["id"])
+				rig.focus(map_view.cell_world(c["id"]), 0.4)
+				break
 		return
 	if what == "ch2":
 		if parts.size() > 1:

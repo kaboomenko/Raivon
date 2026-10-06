@@ -28,6 +28,8 @@ const _Self := preload("res://scripts/sim/economy.gd")
 
 ## Stored resources (canon §4). Oil exists only from DL5 (outside chapter I, max DL3) — not tracked yet.
 const RES := ["gold", "food", "metal"]
+const OIL := "oil"
+const OIL_DL := 5  # oil appears in the HUD and in the economy from DL5 (canon §4, §5.1)
 ## Hard currency key (canon §4: no cap, never plundered).
 const RAIVITE := "raivite"
 ## Translation keys of resource names in refusal reasons (genitive in Russian: «Не хватает золота»).
@@ -58,6 +60,9 @@ const HEX_PRODUCTION := {
 	"port": {"res": {"gold": 20}, "lvl": "port"},
 	"capital": {"res": {"gold": 150, "food": 30, "metal": 30}, "lvl": ""},
 	"military_base": {"res": {}, "lvl": "military_base"},   # no income (canon §5.1)
+	"oil": {"res": {"oil": 25}, "lvl": ""},   # 25 oil/h from DL5 (canon §5.1)
+	"raivite_vein": {"res": {}, "lvl": ""},   # Raivites accrue separately (vein_secs)
+	"dark_lake": {"res": {}, "lvl": ""},   # dormant oil until DL5
 }
 
 ## Building catalogue (canon §7; C_B — 05 §8.4 / 11 §7.3, author's proposal adopted by 11).
@@ -194,6 +199,11 @@ func _init(world: World = null, now: int = 0) -> void:
 
 # ---------------------------------------------------------------- queries
 
+## Resources the economy tracks right now: gold, food, metal, and oil from DL5.
+func res_kinds() -> Array:
+	return RES + [OIL] if dev_level() >= OIL_DL else RES
+
+
 func dev_level() -> int:
 	var r := _find_type("residence")
 	return 1 if r.is_empty() else int(r["level"])
@@ -203,7 +213,7 @@ func storage_cap() -> Dictionary:
 	var lvl := _type_level("warehouse")
 	var cap: int = STORAGE_CAP[clampi(lvl, 1, STORAGE_CAP.size() - 1)]
 	var out := {}
-	for r in RES:
+	for r in res_kinds():
 		out[r] = cap
 	return out
 
@@ -233,7 +243,7 @@ func income_per_hour(world: World) -> Dictionary:
 	var gross := _rates_total(world)
 	var up := _upkeep_milli()
 	var out := {}
-	for r in RES:
+	for r in res_kinds():
 		var v: int = gross[r]
 		if r == "gold":
 			v -= up
@@ -247,7 +257,7 @@ func income_per_hour(world: World) -> Dictionary:
 ## Used for «часы производства» (deposits, 12 h loss cap, buy-out).
 func gross_per_hour(world: World) -> Dictionary:
 	var out := {}
-	for r in RES:
+	for r in res_kinds():
 		out[r] = 0
 	for c in world.cells:
 		if c["owner"] != Types.PLAYER or not Types.is_passable(c):
@@ -255,7 +265,7 @@ func gross_per_hour(world: World) -> Dictionary:
 		var hr := _hex_rate_milli(c, false)
 		for r in hr:
 			out[r] = int(out[r]) + int(hr[r])
-	for r in RES:
+	for r in res_kinds():
 		out[r] = int(out[r]) / 1000
 	return out
 
@@ -515,7 +525,7 @@ func tick(world: World, now: int) -> Array:
 ## Returns what was actually gained. Also restarts the 8 h economy window at last_tick.
 func collect(hex: int) -> Dictionary:
 	var gained := {}
-	for r in RES:
+	for r in res_kinds():
 		gained[r] = 0
 	_collect_hex(hex, gained, storage_cap())
 	last_collect = last_tick
@@ -524,7 +534,7 @@ func collect(hex: int) -> Dictionary:
 
 func collect_all() -> Dictionary:
 	var gained := {}
-	for r in RES:
+	for r in res_kinds():
 		gained[r] = 0
 	var cap := storage_cap()
 	for h in _sorted_keys(stock):
@@ -851,6 +861,8 @@ func _hex_rate_milli(c: Dictionary, occupied: bool) -> Dictionary:
 	var mp := _prod_mult100()
 	var base: Dictionary = spec["res"]
 	for r in base:
+		if r == OIL and dev_level() < OIL_DL:
+			continue
 		var v: int = int(base[r]) * mp * lm / 10   # base × 1000 × mp/100 × lm/100
 		v = v * (100 + 2 * int(research.get(r, 0))) / 100
 		if occupied:
@@ -988,7 +1000,7 @@ func _finish_repairs(now: int) -> void:
 
 func _rates_total(world: World) -> Dictionary:
 	var out := {}
-	for r in RES:
+	for r in res_kinds():
 		out[r] = 0
 	var rates := _hex_rates(world)
 	for h in rates:
@@ -1150,7 +1162,7 @@ func _collect_hex(hex: int, gained: Dictionary, cap: Dictionary) -> void:
 	if not stock.has(hex):
 		return
 	var s: Dictionary = stock[hex]
-	for r in RES:
+	for r in res_kinds():
 		var have: int = s.get(r, 0)
 		if have <= 0:
 			continue

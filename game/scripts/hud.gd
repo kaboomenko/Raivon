@@ -78,7 +78,7 @@ func _build() -> void:
 
 	# ---- top resource bar (live values from the economy, set_resources)
 	_panel(Rect2(108, 10, 680, 66), _style(PANEL, 12))
-	var res := [["gold", "coin"], ["food", "food"], ["metal", "metal"], ["raivite", "raivite"]]
+	var res := [["gold", "coin"], ["food", "food"], ["metal", "metal"], ["oil", "oil"], ["raivite", "raivite"]]
 	for i in res.size():
 		var x := 120.0 + i * 168.0
 		var icon := TextureRect.new()
@@ -95,7 +95,7 @@ func _build() -> void:
 		var d := _label("", 15, GOOD, false)
 		d.position = Vector2(x + 54, 42)
 		add_child(d)
-		res_labels[res[i][0]] = [v, d]
+		res_labels[res[i][0]] = [v, d, icon]
 	_panel(Rect2(800, 10, 130, 66), _style(PANEL, 12))
 	var bi := TextureRect.new()
 	bi.texture = load("res://assets/ui/builder.png")
@@ -319,8 +319,35 @@ static func fmt(v: int) -> String:
 
 
 ## Top bar: stored amounts (orange when the warehouse is full), net income per hour, free builders.
-func set_resources(res: Dictionary, per_hour: Dictionary, caps: Dictionary, free_builders: int, builders: int) -> void:
+## Lays the resource slots out: 4 across, 5 once oil appears (DL5, canon §4).
+func _layout_res(with_oil: bool) -> void:
+	var order := ["gold", "food", "metal", "oil", "raivite"] if with_oil else ["gold", "food", "metal", "raivite"]
+	var step := 134.0 if with_oil else 168.0
 	for r in res_labels:
+		var on := order.has(r)
+		for n in res_labels[r]:
+			(n as Control).visible = on
+		if not on:
+			continue
+		var x := 120.0 + order.find(r) * step
+		var icon: Control = res_labels[r][2]
+		icon.position = Vector2(x, 18)
+		icon.size = Vector2(42, 42) if with_oil else Vector2(48, 48)
+		(res_labels[r][0] as Control).position = Vector2(x + (44 if with_oil else 52), 14)
+		(res_labels[r][1] as Control).position = Vector2(x + (46 if with_oil else 54), 42)
+
+
+var _oil_shown := -1
+
+
+func set_resources(res: Dictionary, per_hour: Dictionary, caps: Dictionary, free_builders: int, builders: int) -> void:
+	var with_oil := caps.has("oil")
+	if int(with_oil) != _oil_shown:
+		_oil_shown = int(with_oil)
+		_layout_res(with_oil)
+	for r in res_labels:
+		if not (res_labels[r][0] as Control).visible:
+			continue
 		var v: Label = res_labels[r][0]
 		var d: Label = res_labels[r][1]
 		var amount: int = res.get(r, 0)

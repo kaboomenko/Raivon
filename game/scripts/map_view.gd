@@ -441,6 +441,35 @@ func _place_dark_lake(holder: Node3D) -> void:
 		spawn("rock", holder, o, rng.randf() * TAU, 0.9)
 
 
+## Oil: a timber derrick over the black pool (until a baked model exists).
+func _place_derrick(holder: Node3D) -> void:
+	var wood := StandardMaterial3D.new()
+	wood.albedo_color = Color(0.42, 0.28, 0.16)
+	var top := Vector3(0.0, 1.05, 0.0)
+	for k in 4:
+		var a := TAU * k / 4.0 + PI / 4.0
+		var foot := Vector3(cos(a) * 0.32, 0.0, sin(a) * 0.32)
+		var leg := MeshInstance3D.new()
+		var lm := CylinderMesh.new()
+		lm.top_radius = 0.025
+		lm.bottom_radius = 0.035
+		lm.height = foot.distance_to(top)
+		lm.material = wood
+		leg.mesh = lm
+		var yv := (top - foot).normalized()
+		var xv := yv.cross(Vector3.FORWARD).normalized()
+		leg.basis = Basis(xv, yv, xv.cross(yv))
+		leg.position = (foot + top) / 2.0
+		holder.add_child(leg)
+	var cap := MeshInstance3D.new()
+	var cm := BoxMesh.new()
+	cm.size = Vector3(0.16, 0.08, 0.16)
+	cm.material = wood
+	cap.mesh = cm
+	cap.position = top
+	holder.add_child(cap)
+
+
 ## Rotation that turns a port model's water inlet (+X in the model) toward the hex's water neighbour.
 func _water_side(c: Dictionary) -> float:
 	for i in 6:
@@ -541,6 +570,11 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 			return
 		"dark_lake":
 			_place_dark_lake(holder)
+			_place_fort(c, holder)
+			return
+		"oil":
+			_place_dark_lake(holder)
+			_place_derrick(holder)
 			_place_fort(c, holder)
 			return
 		"port":
