@@ -382,6 +382,12 @@ func select_tab(key: String) -> void:
 	for k in tab_labels:
 		var l: Label = tab_labels[k]
 		l.add_theme_color_override("font_color", TEXT if k == key else MUTED)
+		# only the selected tab is bold with an outline
+		l.add_theme_constant_override("outline_size", 4 if k == key else 0)
+		if k == key:
+			l.add_theme_font_override("font", font_bold)
+		else:
+			l.remove_theme_font_override("font")
 	unit_cards.visible = false  # the Army tab content now comes from the game (game_ui.show_armies)
 
 
