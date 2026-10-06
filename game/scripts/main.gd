@@ -265,18 +265,20 @@ func _environment() -> void:
 	e.ssao_radius = 1.2
 	e.ssao_intensity = 2.5
 	e.tonemap_mode = Environment.TONE_MAPPER_ACES
-	e.tonemap_exposure = 1.05
+	e.tonemap_exposure = 1.0
+	# glow only on emissive things (neon borders, crystals, fire): a threshold above sunlit ground and no bloom,
+	# otherwise the whole frame hazes into pastel (art direction: saturated, contrasty, CoC-like)
 	e.glow_enabled = true
-	e.glow_intensity = 1.2
-	e.glow_strength = 1.15
-	e.glow_bloom = 0.08
-	e.glow_hdr_threshold = 0.75
+	e.glow_intensity = 1.0
+	e.glow_strength = 1.1
+	e.glow_bloom = 0.0
+	e.glow_hdr_threshold = 1.1
 	e.fog_enabled = true
 	e.fog_light_color = Color(0.55, 0.62, 0.72)
 	e.fog_density = 0.003
 	e.adjustment_enabled = true
-	e.adjustment_saturation = 1.12
-	e.adjustment_contrast = 1.06
+	e.adjustment_saturation = 1.2
+	e.adjustment_contrast = 1.1
 	we.environment = e
 	add_child(we)
 

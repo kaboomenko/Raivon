@@ -955,7 +955,7 @@ func _rebuild_overlay() -> void:
 	for o in lines:
 		_add(lines[o], _glow_mat(state_color(o), 0.8, 0.65))
 	for o in borders:
-		var e := 4.5 if (o == Types.PLAYER or o == at_war_with) else 2.0
+		var e := 2.6 if (o == Types.PLAYER or o == at_war_with) else 1.6  # strong enough to glow, still coloured
 		_add(borders[o], _glow_mat(state_color(o), e, 1.0))
 
 
