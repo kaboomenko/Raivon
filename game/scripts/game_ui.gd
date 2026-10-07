@@ -31,6 +31,7 @@ const CARD_NAME_KEYS := {"attack": "card.attack", "breakthrough": "card.breakthr
 const L := preload("res://scripts/l10n.gd")
 const CmdPortrait := preload("res://scripts/cmd_portrait.gd")
 const HudScript := preload("res://scripts/hud.gd")
+const FlagView := preload("res://scripts/flag_view.gd")
 
 var font_bold: Font
 var root: Control
@@ -1385,10 +1386,14 @@ func show_profile(info: Dictionary, cb: Dictionary) -> void:
 	var box := _modal_box(Rect2(30, 170, 881, 1300))
 	_button(box, Rect2(881 - 86, 18, 64, 56), "✕", Color(0.3, 0.33, 0.42), close_modal)
 	_at(_label(tr("profile.title"), 24, MUTED), box, Vector2(30, 26))
-	var crest := HudScript.Icon.new("crest")
+	var crest := FlagView.new(info.get("flag", {}))
 	crest.position = Vector2(34, 84)
 	crest.size = Vector2(130, 168)
+	crest.mouse_filter = Control.MOUSE_FILTER_STOP
+	crest.gui_input.connect(func(e): if _is_tap(e): (cb["flag"] as Callable).call())
 	box.add_child(crest)
+	var edit := _label("✎", 26, Color(1.0, 0.85, 0.4))
+	_at(edit, box, Vector2(150, 222))
 	var nm := _label(String(info["name"]), 38, Color(1.0, 0.85, 0.4))
 	_fit(nm, 38, 640)
 	_at(nm, box, Vector2(190, 92))
@@ -1444,6 +1449,111 @@ func show_profile(info: Dictionary, cb: Dictionary) -> void:
 		var key: String = bs[i][1]
 		_button(box, Rect2(30 + (i % 2) * 416, 1300 - 216 + (i / 2) * 96, 405, 82), String(bs[i][0]),
 			Color(0.13, 0.4, 0.9) if key != "soon" else Color(0.22, 0.26, 0.36), cb[key])
+
+
+var _flag_tab := "div"
+
+
+## The flag constructor (10 §4.23): the preview on top; tabs «Деление» (12), «Цвета» (2 field colours of 16, the
+## emblem's of 18 — gold and yellow only for the emblem), «Эмблема» (24 free + premium `cos_flag_part`), «Рамка»
+## (`cos_frame`); locked items show a lock; «Случайно» and «Готово». Each tap calls on_change with the new flag.
+func show_flag_editor(flag: Dictionary, owned: Dictionary, on_change: Callable, on_random: Callable, on_done: Callable) -> void:
+	var box := _modal_box(Rect2(30, 120, 881, 1430))
+	_at(_label(tr("flag.title"), 30, Color(1.0, 0.85, 0.4)), box, Vector2(30, 26))
+	var prev := FlagView.new(flag)
+	prev.position = Vector2(330, 80)
+	prev.size = Vector2(220, 280)
+	box.add_child(prev)
+	var tabs := [["div", tr("flag.tab_div")], ["colors", tr("flag.tab_colors")], ["em", tr("flag.tab_em")], ["frame", tr("flag.tab_frame")]]
+	for i in tabs.size():
+		var key: String = tabs[i][0]
+		var on := key == _flag_tab
+		_button(box, Rect2(30 + i * 207, 380, 195, 64), String(tabs[i][1]), Color(0.2, 0.42, 0.85) if on else Color(0.16, 0.2, 0.3), func():
+			_flag_tab = key
+			show_flag_editor(flag, owned, on_change, on_random, on_done))
+	var area := Control.new()
+	area.position = Vector2(30, 470)
+	area.size = Vector2(821, 800)
+	box.add_child(area)
+	var set_key := func(k: String, v: Variant) -> void:
+		var f := flag.duplicate()
+		f[k] = v
+		on_change.call(f)
+	match _flag_tab:
+		"div":
+			for i in FlagView.DIVISIONS.size():
+				var d: String = FlagView.DIVISIONS[i]
+				var f := flag.duplicate()
+				f["div"] = d
+				f["em"] = ""
+				_flag_tile(area, Rect2((i % 4) * 207, (i / 4) * 250, 195, 238), f, d == String(flag["div"]), false, func(): set_key.call("div", d))
+		"colors":
+			var groups := [["c1", tr("flag.field1"), FlagView.FIELD], ["c2", tr("flag.field2"), FlagView.FIELD], ["ec", tr("flag.emblem_c"), FlagView.emblem_colors()]]
+			var y := 0.0
+			for g in groups:
+				var key: String = g[0]
+				_at(_label(String(g[1]), 20, MUTED), area, Vector2(0, y))
+				y += 36.0
+				var cols: Array = g[2]
+				for i in cols.size():
+					var r := Rect2((i % 9) * 91, y + (i / 9) * 91, 80, 80)
+					var sel := int(flag[key]) == i
+					var sw := _panel(area, r, _style(cols[i], 12, Color(1.0, 0.85, 0.3) if sel else Color(1, 1, 1, 0.25), 5 if sel else 2))
+					var idx := i
+					sw.gui_input.connect(func(e): if _is_tap(e): set_key.call(key, idx))
+				y += ceilf(cols.size() / 9.0) * 91.0 + 18.0
+		"em":
+			var all: Array = FlagView.EMBLEMS + FlagView.PREMIUM.keys()
+			var ecs := FlagView.emblem_colors()
+			var ec: Color = ecs[clampi(int(flag["ec"]), 0, ecs.size() - 1)]
+			var bg := FlagView.field_color(int(flag["c1"]))
+			for i in all.size():
+				var em: String = all[i]
+				var locked := FlagView.PREMIUM.has(em) and not owned.has(em)
+				var sel := em == String(flag["em"])
+				var r := Rect2((i % 6) * 137, (i / 6) * 137, 125, 125)
+				var tile := _panel(area, r, _style(bg, 14, Color(1.0, 0.85, 0.3) if sel else (Color(0.8, 0.55, 1.0) if FlagView.PREMIUM.has(em) else Color(1, 1, 1, 0.2)), 5 if sel else 2))
+				var art := Control.new()
+				art.size = r.size
+				art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				var draw_em := String(FlagView.PREMIUM.get(em, em))
+				art.draw.connect(func(): FlagView.draw_emblem(art, draw_em, art.size / 2, 40.0, ec))
+				tile.add_child(art)
+				if locked:
+					tile.modulate = Color(1, 1, 1, 0.45)
+					_at(_label("🔒", 22), tile, Vector2(88, 4))
+				tile.gui_input.connect(func(e):
+					if _is_tap(e):
+						if locked:
+							toast(tr("flag.locked"))
+						else:
+							set_key.call("em", em))
+		"frame":
+			var ids: Array = FlagView.FRAMES.keys()
+			for i in ids.size():
+				var fid: String = ids[i]
+				var locked := fid != "" and not owned.has(fid)
+				var f := flag.duplicate()
+				f["frame"] = fid
+				_flag_tile(area, Rect2((i % 4) * 207, (i / 4) * 262, 195, 250), f, fid == String(flag["frame"]), locked, func():
+					if locked:
+						toast(tr("flag.locked"))
+					else:
+						set_key.call("frame", fid))
+	_button(box, Rect2(30, 1430 - 110, 400, 84), tr("flag.random"), Color(0.45, 0.3, 0.75), on_random)
+	_button(box, Rect2(451, 1430 - 110, 400, 84), tr("flag.done"), Color(0.2, 0.6, 0.3), on_done)
+
+
+func _flag_tile(parent: Control, r: Rect2, f: Dictionary, sel: bool, locked: bool, cb: Callable) -> void:
+	var tile := _panel(parent, r, _style(Color(0.1, 0.14, 0.23), 14, Color(1.0, 0.85, 0.3) if sel else EDGE, 4 if sel else 1))
+	var fv := FlagView.new(f)
+	fv.position = Vector2(r.size.x * 0.18, 12)
+	fv.size = Vector2(r.size.x * 0.64, r.size.y - 24)
+	tile.add_child(fv)
+	if locked:
+		tile.modulate = Color(1, 1, 1, 0.45)
+		_at(_label("🔒", 24), tile, Vector2(r.size.x - 40, 6))
+	tile.gui_input.connect(func(e): if _is_tap(e): cb.call())
 
 
 ## The commander picker of an army (04 §15.6): a row per open commander — portrait, level, the passive now, the

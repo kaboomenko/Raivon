@@ -471,7 +471,8 @@ func _run() -> void:
 			print("NOTE  no march needed for the Barons front")
 	# defeat with heavy plunder: ruin and damaged buildings, repair on the hex (canon §9.14)
 	g._apply_defeat(MapGen.BARONS, [])
-	_check(g.econ.ruin_left(g.now_s()) == 8 * 3600 and g.econ.ruin_pct == 40, "defeat: ruin −40% for 8 h")
+	# now_s() follows the real clock: a second may tick between the defeat and this check
+	_check(absi(g.econ.ruin_left(g.now_s()) - 8 * 3600) <= 2 and g.econ.ruin_pct == 40, "defeat: ruin −40% for 8 h")
 	_check(g.econ.damaged.size() > 0, "defeat: %d hex buildings damaged" % g.econ.damaged.size())
 	if g.econ.damaged.size() > 0:
 		var dh: int = g.econ.damaged.keys()[0]
@@ -598,6 +599,18 @@ func _run() -> void:
 	_check(not g.chronicle.recent(3).is_empty() and g.chronicle.recent(3)[0] == g.chronicle.order[g.chronicle.order.size() - 1], "the latest achievement comes first")
 	g._open_profile()
 	_check(g.ui.has_modal(), "the profile opens from the ruler's portrait")
+	g.ui.close_modal()
+	# the flag constructor (10 §4.23): a random flag is valid, «Готово» keeps it and it survives a save
+	var fl_rand: Dictionary = g.FlagView.random_flag(7)
+	_check(fl_rand["c1"] != fl_rand["c2"] and g.FlagView.DIVISIONS.has(fl_rand["div"]) and int(fl_rand["c1"]) < g.FlagView.FIELD.size(), "a random flag: two field colours from the field palette")
+	g._open_flag_editor(fl_rand)
+	_check(g.ui.has_modal(), "the flag constructor opens")
+	g.flag = fl_rand
+	var gfl: Node = load("res://scenes/main.tscn").instantiate()
+	gfl.save_enabled = false
+	Save.apply(gfl, Save.save(g))
+	_check(gfl.flag["div"] == fl_rand["div"] and int(gfl.flag["c2"]) == int(fl_rand["c2"]), "the flag survives a save")
+	gfl.free()
 	g.ui.close_modal()
 	# commanders (04 §15): Bram after the tutorial, a level for shards + gold, the collection and the card open
 	_check(g._cmd_level("cmd_bram") >= 1, "Sergeant Bram is open after the tutorial's war")

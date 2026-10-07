@@ -1108,3 +1108,14 @@ profile.ch2,Глава II «Речной край»,Chapter II “The River Land
 profile.ch3,Глава III «Континент»,Chapter III “The Continent”
 profile.ch4,Глава IV «Индустриальный пояс»,Chapter IV “The Industrial Belt”
 profile.wins,Побед в войнах,Wars won
+flag.title,Флаг державы,The realm's flag
+flag.tab_div,Деление,Division
+flag.tab_colors,Цвета,Colours
+flag.tab_em,Эмблема,Emblem
+flag.tab_frame,Рамка,Frame
+flag.field1,"Поле, первый цвет","Field, first colour"
+flag.field2,"Поле, второй цвет","Field, second colour"
+flag.emblem_c,Цвет эмблемы (золото и жёлтый — только здесь),Emblem colour (gold and yellow — only here)
+flag.locked,Этот элемент ещё не получен,You don't have this item yet
+flag.random,🎲 Случайно,🎲 Random
+flag.done,Готово,Done

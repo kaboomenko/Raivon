@@ -35,6 +35,13 @@ var _tile_set := false  # false while the tile box still shows its placeholder
 var unit_cards: Control  # the Army tab content (hidden while another tab is open)
 
 signal button_pressed(name: String)
+const FlagView := preload("res://scripts/flag_view.gd")
+var crest_flag: Control  # the realm's flag, top-left (tap — the profile)
+
+
+func set_flag(f: Dictionary) -> void:
+	crest_flag.set("flag", f.duplicate())
+	crest_flag.queue_redraw()
 
 
 func _ready() -> void:
@@ -114,10 +121,12 @@ func _build() -> void:
 	add_child(builders_label)
 
 	# ---- crest banner (top-left)
-	var crest := Icon.new("crest")
-	crest.position = Vector2(12, 4)
-	crest.size = Vector2(92, 118)
-	add_child(crest)
+	crest_flag = FlagView.new()
+	crest_flag.position = Vector2(12, 4)
+	crest_flag.size = Vector2(92, 118)
+	crest_flag.mouse_filter = Control.MOUSE_FILTER_STOP
+	crest_flag.gui_input.connect(_on_button_input.bind("profile"))
+	add_child(crest_flag)
 
 	# ---- ruler portrait + level
 	var rp := _panel(Rect2(14, 132, 86, 92), _style(PANEL_2, 10, Color(0.85, 0.7, 0.35, 0.9), 3))

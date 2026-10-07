@@ -31,6 +31,7 @@ const Calendar := preload("res://scripts/sim/calendar.gd")
 const Patent := preload("res://scripts/sim/patent.gd")
 const Chronicle := preload("res://scripts/sim/chronicle.gd")
 const Commanders := preload("res://scripts/sim/commanders.gd")
+const FlagView := preload("res://scripts/flag_view.gd")
 const March := preload("res://scripts/sim/march.gd")
 const Camps := preload("res://scripts/sim/camps.gd")
 const RingGen := preload("res://scripts/sim/ring_gen.gd")
@@ -99,6 +100,7 @@ var weekly  # weekly tasks (scripts/sim/weekly.gd)
 var calendar  # the 28-day login calendar (scripts/sim/calendar.gd)
 var patent  # «Державный патент», the subscription (scripts/sim/patent.gd)
 var chronicle  # «Летопись державы», 40 long goals (scripts/sim/chronicle.gd)
+var flag: Dictionary = FlagView.DEFAULT.duplicate()  # the realm's flag (10 §4.23)
 var commanders  # commander levels (scripts/sim/commanders.gd); the shards themselves are `cases.shards`
 var hand_pick: Array = []
 var installed_at := 0  # the first launch (offers that start «from D2», 09 §9.9.2)
@@ -239,6 +241,7 @@ func _ready() -> void:
 	_econ_tick()
 	if ftue == 0:
 		_grant_bram()
+	hud.set_flag(flag)
 	if loaded:
 		ui.toast(tr("toast.welcome_back"))
 	elif save_enabled:
@@ -5152,7 +5155,7 @@ func _open_profile() -> void:
 		"map_pct": roundi(100.0 * hexes / maxf(1.0, float(land))),
 		"commanders": [_cmd_owned_count(), Commanders.PASSIVES.size()],
 		"chronicle": [chronicle.reached.size(), Chronicle.LIST.size()], "recent": recent,
-		"book_badge": chronicle.claimable(), "cmd_dot": _cmd_upgradable() > 0, "wins": int(stats.get("peace_wins", 0))}
+		"flag": flag, "book_badge": chronicle.claimable(), "cmd_dot": _cmd_upgradable() > 0, "wins": int(stats.get("peace_wins", 0))}
 	ui.show_profile(info, {
 		"chronicle": func(): _open_chronicle(),
 		"commanders": func(): _open_commanders(),
@@ -5160,7 +5163,22 @@ func _open_profile() -> void:
 			ui.close_modal()
 			_show_settings(),
 		"soon": func(): ui.toast(tr("profile.soon")),
+		"flag": func(): _open_flag_editor(),
 	})
+
+
+## The flag constructor (10 §4.23): every change shows at once and is kept with «Готово»; the HUD crest follows.
+func _open_flag_editor(draft: Dictionary = {}) -> void:
+	var f: Dictionary = flag.duplicate() if draft.is_empty() else draft
+	ui.show_flag_editor(f, cases.owned_cosmetics,
+		func(nf: Dictionary): _open_flag_editor(nf),
+		func(): _open_flag_editor(FlagView.random_flag(randi())),
+		func():
+			flag = f
+			hud.set_flag(flag)
+			sfx.play("seal")
+			_autosave()
+			_open_profile())
 
 
 # ---------------------------------------------------------------------- «Державный патент» (canon §15.7, 09 §9.13)
@@ -6071,6 +6089,12 @@ func _demo(spec: String) -> void:
 		_chronicle_tick()
 		chronicle.claim("ach_first_peace")
 		_open_chronicle()
+		return
+	if what == "flag":  # the flag constructor: flag[:colors|em|frame] opens that tab on a sample flag
+		ui._flag_tab = parts[1] if parts.size() > 1 else "div"
+		cases.owned_cosmetics["cos_flag_part_recruit_star"] = true
+		cases.owned_cosmetics["cos_frame_recruit"] = true
+		_open_flag_editor({"div": "chevron", "c1": 6, "c2": 13, "em": "crown", "ec": 16, "frame": "cos_frame_recruit"})
 		return
 	if what == "profile":  # the profile after a little play: goals reached, a few commanders
 		stats["peaces"] = 3
