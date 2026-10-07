@@ -1346,8 +1346,16 @@ def f4_edge(p0, p1, gate=False):
     L, ang, mid, n = edge_frame(p0, p1)
     st = stone("#a39b8d", 1.4)
     taper_box((L - 0.2, 0.17, 0.2), (mid[0], mid[1], 0.1), st, (1.0, 0.6), ang)
+    bx((L - 0.2, 0.18, 0.03), (mid[0], mid[1], 0.015), stone(STONE_D), ang, 0.004)  # footing
+    bx((L - 0.19, 0.145, 0.014), (mid[0], mid[1], 0.13), stone(STONE_D), ang, 0)  # cordon
     bx((L - 0.2, 0.03, 0.06), (mid[0] + n[0] * 0.035, mid[1] + n[1] * 0.035, 0.23), st, ang, 0)
+    slit = flat("slit", "#1e1c1a", 0.9)
+    cnt = max(2, int((L - 0.24) / 0.13))
+    for i in range(cnt):  # embrasures in the parapet
+        q = lerp2(p0, p1, 0.12 + (i + 0.5) * 0.76 / cnt)
+        bx((0.03, 0.034, 0.03), (q[0] + n[0] * 0.035, q[1] + n[1] * 0.035, 0.245), slit, ang, 0)
     bx((L - 0.22, 0.07, 0.012), (mid[0] - n[0] * 0.015, mid[1] - n[1] * 0.015, 0.2), tex("wood", WOOD_L), ang, 0)
+    bx((L - 0.24, 0.05, 0.01), (mid[0] - n[0] * 0.06, mid[1] - n[1] * 0.06, 0.2), flat("grassy", "#6f9a45", 0.9), ang, 0)  # turfed walk
 
 
 def cannon(x, y, a, z=0.0):
@@ -1368,6 +1376,10 @@ def f4_post(p):
     pts = [(-0.14, -0.14), (0.02, -0.14), (0.12, 0.0), (0.02, 0.14), (-0.14, 0.14)]
     pr = [(p[0] + x * math.cos(a) - y * math.sin(a), p[1] + x * math.sin(a) + y * math.cos(a)) for x, y in pts]
     extrude(pr, 0.0, 0.24, stone("#a39b8d", 1.4))
+    extrude([(p[0] + (x * 1.06) * math.cos(a) - (y * 1.06) * math.sin(a), p[1] + (x * 1.06) * math.sin(a) + (y * 1.06) * math.cos(a)) for x, y in pts],
+            0.0, 0.035, stone(STONE_D))  # footing
+    extrude([(p[0] + (x * 1.03) * math.cos(a) - (y * 1.03) * math.sin(a), p[1] + (x * 1.03) * math.sin(a) + (y * 1.03) * math.cos(a)) for x, y in pts],
+            0.125, 0.14, stone(STONE_D))  # cordon
     extrude([(p[0] + (x * 0.85) * math.cos(a) - (y * 0.85) * math.sin(a), p[1] + (x * 0.85) * math.sin(a) + (y * 0.85) * math.cos(a)) for x, y in pts],
             0.24, 0.252, flat("grassy", "#6f9a45", 0.9))
     cannon(p[0] - math.cos(a) * 0.04, p[1] - math.sin(a) * 0.04, a, 0.252)
