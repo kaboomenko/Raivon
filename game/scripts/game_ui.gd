@@ -223,19 +223,34 @@ func _build_cards(order: Array) -> void:
 		var x := 12.0 + i * step
 		var p := _panel(_battle, Rect2(x, VH - 222, w, 196), _style(Color(0.12, 0.17, 0.28), 14, Color(0.5, 0.62, 0.85, 0.8), 2))
 		p.gui_input.connect(_on_card_input.bind(card))
-		var art := _label(CARD_ART[card], 54 if n <= 5 else 46)
-		art.position = Vector2(0, 14)
-		art.size = Vector2(w, 70)
-		art.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		p.add_child(art)
+		var pic := "res://assets/ui/cards/%s.png" % card
+		var name_y := 94.0
+		if ResourceLoader.exists(pic):
+			# the painted scene of the card (tools/blender/card_art.py), as on the «War Cards» concept panel
+			var tr_ := TextureRect.new()
+			tr_.texture = load(pic)
+			tr_.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			tr_.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+			tr_.position = Vector2(5, 5)
+			tr_.size = Vector2(w - 10, 112)
+			tr_.clip_contents = true
+			tr_.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			p.add_child(tr_)
+			name_y = 118.0
+		else:
+			var art := _label(CARD_ART[card], 54 if n <= 5 else 46)
+			art.position = Vector2(0, 14)
+			art.size = Vector2(w, 70)
+			art.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			p.add_child(art)
 		var nm := _label(_card_name(card), 17)
 		_fit(nm, 17, w - 6.0)
-		nm.position = Vector2(0, 94)
+		nm.position = Vector2(0, name_y)
 		nm.size = Vector2(w, 24)
 		nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		p.add_child(nm)
 		_card_names[card] = nm
-		var cost := _panel(p, Rect2(w / 2.0 - 20.0, 138, 40, 40), _style(Color(0.55, 0.3, 0.95), 20, Color(1, 1, 1, 0.9), 3), Control.MOUSE_FILTER_IGNORE)
+		var cost := _panel(p, Rect2(w / 2.0 - 20.0, 146 if name_y > 100.0 else 138, 40, 40), _style(Color(0.55, 0.3, 0.95), 20, Color(1, 1, 1, 0.9), 3), Control.MOUSE_FILTER_IGNORE)
 		var cl := _label(str(_card_cost(card)), 20)
 		cl.position = Vector2(0, 5)
 		cl.size = Vector2(40, 30)
