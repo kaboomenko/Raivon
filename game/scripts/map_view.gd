@@ -375,6 +375,7 @@ func _build_terrain() -> void:
 	mat.set_shader_parameter("noise_fine", _noise_tex(6.0, 2, 202))
 	_terrain_mi.material_override = mat
 	add_child(_terrain_mi)
+	_build_grass()
 	_cloud_shadows()
 	var water := MeshInstance3D.new()
 	var plane := PlaneMesh.new()
@@ -387,6 +388,110 @@ func _build_terrain() -> void:
 	wm.roughness = 0.12
 	water.material_override = wm
 	add_child(water)
+
+
+var _grass_mi: MultiMeshInstance3D
+var _pebble_mi: MultiMeshInstance3D
+
+## Grass tint by biome: tufts a shade lighter than the ground, so empty land reads as a meadow, not plastic.
+const GRASS_TINT := {"meadow": Color(0.42, 0.62, 0.26), "taiga": Color(0.3, 0.5, 0.28), "steppe": Color(0.72, 0.68, 0.34), "badlands": Color(0.66, 0.55, 0.3)}
+
+
+## Grass tufts and pebbles over the land (one MultiMesh each): a whole meadow on an empty plain, a fringe along
+## the edge of hexes with buildings (the pads stay clean), sparse ones in forests and on hills. They rise above the
+## territory fill (+0.03), so the land keeps its texture under the colour, as in the close reference frames.
+func _build_grass() -> void:
+	for mi in [_grass_mi, _pebble_mi]:
+		if mi != null:
+			mi.queue_free()
+	var xf: Array = []
+	var cols: Array = []
+	var peb: Array = []
+	var g := RandomNumberGenerator.new()
+	g.seed = 4242
+	for c in sim.cells:
+		var t: String = c["terrain"]
+		if not t in ["plain", "forest", "hills"]:
+			continue
+		var biome := String(c.get("biome", "meadow"))
+		var tint: Color = GRASS_TINT.get(biome, GRASS_TINT["meadow"])
+		var empty: bool = c["kind"] == "plain" and not camp_hexes.has(int(c["id"]))
+		var n := 14
+		if t == "plain" and empty:
+			n = 46
+		elif t == "hills":
+			n = 20
+		if biome == "badlands":
+			n = n / 2
+		var center := axial_to_world(c["q"], c["r"])
+		for i in n:
+			var r := sqrt(g.randf()) * 0.86 if empty else g.randf_range(0.7, 0.9)
+			var a := g.randf() * TAU
+			var pos := center + Vector3(cos(a) * r, 0.0, sin(a) * r)
+			var sc := g.randf_range(0.75, 1.3)
+			var basis := Basis(Vector3.UP, g.randf() * TAU).scaled(Vector3(sc, sc * g.randf_range(0.8, 1.3), sc))
+			xf.append(Transform3D(basis, pos))
+			cols.append(tint * g.randf_range(0.82, 1.15))
+		if t != "forest" and g.randf() < (0.9 if t == "hills" else 0.5):
+			for i in g.randi_range(1, 3):
+				var r2 := g.randf_range(0.3, 0.85)
+				var a2 := g.randf() * TAU
+				var s2 := g.randf_range(0.6, 1.4)
+				var bp := Basis(Vector3.UP, g.randf() * TAU).scaled(Vector3(s2, s2 * 0.55, s2 * g.randf_range(0.7, 1.0)))
+				peb.append(Transform3D(bp, center + Vector3(cos(a2) * r2, 0.0, sin(a2) * r2)))
+	_grass_mi = _multi(_tuft_mesh(), xf, cols)
+	var pm := SphereMesh.new()
+	pm.radius = 0.025
+	pm.height = 0.05
+	pm.radial_segments = 6
+	pm.rings = 3
+	var stone := StandardMaterial3D.new()
+	stone.albedo_color = Color(0.6, 0.58, 0.54)
+	stone.roughness = 0.95
+	pm.material = stone
+	_pebble_mi = _multi(pm, peb, [])
+
+
+func _multi(mesh: Mesh, xf: Array, cols: Array) -> MultiMeshInstance3D:
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = not cols.is_empty()
+	mm.mesh = mesh
+	mm.instance_count = xf.size()
+	for i in xf.size():
+		mm.set_instance_transform(i, xf[i])
+		if mm.use_colors:
+			mm.set_instance_color(i, cols[i])
+	var mi := MultiMeshInstance3D.new()
+	mi.multimesh = mm
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)
+	return mi
+
+
+## One tuft: seven tapered blades fanned around the centre, dark at the root and light at the tip.
+func _tuft_mesh() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for k in 7:
+		var a := k * TAU / 7.0 + 0.3
+		var lean := Vector3(cos(a), 0, sin(a)) * 0.03
+		var side := Vector3(-sin(a), 0, cos(a)) * 0.016
+		var h := 0.1 if k % 2 == 0 else 0.078
+		var root := Vector3(cos(a), 0, sin(a)) * 0.008
+		st.set_normal(Vector3.UP)
+		st.set_color(Color(0.5, 0.52, 0.48))
+		st.add_vertex(root - side)
+		st.add_vertex(root + side)
+		st.set_color(Color(0.95, 0.98, 0.85))
+		st.add_vertex(root + lean + Vector3(0, h, 0))
+	var mat := StandardMaterial3D.new()
+	mat.vertex_color_use_as_albedo = true
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.roughness = 1.0
+	var mesh := st.commit()
+	mesh.surface_set_material(0, mat)
+	return mesh
 
 
 var _cloud_noise: ImageTexture
