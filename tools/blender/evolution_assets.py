@@ -1282,6 +1282,8 @@ def f3_edge(p0, p1, gate=False):
         f = (s0 + s1) / 2 / L
         c = lerp2(p0, p1, f)
         bx((s1 - s0, 0.085, 0.26), (c[0], c[1], 0.13), st, ang, 0.008)
+        bx((s1 - s0, 0.1, 0.05), (c[0], c[1], 0.025), stone(STONE_D), ang, 0.006)  # plinth
+        bx((s1 - s0, 0.093, 0.016), (c[0], c[1], 0.2), stone(STONE_D), ang, 0)  # string course
         cnt = max(1, int((s1 - s0) / 0.085))
         for i in range(0, cnt, 2):
             g = (s0 + (i + 0.5) * (s1 - s0) / cnt) / L
@@ -1303,10 +1305,24 @@ def f3_edge(p0, p1, gate=False):
 
 
 def f3_post(p):
+    """Round stone tower: a dark plinth, two string courses, arrow slits, a merloned parapet, a slate cone with
+    a gilt finial — enough shapes to read as masonry at map zoom."""
     st = stone(STONE, 1.4)
+    dk = stone(STONE_D)
+    cy(0.102, 0.06, (p[0], p[1], 0.03), dk, 10)  # plinth
     cy(0.09, 0.38, (p[0], p[1], 0.19), st, 10)
-    cy(0.1, 0.035, (p[0], p[1], 0.37), stone(STONE_D), 10)
-    cn(0.12, 0.2, (p[0], p[1], 0.49), flat("slate", SLATE, 0.6), 10)
+    for z in (0.14, 0.27):  # string courses
+        cy(0.096, 0.016, (p[0], p[1], z), dk, 10)
+    slit = flat("slit", "#1e1c1a", 0.9)
+    for k in range(3):
+        a = math.radians(-90 + (k - 1) * 60)
+        bx((0.012, 0.012, 0.06), (p[0] + math.cos(a) * 0.088, p[1] + math.sin(a) * 0.088, 0.21), slit, a, 0)
+    cy(0.105, 0.03, (p[0], p[1], 0.375), dk, 10)
+    for k in range(8):  # merlons
+        a = math.tau * k / 8
+        bx((0.035, 0.03, 0.04), (p[0] + math.cos(a) * 0.092, p[1] + math.sin(a) * 0.092, 0.405), st, a, 0)
+    cn(0.115, 0.2, (p[0], p[1], 0.5), flat("slate", SLATE, 0.6), 10)
+    uvs(0.016, (p[0], p[1], 0.61), flat("finial", GOLD, 0.35), 6, 4)
 
 
 def f4_edge(p0, p1, gate=False):
