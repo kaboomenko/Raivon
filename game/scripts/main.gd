@@ -6283,7 +6283,7 @@ func _demo(spec: String) -> void:
 		return
 	if what == "commanders":  # the collection mid-game (commanders:card — Vega's card; commanders:tab — the Army tab)
 		econ.res["gold"] = 40000
-		econ._find_type("residence")["level"] = 4
+		econ._find_type("residence")["level"] = int(parts[2]) if parts.size() > 2 else 4  # commanders:<view>:<DL>
 		for id in ["cmd_lira", "cmd_vega", "cmd_frey", "cmd_seir", "cmd_irma", "cmd_bram", "cmd_vik"]:
 			cases.shards[id] = int(cases.shards.get(id, 0)) + Commanders.spent(_cmd_rarity(id), 1)
 		cases.shards["cmd_bram"] = int(cases.shards["cmd_bram"]) + 30
