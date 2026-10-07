@@ -915,3 +915,93 @@ patent.offer_title,Награды роликов — сразу,Video rewards �
 patent.offer_line,Получайте награды роликов без просмотра — 7 дней за %s.,Get video rewards without watching — 7 days for %s.
 patent.offer_more,Подробнее,Details
 patent.offer_later,Не сейчас,Not now
+chr.title,Летопись державы · %d / %d,Chronicle of the Realm · %d / %d
+chr.toast,Летопись: %s,Chronicle: %s
+chr.claimed,«%s»: +%d Райвитов,“%s”: +%d Raivites
+chr.soon,скоро,soon
+chr.ch.map,Территория и карта,Territory and map
+chr.ch.war,Война,War
+chr.ch.peace,Мир и дипломатия,Peace and diplomacy
+chr.ch.dev,Развитие и экономика,Development and economy
+chr.ch.cmd,Командиры,Commanders
+chr.ch.arena,Арена,Arena
+chr.ach_first_peace,Первая граница,First Border
+chr.ach_first_peace.d,Подпишите первый мирный договор,Sign your first peace treaty
+chr.ach_hexes_25,Княжество на карте,A Principality on the Map
+chr.ach_hexes_25.d,25 официальных гексов,25 official hexes
+chr.ach_hexes_50,Пятьдесят знамён,Fifty Banners
+chr.ach_hexes_50.d,50 официальных гексов,50 official hexes
+chr.ach_hexes_100,Сотня,The Hundred
+chr.ach_hexes_100.d,100 официальных гексов,100 official hexes
+chr.ach_hexes_200,Империя,Empire
+chr.ach_hexes_200.d,200 официальных гексов,200 official hexes
+chr.ach_half_world,Полмира,Half the World
+chr.ach_half_world.d,"Держите половину суши мира, когда в нём от 160 гексов",Hold half the world's land once it has 160+ hexes
+chr.ach_colonize_40,Первопроходцы,Pioneers
+chr.ach_colonize_40.d,Колонизируйте 40 гексов,Settle 40 hexes
+chr.ach_offensive_10,Боевое крещение,Baptism of Fire
+chr.ach_offensive_10.d,10 наступлений,10 offensives
+chr.ach_offensive_100,Ветеран фронта,Front-line Veteran
+chr.ach_offensive_100.d,100 наступлений,100 offensives
+chr.ach_offensive_500,Вечный фронт,The Endless Front
+chr.ach_offensive_500.d,500 наступлений,500 offensives
+chr.ach_perfect_25,Безупречно,Flawless
+chr.ach_perfect_25.d,25 наступлений на ★★★,25 offensives with ★★★
+chr.ach_wedge_100,Мастер клина,Master of the Wedge
+chr.ach_wedge_100.d,100 атак «Клином» — с двух и более гексов,100 «Wedge» attacks — from 2+ hexes
+chr.ach_pocket_50,Окружи 50 гексов,Encircle 50 Hexes
+chr.ach_pocket_50.d,Суммарно 50 гексов во взятых котлах,50 hexes taken in pockets in total
+chr.ach_capitals_5,У стен столиц,At the Capitals' Walls
+chr.ach_capitals_5.d,Оккупируйте вражескую столицу в 5 войнах,Occupy an enemy capital in 5 wars
+chr.ach_defense_20,Несокрушимые,Unbreakable
+chr.ach_defense_20.d,Отбейте 20 атак ИИ на свои гексы,Repel 20 AI attacks on your hexes
+chr.ach_raiders_50,Чистые земли,Clean Lands
+chr.ach_raiders_50.d,Разбейте 50 лагерей мародёров,Destroy 50 marauder camps
+chr.ach_triumph_3,Против всех,Against All
+chr.ach_triumph_3.d,3 победы над коалицией,3 victories over a coalition
+chr.ach_peace_25,Подпиши 25 миров,Sign 25 Peaces
+chr.ach_peace_25.d,25 победных договоров,25 victorious treaties
+chr.ach_peace_60,Миротворец,Peacemaker
+chr.ach_peace_60.d,60 победных договоров,60 victorious treaties
+chr.ach_mercy_5,Великодушный правитель,Magnanimous Ruler
+chr.ach_mercy_5.d,5 раз выберите «Пощадить» в победном договоре,Choose «Spare» in a victorious treaty 5 times
+chr.ach_blueprints_25,Трофейный архив,Trophy Archive
+chr.ach_blueprints_25.d,Получите 25 трофейных чертежей,Obtain 25 trophy blueprints
+chr.ach_first_alliance,Слово чести,Word of Honour
+chr.ach_first_alliance.d,Заключите первый союз,Sign your first alliance
+chr.ach_swap_5,Картограф,Cartographer
+chr.ach_swap_5.d,Завершите 5 обменов территориями,Complete 5 territory swaps
+chr.ach_coalition_broken,Разделяй и властвуй,Divide and Rule
+chr.ach_coalition_broken.d,"Сорвите коалицию, пока она собирается",Break up a coalition while it is forming
+chr.ach_rout,Разгром,Rout
+chr.ach_rout.d,Доведите счёт войны до +100,Bring the war score to +100
+chr.ach_dev_3,Княжество,Principality
+chr.ach_dev_3.d,Достигните УР3,Reach DL3
+chr.ach_dev_5,Индустриальная держава,Industrial Power
+chr.ach_dev_5.d,Достигните УР5,Reach DL5
+chr.ach_dev_8,Мегаполис,Megalopolis
+chr.ach_dev_8.d,Достигните УР8,Reach DL8
+chr.ach_dev_10,Ультрадержава,Ultra-power
+chr.ach_dev_10.d,Достигните УР10,Reach DL10
+chr.ach_deposits_100,Жёлтая лихорадка,Yellow Fever
+chr.ach_deposits_100.d,Соберите 100 залежей,Gather 100 deposits
+chr.ach_gold_1m,Золотой миллион,Golden Million
+chr.ach_gold_1m.d,Соберите 1 000 000 золота,"Collect 1,000,000 gold"
+chr.ach_research_50,Учёный совет,Learned Council
+chr.ach_research_50.d,Завершите 50 уровней исследований,Complete 50 research levels
+chr.ach_research_150,Академия света,Academy of Light
+chr.ach_research_150.d,Завершите 150 уровней исследований,Complete 150 research levels
+chr.ach_ultrafence_5,Ультраграница,Ultra-frontier
+chr.ach_ultrafence_5.d,Держите 5 укреплений ур. 8 одновременно,Hold 5 level 8 forts at once
+chr.ach_vein_4,Райвитовый пояс,Raivite Belt
+chr.ach_vein_4.d,Владейте 4 Райвитовыми жилами одновременно,Own 4 Raivite veins at once
+chr.ach_cmd_4,Штаб собран,Staff Assembled
+chr.ach_cmd_4.d,Откройте 4 из 8 командиров кампании,Unlock 4 of the 8 campaign commanders
+chr.ach_cmd_8,Генеральный штаб,General Staff
+chr.ach_cmd_8.d,Откройте всех 8 командиров кампании,Unlock all 8 campaign commanders
+chr.ach_cmd_level_10,Закалённый,Battle-hardened
+chr.ach_cmd_level_10.d,Поднимите командира до ур. 10,Raise a commander to level 10
+chr.ach_arena_gold,Золотой рубеж,Golden Frontier
+chr.ach_arena_gold.d,Достигните лиги Золото на Арене,Reach the Gold league in the Arena
+chr.ach_arena_legend,Легенда Рубежей,Legend of the Frontier
+chr.ach_arena_legend.d,Достигните лиги Легенда на Арене,Reach the Legend league in the Arena

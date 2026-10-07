@@ -584,6 +584,16 @@ func _run() -> void:
 	g.ui.close_modal()
 	g.patent.trial_used = io_trial
 	g.ad_counts = {}
+	# «Летопись державы» (07 §7): the first peace and the hexes are counted, the book opens, a reward is taken
+	g._chronicle_tick()
+	_check(g.chronicle.reached.has("ach_first_peace"), "the Chronicle counts the first peace")
+	g._open_chronicle()
+	_check(g.ui.has_modal(), "the Chronicle opens from the book")
+	var chr_rv: int = g.econ.res["raivite"]
+	if g.chronicle.can_claim("ach_first_peace"):
+		g._claim_chronicle("ach_first_peace")
+	_check(g.chronicle.claimed.has("ach_first_peace") and int(g.econ.res["raivite"]) >= chr_rv + 25, "its reward is paid")
+	g.ui.close_modal()
 	# the hand (03 §5.2): «Атака» + 4 slots of the player's choice
 	var hand0: Array = g._hand_display()
 	_check(hand0[0] == "attack" and hand0.size() <= 1 + g._hand_slots(), "the default hand: «Атака» + slots")

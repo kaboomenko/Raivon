@@ -83,6 +83,7 @@ var _protected_core: Dictionary = {}
 var _corps_used: Dictionary = {}  # side -> true once «Союзный корпус» was played this offensive
 var _landings: Array = []          # [{army, at}] landed copies waiting 1.5 s before they attack
 var _landing_hexes: Dictionary = {} # hex -> side: hexes a landing took (the «Высадка» star needs them held)
+var wedges: Dictionary = {}         # side -> clashes joined from 2+ hexes («Клин», the Chronicle counts them)
 var _missile_hit: Dictionary = {}   # hex -> true: fort −3 and the tower out until the battle ends
 const LANDING_SHARE_PM := 400       # the copy has 40% of the strongest army's max Strength
 const LANDING_DELAY := 15           # 1.5 s after the drop it attacks
@@ -593,6 +594,15 @@ func _start_or_join(side: int, target: int, list: Array, breakthrough: Variant) 
 		clash["attackers"].append(a["id"])
 		clash["start_atk"] += a["str"]
 		a["hold"] = false
+	if not clash.has("wedge") and (clash["attackers"] as Array).size() >= 2:
+		var from := {}
+		for aid in clash["attackers"]:
+			var aa: Variant = army_by_id(aid)
+			if aa != null:
+				from[aa["hex"]] = true
+		if from.size() >= 2:
+			clash["wedge"] = true
+			wedges[side] = int(wedges.get(side, 0)) + 1
 
 
 # ---------- simulation ----------

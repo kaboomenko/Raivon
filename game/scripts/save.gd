@@ -98,6 +98,7 @@ static func to_dict(g: Node) -> Dictionary:
 		"calendar": g.calendar.to_dict() if g.calendar != null else {},
 		"hand_pick": g.hand_pick,
 		"patent": g.patent.to_dict() if g.patent != null else {},
+		"chronicle": g.chronicle.to_dict() if g.chronicle != null else {},
 		"camps": g.camps.to_dict() if g.camps != null else {},
 	}
 	if g.get("econ") != null:
@@ -303,6 +304,10 @@ static func apply(g: Node, d: Dictionary) -> bool:
 		if g.weekly == null:
 			g.weekly = load("res://scripts/sim/weekly.gd").new()
 		g.weekly.load_dict(d["weekly"])
+	if typeof(d.get("chronicle")) == TYPE_DICTIONARY:
+		if g.chronicle == null:
+			g.chronicle = load("res://scripts/sim/chronicle.gd").new()
+		g.chronicle.load_dict(d["chronicle"])
 	if typeof(d.get("patent")) == TYPE_DICTIONARY:
 		if g.patent == null:
 			g.patent = load("res://scripts/sim/patent.gd").new()

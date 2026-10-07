@@ -824,6 +824,70 @@ func show_patent(info: Dictionary, on_buy: Callable, on_restore: Callable) -> vo
 	_button(box, Rect2(590, y, 261, 56), tr("patent.restore"), Color(0.2, 0.25, 0.36), func(): on_restore.call())
 
 
+## «Летопись державы» (07 §7.4): a book of 6 chapters; a row — name, condition, progress «37/50», reward, «Забрать».
+func show_chronicle(info: Dictionary, on_claim: Callable) -> void:
+	var box := _modal_box(Rect2(30, 150, 881, 1370))
+	_button(box, Rect2(881 - 86, 18, 64, 56), "✕", Color(0.3, 0.33, 0.42), close_modal)
+	_at(_label(tr("chr.title") % [int(info["done"]), int(info["total"])], 30, Color(1.0, 0.85, 0.4)), box, Vector2(30, 26))
+	var scroll := ScrollContainer.new()
+	scroll.position = Vector2(20, 90)
+	scroll.size = Vector2(841, 1260)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	box.add_child(scroll)
+	var col := VBoxContainer.new()
+	col.custom_minimum_size = Vector2(830, 0)
+	col.add_theme_constant_override("separation", 8)
+	scroll.add_child(col)
+	var chapter := ""
+	for r in info["rows"]:
+		if String(r["chapter"]) != chapter:
+			chapter = r["chapter"]
+			var hl := _label(tr("chr.ch." + chapter), 22, Color(1.0, 0.85, 0.4))
+			hl.custom_minimum_size = Vector2(830, 40)
+			hl.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+			col.add_child(hl)
+		var st: String = r["state"]
+		var row := Panel.new()
+		row.custom_minimum_size = Vector2(830, 96)
+		var bg := Color(0.16, 0.14, 0.08) if st == "claim" else Color(0.1, 0.14, 0.23)
+		row.add_theme_stylebox_override("panel", _style(bg, 12, Color(1.0, 0.8, 0.3) if st == "claim" else EDGE, 1))
+		var nm := _label(String(r["name"]), 19, TEXT if st != "soon" else MUTED)
+		_fit(nm, 19, 520)
+		nm.position = Vector2(14, 8)
+		row.add_child(nm)
+		var ds := _label(String(r["desc"]), 15, MUTED, false)
+		_fit(ds, 15, 540)
+		ds.position = Vector2(14, 36)
+		row.add_child(ds)
+		var rw := _label(String(r["reward"]), 15, Color(0.75, 0.85, 1.0), false)
+		_fit(rw, 15, 540)
+		rw.position = Vector2(14, 62)
+		row.add_child(rw)
+		var need: int = r["need"]
+		var prog: int = r["progress"]
+		if st == "claim":
+			var b := _panel(row, Rect2(650, 22, 166, 52), _style(Color(0.75, 0.55, 0.12), 10, Color(1, 1, 1, 0.45), 2))
+			var bl := _label(tr("ui.claim"), 18)
+			bl.size = Vector2(166, 52)
+			bl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			bl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			b.add_child(bl)
+			b.mouse_filter = Control.MOUSE_FILTER_PASS
+			var code: String = r["code"]
+			b.gui_input.connect(func(e): if _is_tap(e): on_claim.call(code))
+		else:
+			var txt := "✓" if st == "claimed" else (tr("chr.soon") if st == "soon" else "%s / %s" % [fmt_num(prog), fmt_num(need)])
+			var pl := _label(txt, 18 if st != "claimed" else 26, Color(0.5, 1.0, 0.6) if st == "claimed" else MUTED)
+			pl.position = Vector2(600, 18)
+			pl.size = Vector2(216, 32)
+			pl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+			row.add_child(pl)
+			if st == "open":
+				var bar := _panel(row, Rect2(600, 58, 216, 12), _style(Color(1, 1, 1, 0.1), 6, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
+				_panel(bar, Rect2(0, 0, 216.0 * clampf(float(prog) / maxf(1.0, float(need)), 0.0, 1.0), 12), _style(Color(0.95, 0.72, 0.2), 6, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
+		col.add_child(row)
+
+
 ## AI ultimatum (canon §9.1): accept (cede the hex), pay tribute, or refuse (war).
 func show_ultimatum(enemy: String, hex_name: String, tribute: int, can_pay: bool, left_sec: int, on_accept: Callable, on_pay: Callable, on_refuse: Callable) -> void:
 	var box := _modal_box(Rect2(50, 380, 841, 860), true)

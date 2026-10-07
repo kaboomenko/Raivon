@@ -29,6 +29,7 @@ const BattlePass := preload("res://scripts/sim/battlepass.gd")
 const Weekly := preload("res://scripts/sim/weekly.gd")
 const Calendar := preload("res://scripts/sim/calendar.gd")
 const Patent := preload("res://scripts/sim/patent.gd")
+const Chronicle := preload("res://scripts/sim/chronicle.gd")
 const March := preload("res://scripts/sim/march.gd")
 const Camps := preload("res://scripts/sim/camps.gd")
 const RingGen := preload("res://scripts/sim/ring_gen.gd")
@@ -96,6 +97,7 @@ var bp  # «Военный пропуск» (scripts/sim/battlepass.gd)
 var weekly  # weekly tasks (scripts/sim/weekly.gd)
 var calendar  # the 28-day login calendar (scripts/sim/calendar.gd)
 var patent  # «Державный патент», the subscription (scripts/sim/patent.gd)
+var chronicle  # «Летопись державы», 40 long goals (scripts/sim/chronicle.gd)
 var hand_pick: Array = []
 var installed_at := 0  # the first launch (offers that start «from D2», 09 §9.9.2)
 var intro_offer_day := -1  # the game day the intro Patent offer was shown  # the player's slot cards (03 §5.2); empty — the default hand
@@ -179,6 +181,7 @@ func _ready() -> void:
 	weekly = Weekly.new()
 	calendar = Calendar.new()
 	patent = Patent.new()
+	chronicle = Chronicle.new()
 	installed_at = now_s()
 	camps = Camps.new(MAP_SEED ^ 0xCA4B)
 	save_enabled = save_enabled and not _scripted_run()
@@ -699,7 +702,7 @@ func _on_hud_button(name: String) -> void:
 		"trophy":
 			ui.toast(tr("toast.chapter_progress") % [_player_hexes(), _chapter_goal()])
 		"book":
-			ui.toast(tr("toast.chronicle_locked"))
+			_open_chronicle()
 		"mail":
 			if not ultimatum.is_empty():
 				_show_ultimatum()
@@ -954,6 +957,7 @@ func _coalition_tick(now: int) -> void:
 				still.append(int(m))
 		if still.size() < 2:
 			coalition = {}
+			_stat("coalitions_broken")  # «Разделяй и властвуй» (07 §7.2)
 			_post("inbox.coalition_broken.title", "inbox.coalition_broken.text")
 			ui.toast(tr("toast.coalition_broken"))
 			return
@@ -2595,6 +2599,7 @@ func _end_offensive() -> void:
 	if battle.landing_held(Types.PLAYER):
 		_stat("landings_held")  # «Высадка»: the landing hex is still ours at the end
 	var ws := War.war_score(sim, war)
+	stats["wedges"] = int(stats.get("wedges", 0)) + int(battle.wedges.get(Types.PLAYER, 0))
 	battle = null
 	ai = null
 	for a in armies:
@@ -2865,6 +2870,10 @@ func _sign_peace() -> void:
 		bp.gain("peace", now_s())
 		_stat("peace_wins")
 		_coalition_win()
+		if plunder_level == 0:
+			_stat("mercy")  # «Пощадить» in a victorious treaty (07 §7.2)
+		if _last_score >= 100.0:
+			_stat("routs")
 	if enemy == RingNext.ALVARIA and _last_score >= 30.0:
 		_stat("hegemon_wins")  # «Укротитель волков»
 	if enemy == RingNext.CONCLAVE and _last_score >= 30.0:
@@ -2874,6 +2883,7 @@ func _sign_peace() -> void:
 	for d in chosen:
 		if d["kind"] == "pocket":
 			_stat("pockets")
+			stats["pocket_hexes"] = int(stats.get("pocket_hexes", 0)) + (d["hexes"] as Array).size()
 			if (d["hexes"] as Array).size() >= 4:
 				_stat("pockets4")
 				if (d["hexes"] as Array).size() >= 8:
@@ -3229,6 +3239,7 @@ func _econ_tick() -> void:
 	hud.shop_dot.visible = cases.claim_free_crates(now) > 0
 	_patent_tick(now)
 	_calendar_tick(now)
+	_chronicle_tick()
 	_orders_chip()
 	_ai_tick(now)
 	_update_bubbles()
@@ -3427,6 +3438,7 @@ func _collect_all() -> void:
 		if econ.vein_amount(int(h)) > 0:
 			veins[int(h)] = econ.vein_amount(int(h))
 	var gained: Dictionary = econ.collect_all()
+	stats["gold_collected"] = int(stats.get("gold_collected", 0)) + int(gained.get("gold", 0))
 	var crystals: int = econ.collect_veins()
 	if now_s() - _collect_counted >= 1800:  # order_collect_3 counts collections ≥30 min apart (08 §8.6.3)
 		_collect_counted = now_s()
@@ -3703,6 +3715,7 @@ func _on_research_speedup(_line: String) -> void:
 
 
 func _on_research_done(line: String) -> void:
+	_stat("research_done")
 	ui.toast(tr("toast.research_done") % [tr(String(Research.LINES[line]["name"])), research.level(line), tr(String(Research.LINES[line]["desc"]))])
 	sfx.play("capture")
 	if line == "infantry":
@@ -4721,6 +4734,75 @@ func _open_hand_picker() -> void:
 			ui.show_armies(_army_items(now_s())))
 
 
+# ---------------------------------------------------------------------- «Летопись державы» (canon §12.5, 07 §7)
+
+## The live measures of the Chronicle on top of the game's counters.
+func _chronicle_values() -> Dictionary:
+	var v: Dictionary = stats.duplicate()
+	var hexes := _player_hexes()
+	v["@hexes"] = hexes
+	var land := _land_count()
+	v["@half_world"] = 1 if land >= 160 and hexes * 2 >= land else 0
+	v["@dl"] = econ.dev_level()
+	var fort8 := 0
+	var veins := 0
+	for c in sim.cells:
+		if c["owner"] == Types.PLAYER and c["controller"] == Types.PLAYER:
+			if int(c["fort"]) >= 8:
+				fort8 += 1
+			if c["kind"] == "raivite_vein":
+				veins += 1
+	v["@fort8"] = fort8
+	v["@veins"] = veins
+	var unlock: Dictionary = Cases.data().get("commander_unlock_shards", {})
+	var det := 0
+	for cmd in Chronicle.DET_COMMANDERS:
+		if int(cases.shards.get(cmd, 0)) >= int(unlock.get(String(Cases.commander(cmd).get("rarity", "common")), 10)):
+			det += 1
+	v["@cmd_det"] = det
+	return v
+
+
+## Counts the goals and announces the new ones — not in a battle or a ceremony (07 §7.4: the toast waits).
+func _chronicle_tick() -> void:
+	if mode not in [Mode.MAP, Mode.WAR]:
+		return
+	for code in chronicle.update(_chronicle_values()):
+		ui.toast(tr("chr.toast") % tr("chr." + String(code)))
+	hud.set_book(chronicle.claimable())
+
+
+func _open_chronicle() -> void:
+	var rows: Array = []
+	for row in Chronicle.LIST:
+		var code: String = row[0]
+		var cos: String = row[5]
+		var reward := "+%d 💎" % int(row[4])
+		if cos != "":
+			var co: Dictionary = Cases.cosmetic(cos)
+			reward += " · «%s»" % String(co.get("name_en" if Cases.is_english() else "name", cos))
+		rows.append({"code": code, "chapter": row[1], "name": tr("chr." + code), "need": int(row[3]),
+			"desc": tr("chr." + code + ".d"), "progress": chronicle.progress(code), "reward": reward,
+			"state": "soon" if bool(row[6]) else ("claimed" if chronicle.claimed.has(code) else ("claim" if chronicle.can_claim(code) else "open"))})
+	ui.show_chronicle({"done": chronicle.reached.size(), "total": Chronicle.LIST.size(), "rows": rows},
+		func(code: String): _claim_chronicle(code))
+
+
+func _claim_chronicle(code: String) -> void:
+	var r: Array = chronicle.claim(code)
+	if r.is_empty():
+		return
+	econ.res["raivite"] = int(econ.res["raivite"]) + int(r[0])
+	if String(r[1]) != "":
+		cases.owned_cosmetics[String(r[1])] = true
+	sfx.play("fanfare")
+	ui.toast(tr("chr.claimed") % [tr("chr." + code), int(r[0])])
+	hud.set_book(chronicle.claimable())
+	_econ_tick()
+	_autosave()
+	_open_chronicle()
+
+
 # ---------------------------------------------------------------------- «Державный патент» (canon §15.7, 09 §9.13)
 
 ## Applies the subscription's perks while it is active and pays its weekly key and monthly frame.
@@ -4739,6 +4821,7 @@ func _patent_tick(now: int) -> void:
 	# income is collected automatically (05 §5.4)
 	if not econ.stock.is_empty():
 		var got: Dictionary = econ.collect_all()
+		stats["gold_collected"] = int(stats.get("gold_collected", 0)) + int(got.get("gold", 0))
 		econ.collect_veins()
 		if not got.is_empty() and now - _collect_counted >= 1800:  # counts for «Приказы дня» like a tap
 			_collect_counted = now
@@ -5608,6 +5691,16 @@ func _demo(spec: String) -> void:
 		bp.add_xp(4600, now_s())
 		bp.claim(1, "free")
 		_open_pass()
+		return
+	if what == "chronicle":  # the Chronicle after a little play: a few goals reached, one to take
+		stats["peaces"] = 3
+		stats["peace_wins"] = 3
+		stats["offensives"] = 12
+		stats["camps"] = 7
+		stats["colonized"] = 9
+		_chronicle_tick()
+		chronicle.claim("ach_first_peace")
+		_open_chronicle()
 		return
 	if what == "patent":  # the subscription screen (patent:on — while active)
 		if parts.size() > 1 and parts[1] == "on":

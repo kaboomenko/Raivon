@@ -21,6 +21,7 @@ var res_labels := {}  # res -> [value Label, rate Label]
 var builders_label: Label
 var level_label: Label
 var mail_badge: Array = []
+var book_badge: Array = []  # «Летопись»: rewards waiting
 var shop_dot: Panel  # red dot: a free crate is ready
 var _orders_chip: Panel  # «⚑ 1/3» — today's orders (08 §8.6)
 var _orders_lbl: Label
@@ -157,6 +158,19 @@ func _build() -> void:
 			bt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 			add_child(bt)
 			mail_badge = [badge, bt]
+		if left[i] == "book":
+			var bb := Icon.new("badge")
+			bb.position = Vector2(62, y - 8)
+			bb.size = Vector2(26, 26)
+			add_child(bb)
+			var bbt := _label("", 15)
+			bbt.position = Vector2(62, y - 6)
+			bbt.size = Vector2(26, 22)
+			bbt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			add_child(bbt)
+			book_badge = [bb, bbt]
+			bb.visible = false
+			bbt.visible = false
 
 	# ---- store button (below the left column)
 	var sb := _panel(Rect2(16, 524, 64, 74), _style(Color(0.35, 0.2, 0.55), 14, Color(1.0, 0.8, 0.35, 0.9), 2))
@@ -403,6 +417,13 @@ func set_orders(text: String, ready: bool, shown: bool) -> void:
 	_orders_chip.visible = shown
 	_orders_lbl.text = text
 	_orders_dot.visible = shown and ready
+
+
+func set_book(n: int) -> void:
+	for nd in book_badge:
+		(nd as Control).visible = n > 0
+	if book_badge.size() > 1:
+		(book_badge[1] as Label).text = str(mini(n, 9))
 
 
 func set_level(dl: int) -> void:
