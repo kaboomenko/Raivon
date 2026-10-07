@@ -280,6 +280,7 @@ func _build_terrain() -> void:
 	mat.set_shader_parameter("noise_fine", _noise_tex(6.0, 2, 202))
 	_terrain_mi.material_override = mat
 	add_child(_terrain_mi)
+	_cloud_shadows()
 	var water := MeshInstance3D.new()
 	var plane := PlaneMesh.new()
 	plane.size = Vector2(90, 90)
@@ -291,6 +292,44 @@ func _build_terrain() -> void:
 	wm.roughness = 0.12
 	water.material_override = wm
 	add_child(water)
+
+
+var _cloud_noise: ImageTexture
+var _cloud_plane: MeshInstance3D
+
+
+## Drifting cloud shadows over the whole map (shaders/cloud_shadows.gdshader), between the territory fills (+0.03)
+## and the borders (+0.042); drawn after the fills.
+func _cloud_shadows() -> void:
+	if _cloud_plane != null:
+		return
+	_cloud_plane = MeshInstance3D.new()
+	var pm := PlaneMesh.new()
+	pm.size = Vector2(140, 140)
+	_cloud_plane.mesh = pm
+	_cloud_plane.position = Vector3(0, 0.036, 0)
+	_cloud_plane.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var m := ShaderMaterial.new()
+	m.shader = load("res://shaders/cloud_shadows.gdshader")
+	m.set_shader_parameter("cloud_noise", _cloud_tex())
+	m.render_priority = 1
+	_cloud_plane.material_override = m
+	add_child(_cloud_plane)
+
+
+## Soft round cloud shapes for the drifting cloud shadows (terrain and water share it). Built synchronously:
+## a NoiseTexture2D fills in on a thread and samples as white until then.
+func _cloud_tex() -> ImageTexture:
+	if _cloud_noise == null:
+		var n := FastNoiseLite.new()
+		n.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+		n.seed = 4242
+		n.frequency = 0.012
+		n.fractal_octaves = 3
+		var img: Image = n.get_seamless_image(256, 256, false, false, 0.1, true)
+		img.generate_mipmaps()
+		_cloud_noise = ImageTexture.create_from_image(img)
+	return _cloud_noise
 
 
 func _noise_tex(freq: float, octaves: int, seed_: int) -> NoiseTexture2D:
