@@ -2821,7 +2821,8 @@ func _open_peace() -> void:
 
 func _show_peace() -> void:
 	var ws := War.war_score(sim, war)
-	ui.show_peace(_state_name(war["enemy"]), ws["score"], ws["control"], _demands, _chosen, plunder_level)
+	ui.show_peace(_state_name(war["enemy"]), ws["score"], ws["control"], _demands, _chosen, plunder_level,
+		_leader_portrait(int(war["enemy"])), map_view.state_color(int(war["enemy"])))
 	_highlight_demands()
 
 
@@ -4477,6 +4478,11 @@ const LEADERS := {2: ["leader.barons", "archetype.wolf", "leader.barons.desc"],
 	11: ["leader.lakes", "archetype.owl", "leader.lakes.desc"]}
 
 
+## The leader's portrait id (tools/blender/portrait_assets.py «ldr_…»), "" for a state without one.
+func _leader_portrait(s: int) -> String:
+	return String(LEADERS[s][0]).replace("leader.", "ldr_") if LEADERS.has(s) else ""
+
+
 func _opinion_add(s: int, v: float) -> void:
 	opinion[s] = float(opinion.get(s, 0.0)) + v
 
@@ -4547,7 +4553,7 @@ func _diplomacy_items(now: int) -> Array:
 			"separate": _can_separate(s),
 			"swap_reason": _swap_reason(s),
 			"color": map_view.state_color(s), "flag": map_view.state_flag(s),
-			"portrait": String(LEADERS[s][0]).replace("leader.", "ldr_")}))
+			"portrait": _leader_portrait(s)}))
 		if not war.is_empty() and (war.get("coalition", []) as Array).has(s):
 			(items[items.size() - 1] as Dictionary)["share"] = _member_share(s)
 	return items
@@ -5710,7 +5716,8 @@ func _issue_ultimatum(now: int, state: int = MapGen.BARONS) -> void:
 func _show_ultimatum() -> void:
 	ui.show_ultimatum(_state_name(int(ultimatum["state"])), _cell_name(int(ultimatum["hex"])), int(ultimatum["tribute"]),
 		econ.res["gold"] >= int(ultimatum["tribute"]), int(ultimatum["deadline"]) - now_s(),
-		_answer_ultimatum.bind("accept"), _answer_ultimatum.bind("pay"), _answer_ultimatum.bind("refuse"))
+		_answer_ultimatum.bind("accept"), _answer_ultimatum.bind("pay"), _answer_ultimatum.bind("refuse"),
+		_leader_portrait(int(ultimatum["state"])), map_view.state_color(int(ultimatum["state"])))
 
 
 func _answer_ultimatum(kind: String) -> void:

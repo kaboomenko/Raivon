@@ -494,16 +494,22 @@ func show_result(stars: int, captured: int, lost: int, score: float, control: in
 const PLUNDER_NAMES := ["plunder.spare", "plunder.light", "plunder.medium", "plunder.heavy"]
 
 
-func show_peace(enemy: String, budget: float, control: int, demands: Array, chosen: Dictionary, plunder := 1) -> void:
+func show_peace(enemy: String, budget: float, control: int, demands: Array, chosen: Dictionary, plunder := 1, portrait := "", plate := Color(0, 0, 0, 0)) -> void:
 	var box := _modal_box(Rect2(30, 640, 881, 1010), true)
 	var ink := Color(0.24, 0.16, 0.07)
-	_at(_label(tr("peace.title") % enemy, 32, ink, false), box, Vector2(30, 24))
+	if portrait != "":
+		_leader_seal(box, portrait, plate, Rect2(881 - 120, 14, 96, 116))
+	var pt := _label(tr("peace.title") % enemy, 32, ink, false)
+	_fit(pt, 32, 700.0 if portrait != "" else 820.0)
+	_at(pt, box, Vector2(30, 24))
 	var used := 0.0
 	for d in demands:
 		if chosen.has(d["id"]):
 			used += d["cost"]
 	_at(_label(tr("peace.points") % [used, budget, control], 22, ink, false), box, Vector2(30, 78))
-	_at(_label(tr("peace.hint"), 17, Color(0.42, 0.32, 0.18), false), box, Vector2(30, 112))
+	var ph := _label(tr("peace.hint"), 17, Color(0.42, 0.32, 0.18), false)
+	_fit(ph, 17, 700.0 if portrait != "" else 820.0)
+	_at(ph, box, Vector2(30, 112))
 	var scroll := ScrollContainer.new()
 	scroll.position = Vector2(26, 150)
 	scroll.size = Vector2(829, 548)
@@ -896,18 +902,35 @@ func show_chronicle(info: Dictionary, on_claim: Callable) -> void:
 
 
 ## AI ultimatum (canon §9.1): accept (cede the hex), pay tribute, or refuse (war).
-func show_ultimatum(enemy: String, hex_name: String, tribute: int, can_pay: bool, left_sec: int, on_accept: Callable, on_pay: Callable, on_refuse: Callable) -> void:
+func show_ultimatum(enemy: String, hex_name: String, tribute: int, can_pay: bool, left_sec: int, on_accept: Callable, on_pay: Callable, on_refuse: Callable, portrait := "", plate := Color(0, 0, 0, 0)) -> void:
 	var box := _modal_box(Rect2(50, 380, 841, 860), true)
 	var ink := Color(0.3, 0.08, 0.05)
-	_at(_label(tr("ult.title") % enemy, 32, ink, false), box, Vector2(30, 26))
+	var text_w := 780.0
+	if portrait != "":
+		_leader_seal(box, portrait, plate, Rect2(841 - 166, 22, 136, 162))
+		text_w = 620.0
+	var tl := _label(tr("ult.title") % enemy, 32, ink, false)
+	_fit(tl, 32, text_w)
+	_at(tl, box, Vector2(30, 26))
 	var t := _label(tr("ult.text") % [hex_name, tribute, fmt_time(left_sec)], 23, Color(0.25, 0.16, 0.08), false)
 	t.autowrap_mode = TextServer.AUTOWRAP_WORD
-	_at(t, box, Vector2(30, 90), Vector2(780, 260))
+	_at(t, box, Vector2(30, 90), Vector2(text_w, 260))
 	_button(box, Rect2(30, 380, 780, 96), tr("ult.accept") % hex_name, Color(0.45, 0.35, 0.2), on_accept)
 	var pay := _button(box, Rect2(30, 494, 780, 96), tr("ult.pay") % tribute, Color(0.75, 0.55, 0.12), on_pay)
 	pay.modulate.a = 1.0 if can_pay else 0.45
 	_button(box, Rect2(30, 608, 780, 96), tr("ult.refuse"), Color(0.75, 0.16, 0.12), on_refuse)
 	_button(box, Rect2(30, 722, 780, 84), tr("ult.later"), Color(0.3, 0.33, 0.42), close_modal)
+
+
+## The enemy leader's portrait on a parchment (ultimatum, peace conference): the face on the state's colour in a
+## dark wooden frame.
+func _leader_seal(box: Control, portrait: String, plate: Color, r: Rect2) -> void:
+	_panel(box, r.grow(6), _style(Color(0.35, 0.22, 0.1), 10, Color(0.75, 0.55, 0.25), 3), Control.MOUSE_FILTER_IGNORE)
+	var lp := CmdPortrait.new(portrait)
+	lp.plate = plate
+	lp.position = r.position
+	lp.size = r.size
+	box.add_child(lp)
 
 
 ## Simple announcement: title, lines of text, one button (world expansion, chapter cards).
