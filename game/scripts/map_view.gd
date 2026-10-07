@@ -332,18 +332,16 @@ func _cloud_tex() -> ImageTexture:
 	return _cloud_noise
 
 
-func _noise_tex(freq: float, octaves: int, seed_: int) -> NoiseTexture2D:
+## Seamless noise for the ground and water shaders, built synchronously: a NoiseTexture2D fills in on a thread
+## and samples as white until then, so the meadow patches popped in late (or not at all in a first frame).
+func _noise_tex(freq: float, octaves: int, seed_: int) -> ImageTexture:
 	var n := FastNoiseLite.new()
 	n.seed = seed_
 	n.frequency = freq / 64.0
 	n.fractal_octaves = octaves
-	var t := NoiseTexture2D.new()
-	t.width = 256
-	t.height = 256
-	t.seamless = true
-	t.generate_mipmaps = true
-	t.noise = n
-	return t
+	var img: Image = n.get_seamless_image(256, 256, false, false, 0.1, true)
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)
 
 
 # ------------------------------------------------------------------ props per hex
