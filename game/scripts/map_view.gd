@@ -394,7 +394,7 @@ var _grass_mi: MultiMeshInstance3D
 var _pebble_mi: MultiMeshInstance3D
 
 ## Grass tint by biome: tufts a shade lighter than the ground, so empty land reads as a meadow, not plastic.
-const GRASS_TINT := {"meadow": Color(0.42, 0.62, 0.26), "taiga": Color(0.3, 0.5, 0.28), "steppe": Color(0.72, 0.68, 0.34), "badlands": Color(0.66, 0.55, 0.3)}
+const GRASS_TINT := {"meadow": Color(0.34, 0.62, 0.22), "taiga": Color(0.3, 0.5, 0.28), "steppe": Color(0.72, 0.68, 0.34), "badlands": Color(0.66, 0.55, 0.3)}
 
 
 ## Grass tufts and pebbles over the land (one MultiMesh each): a whole meadow on an empty plain, a fringe along
@@ -480,15 +480,13 @@ func _tuft_mesh() -> ArrayMesh:
 		var h := 0.1 if k % 2 == 0 else 0.078
 		var root := Vector3(cos(a), 0, sin(a)) * 0.008
 		st.set_normal(Vector3.UP)
-		st.set_color(Color(0.5, 0.52, 0.48))
+		st.set_color(Color(0.62, 0.64, 0.58))
 		st.add_vertex(root - side)
 		st.add_vertex(root + side)
 		st.set_color(Color(0.95, 0.98, 0.85))
 		st.add_vertex(root + lean + Vector3(0, h, 0))
-	var mat := StandardMaterial3D.new()
-	mat.vertex_color_use_as_albedo = true
-	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mat.roughness = 1.0
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://shaders/grass.gdshader")
 	var mesh := st.commit()
 	mesh.surface_set_material(0, mat)
 	return mesh
