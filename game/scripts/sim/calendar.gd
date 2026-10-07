@@ -11,7 +11,8 @@ const LENGTH := 28
 
 ## Each day: [rewards, ×2 allowed]. A reward is [kind, …]: res h · crate n · raivite n · speed h count · builder ·
 ## cmd id (the unlock shards) · shards id n · shards_pick n (the least advanced common/rare commander) ·
-## cosmetic id · season_cosmetic (a not yet owned rare frame or emote).
+## shards_choice n (the player picks a common/rare commander) · cosmetic id · season_cosmetic (a not yet owned rare
+## frame or emote).
 const CYCLE_1 := [
 	[[["res", 2], ["crate", 1]], true],
 	[[["builder"]], false],
@@ -38,7 +39,7 @@ const CYCLE_1 := [
 	[[["crate", 3]], true],
 	[[["raivite", 60]], true],
 	[[["res", 12]], true],
-	[[["shards_pick", 15]], true],
+	[[["shards_choice", 15]], true],
 	[[["cosmetic", "cos_emote_drumroll"]], false],
 	[[["shards", "cmd_rai", 20]], false],
 ]
@@ -57,6 +58,7 @@ const DAY_28 := [[["season_cosmetic"]], false]
 var credited := 0        # calendar days credited in total (the next reward is day `credited`)
 var last_day := -1       # the game day of the last credit
 var pending := false     # the credited day's reward waits to be taken
+var choice := 0          # shards taken but not yet given: the player still picks the commander
 
 
 static func game_day(now: int) -> int:
@@ -107,10 +109,11 @@ func can_double() -> bool:
 
 
 func to_dict() -> Dictionary:
-	return {"credited": credited, "last_day": last_day, "pending": pending}
+	return {"credited": credited, "last_day": last_day, "pending": pending, "choice": choice}
 
 
 func load_dict(d: Dictionary) -> void:
 	credited = int(d.get("credited", 0))
 	last_day = int(d.get("last_day", -1))
 	pending = bool(d.get("pending", false))
+	choice = int(d.get("choice", 0))

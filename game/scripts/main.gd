@@ -4121,7 +4121,7 @@ func _cal_text(r: Array) -> String:
 			return tr("cal.rw_builder")
 		"cmd":
 			return tr("cal.rw_cmd") % Cases.commander_name(String(r[1]))
-		"shards_pick":
+		"shards_pick", "shards_choice":
 			return tr("cal.rw_shards_pick") % int(r[1])
 		"season_cosmetic":
 			return tr("cal.rw_season")
@@ -4143,6 +4143,9 @@ func _pay_calendar(r: Array, mult: int) -> String:
 			var x := ["shards", _least_commander(), int(r[1]) * mult]
 			_pay_pass(x)
 			return _pass_text(x)
+		"shards_choice":
+			calendar.choice += int(r[1]) * mult  # given once the player picks the commander
+			return tr("cal.rw_shards_pick") % (int(r[1]) * mult)
 		"speed":
 			speed_minutes += int(r[1]) * int(r[2]) * mult * 60
 			return _cal_text([r[0], r[1], int(r[2]) * mult])
@@ -4173,6 +4176,9 @@ func _pay_calendar(r: Array, mult: int) -> String:
 
 
 func _open_calendar() -> void:
+	if calendar.choice > 0:
+		_pick_cal_commander()
+		return
 	var n: int = calendar.credited
 	var cyc := Calendar.cycle_of(maxi(1, n))
 	var first := (cyc - 1) * Calendar.LENGTH
@@ -4204,6 +4210,38 @@ func _claim_calendar(double: bool) -> void:
 	sfx.play("fanfare")
 	ui.toast(tr("toast.cal_claim") % ", ".join(parts))
 	_econ_tick()
+	_autosave()
+	if calendar.choice > 0:
+		_pick_cal_commander()
+	else:
+		_open_calendar()
+
+
+## «15 осколков командира на выбор» (08 §8.8.2, day 26): the common and rare commanders, with the shards each has.
+const CHOICE_COMMANDERS := ["cmd_bram", "cmd_lira", "cmd_olm", "cmd_vik", "cmd_vega", "cmd_kort", "cmd_seir", "cmd_frey"]
+
+
+func _pick_cal_commander() -> void:
+	if calendar.choice <= 0:
+		return
+	var n: int = calendar.choice
+	var buttons: Array = []
+	for c in CHOICE_COMMANDERS:
+		var cmd: String = c
+		buttons.append([tr("cal.pick_btn") % [Cases.commander_name(cmd), int(cases.shards.get(cmd, 0))], Color(0.2, 0.36, 0.6), func():
+			_give_cal_shards(cmd)])
+	ui.show_choice(tr("cal.pick_title") % n, [tr("cal.pick_line")], buttons)
+
+
+func _give_cal_shards(cmd: String) -> void:
+	if calendar.choice <= 0:
+		return
+	var n: int = calendar.choice
+	calendar.choice = 0
+	cases.shards[cmd] = int(cases.shards.get(cmd, 0)) + n
+	ui.close_modal()
+	sfx.play("coin")
+	ui.toast(tr("toast.pass_claim") % _pass_text(["shards", cmd, n]))
 	_autosave()
 	_open_calendar()
 
@@ -5480,6 +5518,10 @@ func _demo(spec: String) -> void:
 		_econ_tick()
 		if parts.size() < 2:
 			_open_hand_picker()
+		return
+	if what == "calendar" and parts.size() > 1 and parts[1] == "pick":  # day 26: whom to give the 15 shards
+		calendar.choice = 15
+		_pick_cal_commander()
 		return
 	if what == "calendar":  # the login calendar on day 5 (days 1–4 taken)
 		var t := now_s()

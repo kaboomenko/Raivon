@@ -875,3 +875,6 @@ hand.attack_fixed,«Атака» закреплена в руке,«Attack» is 
 hand.min_one,Хотя бы одна карта в слотах,Keep at least one card in the slots
 hand.full,Все %d слотов заняты — уберите карту,All %d slots are used — remove a card first
 star.c4_two_fronts,Война на два фронта: два победных мира в одной коалиционной войне,War on two fronts: two victorious treaties in one coalition war
+cal.pick_title,Осколки на выбор: %d,Shards of your choice: %d
+cal.pick_line,Кому отдать осколки? Рядом — сколько их уже у командира.,Who gets the shards? Next to each name — how many that commander already has.
+cal.pick_btn,%s · есть %d,%s · has %d

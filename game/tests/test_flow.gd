@@ -574,6 +574,17 @@ func _run() -> void:
 	g._claim_calendar(false)
 	_check(g.econ.builders == bld + 1, "day 2: the 3rd builder")
 	g.ui.close_modal()
+	# day 26: «15 осколков на выбор» — the player picks the commander
+	g.calendar.credited = 25
+	g.calendar.pending = false
+	g.calendar.last_day -= 1
+	g._calendar_tick(g.now_s())
+	g._claim_calendar(false)
+	_check(g.calendar.choice == 15 and g.ui.has_modal(), "day 26 asks whom to give the shards")
+	var kort0 := int(g.cases.shards.get("cmd_kort", 0))
+	g._give_cal_shards("cmd_kort")
+	_check(g.calendar.choice == 0 and int(g.cases.shards.get("cmd_kort", 0)) == kort0 + 15, "the chosen commander gets 15 shards")
+	g.ui.close_modal()
 	g.stats["camps"] = int(g.stats_base.get("camps", 0)) + 3
 	var rvs: int = g.econ.res["raivite"]
 	g._on_world_action("c2_camps")

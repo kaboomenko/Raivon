@@ -56,8 +56,11 @@ func _initialize() -> void:
 	c.visit(four - 60)
 	c.claim()
 	_check(c.visit(four + 60) and c.credited == 5, "03:59 and 04:01 are two calendar days")
+	_check(Calendar.entry(26)[0][0][0] == "shards_choice" and Calendar.entry(54)[0][0][0] == "shards_pick", "day 26: shards of the player's choice; cycle 2 gives them automatically")
+	c.choice = 15
 	var q := Calendar.new()
 	q.load_dict(c.to_dict())
+	_check(q.choice == 15, "an unpicked choice survives a save")
 	_check(q.credited == 5 and q.pending and q.last_day == c.last_day, "save and load")
 	print("ALL CALENDAR CHECKS PASSED" if fails == 0 else "%d FAILED" % fails)
 	quit(1 if fails > 0 else 0)
