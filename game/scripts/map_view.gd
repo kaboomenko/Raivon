@@ -1016,10 +1016,12 @@ func _rebuild_overlay() -> void:
 				st.begin(Mesh.PRIMITIVE_TRIANGLES)
 				tints[own] = st
 			# inner-glow look of the references: faint in the middle, saturated at the rim
-			var tc := state_color(own)
-			var base := 0.2 if own == Types.PLAYER else 0.34
-			var c_in := Color(tc.r, tc.g, tc.b, base * 0.45)
-			var c_rim := Color(tc.r, tc.g, tc.b, base * 1.45)
+			# saturated, slightly deep team colour as in the concept art (docs/assets/concepts.webp): the hex reads
+			# as blue / red even over bright grass, strongest at the rim
+			var tc := Color(0.1, 0.3, 0.95) if own == Types.PLAYER else state_color(own).darkened(0.12)  # royal blue, not azure
+			var base := 0.42 if own == Types.PLAYER else 0.42
+			var c_in := Color(tc.r, tc.g, tc.b, base * 0.62)
+			var c_rim := Color(tc.r, tc.g, tc.b, minf(0.85, base * 1.75))
 			for k in 6:
 				st.set_color(c_in); st.add_vertex(center)
 				st.set_color(c_rim); st.add_vertex(pts[k])
@@ -1044,7 +1046,7 @@ func _rebuild_overlay() -> void:
 				continue
 			var e := _edge_pts(center, n, d)
 			if other == own:
-				_strip(_st(lines, own), e[0], e[1], 0.035, center.y + 0.005)
+				_strip(_st(lines, own), e[0], e[1], 0.05, center.y + 0.005)
 			else:
 				var w := 0.12
 				var prog := 1.0
@@ -1057,7 +1059,7 @@ func _rebuild_overlay() -> void:
 	for o in hatch:
 		_add(hatch[o], _hatch_mat(state_color(o)))
 	for o in lines:
-		_add(lines[o], _glow_mat(state_color(o), 0.8, 0.65))
+		_add(lines[o], _glow_mat(state_color(o), 1.25, 0.8))  # the glowing inner hex grid of the references
 	for o in borders:
 		var e := 2.6 if (o == Types.PLAYER or o == at_war_with) else 1.6  # strong enough to glow, still coloured
 		_add(borders[o], _glow_mat(state_color(o), e, 1.0))
@@ -1698,10 +1700,10 @@ func _make_deposit(hex: int, res: String) -> Node3D:
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var pts := _hex_pts(center, 0.86)
 	for k in 6:
-		_strip(st, pts[k], pts[(k + 1) % 6], 0.11, center.y + 0.02)
+		_strip(st, pts[k], pts[(k + 1) % 6], 0.065, center.y + 0.02)
 	var mi := MeshInstance3D.new()
 	mi.mesh = st.commit()
-	mi.material_override = _glow_mat(C_DEPOSIT, 1.15, 1.0)
+	mi.material_override = _glow_mat(C_DEPOSIT, 1.0, 0.9)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	node.add_child(mi)
 	var sp := Sprite3D.new()

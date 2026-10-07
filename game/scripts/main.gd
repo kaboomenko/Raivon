@@ -306,7 +306,7 @@ func _environment() -> void:
 	e.ssao_radius = 1.2
 	e.ssao_intensity = 2.5
 	e.tonemap_mode = Environment.TONE_MAPPER_ACES
-	e.tonemap_exposure = 1.0
+	e.tonemap_exposure = 0.86
 	# glow only on emissive things (neon borders, crystals, fire): a threshold above sunlit ground and no bloom,
 	# otherwise the whole frame hazes into pastel (art direction: saturated, contrasty, CoC-like)
 	e.glow_enabled = true
@@ -318,15 +318,15 @@ func _environment() -> void:
 	e.fog_light_color = Color(0.55, 0.62, 0.72)
 	e.fog_density = 0.003
 	e.adjustment_enabled = true
-	e.adjustment_saturation = 1.2
-	e.adjustment_contrast = 1.1
+	e.adjustment_saturation = 1.28
+	e.adjustment_contrast = 1.18
 	we.environment = e
 	add_child(we)
 
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-48, -35, 0)
 	sun.light_color = Color(1.0, 0.93, 0.82)
-	sun.light_energy = 1.35
+	sun.light_energy = 1.3
 	sun.shadow_enabled = true
 	sun.shadow_blur = 1.5
 	sun.directional_shadow_max_distance = 60
