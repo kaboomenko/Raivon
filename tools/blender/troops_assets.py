@@ -415,18 +415,45 @@ def squad(dl, team):
 
 
 def horse(coat, mane, sock=None, saddle=None):
-    """Horse facing −Y: back at z≈0.335, body y −0.17…0.17, head to y≈−0.33, height ≈0.5."""
+    """Horse facing −Y: back at z≈0.335, body y −0.17…0.17, head to y≈−0.33, height ≈0.5. A rounded barrel with
+    chest and rump, an arched neck, a wedge head with a darker muzzle, eyes and a bridle, tapered legs with
+    knees and hooves, a mane crest and a full tail — so it reads as a horse at map zoom, not a box."""
     c, mn = F(coat, 0.75), F(mane, 0.85)
-    bx((0.115, 0.34, 0.13), (0, 0, 0.27), c, bev=0.045)
-    beam((0, -0.13, 0.3), (0, -0.2, 0.43), 0.085, c, 0.02)
-    beam((0, -0.185, 0.445), (0, -0.3, 0.385), 0.064, c, 0.02)
-    beam((0, -0.11, 0.36), (0, -0.185, 0.47), 0.03, mn)
+    dark = F(mixc(coat, "#1a1410", 0.45), 0.8)
+    leather = F("#3a2516", 0.7)
+    # barrel, chest and rump
+    bx((0.11, 0.26, 0.12), (0, 0, 0.27), c, bev=0.05)
+    uvs(0.075, (0, -0.12, 0.285), c, 12, 8, (0.85, 1.0, 1.0))
+    uvs(0.078, (0, 0.12, 0.29), c, 12, 8, (0.9, 1.0, 0.95))
+    # arched neck and head
+    beam((0, -0.13, 0.31), (0, -0.2, 0.44), 0.082, c, 0.025)
+    uvs(0.045, (0, -0.205, 0.45), c, 10, 6)
+    beam((0, -0.2, 0.455), (0, -0.305, 0.39), 0.058, c, 0.022)
+    beam((0, -0.29, 0.4), (0, -0.335, 0.37), 0.048, dark, 0.016)  # muzzle
     for sx in (-1, 1):
-        cn(0.012, 0.04, (sx * 0.018, -0.19, 0.49), c, 4)
+        uvs(0.009, (sx * 0.03, -0.235, 0.452), F("#141010", 0.3), 6, 4)  # eyes
+        cn(0.012, 0.042, (sx * 0.018, -0.19, 0.495), c, 4)  # ears
+        rod((sx * 0.031, -0.2, 0.448), (sx * 0.027, -0.318, 0.385), 0.0045, leather, n=4)  # cheek strap
+    rod((-0.032, -0.322, 0.382), (0.032, -0.322, 0.382), 0.005, leather, n=4)  # noseband
+    if saddle:
+        for sx in (-1, 1):  # reins back to the rider
+            rod((sx * 0.03, -0.32, 0.38), (sx * 0.04, -0.05, 0.4), 0.0035, leather, n=4)
+    # mane: a crest of tufts along the neck
+    for k in range(5):
+        t = k / 4.0
+        cn(0.02, 0.05, (0, -0.11 - 0.08 * t, 0.37 + 0.11 * t), mn, 4, rot=(math.radians(-35), 0, 0))
+    cn(0.018, 0.045, (0, -0.215, 0.49), mn, 4, rot=(math.radians(-70), 0, 0))  # forelock
+    # legs: forearm/gaskin tapering to the knee, cannon to the hoof
+    for sx in (-1, 1):
         for sy in (-1, 1):
-            rod((sx * 0.036, sy * 0.125, 0.23), (sx * 0.036, sy * 0.125 - 0.01, 0.02), 0.018, c, r2=0.014, n=6)
-            cy(0.018, 0.022, (sx * 0.036, sy * 0.125 - 0.01, 0.011), F(sock or mane), 6)
-    rod((0, 0.17, 0.31), (0, 0.24, 0.13), 0.026, mn, r2=0.012, n=5)
+            x, y = sx * 0.036, sy * 0.115
+            rod((x, y, 0.25), (x, y - 0.006, 0.13), 0.022 if sy > 0 else 0.02, c, r2=0.014, n=6)
+            uvs(0.0155, (x, y - 0.006, 0.125), c, 6, 4)
+            rod((x, y - 0.006, 0.125), (x, y - 0.012, 0.03), 0.012, c, n=6)
+            cy(0.018, 0.024, (x, y - 0.012, 0.012), F(sock or mane), 6)
+    # tail: three strands fanned
+    for k, ox in enumerate((-0.012, 0.0, 0.012)):
+        rod((ox * 0.5, 0.17, 0.32), (ox * 2.2, 0.24 + 0.01 * (k == 1), 0.12), 0.024 if k == 1 else 0.017, mn, r2=0.008, n=5)
     if saddle:
         bx((0.125, 0.12, 0.02), (0, 0.005, 0.338), F(saddle, 0.7), bev=0)
 
