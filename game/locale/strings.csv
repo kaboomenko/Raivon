@@ -1078,3 +1078,12 @@ cmdr.rarity.common,Обычный,Common
 cmdr.rarity.rare,Редкий,Rare
 cmdr.rarity.epic,Эпический,Epic
 cmdr.rarity.legendary,Легендарный,Legendary
+cmdr.in_army,в %d-й армии,in army %d
+cmdr.pick_title,Командир %d-й армии,Commander of army %d
+cmdr.move_title,Перевести: %s,Transfer %s
+cmdr.move_text,Командир сейчас ведёт %d-ю армию. Перевести его в %d-ю?,This commander leads army %d now. Move them to army %d?
+cmdr.move_yes,Перевести,Transfer
+cmdr.assigned,%s ведёт армию,%s leads the army
+cmdr.recommend,Рекомендуем,Recommended
+cmdr.leads,Ведёт эту армию,Leads this army
+cmdr.remove,Снять командира,Remove the commander

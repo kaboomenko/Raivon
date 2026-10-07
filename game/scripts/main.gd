@@ -2326,6 +2326,7 @@ func _start_offensive() -> void:
 		opts["ai_energy_mult"] = 0
 		opts["ticks"] = 60 * Battle.TICKS_PER_SEC
 		ftue = 12 if ftue >= 10 else 3
+	opts.merge(_apply_commanders())
 	battle = Battle.new(sim, armies, opts)
 	ai = BattleAI.new(enemy)
 	ai.airstrike = ftue == 0 and _state_dl(enemy) >= AIRSTRIKE_DL and String(sim.states[enemy]["archetype"]) in AIR_ARCHETYPES
@@ -2526,8 +2527,10 @@ func _start_camp_fight(hex: int) -> void:
 		a["hold"] = false
 	_camp_fight = {"hex": hex, "fort": int(sim.cells[hex]["fort"]), "homes": homes}
 	sim.cells[hex]["fort"] = Camps.fort_level(econ.dev_level())
-	battle = Battle.new(sim, armies, {"attacker": Types.PLAYER, "defender": Types.NOBODY, "ai_energy_mult": 0,
-		"cards": _hand(), "camp": hex, "ticks": Camps.FIGHT_TICKS})
+	var camp_opts := {"attacker": Types.PLAYER, "defender": Types.NOBODY, "ai_energy_mult": 0,
+		"cards": _hand(), "camp": hex, "ticks": Camps.FIGHT_TICKS}
+	camp_opts.merge(_apply_commanders())
+	battle = Battle.new(sim, armies, camp_opts)
 	battle.garrison[hex] = camps.garrison(total / maxi(1, n), now_s())
 	_show_hand()
 	ai = null
@@ -2784,7 +2787,10 @@ func _open_peace() -> void:
 		_open_defeat_or_white(ws["score"])
 		return
 	_demands = War.available_demands(sim, war)
+	var kort: Dictionary = _army_by_id(commanders.army_of("cmd_kort")) if _cmd_level("cmd_kort") > 0 else {}
 	for d in _demands:
+		if d["kind"] == "pocket" and not kort.is_empty() and _touches_any(int(kort["hex"]), d["hexes"]):
+			d["cost"] = Types.round1(float(d["cost"]) / _cmd_v("cmd_kort", 0))  # Marshal Kort: pockets give up faster
 		if d["kind"] == "annex":
 			var h: int = d["hexes"][0]
 			d["label"] = tr("peace.annex") % [_cell_name(h), sim.cells[h]["value"]] + (" 🚩" if h == war["goal"] else "")
@@ -4641,11 +4647,15 @@ func _army_refill(now: int) -> void:
 			inf_lvl = int(b["level"])
 	var speed: float = (1.0 + 0.05 * inf_lvl) * (1.0 + 0.05 * research.level("reserve"))
 	var food_per_fx := float(Economy.PROD_MULT100[dl]) / 100.0 / Types.strength_mult(maxi(1, dl)) / 1000.0
+	var lira: int = commanders.army_of("cmd_lira") if _cmd_level("cmd_lira") > 0 else -1
 	for a in _player_armies():
 		var missing: int = int(a["max_str"]) - int(a["str"])
 		if missing <= 0:
 			continue
-		var heal := mini(missing, int(float(a["max_str"]) * dt * speed / REFILL_FULL_SEC[dl]))
+		var sp := speed
+		if int(a["id"]) == lira:
+			sp *= 1.0 + _cmd_v("cmd_lira", 0) / 100.0  # Captain Lira: the «b_Командир» term of the refill (03 §9.2)
+		var heal := mini(missing, int(float(a["max_str"]) * dt * sp / REFILL_FULL_SEC[dl]))
 		var afford := int(floor(float(econ.res["food"]) / maxf(food_per_fx, 1e-9)))
 		heal = mini(heal, afford)
 		if heal <= 0:
@@ -4959,6 +4969,145 @@ func _upgrade_commander(id: String) -> void:
 	_open_commander(id)
 
 
+## A passive's value (the part `i`) at the commander's level, in its units (percent, points or a factor).
+func _cmd_v(id: String, i: int) -> float:
+	var p: Array = Commanders.PASSIVES[id][i]
+	return Commanders.value(float(p[1]), float(p[2]), maxi(1, _cmd_level(id)))
+
+
+func _cmd_pm(id: String, i: int) -> int:
+	return int(_cmd_v(id, i) * 10.0)
+
+
+func _touches_any(hex: int, hexes: Array) -> bool:
+	if hexes.has(hex):
+		return true
+	for n in sim.neighbors[hex]:
+		if n >= 0 and hexes.has(n):
+			return true
+	return false
+
+
+const CMD_KEYS := ["cmd_atk", "cmd_def", "cmd_home", "cmd_forts", "cmd_port", "cmd_wedge", "cmd_breach"]
+
+## Writes the commanders' passives onto the player's armies (04 §15.2; the battle reads the cmd_* fields) and
+## returns the battle-wide ones for the offensive's options — those of a commander whose army takes part.
+func _apply_commanders() -> Dictionary:
+	var ids: Array = []
+	for a in armies:
+		for k in CMD_KEYS:
+			a.erase(k)
+		if a["side"] == Types.PLAYER:
+			ids.append(int(a["id"]))
+	commanders.keep_armies(ids)
+	var opts := {}
+	for army_id in commanders.assigned:
+		var id: String = commanders.assigned[army_id]
+		var a := _army_by_id(int(army_id))
+		if a.is_empty() or _cmd_level(id) <= 0:
+			continue
+		match id:
+			"cmd_bram":  # infantry strength on the infantry share of the army
+				var v := _cmd_pm(id, 0) * int(a.get("infantry", 1000)) / 1000
+				a["cmd_atk"] = v
+				a["cmd_def"] = v
+			"cmd_olm":
+				a["cmd_forts"] = _cmd_pm(id, 0)
+			"cmd_vik", "cmd_hawk", "cmd_vance":  # army strength: attack and defence
+				a["cmd_atk"] = _cmd_pm(id, 1)
+				a["cmd_def"] = _cmd_pm(id, 1)
+				if id == "cmd_hawk":
+					opts["air_pm"] = _cmd_pm(id, 0)
+				if id == "cmd_vance":
+					opts["energy_bonus"] = 1
+			"cmd_vega":
+				a["cmd_wedge"] = _cmd_pm(id, 0)
+			"cmd_rai":
+				a["cmd_wedge"] = _cmd_pm(id, 0)
+				opts["regen_pm"] = _cmd_pm(id, 1)
+			"cmd_seir":
+				a["cmd_port"] = _cmd_pm(id, 1)
+				opts["landing_discount"] = 1
+			"cmd_frey":
+				a["cmd_home"] = _cmd_pm(id, 0)
+			"cmd_irma":
+				a["cmd_atk"] = _cmd_pm(id, 1)
+				a["cmd_breach"] = true
+	return opts
+
+
+## What a commander would give this army now, in Might % (the «Рекомендуем» order, 04 §15.6).
+func _cmd_score(id: String, a: Dictionary) -> float:
+	match id:
+		"cmd_bram":
+			return _cmd_v(id, 0) * float(a.get("infantry", 1000)) / 1000.0
+		"cmd_vik", "cmd_seir", "cmd_irma", "cmd_hawk", "cmd_vance":
+			return _cmd_v(id, 1) + (2.0 if id in ["cmd_hawk", "cmd_vance"] else 0.0)
+		"cmd_frey":
+			return _cmd_v(id, 0) if int(sim.cells[int(a["hex"])]["owner"]) == Types.PLAYER else 0.0
+		"cmd_olm", "cmd_vega", "cmd_rai":
+			return _cmd_v(id, 0) * 0.6
+	return 1.0
+
+
+## The commander picker of an army (04 §15.6): the recommended one first, a commander of another army marked
+## with its number, «Снять» when one leads it.
+func _open_cmd_picker(army_id: int) -> void:
+	var a := _army_by_id(army_id)
+	if a.is_empty() or mode == Mode.BATTLE:
+		return
+	var rows: Array = []
+	var nums := {}
+	var pa := _player_armies()
+	for i in pa.size():
+		nums[int(pa[i]["id"])] = i + 1
+	for id in Commanders.PASSIVES:
+		if _cmd_level(id) <= 0:
+			continue
+		var other: int = commanders.army_of(id)
+		rows.append({"id": id, "name": Cases.commander_name(id), "rarity": _cmd_rarity(id), "level": _cmd_level(id),
+			"lines": _cmd_passive_lines(id, _cmd_level(id)), "score": _cmd_score(id, a),
+			"busy": tr("cmdr.in_army") % int(nums.get(other, 0)) if other >= 0 and other != army_id else "",
+			"here": other == army_id})
+	# the free ones first, then those of other armies; «Рекомендуем» goes to the best free one
+	rows.sort_custom(func(x, y): return float(x["score"]) - (100.0 if String(x["busy"]) != "" else 0.0) > float(y["score"]) - (100.0 if String(y["busy"]) != "" else 0.0))
+	if not rows.is_empty() and String(rows[0]["busy"]) == "" and not bool(rows[0]["here"]):
+		rows[0]["best"] = true
+	var title := tr("cmdr.pick_title") % int(nums.get(army_id, 1))
+	ui.show_cmd_picker(title, rows, func(id: String): _assign_commander(army_id, id),
+		func(): _unassign_commander(army_id) if commanders.cmd_of(army_id) != "" else ui.close_modal())
+
+
+func _assign_commander(army_id: int, id: String) -> void:
+	var other: int = commanders.army_of(id)
+	if other >= 0 and other != army_id:
+		var nums := {}
+		var pa := _player_armies()
+		for i in pa.size():
+			nums[int(pa[i]["id"])] = i + 1
+		ui.show_choice(tr("cmdr.move_title") % Cases.commander_name(id), [tr("cmdr.move_text") % [int(nums.get(other, 0)), int(nums.get(army_id, 0))]], [
+			[tr("cmdr.move_yes"), Color(0.2, 0.55, 0.3), func(): _do_assign(army_id, id)],
+			[tr("ui.cancel"), Color(0.3, 0.33, 0.42), func(): _open_cmd_picker(army_id)]])
+		return
+	_do_assign(army_id, id)
+
+
+func _do_assign(army_id: int, id: String) -> void:
+	commanders.assign(army_id, id)
+	ui.close_modal()
+	sfx.play("tap")
+	ui.toast(tr("cmdr.assigned") % Cases.commander_name(id))
+	_autosave()
+	_open_tab("army")
+
+
+func _unassign_commander(army_id: int) -> void:
+	commanders.unassign(army_id)
+	ui.close_modal()
+	_autosave()
+	_open_tab("army")
+
+
 ## «Поставить Целью» (09): the Royal case's target — the toast says so and the card refreshes.
 func _set_cmd_target(id: String) -> void:
 	if cases.set_target(id):
@@ -5058,7 +5207,9 @@ func _army_items(now: int) -> Array:
 		items.append({"id": a["id"], "name": tr("army.name") % i, "str": int(round(float(a["str"]) / 1000.0)), "max": int(round(float(a["max_str"]) / 1000.0)),
 			"slots": int(a.get("slots", 3)),
 			"upkeep": roundi(int(a["max_str"]) / 10000.0 * (1.5 if not war.is_empty() else 1.0) * (1.0 - 0.03 * research.level("thrift"))),
-			"refilling": int(a["str"]) < int(a["max_str"])})
+			"refilling": int(a["str"]) < int(a["max_str"]), "cmd": commanders.cmd_of(int(a["id"])),
+			"cmd_rarity": _cmd_rarity(commanders.cmd_of(int(a["id"]))) if commanders.cmd_of(int(a["id"])) != "" else "",
+			"cmd_free": ftue == 0 and _cmd_owned_count() > 0})
 		i += 1
 	var dl: int = econ.dev_level()
 	var cost := _train_cost()
@@ -5081,6 +5232,9 @@ func _on_army_action(id: int, kind: String) -> void:
 		return
 	if kind == "commanders":
 		_open_commanders()
+		return
+	if kind == "cmd":
+		_open_cmd_picker(id)
 		return
 	if kind == "train":
 		_train_army()
@@ -5465,6 +5619,7 @@ func _auto_defense(hex: int, by := -1) -> void:
 		if a["side"] != Types.PLAYER:
 			a["str"] = a["max_str"]
 	_normalize_armies()
+	_apply_commanders()  # the player's commanders defend too (the battle-wide ones are the attacker's)
 	var b := Battle.new(sim, armies, {"attacker": enemy, "defender": Types.PLAYER, "ai_energy_mult": 0, "cards": HAND})
 	var bot := BattleAI.new(enemy)
 	while not b.over:
@@ -5881,8 +6036,15 @@ func _demo(spec: String) -> void:
 		cases.shards["cmd_rai"] = 20
 		cases.shards["cmd_hawk"] = 14
 		commanders.levels = {"cmd_bram": 6, "cmd_lira": 5, "cmd_vega": 4, "cmd_frey": 3, "cmd_irma": 2}
+		var pa := _player_armies()
+		if pa.size() > 1:
+			commanders.assign(int(pa[0]["id"]), "cmd_bram")
 		if parts.size() > 1 and parts[1] == "tab":
 			_open_tab("army")
+			return
+		if parts.size() > 1 and parts[1] == "assign" and pa.size() > 1:
+			_open_tab("army")
+			_open_cmd_picker(int(pa[1]["id"]))
 			return
 		if parts.size() > 1 and parts[1] == "card":
 			_open_commander("cmd_vega")

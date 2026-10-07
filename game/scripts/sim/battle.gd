@@ -17,7 +17,13 @@ extends RefCounted
 ##   clash {tick, clash, target, side} | capture {tick, hex, side, from} | repelled {tick, hex, side}
 ##   routed {tick, army} | retreat {tick, army, to} | card {tick, side, card, hex} | end {tick, reason}
 ## Options (Dictionary): {attacker:int (player side), defender:int, ai_energy_mult:int (‰), cards:Array[String],
-##   ticks:int (optional offensive length, default OFFENSIVE_TICKS)}
+##   ticks:int (optional offensive length, default OFFENSIVE_TICKS); the attacker's commanders (04 §15.2, all
+##   optional): energy_bonus:int (start energy points), regen_pm:int (‰ faster energy), landing_discount:int,
+##   air_pm:int (‰ more «Авиаудар» damage)}
+## Commander passives on an army (all optional, ‰): cmd_atk (attack), cmd_def (defence), cmd_home (defence on its
+##   own official hex), cmd_forts (attack on a hex with a fort ≥ 1), cmd_port (attack and defence on or next to a
+##   port its side controls), cmd_wedge (extra «Клин» for every army of an attack it joins), cmd_breach:bool
+##   («Прорыв» goes one hex further).
 
 const HexGridLib := preload("res://scripts/sim/hexgrid.gd")
 const Types := preload("res://scripts/sim/types.gd")
@@ -95,7 +101,7 @@ func _init(p_world: World, p_armies: Array, p_opts: Dictionary) -> void:
 	opts = p_opts
 	for c in world.cells:
 		garrison.append(garrison_for(c["id"], c["controller"]) if Types.is_passable(c) else 0)
-	energy[attacker()] = 5 * ENERGY_UNIT
+	energy[attacker()] = (5 + int(opts.get("energy_bonus", 0))) * ENERGY_UNIT
 	energy[defender()] = ((5 * int(opts["ai_energy_mult"])) / 1000) * ENERGY_UNIT
 	for a in armies:
 		a["start_str"] = a["str"]
@@ -232,10 +238,33 @@ func forms_for(side: int, target: int, attacker_hexes: Array) -> Dictionary:
 	}
 
 
+## True when the hex is a port, or touches one, that `side` controls (Admiral Seir).
+func _near_port(hex: int, side: int) -> bool:
+	var c: Dictionary = world.cells[hex]
+	if c["kind"] == "port" and int(c["controller"]) == side:
+		return true
+	for id in world.neighbors[hex]:
+		if id >= 0 and world.cells[id]["kind"] == "port" and int(world.cells[id]["controller"]) == side:
+			return true
+	return false
+
+
+## The commanders' «Клин» bonus of an attack: Vega and Rai add up for every army in it (03 §9.1).
+static func wedge_extra(atk: Array) -> int:
+	var w := 0
+	for a in atk:
+		w += int(a.get("cmd_wedge", 0))
+	return w
+
+
 func _atk_mult(army: Dictionary, f: Dictionary, breakthrough: bool) -> int:
-	var m := 1000
+	var m := 1000 + int(army.get("cmd_atk", 0))
 	if f["wedge"]:
-		m += 200
+		m += 200 + int(f.get("wedge_extra", 0))
+	if army.has("cmd_forts") and f.has("target") and effective_fort(int(f["target"])) >= 1:
+		m += int(army["cmd_forts"])
+	if army.has("cmd_port") and _near_port(int(army["hex"]), int(army["side"])):
+		m += int(army["cmd_port"])
 	if f["encircle"]:
 		m += 300 # «Окружение» +30% damage
 	if breakthrough:
@@ -273,6 +302,12 @@ func _def_mult(target: int, def_army: Variant, f: Dictionary) -> int:
 		m += 500 # «Стойкость»
 	if def_army != null and def_army["hold"]:
 		m += 100
+	if def_army != null:
+		m += int(def_army.get("cmd_def", 0))
+		if c["owner"] == side:
+			m += int(def_army.get("cmd_home", 0))
+		if def_army.has("cmd_port") and _near_port(target, side):
+			m += int(def_army["cmd_port"])
 	if has_effect("defense", target):
 		m += 500
 	if has_effect("weak", target):
@@ -297,6 +332,7 @@ func forecast(side: int, army_ids: Array, target: int, breakthrough: bool = fals
 			atk.append(a)
 			hexes.append(a["hex"])
 	var f := forms_for(side, target, hexes)
+	f["wedge_extra"] = wedge_extra(atk)
 	var enemy := enemy_of(side)
 	var def_army: Variant = army_at(target, enemy)
 	var gar: int = garrison[target]
@@ -337,11 +373,14 @@ func issue(side: int, cmd: Dictionary) -> bool:
 	return true
 
 
-func _cost(cmd: Dictionary) -> int:
+func _cost(cmd: Dictionary, side: int = -1) -> int:
 	if cmd["t"] == "attack":
 		return CARDS["attack"]["cost"]
 	if cmd["t"] == "card":
-		return CARDS[cmd["card"]]["cost"]
+		var c: int = CARDS[cmd["card"]]["cost"]
+		if cmd["card"] == "landing" and side == attacker():
+			c = maxi(1, c - int(opts.get("landing_discount", 0)))  # Admiral Seir
+		return c
 	return 0
 
 
@@ -357,7 +396,7 @@ func validate(side: int, cmd: Dictionary) -> bool:
 	var e: int = energy.get(side, 0)
 	if cmd["t"] == "card" and not CARDS.has(cmd["card"]):
 		return false
-	if e < _cost(cmd) * ENERGY_UNIT:
+	if e < _cost(cmd, side) * ENERGY_UNIT:
 		return false
 	match cmd["t"]:
 		"attack":
@@ -418,7 +457,7 @@ func validate(side: int, cmd: Dictionary) -> bool:
 func _apply(side: int, cmd: Dictionary) -> void:
 	if not validate(side, cmd):
 		return
-	energy[side] = int(energy.get(side, 0)) - _cost(cmd) * ENERGY_UNIT
+	energy[side] = int(energy.get(side, 0)) - _cost(cmd, side) * ENERGY_UNIT
 	command_log.append({"tick": tick, "side": side, "cmd": cmd})
 	match cmd["t"]:
 		"attack":
@@ -495,12 +534,13 @@ func _play_card(side: int, card: String, target: int) -> void:
 			# target and its 6 neighbours: −20% max Strength of enemy armies and garrisons, forts −1 for 15 s;
 			# hexes under the enemy's air defence take half the damage (canon §7, 03 §12.2)
 			var enemy := enemy_of(side)
+			var air_pm := 1000 + (int(opts.get("air_pm", 0)) if side == attacker() else 0)  # General Hawk
 			for hex in airstrike_area(target):
 				var div := 10 if air_defended(hex, enemy) else 5
 				var hit := false
 				for a in armies:
 					if a["hex"] == hex and a["side"] == enemy and not a["routed"]:
-						a["str"] = maxi(1, int(a["str"]) - int(a["max_str"]) / div)
+						a["str"] = maxi(1, int(a["str"]) - int(a["max_str"]) * air_pm / (div * 1000))
 						hit = true
 				var cell: Dictionary = world.cells[hex]
 				if cell["controller"] == enemy:
@@ -622,6 +662,8 @@ func step() -> void:
 			regen = (regen * 1250) / 1000
 		if side == defender():
 			regen = (regen * int(opts["ai_energy_mult"])) / 1000
+		else:
+			regen = (regen * (1000 + int(opts.get("regen_pm", 0)))) / 1000  # Emperor Rai
 		energy[side] = mini(ENERGY_MAX, int(energy.get(side, 0)) + regen)
 	for k in cooldown.keys():
 		if cooldown[k] > 0:
@@ -716,6 +758,7 @@ func _step_clashes() -> void:
 		for a in atk:
 			hexes.append(a["hex"])
 		var f := forms_for(cl["side"], target, hexes)
+		f["wedge_extra"] = wedge_extra(atk)
 		var bt: Variant = cl["breakthrough"]
 		var atk_might := 0
 		var atk_str := 0
@@ -928,7 +971,7 @@ func _capture(cl: Dictionary, atk: Array) -> void:
 		lead["hex"] = target
 
 	var bt: Variant = cl["breakthrough"]
-	if bt != null and bt["army"] == lead["id"] and lead["hex"] == target and bt["steps"] < 3:
+	if bt != null and bt["army"] == lead["id"] and lead["hex"] == target and bt["steps"] < (4 if bool(lead.get("cmd_breach", false)) else 3):
 		_continue_breakthrough(lead, bt)
 
 

@@ -1266,6 +1266,29 @@ func _army_card(it: Dictionary) -> Control:
 		card.add_child(tl)
 		_card_button(card, tr("army.train"), Color(0.2, 0.55, 0.3), func(): army_action.emit(-1, "train"), true)
 		return card
+	if it.get("cmd", "") != "" or bool(it.get("cmd_free", false)):
+		# the commander frame (04 §15.6): a portrait, or «+» while the army has none
+		var cid: String = it.get("cmd", "")
+		var fr := Control.new()
+		fr.position = Vector2(110, 4)
+		fr.size = Vector2(36, 42)
+		fr.mouse_filter = Control.MOUSE_FILTER_STOP
+		if cid != "":
+			var pr := CmdPortrait.new(cid, String(it.get("cmd_rarity", "common")))
+			pr.size = fr.size
+			fr.add_child(pr)
+		else:
+			_panel(fr, Rect2(Vector2.ZERO, fr.size), _style(Color(0.12, 0.17, 0.28), 6, Color(1.0, 0.8, 0.4, 0.8), 2), Control.MOUSE_FILTER_IGNORE)
+			var plus := _label("+", 24, Color(1.0, 0.85, 0.4))
+			plus.size = fr.size
+			plus.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			plus.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			plus.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			fr.add_child(plus)
+		var aid: int = it["id"]
+		fr.gui_input.connect(func(e): if _is_tap(e): army_action.emit(aid, "cmd"))
+		card.add_child(fr)
+		nm.size = Vector2(118, 24)
 	var big := _label("⚔ %d" % int(it["str"]), 28)
 	big.position = Vector2(0, 34)
 	big.size = Vector2(150, 40)
@@ -1348,6 +1371,59 @@ func _commanders_card(it: Dictionary) -> Control:
 	if bool(it.get("dot", false)):
 		_panel(card, Rect2(128, 4, 18, 18), _style(Color(0.3, 0.9, 0.4), 9, Color(1, 1, 1, 0.8), 2), Control.MOUSE_FILTER_IGNORE)
 	return card
+
+
+## The commander picker of an army (04 §15.6): a row per open commander — portrait, level, the passive now, the
+## best one marked «Рекомендуем», one of another army marked with its number; «Снять» at the bottom.
+func show_cmd_picker(title: String, rows: Array, on_pick: Callable, on_remove: Callable) -> void:
+	var h := minf(1370.0, 200.0 + rows.size() * 142.0 + 110.0)
+	var box := _modal_box(Rect2(30, maxf(150.0, (VH - h) / 2.0 - 60.0), 881, h))
+	_button(box, Rect2(881 - 86, 18, 64, 56), "✕", Color(0.3, 0.33, 0.42), close_modal)
+	var t := _label(title, 30, Color(1.0, 0.85, 0.4))
+	_at(t, box, Vector2(30, 26))
+	var scroll := ScrollContainer.new()
+	scroll.position = Vector2(20, 90)
+	scroll.size = Vector2(841, h - 210)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	box.add_child(scroll)
+	var col := VBoxContainer.new()
+	col.custom_minimum_size = Vector2(830, 0)
+	col.add_theme_constant_override("separation", 10)
+	scroll.add_child(col)
+	for r in rows:
+		var here := bool(r["here"])
+		var best := bool(r.get("best", false))
+		var row := Panel.new()
+		row.custom_minimum_size = Vector2(830, 132)
+		row.mouse_filter = Control.MOUSE_FILTER_PASS
+		row.add_theme_stylebox_override("panel", _style(Color(0.15, 0.24, 0.16) if here else Color(0.1, 0.14, 0.23), 12, Color(0.3, 0.9, 0.4) if here else (Color(1.0, 0.8, 0.3) if best else EDGE), 2))
+		var pr := CmdPortrait.new(String(r["id"]), String(r["rarity"]))
+		pr.position = Vector2(10, 10)
+		pr.size = Vector2(96, 112)
+		row.add_child(pr)
+		var nm := _label("%s · %s" % [String(r["name"]), tr("cmdr.lvl_n") % int(r["level"])], 20)
+		_fit(nm, 20, 520)
+		nm.position = Vector2(124, 10)
+		row.add_child(nm)
+		var y := 44.0
+		for ln in r["lines"]:
+			var pl := _label(String(ln), 16, Color(0.75, 0.88, 1.0), false)
+			_fit(pl, 16, 690)
+			pl.position = Vector2(124, y)
+			row.add_child(pl)
+			y += 26.0
+		var tag := tr("cmdr.leads") if here else (String(r["busy"]) if String(r["busy"]) != "" else (tr("cmdr.recommend") if best else ""))
+		if tag != "":
+			var tl := _label(tag, 16, Color(0.5, 1.0, 0.6) if here else (Color(1.0, 0.85, 0.4) if best else MUTED))
+			tl.position = Vector2(560, 12)
+			tl.size = Vector2(256, 24)
+			tl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+			row.add_child(tl)
+		var id: String = r["id"]
+		row.gui_input.connect(func(e): if _is_tap(e) and not here: on_pick.call(id))
+		col.add_child(row)
+	var any_here := rows.any(func(r): return bool(r["here"]))
+	_button(box, Rect2(30, h - 106, 821, 80), tr("cmdr.remove") if any_here else tr("ui.close"), Color(0.55, 0.2, 0.2) if any_here else Color(0.13, 0.4, 0.9), on_remove)
 
 
 ## The collection (04 §15.7): albums, each a 3 × N grid of commander cards; a tap opens the commander.

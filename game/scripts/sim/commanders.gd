@@ -43,6 +43,7 @@ const ALBUMS := [
 const TABLE_LEVELS := [1, 5, 10, 15, 16, 20]
 
 var levels := {}  # cmd id -> level bought (≥ 2); level 1 comes with the unlock
+var assigned := {}  # army id -> cmd id: one commander per army, one army per commander (canon §8.4)
 
 
 static func level_cap(dl: int) -> int:
@@ -117,6 +118,36 @@ func upgrade(cmd: String, rarity: String, total: int, gold: int, dl: int) -> int
 	return int(c[1])
 
 
+## Puts a commander on an army, taking it off the army it led before (04 §15.6: free and instant out of battle).
+func assign(army_id: int, cmd: String) -> void:
+	var was := army_of(cmd)
+	if was >= 0:
+		assigned.erase(was)
+	assigned[army_id] = cmd
+
+
+func unassign(army_id: int) -> void:
+	assigned.erase(army_id)
+
+
+func army_of(cmd: String) -> int:
+	for id in assigned:
+		if String(assigned[id]) == cmd:
+			return int(id)
+	return -1
+
+
+func cmd_of(army_id: int) -> String:
+	return String(assigned.get(army_id, ""))
+
+
+## Drops the assignments of armies that are gone.
+func keep_armies(ids: Array) -> void:
+	for id in assigned.keys():
+		if not ids.has(id):
+			assigned.erase(id)
+
+
 static func album_of(cmd: String) -> String:
 	for a in ALBUMS:
 		if (a[1] as Array).has(cmd):
@@ -125,7 +156,10 @@ static func album_of(cmd: String) -> String:
 
 
 func to_dict() -> Dictionary:
-	return {"levels": levels.duplicate()}
+	var a := {}
+	for id in assigned:
+		a[str(id)] = assigned[id]
+	return {"levels": levels.duplicate(), "assigned": a}
 
 
 func load_dict(d: Dictionary) -> void:
@@ -133,3 +167,7 @@ func load_dict(d: Dictionary) -> void:
 	var l: Dictionary = d.get("levels", {})
 	for k in l:
 		levels[String(k)] = int(l[k])
+	assigned = {}
+	var a: Dictionary = d.get("assigned", {})
+	for k in a:
+		assigned[int(k)] = String(a[k])

@@ -3,6 +3,10 @@ extends SceneTree
 
 const Commanders := preload("res://scripts/sim/commanders.gd")
 const Cases := preload("res://scripts/sim/cases.gd")
+const Battle := preload("res://scripts/sim/battle.gd")
+const MapGen := preload("res://scripts/sim/map_gen.gd")
+const Armies := preload("res://scripts/sim/armies.gd")
+const Types := preload("res://scripts/sim/types.gd")
 
 var fails := 0
 
@@ -54,5 +58,54 @@ func _initialize() -> void:
 	var q := Commanders.new()
 	q.load_dict(m.to_dict())
 	_check(q.level("cmd_bram", "common", 999) == 16, "save and load")
+	# assignment (04 §15.6): one army per commander, moving takes it off the old army
+	var asg := Commanders.new()
+	asg.assign(1, "cmd_bram")
+	asg.assign(2, "cmd_bram")
+	_check(asg.cmd_of(1) == "" and asg.cmd_of(2) == "cmd_bram" and asg.army_of("cmd_bram") == 2, "a commander leads one army")
+	asg.assign(1, "cmd_frey")
+	asg.keep_armies([1])
+	_check(asg.army_of("cmd_bram") == -1 and asg.cmd_of(1) == "cmd_frey", "a lost army frees its commander")
+	var asg2 := Commanders.new()
+	asg2.load_dict(asg.to_dict())
+	_check(asg2.cmd_of(1) == "cmd_frey", "assignments survive a save")
+	_battle_checks()
 	print("ALL COMMANDER CHECKS PASSED" if fails == 0 else "%d FAILED" % fails)
 	quit(1 if fails > 0 else 0)
+
+
+## The passives in the battle engine: attack, wedge, home defence, start energy, a cheaper landing.
+func _battle_checks() -> void:
+	var w := MapGen.generate_chapter_one(20261004)
+	var target := -1
+	var srcs: Array = []
+	for c in w.cells:
+		if c["controller"] != MapGen.BARONS or c["kind"] != "plain":
+			continue
+		srcs = []
+		for n in w.neighbors[c["id"]]:
+			if n >= 0 and w.cells[n]["controller"] == Types.PLAYER:
+				srcs.append(n)
+		if srcs.size() >= 2:
+			target = c["id"]
+			break
+	_check(target >= 0, "a hex with a two-hex front")
+	var a1 := Armies.infantry_army(1, Types.PLAYER, int(srcs[0]), 3, 1)
+	var a2 := Armies.infantry_army(2, Types.PLAYER, int(srcs[1]), 3, 1)
+	var d := Armies.infantry_army(101, MapGen.BARONS, target, 3, 1)
+	var b := Battle.new(w, [a1, a2, d], {"attacker": Types.PLAYER, "defender": MapGen.BARONS, "ai_energy_mult": 0, "cards": [], "energy_bonus": 1, "landing_discount": 1})
+	var m0: int = b.forecast(Types.PLAYER, [1], target)["atk_might"]
+	a1["cmd_atk"] = 100
+	var m1: int = b.forecast(Types.PLAYER, [1], target)["atk_might"]
+	_check(m1 == m0 * 1100 / 1000, "+10%% attack: Might ×1.1 (%d → %d)" % [m0, m1])
+	a1.erase("cmd_atk")
+	var w0: int = b.forecast(Types.PLAYER, [1, 2], target)["atk_might"]
+	a2["cmd_wedge"] = 74
+	var w1: int = b.forecast(Types.PLAYER, [1, 2], target)["atk_might"]
+	_check(w1 > w0, "Vega's wedge bonus lifts both armies of the wedge (%d → %d)" % [w0, w1])
+	_check(b.energy_points(Types.PLAYER) == 6, "Lady Vance: +1 energy at the start")
+	_check(b._cost({"t": "card", "card": "landing"}, Types.PLAYER) == 3 and b._cost({"t": "card", "card": "landing"}, MapGen.BARONS) == 4, "Admiral Seir: «Десант» costs 3 for the player only")
+	var dm0: int = b._def_mult(target, d, b.forms_for(Types.PLAYER, target, [srcs[0]]))
+	d["cmd_home"] = 97
+	var dm1: int = b._def_mult(target, d, b.forms_for(Types.PLAYER, target, [srcs[0]]))
+	_check(dm1 == dm0 + 97, "Colonel Frey: +9.7% defence on an own official hex")
