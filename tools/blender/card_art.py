@@ -307,8 +307,23 @@ def corps():
     camera((0.3, -2.1, 0.95), (0.1, 0.3, 0.6), 40)
 
 
+def unit(n):
+    """The Army tab's card picture (the unit cards of the reference HUD): the era's infantry up close with its
+    assault unit behind, under the card sky."""
+    def scene():
+        sky("#1d2c4c", "#d8a060", "#34482a")
+        load("squad_dl%d_blue" % n, (0.05, 0.1, 0), math.radians(205), 1.7)
+        if n >= 2:
+            load("assault_dl%d_blue" % n, (0.75, 0.75, 0), math.radians(215), 1.5)
+        lights()
+        camera((0.35, -1.55, 0.72), (0.15, 0.25, 0.32), 40)
+    return scene
+
+
 SCENES = {"attack": attack, "breakthrough": breakthrough, "airstrike": airstrike, "encircle": encircle, "defense": defense,
           "landing": landing, "missile": missile, "corps": corps}
+for _n in range(1, 9):
+    SCENES["unit_dl%d" % _n] = unit(_n)
 
 
 if __name__ == "__main__":

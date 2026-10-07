@@ -1351,8 +1351,23 @@ func _army_card(it: Dictionary) -> Control:
 		fr.gui_input.connect(func(e): if _is_tap(e): army_action.emit(aid, "cmd"))
 		card.add_child(fr)
 		nm.size = Vector2(118, 24)
+	var pic := "res://assets/ui/cards/unit_dl%d.png" % clampi(int(it.get("dl", 1)), 1, 8)
+	var big_y := 34.0
+	if ResourceLoader.exists(pic):
+		# the era's troops as the card picture (the unit cards of the reference HUD), the name and strength over it
+		var tr_ := TextureRect.new()
+		tr_.texture = load(pic)
+		tr_.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		tr_.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		tr_.clip_contents = true
+		tr_.position = Vector2(4, 4)
+		tr_.size = Vector2(142, 78)
+		tr_.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card.add_child(tr_)
+		card.move_child(tr_, 0)
+		big_y = 46.0
 	var big := _label("⚔ %d" % int(it["str"]), 28)
-	big.position = Vector2(0, 34)
+	big.position = Vector2(0, big_y)
 	big.size = Vector2(150, 40)
 	big.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	card.add_child(big)

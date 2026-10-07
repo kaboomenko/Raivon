@@ -5462,7 +5462,7 @@ func _army_items(now: int) -> Array:
 			"upkeep": roundi(int(a["max_str"]) / 10000.0 * (1.5 if not war.is_empty() else 1.0) * (1.0 - 0.03 * research.level("thrift"))),
 			"refilling": int(a["str"]) < int(a["max_str"]), "cmd": commanders.cmd_of(int(a["id"])),
 			"cmd_rarity": _cmd_rarity(commanders.cmd_of(int(a["id"]))) if commanders.cmd_of(int(a["id"])) != "" else "",
-			"cmd_free": ftue == 0 and _cmd_owned_count() > 0})
+			"cmd_free": ftue == 0 and _cmd_owned_count() > 0, "dl": econ.dev_level()})
 		i += 1
 	var dl: int = econ.dev_level()
 	var cost := _train_cost()
