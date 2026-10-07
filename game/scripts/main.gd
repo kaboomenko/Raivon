@@ -3231,6 +3231,8 @@ func now_s() -> int:
 
 
 func _econ_tick() -> void:
+	if ui:
+		ui.set_portrait_era(econ.dev_level())
 	var now := now_s()
 	var done_line: String = research.tick(now)
 	if done_line != "":
@@ -4928,6 +4930,7 @@ func _cmd_passive_lines(id: String, lvl: int) -> Array:
 ## The collection (04 §15.7): albums of a 3 × N grid — portrait, level «ур. 9/16», shards to the next level.
 func _open_commanders() -> void:
 	var dl: int = econ.dev_level()
+	ui.set_portrait_era(dl)
 	var albums: Array = []
 	for a in Commanders.ALBUMS:
 		var cards: Array = []

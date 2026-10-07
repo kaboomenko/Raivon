@@ -69,6 +69,8 @@ func _initialize() -> void:
 	var asg2 := Commanders.new()
 	asg2.load_dict(asg.to_dict())
 	_check(asg2.cmd_of(1) == "cmd_frey", "assignments survive a save")
+	var CmdPortrait = load("res://scripts/cmd_portrait.gd")
+	_check(CmdPortrait.era_of(1) == 1 and CmdPortrait.era_of(3) == 1 and CmdPortrait.era_of(4) == 2 and CmdPortrait.era_of(7) == 3 and CmdPortrait.era_of(8) == 4, "portrait eras: DL1–3, 4–5, 6–7, 8+ (04 §15.4)")
 	_battle_checks()
 	print("ALL COMMANDER CHECKS PASSED" if fails == 0 else "%d FAILED" % fails)
 	quit(1 if fails > 0 else 0)

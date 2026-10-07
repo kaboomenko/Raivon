@@ -22,7 +22,13 @@ const LOOK := {
 	"cmd_rai": [Color("e7c0a0"), [0.33, 0.42], Color("f0f0f0"), "long", "beard_long", "circlet", Color("eef1f6"), Color("3a8dff")],
 }
 
-static var _renders := {}  # cmd -> Texture2D or null
+static var _renders := {}  # "cmd_eN" -> Texture2D or null
+## The uniform era of the portraits (04 §15.4): 1 DL1–3, 2 DL4–5, 3 DL6–7, 4 DL8–10 — set from the player's DL.
+static var era := 1
+
+
+static func era_of(dl: int) -> int:
+	return 1 if dl <= 3 else (2 if dl <= 5 else (3 if dl <= 7 else 4))
 
 var cmd := ""
 var rarity := "common"
@@ -219,7 +225,10 @@ func _draw() -> void:
 
 
 static func _render(id: String) -> Texture2D:
-	if not _renders.has(id):
-		var path := "res://assets/ui/portraits/%s.png" % id
-		_renders[id] = load(path) if ResourceLoader.exists(path) else null
-	return _renders[id]
+	var key := "%s_e%d" % [id, era]
+	if not _renders.has(key):
+		var path := "res://assets/ui/portraits/%s.png" % (id if era == 1 else key)
+		if not ResourceLoader.exists(path):
+			path = "res://assets/ui/portraits/%s.png" % id  # no render of this era yet: the first one
+		_renders[key] = load(path) if ResourceLoader.exists(path) else null
+	return _renders[key]

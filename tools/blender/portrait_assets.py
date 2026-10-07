@@ -35,8 +35,29 @@ def darker(hex_color, k=0.6):
     return "#%02x%02x%02x" % tuple(c)
 
 
-def build(cid):
+def mix(a, b, t):
+    pa = [int(a.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4)]
+    pb = [int(b.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4)]
+    return "#%02x%02x%02x" % tuple(int(round(x + (y - x) * t)) for x, y in zip(pa, pb))
+
+
+# Eras of the uniform (04 §15.4): the face stays, the uniform and the headgear follow the player's DL —
+# 1 cloth and leather (DL1–3), 2 coats and bicornes (DL4–5), 3 field uniform (DL6–7), 4 armour and visors (DL8–10).
+# Personal gear (goggles, glasses, the flight helmet, the cap, the circlet) is kept in every era.
+KEEP_GEAR = ("goggles", "glasses", "flight", "tricorn", "circlet")
+
+
+def build(cid, era=1):
     skin_c, (hw, hh), hair_c, style, facial, gear, uni_c, acc_c = LOOK[cid]
+    if era == 2:
+        uni_c = darker(uni_c, 0.72)
+    elif era == 3:
+        uni_c = mix(uni_c, "#6b7a4a", 0.65)
+    elif era == 4:
+        uni_c = mix(uni_c, "#2f3642", 0.8)
+    era_hat = era > 1 and gear not in KEEP_GEAR
+    if era_hat and gear != "brooch":
+        gear = ""
     skin = kit.mat("skin_" + cid, skin_c, 0.55)
     hair = kit.mat("hair_" + cid, hair_c, 0.7)
     uni = kit.mat("uni_" + cid, uni_c, 0.65)
@@ -77,10 +98,10 @@ def build(cid):
         n.rotation_euler = (math.radians(-70), 0, 0)
     kit.box("mouth", (0.13, 0.03, 0.025), (0, -0.335, HEAD_Z - 0.18), lips, 0.01)
     # hair
-    if style in ("short", "messy", "braid", "long", "ponytail", "updo", "bob", "buzz"):
+    if style in ("short", "messy", "braid", "long", "ponytail", "updo", "bob", "buzz") and not (era == 4 and era_hat):
         top = 0.3 if style != "buzz" else 0.24
         kit.sphere("hair_cap", 1.0, (0, 0.03, HEAD_Z + 0.16), hair, (hw + 0.03, 0.4, top + 0.06))
-    if style == "messy":
+    if style == "messy" and not (era == 4 and era_hat):
         for k in range(6):
             a = -0.5 + k * 0.2
             c = kit.cone("tuft", 0.07, 0.18, (a * hw * 1.6, -0.2, HEAD_Z + 0.36), hair, 6, 0.0)
@@ -157,10 +178,46 @@ def build(cid):
     if cid == "cmd_hawk":
         bpy.ops.mesh.primitive_torus_add(major_radius=0.2, minor_radius=0.075, location=(0, 0.0, 0.9))
         bpy.context.active_object.data.materials.append(kit.mat("scarf", "#f4f4f4", 0.7))
-    if cid == "cmd_olm":
+    gold = kit.mat("gold_trim", "#e8b23a", 0.3, 0.8)
+    if era == 2:  # a coat: a column of brass buttons, gold epaulettes, a bicorne
+        for k in range(4):
+            kit.sphere("button", 0.022, (0.0, -0.5, 0.62 - k * 0.11), gold)
+        if cid not in ("cmd_vega", "cmd_frey", "cmd_kort", "cmd_vance", "cmd_rai"):
+            for sx in (-1, 1):
+                kit.sphere("epaulette", 1.0, (sx * 0.5, -0.02, 0.86), gold, (0.17, 0.2, 0.06))
+        if era_hat:
+            hat = kit.mat("bicorne", "#1d2533", 0.55)
+            bc = kit.sphere("bicorne", 1.0, (0, -0.02, HEAD_Z + 0.46), hat, (hw + 0.2, 0.16, 0.17))
+            bc.rotation_euler.x = math.radians(-12)
+            kit.sphere("bicorne_trim", 1.0, (0, -0.02, HEAD_Z + 0.4), gold, (hw + 0.21, 0.165, 0.03))
+            kit.sphere("cockade", 0.055, (0, -0.18, HEAD_Z + 0.48), acc, (1, 0.5, 1))
+    if era == 3:  # field uniform: chest pockets, a shoulder belt, a peaked field cap
+        for sx in (-1, 1):
+            kit.box("pocket", (0.16, 0.04, 0.14), (sx * 0.22, -0.52, 0.5), kit.mat("pocket", darker(uni_c, 0.85), 0.7), 0.02)
+        b = kit.box("sam_browne", (0.07, 0.04, 1.1), (0.08, -0.49, 0.42), kit.mat("belt", "#5a3a22", 0.6), 0.01)
+        b.rotation_euler.y = math.radians(-32)
+        if era_hat:
+            cap = kit.mat("field_cap", mix(uni_c, "#3d4a2a", 0.4), 0.6)
+            kit.cyl("fcap_top", hw + 0.05, 0.1, (0, 0.04, HEAD_Z + 0.34), cap, 32, 0.03, r2=hw + 0.1)
+            kit.cyl("fcap_band", hw + 0.03, 0.07, (0, 0.03, HEAD_Z + 0.27), kit.mat("fcap_band", darker(uni_c, 0.6), 0.6), 32, 0.01)
+            v = kit.sphere("fcap_visor", 1.0, (0, -0.3, HEAD_Z + 0.24), kit.mat("visor", "#1b1a16", 0.3), (hw * 0.75, 0.16, 0.03))
+            v.rotation_euler.x = math.radians(-12)
+            kit.sphere("fcap_badge", 0.035, (0, -0.37, HEAD_Z + 0.3), acc, (1, 0.5, 1))
+    if era == 4:  # armour: plates, pauldrons, a glowing strip in the accent colour, a helmet with a visor band
+        steel = kit.mat("armour", "#5a6472", 0.3, 0.85)
+        glowm = kit.mat("glow_" + cid, acc_c, 0.2, emission=acc_c, emit_strength=5.0)
+        for sx in (-1, 1):
+            kit.sphere("pauldron", 1.0, (sx * 0.5, 0.0, 0.84), steel, (0.22, 0.26, 0.12))
+        kit.box("chest_plate", (0.5, 0.06, 0.42), (0, -0.5, 0.52), steel, 0.05)
+        kit.box("chest_glow", (0.36, 0.02, 0.03), (0, -0.54, 0.62), glowm, 0.0)
+        if era_hat:
+            kit.sphere("helmet", 1.0, (0, 0.03, HEAD_Z + 0.13), steel, (hw + 0.06, 0.43, 0.36))
+            bpy.ops.mesh.primitive_torus_add(major_radius=hw + 0.035, minor_radius=0.02, location=(0, -0.01, HEAD_Z + 0.24))
+            bpy.context.active_object.data.materials.append(glowm)
+    if cid == "cmd_olm" and era == 1:
         kit.box("apron", (0.62, 0.05, 0.7), (0, -0.42, 0.3), kit.mat("apron", "#5a3820", 0.7), 0.03)
         kit.box("wrench", (0.05, 0.03, 0.3), (0.18, -0.46, 0.38), kit.mat("brass", "#c9a24a", 0.3, 0.8), 0.01)
-    if cid == "cmd_lira":
+    if cid == "cmd_lira" and era == 1:
         s = kit.box("bag_strap", (0.08, 0.04, 1.0), (0.05, -0.38, 0.45), kit.mat("strap_lira", "#7a5a3a", 0.7), 0.01)
         s.rotation_euler.y = math.radians(35)
     if cid == "cmd_rai":
@@ -209,17 +266,23 @@ def main():
     for a in sys.argv[1:]:
         if a.startswith("--size="):
             size = int(a[7:])
+    eras = [1]
+    for a in sys.argv[1:]:
+        if a.startswith("--eras="):
+            eras = [int(x) for x in a[7:].split(",")]
     out = args[0]
     ids = args[1:] or list(LOOK)
     os.makedirs(out, exist_ok=True)
     for cid in ids:
-        bpy.ops.wm.read_factory_settings(use_empty=True)
-        kit._MATS.clear()
-        build(cid)
-        setup(size)
-        bpy.context.scene.render.filepath = os.path.join(out, cid + ".png")
-        bpy.ops.render.render(write_still=True)
-        print("rendered", cid)
+        for era in eras:
+            bpy.ops.wm.read_factory_settings(use_empty=True)
+            kit._MATS.clear()
+            build(cid, era)
+            setup(size)
+            name = cid if era == 1 else "%s_e%d" % (cid, era)  # era 1 keeps the plain name
+            bpy.context.scene.render.filepath = os.path.join(out, name + ".png")
+            bpy.ops.render.render(write_still=True)
+            print("rendered", name)
 
 
 main()

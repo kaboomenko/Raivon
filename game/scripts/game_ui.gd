@@ -1456,6 +1456,11 @@ func show_profile(info: Dictionary, cb: Dictionary) -> void:
 var _flag_tab := "div"
 
 
+## The commander portraits follow the player's DL era (04 §15.4).
+func set_portrait_era(dl: int) -> void:
+	CmdPortrait.era = CmdPortrait.era_of(dl)
+
+
 ## The flag constructor (10 §4.23): the preview on top; tabs «Деление» (12), «Цвета» (2 field colours of 16, the
 ## emblem's of 18 — gold and yellow only for the emblem), «Эмблема» (24 free + premium `cos_flag_part`), «Рамка»
 ## (`cos_frame`); locked items show a lock; «Случайно» and «Готово». Each tap calls on_change with the new flag.
