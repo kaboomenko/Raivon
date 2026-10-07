@@ -1241,6 +1241,120 @@ func _rebuild_overlay() -> void:
 	for o in borders:
 		var e := 2.6 if (o == Types.PLAYER or o == at_war_with) else 1.6  # strong enough to glow, still coloured
 		_add(borders[o], _glow_mat(state_color(o), e, 1.0))
+	_build_roads()
+
+
+const ROAD_W := 0.1
+
+## Dirt roads (the close reference frames: carts on country roads): from every building hex to its owner's capital
+## along the shortest way over the owner's land, as wavy ribbons that stop at the building pads; rebuilt with the
+## borders, so a conquered town joins the new owner's roads.
+func _build_roads() -> void:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var done := {}
+	var joints := {}
+	for c in sim.cells:
+		if c["kind"] in ["plain", "capital"] or not Types.is_passable(c):
+			continue
+		var own := owner_of(c)
+		if own <= Types.NOBODY or own >= sim.states.size():
+			continue
+		var cap: int = int(sim.states[own]["capital_id"])
+		if cap < 0 or owner_of(sim.cells[cap]) != own:
+			continue
+		var path := _land_path(int(c["id"]), cap, own)
+		if path.size() < 2 or path.size() > 7:
+			continue
+		for i in path.size() - 1:
+			var a: int = path[i]
+			var b: int = path[i + 1]
+			var key := "%d-%d" % [mini(a, b), maxi(a, b)]
+			if done.has(key):
+				continue
+			done[key] = true
+			_road_segment(st, a, b)
+			for h in [a, b]:
+				if not _road_stop(h):
+					joints[h] = true
+	if done.is_empty():
+		return
+	for h in joints:  # a round patch where roads meet in an open hex hides the joints
+		var cc := cell_world(int(h)) + Vector3(0, 0.033, 0)
+		for k in 10:
+			var a0 := k * TAU / 10.0
+			var a1 := (k + 1) * TAU / 10.0
+			st.set_normal(Vector3.UP)
+			st.add_vertex(cc)
+			st.add_vertex(cc + Vector3(cos(a0), 0, sin(a0)) * ROAD_W * 0.62)
+			st.add_vertex(cc + Vector3(cos(a1), 0, sin(a1)) * ROAD_W * 0.62)
+	var mi := MeshInstance3D.new()
+	mi.mesh = st.commit()
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.64, 0.5, 0.32)
+	m.roughness = 1.0
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mi.material_override = m
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_overlay_root.add_child(mi)
+
+
+## A road ends at the edge of a building's pad; through open land it runs to the hex centre.
+func _road_stop(h: int) -> bool:
+	return sim.cells[h]["kind"] != "plain" or camp_hexes.has(h)
+
+
+func _road_segment(st: SurfaceTool, a: int, b: int) -> void:
+	var pa := cell_world(a)
+	var pb := cell_world(b)
+	var dir := (pb - pa).normalized()
+	if _road_stop(a):
+		pa += dir * 0.55
+	if _road_stop(b):
+		pb -= dir * 0.55
+	var side := Vector3(-dir.z, 0, dir.x)
+	var seed_ := float((a * 31 + b * 17) % 97)
+	var n := 8
+	var prev_l := Vector3.ZERO
+	var prev_r := Vector3.ZERO
+	for i in n + 1:
+		var t := float(i) / n
+		var wob := sin(t * PI) * sin(t * TAU + seed_) * 0.06  # a gentle meander, none at the ends
+		var p := pa.lerp(pb, t) + side * wob + Vector3(0, 0.033, 0)  # over the fill, under the hex grid lines
+		var l := p - side * ROAD_W * 0.5
+		var r := p + side * ROAD_W * 0.5
+		if i > 0:
+			st.set_normal(Vector3.UP)
+			st.add_vertex(prev_l); st.add_vertex(r); st.add_vertex(prev_r)
+			st.add_vertex(prev_l); st.add_vertex(l); st.add_vertex(r)
+		prev_l = l
+		prev_r = r
+
+
+## Shortest way from `from` to `to` over passable hexes of `own` (breadth first), [] if there is none.
+func _land_path(from: int, to: int, own: int) -> Array:
+	var prev := {from: -1}
+	var queue: Array = [from]
+	while not queue.is_empty():
+		var h: int = queue.pop_front()
+		if h == to:
+			break
+		for nb in sim.neighbors[h]:
+			if nb < 0 or prev.has(nb):
+				continue
+			var cn: Dictionary = sim.cells[nb]
+			if not Types.is_passable(cn) or owner_of(cn) != own:
+				continue
+			prev[nb] = h
+			queue.append(nb)
+	if not prev.has(to):
+		return []
+	var path: Array = []
+	var cur := to
+	while cur != -1:
+		path.push_front(cur)
+		cur = int(prev[cur])
+	return path
 
 
 var _tint_mats: Array = []
