@@ -22,6 +22,8 @@ const LOOK := {
 	"cmd_rai": [Color("e7c0a0"), [0.33, 0.42], Color("f0f0f0"), "long", "beard_long", "circlet", Color("eef1f6"), Color("3a8dff")],
 }
 
+static var _renders := {}  # cmd -> Texture2D or null
+
 var cmd := ""
 var rarity := "common"
 var locked := false
@@ -64,6 +66,18 @@ func _draw() -> void:
 		PackedColorArray([top, top, bot, bot]))
 	# a soft halo behind the head
 	_fill(_ellipse(Vector2(w * 0.5, h * 0.42), u * 0.36, u * 0.36), Color(1, 1, 1, 0.08 if not locked else 0.03))
+	var tex := _render(cmd)
+	if tex != null:
+		# the bpy render (tools/blender/portrait_assets.py): cover the box, keep the head, crop the torso;
+		# a locked commander is its silhouette
+		var ts := tex.get_size()
+		var sc := maxf(w / ts.x, h / ts.y)
+		var src := Rect2((ts.x - w / sc) / 2.0, 0, w / sc, h / sc)
+		draw_texture_rect_region(tex, Rect2(Vector2.ZERO, size), src, Color(0.05, 0.06, 0.09) if locked else Color.WHITE)
+		if locked:
+			draw_string(get_theme_default_font(), Vector2(0, h * 0.5 + u * 0.08), "?", HORIZONTAL_ALIGNMENT_CENTER, w, int(u * 0.28), Color(0.62, 0.68, 0.78, 0.9))
+		draw_rect(Rect2(Vector2.ZERO, size), rc if not locked else rc.darkened(0.5), false, maxf(3.0, u * 0.025))
+		return
 	var look: Array = LOOK.get(cmd, LOOK["cmd_bram"])
 	var shade := Color(0.05, 0.06, 0.09, 0.95)
 	var skin: Color = shade if locked else look[0]
@@ -202,3 +216,10 @@ func _draw() -> void:
 		draw_string(f, Vector2(0, h * 0.5 + u * 0.08), "?", HORIZONTAL_ALIGNMENT_CENTER, w, int(u * 0.28), Color(0.62, 0.68, 0.78, 0.9))
 	# the rarity frame
 	draw_rect(Rect2(Vector2.ZERO, size), rc if not locked else rc.darkened(0.5), false, maxf(3.0, u * 0.025))
+
+
+static func _render(id: String) -> Texture2D:
+	if not _renders.has(id):
+		var path := "res://assets/ui/portraits/%s.png" % id
+		_renders[id] = load(path) if ResourceLoader.exists(path) else null
+	return _renders[id]
