@@ -376,10 +376,20 @@ def pine(x, y, s=1.0):
         cn((0.1 - i * 0.025) * s, 0.13 * s, (x, y, (0.12 + i * 0.07) * s), flat("pine", "#2a6233", 0.8), 7)
 
 
+def flag_at(name, x, y, z, w, h, t=0.015):
+    """Empty marking a flag cloth (centre, w × h facing ∓Y, t thick): the game paints the state's own flag on it."""
+    o = bpy.data.objects.new(name, None)
+    o.location = (x, y, z)
+    o.scale = (w, t, h)
+    bpy.context.scene.collection.objects.link(o)
+    return o
+
+
 def flagpole(x, y, h, team, w=0.15, pole="#d9d2c3"):
     cy(0.009, h, (x, y, h / 2), flat("pole", pole, 0.5), 6)
     bx((w, 0.008, w * 0.64), (x + w / 2 + 0.006, y, h - w * 0.34), flat("flag" + team, team, 0.7), bev=0)
     bx((w * 0.36, 0.011, w * 0.3), (x + w / 2 + 0.006, y, h - w * 0.3), flat("emblem", WHITE, 0.6), bev=0)
+    flag_at("flagw", x + w / 2 + 0.006, y, h - w * 0.34, w + 0.004, w * 0.64 + 0.004)
     ico(0.016, (x, y, h + 0.01), flat("gold", GOLD, 0.35))
 
 
@@ -390,6 +400,7 @@ def banner(x, y, h, team, w=0.17):
     cy(0.007, w + 0.04, (x + w / 2, y, h - 0.02), pm, 6, rot=(0, math.pi / 2, 0))
     bx((w, 0.01, w * 1.5), (x + w / 2, y, h - 0.03 - w * 0.75), flat("flag" + team, team, 0.7), bev=0)
     bx((w * 0.42, 0.013, w * 0.42), (x + w / 2, y, h - 0.03 - w * 0.6), flat("emblem", WHITE, 0.6), bev=0)
+    flag_at("flagt", x + w / 2, y, h - 0.03 - w * 0.75, w + 0.004, w * 1.5 + 0.004, 0.017)
     ico(0.022, (x, y, h + 0.015), flat("gold", GOLD, 0.35))
 
 
@@ -1728,7 +1739,7 @@ def export(name, out):
     objs = [o for o in bpy.context.scene.objects if o.type == "MESH"]
     bpy.context.view_layer.update()
     lowpoly(objs)
-    smokes = [o for o in bpy.context.scene.objects if o.type == "EMPTY" and o.name.startswith("smoke")]
+    smokes = [o for o in bpy.context.scene.objects if o.type == "EMPTY" and o.name.startswith(("smoke", "flag"))]
     ob = ea.bake_asset(objs, 512)
     ob.name = name
     ob.data.calc_loop_triangles()

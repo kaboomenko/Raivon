@@ -4977,7 +4977,7 @@ func _open_commanders() -> void:
 
 
 ## The commander card (04 §15.7): portrait, biography, the passive by level, «Повысить», sources, «Цель».
-func _open_commander(id: String) -> void:
+func _open_commander(id: String, mood := "") -> void:
 	var r := _cmd_rarity(id)
 	var total := int(cases.shards.get(id, 0))
 	var lvl := _cmd_level(id)
@@ -4995,7 +4995,7 @@ func _open_commander(id: String) -> void:
 		table.append([l, " / ".join(vals)])
 	var info := {"id": id, "name": Cases.commander_name(id), "rarity": r, "rarity_name": tr("cmdr.rarity." + r), "level": lvl,
 		"cap": Commanders.level_cap(dl), "bio": tr("cmdr.bio." + id), "passive": _cmd_passive_lines(id, maxi(1, lvl)),
-		"table": table, "src": tr("cmdr.src." + id), "album": tr("cmdr.album." + Commanders.album_of(id))}
+		"table": table, "src": tr("cmdr.src." + id), "album": tr("cmdr.album." + Commanders.album_of(id)), "mood": mood}
 	var block := _cmd_block(id)
 	var c: Array = commanders.next_cost(id, r, total)
 	if lvl <= 0:
@@ -5026,7 +5026,7 @@ func _upgrade_commander(id: String) -> void:
 	ui.toast(tr("cmdr.leveled") % [Cases.commander_name(id), _cmd_level(id)])
 	_econ_tick()
 	_autosave()
-	_open_commander(id)
+	_open_commander(id, "smile")
 
 
 ## A passive's value (the part `i`) at the commander's level, in its units (percent, points or a factor).

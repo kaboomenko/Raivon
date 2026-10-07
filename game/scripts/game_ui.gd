@@ -1785,6 +1785,7 @@ func show_commander(info: Dictionary, on_upgrade: Callable, on_target: Callable,
 	_at(t, box, Vector2(100, 22), Vector2(681, 50))
 	var lvl: int = info["level"]
 	var p := CmdPortrait.new(String(info["id"]), String(info["rarity"]), lvl <= 0)
+	p.mood = String(info.get("mood", ""))  # a smile right after a level-up
 	p.position = Vector2(30, 92)
 	p.size = Vector2(330, 390)
 	box.add_child(p)

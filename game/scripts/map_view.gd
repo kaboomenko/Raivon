@@ -218,7 +218,30 @@ func spawn(name: String, parent: Node, pos: Vector3, rot := 0.0, s := 1.0, owner
 		_paint_flag(n, Types.PLAYER if name == "banner_blue" else owner)
 	for m in n.find_children("smoke*", "", true, false):
 		_chimney_smoke(m as Node3D)
+	if owner != -99:
+		for m in n.find_children("flag*", "", true, false):
+			_flag_cloth(m as Node3D, owner)
 	return n
+
+
+## The state's own flag over a cloth marker baked into a building model (evolution_assets.flag_at): the node's
+## scale is the cloth (x width, y height, z thickness), so a unit quad on each face covers it. "flagw…" is a
+## wide flag on a pole, "flagt…" a tall hanging banner.
+func _flag_cloth(at: Node3D, owner: int) -> void:
+	if at == null:
+		return
+	var mat := _flag_material(owner, String(at.name).begins_with("flagw"))
+	if mat == null:
+		return
+	var quad := QuadMesh.new()
+	for face in [1.0, -1.0]:
+		var mi := MeshInstance3D.new()
+		mi.mesh = quad
+		mi.material_override = mat
+		mi.position = Vector3(0, 0, 0.5 * face)
+		mi.rotation.y = 0.0 if face > 0 else PI
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		at.add_child(mi)
 
 
 ## A thin lazy plume over a chimney marker baked into a village model (tools/blender/evolution_assets.py
@@ -277,18 +300,20 @@ func state_flag(owner: int) -> Dictionary:
 	return FlagView.ai_flag(String(sim.states[owner]["name"]), state_color(owner))
 
 
-func _flag_material(owner: int) -> StandardMaterial3D:
-	if not _flag_mats.has(owner):
+func _flag_material(owner: int, wide := false) -> StandardMaterial3D:
+	var key := owner + (1000 if wide else 0)  # wide: a flag on a pole (3:2), else a tall banner
+	if not _flag_mats.has(key):
 		var f := state_flag(owner)
 		if f.is_empty():
 			return null
 		var vp := SubViewport.new()
-		vp.size = Vector2i(130, 208)
+		var px := Vector2i(208, 136) if wide else Vector2i(130, 208)
+		vp.size = px
 		vp.transparent_bg = true
 		vp.disable_3d = true
 		vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 		var view := FlagView.new(f)
-		view.size = Vector2(130, 208)
+		view.size = Vector2(px)
 		vp.add_child(view)
 		add_child(vp)
 		var mat := StandardMaterial3D.new()
@@ -296,17 +321,18 @@ func _flag_material(owner: int) -> StandardMaterial3D:
 		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
 		mat.alpha_scissor_threshold = 0.5
 		mat.roughness = 0.75
-		_flag_mats[owner] = [vp, view, mat]
-	return _flag_mats[owner][2]
+		_flag_mats[key] = [vp, view, mat]
+	return _flag_mats[key][2]
 
 
 func set_flag(f: Dictionary) -> void:
 	flag = f.duplicate()
-	if _flag_mats.has(Types.PLAYER):
-		var view: Control = _flag_mats[Types.PLAYER][1]
-		view.set("flag", flag)
-		view.queue_redraw()
-		(_flag_mats[Types.PLAYER][0] as SubViewport).render_target_update_mode = SubViewport.UPDATE_ONCE
+	for key in [Types.PLAYER, Types.PLAYER + 1000]:
+		if _flag_mats.has(key):
+			var view: Control = _flag_mats[key][1]
+			view.set("flag", flag)
+			view.queue_redraw()
+			(_flag_mats[key][0] as SubViewport).render_target_update_mode = SubViewport.UPDATE_ONCE
 
 
 # ------------------------------------------------------------------ static terrain
@@ -902,7 +928,7 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 			var rm := evolved("residence", c["owner"])
 			if rm != "":
 				var early := rm.contains("_dl1_") or rm.contains("_dl2_") or rm.contains("_dl3_")
-				spawn(rm, holder, p, 0.3 if c["owner"] == Types.PLAYER else PI, 1.3 if early else 1.0)  # small early buildings fill the hex
+				spawn(rm, holder, p, 0.3 if c["owner"] == Types.PLAYER else PI, 1.3 if early else 1.0, int(c["owner"]))  # small early buildings fill the hex
 			else:
 				var model := "castle" if c["owner"] == Types.PLAYER else ("castle_green" if c["owner"] == MapGen.HAMLETS else "castle_red")
 				spawn(model, holder, p, 0.3 if c["owner"] == Types.PLAYER else PI, 1.35)
@@ -911,7 +937,7 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 		"city":
 			var cm := evolved("city", c["owner"])
 			if cm != "":
-				spawn(cm, holder, p, rng.randf_range(-0.25, 0.25), 1.15)  # tall towers stay at the back
+				spawn(cm, holder, p, rng.randf_range(-0.25, 0.25), 1.15, int(c["owner"]))  # tall towers stay at the back
 			else:
 				var hm := "house_blue" if c["owner"] == Types.PLAYER else ("house_green" if c["owner"] == MapGen.HAMLETS else "house_red")
 				for o in [Vector3(-0.3, 0, 0.15), Vector3(0.3, 0, -0.25), Vector3(0.1, 0, 0.4), Vector3(-0.25, 0, -0.35)]:
