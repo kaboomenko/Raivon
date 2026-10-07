@@ -284,6 +284,20 @@ func _set_language(code: String) -> void:
 	_show_settings()
 
 
+## Tilt-shift and vignette over the 3D map (art direction §1), under the HUD so the interface stays sharp.
+func _add_tilt_shift() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = -1
+	add_child(layer)
+	var rect := ColorRect.new()
+	rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var mat := ShaderMaterial.new()
+	mat.shader = load("res://shaders/tilt_shift.gdshader")
+	rect.material = mat
+	layer.add_child(rect)
+
+
 func _show_settings() -> void:
 	var manage := Callable()
 	if _payments_enabled():
@@ -323,6 +337,7 @@ func _environment() -> void:
 	we.environment = e
 	add_child(we)
 
+	_add_tilt_shift()
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-48, -35, 0)
 	sun.light_color = Color(1.0, 0.93, 0.82)
