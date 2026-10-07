@@ -448,6 +448,80 @@ def bench(x, y, rz):
     build_at(b, x, y, rz)
 
 
+def smoke_at(x, y, z):
+    """Empty node "smoke" at a chimney mouth: exported with the model, the game hangs a smoke plume on it."""
+    o = bpy.data.objects.new("smoke", None)
+    o.location = (x, y, z)
+    bpy.context.scene.collection.objects.link(o)
+    return o
+
+
+def wattle(x0, y0, x1, y1, h=0.075):
+    """Woven hazel fence (плетень): stakes and three wavy withy rows between them."""
+    L = math.dist((x0, y0), (x1, y1))
+    ang = math.atan2(y1 - y0, x1 - x0)
+    n = max(2, round(L / 0.055))
+    st = tex("wood", WOOD_D, 3.0)
+    wy = flat("withy", "#8c6a42", 0.9)
+    for i in range(n + 1):
+        f = i / n
+        cy(0.007, h + 0.02, (x0 + (x1 - x0) * f, y0 + (y1 - y0) * f, (h + 0.02) / 2), st, 5)
+    for k in range(3):
+        z = h * (0.3 + 0.32 * k)
+        sh = 0.006 if k % 2 == 0 else -0.006
+        bx((L, 0.009, 0.016), ((x0 + x1) / 2 - math.sin(ang) * sh, (y0 + y1) / 2 + math.cos(ang) * sh, z), wy, ang, 0)
+
+
+def garden(w, d, rows=4, crop="#4f9a34", fence=True):
+    """Vegetable patch: dark tilled soil, ridged beds with cabbage heads, a wattle fence with a gap for the gate."""
+    soil = tex("plaster", "#5b3f27", 2.5)
+    bx((w, d, 0.016), (0, 0, 0.008), soil, bev=0.004)
+    bed = tex("plaster", "#6e4c2e", 3.0)
+    leaf = flat("crop", crop, 0.8)
+    leaf2 = flat("crop2", shade(crop, 1.25), 0.8)
+    for r_ in range(rows):
+        y = (r_ + 0.5) / rows * d - d / 2
+        bx((w * 0.86, d / rows * 0.5, 0.018), (0, y, 0.02), bed, bev=0.006)
+        n = max(2, int(w / 0.06))
+        for i in range(n):
+            x = (i + 0.5) / n * w * 0.82 - w * 0.41
+            ico(0.019 if r_ % 2 == 0 else 0.015, (x, y, 0.04), leaf if (i + r_) % 3 else leaf2, (1, 1, 0.75), sub=1)
+    if fence:
+        hw, hd = w / 2 + 0.02, d / 2 + 0.02
+        wattle(-hw, -hd, -hw, hd)
+        wattle(-hw, hd, hw, hd)
+        wattle(hw, hd, hw, -hd)
+        wattle(hw, -hd, hw * 0.25, -hd)
+        wattle(-hw * 0.25, -hd, -hw, -hd)
+
+
+def cart(team, load="hay"):
+    """Peasant cart (телега): plank bed on four spoked wheels, shafts, a load of hay or sacks."""
+    wd = tex("wood", "#8a5e36", 2.5)
+    dk = tex("wood", WOOD_D, 2.0)
+    bx((0.2, 0.11, 0.02), (0, 0, 0.065), wd, bev=0.004)
+    for sy in (-1, 1):
+        bx((0.2, 0.01, 0.035), (0, sy * 0.055, 0.09), wd, bev=0.002)
+    for sx in (-1, 1):
+        bx((0.01, 0.11, 0.035), (sx * 0.1, 0, 0.09), wd, bev=0.002)
+    for sx in (-0.065, 0.065):
+        cy(0.006, 0.15, (sx, 0, 0.045), dk, 6, rot=(math.pi / 2, 0, 0))
+        for sy in (-1, 1):
+            rr = 0.045 if sx > 0 else 0.04
+            cy(rr, 0.012, (sx, sy * 0.068, rr), dk, 10, rot=(math.pi / 2, 0, 0))
+            cy(rr * 0.72, 0.014, (sx, sy * 0.068, rr), wd, 10, rot=(math.pi / 2, 0, 0))
+            cy(rr * 0.25, 0.022, (sx, sy * 0.068, rr), dk, 6, rot=(math.pi / 2, 0, 0))
+    for sy in (-1, 1):
+        beam((-0.1, sy * 0.035, 0.07), (-0.27, sy * 0.045, 0.03), 0.01, dk)
+    if load == "hay":
+        uvs(0.075, (0.0, 0, 0.115), tex("wood", THATCH, 3.0), 8, 5, (1.35, 0.75, 0.55))
+    else:
+        sk = flat("sack", "#cdb88e", 0.95)
+        for (x, y) in ((-0.05, -0.022), (0.0, 0.024), (0.05, -0.02)):
+            uvs(0.03, (x, y, 0.105), sk, 7, 5, (1.3, 1, 0.85))
+        bx((0.06, 0.02, 0.008), (0.0, 0.024, 0.134), flat("tie" + team, team, 0.7), bev=0)
+
+
 def clock_face(x, y, z, rz, r=0.045):
     """Clock dial facing −Y rotated by rz around Z."""
     def b():
@@ -477,7 +551,7 @@ def onion(x, y, z, r, mt, drum_mt=None):
 # ------------------------------------------------------------------ building types
 
 
-def hut(w, d, h, team):
+def hut(w, d, h, team, smoke=False):
     """DL1 халупа: daub walls, shaggy thatch, team-coloured ridge cap and door."""
     bx((w, d, h + 0.04), (0, 0, (h - 0.04) / 2), tex("plaster", DAUB, 1.5), bev=0.015)
     for sx in (-1, 1):
@@ -488,6 +562,9 @@ def hut(w, d, h, team):
     bx((w + 0.15, 0.05, 0.035), (0, 0, h + rh - 0.02), flat("ridge" + team, shade(team, 0.85)), bev=0.01)
     bx((0.07, 0.014, 0.11), (-w * 0.18, -d / 2 - 0.004, 0.055), flat("door" + team, shade(team, 0.7)), bev=0)
     window(w * 0.22, -d / 2 - 0.004, h * 0.6, 0, 0.04, 0.035, WOOD_D)
+    if smoke:  # a clay flue through the thatch
+        cy(0.022, 0.1, (w * 0.25, d * 0.08, h + rh * 0.55), tex("plaster", "#b08a62", 2.0), 7)
+        smoke_at(w * 0.25, d * 0.08, h + rh * 0.55 + 0.06)
 
 
 def laundry(x0, y0, x1, y1, team):
@@ -504,7 +581,7 @@ def laundry(x0, y0, x1, y1, team):
         bx((0.07, 0.008, hgt), (x, y, 0.232 - hgt / 2), flat("cloth" + cols[i], cols[i], 0.85), ang, 0)
 
 
-def log_house(w, d, h, team, gable_front=False, roof_k=0.85, logc=LOG, chimney=True, n_win=2):
+def log_house(w, d, h, team, gable_front=False, roof_k=0.85, logc=LOG, chimney=True, n_win=2, smoke=False):
     """DL2 изба: stacked logs with crossed corners, plank roof in the team colour, white-framed windows."""
     r = 0.023
     n = max(3, round(h / (2 * r * 0.92)))
@@ -542,6 +619,9 @@ def log_house(w, d, h, team, gable_front=False, roof_k=0.85, logc=LOG, chimney=T
     window(-w / 2 - r - 0.002, 0, h * 0.55, math.pi / 2, 0.04, 0.05, WHITE)
     if chimney:
         cy(0.026, 0.16, (w * 0.22, d * 0.12, top + rh * 0.55), stone(STONE_D), 8)
+        cy(0.031, 0.02, (w * 0.22, d * 0.12, top + rh * 0.55 + 0.08), stone(STONE_D), 8)
+        if smoke:
+            smoke_at(w * 0.22, d * 0.12, top + rh * 0.55 + 0.1)
     return top, rh
 
 
@@ -556,11 +636,13 @@ def barn(team):
     bx((0.18, 0.016, 0.016), (0, -d / 2 - 0.012, 0.165), flat("trim", WHITE, 0.7), bev=0)
 
 
-def stone_house(w, d, h, team, wall=STONE, roof_k=0.8):
+def stone_house(w, d, h, team, wall=STONE, roof_k=0.8, smoke=False):
     bx((w, d, h), (0, 0, h / 2), stone(wall, 1.6), bev=0.012)
     bx((w + 0.02, d + 0.02, 0.035), (0, 0, 0.0175), stone(STONE_D), bev=0)
     prism_roof("roof", w, d, d * roof_k, (0, 0, h - 0.005), tex("roof", shade(team, 0.8)), overhang=0.045)
     cy(0.028, 0.15, (w * 0.25, d * 0.15, h + d * roof_k * 0.55), stone(STONE_D), 8)
+    if smoke:
+        smoke_at(w * 0.25, d * 0.15, h + d * roof_k * 0.55 + 0.09)
     bx((0.065, 0.014, 0.11), (0, -d / 2 - 0.004, 0.055), tex("wood", WOOD_D), bev=0)
     for sx in (-1, 1):
         window(sx * w * 0.3, -d / 2 - 0.004, h * 0.62, 0, 0.04, 0.05, WOOD_D)
@@ -694,31 +776,38 @@ def dark_glass():
 
 def city_dl1(team):
     pad(0.66, tex("plaster", DIRT, 1.2), 0.008, 12, 0.12, 1)
-    build_at(lambda: hut(0.30, 0.24, 0.17, team), -0.36, 0.30, 0.25, 1, (0.05, -0.03))
+    build_at(lambda: hut(0.30, 0.24, 0.17, team, smoke=True), -0.36, 0.30, 0.25, 1, (0.05, -0.03))
     build_at(lambda: hut(0.27, 0.22, 0.15, team), 0.35, 0.33, -0.35, 1, (-0.04, 0.05))
-    build_at(lambda: hut(0.28, 0.22, 0.16, team), -0.44, -0.22, 0.6, 1, (0.03, 0.05))
-    build_at(lambda: hut(0.24, 0.20, 0.14, team), 0.42, -0.2, -0.5, 1, (-0.05, -0.03))
+    build_at(lambda: hut(0.28, 0.22, 0.16, team, smoke=True), -0.44, -0.22, 0.6, 1, (0.03, 0.05))
+    build_at(lambda: hut(0.24, 0.20, 0.14, team), 0.42, -0.2, -0.5, 1, (-0.04, -0.03))
     laundry(-0.2, -0.03, 0.17, 0.06, team)
     build_at(woodpile, 0.0, 0.42, 0.1)
     cy(0.04, 0.06, (0.16, 0.36, 0.03), tex("wood", "#8a5e36"), 8)
-    haystack(0.06, -0.42)
+    build_at(lambda: garden(0.24, 0.15, 3), -0.04, -0.3, 0.12)
+    haystack(0.22, -0.46)
+    bench(0.12, 0.22, 0.4)
     flagpole(-0.08, 0.2, 0.4, team, 0.12, "#8a6a44")
     tree(0.62, 0.08, 0.9)
-    ico(0.05, (-0.12, -0.5, 0.01), tex("plaster", "#8d8a84"), (1.3, 1, 0.6))
+    tree(-0.6, 0.16, 0.75, LEAF2)
+    ico(0.05, (-0.3, -0.52, 0.01), tex("plaster", "#8d8a84"), (1.3, 1, 0.6))
 
 
 def city_dl2(team):
     pad(0.66, tex("plaster", DIRT, 1.2), 0.008, 12, 0.1, 2)
-    build_at(lambda: log_house(0.32, 0.26, 0.2, team), -0.36, 0.3, 0.12)
-    build_at(lambda: log_house(0.28, 0.24, 0.18, team, gable_front=True), 0.36, 0.32, -0.15)
+    build_at(lambda: log_house(0.32, 0.26, 0.2, team, smoke=True), -0.36, 0.3, 0.12)
+    build_at(lambda: log_house(0.28, 0.24, 0.18, team, gable_front=True, smoke=True), 0.36, 0.32, -0.15)
     build_at(lambda: log_house(0.28, 0.24, 0.17, team, n_win=1), -0.42, -0.26, 0.4)
     build_at(lambda: barn(team), 0.36, -0.26, -0.3)
     build_at(well, 0.0, -0.04, 0.3)
     prism_roof("well_roof", 0.18, 0.14, 0.07, (0, -0.04, 0.22), tex("wood", shade(team, 0.75)), overhang=0.02, rot_z=0.3)
-    haystack(0.02, -0.46, 0.9)
+    build_at(lambda: garden(0.26, 0.15, 3, "#5aa63a"), -0.1, -0.5, 0.25)
+    build_at(lambda: cart(team, "sacks"), 0.17, -0.5, -0.5)
+    haystack(0.58, -0.02, 0.85)
     build_at(lambda: woodpile(2), 0.02, 0.4, 0.0)
-    pine(0.64, 0.05, 1.1)
+    bench(-0.16, 0.12, 0.2)
+    pine(0.6, 0.22, 1.1)
     pine(-0.66, 0.06, 1.0)
+    tree(-0.58, 0.3, 0.7, LEAF2)
     flagpole(0.14, 0.16, 0.45, team, 0.13, "#8a6a44")
 
 
@@ -726,9 +815,9 @@ def city_dl3(team):
     pad(0.7, stone(COBBLE, 1.8), 0.012, 14, 0.06, 3)
     build_at(lambda: (terem_block(0.3, 0.26, 0.16, 0.18, team, 0.3),
                       bx((0.14, 0.1, 0.02), (0, -0.18, 0.01), stone(STONE_D), bev=0)), 0.0, 0.32)
-    build_at(lambda: stone_house(0.3, 0.22, 0.2, team), -0.46, 0.02, 0.2)
+    build_at(lambda: stone_house(0.3, 0.22, 0.2, team, smoke=True), -0.46, 0.02, 0.2)
     build_at(lambda: stone_house(0.27, 0.22, 0.2, team, "#d8cdb6"), 0.46, -0.02, -0.25)
-    build_at(lambda: stone_house(0.28, 0.2, 0.18, team, "#c2b8a6"), -0.2, -0.43, 0.1)
+    build_at(lambda: stone_house(0.28, 0.2, 0.18, team, "#c2b8a6", smoke=True), -0.2, -0.43, 0.1)
     build_at(lambda: stone_house(0.24, 0.2, 0.17, team), 0.25, -0.44, -0.1)
     tree(-0.12, 0.62, 0.9)
     tree(0.36, 0.56, 0.8)
@@ -928,6 +1017,7 @@ def residence_dl1(team):
             beam((math.cos(a) * 0.07, math.sin(a) * 0.07, 0.01), (-math.cos(a) * 0.02, -math.sin(a) * 0.02, 0.06), 0.02, tex("wood", WOOD_D))
         cn(0.05, 0.13, (0, 0, 0.08), glow("fire", "#ff7a1a", 4.0), 7)
         cn(0.028, 0.09, (0, 0, 0.07), glow("fire2", "#ffd34a", 5.0), 6)
+        smoke_at(0, 0, 0.17)
     build_at(fire, 0.05, -0.36)
     bench(-0.17, -0.38, 1.4)
     bench(0.27, -0.36, 1.7)
@@ -951,7 +1041,7 @@ def residence_dl2(team):
     pad(0.8, tex("plaster", DIRT, 1.2), 0.008, 14, 0.08, 12)
 
     def main():
-        top, rh = log_house(0.42, 0.5, 0.32, team, gable_front=True, roof_k=0.72, n_win=2)
+        top, rh = log_house(0.42, 0.5, 0.32, team, gable_front=True, roof_k=0.72, n_win=2, smoke=True)
         # porch (крыльцо) with its own little roof
         wd = tex("wood", WOOD_L)
         for i in range(3):
@@ -1579,12 +1669,15 @@ def export(name, out):
     objs = [o for o in bpy.context.scene.objects if o.type == "MESH"]
     bpy.context.view_layer.update()
     lowpoly(objs)
+    smokes = [o for o in bpy.context.scene.objects if o.type == "EMPTY" and o.name.startswith("smoke")]
     ob = ea.bake_asset(objs, 512)
     ob.name = name
     ob.data.calc_loop_triangles()
     tris = len(ob.data.loop_triangles)
     bpy.ops.object.select_all(action="DESELECT")
     ob.select_set(True)
+    for o in smokes:  # chimney markers travel with the model as plain nodes
+        o.select_set(True)
     bpy.context.view_layer.objects.active = ob
     path = os.path.join(out, f"{name}.glb")
     bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", use_selection=True, export_apply=True, export_yup=True)

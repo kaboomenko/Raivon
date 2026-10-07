@@ -216,7 +216,35 @@ func spawn(name: String, parent: Node, pos: Vector3, rot := 0.0, s := 1.0, owner
 			_sails.append(sails)
 	if name.begins_with("banner_"):
 		_paint_flag(n, Types.PLAYER if name == "banner_blue" else owner)
+	for m in n.find_children("smoke*", "", true, false):
+		_chimney_smoke(m as Node3D)
 	return n
+
+
+## A thin lazy plume over a chimney marker baked into a village model (tools/blender/evolution_assets.py
+## smoke_at): the lived-in look of the close reference frames.
+func _chimney_smoke(at: Node3D) -> void:
+	if at == null:
+		return
+	var sm := CPUParticles3D.new()
+	sm.amount = 5
+	sm.lifetime = 3.2
+	sm.direction = Vector3(0.25, 1, 0.1)
+	sm.spread = 6.0
+	sm.initial_velocity_min = 0.07
+	sm.initial_velocity_max = 0.11
+	sm.gravity = Vector3(0.05, 0.015, 0.02)
+	sm.scale_amount_curve = _curve(0.25, 1.15)
+	sm.color_ramp = _ramp([0.0, 0.18, 1.0], [Color(0.8, 0.79, 0.77, 0.0), Color(0.82, 0.81, 0.8, 0.42), Color(0.92, 0.92, 0.94, 0.0)])
+	var q := QuadMesh.new()
+	q.size = Vector2(0.2, 0.2)
+	if _smoke_mat == null:
+		_smoke_mat = _fx_mat(_puff_tex(), false)
+	q.material = _smoke_mat
+	sm.mesh = q
+	sm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	sm.preprocess = 3.2
+	at.add_child(sm)
 
 
 ## The player's flag (10 §4.23) on both faces of a banner's cloth (tools/blender/export_assets.py: the cloth is

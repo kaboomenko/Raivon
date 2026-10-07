@@ -3,7 +3,7 @@
 1. `tools/setup_env.sh` — восстановить инструменты в новом контейнере (Godot 4.5.1, Blender bpy 5.0.1, Xvfb + Mesa lavapipe, npm).
 2. Модели: `python3 tools/blender/export_assets.py game/assets/models [имя ...]` → `.glb` для Godot.
 3. Импорт в Godot: `/opt/godot/Godot_v4.5.1-stable_linux.x86_64 --headless --path game --import`.
-4. Скриншот клиента: `tools/godot_shot.sh /путь/out.png [--zoom=0.15]` (941×1672, как эталон).
+4. Скриншот клиента: `tools/godot_shot.sh /путь/out.png [--zoom=0.15] [--focus=q,r]` (941×1672, как эталон).
 5. Проверка GDScript: `godot --headless --path game --check-only --script res://scripts/<file>.gd`.
 5b. Тест игрового цикла: `godot --headless --path game --script res://tests/test_flow.gd`. Демо-состояния для скриншотов: `tools/godot_shot.sh OUT.png --demo=battle:40|result|peace|ceremony:1.5`.
 6. APK для Android: `cd game && godot --headless --path . --export-debug "Android" ../builds/raivon-debug.apk` (arm64, подпись отладочным ключом). APK в git не коммитится (большой): для владельца его собирает GitHub Actions «Mobile builds» при смене версии в `export_presets.cfg` (артефакты Android APK и проект Xcode).
