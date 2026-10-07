@@ -1887,7 +1887,23 @@ func show_hand_picker(cards: Array, chosen: Array, slots: int, on_toggle: Callab
 		var on := chosen.has(c) or c == "attack"
 		var r := Rect2(30 + (i % 2) * 391, 150 + (i / 2) * 96, 370, 80)
 		var col := Color(0.2, 0.42, 0.28) if on else Color(0.14, 0.18, 0.27)
-		var b := _button(box, r, "%s  %s%s" % [String(CARD_ART.get(c, "?")), _card_name(c), "  ✓" if on else ""], col, func(): on_toggle.call(c))
+		var pic := "res://assets/ui/cards/%s.png" % c
+		var has_pic := ResourceLoader.exists(pic)
+		var label := "%s%s" % [_card_name(c), "  ✓" if on else ""] if has_pic else "%s  %s%s" % [String(CARD_ART.get(c, "?")), _card_name(c), "  ✓" if on else ""]
+		var b := _button(box, r, label, col, func(): on_toggle.call(c))
+		if has_pic:  # the card's painted scene on the left, the name beside it
+			var tr_ := TextureRect.new()
+			tr_.texture = load(pic)
+			tr_.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			tr_.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+			tr_.clip_contents = true
+			tr_.position = Vector2(8, 6)
+			tr_.size = Vector2(62, 68)
+			tr_.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			b.add_child(tr_)
+			for ch in b.get_children():
+				if ch is Label:
+					(ch as Label).position.x = 40.0  # centred in the room right of the picture
 		if c == "attack":
 			b.modulate = Color(1, 1, 1, 0.75)  # fixed
 	_button(box, Rect2(30, h - 100, 761, 76), tr("ui.close"), Color(0.13, 0.4, 0.9), close_modal)
