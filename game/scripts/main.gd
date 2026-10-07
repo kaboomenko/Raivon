@@ -4526,6 +4526,22 @@ func _opinion_of(s: int) -> float:
 
 
 ## Translation key of the opinion word.
+## The face a leader shows on the diplomacy card: angry at war or when hostile, scheming when wary or in a
+## coalition against the player, smiling when friendly or allied, calm otherwise.
+func _leader_mood(s: int, opinion: float) -> String:
+	if not war.is_empty() and (int(war["enemy"]) == s or (war.get("coalition", []) as Array).has(s)):
+		return "angry"
+	if not coalition.is_empty() and (coalition["members"] as Array).has(s):
+		return "cunning"
+	if allies.has(s) or opinion > 10.0:
+		return "smile"
+	if opinion <= -50.0:
+		return "angry"
+	if opinion < -10.0:
+		return "cunning"
+	return ""
+
+
 static func _opinion_word(v: float) -> String:
 	if v <= -50.0:
 		return "opinion.hostile"
@@ -4568,7 +4584,7 @@ func _diplomacy_items(now: int) -> Array:
 			"separate": _can_separate(s),
 			"swap_reason": _swap_reason(s),
 			"color": map_view.state_color(s), "flag": map_view.state_flag(s),
-			"portrait": _leader_portrait(s)}))
+			"portrait": _leader_portrait(s), "mood": _leader_mood(s, v)}))
 		if not war.is_empty() and (war.get("coalition", []) as Array).has(s):
 			(items[items.size() - 1] as Dictionary)["share"] = _member_share(s)
 	return items

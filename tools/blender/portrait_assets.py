@@ -65,6 +65,17 @@ def _mouth(name, z, y, mood, lips, w=0.13):
     if mood == "":
         kit.box(name, (w, 0.03, 0.025), (0, y, z), lips, 0.01)
         return
+    if mood == "cunning":  # a smirk: one corner up, the other flat
+        kit.box(name, (w * 0.7, 0.032, 0.026), (-w * 0.12, y, z), lips, 0.01)
+        c = kit.box(name + "_corner", (w * 0.42, 0.034, 0.028), (w * 0.36, y, z + 0.016), lips, 0.012)
+        c.rotation_euler.y = math.radians(-30)
+        return
+    if mood == "tired":  # a slack mouth, corners a little down
+        kit.box(name, (w * 0.55, 0.03, 0.026), (0, y, z - 0.006), lips, 0.01)
+        for sx in (-1, 1):
+            c = kit.box(name + "_corner", (w * 0.3, 0.03, 0.024), (sx * w * 0.36, y, z - 0.014), lips, 0.01)
+            c.rotation_euler.y = math.radians(14 * sx)
+        return
     up = 1 if mood == "smile" else -1
     w *= 1.2
     kit.box(name, (w * 0.5, 0.035, 0.034), (0, y - 0.004, z + (0.0 if mood == "smile" else 0.016)), lips, 0.012)
@@ -73,7 +84,8 @@ def _mouth(name, z, y, mood, lips, w=0.13):
         c.rotation_euler.y = math.radians(-38 * sx * up)
 
 
-# Moods (04 §15.4: 5 expression presets; the game uses these): "" calm, "angry" (ultimatum), "smile" (peace).
+# Moods (04 §15.4: 5 expression presets): "" calm, "angry" (ultimatum, war), "smile" (friendship, a level-up),
+# "cunning" (a wary neighbour, a coalition against the player), "tired" (the loser at the peace conference).
 def build(cid, era=1, mood=""):
     skin_c, (hw, hh), hair_c, style, facial, gear, uni_c, acc_c = LOOK[cid]
     if era == 2:
@@ -115,13 +127,26 @@ def build(cid, era=1, mood=""):
         kit.sphere("eye", 0.078, (sx * 0.135, -0.31, HEAD_Z + 0.03), white, (1.0, 0.6, 0.85), 2)
         pc = kit.mat("rai_eye", "#3a8dff", 0.2, emission="#5aa0ff", emit_strength=4.0) if cid == "cmd_rai" else dark
         kit.sphere("pupil", 0.045, (sx * 0.135 + 0.012, -0.355, HEAD_Z + 0.025), pc, (1, 0.6, 1.05), 2)
+        if mood in ("tired", "cunning"):  # heavy upper lids: half shut when tired, narrowed when scheming
+            lz = 0.062 if mood == "tired" else (0.072 if sx > 0 else 0.084)
+            kit.sphere("lid", 0.084, (sx * 0.135, -0.318, HEAD_Z + lz), skin, (1.06, 0.66, 0.62), 2)
+        if mood == "tired":  # shadows under the eyes
+            kit.sphere("bag", 0.06, (sx * 0.135, -0.33, HEAD_Z - 0.035), kit.mat("bag_" + cid, darker(skin_c, 0.84), 0.6), (1.1, 0.4, 0.35), 2)
         bz = HEAD_Z + 0.13 + (-0.02 if mood == "angry" else (0.025 if mood == "smile" else 0.0))
+        if mood == "cunning":
+            bz = HEAD_Z + (0.17 if sx < 0 else 0.115)  # one brow cocked, the other low
+        elif mood == "tired":
+            bz = HEAD_Z + 0.12
         b = kit.box("brow", (0.15, 0.04, 0.035), (sx * 0.14, -0.34, bz), brow, 0.01)
         tilt = -12 * sx if cid != "cmd_vega" or sx < 0 else 18
         if mood == "angry":
             tilt = -28 * sx  # inner ends down — a scowl
         elif mood == "smile":
             tilt = -6 * sx
+        elif mood == "cunning":
+            tilt = 10 if sx < 0 else -22  # the raised one arches, the low one slants to the nose
+        elif mood == "tired":
+            tilt = 16 * sx  # inner ends up — worn out
         b.rotation_euler.y = math.radians(tilt)
     # nose and mouth
     if cid in ("cmd_bram", "cmd_kort"):

@@ -33,7 +33,7 @@ static func era_of(dl: int) -> int:
 var cmd := ""
 var rarity := "common"
 var locked := false
-var mood := ""  # "" calm, "angry" (an ultimatum), "smile" (peace) — a render of that mood if there is one
+var mood := ""  # "" calm, "angry", "smile", "cunning", "tired" — a render of that mood if there is one, else calm
 var plate := Color(0, 0, 0, 0)  # a plate colour instead of the rarity's (AI leaders: their state's colour)
 
 

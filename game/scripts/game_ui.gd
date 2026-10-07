@@ -498,7 +498,7 @@ func show_peace(enemy: String, budget: float, control: int, demands: Array, chos
 	var box := _modal_box(Rect2(30, 640, 881, 1010), true)
 	var ink := Color(0.24, 0.16, 0.07)
 	if portrait != "":
-		_leader_seal(box, portrait, plate, Rect2(881 - 120, 14, 96, 116), "smile")
+		_leader_seal(box, portrait, plate, Rect2(881 - 120, 14, 96, 116), "tired")  # the loser, worn out by the war
 	var pt := _label(tr("peace.title") % enemy, 32, ink, false)
 	_fit(pt, 32, 700.0 if portrait != "" else 820.0)
 	_at(pt, box, Vector2(30, 24))
@@ -1905,6 +1905,7 @@ func _diplomacy_card(it: Dictionary) -> Control:
 	if String(it.get("portrait", "")) != "":
 		# the leader's face from the portrait kit (canon §10.4), on a plate of the state's colour
 		var lp := CmdPortrait.new(String(it["portrait"]))
+		lp.mood = String(it.get("mood", ""))
 		lp.plate = col.darkened(0.1)
 		lp.position = Vector2(10, 36)
 		lp.size = Vector2(54, 66)
