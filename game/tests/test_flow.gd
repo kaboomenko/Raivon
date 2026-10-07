@@ -594,6 +594,11 @@ func _run() -> void:
 		g._claim_chronicle("ach_first_peace")
 	_check(g.chronicle.claimed.has("ach_first_peace") and int(g.econ.res["raivite"]) >= chr_rv + 25, "its reward is paid")
 	g.ui.close_modal()
+	# the profile (10 §4.23): «Летопись N/40» and the latest achievements, newest first
+	_check(not g.chronicle.recent(3).is_empty() and g.chronicle.recent(3)[0] == g.chronicle.order[g.chronicle.order.size() - 1], "the latest achievement comes first")
+	g._open_profile()
+	_check(g.ui.has_modal(), "the profile opens from the ruler's portrait")
+	g.ui.close_modal()
 	# commanders (04 §15): Bram after the tutorial, a level for shards + gold, the collection and the card open
 	_check(g._cmd_level("cmd_bram") >= 1, "Sergeant Bram is open after the tutorial's war")
 	var cm_items: Array = g._army_items(g.now_s()).filter(func(x): return x.has("commanders"))

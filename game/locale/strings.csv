@@ -1087,3 +1087,24 @@ cmdr.assigned,%s ведёт армию,%s leads the army
 cmdr.recommend,Рекомендуем,Recommended
 cmdr.leads,Ведёт эту армию,Leads this army
 cmdr.remove,Снять командира,Remove the commander
+profile.title,Профиль державы,Realm profile
+profile.dl,Уровень развития %d,Development level %d
+profile.hexes,Держава,Realm
+profile.hexes_v,%d гексов,%d hexes
+profile.map,Карта главы,Chapter map
+profile.arena,Лига Арены,Arena league
+profile.arena_v,скоро,soon
+profile.commanders,Командиры,Commanders
+profile.chronicle,Летопись,Chronicle
+profile.recent,Последние достижения,Latest achievements
+profile.none,Пока нет — первая победа впереди,None yet — the first victory lies ahead
+profile.timelapse,Таймлапс,Timelapse
+profile.compare,Сравнить державы,Compare realms
+profile.friends,Друзья,Friends
+profile.settings,Настройки,Settings
+profile.soon,Откроется с сервером игры,Opens with the game server
+profile.ch1,Глава I «Долина»,Chapter I “The Valley”
+profile.ch2,Глава II «Речной край»,Chapter II “The River Lands”
+profile.ch3,Глава III «Континент»,Chapter III “The Continent”
+profile.ch4,Глава IV «Индустриальный пояс»,Chapter IV “The Industrial Belt”
+profile.wins,Побед в войнах,Wars won

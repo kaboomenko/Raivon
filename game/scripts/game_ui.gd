@@ -30,6 +30,7 @@ var _hand_order: Array = []
 const CARD_NAME_KEYS := {"attack": "card.attack", "breakthrough": "card.breakthrough", "airstrike": "card.airstrike", "encircle": "card.encircle", "defense": "card.defense", "corps": "card.corps", "landing": "card.landing", "missile": "card.missile"}
 const L := preload("res://scripts/l10n.gd")
 const CmdPortrait := preload("res://scripts/cmd_portrait.gd")
+const HudScript := preload("res://scripts/hud.gd")
 
 var font_bold: Font
 var root: Control
@@ -1375,6 +1376,74 @@ func _commanders_card(it: Dictionary) -> Control:
 	if bool(it.get("dot", false)):
 		_panel(card, Rect2(128, 4, 18, 18), _style(Color(0.3, 0.9, 0.4), 9, Color(1, 1, 1, 0.8), 2), Control.MOUSE_FILTER_IGNORE)
 	return card
+
+
+## The realm's profile (10 §4.23): the flag, name, chapter and DL; tiles — realm size, the chapter's map share, the
+## Arena league, «Командиры 7/12» and «Летопись 23/40» (these two open their screens); the 3 latest achievements;
+## «Таймлапс», «Сравнить державы», «Друзья» (with the server) and «Настройки».
+func show_profile(info: Dictionary, cb: Dictionary) -> void:
+	var box := _modal_box(Rect2(30, 170, 881, 1300))
+	_button(box, Rect2(881 - 86, 18, 64, 56), "✕", Color(0.3, 0.33, 0.42), close_modal)
+	_at(_label(tr("profile.title"), 24, MUTED), box, Vector2(30, 26))
+	var crest := HudScript.Icon.new("crest")
+	crest.position = Vector2(34, 84)
+	crest.size = Vector2(130, 168)
+	box.add_child(crest)
+	var nm := _label(String(info["name"]), 38, Color(1.0, 0.85, 0.4))
+	_fit(nm, 38, 640)
+	_at(nm, box, Vector2(190, 92))
+	var ch := _label(String(info["chapter"]), 22, TEXT, false)
+	_fit(ch, 22, 640)
+	_at(ch, box, Vector2(190, 148))
+	_at(_label(tr("profile.dl") % int(info["dl"]), 22, Color(0.55, 0.75, 1.0)), box, Vector2(190, 186))
+	# tiles
+	var cm: Array = info["commanders"]
+	var cr: Array = info["chronicle"]
+	var tiles := [
+		[tr("profile.hexes"), tr("profile.hexes_v") % int(info["hexes"]), "", false],
+		[tr("profile.map"), "%d%%" % int(info["map_pct"]), "", false],
+		[tr("profile.arena"), tr("profile.arena_v"), "", false],
+		[tr("profile.commanders"), "%d / %d" % [int(cm[0]), int(cm[1])], "commanders", bool(info["cmd_dot"])],
+		[tr("profile.chronicle"), "%d / %d" % [int(cr[0]), int(cr[1])], "chronicle", int(info["book_badge"]) > 0],
+		[tr("profile.wins"), str(int(info["wins"])), "", false],
+	]
+	for i in tiles.size():
+		var t: Array = tiles[i]
+		var r := Rect2(30 + (i % 3) * 277, 280 + (i / 3) * 150, 263, 136)
+		var link := String(t[2]) != ""
+		var tile := _panel(box, r, _style(Color(0.12, 0.17, 0.28) if link else Color(0.09, 0.12, 0.2), 14, Color(1.0, 0.8, 0.35, 0.8) if link else EDGE, 2 if link else 1))
+		var tl := _label(String(t[0]), 18, MUTED, false)
+		_fit(tl, 18, 240)
+		_at(tl, tile, Vector2(16, 14))
+		var tv := _label(String(t[1]), 34, TEXT)
+		_fit(tv, 34, 240)
+		_at(tv, tile, Vector2(16, 52))
+		if link:
+			var go := _label("›", 34, Color(1.0, 0.85, 0.4))
+			_at(go, tile, Vector2(232, 48))
+			var key: String = t[2]
+			tile.gui_input.connect(func(e): if _is_tap(e): (cb[key] as Callable).call())
+		if bool(t[3]):
+			_panel(tile, Rect2(236, 10, 18, 18), _style(Color(0.3, 0.9, 0.4), 9, Color(1, 1, 1, 0.8), 2), Control.MOUSE_FILTER_IGNORE)
+	# the latest achievements
+	_at(_label(tr("profile.recent"), 22, Color(1.0, 0.85, 0.4)), box, Vector2(30, 600))
+	var y := 646.0
+	if (info["recent"] as Array).is_empty():
+		_at(_label(tr("profile.none"), 19, MUTED, false), box, Vector2(30, y))
+	for a in info["recent"]:
+		var row := _panel(box, Rect2(30, y, 821, 84), _style(Color(0.16, 0.14, 0.08), 12, Color(1.0, 0.8, 0.3, 0.7), 1), Control.MOUSE_FILTER_IGNORE)
+		_at(_label("✦", 34, Color(1.0, 0.8, 0.3)), row, Vector2(20, 16))
+		var an := _label(String(a["name"]), 21, TEXT)
+		_fit(an, 21, 700)
+		_at(an, row, Vector2(72, 10))
+		_at(_label(String(a["chapter"]), 16, MUTED, false), row, Vector2(72, 46))
+		y += 96.0
+	# buttons
+	var bs := [[tr("profile.timelapse"), "soon"], [tr("profile.compare"), "soon"], [tr("profile.friends"), "soon"], [tr("profile.settings"), "settings"]]
+	for i in bs.size():
+		var key: String = bs[i][1]
+		_button(box, Rect2(30 + (i % 2) * 416, 1300 - 216 + (i / 2) * 96, 405, 82), String(bs[i][0]),
+			Color(0.13, 0.4, 0.9) if key != "soon" else Color(0.22, 0.26, 0.36), cb[key])
 
 
 ## The commander picker of an army (04 §15.6): a row per open commander — portrait, level, the passive now, the

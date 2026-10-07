@@ -54,6 +54,7 @@ const DET_COMMANDERS := ["cmd_bram", "cmd_lira", "cmd_vega", "cmd_frey", "cmd_ir
 var claimed := {}   # code -> true
 var reached := {}   # code -> true: announced once («Летопись: …» toast)
 var best := {}      # code -> best value seen (live measures like hexes can drop; the goal stays reached)
+var order: Array = []  # the codes in the order they were reached (the profile's «3 последних достижения»)
 
 
 static func index_of(code: String) -> int:
@@ -74,6 +75,7 @@ func update(values: Dictionary) -> Array:
 		best[code] = maxi(int(best.get(code, 0)), v)
 		if int(best[code]) >= int(row[3]) and not reached.has(code):
 			reached[code] = true
+			order.append(code)
 			fresh.append(code)
 	return fresh
 
@@ -96,6 +98,14 @@ func claim(code: String) -> Array:
 	return [int(row[4]), String(row[5])]
 
 
+## The last `n` goals reached, the newest first.
+func recent(n: int) -> Array:
+	var out: Array = []
+	for i in range(order.size() - 1, maxi(-1, order.size() - 1 - n), -1):
+		out.append(order[i])
+	return out
+
+
 func claimable() -> int:
 	var n := 0
 	for code in reached:
@@ -105,7 +115,7 @@ func claimable() -> int:
 
 
 func to_dict() -> Dictionary:
-	return {"claimed": claimed.keys(), "reached": reached.keys(), "best": best.duplicate()}
+	return {"claimed": claimed.keys(), "reached": reached.keys(), "best": best.duplicate(), "order": order.duplicate()}
 
 
 func load_dict(d: Dictionary) -> void:
@@ -115,6 +125,9 @@ func load_dict(d: Dictionary) -> void:
 	reached = {}
 	for c in d.get("reached", []):
 		reached[String(c)] = true
+	order = []
+	for c in d.get("order", reached.keys()):
+		order.append(String(c))
 	best = {}
 	var b: Dictionary = d.get("best", {})
 	for k in b:

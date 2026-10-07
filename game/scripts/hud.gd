@@ -120,7 +120,8 @@ func _build() -> void:
 	add_child(crest)
 
 	# ---- ruler portrait + level
-	_panel(Rect2(14, 132, 86, 92), _style(PANEL_2, 10, Color(0.85, 0.7, 0.35, 0.9), 3))
+	var rp := _panel(Rect2(14, 132, 86, 92), _style(PANEL_2, 10, Color(0.85, 0.7, 0.35, 0.9), 3))
+	rp.gui_input.connect(_on_button_input.bind("profile"))  # the ruler's portrait opens the profile (10 §4.23)
 	var ruler := Icon.new("ruler")
 	ruler.position = Vector2(18, 136)
 	ruler.size = Vector2(78, 84)

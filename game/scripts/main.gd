@@ -708,6 +708,9 @@ func _on_hud_button(name: String) -> void:
 			ui.toast(tr("toast.chapter_progress") % [_player_hexes(), _chapter_goal()])
 		"book":
 			_open_chronicle()
+		"profile":
+			if mode in [Mode.MAP, Mode.WAR]:
+				_open_profile()
 		"mail":
 			if not ultimatum.is_empty():
 				_show_ultimatum()
@@ -5131,6 +5134,35 @@ func _set_cmd_target(id: String) -> void:
 	_open_commander(id)
 
 
+# ---------------------------------------------------------------------- the profile (10 §4.23)
+
+const CHAPTER_NAME_KEYS := ["", "profile.ch1", "profile.ch2", "profile.ch3", "profile.ch4"]
+
+## The realm's profile: flag, name, DL, hexes, the chapter's share of the map, the Arena league, «Командиры 7/12»,
+## «Летопись 23/40» and the 3 latest achievements; the buttons lead to the book, the collection and the settings.
+func _open_profile() -> void:
+	var land := _land_count()
+	var hexes := _player_hexes()
+	var recent: Array = []
+	for code in chronicle.recent(3):
+		var row: Array = Chronicle.LIST[Chronicle.index_of(String(code))]
+		recent.append({"name": tr("chr." + String(code)), "chapter": tr("chr.ch." + String(row[1]))})
+	var info := {"name": tr("state.player"), "dl": econ.dev_level(), "hexes": hexes,
+		"chapter": tr(CHAPTER_NAME_KEYS[clampi(chapter, 1, CHAPTER_NAME_KEYS.size() - 1)]),
+		"map_pct": roundi(100.0 * hexes / maxf(1.0, float(land))),
+		"commanders": [_cmd_owned_count(), Commanders.PASSIVES.size()],
+		"chronicle": [chronicle.reached.size(), Chronicle.LIST.size()], "recent": recent,
+		"book_badge": chronicle.claimable(), "cmd_dot": _cmd_upgradable() > 0, "wins": int(stats.get("peace_wins", 0))}
+	ui.show_profile(info, {
+		"chronicle": func(): _open_chronicle(),
+		"commanders": func(): _open_commanders(),
+		"settings": func():
+			ui.close_modal()
+			_show_settings(),
+		"soon": func(): ui.toast(tr("profile.soon")),
+	})
+
+
 # ---------------------------------------------------------------------- «Державный патент» (canon §15.7, 09 §9.13)
 
 ## Applies the subscription's perks while it is active and pays its weekly key and monthly frame.
@@ -6039,6 +6071,16 @@ func _demo(spec: String) -> void:
 		_chronicle_tick()
 		chronicle.claim("ach_first_peace")
 		_open_chronicle()
+		return
+	if what == "profile":  # the profile after a little play: goals reached, a few commanders
+		stats["peaces"] = 3
+		stats["peace_wins"] = 3
+		stats["offensives"] = 12
+		stats["colonized"] = 9
+		for id in ["cmd_lira", "cmd_vega"]:
+			cases.shards[id] = int(cases.shards.get(id, 0)) + Commanders.spent(_cmd_rarity(id), 1)
+		_chronicle_tick()
+		_open_profile()
 		return
 	if what == "commanders":  # the collection mid-game (commanders:card — Vega's card; commanders:tab — the Army tab)
 		econ.res["gold"] = 40000
