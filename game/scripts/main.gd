@@ -6586,6 +6586,14 @@ func _demo(spec: String) -> void:
 			await _world_expansion()
 		else:
 			_world_expansion()
+		if parts.size() > 1 and parts[1] == "bridge":  # ch2:bridge — a stone bridge where a road crosses a river
+			ui.close_modal()
+			map_view.mark_dirty()
+			await get_tree().process_frame
+			await get_tree().process_frame
+			if not map_view.bridge_spots.is_empty():
+				rig.focus(map_view.bridge_spots[0], 0.12)
+			return
 		if parts.size() > 1:  # ch2:port / ch2:military_base / ch2:camp — look at a ring II feature
 			ui.close_modal()
 			for c in sim.cells:

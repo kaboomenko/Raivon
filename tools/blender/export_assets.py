@@ -599,6 +599,48 @@ def rocket_launcher():
     sphere("beacon", 0.008, (0.07, 0.05, 0.262), cyan, (1, 1, 1), 1)
 
 
+def bridge():
+    """Stone arch bridge along X (length 0.5, deck width 0.15): an arched span over the river, parapets with
+    coping, cutwaters and a cobbled deck (the bridges over the rivers in the reference frames)."""
+    st = m("stone", STONE)
+    std = m("stone_d", STONE_D)
+    cob = m("cobble", "#a59b8a")
+    def profile(name, outline, y0, y1, mt):
+        """An outline in XZ extruded along Y from y0 to y1 (one solid: front, back and side faces)."""
+        nv = len(outline)
+        verts = [(x, y0, z) for (x, z) in outline] + [(x, y1, z) for (x, z) in outline]
+        faces = [tuple(range(nv - 1, -1, -1)), tuple(range(nv, 2 * nv))]
+        faces += [(i, (i + 1) % nv, nv + (i + 1) % nv, nv + i) for i in range(nv)]
+        me = bpy.data.meshes.new(name)
+        me.from_pydata(verts, [], faces)
+        me.validate()
+        o = bpy.data.objects.new(name, me)
+        bpy.context.scene.collection.objects.link(o)
+        me.materials.append(mt)
+        return o
+    arch = [(-math.cos(math.pi * k / 12) * 0.15, math.sin(math.pi * k / 12) * 0.1) for k in range(13)]
+    # the span: masonry from the banks up to the deck with an arched opening through it
+    body = [(-0.25, 0.0)] + [(x, z) for (x, z) in arch] + [(0.25, 0.0), (0.25, 0.145), (-0.25, 0.145)]
+    profile("span", body, -0.075, 0.075, st)
+    # a darker ring of voussoirs proud of both faces
+    ring = [(x * 1.25, z * 1.3) for (x, z) in arch] + [(x, z) for (x, z) in reversed(arch)]
+    for y0, y1 in ((-0.082, -0.074), (0.074, 0.082)):
+        profile("voussoirs", ring, y0, y1, std)
+    box("deck", (0.5, 0.15, 0.025), (0, 0, 0.155), cob, 0.004)
+    # parapets with a coping stone and little end posts
+    for sy in (-1, 1):
+        box("parapet", (0.5, 0.022, 0.045), (0, sy * 0.068, 0.19), st, 0.004)
+        box("coping", (0.52, 0.03, 0.012), (0, sy * 0.068, 0.218), std, 0.003)
+        for x in (-0.25, 0.25):
+            box("post", (0.035, 0.035, 0.08), (x, sy * 0.068, 0.2), std, 0.004)
+    # cutwaters at the springing points and the ramps down to the banks
+    for x in (-0.19, 0.19):
+        c = cyl("cutwater", 0.035, 0.09, (x, 0, 0.035), std, 6, 0.004)
+    for sx in (-1, 1):
+        r = box("ramp", (0.12, 0.15, 0.02), (sx * 0.3, 0, 0.11), cob, 0.003)
+        r.rotation_euler.y = sx * 0.55
+
+
 def mounted_knight(color):
     def build():
         horse = m("horse", "#6b4a2f", 0.75)
@@ -667,6 +709,7 @@ ASSETS = {
     "cannon": cannon,
     "howitzer": howitzer,
     "rocket_launcher": rocket_launcher,
+    "bridge": bridge,
     "knight_blue": mounted_knight(ROOF_BLUE),
     "knight_red": mounted_knight("#b3272b"),
     "squad_blue": infantry_squad(ROOF_BLUE),

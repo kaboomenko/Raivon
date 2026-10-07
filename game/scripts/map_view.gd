@@ -146,11 +146,8 @@ func _build_rivers() -> void:
 				st.add_vertex(c + Vector3(cos(a1) * w, y, sin(a1) * w))
 				st.add_vertex(c + Vector3(cos(a0) * w, y, sin(a0) * w))
 	var m := StandardMaterial3D.new()
-	m.albedo_color = Color(0.22, 0.58, 0.95)
-	m.roughness = 0.12
-	m.metallic = 0.2
-	m.emission_enabled = true
-	m.emission = Color(0.05, 0.25, 0.5)
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED  # the ribbon's faces point down: lit, it went black
+	m.albedo_color = Color(0.12, 0.42, 0.52)  # teal, a shade lighter than the open water
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	_river_mi = MeshInstance3D.new()
 	_river_mi.mesh = st.commit()
@@ -1286,11 +1283,13 @@ func _rebuild_overlay() -> void:
 
 
 const ROAD_W := 0.1
+var bridge_spots: Array = []  # world positions of the bridges (screenshots, tests)
 
 ## Dirt roads (the close reference frames: carts on country roads): from every building hex to its owner's capital
 ## along the shortest way over the owner's land, as wavy ribbons that stop at the building pads; rebuilt with the
 ## borders, so a conquered town joins the new owner's roads.
 func _build_roads() -> void:
+	bridge_spots = []
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var done := {}
@@ -1315,6 +1314,13 @@ func _build_roads() -> void:
 				continue
 			done[key] = true
 			_road_segment(st, a, b)
+			if sim.rivers.has("%d:%d" % [a, b]) or sim.rivers.has("%d:%d" % [b, a]):
+				# a stone arch bridge where the road crosses a river (the reference frames)
+				var pa := cell_world(a)
+				var pb := cell_world(b)
+				var dv := (pb - pa).normalized()
+				spawn("bridge", _overlay_root, (pa + pb) / 2.0, atan2(-dv.z, dv.x), 1.0)
+				bridge_spots.append((pa + pb) / 2.0)
 			for h in [a, b]:
 				if not _road_stop(h):
 					joints[h] = true
