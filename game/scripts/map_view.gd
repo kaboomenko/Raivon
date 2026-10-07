@@ -308,13 +308,13 @@ func _build_terrain() -> void:
 	for c in sim.cells:
 		var center := axial_to_world(c["q"], c["r"])
 		var top := 0.0
-		var col := Color(0.29, 0.52, 0.18)
+		var col := Color(0.31, 0.47, 0.21)  # a natural meadow green — the old one went lime under the colour grade
 		var pal: Dictionary = BIOME_GROUND.get(String(c.get("biome", "meadow")), {})
 		match c["terrain"]:
 			"forest":
-				col = Color(0.22, 0.44, 0.16)
+				col = Color(0.21, 0.38, 0.17)
 			"hills":
-				col = Color(0.48, 0.5, 0.26)
+				col = Color(0.45, 0.46, 0.27)
 			"mountain":
 				col = Color(0.42, 0.4, 0.36)
 			"water":
@@ -891,7 +891,7 @@ func _place_biome_props(c: Dictionary, holder: Node3D, p: Vector3, biome: String
 
 func _build_horizon() -> void:
 	var ring_mat := StandardMaterial3D.new()
-	ring_mat.albedo_color = Color(0.18, 0.22, 0.2)
+	ring_mat.albedo_color = Color(0.13, 0.2, 0.12)  # dark forest floor, as the wooded rim of the references
 	var rr: int = maxi(4, int(sim.radius))  # the horizon ring sits around the open world (grows by chapter)
 	for q in range(-rr - 5, rr + 6):
 		for r in range(-rr - 5, rr + 6):
@@ -904,7 +904,7 @@ func _build_horizon() -> void:
 			var roll := rng.randf()
 			var near := p.z > 3.0  # bottom of the screen: keep low so it never hides the player's land
 			if near:
-				for i in 3:
+				for i in 5:
 					spawn("tree_pine" if rng.randf() < 0.7 else "tree_round", _horizon_root, p + Vector3(rng.randf_range(-0.7, 0.7), -0.1, rng.randf_range(-0.7, 0.7)), rng.randf() * TAU, rng.randf_range(0.8, 1.1))
 			elif d <= rr + 2 and roll < 0.5:
 				spawn("mountain", _horizon_root, p + Vector3(0, -0.15, 0), rng.randf() * TAU, rng.randf_range(1.7, 2.8))
@@ -913,8 +913,8 @@ func _build_horizon() -> void:
 					spawn("tree_pine", _horizon_root, p + Vector3(rng.randf_range(-0.7, 0.7), -0.1, rng.randf_range(-0.7, 0.7)), rng.randf() * TAU, rng.randf_range(0.9, 1.4))
 			var base := MeshInstance3D.new()
 			var cm := CylinderMesh.new()
-			cm.top_radius = 1.0
-			cm.bottom_radius = 1.0
+			cm.top_radius = 1.16  # overlap: with the exact radius the sky showed through as blue triangles
+			cm.bottom_radius = 1.16
 			cm.height = 1.0
 			cm.radial_segments = 6
 			base.mesh = cm
@@ -1021,7 +1021,7 @@ func _rebuild_overlay() -> void:
 			# as blue / red even over bright grass, strongest at the rim
 			var tc := Color(0.1, 0.3, 0.95) if own == Types.PLAYER else state_color(own).darkened(0.12)  # royal blue, not azure
 			var base := 0.42 if own == Types.PLAYER else 0.42
-			var c_in := Color(tc.r, tc.g, tc.b, base * 0.62)
+			var c_in := Color(tc.r, tc.g, tc.b, base * (0.62 if own == Types.PLAYER else 0.42))  # AI: the land shows through
 			var c_rim := Color(tc.r, tc.g, tc.b, minf(0.85, base * 1.75))
 			for k in 6:
 				st.set_color(c_in); st.add_vertex(center)
