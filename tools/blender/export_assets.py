@@ -498,6 +498,57 @@ def cannon():
         sphere("ball", 0.016, (x, y, z), shot, (1, 1, 1), 2)
 
 
+def howitzer():
+    """Field howitzer of the trench era: an olive barrel with a recoil cylinder over the cradle, a gun shield,
+    split trails with spades, pressed-steel wheels with rubber tyres, shells and a crate."""
+    od = mat("olive", "#5b6436", 0.7, 0.2)
+    od_d = mat("olive_d", "#454c2a", 0.7, 0.2)
+    steel = mat("steel", "#3d4044", 0.5, 0.6)
+    tyre = mat("tyre", "#1f1f21", 0.9)
+    # split trails spreading back to the spades
+    for sy in (-1, 1):
+        _beam("trail", (0.0, sy * 0.03, 0.1), (-0.3, sy * 0.13, 0.02), 0.03, od_d)
+        box("spade", (0.02, 0.06, 0.05), (-0.31, sy * 0.135, 0.03), steel, 0.004)
+    # axle, wheels with rubber tyres and pressed-steel discs
+    cyl("axle", 0.014, 0.24, (0.0, 0, 0.09), steel, 8, 0.0).rotation_euler.x = math.pi / 2
+    for sy in (-1, 1):
+        t = cyl("tyre", 0.09, 0.04, (0.0, sy * 0.115, 0.09), tyre, 18, 0.008)
+        t.rotation_euler.x = math.pi / 2
+        d = cyl("disc", 0.065, 0.044, (0.0, sy * 0.115, 0.09), od, 16, 0.003)
+        d.rotation_euler.x = math.pi / 2
+        h = cyl("hub", 0.024, 0.05, (0.0, sy * 0.12, 0.09), steel, 8, 0.002)
+        h.rotation_euler.x = math.pi / 2
+        for k in range(5):
+            a = k * math.tau / 5
+            cyl("bolt", 0.006, 0.05, (math.cos(a) * 0.04, sy * 0.12, 0.09 + math.sin(a) * 0.04), steel, 6, 0.0).rotation_euler.x = math.pi / 2
+    # cradle, barrel and recoil cylinder, raised to a firing angle
+    el = 0.32
+
+    def at(x, z=0.0):
+        return (x * math.cos(el) - z * math.sin(el) + 0.02, 0, 0.16 + x * math.sin(el) + z * math.cos(el))
+    box("cradle", (0.1, 0.07, 0.06), (0.02, 0, 0.15), od, 0.008)
+    b = cyl("barrel", 0.024, 0.42, at(0.16), od, 14, 0.003, r2=0.02)
+    b.rotation_euler = (0, math.pi / 2 - el, 0)
+    r = cyl("recoil", 0.018, 0.22, at(0.06, 0.036), od_d, 12, 0.003)
+    r.rotation_euler = (0, math.pi / 2 - el, 0)
+    m_ = cyl("muzzle_brake", 0.03, 0.05, at(0.37), steel, 12, 0.003)
+    m_.rotation_euler = (0, math.pi / 2 - el, 0)
+    box("breech", (0.07, 0.06, 0.06), at(-0.06), steel, 0.006).rotation_euler.y = -el
+    # gun shield with a sight window and a riveted rim
+    sh = box("shield", (0.012, 0.24, 0.16), (0.1, 0, 0.2), od, 0.004)
+    sh.rotation_euler.y = -0.15
+    box("shield_top", (0.012, 0.2, 0.05), (0.095, 0, 0.3), od, 0.004).rotation_euler.y = -0.35
+    box("sight", (0.014, 0.04, 0.025), (0.104, 0.06, 0.24), mat("glass", "#1a1d22", 0.3), 0.0)
+    # shells, an ammo crate and a camo net roll on the trail
+    brass = mat("brass", "#c9a043", 0.35, 0.8)
+    for k in range(3):
+        x = 0.17 + k * 0.035
+        cyl("case", 0.013, 0.07, (x, -0.17, 0.035), brass, 10, 0.0)
+        cone("tip", 0.013, 0.03, (x, -0.17, 0.085), steel, 10, 0.0)
+    box("crate", (0.1, 0.07, 0.055), (0.2, 0.17, 0.028), mat("crate", "#6b5a3a", 0.85), 0.006)
+    cyl("net", 0.028, 0.16, (-0.16, 0, 0.085), mat("net", "#4f5a32", 0.95), 10, 0.01).rotation_euler.x = math.pi / 2
+
+
 def mounted_knight(color):
     def build():
         horse = m("horse", "#6b4a2f", 0.75)
@@ -564,6 +615,7 @@ ASSETS = {
     "mountain": mountain,
     "catapult": catapult,
     "cannon": cannon,
+    "howitzer": howitzer,
     "knight_blue": mounted_knight(ROOF_BLUE),
     "knight_red": mounted_knight("#b3272b"),
     "squad_blue": infantry_squad(ROOF_BLUE),

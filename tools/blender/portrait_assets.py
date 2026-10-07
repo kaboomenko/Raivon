@@ -58,6 +58,26 @@ def mix(a, b, t):
 # 1 cloth and leather (DL1–3), 2 coats and bicornes (DL4–5), 3 field uniform (DL6–7), 4 armour and visors (DL8–10).
 # Personal gear (goggles, glasses, the flight helmet, the cap, the circlet) is kept in every era.
 KEEP_GEAR = ("goggles", "glasses", "flight", "tricorn", "circlet")
+# The old guard (04 §15.4: age shows in the face): forehead lines, crow's feet and the folds from nose to mouth.
+AGED = ("cmd_olm", "cmd_kort", "cmd_seir", "cmd_vance", "cmd_rai", "ldr_order", "ldr_conclave")
+
+
+def _wrinkles(cid, skin_c, hw, hh, mood):
+    ln = kit.mat("wrinkle_" + cid, darker(skin_c, 0.8), 0.7)
+    up = 0.012 if mood in ("smile", "cunning") else (-0.008 if mood == "angry" else 0.0)
+    for k, (z, w) in enumerate(((0.215, 0.2), (0.255, 0.16))):  # forehead lines, a touch higher when the brows lift
+        zz = z * hh / 0.42 + up
+        y = -0.02 - 0.37 * math.sqrt(max(0.05, 1 - (zz / hh) ** 2)) + 0.012
+        b = kit.box("forehead_line", (w, 0.018, 0.011), (0, y, HEAD_Z + zz), ln, 0.004)
+        b.rotation_euler.x = math.atan2(zz / hh, 1.0) * 0.8
+    for sx in (-1, 1):
+        for k, a in enumerate((-22, 6, 30)):  # crow's feet fanning from the outer corner of the eye
+            x, dz = 0.225, 0.01 + k * 0.022
+            y = -0.02 - 0.37 * math.sqrt(max(0.05, 1 - (x / hw) ** 2 - (dz / hh) ** 2)) + 0.006
+            c = kit.box("crow", (0.05, 0.014, 0.008), (sx * x, y, HEAD_Z + dz), ln, 0.003)
+            c.rotation_euler = (0, math.radians(a * sx), math.radians(-40 * sx))
+        f = kit.box("fold", (0.009, 0.016, 0.1), (sx * 0.1, -0.345, HEAD_Z - 0.12), ln, 0.003)
+        f.rotation_euler = (0, math.radians(-24 * sx), 0)
 
 
 def _mouth(name, z, y, mood, lips, w=0.13):
@@ -155,6 +175,8 @@ def build(cid, era=1, mood=""):
         n = kit.cone("nose", 0.05, 0.16, (0, -0.37, HEAD_Z - 0.04), skin, 8, 0.01)
         n.rotation_euler = (math.radians(-70), 0, 0)
     _mouth("mouth", HEAD_Z - 0.18, -0.335, mood, lips)
+    if cid in AGED:
+        _wrinkles(cid, skin_c, hw, hh, mood)
     # hair
     if style in ("short", "messy", "braid", "long", "ponytail", "updo", "bob", "buzz") and not (era == 4 and era_hat):
         top = 0.3 if style != "buzz" else 0.24
