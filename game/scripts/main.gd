@@ -101,6 +101,7 @@ var calendar  # the 28-day login calendar (scripts/sim/calendar.gd)
 var patent  # «Державный патент», the subscription (scripts/sim/patent.gd)
 var chronicle  # «Летопись державы», 40 long goals (scripts/sim/chronicle.gd)
 var flag: Dictionary = FlagView.DEFAULT.duplicate()  # the realm's flag (10 §4.23)
+var realm_name := ""  # the player's name for the realm (canon §14.3); "" — «Ваша держава»
 var commanders  # commander levels (scripts/sim/commanders.gd); the shards themselves are `cases.shards`
 var hand_pick: Array = []
 var installed_at := 0  # the first launch (offers that start «from D2», 09 §9.9.2)
@@ -2057,6 +2058,8 @@ func _state_key(s: int) -> String:
 
 
 func _state_name(s: int) -> String:
+	if s == Types.PLAYER and realm_name != "":
+		return realm_name
 	var k := _state_key(s)
 	return tr(k) if k != "" else ""
 
@@ -3080,7 +3083,7 @@ func _end_ceremony() -> void:
 	if resume == 7 and not stats.has("flag_wizard"):
 		# FTUE 2:30 (canon §14.3): after the first peace the player makes the flag in 3 taps, then the tour goes on
 		stats["flag_wizard"] = 1
-		_open_flag_wizard(0, FlagView.random_flag(_flag_seed()), func(): ftue = 7)
+		_open_flag_wizard(0, FlagView.random_flag(_flag_seed()), func(): _open_name_editor(func(): ftue = 7))
 	elif resume > 0:
 		ftue = resume
 	map_view.ceremony_t = -1.0
@@ -5174,7 +5177,7 @@ func _open_profile() -> void:
 	for code in chronicle.recent(3):
 		var row: Array = Chronicle.LIST[Chronicle.index_of(String(code))]
 		recent.append({"name": tr("chr." + String(code)), "chapter": tr("chr.ch." + String(row[1]))})
-	var info := {"name": tr("state.player"), "dl": econ.dev_level(), "hexes": hexes,
+	var info := {"name": _state_name(Types.PLAYER), "dl": econ.dev_level(), "hexes": hexes,
 		"chapter": tr(CHAPTER_NAME_KEYS[clampi(chapter, 1, CHAPTER_NAME_KEYS.size() - 1)]),
 		"map_pct": roundi(100.0 * hexes / maxf(1.0, float(land))),
 		"commanders": [_cmd_owned_count(), Commanders.PASSIVES.size()],
@@ -5188,6 +5191,7 @@ func _open_profile() -> void:
 			_show_settings(),
 		"soon": func(): ui.toast(tr("profile.soon")),
 		"flag": func(): _open_flag_editor(),
+		"name": func(): _open_name_editor(func(): _open_profile()),
 	})
 
 
@@ -5251,6 +5255,59 @@ func _finish_flag_wizard(draft: Dictionary) -> void:
 	_autosave()
 	var done := _flag_wizard_done
 	_flag_wizard_done = Callable()
+	if done.is_valid():
+		done.call()
+
+
+const REALM_NAMES := ["realm.n1", "realm.n2", "realm.n3", "realm.n4", "realm.n5", "realm.n6", "realm.n7", "realm.n8",
+	"realm.n9", "realm.n10", "realm.n11", "realm.n12", "realm.n13", "realm.n14", "realm.n15", "realm.n16"]
+const REALM_NAME_MAX := 20
+var _name_done := Callable()
+
+
+## Six name ideas from the account seed (and a shift for the die).
+func _realm_name_ideas(shift: int) -> Array:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = _flag_seed() + 7 * shift
+	var pool: Array = REALM_NAMES.duplicate()
+	for i in range(pool.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var t: Variant = pool[i]
+		pool[i] = pool[j]
+		pool[j] = t
+	var out: Array = []
+	for k in 6:
+		out.append(tr(String(pool[k])))
+	return out
+
+
+## «Название державы» (canon §14.3, 2:30–3:30): a field and 6 ideas; the name shows on the profile, the
+## diplomacy and the war bar.
+func _open_name_editor(on_done: Callable, shift := 0) -> void:
+	_name_done = on_done
+	ui.show_name_editor(realm_name if realm_name != "" else "", _realm_name_ideas(shift), REALM_NAME_MAX,
+		func(n: String): _finish_name_editor(n),
+		func(): _open_name_editor(on_done, shift + 1))
+
+
+## A name of 2–20 characters (spaces trimmed, line breaks dropped); an empty one keeps «Ваша держава».
+static func clean_realm_name(n: String) -> String:
+	var t := n.replace("\n", " ").replace("\t", " ").strip_edges()
+	while t.contains("  "):
+		t = t.replace("  ", " ")
+	return t.substr(0, REALM_NAME_MAX)
+
+
+func _finish_name_editor(n: String) -> void:
+	var t := clean_realm_name(n)
+	if t.length() == 1:
+		ui.toast(tr("realm.too_short"))
+		return
+	realm_name = t
+	ui.close_modal()
+	_autosave()
+	var done := _name_done
+	_name_done = Callable()
 	if done.is_valid():
 		done.call()
 
@@ -6189,6 +6246,9 @@ func _demo(spec: String) -> void:
 			research.current["end"] = now_s() + 7200  # a long one, so the blueprint matters
 			research.current["dur"] = 7200
 		_open_tab("development")
+		return
+	if what == "realm_name":  # the realm's name field with ideas
+		_open_name_editor(func(): pass)
 		return
 	if what == "flag_wizard":  # the FTUE 3-tap flag: flag_wizard[:1|2|3] — that step
 		var st := int(parts[1]) if parts.size() > 1 else 0

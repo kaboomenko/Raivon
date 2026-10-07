@@ -1129,3 +1129,23 @@ ceremony.blueprints_burned,", %d сгорело — склад полон",", %d
 toast.blueprint,📜 Чертёж применён: осталось %s · чертежей %d,📜 Blueprint used: %s left · %d blueprints
 toast.blueprint_max,Чертежи уже сократили это исследование на 50%,Blueprints have already cut this research by 50%
 bld.blueprint,📜 −10%% ×%d,📜 −10%% ×%d
+realm.n1,Лазурная Марка,Azure March
+realm.n2,Вольная Долина,Free Valley
+realm.n3,Северный Предел,Northern Reach
+realm.n4,Златоград,Goldhold
+realm.n5,Синегорье,Bluehills
+realm.n6,Ветреный Край,Windward Land
+realm.n7,Речная Корона,River Crown
+realm.n8,Звёздный Удел,Star Domain
+realm.n9,Дубрава,Oakwood
+realm.n10,Светлогорье,Brighthills
+realm.n11,Каменный Рубеж,Stone Frontier
+realm.n12,Новый Райвон,New Raivon
+realm.n13,Медовые Луга,Honey Meadows
+realm.n14,Серебряный Брод,Silver Ford
+realm.n15,Ясная Гавань,Clear Haven
+realm.n16,Соколиный Утёс,Falcon Cliff
+realm.title,Название державы,Name your realm
+realm.ideas,Идеи:,Ideas:
+realm.more,🎲 Ещё идеи,🎲 More ideas
+realm.too_short,Название — от 2 букв,A name needs at least 2 letters

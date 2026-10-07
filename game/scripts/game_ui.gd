@@ -1394,9 +1394,11 @@ func show_profile(info: Dictionary, cb: Dictionary) -> void:
 	box.add_child(crest)
 	var edit := _label("✎", 26, Color(1.0, 0.85, 0.4))
 	_at(edit, box, Vector2(150, 222))
-	var nm := _label(String(info["name"]), 38, Color(1.0, 0.85, 0.4))
+	var nm := _label(String(info["name"]) + "  ✎", 38, Color(1.0, 0.85, 0.4))
 	_fit(nm, 38, 640)
 	_at(nm, box, Vector2(190, 92))
+	nm.mouse_filter = Control.MOUSE_FILTER_STOP
+	nm.gui_input.connect(func(e): if _is_tap(e): (cb["name"] as Callable).call())
 	var ch := _label(String(info["chapter"]), 22, TEXT, false)
 	_fit(ch, 22, 640)
 	_at(ch, box, Vector2(190, 148))
@@ -1542,6 +1544,35 @@ func show_flag_editor(flag: Dictionary, owned: Dictionary, on_change: Callable, 
 						set_key.call("frame", fid))
 	_button(box, Rect2(30, 1430 - 110, 400, 84), tr("flag.random"), Color(0.45, 0.3, 0.75), on_random)
 	_button(box, Rect2(451, 1430 - 110, 400, 84), tr("flag.done"), Color(0.2, 0.6, 0.3), on_done)
+
+
+## «Название державы» (canon §14.3): a text field (the system keyboard on a phone), 6 ideas as chips, a die for
+## new ideas, «Готово». An empty field keeps «Ваша держава».
+func show_name_editor(current: String, ideas: Array, max_len: int, on_done: Callable, on_more: Callable) -> void:
+	var box := _modal_box(Rect2(60, 340, 821, 680))
+	var t := _label(tr("realm.title"), 32, Color(1.0, 0.85, 0.4))
+	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_at(t, box, Vector2(0, 30), Vector2(821, 44))
+	var field := LineEdit.new()
+	field.text = current
+	field.placeholder_text = tr("state.player")
+	field.max_length = max_len
+	field.position = Vector2(40, 100)
+	field.size = Vector2(741, 84)
+	field.add_theme_font_size_override("font_size", 34)
+	if font_bold:
+		field.add_theme_font_override("font", font_bold)
+	field.add_theme_stylebox_override("normal", _style(Color(0.08, 0.11, 0.18), 14, Color(1.0, 0.8, 0.35, 0.8), 2))
+	field.add_theme_stylebox_override("focus", _style(Color(0.1, 0.14, 0.22), 14, Color(1.0, 0.85, 0.4), 3))
+	field.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	box.add_child(field)
+	_at(_label(tr("realm.ideas"), 20, MUTED), box, Vector2(40, 210))
+	for i in ideas.size():
+		var idea: String = ideas[i]
+		_button(box, Rect2(40 + (i % 2) * 376, 250 + (i / 2) * 96, 365, 82), idea, Color(0.16, 0.22, 0.34), func():
+			field.text = idea)
+	_button(box, Rect2(40, 680 - 120, 300, 84), tr("realm.more"), Color(0.45, 0.3, 0.75), on_more)
+	_button(box, Rect2(361, 680 - 120, 420, 84), tr("flag.done"), Color(0.2, 0.6, 0.3), func(): on_done.call(field.text))
 
 
 ## The FTUE flag wizard (canon §14.3: 3 taps): step dots, 6 flags to pick from (division, emblem, colours), then

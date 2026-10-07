@@ -101,6 +101,7 @@ static func to_dict(g: Node) -> Dictionary:
 		"chronicle": g.chronicle.to_dict() if g.chronicle != null else {},
 		"commanders": g.commanders.to_dict() if g.commanders != null else {},
 		"flag": g.flag,
+		"realm_name": g.realm_name,
 		"camps": g.camps.to_dict() if g.camps != null else {},
 	}
 	if g.get("econ") != null:
@@ -310,6 +311,7 @@ static func apply(g: Node, d: Dictionary) -> bool:
 		if g.chronicle == null:
 			g.chronicle = load("res://scripts/sim/chronicle.gd").new()
 		g.chronicle.load_dict(d["chronicle"])
+	g.realm_name = String(d.get("realm_name", ""))
 	if typeof(d.get("flag")) == TYPE_DICTIONARY:
 		var fl: Dictionary = d["flag"]
 		g.flag = {"div": String(fl.get("div", "solid")), "c1": int(fl.get("c1", 0)), "c2": int(fl.get("c2", 13)),
