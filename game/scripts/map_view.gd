@@ -1617,6 +1617,8 @@ func _make_army(a: Dictionary) -> Node3D:
 		spawn("cannon", model, Vector3(-0.44, 0, -0.14), 0.25, 1.3)
 	elif dl == 6 or dl == 7:  # the trench era: a field howitzer
 		spawn("howitzer", model, Vector3(-0.44, 0, -0.14), 0.25, 1.2)
+	elif dl >= 8:  # the late era: a six-wheeled rocket launcher
+		spawn("rocket_launcher", model, Vector3(-0.44, 0, -0.14), 0.25, 1.15)
 	node.set_meta("anim", anim)
 	spawn("banner_" + side, model, Vector3(0.05, 0, -0.35), 0.0, 0.9, int(a["side"]))
 	var lbl := Label3D.new()

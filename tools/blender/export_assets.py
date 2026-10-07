@@ -549,6 +549,56 @@ def howitzer():
     cyl("net", 0.028, 0.16, (-0.16, 0, 0.085), mat("net", "#4f5a32", 0.95), 10, 0.01).rotation_euler.x = math.pi / 2
 
 
+def rocket_launcher():
+    """Late-era launcher: a six-wheeled composite chassis with a cab, a raised pod of rocket tubes with glowing
+    mouths, a radar mast and side lights, in the white-and-graphite look of the DL8 troops."""
+    comp = mat("composite", "#e3e8ee", 0.4)
+    trim = mat("comptrim", "#3e4550", 0.5)
+    tyre = mat("tyre", "#1f1f21", 0.9)
+    cyan = mat("cyan", "#14d2ff", 0.4, 0.0, "#14d2ff", 3.0)
+    glass = mat("glass", "#1b2533", 0.2)
+    # chassis and wheels
+    box("hull", (0.42, 0.17, 0.07), (0, 0, 0.1), comp, 0.012)
+    box("skirt", (0.43, 0.175, 0.025), (0, 0, 0.065), trim, 0.006)
+    for x in (-0.14, 0.0, 0.14):
+        for sy in (-1, 1):
+            w = cyl("wheel", 0.045, 0.035, (x, sy * 0.09, 0.045), tyre, 14, 0.006)
+            w.rotation_euler.x = math.pi / 2
+            h = cyl("rim", 0.024, 0.038, (x, sy * 0.09, 0.045), trim, 10, 0.0)
+            h.rotation_euler.x = math.pi / 2
+    for sy in (-1, 1):
+        box("light_strip", (0.36, 0.006, 0.01), (0, sy * 0.088, 0.11), cyan, 0.0)
+    # cab at the front with a dark visor
+    box("cab", (0.11, 0.16, 0.09), (0.15, 0, 0.18), comp, 0.016)
+    box("visor", (0.02, 0.13, 0.04), (0.205, 0, 0.19), glass, 0.004)
+    box("cab_roof", (0.08, 0.12, 0.012), (0.145, 0, 0.23), trim, 0.003)
+    # launcher pod: a turntable, two arms and a 3×3 block of tubes tilted up toward the front
+    cyl("turntable", 0.06, 0.03, (-0.07, 0, 0.15), trim, 16, 0.004)
+    el = 0.5
+    for sy in (-1, 1):
+        a = box("arm", (0.03, 0.015, 0.1), (-0.07, sy * 0.06, 0.2), trim, 0.003)
+        a.rotation_euler.y = -0.2
+    pod = box("pod", (0.2, 0.12, 0.11), (-0.06, 0, 0.27), comp, 0.01)
+    pod.rotation_euler.y = -el
+    cx, cz = -0.06 + math.cos(el) * 0.1, 0.27 + math.sin(el) * 0.1
+    for i in range(3):
+        for j in range(3):
+            off_y = (i - 1) * 0.034
+            off_n = (j - 1) * 0.032
+            px = cx - math.sin(el) * off_n
+            pz = cz + math.cos(el) * off_n
+            t = cyl("tube", 0.013, 0.012, (px, off_y, pz), trim, 10, 0.0)
+            t.rotation_euler.y = math.pi / 2 - el
+            g = cyl("tube_glow", 0.009, 0.014, (px + 0.002, off_y, pz + 0.001), cyan, 8, 0.0)
+            g.rotation_euler.y = math.pi / 2 - el
+    box("pod_stripe", (0.2, 0.124, 0.014), (-0.06, 0, 0.27), trim, 0.0).rotation_euler.y = -el
+    # radar mast behind the cab
+    cyl("mast", 0.006, 0.1, (0.07, 0.05, 0.2), trim, 6, 0.0)
+    d = cyl("dish", 0.03, 0.008, (0.07, 0.05, 0.255), comp, 12, 0.002)
+    d.rotation_euler = (0.9, 0, 0.5)
+    sphere("beacon", 0.008, (0.07, 0.05, 0.262), cyan, (1, 1, 1), 1)
+
+
 def mounted_knight(color):
     def build():
         horse = m("horse", "#6b4a2f", 0.75)
@@ -616,6 +666,7 @@ ASSETS = {
     "catapult": catapult,
     "cannon": cannon,
     "howitzer": howitzer,
+    "rocket_launcher": rocket_launcher,
     "knight_blue": mounted_knight(ROOF_BLUE),
     "knight_red": mounted_knight("#b3272b"),
     "squad_blue": infantry_squad(ROOF_BLUE),
