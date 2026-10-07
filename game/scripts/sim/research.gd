@@ -24,7 +24,10 @@ const TIME_5: Array[int] = [0, 60, 600, 1800, 7200, 14400]
 const TIME_3: Array[int] = [0, 300, 900, 1800]
 
 var levels := {}  # line -> level
-var current := {}  # {line, end}
+var current := {}  # {line, end, dur (the full time), cut (seconds taken off by blueprints)}
+var blueprints := 0  # «Трофейные чертежи» (canon §9.14, 07 §6.1): at most 5 in store
+
+const BLUEPRINT_MAX := 5
 
 
 static func base_cost(level: int) -> float:
@@ -85,8 +88,42 @@ func start(line: String, dl: int, academy_level: int, res: Dictionary, now: int)
 	var c := cost(line)
 	for r in c:
 		res[r] = int(res[r]) - int(c[r])
-	current = {"line": line, "end": now + seconds(line, academy_level)}
+	var dur := seconds(line, academy_level)
+	current = {"line": line, "end": now + dur, "dur": dur, "cut": 0}
 	return true
+
+
+## Trophy blueprints won by plunder: kept up to 5, the rest burn. Returns how many burned.
+func add_blueprints(n: int) -> int:
+	var room := BLUEPRINT_MAX - blueprints
+	blueprints = mini(BLUEPRINT_MAX, blueprints + n)
+	return maxi(0, n - room)
+
+
+## «Применить чертёж»: −10% of the remaining time, at most −50% of the research in all. False when it can't.
+func apply_blueprint(now: int) -> bool:
+	if current.is_empty() or blueprints <= 0:
+		return false
+	var left := int(current["end"]) - now
+	var dur := int(current.get("dur", left))
+	var room := dur / 2 - int(current.get("cut", 0))
+	var cut := mini(left / 10, room)
+	if cut <= 0:
+		return false
+	current["end"] = int(current["end"]) - cut
+	current["cut"] = int(current.get("cut", 0)) + cut
+	blueprints -= 1
+	return true
+
+
+## A plundered defeat costs `pct`% of the running research's full time in progress (never below zero progress).
+func lose_progress(pct: int, now: int) -> int:
+	if current.is_empty():
+		return 0
+	var dur := int(current.get("dur", int(current["end"]) - now))
+	var before := int(current["end"])
+	current["end"] = mini(before + dur * pct / 100, now + dur)
+	return int(current["end"]) - before
 
 
 ## Completes the running research when due; returns the finished line or "".
@@ -106,7 +143,7 @@ func economy_levels() -> Dictionary:
 
 
 func to_dict() -> Dictionary:
-	return {"levels": levels, "current": current}
+	return {"levels": levels, "current": current, "blueprints": blueprints}
 
 
 static func from_dict(d: Dictionary):
@@ -116,5 +153,6 @@ static func from_dict(d: Dictionary):
 		r.levels[String(k)] = int(lv[k])
 	var cur: Dictionary = d.get("current", {})
 	if not cur.is_empty():
-		r.current = {"line": String(cur["line"]), "end": int(cur["end"])}
+		r.current = {"line": String(cur["line"]), "end": int(cur["end"]), "dur": int(cur.get("dur", 0)), "cut": int(cur.get("cut", 0))}
+	r.blueprints = int(d.get("blueprints", 0))
 	return r

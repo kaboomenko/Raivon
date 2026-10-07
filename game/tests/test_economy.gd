@@ -41,6 +41,7 @@ func _init() -> void:
 		["raivite vein: 2 per 12 h up to 4, occupied 1 up to 2", _test_vein],
 		["market: rates, floor, warehouse cut, no raivites", _test_market],
 		["market trader: daily lots, one buy each, 04:00 refresh, save", _test_trader],
+		["trophy blueprints: store of 5, −10% left, −50% cap, defeat loss, save", _test_blueprints],
 	]
 	for t in tests:
 		_errors.clear()
@@ -694,3 +695,22 @@ func _test_vein() -> void:
 	_eq(e.vein_amount(vh), 2, "occupied vein holds up to 2")
 	var e2: Economy = Economy.from_dict(JSON.parse_string(JSON.stringify(e.to_dict())))
 	_eq(e2.vein_amount(vh), 2, "round trip")
+
+
+func _test_blueprints() -> void:
+	# trophy blueprints (canon §9.14, 07 §6.1): up to 5 kept, −10% of what is left, −50% per research at most
+	var rb = load("res://scripts/sim/research.gd").new()
+	_check(rb.add_blueprints(3) == 0 and rb.add_blueprints(4) == 2 and rb.blueprints == 5, "blueprints: 5 kept, 2 burn")
+	rb.current = {"line": "taxes", "end": 10000, "dur": 10000, "cut": 0}
+	_check(rb.apply_blueprint(0) and int(rb.current["end"]) == 9000, "a blueprint takes 10% of what is left")
+	var bp_n := 1
+	while rb.apply_blueprint(0):
+		bp_n += 1
+	_check(int(rb.current["cut"]) <= 5000 and rb.blueprints == 5 - bp_n, "never more than −50%% of a research (%d used)" % bp_n)
+	rb.current = {"line": "taxes", "end": 1000, "dur": 10000, "cut": 0}
+	rb.lose_progress(12, 0)
+	_check(int(rb.current["end"]) == 2200, "a plundered defeat: −12% of the research's time in progress")
+	rb.lose_progress(100, 0)
+	_check(int(rb.current["end"]) == 10000, "progress never drops below zero")
+	var rb2 = rb.from_dict(rb.to_dict())
+	_check(rb2.blueprints == rb.blueprints and int(rb2.current["dur"]) == 10000, "blueprints survive a save")

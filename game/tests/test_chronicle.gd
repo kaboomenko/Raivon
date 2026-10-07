@@ -33,7 +33,7 @@ func _initialize() -> void:
 	c.update({"@hexes": 12})
 	_check(c.can_claim("ach_hexes_25") and c.progress("ach_hexes_25") == 25, "a live measure that drops keeps the goal reached")
 	c.update({"blueprints": 99, "arena_league": 9})
-	_check(not c.reached.has("ach_blueprints_25") and not c.reached.has("ach_arena_legend"), "«soon» goals don't count yet")
+	_check(c.reached.has("ach_blueprints_25") and not c.reached.has("ach_arena_legend"), "«soon» goals don't count yet; blueprints do")
 	var q := Chronicle.new()
 	q.load_dict(c.to_dict())
 	_check(q.claimed.has("ach_first_peace") and q.can_claim("ach_hexes_25") and q.progress("ach_hexes_25") == 25, "save and load")

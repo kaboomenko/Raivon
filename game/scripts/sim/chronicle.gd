@@ -26,7 +26,7 @@ const LIST := [
 	["ach_peace_25", "peace", "peace_wins", 25, 10, "", false],
 	["ach_peace_60", "peace", "peace_wins", 60, 30, "cos_peace_seal_olive_branch", false],
 	["ach_mercy_5", "peace", "mercy", 5, 10, "", false],
-	["ach_blueprints_25", "peace", "blueprints", 25, 10, "", true],
+	["ach_blueprints_25", "peace", "blueprints", 25, 10, "", false],
 	["ach_first_alliance", "peace", "alliances", 1, 20, "", false],
 	["ach_swap_5", "peace", "swaps", 5, 10, "", false],
 	["ach_coalition_broken", "peace", "coalitions_broken", 1, 10, "", false],

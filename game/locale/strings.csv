@@ -1124,3 +1124,8 @@ flagw.title1,Теперь эмблему,Now an emblem
 flagw.title2,И цвета,And the colours
 flagw.title3,Флаг вашей державы,Your realm's flag
 flagw.later,Изменить можно в профиле — тап по флагу,You can change it in the profile — tap the flag
+ceremony.blueprints,Трофейные чертежи: +%d (на складе %d/5),Trophy blueprints: +%d (%d/5 in store)
+ceremony.blueprints_burned,", %d сгорело — склад полон",", %d burned — the store is full"
+toast.blueprint,📜 Чертёж применён: осталось %s · чертежей %d,📜 Blueprint used: %s left · %d blueprints
+toast.blueprint_max,Чертежи уже сократили это исследование на 50%,Blueprints have already cut this research by 50%
+bld.blueprint,📜 −10%% ×%d,📜 −10%% ×%d

@@ -353,6 +353,7 @@ func _run() -> void:
 		var fw_flag: Dictionary = g.FlagView.random_flag(3)
 		g._finish_flag_wizard(fw_flag)
 		_check(g.flag == fw_flag, "the wizard's flag becomes the realm's flag")
+		_check(g.research.blueprints >= 1 or g.plunder_level == 0, "a plundered peace brings trophy blueprints (%d)" % g.research.blueprints)
 		_check(g.ftue == 7, "FTUE resumes after the ceremony (residence step)")
 		g._ftue_tick(0.1)
 		if g.ftue == 7:

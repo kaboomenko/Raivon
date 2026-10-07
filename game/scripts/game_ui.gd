@@ -2112,6 +2112,16 @@ func _building_card(it: Dictionary) -> Control:
 		var stock: int = it.get("stock", 0)
 		var txt := tr("bld.free") if sp == 0 else (tr("bld.stock") % stock if stock > 0 else "⚡ %d" % sp)
 		var line_s: String = it.get("line", "")
+		if int(it.get("bp", 0)) > 0:
+			# «Применить чертёж» (07 §6.1)
+			var bpb := _panel(card, Rect2(20, 102, 110, 30), _style(Color(0.45, 0.32, 0.18), 8, Color(1.0, 0.85, 0.5, 0.7), 2))
+			var bpl := _label(tr("bld.blueprint") % int(it["bp"]), 15)
+			bpl.size = Vector2(110, 30)
+			bpl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			bpl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			bpl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			bpb.add_child(bpl)
+			bpb.gui_input.connect(func(e): if _is_tap(e): research_speedup.emit("bp:" + line_s))
 		_card_button(card, txt, Color(0.85, 0.55, 0.1), func():
 			if line_s != "":
 				research_speedup.emit(line_s)

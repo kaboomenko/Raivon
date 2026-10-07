@@ -2848,6 +2848,7 @@ func _on_demand_toggled(id: String) -> void:
 
 
 var _last_score := 0.0
+const RESEARCH_LOSS := [0, 5, 8, 12]
 var plunder_level := 1  # 0 spare, 1 light 30%, 2 medium 45%, 3 heavy 60% (canon §9.14)
 const PLUNDER_PCT := [0.0, 0.30, 0.45, 0.60]
 const PLUNDER_OPINION := [20.0, -10.0, -20.0, -30.0]
@@ -2972,6 +2973,10 @@ func _sign_peace() -> void:
 			loot[r] = maxi(0, mini(int(exposed * PLUNDER_PCT[plunder_level]), cap_left))
 		econ.add_resources(loot)
 		lines.append(tr("ceremony.plunder") % [int(loot["gold"]), int(loot["food"]), int(loot["metal"])])
+		# trophy blueprints: +1 / +2 / +3 (canon §9.14), kept up to 5 — the rest burn
+		var burned: int = research.add_blueprints(plunder_level)
+		stats["blueprints"] = int(stats.get("blueprints", 0)) + plunder_level
+		lines.append(tr("ceremony.blueprints") % [plunder_level, research.blueprints] + (tr("ceremony.blueprints_burned") % burned if burned > 0 else ""))
 	_opinion_add(enemy, PLUNDER_OPINION[plunder_level])
 	# «Угроза» (canon §10.8): the value of every annexed hex (a city +4 more), plunder +5 / +10 / +15
 	var annexed_threat := 0.0
@@ -3142,6 +3147,7 @@ func _apply_defeat(enemy: int, lost: Array) -> void:
 	_post("inbox.defeat.title", msg)
 	# plunder also brings ruin (−20/30/40% for 4/6/8 h) and 1–3 damaged hex buildings (canon §9.14)
 	econ.apply_ruin(RUIN_PCT[lvl], RUIN_HOURS[lvl] * 3600, now_s())
+	research.lose_progress(RESEARCH_LOSS[lvl], now_s())  # −5 / −8 / −12% of the running research (canon §9.14)
 	var dmg: Array = econ.damage_buildings(sim, lvl)
 	_show_damage()
 	_post("inbox.ruin.title", L.pack("inbox.ruin.text", [RUIN_PCT[lvl], RUIN_HOURS[lvl], dmg.size()]))
@@ -3707,7 +3713,8 @@ func _research_items(now: int) -> Array:
 			"max": research.max_level(line, dl, acad), "busy": busy, "left": left,
 			"speed": Economy.speedup_price(left) if busy else 0, "cost": research.cost(line) if not maxed else {},
 			"seconds": research.seconds(line, acad) if not maxed else 0,
-			"reason": L.t(research.can_start(line, dl, acad, econ.res, now)), "stock": speed_minutes})
+			"reason": L.t(research.can_start(line, dl, acad, econ.res, now)), "stock": speed_minutes,
+			"bp": research.blueprints if busy else 0})
 	items.sort_custom(func(x, y): return int(x["busy"]) > int(y["busy"]))
 	return items
 
@@ -3724,10 +3731,21 @@ func _on_research_start(line: String) -> void:
 	_autosave()
 
 
-func _on_research_speedup(_line: String) -> void:
+func _on_research_speedup(line: String) -> void:
 	if research.current.is_empty():
 		return
 	var now := now_s()
+	if line.begins_with("bp:"):
+		# «Применить чертёж» (07 §6.1): −10% of what is left, −50% at most per research
+		if research.apply_blueprint(now):
+			_stat("blueprints_used")
+			sfx.play("seal")
+			ui.toast(tr("toast.blueprint") % [GameUI.fmt_time(int(research.current["end"]) - now), research.blueprints])
+		else:
+			ui.toast(tr("toast.blueprint_max"))
+		_econ_tick()
+		_autosave()
+		return
 	var left := int(research.current["end"]) - now
 	if speed_minutes > 0 and left > Economy.FREE_FINISH_SEC:
 		var use := mini(speed_minutes, int(ceil(left / 60.0)))
@@ -6160,6 +6178,17 @@ func _demo(spec: String) -> void:
 		_chronicle_tick()
 		chronicle.claim("ach_first_peace")
 		_open_chronicle()
+		return
+	if what == "blueprint":  # a research running with 3 trophy blueprints in store (the Development tab)
+		econ.res["gold"] = 50000
+		econ.res["food"] = 50000
+		econ.res["metal"] = 50000
+		research.blueprints = 3
+		_on_research_start("infantry")
+		if not research.current.is_empty():
+			research.current["end"] = now_s() + 7200  # a long one, so the blueprint matters
+			research.current["dur"] = 7200
+		_open_tab("development")
 		return
 	if what == "flag_wizard":  # the FTUE 3-tap flag: flag_wizard[:1|2|3] — that step
 		var st := int(parts[1]) if parts.size() > 1 else 0
