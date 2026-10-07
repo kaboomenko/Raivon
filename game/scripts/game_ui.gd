@@ -606,11 +606,10 @@ func show_ceremony_counters(lines: Array, on_done: Callable, on_double := Callab
 	create_tween().tween_property(back, "modulate:a", 1.0, 0.3)
 	for i in lines.size():
 		var l := _label(lines[i], 40)
-		l.size = Vector2(VW, 60)
+		l.size = Vector2(VW - 100, 60)
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		l.position = Vector2(0, 230 + i * 64)
-		if i > 0:
-			l.add_theme_font_size_override("font_size", 30)
+		l.position = Vector2(50, 230 + i * 64)
+		_fit(l, 40 if i == 0 else 30, VW - 110.0)  # long lines (a chest's contents) shrink inside the panel
 		l.modulate.a = 0.0
 		l.scale = Vector2(1.0, 1.0)
 		_modal.add_child(l)
