@@ -1000,6 +1000,7 @@ func _rebuild_overlay() -> void:
 	for n in _overlay_root.get_children():
 		n.queue_free()
 	var tints := {}
+	var scorch := {}  # owner -> darkening layer under AI fills (the burnt ground of the references)
 	var hatch := {}
 	var lines := {}
 	var borders := {}
@@ -1026,6 +1027,12 @@ func _rebuild_overlay() -> void:
 				st.set_color(c_in); st.add_vertex(center)
 				st.set_color(c_rim); st.add_vertex(pts[k])
 				st.set_color(c_rim); st.add_vertex(pts[(k + 1) % 6])
+			if own != Types.PLAYER:
+				var ss := _st(scorch, own)
+				var sc := center - Vector3(0, 0.006, 0)
+				var sp := _hex_pts(sc, 0.995)
+				for k in 6:
+					ss.add_vertex(sc); ss.add_vertex(sp[k]); ss.add_vertex(sp[(k + 1) % 6])
 		# occupation hatch in the occupier colour (canon §3.1)
 		if c["controller"] != own and c["controller"] != Types.NOBODY:
 			var hs: SurfaceTool = hatch.get(c["controller"])
@@ -1054,6 +1061,13 @@ func _rebuild_overlay() -> void:
 					prog = clampf((ceremony_t - flip_at[c["id"]]) / 0.3, 0.0, 1.0)
 				if prog > 0.0:
 					_strip(_st(borders, own), e[0], e[0].lerp(e[1], prog), w, center.y + 0.012)
+	for o in scorch:
+		var m := StandardMaterial3D.new()
+		m.blend_mode = BaseMaterial3D.BLEND_MODE_MUL
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.albedo_color = Color(0.72, 0.62, 0.6) if o == at_war_with else Color(0.86, 0.8, 0.78)
+		m.cull_mode = BaseMaterial3D.CULL_DISABLED
+		_add(scorch[o], m)
 	for o in tints:
 		_add(tints[o], _tint_mat(Color.WHITE, 1.0))
 	for o in hatch:
