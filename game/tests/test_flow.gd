@@ -538,11 +538,19 @@ func _run() -> void:
 	_check(wi.size() == 1 + 8 + 9 and String(wi[1]["id"]) == "c2_port", "World tab lists chapter II stars first (%d items)" % wi.size())
 	var oi: Array = g._world_items().filter(func(x): return String(x.get("id", "")).begins_with("order"))
 	_check(oi.size() == 4, "the World tab opens with today's 3 orders and the bonus")
-	var code0: String = g.orders.list[0]["code"]
-	_check(bool(oi[0].get("swap", false)), "an unfinished order offers the free swap")
-	g._on_world_action("swap:order:0")
-	_check(g.orders.swapped and String(g.orders.list[0]["code"]) != code0, "the free swap replaces the order")
-	_check(not bool(g._order_items()[1].get("swap", true)), "one free swap a day")
+	# the day's roll depends on the date: earlier steps of this test may already have finished an order, so
+	# use the first one still open; a finished or claimed order never offers the swap
+	var sw_i := -1
+	for i in g.orders.list.size():
+		var done_i: bool = g.orders.done(i, g.stats) or bool(g.orders.list[i]["claimed"])
+		_check(bool(oi[i].get("swap", false)) == (not done_i), "order %d: swap offered only while unfinished" % i)
+		if sw_i < 0 and not done_i:
+			sw_i = i
+	if sw_i >= 0:
+		var code0: String = g.orders.list[sw_i]["code"]
+		g._on_world_action("swap:order:%d" % sw_i)
+		_check(g.orders.swapped and String(g.orders.list[sw_i]["code"]) != code0, "the free swap replaces the order")
+		_check(not g._order_items().any(func(x): return bool(x.get("swap", false))), "one free swap a day")
 	g._orders_chip()
 	_check(g.hud._orders_chip.visible and g.hud._orders_lbl.text.ends_with("/3"), "the HUD chip shows today's orders")
 	# «Державный патент» (09 §9.13): perks while active
