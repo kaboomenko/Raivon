@@ -6564,14 +6564,15 @@ func _demo(spec: String) -> void:
 		return
 	if what == "forts":
 		var cap: int = sim.states[Types.PLAYER]["capital_id"]
-		sim.cells[cap]["fort"] = 3
+		var only := int(parts[1]) if parts.size() > 1 else 0  # forts:N — every fort at level N, up close
+		sim.cells[cap]["fort"] = only if only > 0 else 3
 		var lv := 1
 		for n in sim.neighbors[cap]:
 			if n >= 0 and sim.cells[n]["owner"] == Types.PLAYER:
-				sim.cells[n]["fort"] = lv
+				sim.cells[n]["fort"] = only if only > 0 else lv
 				lv = lv % 8 + 1
 		map_view.refresh_props()
-		rig.focus(map_view.cell_world(cap), 0.3)
+		rig.focus(map_view.cell_world(cap), 0.12 if only > 0 else 0.3)
 		return
 	if what == "fire":  # the burned FTUE mill up close
 		ftue = 1

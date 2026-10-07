@@ -1475,6 +1475,35 @@ def f4_post(p):
     cannon(p[0] - math.cos(a) * 0.04, p[1] - math.sin(a) * 0.04, a, 0.252)
 
 
+SANDBAG = "#b8a576"
+
+
+def sandbags(qa, qb, off, n, courses=2, color=SANDBAG, f0=0.0, f1=1.0):
+    """A staggered sandbag parapet from qa to qb, shifted by off along the normal n."""
+    L = math.dist(qa, qb) * (f1 - f0)
+    ang = math.atan2(qb[1] - qa[1], qb[0] - qa[0])
+    bags = [flat("sand", color, 0.95), flat("sand2", shade(color, 0.86), 0.95)]
+    k = max(2, int(L / 0.062))
+    for c in range(courses):
+        m = k - (c % 2)
+        for i in range(m):
+            f = f0 + (f1 - f0) * (i + 0.5 + 0.5 * (c % 2)) / k
+            q = lerp2(qa, qb, f)
+            bx((L / k * 0.94, 0.045, 0.026), (q[0] + n[0] * off, q[1] + n[1] * off, 0.014 + c * 0.025), bags[(i + c) % 2], ang, 0.009)
+
+
+def sandbag_ring(x, y, r, courses=3, gap=0.9, color=SANDBAG):
+    """A round sandbag nest open at the back (angle gap around +X of the local frame is left out)."""
+    bags = [flat("sand", color, 0.95), flat("sand2", shade(color, 0.86), 0.95)]
+    k = max(6, int(math.tau * r / 0.055))
+    for c in range(courses):
+        for i in range(k):
+            a = (i + 0.5 * (c % 2)) / k * math.tau
+            if abs(math.remainder(a - math.pi, math.tau)) < gap / 2:
+                continue
+            bx((math.tau * r / k * 0.95, 0.042, 0.026), (x + math.cos(a) * r, y + math.sin(a) * r, 0.014 + c * 0.025), bags[(i + c) % 2], a + math.pi / 2, 0.009)
+
+
 def f5_edge(p0, p1, gate=False):
     L, ang, mid, n = edge_frame(p0, p1)
     cm = tex("plaster", "#b9b5ad", 2.0)
@@ -1492,6 +1521,13 @@ def f5_edge(p0, p1, gate=False):
     for i in range(6):
         q = lerp2(p0, p1, 0.1 + i * 0.8 / 5)
         torus(0.058, 0.006, (q[0] + n[0] * 0.09, q[1] + n[1] * 0.09, 0.12), steel, (math.pi / 2, 0.25, ang + math.pi / 2), 7, 3)
+    pk = tex("wood", WOOD_D, 3.0)
+    for f in (0.3, 0.7):  # X-shaped wooden pickets that carry the wire
+        q = lerp2(p0, p1, f)
+        c_ = (q[0] + n[0] * 0.09, q[1] + n[1] * 0.09)
+        for s_ in (-1, 1):
+            beam((c_[0] - n[0] * 0.05 * s_, c_[1] - n[1] * 0.05 * s_, 0.0), (c_[0] + n[0] * 0.05 * s_, c_[1] + n[1] * 0.05 * s_, 0.2), 0.012, pk)
+    sandbags(p0, p1, -0.075, n, 2, f0=0.12, f1=0.88)
 
 
 def f5_post(p):
@@ -1500,6 +1536,16 @@ def f5_post(p):
     bx((0.15, 0.15, 0.13), (p[0], p[1], 0.065), cm, a, 0.008)
     bx((0.11, 0.11, 0.1), (p[0], p[1], 0.18), cm, a + 0.4, 0.008)
     bx((0.07, 0.008, 0.05), (p[0] + math.cos(a) * 0.08, p[1] + math.sin(a) * 0.08, 0.1), flat("warn", "#f2c230", 0.6), a + math.pi / 2, 0)
+
+    def nest():  # machine-gun nest on the inner side: a sandbag ring and a water-cooled gun facing out
+        sandbag_ring(0, 0, 0.075, 3)
+        gm = flat("gun", "#33363b", 0.55)
+        cy(0.016, 0.1, (-0.03, 0, 0.075), gm, 8, rot=(0, math.pi / 2, 0))
+        cy(0.006, 0.07, (-0.11, 0, 0.075), gm, 6, rot=(0, math.pi / 2, 0))
+        for k in range(3):
+            q = k * math.tau / 3
+            beam((0.0, 0.0, 0.07), (math.cos(q) * 0.04, math.sin(q) * 0.04, 0.0), 0.007, gm)
+    build_at(nest, p[0] * 0.8, p[1] * 0.8, a + math.pi)
 
 
 def hedgehog(x, y, rz):
@@ -1514,6 +1560,14 @@ def hedgehog(x, y, rz):
 def f6_edge(p0, p1, gate=False):
     L, ang, mid, n = edge_frame(p0, p1)
     taper_box((L - 0.24, 0.13, 0.06), (mid[0], mid[1], 0.03), tex("plaster", "#8a6e4b", 1.5), (1.0, 0.5), ang)
+    taper_box((L - 0.28, 0.075, 0.012), (mid[0], mid[1], 0.064), tex("plaster", "#5f7a3a", 2.0), (1.0, 0.7), ang)
+    # the trench on the inner side: a dark cut lined with a log revetment
+    tr = (mid[0] - n[0] * 0.115, mid[1] - n[1] * 0.115)
+    bx((L - 0.26, 0.06, 0.008), (tr[0], tr[1], 0.004), flat("trench", "#3a2c1e", 0.95), ang, 0)
+    lg = tex("wood", "#7a5634", 3.0)
+    for s_ in (-1, 1):
+        cy(0.011, L - 0.26, (tr[0] + n[0] * 0.034 * s_, tr[1] + n[1] * 0.034 * s_, 0.014), lg, 6, rot=(0, math.pi / 2, ang))
+    sandbags(p0, p1, -0.03, n, 1, "#9c936a", 0.2, 0.8)
     for f in (0.3, 0.5, 0.7):
         q = lerp2(p0, p1, f)
         hedgehog(q[0] + n[0] * 0.11, q[1] + n[1] * 0.11, ang + f * 2)
@@ -1524,6 +1578,11 @@ def f6_post(p):
     cm = tex("plaster", "#a9a59c", 2.0)
     cy(0.13, 0.13, (p[0], p[1], 0.065), cm, 6, r2=0.11, rot=(0, 0, a))
     cy(0.135, 0.03, (p[0], p[1], 0.145), cm, 6, rot=(0, 0, a))
+    uvs(0.105, (p[0], p[1], 0.16), cm, 10, 5, (1, 1, 0.38))
+    camo = [flat("camo1", "#5d6b3c", 0.85), flat("camo2", "#7a6a48", 0.85)]
+    for k in range(5):
+        q = a + k * 1.3 + 0.4
+        ico(0.034, (p[0] + math.cos(q) * 0.1, p[1] + math.sin(q) * 0.1, 0.07 + (k % 2) * 0.04), camo[k % 2], (1.2, 1.2, 0.35))
     bx((0.022, 0.1, 0.025), (p[0] + math.cos(a) * 0.12, p[1] + math.sin(a) * 0.12, 0.09), flat("slit", "#15171a", 0.9), a, 0)
     # searchlight
     def sl():
