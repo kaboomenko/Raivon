@@ -6204,6 +6204,10 @@ func _handle_args() -> void:
 		elif a.begins_with("--select="):
 			var parts := a.substr(9).split(",")
 			_select(sim.id_at(int(parts[0]), int(parts[1])))
+		elif a.begins_with("--dl="):  # the player's development level for screenshots (the residence level)
+			econ._find_type("residence")["level"] = int(a.substr(5))
+			_econ_tick()
+			map_view.refresh_props()
 		elif a.begins_with("--focus="):  # centre the camera on a hex: --focus=q,r[,zoom]
 			var fp := a.substr(8).split(",")
 			rig.focus(map_view.cell_world(sim.id_at(int(fp[0]), int(fp[1]))), float(fp[2]) if fp.size() > 2 else rig.zoom)

@@ -368,18 +368,77 @@ def mountain():
         cone("snowcap", rad * 0.32, h * 0.32, (x, y, h * 0.84), snow, 7, 0.01).rotation_euler.z = c.rotation_euler.z
 
 
+def _beam(name, p0, p1, t, mt, bevel=0.004):
+    """Square timber of thickness t from p0 to p1."""
+    d = [p1[i] - p0[i] for i in range(3)]
+    ln = math.sqrt(sum(v * v for v in d))
+    o = box(name, (ln, t, t), tuple((p0[i] + p1[i]) / 2 for i in range(3)), mt, bevel)
+    o.rotation_euler = (0, -math.atan2(d[2], math.hypot(d[0], d[1])), math.atan2(d[1], d[0]))
+    return o
+
+
 def catapult():
+    """Siege mangonel: a braced timber bed on four spoked wheels, an A-frame with a straw-padded stop beam,
+    a torsion skein of rope, the throwing arm with a cup and a stone, a winch at the back and spare shot."""
     wd = m("wood", WOOD)
-    box("frame", (0.36, 0.2, 0.05), (0, 0, 0.09), wd, 0.008)
-    for dx in (-0.12, 0.12):
-        for dy in (-0.11, 0.11):
-            w = cyl("wheel", 0.06, 0.03, (dx, dy, 0.06), m("wheel", "#5a3a22"), 12, 0.004)
-            w.rotation_euler.x = math.pi / 2
-    for dy in (-0.07, 0.07):
-        b = box("upright", (0.04, 0.04, 0.22), (0.02, dy, 0.2), wd, 0.005)
-    arm = box("arm", (0.45, 0.035, 0.035), (-0.05, 0, 0.3), wd, 0.004)
-    arm.rotation_euler.y = 0.6
-    sphere("bucket", 0.04, (-0.22, 0, 0.42), m("stone", STONE_D), (1, 1, 0.7), 1)
+    wl = m("planks", WOOD_L)
+    dk = m("wheel", "#5a3a22")
+    iron = mat("iron", "#3b3d42", 0.55, 0.6)
+    rope = mat("rope", "#c9b48a", 0.95)
+    straw = mat("straw", "#d8b25c", 0.95)
+    rock = m("stone", STONE_D)
+    # bed: two long side beams, cross members, a plank deck at the front
+    for dy in (-0.075, 0.075):
+        box("rail", (0.44, 0.035, 0.035), (0, dy, 0.085), wd, 0.006)
+        for x in (-0.16, 0.0, 0.16):
+            box("band", (0.012, 0.038, 0.038), (x, dy, 0.085), iron, 0.002)
+    for x in (-0.19, -0.06, 0.08, 0.19):
+        box("cross", (0.03, 0.18, 0.025), (x, 0, 0.085), wd, 0.005)
+    box("deck", (0.12, 0.13, 0.012), (0.13, 0, 0.105), wl, 0.003)
+    # wheels: dark rim, lighter disc, six spokes, iron hub
+    for dx in (-0.14, 0.14):
+        cyl("axle", 0.01, 0.24, (dx, 0, 0.06), iron, 8, 0.0).rotation_euler.x = math.pi / 2
+        for dy in (-0.105, 0.105):
+            r = cyl("rim", 0.06, 0.02, (dx, dy, 0.06), dk, 16, 0.004)
+            r.rotation_euler.x = math.pi / 2
+            d = cyl("disc", 0.045, 0.012, (dx, dy * 1.03, 0.06), wl, 14, 0.0)
+            d.rotation_euler.x = math.pi / 2
+            for k in range(6):
+                a = k * math.pi / 3
+                sp = box("spoke", (0.009, 0.016, 0.09), (dx, dy * 1.07, 0.06), dk, 0.0)
+                sp.rotation_euler = (0, a, 0)
+            h = cyl("hub", 0.014, 0.03, (dx, dy * 1.1, 0.06), iron, 8, 0.0)
+            h.rotation_euler.x = math.pi / 2
+    # A-frame uprights with diagonal braces and the padded stop beam
+    for dy in (-0.075, 0.075):
+        _beam("post", (0.06, dy, 0.1), (0.04, dy, 0.33), 0.034, wd)
+        _beam("brace", (0.18, dy, 0.1), (0.05, dy, 0.3), 0.024, wd)
+        _beam("brace2", (-0.06, dy, 0.1), (0.035, dy, 0.24), 0.022, wd)
+    box("stop", (0.04, 0.2, 0.04), (0.04, 0, 0.34), wd, 0.006)
+    cyl("pad", 0.03, 0.15, (0.015, 0, 0.34), straw, 10, 0.004).rotation_euler.x = math.pi / 2
+    for y in (-0.05, 0.0, 0.05):
+        cyl("tie", 0.032, 0.008, (0.015, y, 0.34), rope, 10, 0.0).rotation_euler.x = math.pi / 2
+    # torsion skein between the side beams, the arm rising from it towards the stop beam
+    cyl("skein", 0.035, 0.12, (-0.1, 0, 0.1), rope, 12, 0.006).rotation_euler.x = math.pi / 2
+    for dy in (-0.075, 0.075):
+        cyl("lever", 0.016, 0.03, (-0.1, dy, 0.1), iron, 8, 0.0).rotation_euler.x = math.pi / 2
+        _beam("lever_bar", (-0.13, dy * 1.2, 0.1), (-0.07, dy * 1.2, 0.1), 0.012, iron, 0.0)
+    _beam("arm", (-0.1, 0, 0.1), (-0.02, 0, 0.42), 0.032, wl)
+    for f in (0.3, 0.6):
+        box("arm_band", (0.04, 0.04, 0.012), (-0.1 + 0.08 * f, 0, 0.1 + 0.32 * f), iron, 0.002).rotation_euler.y = -0.24
+    cyl("cup", 0.05, 0.035, (-0.04, 0, 0.45), wd, 12, 0.004, r2=0.035).rotation_euler.y = 0.4
+    sphere("shot", 0.038, (-0.045, 0, 0.475), rock, (1, 1, 0.9), 2)
+    # winch at the back: drum with a rope to the arm and two crank handles
+    cyl("drum", 0.022, 0.15, (-0.2, 0, 0.125), wl, 10, 0.003).rotation_euler.x = math.pi / 2
+    for dy in (-0.075, 0.075):
+        box("winch_post", (0.025, 0.02, 0.06), (-0.2, dy, 0.11), wd, 0.003)
+        for k in range(2):
+            hd = box("handle", (0.008, 0.008, 0.09), (-0.2, dy * 1.25, 0.125), wd, 0.0)
+            hd.rotation_euler = (0, k * math.pi / 2, 0)
+    _beam("winch_rope", (-0.2, 0, 0.14), (-0.075, 0, 0.18), 0.008, rope, 0.0)
+    # spare shot beside the machine
+    for (x, y, z, r) in ((0.05, 0.2, 0.03, 0.032), (0.11, 0.21, 0.03, 0.03), (0.08, 0.17, 0.028, 0.028), (0.08, 0.2, 0.075, 0.03)):
+        sphere("pile", r, (x, y, z), rock, (1, 1, 0.9), 2)
 
 
 def mounted_knight(color):

@@ -1585,6 +1585,8 @@ func _make_army(a: Dictionary) -> Node3D:
 		rider = spawn("knight_" + ("blue" if side == "blue" else "red"), model, Vector3(0.32, 0, 0.25), 0.0, 1.25)
 	if rider:
 		_animate_troops(rider, true, anim)
+	if dl == 2 or dl == 3:  # the medieval armies drag a mangonel along (tools/blender/export_assets.py catapult)
+		spawn("catapult", model, Vector3(-0.44, 0, -0.16), 0.35, 1.15)
 	node.set_meta("anim", anim)
 	spawn("banner_" + side, model, Vector3(0.05, 0, -0.35), 0.0, 0.9, int(a["side"]))
 	var lbl := Label3D.new()
