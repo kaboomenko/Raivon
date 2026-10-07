@@ -257,7 +257,55 @@ def pad(r, mt, h=0.02, n=14, jitter=0.0, seed=0, sx=1.0, sy=1.0):
     return extrude(ngon(r, n, 0.1, sx, sy, jitter, seed), -0.01, h, mt)
 
 
+ROOF_TRIM = "#3e2f25"  # ridge caps and eave boards: dark lines that keep a small roof readable at game size
+
+
+def _rt(p, loc, rz):
+    """Local roof point -> world (rotated by rz about Z, then moved to loc)."""
+    c, s_ = math.cos(rz), math.sin(rz)
+    return (loc[0] + p[0] * c - p[1] * s_, loc[1] + p[0] * s_ + p[1] * c, loc[2] + p[2])
+
+
+def _trim_lines(lines, loc, rz, t):
+    tm = flat("roof_trim", ROOF_TRIM, 0.8)
+    for p0, p1 in lines:
+        beam(_rt(p0, loc, rz), _rt(p1, loc, rz), t, tm)
+
+
+def prism_roof(name, w, d, h, loc, material, overhang=0.08, rot_z=0.0):
+    """Gable roof (kit.prism_roof) with a ridge cap and eave boards."""
+    o = kit.prism_roof(name, w, d, h, loc, material, overhang, rot_z)
+    L, D = w / 2 + overhang, d / 2 + overhang
+    t = max(0.008, 0.05 * min(w, d))
+    _trim_lines([((-L, 0, h + t * 0.2), (L, 0, h + t * 0.2)),
+                 ((-L, -D, t * 0.3), (L, -D, t * 0.3)), ((-L, D, t * 0.3), (L, D, t * 0.3))], loc, rot_z, t)
+    return o
+
+
 def hip_roof(w, d, h, loc, mt, oh=0.03, rz=0.0):
+    """Hip roof (or a pyramid / tent roof when w == d), base at loc.z; ridge, hip lines and eave boards."""
+    o = _hip_roof(w, d, h, loc, mt, oh, rz)
+    W, D = w / 2 + oh, d / 2 + oh
+    rl = abs(w - d) / 2
+    t = max(0.007, 0.045 * min(w, d))
+    if rl < 1e-4:
+        tops = [(0, 0, h)] * 4
+        lines = []
+    elif w > d:
+        tops = [(-rl, 0, h), (rl, 0, h), (rl, 0, h), (-rl, 0, h)]
+        lines = [((-rl, 0, h), (rl, 0, h))]
+    else:
+        tops = [(0, -rl, h), (0, -rl, h), (0, rl, h), (0, rl, h)]
+        lines = [((0, -rl, h), (0, rl, h))]
+    corners = [(-W, -D, 0), (W, -D, 0), (W, D, 0), (-W, D, 0)]
+    for i in range(4):
+        lines.append((corners[i], tops[i]))  # hip ridges
+        lines.append((corners[i], corners[(i + 1) % 4]))  # eaves
+    _trim_lines(lines, loc, rz, t)
+    return o
+
+
+def _hip_roof(w, d, h, loc, mt, oh=0.03, rz=0.0):
     """Hip roof (or a pyramid / tent roof when w == d), base at loc.z."""
     W, D = w / 2 + oh, d / 2 + oh
     base = [(-W, -D, 0), (W, -D, 0), (W, D, 0), (-W, D, 0)]
