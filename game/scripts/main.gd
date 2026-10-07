@@ -3070,9 +3070,14 @@ func _double_trophies() -> void:
 
 func _end_ceremony() -> void:
 	ui.close_modal()
-	if _ftue_next > 0:
-		ftue = _ftue_next
-		_ftue_next = 0
+	var resume := _ftue_next
+	_ftue_next = 0
+	if resume == 7 and not stats.has("flag_wizard"):
+		# FTUE 2:30 (canon §14.3): after the first peace the player makes the flag in 3 taps, then the tour goes on
+		stats["flag_wizard"] = 1
+		_open_flag_wizard(0, FlagView.random_flag(_flag_seed()), func(): ftue = 7)
+	elif resume > 0:
+		ftue = resume
 	map_view.ceremony_t = -1.0
 	map_view.flip_at = {}
 	map_view.prev_owner = {}
@@ -4518,7 +4523,7 @@ func _diplomacy_items(now: int) -> Array:
 			"pact_reason": _pact_reason(s), "pact_left": _pact_left(s),
 			"separate": _can_separate(s),
 			"swap_reason": _swap_reason(s),
-			"color": map_view.state_color(s)}))
+			"color": map_view.state_color(s), "flag": map_view.state_flag(s)}))
 		if not war.is_empty() and (war.get("coalition", []) as Array).has(s):
 			(items[items.size() - 1] as Dictionary)["share"] = _member_share(s)
 	return items
@@ -5166,6 +5171,70 @@ func _open_profile() -> void:
 		"soon": func(): ui.toast(tr("profile.soon")),
 		"flag": func(): _open_flag_editor(),
 	})
+
+
+## Colour schemes of the FTUE flag wizard: [field 1, field 2, emblem] (FlagView palettes; 13 white, 16 gold, 17 yellow).
+var _flag_wizard_done := Callable()  # what the FTUE does after the flag wizard
+const FLAG_SCHEMES := [[0, 13, 16], [5, 13, 16], [2, 14, 13], [7, 11, 13], [4, 13, 16], [1, 13, 17], [8, 13, 16], [14, 6, 13], [3, 12, 17], [11, 7, 16]]
+
+
+func _flag_seed() -> int:
+	return int(installed_at) if int(installed_at) > 0 else 20261004
+
+
+## The 3-tap flag (canon §14.3, 10 §4.23): 6 divisions → 6 emblems → 6 colour schemes, all from the account's seed,
+## then the flag with «Готово» and «Случайно»; the full constructor stays in the profile.
+func _open_flag_wizard(step: int, draft: Dictionary, on_done: Callable) -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = _flag_seed() + step
+	var opts: Array = []
+	match step:
+		0, 1:
+			var pool: Array = (FlagView.DIVISIONS if step == 0 else FlagView.EMBLEMS).duplicate()
+			for i in range(pool.size() - 1, 0, -1):
+				var j := rng.randi_range(0, i)
+				var t: Variant = pool[i]
+				pool[i] = pool[j]
+				pool[j] = t
+			for k in 6:
+				var f := draft.duplicate()
+				f["div" if step == 0 else "em"] = pool[k]
+				opts.append(f)
+		2:
+			var order: Array = range(FLAG_SCHEMES.size())
+			for i in range(order.size() - 1, 0, -1):
+				var j := rng.randi_range(0, i)
+				var t: Variant = order[i]
+				order[i] = order[j]
+				order[j] = t
+			for k in 6:
+				var sc: Array = FLAG_SCHEMES[order[k]]
+				var f := draft.duplicate()
+				f["c1"] = sc[0]
+				f["c2"] = sc[1]
+				f["ec"] = sc[2]
+				opts.append(f)
+		_:
+			opts = [draft]
+	_flag_wizard_done = on_done
+	ui.show_flag_wizard(step, opts,
+		func(i: int): _open_flag_wizard(step + 1, opts[i], on_done),
+		func(): _open_flag_wizard(3, FlagView.random_flag(randi()), on_done),
+		func(): _finish_flag_wizard(draft))
+
+
+## «Готово» of the wizard: the flag goes on the HUD and the banners, then the FTUE tour goes on.
+func _finish_flag_wizard(draft: Dictionary) -> void:
+	flag = draft
+	hud.set_flag(flag)
+	map_view.set_flag(flag)
+	sfx.play("seal")
+	ui.close_modal()
+	_autosave()
+	var done := _flag_wizard_done
+	_flag_wizard_done = Callable()
+	if done.is_valid():
+		done.call()
 
 
 ## The flag constructor (10 §4.23): every change shows at once and is kept with «Готово»; the HUD crest follows.
@@ -6091,6 +6160,10 @@ func _demo(spec: String) -> void:
 		_chronicle_tick()
 		chronicle.claim("ach_first_peace")
 		_open_chronicle()
+		return
+	if what == "flag_wizard":  # the FTUE 3-tap flag: flag_wizard[:1|2|3] — that step
+		var st := int(parts[1]) if parts.size() > 1 else 0
+		_open_flag_wizard(st, FlagView.random_flag(_flag_seed()), func(): pass)
 		return
 	if what == "flag_map":  # the player's flag on the map's banners, close to the first army
 		flag = {"div": "quarters", "c1": 0, "c2": 13, "em": "tower", "ec": 16, "frame": ""}

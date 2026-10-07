@@ -348,6 +348,11 @@ func _run() -> void:
 		for i in 80:
 			g._step_ceremony(0.1)
 		g._end_ceremony()
+		# FTUE 2:30 (canon §14.3): the 3-tap flag comes first, the tour resumes on «Готово»
+		_check(g.ui.has_modal() and g.stats.has("flag_wizard"), "the flag wizard opens after the first peace")
+		var fw_flag: Dictionary = g.FlagView.random_flag(3)
+		g._finish_flag_wizard(fw_flag)
+		_check(g.flag == fw_flag, "the wizard's flag becomes the realm's flag")
 		_check(g.ftue == 7, "FTUE resumes after the ceremony (residence step)")
 		g._ftue_tick(0.1)
 		if g.ftue == 7:

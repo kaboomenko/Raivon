@@ -19,9 +19,7 @@ var sim  # World (RefCounted)
 var at_war_with := -1
 var models := {}
 var flag: Dictionary = FlagView.DEFAULT.duplicate()  # the player's flag, painted on the player's banners
-var _flag_vp: SubViewport
-var _flag_view: Control
-var _flag_mat: StandardMaterial3D
+var _flag_mats := {}  # owner -> [SubViewport, FlagView, material]: one texture per state
 var rng := RandomNumberGenerator.new()
 
 # ceremony: hex id -> flip time (s); before flip the hex is drawn with prev_owner
@@ -202,7 +200,7 @@ func has_model(name: String) -> bool:
 	return models.has(name) or ResourceLoader.exists("res://assets/models/%s.glb" % name)
 
 
-func spawn(name: String, parent: Node, pos: Vector3, rot := 0.0, s := 1.0) -> Node3D:
+func spawn(name: String, parent: Node, pos: Vector3, rot := 0.0, s := 1.0, owner := -99) -> Node3D:
 	if not models.has(name):
 		if not ResourceLoader.exists("res://assets/models/%s.glb" % name):
 			return null
@@ -216,52 +214,71 @@ func spawn(name: String, parent: Node, pos: Vector3, rot := 0.0, s := 1.0) -> No
 		var sails := n.get_node_or_null("sails")
 		if sails:
 			_sails.append(sails)
-	if name == "banner_blue":
-		_paint_flag(n)
+	if name.begins_with("banner_"):
+		_paint_flag(n, Types.PLAYER if name == "banner_blue" else owner)
 	return n
 
 
 ## The player's flag (10 §4.23) on both faces of a banner's cloth (tools/blender/export_assets.py: the cloth is
 ## 0.26 × 0.416 from x 0, its top at y 0.98, 0.012 thick): one viewport texture shared by every banner, so a new
 ## flag repaints them all at once.
-func _paint_flag(banner: Node3D) -> void:
+func _paint_flag(banner: Node3D, owner: int) -> void:
+	if owner < 0 and owner != Types.PLAYER:
+		return
+	var mat := _flag_material(owner)
+	if mat == null:
+		return
 	var quad := QuadMesh.new()
 	quad.size = Vector2(0.25, 0.4)
 	for face in [1.0, -1.0]:
 		var mi := MeshInstance3D.new()
 		mi.mesh = quad
-		mi.material_override = _flag_material()
+		mi.material_override = mat
 		mi.position = Vector3(0.13, 0.775, 0.0095 * face)
 		mi.rotation.y = 0.0 if face > 0 else PI
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		banner.add_child(mi)
 
 
-func _flag_material() -> StandardMaterial3D:
-	if _flag_mat == null:
-		_flag_vp = SubViewport.new()
-		_flag_vp.size = Vector2i(130, 208)
-		_flag_vp.transparent_bg = true
-		_flag_vp.disable_3d = true
-		_flag_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
-		_flag_view = FlagView.new(flag)
-		_flag_view.size = Vector2(130, 208)
-		_flag_vp.add_child(_flag_view)
-		add_child(_flag_vp)
-		_flag_mat = StandardMaterial3D.new()
-		_flag_mat.albedo_texture = _flag_vp.get_texture()
-		_flag_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
-		_flag_mat.alpha_scissor_threshold = 0.5
-		_flag_mat.roughness = 0.75
-	return _flag_mat
+## The flag a state flies: the player's own, or an AI state's from its name (FlagView.ai_flag).
+func state_flag(owner: int) -> Dictionary:
+	if owner == Types.PLAYER:
+		return flag
+	if sim == null or owner < 0 or owner >= sim.states.size():
+		return {}
+	return FlagView.ai_flag(String(sim.states[owner]["name"]), state_color(owner))
+
+
+func _flag_material(owner: int) -> StandardMaterial3D:
+	if not _flag_mats.has(owner):
+		var f := state_flag(owner)
+		if f.is_empty():
+			return null
+		var vp := SubViewport.new()
+		vp.size = Vector2i(130, 208)
+		vp.transparent_bg = true
+		vp.disable_3d = true
+		vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+		var view := FlagView.new(f)
+		view.size = Vector2(130, 208)
+		vp.add_child(view)
+		add_child(vp)
+		var mat := StandardMaterial3D.new()
+		mat.albedo_texture = vp.get_texture()
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+		mat.alpha_scissor_threshold = 0.5
+		mat.roughness = 0.75
+		_flag_mats[owner] = [vp, view, mat]
+	return _flag_mats[owner][2]
 
 
 func set_flag(f: Dictionary) -> void:
 	flag = f.duplicate()
-	if _flag_view:
-		_flag_view.set("flag", flag)
-		_flag_view.queue_redraw()
-		_flag_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+	if _flag_mats.has(Types.PLAYER):
+		var view: Control = _flag_mats[Types.PLAYER][1]
+		view.set("flag", flag)
+		view.queue_redraw()
+		(_flag_mats[Types.PLAYER][0] as SubViewport).render_target_update_mode = SubViewport.UPDATE_ONCE
 
 
 # ------------------------------------------------------------------ static terrain
@@ -809,7 +826,7 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 		_place_biome_props(c, holder, p, biome)
 		_place_fort(c, holder)
 		if c["owner"] != Types.NOBODY and rng.randf() < 0.3:
-			spawn("banner_" + side, holder, p + Vector3(rng.randf_range(-0.4, 0.4), 0, rng.randf_range(-0.4, 0.4)))
+			spawn("banner_" + side, holder, p + Vector3(rng.randf_range(-0.4, 0.4), 0, rng.randf_range(-0.4, 0.4)), 0.0, 1.0, int(c["owner"]))
 		return
 	match c["terrain"]:
 		"forest":
@@ -832,7 +849,7 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 				spawn("flowers", holder, p + Vector3(rng.randf_range(-0.5, 0.5), 0, rng.randf_range(-0.5, 0.5)), rng.randf() * TAU, rng.randf_range(1.0, 1.3))
 	_place_fort(c, holder)
 	if c["owner"] != Types.NOBODY and rng.randf() < 0.3:
-		spawn("banner_" + side, holder, p + Vector3(rng.randf_range(-0.4, 0.4), 0, rng.randf_range(-0.4, 0.4)))
+		spawn("banner_" + side, holder, p + Vector3(rng.randf_range(-0.4, 0.4), 0, rng.randf_range(-0.4, 0.4)), 0.0, 1.0, int(c["owner"]))
 
 
 ## Plain / forest / hills props of a non-meadow biome: dense dark pines in the taiga; grass, shrubs and a few
@@ -1402,7 +1419,7 @@ func _make_army(a: Dictionary) -> Node3D:
 	if rider:
 		_animate_troops(rider, true, anim)
 	node.set_meta("anim", anim)
-	spawn("banner_" + side, model, Vector3(0.05, 0, -0.35), 0.0, 0.9)
+	spawn("banner_" + side, model, Vector3(0.05, 0, -0.35), 0.0, 0.9, int(a["side"]))
 	var lbl := Label3D.new()
 	lbl.name = "label"
 	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED

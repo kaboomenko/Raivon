@@ -1119,3 +1119,8 @@ flag.emblem_c,Цвет эмблемы (золото и жёлтый — толь
 flag.locked,Этот элемент ещё не получен,You don't have this item yet
 flag.random,🎲 Случайно,🎲 Random
 flag.done,Готово,Done
+flagw.title0,Ваш флаг: выберите деление,Your flag: pick a division
+flagw.title1,Теперь эмблему,Now an emblem
+flagw.title2,И цвета,And the colours
+flagw.title3,Флаг вашей державы,Your realm's flag
+flagw.later,Изменить можно в профиле — тап по флагу,You can change it in the profile — tap the flag

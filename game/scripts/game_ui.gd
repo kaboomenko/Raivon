@@ -1544,6 +1544,34 @@ func show_flag_editor(flag: Dictionary, owned: Dictionary, on_change: Callable, 
 	_button(box, Rect2(451, 1430 - 110, 400, 84), tr("flag.done"), Color(0.2, 0.6, 0.3), on_done)
 
 
+## The FTUE flag wizard (canon §14.3: 3 taps): step dots, 6 flags to pick from (division, emblem, colours), then
+## the chosen flag with «Готово» and «Случайно»; «Можно изменить в профиле».
+func show_flag_wizard(step: int, opts: Array, on_pick: Callable, on_random: Callable, on_done: Callable) -> void:
+	var box := _modal_box(Rect2(30, 170, 881, 1300))
+	var titles := [tr("flagw.title0"), tr("flagw.title1"), tr("flagw.title2"), tr("flagw.title3")]
+	var t := _label(String(titles[mini(step, 3)]), 32, Color(1.0, 0.85, 0.4))
+	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_at(t, box, Vector2(0, 30), Vector2(881, 44))
+	for i in 3:
+		var on := i <= step
+		_panel(box, Rect2(380 + i * 44, 90, 30, 30), _style(Color(1.0, 0.8, 0.3) if on else Color(0.2, 0.24, 0.34), 15, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
+	if step < 3:
+		for i in opts.size():
+			var r := Rect2(40 + (i % 3) * 272, 150 + (i / 3) * 430, 256, 410)
+			_flag_tile(box, r, opts[i], false, false, func(): on_pick.call(i))
+		_button(box, Rect2(240, 1300 - 120, 400, 84), tr("flag.random"), Color(0.45, 0.3, 0.75), on_random)
+		return
+	var big := FlagView.new(opts[0])
+	big.position = Vector2(270, 160)
+	big.size = Vector2(340, 440)
+	box.add_child(big)
+	var hint := _label(tr("flagw.later"), 20, MUTED, false)
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_at(hint, box, Vector2(0, 640), Vector2(881, 30))
+	_button(box, Rect2(40, 1300 - 120, 390, 84), tr("flag.random"), Color(0.45, 0.3, 0.75), on_random)
+	_button(box, Rect2(451, 1300 - 120, 390, 84), tr("flag.done"), Color(0.2, 0.6, 0.3), on_done)
+
+
 func _flag_tile(parent: Control, r: Rect2, f: Dictionary, sel: bool, locked: bool, cb: Callable) -> void:
 	var tile := _panel(parent, r, _style(Color(0.1, 0.14, 0.23), 14, Color(1.0, 0.85, 0.3) if sel else EDGE, 4 if sel else 1))
 	var fv := FlagView.new(f)
@@ -1801,9 +1829,16 @@ func _diplomacy_card(it: Dictionary) -> Control:
 	var col: Color = it["color"]
 	card.add_theme_stylebox_override("panel", _style(Color(0.1, 0.14, 0.22), 12, col, 3))
 	card.mouse_filter = Control.MOUSE_FILTER_PASS
+	var fx := 12.0
+	if not (it.get("flag", {}) as Dictionary).is_empty():
+		var fl := FlagView.new(it["flag"])
+		fl.position = Vector2(10, 6)
+		fl.size = Vector2(20, 26)
+		card.add_child(fl)
+		fx = 36.0
 	var st := _label(it["state"], 18, col.lightened(0.3))
-	_fit(st, 18, 160.0)  # room for the Pact and ⇄ buttons on the right
-	st.position = Vector2(12, 8)
+	_fit(st, 18, 172.0 - fx)  # room for the Pact and ⇄ buttons on the right
+	st.position = Vector2(fx, 8)
 	card.add_child(st)
 	var ld := _label("%s · %s" % [it["leader"], it["archetype"]], 14, MUTED, false)
 	ld.position = Vector2(12, 32)

@@ -63,6 +63,26 @@ static func random_flag(seed_v: int) -> Dictionary:
 		"em": EMBLEMS[rng.randi_range(0, EMBLEMS.size() - 1)], "ec": ec, "frame": ""}
 
 
+## An AI state's flag (10 §4.23: AI states have flags too): its map colour as the field, the rest from a seed.
+static func ai_flag(seed_key: String, map_color: Color) -> Dictionary:
+	var f := random_flag(hash(seed_key))
+	var best := 0
+	var best_d := 1e9
+	for i in FIELD.size():
+		var c: Color = FIELD[i]
+		var d := Vector3(c.r - map_color.r, c.g - map_color.g, c.b - map_color.b).length_squared()
+		if d < best_d:
+			best_d = d
+			best = i
+	f["c1"] = best
+	if int(f["c2"]) == best:
+		f["c2"] = 13 if best != 13 else 11
+	var ecs := emblem_colors()
+	if absf((ecs[int(f["ec"])] as Color).get_luminance() - field_color(best).get_luminance()) < 0.25:
+		f["ec"] = 13 if field_color(best).get_luminance() < 0.5 else 11
+	return f
+
+
 func _shape(w: float, h: float) -> PackedVector2Array:
 	return PackedVector2Array([Vector2(w * .08, 0), Vector2(w * .92, 0), Vector2(w * .92, h * .8), Vector2(w * .5, h * .98), Vector2(w * .08, h * .8)])
 
