@@ -1759,24 +1759,31 @@ func _make_army(a: Dictionary) -> Node3D:
 		if assault == "" and has_model("assault_dl%d_%s" % [n, side]):
 			assault = "assault_dl%d_%s" % [n, side]
 	var anim: Array = []
-	var sq := spawn(squad if squad != "" else "squad_" + side, model, Vector3(-0.15, 0, 0.05), 0.0, 1.15)
-	if sq:
-		_animate_troops(sq, false, anim)
+	# the reference frames: an army is a crowd of small figures in loose groups, not one big block —
+	# three squads at a smaller scale, slightly turned against each other
+	var sq_name := squad if squad != "" else "squad_" + side
+	for g in [[Vector3(-0.3, 0, 0.14), 0.12], [Vector3(0.08, 0, 0.34), -0.1], [Vector3(-0.04, 0, -0.14), 0.05]]:
+		var sq := spawn(sq_name, model, g[0], g[1], 0.68)
+		if sq:
+			_animate_troops(sq, false, anim)
 	var rider: Node3D = null
 	if assault != "":
-		rider = spawn(assault, model, Vector3(0.32, 0, 0.25), 0.0, 1.25)
+		rider = spawn(assault, model, Vector3(0.36, 0, 0.08), 0.0, 0.92)
 	elif dl >= 2 or squad == "":
-		rider = spawn("knight_" + ("blue" if side == "blue" else "red"), model, Vector3(0.32, 0, 0.25), 0.0, 1.25)
+		rider = spawn("knight_" + ("blue" if side == "blue" else "red"), model, Vector3(0.36, 0, 0.08), 0.0, 0.92)
 	if rider:
 		_animate_troops(rider, true, anim)
+	var gun := ""
 	if dl == 2 or dl == 3:  # the medieval armies drag a mangonel along (tools/blender/export_assets.py catapult)
-		spawn("catapult", model, Vector3(-0.44, 0, -0.16), 0.35, 1.15)
+		gun = "catapult"
 	elif dl == 4 or dl == 5:  # the bicorne era: a bronze field gun
-		spawn("cannon", model, Vector3(-0.44, 0, -0.14), 0.25, 1.3)
+		gun = "cannon"
 	elif dl == 6 or dl == 7:  # the trench era: a field howitzer
-		spawn("howitzer", model, Vector3(-0.44, 0, -0.14), 0.25, 1.2)
+		gun = "howitzer"
 	elif dl >= 8:  # the late era: a six-wheeled rocket launcher
-		spawn("rocket_launcher", model, Vector3(-0.44, 0, -0.14), 0.25, 1.15)
+		gun = "rocket_launcher"
+	if gun != "":
+		spawn(gun, model, Vector3(-0.46, 0, -0.22), 0.3, 0.85)
 	node.set_meta("anim", anim)
 	spawn("banner_" + side, model, Vector3(0.05, 0, -0.35), 0.0, 0.9, int(a["side"]))
 	var lbl := Label3D.new()
@@ -1785,8 +1792,8 @@ func _make_army(a: Dictionary) -> Node3D:
 	lbl.no_depth_test = true
 	lbl.font_size = 64
 	lbl.outline_size = 14
-	lbl.pixel_size = 0.006
-	lbl.position = Vector3(0, 1.15, 0)
+	lbl.pixel_size = 0.0036  # a small tag over the bar: the reference frames show bars, not big numbers
+	lbl.position = Vector3(0, 1.04, 0)
 	lbl.outline_modulate = Color(0.05, 0.1, 0.25) if side == "blue" else Color(0.3, 0.05, 0.05)
 	node.add_child(lbl)
 	var bar := Node3D.new()
