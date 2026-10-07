@@ -12,6 +12,8 @@ const MUTED := Color(0.62, 0.68, 0.78)
 var world: Node3D
 var font_bold: Font
 var tile_title: Label
+var tile_icon: Control
+var tile_pic: TextureRect
 var tile_owner: Label
 var tile_bonus: Label
 var attack_btn: Panel
@@ -306,6 +308,14 @@ func _build() -> void:
 	tile.position = Vector2(664, base_y + 14)
 	tile.size = Vector2(70, 60)
 	add_child(tile)
+	tile_icon = tile
+	tile_pic = TextureRect.new()  # the rendered hex of that land (tools/blender/card_art.py tile_*)
+	tile_pic.position = Vector2(658, base_y + 8)
+	tile_pic.size = Vector2(84, 74)
+	tile_pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	tile_pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	tile_pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(tile_pic)
 	var tn := _label(tr("terrain.plain"), 21)
 	tile_title = tn
 	tn.position = Vector2(746, base_y + 18)
@@ -463,6 +473,12 @@ func select_tab(key: String) -> void:
 
 func show_tile(info: Dictionary) -> void:
 	_tile_set = true
+	var pic := "res://assets/ui/cards/tile_%s.png" % String(info.get("tile", "plain"))
+	if not ResourceLoader.exists(pic):
+		pic = "res://assets/ui/cards/tile_plain.png"
+	var has_pic := ResourceLoader.exists(pic)
+	tile_pic.texture = load(pic) if has_pic else null
+	tile_icon.visible = not has_pic
 	_fit(tile_title, String(info["title"]), 176.0, 21)
 	_fit(tile_owner, String(info["owner"]), 176.0, 17)
 	tile_owner.add_theme_color_override("font_color", info["owner_color"])

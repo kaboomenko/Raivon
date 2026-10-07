@@ -2013,6 +2013,7 @@ func _describe(id: int) -> Dictionary:
 	if c["controller"] != own:
 		owner_text = tr("tile.occupied") % owner_text
 	var bonus: String = tr("tile.value") % c["value"]
+	var tile_key: String = c["kind"] if String(c["kind"]) != "plain" else String(c["terrain"])
 	if c["terrain"] == "forest":
 		bonus += " · " + tr("tile.forest_def")
 	elif c["terrain"] == "hills":
@@ -2038,18 +2039,19 @@ func _describe(id: int) -> Dictionary:
 	var cm: Dictionary = camps.at(id) if camps != null else {}
 	if not cm.is_empty():
 		return {"title": tr("tile.camp"), "owner": owner_text, "owner_color": Color(0.75, 0.72, 0.68),
-			"bonus": tr("tile.camp_loot") % [tr("res.name." + String(cm["res"])), camps.rewards_left(now_s())], "attackable": false}
+			"bonus": tr("tile.camp_loot") % [tr("res.name." + String(cm["res"])), camps.rewards_left(now_s())], "attackable": false, "tile": String(c["terrain"])}
 	var dep: Dictionary = deposits.at(id) if deposits != null else {}
 	if not dep.is_empty():
 		bonus = tr("tile.deposit") % [int(dep["amount"]), tr("res.gen." + String(dep["res"])), GameUI.fmt_time(int(dep["gather_sec"]))]
 		return {"title": "%s (%s)" % [tr(String(Deposits.NAMES.get(String(dep["res"]), "tile.deposit_name"))), dep["size"]], "owner": owner_text,
-			"owner_color": Color(1.0, 0.85, 0.3), "bonus": bonus, "attackable": false}
+			"owner_color": Color(1.0, 0.85, 0.3), "bonus": bonus, "attackable": false, "tile": String(c["terrain"])}
 	return {
 		"title": _cell_name(id),
 		"owner": owner_text,
 		"owner_color": map_view.state_color(own).lightened(0.25),
 		"bonus": bonus,
 		"attackable": own != Types.PLAYER and own != Types.NOBODY,
+		"tile": tile_key,
 	}
 
 

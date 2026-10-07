@@ -115,13 +115,14 @@ def camera(loc, target, lens=50):
     bpy.context.scene.camera = cam
 
 
-def render(path):
+def render(path, w=None, h=None, transparent=False):
     sc = bpy.context.scene
+    sc.render.film_transparent = transparent
     sc.render.engine = "CYCLES"
     sc.cycles.samples = 48
     sc.cycles.use_denoising = True
-    sc.render.resolution_x = W
-    sc.render.resolution_y = H
+    sc.render.resolution_x = w or W
+    sc.render.resolution_y = h or H
     sc.view_settings.view_transform = "AgX"
     sc.view_settings.look = "AgX - Punchy"
     w = bpy.data.worlds.new("w")
@@ -320,10 +321,49 @@ def unit(n):
     return scene
 
 
+TILE_MODELS = {
+    "plain": [("tree_round", (0.45, 0.3), 0.8), ("bush", (-0.4, -0.2), 1.2), ("flowers", (0.1, -0.4), 1.2)],
+    "forest": [("tree_pine", (x, y), 1.0) for (x, y) in ((-0.4, 0.1), (0.0, 0.35), (0.35, 0.05), (-0.1, -0.25), (0.4, -0.35), (-0.5, -0.4), (0.15, -0.05))],
+    "hills": [("rock", (-0.3, 0.1), 1.8), ("rock", (0.35, -0.1), 1.5), ("rock", (0.0, -0.4), 1.2), ("tree_pine", (0.3, 0.4), 0.9)],
+    "mountain": [("mountain", (0, 0), 1.3)],
+    "water": [],
+    "farm": [("wheat_field", (0.1, 0.1), 0.95), ("windmill", (-0.45, -0.3), 0.95)],
+    "mine": [("mine", (0, 0), 1.1)],
+    "city": [("city_dl3_blue", (0, 0), 1.15)],
+    "capital": [("residence_dl4_blue", (0, 0), 1.0)],
+    "port": [("port", (0, 0), 1.0)],
+    "military_base": [("military_base", (0, 0), 1.0)],
+}
+
+
+def tile(kind):
+    """The hex panel's picture (the «Равнина» tile of the reference HUD): one hex of that land or building."""
+    def scene():
+        grass = kit.noisy_mat("grass", "#4c7a2c", "#5f8f36", 4.0)
+        dirt = kit.noisy_mat("dirt", "#5b4029", "#6d4a2c", 6.0)
+        if kind == "water":
+            grass = mat("water", "#1b5a78", 0.15, 0.2)
+        kit.hex_prism("tile", (0, 0, -0.18), 1.0, 0.18, grass, dirt, 0.03)
+        for name, (x, y), sc in TILE_MODELS[kind]:
+            load(name, (x, y, 0), 0.4, sc)
+        lights(4.0)
+        cam = bpy.data.objects.new("cam", bpy.data.cameras.new("cam"))
+        bpy.context.scene.collection.objects.link(cam)
+        cam.data.type = "ORTHO"
+        cam.data.ortho_scale = 2.5
+        el = math.radians(42)
+        cam.location = (0, -12 * math.cos(el), 12 * math.sin(el) + 0.2)
+        cam.rotation_euler = (math.pi / 2 - el, 0, 0)
+        bpy.context.scene.camera = cam
+    return scene
+
+
 SCENES = {"attack": attack, "breakthrough": breakthrough, "airstrike": airstrike, "encircle": encircle, "defense": defense,
           "landing": landing, "missile": missile, "corps": corps}
 for _n in range(1, 9):
     SCENES["unit_dl%d" % _n] = unit(_n)
+for _k in TILE_MODELS:
+    SCENES["tile_" + _k] = tile(_k)
 
 
 if __name__ == "__main__":
@@ -333,5 +373,8 @@ if __name__ == "__main__":
     for name in (args[1:] or list(SCENES)):
         reset()
         SCENES[name]()
-        render(os.path.join(os.path.abspath(out), name + ".png"))
+        if name.startswith("tile_"):
+            render(os.path.join(os.path.abspath(out), name + ".png"), 160, 140, True)
+        else:
+            render(os.path.join(os.path.abspath(out), name + ".png"))
         print("CARD", name, flush=True)
