@@ -409,7 +409,7 @@ func _build_terrain() -> void:
 	water.mesh = plane
 	water.position = Vector3(0, -0.25, 0)
 	var wm := StandardMaterial3D.new()
-	wm.albedo_color = Color(0.07, 0.27, 0.42)
+	wm.albedo_color = Color(0.03, 0.14, 0.24)
 	wm.metallic = 0.3
 	wm.roughness = 0.12
 	water.material_override = wm
@@ -1062,6 +1062,25 @@ func _build_horizon() -> void:
 			var p := axial_to_world(q, r)
 			var roll := rng.randf()
 			var near := p.z > 3.0  # bottom of the screen: keep low so it never hides the player's land
+			if d <= rr + 2:
+				# the unexplored land next to the open world (reference frame 1): dark slate hexes with a faint grid,
+				# drifting low clouds and a peak here and there
+				var tile := MeshInstance3D.new()
+				var tm := CylinderMesh.new()
+				tm.top_radius = 0.985
+				tm.bottom_radius = 0.985
+				tm.height = 1.0
+				tm.radial_segments = 6
+				tile.mesh = tm
+				tile.rotation.y = PI / 6.0
+				tile.position = p + Vector3(0, -0.52 - rng.randf() * 0.03, 0)
+				tile.material_override = _fog_hex_mat()
+				_horizon_root.add_child(tile)
+				if not near and d == rr + 2 and roll < 0.3:
+					spawn("mountain", _horizon_root, p + Vector3(0, -0.15, 0), rng.randf() * TAU, rng.randf_range(1.5, 2.4))
+				elif rng.randf() < 0.45:
+					_cloud(p + Vector3(rng.randf_range(-0.5, 0.5), rng.randf_range(0.25, 0.7), rng.randf_range(-0.5, 0.5)), rng.randf_range(1.8, 3.0))
+				continue
 			if near:
 				for i in 5:
 					spawn("tree_pine" if rng.randf() < 0.7 else "tree_round", _horizon_root, p + Vector3(rng.randf_range(-0.7, 0.7), -0.1, rng.randf_range(-0.7, 0.7)), rng.randf() * TAU, rng.randf_range(0.8, 1.1))
@@ -1082,6 +1101,17 @@ func _build_horizon() -> void:
 			_horizon_root.add_child(base)
 			if not near and rng.randf() < 0.55 + 0.1 * (d - rr - 1):
 				_cloud(p + Vector3(rng.randf_range(-0.5, 0.5), rng.randf_range(1.0, 2.6), rng.randf_range(-0.5, 0.5)), rng.randf_range(3.5, 6.0))
+
+
+var _fog_mat: StandardMaterial3D
+
+
+func _fog_hex_mat() -> StandardMaterial3D:
+	if _fog_mat == null:
+		_fog_mat = StandardMaterial3D.new()
+		_fog_mat.albedo_color = Color(0.2, 0.22, 0.25)
+		_fog_mat.roughness = 0.95
+	return _fog_mat
 
 
 var _cloud_mat: StandardMaterial3D

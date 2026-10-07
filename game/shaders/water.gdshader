@@ -4,8 +4,8 @@ shader_type spatial;
 render_mode cull_back;
 
 uniform sampler2D noise_tex : filter_linear_mipmap, repeat_enable;
-uniform vec3 deep : source_color = vec3(0.07, 0.30, 0.50);
-uniform vec3 shallow : source_color = vec3(0.20, 0.58, 0.70);
+uniform vec3 deep : source_color = vec3(0.025, 0.13, 0.24);
+uniform vec3 shallow : source_color = vec3(0.07, 0.34, 0.40);
 
 varying vec3 wpos;
 
@@ -22,11 +22,11 @@ void fragment() {
 	vec3 c = mix(deep, shallow, clamp(pow(shore, 2.0) * 0.8 + n * 0.25, 0.0, 1.0));
 	// glints on the ripples
 	float glint = smoothstep(0.68, 0.78, n);
-	c += vec3(0.25, 0.3, 0.32) * glint;
+	c += vec3(0.14, 0.2, 0.22) * glint;
 	// foam band on the shore, wobbling with the noise and the time
-	float band = shore - 0.86 + (n - 0.5) * 0.16 + sin(TIME * 1.6 + wpos.x * 3.0) * 0.025;
+	float band = shore - 0.93 + (n - 0.5) * 0.16 + sin(TIME * 1.6 + wpos.x * 3.0) * 0.025;
 	float foam = smoothstep(0.0, 0.06, band);
-	c = mix(c, vec3(0.93, 0.97, 1.0), foam * 0.85);
+	c = mix(c, vec3(0.86, 0.92, 0.95), foam * 0.6);  // a thin lace of surf, not a white rim
 	ALBEDO = c;
 	ROUGHNESS = mix(0.08, 0.6, foam);
 	SPECULAR = 0.6;
