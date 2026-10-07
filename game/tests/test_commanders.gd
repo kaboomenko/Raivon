@@ -109,3 +109,12 @@ func _battle_checks() -> void:
 	d["cmd_home"] = 97
 	var dm1: int = b._def_mult(target, d, b.forms_for(Types.PLAYER, target, [srcs[0]]))
 	_check(dm1 == dm0 + 97, "Colonel Frey: +9.7% defence on an own official hex")
+	d.erase("cmd_home")
+	a2.erase("cmd_wedge")
+	a2["cmd_forms"] = 74
+	_check(b.forecast(Types.PLAYER, [1, 2], target)["atk_might"] == w1, "Emperor Rai adds the same to the Wedge")
+	var sf := b.forms_for(Types.PLAYER, target, [srcs[0]])
+	sf["salient"] = true
+	var sm0: int = b._def_mult(target, d, sf)
+	d["cmd_forms"] = 74
+	_check(b._def_mult(target, d, sf) == sm0 + 74, "his own hex: the Salient penalty shrinks by v")

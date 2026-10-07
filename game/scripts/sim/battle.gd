@@ -23,7 +23,8 @@ extends RefCounted
 ## Commander passives on an army (all optional, ‰): cmd_atk (attack), cmd_def (defence), cmd_home (defence on its
 ##   own official hex), cmd_forts (attack on a hex with a fort ≥ 1), cmd_port (attack and defence on or next to a
 ##   port its side controls), cmd_wedge (extra «Клин» for every army of an attack it joins), cmd_breach:bool
-##   («Прорыв» goes one hex further).
+##   («Прорыв» goes one hex further), cmd_forms (Emperor Rai, every form: «Окружение» damage +v, the «Коридор»
+##   garrison cut deeper by v, the «Выступ» penalty of his own hex smaller by v).
 
 const HexGridLib := preload("res://scripts/sim/hexgrid.gd")
 const Types := preload("res://scripts/sim/types.gd")
@@ -253,7 +254,15 @@ func _near_port(hex: int, side: int) -> bool:
 static func wedge_extra(atk: Array) -> int:
 	var w := 0
 	for a in atk:
-		w += int(a.get("cmd_wedge", 0))
+		w += int(a.get("cmd_wedge", 0)) + int(a.get("cmd_forms", 0))
+	return w
+
+
+## Emperor Rai's bonus to the other forms of an attack he joins (‰).
+static func forms_extra(atk: Array) -> int:
+	var w := 0
+	for a in atk:
+		w += int(a.get("cmd_forms", 0))
 	return w
 
 
@@ -266,7 +275,7 @@ func _atk_mult(army: Dictionary, f: Dictionary, breakthrough: bool) -> int:
 	if army.has("cmd_port") and _near_port(int(army["hex"]), int(army["side"])):
 		m += int(army["cmd_port"])
 	if f["encircle"]:
-		m += 300 # «Окружение» +30% damage
+		m += 300 + int(f.get("forms_extra", 0)) # «Окружение» +30% damage
 	if breakthrough:
 		m += 500
 	if not is_supplied(army["hex"], army["side"]):
@@ -313,7 +322,7 @@ func _def_mult(target: int, def_army: Variant, f: Dictionary) -> int:
 	if has_effect("weak", target):
 		m -= 300
 	if f["salient"]:
-		m -= 150
+		m -= maxi(0, 150 - (int(def_army.get("cmd_forms", 0)) if def_army != null else 0))
 	if not is_supplied(target, side):
 		m -= 200
 	if last_stand == side:
@@ -333,11 +342,12 @@ func forecast(side: int, army_ids: Array, target: int, breakthrough: bool = fals
 			hexes.append(a["hex"])
 	var f := forms_for(side, target, hexes)
 	f["wedge_extra"] = wedge_extra(atk)
+	f["forms_extra"] = forms_extra(atk)
 	var enemy := enemy_of(side)
 	var def_army: Variant = army_at(target, enemy)
 	var gar: int = garrison[target]
 	if f["corridor"]:
-		gar /= 2
+		gar = gar * maxi(0, 500 - int(f["forms_extra"])) / 1000
 	var atk_str := 0
 	var atk_might := 0
 	for a in atk:
@@ -382,6 +392,11 @@ func _cost(cmd: Dictionary, side: int = -1) -> int:
 			c = maxi(1, c - int(opts.get("landing_discount", 0)))  # Admiral Seir
 		return c
 	return 0
+
+
+## A card's price for `side` in this battle (the commanders' discounts included).
+func card_cost(side: int, card: String) -> int:
+	return _cost({"t": "card", "card": card}, side)
 
 
 func card_ready(side: int, card: String) -> bool:
@@ -609,7 +624,7 @@ func _start_or_join(side: int, target: int, list: Array, breakthrough: Variant) 
 			hexes.append(a["hex"])
 		var f := forms_for(side, target, hexes)
 		if f["corridor"]:
-			garrison[target] = garrison[target] / 2
+			garrison[target] = garrison[target] * maxi(0, 500 - forms_extra(list)) / 1000
 		var def: Variant = army_at(target, enemy)
 		clash = {
 			"id": _next_clash_id,
@@ -759,6 +774,7 @@ func _step_clashes() -> void:
 			hexes.append(a["hex"])
 		var f := forms_for(cl["side"], target, hexes)
 		f["wedge_extra"] = wedge_extra(atk)
+		f["forms_extra"] = forms_extra(atk)
 		var bt: Variant = cl["breakthrough"]
 		var atk_might := 0
 		var atk_str := 0

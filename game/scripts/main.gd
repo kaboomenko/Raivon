@@ -2327,6 +2327,7 @@ func _start_offensive() -> void:
 		opts["ticks"] = 60 * Battle.TICKS_PER_SEC
 		ftue = 12 if ftue >= 10 else 3
 	opts.merge(_apply_commanders())
+	ui.cost_discount = {"landing": int(opts.get("landing_discount", 0))}
 	battle = Battle.new(sim, armies, opts)
 	ai = BattleAI.new(enemy)
 	ai.airstrike = ftue == 0 and _state_dl(enemy) >= AIRSTRIKE_DL and String(sim.states[enemy]["archetype"]) in AIR_ARCHETYPES
@@ -2530,6 +2531,7 @@ func _start_camp_fight(hex: int) -> void:
 	var camp_opts := {"attacker": Types.PLAYER, "defender": Types.NOBODY, "ai_energy_mult": 0,
 		"cards": _hand(), "camp": hex, "ticks": Camps.FIGHT_TICKS}
 	camp_opts.merge(_apply_commanders())
+	ui.cost_discount = {"landing": int(camp_opts.get("landing_discount", 0))}
 	battle = Battle.new(sim, armies, camp_opts)
 	battle.garrison[hex] = camps.garrison(total / maxi(1, n), now_s())
 	_show_hand()
@@ -2686,7 +2688,7 @@ func _draw_order(from: int, to: int) -> void:
 	if ok and battle.can_target(Types.PLAYER, to):
 		var f: float = battle.forecast(Types.PLAYER, [_drag_army], to)["f"]
 		col = Color(0.35, 1.0, 0.45) if f >= 1.2 else (Color(1.0, 0.85, 0.3) if f >= 0.8 else Color(1.0, 0.35, 0.3))
-		text = "×%.1f" % f
+		text = "×%.1f" % f + _cmd_mark([_drag_army], to)
 	elif not ok:
 		col = Color(1, 1, 1, 0.4)
 	var a: Vector3 = map_view.cell_world(from) + Vector3(0, 0.25, 0)
@@ -2752,7 +2754,7 @@ func _on_card_drag(card: String, screen: Vector2, active: bool) -> void:
 			ids.append(a["id"])
 		if not ids.is_empty():
 			var f: float = battle.forecast(Types.PLAYER, ids, id, card == "breakthrough")["f"]
-			_drag_lbl.text = "×%.1f" % f
+			_drag_lbl.text = "×%.1f" % f + _cmd_mark(ids, id)
 			_drag_lbl.modulate = Color(0.35, 1.0, 0.45) if f >= 1.2 else (Color(1.0, 0.85, 0.3) if f >= 0.8 else Color(1.0, 0.35, 0.3))
 			_drag_lbl.position = map_view.cell_world(id) + Vector3(0, 1.0, 0)
 			_drag_lbl.visible = true
@@ -2767,8 +2769,8 @@ func _on_card_drop(card: String, screen: Vector2) -> void:
 	var id: int = map_view.id_at_world(rig.ground_at(screen))
 	if id < 0:
 		return
-	if battle.energy_points(Types.PLAYER) < Battle.CARDS[card]["cost"]:
-		ui.toast(tr("toast.no_energy") % Battle.CARDS[card]["cost"])
+	if battle.energy_points(Types.PLAYER) < battle.card_cost(Types.PLAYER, card):
+		ui.toast(tr("toast.no_energy") % battle.card_cost(Types.PLAYER, card))
 	elif not battle.card_ready(Types.PLAYER, card):
 		ui.toast(tr("toast.card_cooldown"))
 	elif battle.issue(Types.PLAYER, {"t": "card", "card": card, "target": id}):
@@ -4988,7 +4990,7 @@ func _touches_any(hex: int, hexes: Array) -> bool:
 	return false
 
 
-const CMD_KEYS := ["cmd_atk", "cmd_def", "cmd_home", "cmd_forts", "cmd_port", "cmd_wedge", "cmd_breach"]
+const CMD_KEYS := ["cmd_atk", "cmd_def", "cmd_home", "cmd_forts", "cmd_port", "cmd_wedge", "cmd_breach", "cmd_forms"]
 
 ## Writes the commanders' passives onto the player's armies (04 §15.2; the battle reads the cmd_* fields) and
 ## returns the battle-wide ones for the offensive's options — those of a commander whose army takes part.
@@ -5023,7 +5025,7 @@ func _apply_commanders() -> Dictionary:
 			"cmd_vega":
 				a["cmd_wedge"] = _cmd_pm(id, 0)
 			"cmd_rai":
-				a["cmd_wedge"] = _cmd_pm(id, 0)
+				a["cmd_forms"] = _cmd_pm(id, 0)
 				opts["regen_pm"] = _cmd_pm(id, 1)
 			"cmd_seir":
 				a["cmd_port"] = _cmd_pm(id, 1)
@@ -5034,6 +5036,19 @@ func _apply_commanders() -> Dictionary:
 				a["cmd_atk"] = _cmd_pm(id, 1)
 				a["cmd_breach"] = true
 	return opts
+
+
+## « ★» after a forecast when a commander's attack passive works in this attack (04 §15.6: the effect is seen).
+func _cmd_mark(army_ids: Array, target: int) -> String:
+	for id in army_ids:
+		var a := _army_by_id(int(id))
+		if a.is_empty():
+			continue
+		if int(a.get("cmd_atk", 0)) > 0 or int(a.get("cmd_forms", 0)) > 0 or (int(a.get("cmd_wedge", 0)) > 0 and army_ids.size() > 1):
+			return " ★"
+		if int(a.get("cmd_forts", 0)) > 0 and int(sim.cells[target]["fort"]) >= 1:
+			return " ★"
+	return ""
 
 
 ## What a commander would give this army now, in Might % (the «Рекомендуем» order, 04 §15.6).

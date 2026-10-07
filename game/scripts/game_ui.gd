@@ -282,8 +282,12 @@ func retranslate() -> void:
 		_fit(nm, 17, 110.0)
 
 
+var cost_discount := {}  # card -> energy off its price in this battle (Admiral Seir: «Десант» −1)
+
+
 func _card_cost(c: String) -> int:
-	return {"attack": 2, "breakthrough": 3, "airstrike": 4, "encircle": 3, "defense": 2, "corps": 3, "landing": 4, "missile": 5}[c]
+	var base: int = {"attack": 2, "breakthrough": 3, "airstrike": 4, "encircle": 3, "defense": 2, "corps": 3, "landing": 4, "missile": 5}[c]
+	return maxi(1, base - int(cost_discount.get(c, 0)))
 
 
 func set_battle(visible_hand: bool, energy_units: int, unit: int, cooldowns: Dictionary, seconds_left: int, rush: bool) -> void:
