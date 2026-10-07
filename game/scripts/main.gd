@@ -320,7 +320,7 @@ func _environment() -> void:
 	e.ssao_radius = 1.2
 	e.ssao_intensity = 2.5
 	e.tonemap_mode = Environment.TONE_MAPPER_ACES
-	e.tonemap_exposure = 0.86
+	e.tonemap_exposure = 0.8
 	# glow only on emissive things (neon borders, crystals, fire): a threshold above sunlit ground and no bloom,
 	# otherwise the whole frame hazes into pastel (art direction: saturated, contrasty, CoC-like)
 	e.glow_enabled = true
@@ -332,8 +332,8 @@ func _environment() -> void:
 	e.fog_light_color = Color(0.55, 0.62, 0.72)
 	e.fog_density = 0.003
 	e.adjustment_enabled = true
-	e.adjustment_saturation = 1.28
-	e.adjustment_contrast = 1.18
+	e.adjustment_saturation = 1.08  # the reference frames are rich but not acid
+	e.adjustment_contrast = 1.25
 	we.environment = e
 	add_child(we)
 
@@ -6199,7 +6199,7 @@ func _update_minimap() -> void:
 		parts.append("%d%d" % [map_view.owner_of(c), c["controller"]])
 	var snap := ",".join(parts) + str(map_view.at_war_with)
 	var mm: Control = hud.minimap
-	var half := Vector2(lerpf(2.2, 6.5, rig.zoom), lerpf(3.2, 9.0, rig.zoom))
+	var half := Vector2(lerpf(2.2, 9.2, rig.zoom), lerpf(3.2, 12.8, rig.zoom))
 	var r := Rect2(Vector2(rig.target.x, rig.target.z) - half, half * 2.0)
 	if snap != _minimap_snap or r != mm.view_rect:
 		_minimap_snap = snap

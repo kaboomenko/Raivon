@@ -362,11 +362,11 @@ func _build_terrain() -> void:
 	for c in sim.cells:
 		var center := axial_to_world(c["q"], c["r"])
 		var top := 0.0
-		var col := Color(0.31, 0.47, 0.21)  # a natural meadow green — the old one went lime under the colour grade
+		var col := Color(0.27, 0.4, 0.19)  # a natural meadow green — the old one went lime under the colour grade
 		var pal: Dictionary = BIOME_GROUND.get(String(c.get("biome", "meadow")), {})
 		match c["terrain"]:
 			"forest":
-				col = Color(0.21, 0.38, 0.17)
+				col = Color(0.18, 0.31, 0.15)
 			"hills":
 				col = Color(0.45, 0.46, 0.27)
 			"mountain":
@@ -420,7 +420,7 @@ var _grass_mi: MultiMeshInstance3D
 var _pebble_mi: MultiMeshInstance3D
 
 ## Grass tint by biome: tufts a shade lighter than the ground, so empty land reads as a meadow, not plastic.
-const GRASS_TINT := {"meadow": Color(0.34, 0.62, 0.22), "taiga": Color(0.3, 0.5, 0.28), "steppe": Color(0.72, 0.68, 0.34), "badlands": Color(0.66, 0.55, 0.3)}
+const GRASS_TINT := {"meadow": Color(0.3, 0.5, 0.2), "taiga": Color(0.3, 0.5, 0.28), "steppe": Color(0.72, 0.68, 0.34), "badlands": Color(0.66, 0.55, 0.3)}
 
 
 ## Grass tufts and pebbles over the land (one MultiMesh each): a whole meadow on an empty plain, a fringe along
@@ -1163,6 +1163,7 @@ func _rebuild_overlay() -> void:
 	var hatch := {}
 	var lines := {}
 	var borders := {}
+	var cores := {}
 	for c in sim.cells:
 		if not Types.is_passable(c):
 			continue
@@ -1175,17 +1176,24 @@ func _rebuild_overlay() -> void:
 				st = SurfaceTool.new()
 				st.begin(Mesh.PRIMITIVE_TRIANGLES)
 				tints[own] = st
-			# inner-glow look of the references: faint in the middle, saturated at the rim
-			# saturated, slightly deep team colour as in the concept art (docs/assets/concepts.webp): the hex reads
-			# as blue / red even over bright grass, strongest at the rim
-			var tc := Color(0.1, 0.3, 0.95) if own == Types.PLAYER else state_color(own).darkened(0.12)  # royal blue, not azure
-			var base := 0.42 if own == Types.PLAYER else 0.42
-			var c_in := Color(tc.r, tc.g, tc.b, base * (0.62 if own == Types.PLAYER else 0.42))  # AI: the land shows through
-			var c_rim := Color(tc.r, tc.g, tc.b, minf(0.85, base * 1.75))
+			# the reference frames (docs/reference): a light tint over the land that deepens toward the territory's
+			# border — per territory, not per hex, so the inner hexes don't read as tiles
+			var tc := Color(0.1, 0.3, 0.95) if own == Types.PLAYER else state_color(own).darkened(0.25)  # royal blue, crimson
+			var c_in := Color(tc.r, tc.g, tc.b, 0.14)
+			var c_rim := Color(tc.r, tc.g, tc.b, 0.5)
+			var rim := [false, false, false, false, false, false]
+			for d in 6:
+				var nb: int = sim.neighbors[c["id"]][d]
+				if nb >= 0 and Types.is_passable(sim.cells[nb]) and owner_of(sim.cells[nb]) == own:
+					continue
+				var nc := center + Vector3(1.5 * DIRS[d].x, 0, SQ3 * (DIRS[d].y + DIRS[d].x / 2.0))
+				for k in 6:
+					if (pts[k] as Vector3).distance_to(nc) < 1.3:
+						rim[k] = true
 			for k in 6:
 				st.set_color(c_in); st.add_vertex(center)
-				st.set_color(c_rim); st.add_vertex(pts[k])
-				st.set_color(c_rim); st.add_vertex(pts[(k + 1) % 6])
+				st.set_color(c_rim if rim[k] else c_in); st.add_vertex(pts[k])
+				st.set_color(c_rim if rim[(k + 1) % 6] else c_in); st.add_vertex(pts[(k + 1) % 6])
 			# a multiply layer under every fill: burnt ground for AI states, a cool deepening for the player
 			var ss := _st(scorch, own)
 			var sc := center - Vector3(0, 0.006, 0)
@@ -1212,21 +1220,22 @@ func _rebuild_overlay() -> void:
 				continue
 			var e := _edge_pts(center, n, d)
 			if other == own:
-				_strip(_st(lines, own), e[0], e[1], 0.05, center.y + 0.005)
+				_strip(_st(lines, own), e[0], e[1], 0.028, center.y + 0.005)
 			else:
 				var w := 0.12
 				var prog := 1.0
 				if ceremony_t >= 0.0 and flip_at.has(c["id"]):
 					prog = clampf((ceremony_t - flip_at[c["id"]]) / 0.3, 0.0, 1.0)
 				if prog > 0.0:
-					_strip(_st(borders, own), e[0], e[0].lerp(e[1], prog), w, center.y + 0.012)
+					_strip(_st(borders, own), e[0], e[0].lerp(e[1], prog), 0.2, center.y + 0.011)  # the coloured halo
+					_strip(_st(cores, own), e[0], e[0].lerp(e[1], prog), 0.045, center.y + 0.013)  # the white-hot neon core
 	for o in scorch:
 		var m := StandardMaterial3D.new()
 		m.blend_mode = BaseMaterial3D.BLEND_MODE_MUL
 		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		m.albedo_color = Color(0.72, 0.62, 0.6) if o == at_war_with else Color(0.86, 0.8, 0.78)
 		if o == Types.PLAYER:
-			m.albedo_color = Color(0.8, 0.84, 0.97)  # the royal blue reads deep, as in the concept, not pastel
+			m.albedo_color = Color(0.86, 0.9, 1.0)  # a cool deepening: the land reads bluish without losing its colours
 		m.cull_mode = BaseMaterial3D.CULL_DISABLED
 		_add(scorch[o], m)
 	_tint_mats = []
@@ -1237,10 +1246,12 @@ func _rebuild_overlay() -> void:
 	for o in hatch:
 		_add(hatch[o], _hatch_mat(state_color(o)))
 	for o in lines:
-		_add(lines[o], _glow_mat(state_color(o), 1.25, 0.8))  # the glowing inner hex grid of the references
+		_add(lines[o], _glow_mat(state_color(o), 0.8, 0.5))  # the faint inner hex grid of the references
 	for o in borders:
 		var e := 2.6 if (o == Types.PLAYER or o == at_war_with) else 1.6  # strong enough to glow, still coloured
-		_add(borders[o], _glow_mat(state_color(o), e, 1.0))
+		_add(borders[o], _glow_mat(state_color(o), e * 0.8, 0.5))
+	for o in cores:
+		_add(cores[o], _glow_mat(state_color(o).lerp(Color.WHITE, 0.6), 3.2, 1.0))
 	_build_roads()
 
 

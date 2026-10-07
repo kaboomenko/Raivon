@@ -42,8 +42,8 @@ func _process(delta: float) -> void:
 
 
 func _apply() -> void:
-	var dist := lerpf(7.5, 24.0, zoom)
-	var pitch := deg_to_rad(minf(70.0, lerpf(40.0, 52.0, zoom)))  # ceremony pull-backs go past 1: never overhead
+	var dist := lerpf(7.5, 34.0, zoom)  # the strategic view of the reference frames: ~45 hexes, small detailed objects
+	var pitch := deg_to_rad(minf(70.0, lerpf(40.0, 56.0, zoom)))  # ceremony pull-backs go past 1: never overhead
 	cam.position = target + Vector3(0, sin(pitch), cos(pitch)) * dist
 	cam.look_at(target)
 
