@@ -60,7 +60,21 @@ def mix(a, b, t):
 KEEP_GEAR = ("goggles", "glasses", "flight", "tricorn", "circlet")
 
 
-def build(cid, era=1):
+def _mouth(name, z, y, mood, lips, w=0.13):
+    """The mouth: a line, a frown (corners down, the angry leader of an ultimatum) or a smile (corners up)."""
+    if mood == "":
+        kit.box(name, (w, 0.03, 0.025), (0, y, z), lips, 0.01)
+        return
+    up = 1 if mood == "smile" else -1
+    w *= 1.2
+    kit.box(name, (w * 0.5, 0.035, 0.034), (0, y - 0.004, z + (0.0 if mood == "smile" else 0.016)), lips, 0.012)
+    for sx in (-1, 1):
+        c = kit.box(name + "_corner", (w * 0.36, 0.035, 0.032), (sx * w * 0.38, y, z + up * 0.022), lips, 0.012)
+        c.rotation_euler.y = math.radians(-38 * sx * up)
+
+
+# Moods (04 §15.4: 5 expression presets; the game uses these): "" calm, "angry" (ultimatum), "smile" (peace).
+def build(cid, era=1, mood=""):
     skin_c, (hw, hh), hair_c, style, facial, gear, uni_c, acc_c = LOOK[cid]
     if era == 2:
         uni_c = darker(uni_c, 0.72)
@@ -101,15 +115,21 @@ def build(cid, era=1):
         kit.sphere("eye", 0.078, (sx * 0.135, -0.31, HEAD_Z + 0.03), white, (1.0, 0.6, 0.85), 2)
         pc = kit.mat("rai_eye", "#3a8dff", 0.2, emission="#5aa0ff", emit_strength=4.0) if cid == "cmd_rai" else dark
         kit.sphere("pupil", 0.045, (sx * 0.135 + 0.012, -0.355, HEAD_Z + 0.025), pc, (1, 0.6, 1.05), 2)
-        b = kit.box("brow", (0.15, 0.04, 0.035), (sx * 0.14, -0.34, HEAD_Z + 0.13), brow, 0.01)
-        b.rotation_euler.y = math.radians(-12 * sx if cid != "cmd_vega" or sx < 0 else 18)
+        bz = HEAD_Z + 0.13 + (-0.02 if mood == "angry" else (0.025 if mood == "smile" else 0.0))
+        b = kit.box("brow", (0.15, 0.04, 0.035), (sx * 0.14, -0.34, bz), brow, 0.01)
+        tilt = -12 * sx if cid != "cmd_vega" or sx < 0 else 18
+        if mood == "angry":
+            tilt = -28 * sx  # inner ends down — a scowl
+        elif mood == "smile":
+            tilt = -6 * sx
+        b.rotation_euler.y = math.radians(tilt)
     # nose and mouth
     if cid in ("cmd_bram", "cmd_kort"):
         kit.sphere("nose", 0.075, (0, -0.39, HEAD_Z - 0.06), skin, (1.0, 0.9, 0.9))
     else:
         n = kit.cone("nose", 0.05, 0.16, (0, -0.37, HEAD_Z - 0.04), skin, 8, 0.01)
         n.rotation_euler = (math.radians(-70), 0, 0)
-    kit.box("mouth", (0.13, 0.03, 0.025), (0, -0.335, HEAD_Z - 0.18), lips, 0.01)
+    _mouth("mouth", HEAD_Z - 0.18, -0.335, mood, lips)
     # hair
     if style in ("short", "messy", "braid", "long", "ponytail", "updo", "bob", "buzz") and not (era == 4 and era_hat):
         top = 0.3 if style != "buzz" else 0.24
@@ -140,7 +160,7 @@ def build(cid, era=1):
     if facial.startswith("beard"):
         h = {"beard": 0.28, "beard_short": 0.18, "beard_long": 0.45}[facial]
         kit.sphere("beard", 1.0, (0, -0.16, HEAD_Z - 0.2 - h * 0.35), hair, (hw * 0.95, 0.27, h))
-        kit.box("mouth_gap", (0.12, 0.03, 0.03), (0, -0.39 if facial != "beard_short" else -0.37, HEAD_Z - 0.18), lips, 0.01)
+        _mouth("mouth_gap", HEAD_Z - 0.18, -0.39 if facial != "beard_short" else -0.37, mood, lips, 0.12)
     if facial in ("mustache", "mustache_long", "beard", "beard_long"):
         ln = 0.26 if facial == "mustache_long" else 0.13
         for sx in (-1, 1):
@@ -293,22 +313,28 @@ def main():
         if a.startswith("--size="):
             size = int(a[7:])
     eras = [1]
+    moods = [""]
     for a in sys.argv[1:]:
         if a.startswith("--eras="):
             eras = [int(x) for x in a[7:].split(",")]
+        if a.startswith("--moods="):
+            moods = ["" if m == "calm" else m for m in a[8:].split(",")]
     out = args[0]
     ids = args[1:] or list(LOOK)
     os.makedirs(out, exist_ok=True)
     for cid in ids:
         for era in eras:
-            bpy.ops.wm.read_factory_settings(use_empty=True)
-            kit._MATS.clear()
-            build(cid, era)
-            setup(size)
-            name = cid if era == 1 else "%s_e%d" % (cid, era)  # era 1 keeps the plain name
-            bpy.context.scene.render.filepath = os.path.join(out, name + ".png")
-            bpy.ops.render.render(write_still=True)
-            print("rendered", name)
+            for mood in moods:
+                bpy.ops.wm.read_factory_settings(use_empty=True)
+                kit._MATS.clear()
+                build(cid, era, mood)
+                setup(size)
+                name = cid if era == 1 else "%s_e%d" % (cid, era)  # era 1 keeps the plain name
+                if mood:
+                    name += "_" + mood
+                bpy.context.scene.render.filepath = os.path.join(out, name + ".png")
+                bpy.ops.render.render(write_still=True)
+                print("rendered", name)
 
 
 main()

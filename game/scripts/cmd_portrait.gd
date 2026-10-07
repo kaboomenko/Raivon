@@ -33,6 +33,7 @@ static func era_of(dl: int) -> int:
 var cmd := ""
 var rarity := "common"
 var locked := false
+var mood := ""  # "" calm, "angry" (an ultimatum), "smile" (peace) — a render of that mood if there is one
 var plate := Color(0, 0, 0, 0)  # a plate colour instead of the rarity's (AI leaders: their state's colour)
 
 
@@ -73,7 +74,7 @@ func _draw() -> void:
 		PackedColorArray([top, top, bot, bot]))
 	# a soft halo behind the head
 	_fill(_ellipse(Vector2(w * 0.5, h * 0.42), u * 0.36, u * 0.36), Color(1, 1, 1, 0.08 if not locked else 0.03))
-	var tex := _render(cmd)
+	var tex := _render(cmd, mood)
 	if tex != null:
 		# the bpy render (tools/blender/portrait_assets.py): cover the box, keep the head, crop the torso;
 		# a locked commander is its silhouette
@@ -225,11 +226,16 @@ func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), rc if not locked else rc.darkened(0.5), false, maxf(3.0, u * 0.025))
 
 
-static func _render(id: String) -> Texture2D:
-	var key := "%s_e%d" % [id, era]
+static func _render(id: String, m := "") -> Texture2D:
+	var key := "%s_e%d_%s" % [id, era, m]
 	if not _renders.has(key):
-		var path := "res://assets/ui/portraits/%s.png" % (id if era == 1 else key)
-		if not ResourceLoader.exists(path):
-			path = "res://assets/ui/portraits/%s.png" % id  # no render of this era yet: the first one
-		_renders[key] = load(path) if ResourceLoader.exists(path) else null
+		var base := id if era == 1 else "%s_e%d" % [id, era]
+		var tex: Texture2D = null
+		# the era's render in this mood, the era's calm one, then the first era's (mood, calm)
+		for name in [base + ("_" + m if m != "" else ""), base, id + ("_" + m if m != "" else ""), id]:
+			var path := "res://assets/ui/portraits/%s.png" % name
+			if ResourceLoader.exists(path):
+				tex = load(path)
+				break
+		_renders[key] = tex
 	return _renders[key]

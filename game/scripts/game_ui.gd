@@ -498,7 +498,7 @@ func show_peace(enemy: String, budget: float, control: int, demands: Array, chos
 	var box := _modal_box(Rect2(30, 640, 881, 1010), true)
 	var ink := Color(0.24, 0.16, 0.07)
 	if portrait != "":
-		_leader_seal(box, portrait, plate, Rect2(881 - 120, 14, 96, 116))
+		_leader_seal(box, portrait, plate, Rect2(881 - 120, 14, 96, 116), "smile")
 	var pt := _label(tr("peace.title") % enemy, 32, ink, false)
 	_fit(pt, 32, 700.0 if portrait != "" else 820.0)
 	_at(pt, box, Vector2(30, 24))
@@ -907,7 +907,7 @@ func show_ultimatum(enemy: String, hex_name: String, tribute: int, can_pay: bool
 	var ink := Color(0.3, 0.08, 0.05)
 	var text_w := 780.0
 	if portrait != "":
-		_leader_seal(box, portrait, plate, Rect2(841 - 166, 22, 136, 162))
+		_leader_seal(box, portrait, plate, Rect2(841 - 166, 22, 136, 162), "angry")
 		text_w = 620.0
 	var tl := _label(tr("ult.title") % enemy, 32, ink, false)
 	_fit(tl, 32, text_w)
@@ -924,10 +924,11 @@ func show_ultimatum(enemy: String, hex_name: String, tribute: int, can_pay: bool
 
 ## The enemy leader's portrait on a parchment (ultimatum, peace conference): the face on the state's colour in a
 ## dark wooden frame.
-func _leader_seal(box: Control, portrait: String, plate: Color, r: Rect2) -> void:
+func _leader_seal(box: Control, portrait: String, plate: Color, r: Rect2, mood := "") -> void:
 	_panel(box, r.grow(6), _style(Color(0.35, 0.22, 0.1), 10, Color(0.75, 0.55, 0.25), 3), Control.MOUSE_FILTER_IGNORE)
 	var lp := CmdPortrait.new(portrait)
 	lp.plate = plate
+	lp.mood = mood
 	lp.position = r.position
 	lp.size = r.size
 	box.add_child(lp)
