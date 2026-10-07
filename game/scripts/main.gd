@@ -4546,7 +4546,8 @@ func _diplomacy_items(now: int) -> Array:
 			"pact_reason": _pact_reason(s), "pact_left": _pact_left(s),
 			"separate": _can_separate(s),
 			"swap_reason": _swap_reason(s),
-			"color": map_view.state_color(s), "flag": map_view.state_flag(s)}))
+			"color": map_view.state_color(s), "flag": map_view.state_flag(s),
+			"portrait": String(LEADERS[s][0]).replace("leader.", "ldr_")}))
 		if not war.is_empty() and (war.get("coalition", []) as Array).has(s):
 			(items[items.size() - 1] as Dictionary)["share"] = _member_share(s)
 	return items

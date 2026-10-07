@@ -26,6 +26,19 @@ LOOK = {
     "cmd_vance": ("#f0cdb2", (0.32, 0.42), "#d9d9de", "updo", "", "brooch", "#8e5bd0", "#e8e8f0"),
     "cmd_rai": ("#e7c0a0", (0.36, 0.43), "#f0f0f0", "long", "beard_long", "circlet", "#eef1f6", "#3a8dff"),
 }
+# AI leaders (canon §10.4: the same kit, combinations kept apart from the commanders), in their states' colours
+LOOK.update({
+    "ldr_barons": ("#d9a07a", (0.42, 0.42), "#2a1d14", "bald", "beard", "", "#c0392b", "#f08a24"),       # Baron Grodek the Fang
+    "ldr_hamlets": ("#f0c9a8", (0.34, 0.42), "#c8873a", "braid", "", "kerchief", "#3fa34d", "#e8b23a"),  # Headwoman Mirosya
+    "ldr_league": ("#e6bf9c", (0.31, 0.43), "#3a2a1e", "updo", "", "glasses", "#1fb5ad", "#e8e8f0"),    # Chancellor Iveta
+    "ldr_order": ("#d8b292", (0.38, 0.43), "#9a9a9a", "short", "beard_long", "", "#7a7f88", "#c8ccd4"),  # Magister Torvald
+    "ldr_alvaria": ("#ecc6a8", (0.31, 0.43), "#1a1416", "long", "", "crown", "#8e5bd0", "#c8ccd4"),     # Sovereign Sairin
+    "ldr_saren": ("#d9a585", (0.33, 0.42), "#4a2e1c", "short", "mustache", "", "#e08a2a", "#1f6f8b"),    # Doge Velian
+    "ldr_pack": ("#e2b896", (0.39, 0.41), "#1c1c22", "messy", "beard_short", "", "#2a2d36", "#9aa3ad"),  # Chieftain Bjorulf
+    "ldr_conclave": ("#cfa585", (0.41, 0.42), "#6b6f78", "buzz", "beard", "goggles", "#5a6472", "#b0803a"),  # Archmaster Ormdek
+    "ldr_veilmark": ("#efcfb8", (0.31, 0.43), "#2a1830", "bob", "", "brooch", "#4a2a5e", "#c8ccd4"),    # Margravine Vedana
+    "ldr_lakes": ("#e0b896", (0.33, 0.43), "#1d2533", "short", "", "glasses", "#2e6bff", "#e8e8f0"),     # Consul Arman
+})
 HEAD_Z = 1.3
 
 
@@ -166,12 +179,25 @@ def build(cid, era=1):
         bpy.ops.mesh.primitive_torus_add(major_radius=hw + 0.005, minor_radius=0.018, location=(0, -0.01, HEAD_Z + 0.22), rotation=(math.radians(-8), 0, 0))
         bpy.context.active_object.data.materials.append(silver)
         kit.sphere("raivite", 0.055, (0, -0.375, HEAD_Z + 0.2), kit.mat("raivite_gem", "#3a8dff", 0.1, emission="#5aa0ff", emit_strength=6.0), (1, 0.6, 1.25))
+    if gear == "crown":
+        gold = kit.mat("crown_gold", "#e8b23a", 0.25, 0.85)
+        kit.cyl("crown_band", hw + 0.02, 0.08, (0, 0.0, HEAD_Z + 0.3), gold, 32, 0.01)
+        for k in range(7):
+            a = math.pi * (0.15 + 0.7 * k / 6)
+            kit.cone("crown_spike", 0.035, 0.12, ((hw + 0.02) * math.cos(a), -(hw + 0.0) * math.sin(a) * 0.9, HEAD_Z + 0.39), gold, 4, 0.0)
+        kit.sphere("crown_gem", 0.035, (0, -hw - 0.01, HEAD_Z + 0.31), kit.mat("crown_gem", "#8e5bd0", 0.1, emission="#b07aff", emit_strength=3.0), (1, 0.6, 1))
     if gear == "brooch":
         kit.sphere("brooch", 0.06, (0, -0.4, 0.66), kit.mat("pearl", "#f4f1ea", 0.15), (1, 0.6, 1))
     # uniform details
-    if cid in ("cmd_vega", "cmd_frey", "cmd_kort", "cmd_vance", "cmd_rai"):
+    if cid in ("cmd_vega", "cmd_frey", "cmd_kort", "cmd_vance", "cmd_rai", "ldr_barons", "ldr_alvaria", "ldr_order", "ldr_conclave"):
         for sx in (-1, 1):
             kit.sphere("epaulette", 1.0, (sx * 0.5, -0.02, 0.86), acc, (0.17, 0.2, 0.06))
+    if cid in ("ldr_pack", "ldr_barons"):  # fur mantles
+        bpy.ops.mesh.primitive_torus_add(major_radius=0.32, minor_radius=0.1, location=(0, 0.02, 0.86))
+        bpy.context.active_object.data.materials.append(kit.mat("fur_dark", "#3a2e26" if cid == "ldr_pack" else "#7a5a3a", 0.95))
+    if cid == "ldr_pack":  # a raven feather on the shoulder
+        f = kit.sphere("feather", 1.0, (0.42, -0.1, 0.98), kit.mat("feather", "#121216", 0.4), (0.04, 0.03, 0.16))
+        f.rotation_euler.y = math.radians(-25)
     if cid == "cmd_kort":
         bpy.ops.mesh.primitive_torus_add(major_radius=0.3, minor_radius=0.09, location=(0, 0.02, 0.86))
         bpy.context.active_object.data.materials.append(kit.mat("fur", "#8a6a48", 0.9))

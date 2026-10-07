@@ -1876,20 +1876,31 @@ func _diplomacy_card(it: Dictionary) -> Control:
 	_fit(st, 18, 172.0 - fx)  # room for the Pact and ⇄ buttons on the right
 	st.position = Vector2(fx, 8)
 	card.add_child(st)
+	var tx := 12.0
+	if String(it.get("portrait", "")) != "":
+		# the leader's face from the portrait kit (canon §10.4), on a plate of the state's colour
+		var lp := CmdPortrait.new(String(it["portrait"]))
+		lp.plate = col.darkened(0.1)
+		lp.position = Vector2(10, 36)
+		lp.size = Vector2(54, 66)
+		card.add_child(lp)
+		tx = 72.0
 	var ld := _label("%s · %s" % [it["leader"], it["archetype"]], 14, MUTED, false)
-	ld.position = Vector2(12, 32)
-	ld.size = Vector2(284, 20)
+	ld.position = Vector2(tx, 32)
+	ld.size = Vector2(296 - tx, 20)
 	ld.clip_text = true
 	card.add_child(ld)
 	var v: float = it["opinion"]
 	var op := _label(tr("dipl.opinion") % [roundi(v), it["word"]], 16, Color(0.5, 1.0, 0.6) if v > 10.0 else (Color(1.0, 0.55, 0.45) if v < -10.0 else TEXT), false)
-	op.position = Vector2(12, 56)
+	_fit(op, 16, 296 - tx)
+	op.position = Vector2(tx, 56)
 	card.add_child(op)
 	var st_text: String = it["status"] if String(it.get("ai_ally", "")) == "" else "%s · %s" % [it["status"], tr("dipl.ai_ally") % it["ai_ally"]]
 	if it.has("share"):  # a coalition member's share of the war score (06 §14.6)
 		st_text = tr("dipl.share") % float(it["share"])
 	var stt := _label(st_text, 16, Color(1.0, 0.85, 0.4), false)
-	stt.position = Vector2(12, 82)
+	_fit(stt, 16, 196 - tx)
+	stt.position = Vector2(tx, 82)
 	card.add_child(stt)
 	var id: int = it["id"]
 	if it.get("separate", false):

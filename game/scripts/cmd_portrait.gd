@@ -33,6 +33,7 @@ static func era_of(dl: int) -> int:
 var cmd := ""
 var rarity := "common"
 var locked := false
+var plate := Color(0, 0, 0, 0)  # a plate colour instead of the rarity's (AI leaders: their state's colour)
 
 
 func _init(id: String = "", r: String = "common", is_locked := false) -> void:
@@ -64,7 +65,7 @@ func _draw() -> void:
 	var w := size.x
 	var h := size.y
 	var u := minf(w, h)
-	var rc: Color = RARITY.get(rarity, RARITY["common"])
+	var rc: Color = RARITY.get(rarity, RARITY["common"]) if plate.a == 0.0 else plate
 	# the plate: a vertical gradient of the rarity color
 	var top := rc.darkened(0.15) if not locked else Color(0.16, 0.18, 0.24)
 	var bot := rc.darkened(0.6) if not locked else Color(0.08, 0.09, 0.13)
