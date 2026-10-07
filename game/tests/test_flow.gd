@@ -213,7 +213,7 @@ func _run() -> void:
 	g._econ_tick()
 	_check(int(pa["str"]) == int(pa["max_str"]) and econ.res["food"] < food0 + 5000, "army refills in ~20 min, paying food (%d → %d)" % [food0, econ.res["food"]])
 	g._open_tab("army")
-	_check(g._army_items(g.now_s()).size() == g._player_armies().size() + (1 if g.ftue > 0 else 2), "army tab lists armies plus «new army» (and the hand after the tutorial)")
+	_check(g._army_items(g.now_s()).size() == g._player_armies().size() + (1 if g.ftue > 0 else 3), "army tab lists armies plus «new army» (and the hand and commanders after the tutorial)")
 	# Settings → language: applies at once to the HUD, the open tab and the inbox, and reopens Settings
 	var lang0 := TranslationServer.get_locale()
 	g._post("inbox.raid.title", g.L.pack("inbox.raid.text", [g._cell_key(g.sim.states[Types.PLAYER]["capital_id"])]))
@@ -594,6 +594,22 @@ func _run() -> void:
 		g._claim_chronicle("ach_first_peace")
 	_check(g.chronicle.claimed.has("ach_first_peace") and int(g.econ.res["raivite"]) >= chr_rv + 25, "its reward is paid")
 	g.ui.close_modal()
+	# commanders (04 §15): Bram after the tutorial, a level for shards + gold, the collection and the card open
+	_check(g._cmd_level("cmd_bram") >= 1, "Sergeant Bram is open after the tutorial's war")
+	var cm_items: Array = g._army_items(g.now_s()).filter(func(x): return x.has("commanders"))
+	_check(cm_items.size() == 1 and int(cm_items[0]["commanders"][0]) >= 1, "the Army tab shows the commanders card")
+	g.cases.shards["cmd_bram"] = int(g.cases.shards["cmd_bram"]) + 1
+	g.econ.res["gold"] = maxi(int(g.econ.res["gold"]), 1000)
+	var cm_gold: int = g.econ.res["gold"]
+	var cm_lvl: int = g._cmd_level("cmd_bram")
+	g._upgrade_commander("cmd_bram")
+	_check(g._cmd_level("cmd_bram") == cm_lvl + 1 and int(g.econ.res["gold"]) == cm_gold - 250, "level 2 for a shard and 250 gold")
+	g._open_commanders()
+	_check(g.ui.has_modal(), "the collection opens")
+	g._open_commander("cmd_rai")
+	_check(g.ui.has_modal(), "a locked commander's card opens")
+	g.ui.close_modal()
+	_check((g._case_ctx()["commanders_maxed"] as Array).is_empty(), "nobody is maxed yet")
 	# the hand (03 §5.2): «Атака» + 4 slots of the player's choice
 	var hand0: Array = g._hand_display()
 	_check(hand0[0] == "attack" and hand0.size() <= 1 + g._hand_slots(), "the default hand: «Атака» + slots")

@@ -43,7 +43,7 @@ const LIST := [
 	["ach_vein_4", "dev", "@veins", 4, 15, "", false],
 	["ach_cmd_4", "cmd", "@cmd_det", 4, 25, "", false],
 	["ach_cmd_8", "cmd", "@cmd_det", 8, 15, "", false],
-	["ach_cmd_level_10", "cmd", "cmd_level", 10, 10, "", true],
+	["ach_cmd_level_10", "cmd", "@cmd_level", 10, 10, "", false],
 	["ach_arena_gold", "arena", "arena_league", 4, 10, "", true],
 	["ach_arena_legend", "arena", "arena_league", 7, 30, "cos_frame_arena_legend", true],
 ]

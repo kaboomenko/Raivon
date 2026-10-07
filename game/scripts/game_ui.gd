@@ -29,6 +29,7 @@ var _locked := {}  # card -> DL it opens at
 var _hand_order: Array = []
 const CARD_NAME_KEYS := {"attack": "card.attack", "breakthrough": "card.breakthrough", "airstrike": "card.airstrike", "encircle": "card.encircle", "defense": "card.defense", "corps": "card.corps", "landing": "card.landing", "missile": "card.missile"}
 const L := preload("res://scripts/l10n.gd")
+const CmdPortrait := preload("res://scripts/cmd_portrait.gd")
 
 var font_bold: Font
 var root: Control
@@ -1219,6 +1220,8 @@ func show_armies(items: Array) -> void:
 func _army_card(it: Dictionary) -> Control:
 	if it.has("hand"):
 		return _hand_card(it)
+	if it.has("commanders"):
+		return _commanders_card(it)
 	var card := Panel.new()
 	card.custom_minimum_size = Vector2(150, 178)
 	card.add_theme_stylebox_override("panel", _style(Color(0.1, 0.15, 0.25), 12, Color(0.45, 0.58, 0.8, 0.8), 2))
@@ -1316,6 +1319,192 @@ func _hand_card(it: Dictionary) -> Control:
 	card.add_child(g)
 	_card_button(card, tr("hand.edit"), Color(0.45, 0.3, 0.75), func(): army_action.emit(-2, "hand"), true)
 	return card
+
+
+## The Army tab's «Командиры» card: three faces of the collection, «7/12», a dot when a level can be bought.
+func _commanders_card(it: Dictionary) -> Control:
+	var card := Panel.new()
+	card.custom_minimum_size = Vector2(150, 178)
+	card.add_theme_stylebox_override("panel", _style(Color(0.2, 0.15, 0.08), 12, Color(1.0, 0.75, 0.35, 0.8), 2))
+	card.mouse_filter = Control.MOUSE_FILTER_PASS
+	var nm := _label(it["name"], 17)
+	nm.position = Vector2(0, 6)
+	nm.size = Vector2(150, 24)
+	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	card.add_child(nm)
+	var faces := [["cmd_lira", "common"], ["cmd_rai", "legendary"], ["cmd_vega", "rare"]]
+	for i in faces.size():
+		var p := CmdPortrait.new(faces[i][0], faces[i][1])
+		p.position = Vector2(10 + i * 44, 34 + (0 if i == 1 else 6))
+		p.size = Vector2(42, 50)
+		card.add_child(p)
+	var n: Array = it["commanders"]
+	var cnt := _label("%d / %d" % [int(n[0]), int(n[1])], 18, Color(1.0, 0.85, 0.4))
+	cnt.position = Vector2(0, 92)
+	cnt.size = Vector2(150, 24)
+	cnt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	card.add_child(cnt)
+	_card_button(card, tr("cmdr.open"), Color(0.7, 0.45, 0.12), func(): army_action.emit(-3, "commanders"), true)
+	if bool(it.get("dot", false)):
+		_panel(card, Rect2(128, 4, 18, 18), _style(Color(0.3, 0.9, 0.4), 9, Color(1, 1, 1, 0.8), 2), Control.MOUSE_FILTER_IGNORE)
+	return card
+
+
+## The collection (04 §15.7): albums, each a 3 × N grid of commander cards; a tap opens the commander.
+func show_commanders(info: Dictionary, on_pick: Callable) -> void:
+	var box := _modal_box(Rect2(30, 150, 881, 1370))
+	_button(box, Rect2(881 - 86, 18, 64, 56), "✕", Color(0.3, 0.33, 0.42), close_modal)
+	_at(_label(String(info["title"]), 30, Color(1.0, 0.85, 0.4)), box, Vector2(30, 26))
+	var scroll := ScrollContainer.new()
+	scroll.position = Vector2(20, 90)
+	scroll.size = Vector2(841, 1260)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	box.add_child(scroll)
+	var col := VBoxContainer.new()
+	col.custom_minimum_size = Vector2(830, 0)
+	col.add_theme_constant_override("separation", 10)
+	scroll.add_child(col)
+	for a in info["albums"]:
+		var hl := _label(String(a["name"]) + ("  ✦" if bool(a["full"]) else ""), 22, Color(1.0, 0.85, 0.4) if bool(a["full"]) else MUTED)
+		hl.custom_minimum_size = Vector2(830, 40)
+		hl.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+		col.add_child(hl)
+		var grid := GridContainer.new()
+		grid.columns = 3
+		grid.add_theme_constant_override("h_separation", 13)
+		grid.add_theme_constant_override("v_separation", 13)
+		col.add_child(grid)
+		for c in a["cards"]:
+			grid.add_child(_commander_tile(c, on_pick))
+
+
+func _commander_tile(c: Dictionary, on_pick: Callable) -> Control:
+	var lvl: int = c["level"]
+	var tile := Panel.new()
+	tile.custom_minimum_size = Vector2(268, 350)
+	tile.add_theme_stylebox_override("panel", _style(Color(0.1, 0.14, 0.23), 14, Color(0.3, 0.9, 0.4) if bool(c["can"]) else EDGE, 3 if bool(c["can"]) else 1))
+	tile.mouse_filter = Control.MOUSE_FILTER_PASS
+	var p := CmdPortrait.new(String(c["id"]), String(c["rarity"]), lvl <= 0)
+	p.position = Vector2(8, 8)
+	p.size = Vector2(252, 222)
+	tile.add_child(p)
+	var nm := _label(String(c["name"]), 19, TEXT if lvl > 0 else MUTED)
+	_fit(nm, 19, 252)
+	nm.position = Vector2(8, 236)
+	nm.size = Vector2(252, 28)
+	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	tile.add_child(nm)
+	var sub := _label(tr("cmdr.lvl") % [lvl, int(c["cap"])] if lvl > 0 else String(c.get("src", "")), 16 if lvl > 0 else 14, Color(1.0, 0.85, 0.4) if lvl > 0 else MUTED, lvl > 0)
+	_fit(sub, 16 if lvl > 0 else 14, 252)
+	sub.position = Vector2(8, 266)
+	sub.size = Vector2(252, 24)
+	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	tile.add_child(sub)
+	if c.has("shards"):
+		var sh: Array = c["shards"]
+		var bar := _panel(tile, Rect2(20, 300, 228, 18), _style(Color(1, 1, 1, 0.1), 9, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
+		var fill := clampf(float(sh[0]) / maxf(1.0, float(sh[1])), 0.0, 1.0)
+		_panel(bar, Rect2(0, 0, 228.0 * fill, 18), _style(Color(0.3, 0.85, 0.45) if fill >= 1.0 else Color(0.35, 0.6, 1.0), 9, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
+		var st := _label("%d / %d" % [int(sh[0]), int(sh[1])], 14)
+		st.size = Vector2(228, 18)
+		st.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		st.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		st.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		bar.add_child(st)
+	elif lvl > 0:
+		var mx := _label(tr("cmdr.max_short"), 15, Color(0.5, 1.0, 0.6))
+		mx.position = Vector2(8, 298)
+		mx.size = Vector2(252, 22)
+		mx.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		tile.add_child(mx)
+	if bool(c["can"]):
+		var up := _label("▲", 22, Color(0.3, 0.95, 0.45))
+		up.position = Vector2(226, 12)
+		tile.add_child(up)
+	var id: String = c["id"]
+	tile.gui_input.connect(func(e): if _is_tap(e): on_pick.call(id))
+	return tile
+
+
+## The commander card (04 §15.7): portrait, rarity and album, biography, the passive now and by level (the current
+## row marked), «Повысить: N осколков + G золота», where the shards come from, «Поставить Целью» (epic, legendary).
+func show_commander(info: Dictionary, on_upgrade: Callable, on_target: Callable, on_back: Callable) -> void:
+	var box := _modal_box(Rect2(30, 150, 881, 1370))
+	_button(box, Rect2(881 - 86, 18, 64, 56), "✕", Color(0.3, 0.33, 0.42), close_modal)
+	_button(box, Rect2(22, 18, 64, 56), "‹", Color(0.3, 0.33, 0.42), on_back)
+	var t := _label(String(info["name"]), 32, Color(1.0, 0.85, 0.4))
+	_fit(t, 32, 680)
+	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_at(t, box, Vector2(100, 22), Vector2(681, 50))
+	var lvl: int = info["level"]
+	var p := CmdPortrait.new(String(info["id"]), String(info["rarity"]), lvl <= 0)
+	p.position = Vector2(30, 92)
+	p.size = Vector2(330, 390)
+	box.add_child(p)
+	var rc: Color = CmdPortrait.RARITY.get(String(info["rarity"]), MUTED)
+	var x := 384.0
+	_at(_label(String(info["rarity_name"]), 22, rc), box, Vector2(x, 96))
+	var al := _label(String(info["album"]), 17, MUTED, false)
+	_fit(al, 17, 470)
+	_at(al, box, Vector2(x, 130))
+	var lv := _label(tr("cmdr.lvl") % [lvl, int(info["cap"])] if lvl > 0 else tr("cmdr.locked_short"), 30, TEXT)
+	_at(lv, box, Vector2(x, 164))
+	if info.has("shards"):
+		var sh: Array = info["shards"]
+		var bar := _panel(box, Rect2(x, 214, 460, 22), _style(Color(1, 1, 1, 0.1), 11, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
+		var fill := clampf(float(sh[0]) / maxf(1.0, float(sh[1])), 0.0, 1.0)
+		_panel(bar, Rect2(0, 0, 460.0 * fill, 22), _style(Color(0.3, 0.85, 0.45) if fill >= 1.0 else Color(0.35, 0.6, 1.0), 11, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
+		var st := _label(tr("cmdr.shards") % [int(sh[0]), int(sh[1])], 15)
+		st.size = Vector2(460, 22)
+		st.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		st.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		bar.add_child(st)
+	var py := 254.0
+	for ln in info["passive"]:
+		var pl := _label("• " + String(ln), 19, Color(0.75, 0.88, 1.0), false)
+		pl.autowrap_mode = TextServer.AUTOWRAP_WORD
+		pl.custom_minimum_size = Vector2(470, 0)
+		pl.position = Vector2(x, py)
+		box.add_child(pl)
+		py += _line_h(String(ln)) * 0.9
+	var bio := _label(String(info["bio"]), 19, TEXT, false)
+	bio.autowrap_mode = TextServer.AUTOWRAP_WORD
+	bio.custom_minimum_size = Vector2(821, 0)
+	bio.position = Vector2(30, 500)
+	box.add_child(bio)
+	# the passive by level
+	var ty := 650.0
+	_at(_label(tr("cmdr.by_level"), 20, Color(1.0, 0.85, 0.4)), box, Vector2(30, ty))
+	ty += 40.0
+	var cur_row := 0  # the highest table level the commander has reached
+	for row in info["table"]:
+		if int(row[0]) <= lvl:
+			cur_row = int(row[0])
+	for row in info["table"]:
+		var l: int = row[0]
+		var cur := l == cur_row
+		var bg := _panel(box, Rect2(30, ty, 821, 42), _style(Color(0.2, 0.3, 0.16) if cur else Color(0.09, 0.12, 0.2), 8, Color(0.5, 0.9, 0.4) if cur else Color(0, 0, 0, 0), 2 if cur else 0), Control.MOUSE_FILTER_IGNORE)
+		var future := l > lvl
+		var lab := _label(tr("cmdr.lvl_n") % l + ("  ·  " + tr("cmdr.launch_cap") if l == 16 else ""), 17, MUTED if future else TEXT, false)
+		_at(lab, bg, Vector2(16, 9))
+		var val := _label(String(row[1]), 17, MUTED if future else Color(0.75, 0.88, 1.0))
+		val.size = Vector2(380, 24)
+		val.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		_at(val, bg, Vector2(425, 9), Vector2(380, 24))
+		ty += 48.0
+	var src := _label(tr("cmdr.where") % String(info["src"]), 17, MUTED, false)
+	src.autowrap_mode = TextServer.AUTOWRAP_WORD
+	src.custom_minimum_size = Vector2(821, 0)
+	src.position = Vector2(30, ty + 10)
+	box.add_child(src)
+	var can := bool(info["can"])
+	var by := 1370.0 - 110.0
+	if on_target.is_valid():
+		var on := bool(info.get("target", false))
+		_button(box, Rect2(30, by - 96, 821, 80), tr("cmdr.target_on") if on else tr("cmdr.target"), Color(0.45, 0.3, 0.75) if not on else Color(0.25, 0.25, 0.32), on_target)
+	var b := _button(box, Rect2(30, by, 821, 86), String(info["button"]), Color(0.2, 0.6, 0.3) if can else Color(0.25, 0.28, 0.36), on_upgrade)
+	if not can:
+		b.modulate = Color(1, 1, 1, 0.85)
 
 
 ## Hand picker (03 §5.2): every open card as a toggle; «Атака» is fixed, `slots` more can be chosen.

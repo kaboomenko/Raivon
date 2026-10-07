@@ -1005,3 +1005,76 @@ chr.ach_arena_gold,Золотой рубеж,Golden Frontier
 chr.ach_arena_gold.d,Достигните лиги Золото на Арене,Reach the Gold league in the Arena
 chr.ach_arena_legend,Легенда Рубежей,Legend of the Frontier
 chr.ach_arena_legend.d,Достигните лиги Легенда на Арене,Reach the Legend league in the Arena
+cmdr.title,Командиры,Commanders
+cmdr.open,Открыть,Open
+cmdr.collection,Коллекция %d/%d,Collection %d/%d
+cmdr.lvl,ур. %d/%d,lv. %d/%d
+cmdr.lvl_n,Ур. %d,Lv. %d
+cmdr.launch_cap,потолок УР8,DL8 cap
+cmdr.max_short,Высший уровень,Top level
+cmdr.locked,Откроется при %d/%d осколках,Unlocks at %d/%d shards
+cmdr.locked_short,Не открыт,Locked
+cmdr.max,Высший уровень,Top level
+cmdr.need_dl,Следующий уровень — с УР%d,Next level from DL%d
+cmdr.upgrade,Повысить: %d осколков + %s золота,Upgrade: %d shards + %s gold
+cmdr.shards,Осколки: %d/%d,Shards: %d/%d
+cmdr.by_level,Пассивка по уровням,Passive by level
+cmdr.where,Где взять осколки: %s,Where to get shards: %s
+cmdr.target,Поставить Целью Королевского кейса,Set as the Royal case Target
+cmdr.target_on,Цель Королевского кейса ✓,Royal case Target ✓
+cmdr.target_set,Цель Королевского кейса: %s,Royal case Target: %s
+cmdr.leveled,%s — уровень %d!,%s reached level %d!
+cmdr.why.shards,Не хватает осколков,Not enough shards
+cmdr.why.gold,Не хватает золота,Not enough gold
+cmdr.why.dl,Нужен выше уровень развития,A higher development level is needed
+cmdr.why.max,Высший уровень,Top level
+cmdr.why.locked,Командир ещё не открыт,This commander is still locked
+cmdr.pp,+%s п.п.,+%s pts
+cmdr.p.inf,Сила Пехоты,Infantry strength
+cmdr.p.refill,Пополнение армии,Army refill
+cmdr.p.forts,Урон по укреплённым гексам,Damage to fortified hexes
+cmdr.p.scout,"Обзор +1, первая «Разведка» в бою бесплатна","Vision +1, the first «Scout» in a battle is free"
+cmdr.p.power,Сила армии,Army strength
+cmdr.p.wedge,Клин сильнее,Stronger Wedge
+cmdr.p.pocket,Котлы слабеют и сдаются быстрее,Pockets weaken and surrender faster
+cmdr.p.landing,«Десант» дешевле на 1 энергию,«Landing» costs 1 energy less
+cmdr.p.port,Сила у портов,Strength near ports
+cmdr.p.home,Защита на своих гексах,Defense on your own hexes
+cmdr.p.breach,«Прорыв» на 1 гекс дальше,«Breakthrough» reaches 1 hex further
+cmdr.p.attack,Атака армии,Army attack
+cmdr.p.air,Урон «Авиаудара»,«Airstrike» damage
+cmdr.p.energy,+1 энергия на старте боя,+1 energy at the start of a battle
+cmdr.p.forms,Все формы фронта,All front forms
+cmdr.p.regen,Восполнение энергии,Energy regeneration
+cmdr.album.valley,Альбом «Люди Долины»,Album «People of the Valley»
+cmdr.album.staff,Альбом «Генеральный штаб»,Album «The General Staff»
+cmdr.album.steel,"Альбом «Сталь, крыло и волна»","Album «Steel, Wing and Wave»"
+cmdr.album.founder,Альбом «Основатель»,Album «The Founder»
+cmdr.src.cmd_bram,первая война обучения,the tutorial's first war
+cmdr.src.cmd_lira,награда главы I,the chapter I reward
+cmdr.src.cmd_olm,"Военные ящики, Арена","War crates, the Arena"
+cmdr.src.cmd_vik,"Военные ящики, задания","War crates, orders"
+cmdr.src.cmd_vega,"календарь (день 4), Военные ящики","the calendar (day 4), War crates"
+cmdr.src.cmd_kort,"события, Военные ящики","events, War crates"
+cmdr.src.cmd_seir,"боевой пропуск, Военные ящики","the battle pass, War crates"
+cmdr.src.cmd_frey,"награда главы II, Военные ящики","the chapter II reward, War crates"
+cmdr.src.cmd_irma,"календарь (день 7), Королевский кейс","the calendar (day 7), the Royal case"
+cmdr.src.cmd_hawk,"награда главы III, Королевский кейс","the chapter III reward, the Royal case"
+cmdr.src.cmd_vance,"«Набор новобранца», события, Королевский кейс","the «Recruit pack», events, the Royal case"
+cmdr.src.cmd_rai,"награда главы IV, календарь (день 28), пропуск, кейсы","the chapter IV reward, the calendar (day 28), the pass, cases"
+cmdr.bio.cmd_bram,"Мельник с пограничья. В первый день Кремнёвые Бароны сожгли его мельницу — он собрал соседей с вилами и первым пошёл её отбивать. Речей не любит, верит в плотный строй и горячую похлёбку.",A miller from the borderlands. On the first day the Flint Barons burned his mill — he gathered his neighbours with pitchforks and led them to take it back. No speeches: a tight line and a hot stew.
+cmdr.bio.cmd_lira,"Деревенская лекарка, ставшая капитаном, когда в Долине не осталось офицеров. Устроила первый лазарет в амбаре и вернула в строй больше солдат, чем потеряла.",A village healer who became a captain when the Valley ran out of officers. She set up the first infirmary in a barn and sent back more soldiers than she ever lost.
+cmdr.bio.cmd_olm,"Сапёр-самоучка, разбирающий любую стену «по кирпичику». Слабое место забора он находит раньше, чем забор успевают достроить.",A self-taught sapper who takes any wall apart «brick by brick». He finds the weak spot of a fence before it is even finished.
+cmdr.bio.cmd_vik,"Охотник из лесов Вольных Хуторов, видит дым костра за три холма. Водит армии тропами, которых нет на картах.",A hunter from the Free Farmsteads' woods who spots campfire smoke three hills away. He leads armies down paths no map shows.
+cmdr.bio.cmd_vega,"Выпускница военной академии Речной Лиги, автор учебника «Острие и древко». Уверена: армия, бьющая с одной стороны, просто тратит время.",A River League academy graduate and the author of «Point and Shaft». To her an army striking from one side is just wasting time.
+cmdr.bio.cmd_kort,"Старый мастер осад, который никогда не штурмует то, что можно взять голодом. Солдаты зовут его «Маршал Терпение».",An old master of sieges who never storms what hunger can take. His soldiers call him «Marshal Patience».
+cmdr.bio.cmd_seir,"Капитан речных барж, ставший адмиралом единственного флота Райвона — десантного. Говорит, что вода не граница, а дорога.","A river barge captain who became admiral of Raivon's only fleet — a landing fleet. Water, he says, is not a border but a road."
+cmdr.bio.cmd_frey,"Комендант пограничной крепости, которая 20 лет не сдавала ворот. Каждый камень своих стен знает по имени.",The commandant of a border fortress that kept its gates shut for 20 years. She knows every stone of her walls by name.
+cmdr.bio.cmd_irma,"Первой пересадила кавалерию на броневики, и спорить с ней об этом уже некому. Ведёт прорывы сама, в головной машине.","The first to move the cavalry into armoured cars — nobody argues with her about it any more. She leads breakthroughs herself, in the lead vehicle."
+cmdr.bio.cmd_hawk,"Ас, который первым поднял биплан над полем боя, когда все смеялись над «летающими телегами». Теперь смеётся он.",The ace who first took a biplane over a battlefield while everyone laughed at «flying carts». Now he is the one laughing.
+cmdr.bio.cmd_vance,"Аристократка-стратег, выигрывающая сражения за чаем ещё до их начала. Её армии выходят на поле с готовым планом и лишним патроном.",An aristocrat strategist who wins battles over tea before they begin. Her armies take the field with a plan ready and a spare cartridge.
+cmdr.bio.cmd_rai,"Основатель первой державы Райвона, чьё имя носит сама земля. По легенде, он чувствовал фронт, как пульс, и знал, когда ударить, а когда подписать мир.","The founder of Raivon's first realm, whose name the land itself bears. Legend says he felt the front like a pulse and knew when to strike and when to sign the peace."
+cmdr.rarity.common,Обычный,Common
+cmdr.rarity.rare,Редкий,Rare
+cmdr.rarity.epic,Эпический,Epic
+cmdr.rarity.legendary,Легендарный,Legendary

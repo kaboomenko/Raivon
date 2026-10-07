@@ -30,6 +30,7 @@ const Weekly := preload("res://scripts/sim/weekly.gd")
 const Calendar := preload("res://scripts/sim/calendar.gd")
 const Patent := preload("res://scripts/sim/patent.gd")
 const Chronicle := preload("res://scripts/sim/chronicle.gd")
+const Commanders := preload("res://scripts/sim/commanders.gd")
 const March := preload("res://scripts/sim/march.gd")
 const Camps := preload("res://scripts/sim/camps.gd")
 const RingGen := preload("res://scripts/sim/ring_gen.gd")
@@ -98,6 +99,7 @@ var weekly  # weekly tasks (scripts/sim/weekly.gd)
 var calendar  # the 28-day login calendar (scripts/sim/calendar.gd)
 var patent  # «Державный патент», the subscription (scripts/sim/patent.gd)
 var chronicle  # «Летопись державы», 40 long goals (scripts/sim/chronicle.gd)
+var commanders  # commander levels (scripts/sim/commanders.gd); the shards themselves are `cases.shards`
 var hand_pick: Array = []
 var installed_at := 0  # the first launch (offers that start «from D2», 09 §9.9.2)
 var intro_offer_day := -1  # the game day the intro Patent offer was shown  # the player's slot cards (03 §5.2); empty — the default hand
@@ -182,6 +184,7 @@ func _ready() -> void:
 	calendar = Calendar.new()
 	patent = Patent.new()
 	chronicle = Chronicle.new()
+	commanders = Commanders.new()
 	installed_at = now_s()
 	camps = Camps.new(MAP_SEED ^ 0xCA4B)
 	save_enabled = save_enabled and not _scripted_run()
@@ -234,6 +237,8 @@ func _ready() -> void:
 	_set_mode(Mode.WAR if not war.is_empty() else Mode.MAP)
 	_open_tab("army")
 	_econ_tick()
+	if ftue == 0:
+		_grant_bram()
 	if loaded:
 		ui.toast(tr("toast.welcome_back"))
 	elif save_enabled:
@@ -2899,6 +2904,7 @@ func _sign_peace() -> void:
 		ftue = 0
 		_ftue_next = 7
 		ui.coach_hide()
+		_grant_bram()
 		if _mill >= 0:
 			map_view.clear_smoke(_mill)
 	_normalize_armies()
@@ -3486,7 +3492,11 @@ func _open_tab(t: String) -> void:
 # ---------------------------------------------------------------------- store & cases (canon §15)
 
 func _case_ctx() -> Dictionary:
-	return {"income_per_hour": econ.gross_per_hour(sim), "dl": econ.dev_level()}
+	var maxed: Array = []
+	for id in Commanders.PASSIVES:
+		if Commanders.maxed(_cmd_rarity(id), int(cases.shards.get(id, 0))):
+			maxed.append(id)
+	return {"income_per_hour": econ.gross_per_hour(sim), "dl": econ.dev_level(), "commanders_maxed": maxed}
 
 
 ## Real-money items are hidden in Russia (decision 16; the store country comes from the store SDK later,
@@ -4760,6 +4770,10 @@ func _chronicle_values() -> Dictionary:
 		if int(cases.shards.get(cmd, 0)) >= int(unlock.get(String(Cases.commander(cmd).get("rarity", "common")), 10)):
 			det += 1
 	v["@cmd_det"] = det
+	var top := 0
+	for id in Commanders.PASSIVES:
+		top = maxi(top, _cmd_level(id))
+	v["@cmd_level"] = top
 	return v
 
 
@@ -4801,6 +4815,156 @@ func _claim_chronicle(code: String) -> void:
 	_econ_tick()
 	_autosave()
 	_open_chronicle()
+
+
+# ---------------------------------------------------------------------- commanders (canon §8.4, 04 §15)
+
+func _cmd_rarity(id: String) -> String:
+	return String(Cases.commander(id).get("rarity", "common"))
+
+
+func _cmd_level(id: String) -> int:
+	return commanders.level(id, _cmd_rarity(id), int(cases.shards.get(id, 0)))
+
+
+func _cmd_owned_count() -> int:
+	var n := 0
+	for id in Commanders.PASSIVES:
+		if _cmd_level(id) > 0:
+			n += 1
+	return n
+
+
+func _cmd_block(id: String) -> String:
+	return commanders.block_reason(id, _cmd_rarity(id), int(cases.shards.get(id, 0)), int(econ.res["gold"]), econ.dev_level())
+
+
+func _cmd_upgradable() -> int:
+	var n := 0
+	for id in Commanders.PASSIVES:
+		if _cmd_block(id) == "":
+			n += 1
+	return n
+
+
+## Sergeant Bram comes with the first war of the tutorial (04 §15.3) — once; an old save gets him too.
+func _grant_bram() -> void:
+	if stats.has("bram_given"):
+		return
+	stats["bram_given"] = 1
+	cases.shards["cmd_bram"] = int(cases.shards.get("cmd_bram", 0)) + int(Commanders.UNLOCK["common"])
+
+
+## A passive's value as text: «+9,7%», «+7,4 п.п.», «×1,74».
+func _cmd_value_text(p: Array, lvl: int) -> String:
+	var v := Commanders.value(float(p[1]), float(p[2]), lvl)
+	var num := ("%.2f" if String(p[3]) == "x" else "%.1f") % v
+	if not Cases.is_english():
+		num = num.replace(".", ",")
+	match String(p[3]):
+		"%":
+			return "+%s%%" % num
+		"pp":
+			return tr("cmdr.pp") % num
+		"x":
+			return "×" + num
+	return ""
+
+
+## One line per part of the passive at a level: «Сила Пехоты: +9,7%».
+func _cmd_passive_lines(id: String, lvl: int) -> Array:
+	var out: Array = []
+	for p in Commanders.PASSIVES.get(id, []):
+		var nm := tr("cmdr.p." + String(p[0]))
+		out.append(nm if String(p[3]) == "" else "%s: %s" % [nm, _cmd_value_text(p, lvl)])
+	return out
+
+
+## The collection (04 §15.7): albums of a 3 × N grid — portrait, level «ур. 9/16», shards to the next level.
+func _open_commanders() -> void:
+	var dl: int = econ.dev_level()
+	var albums: Array = []
+	for a in Commanders.ALBUMS:
+		var cards: Array = []
+		var full := true
+		for id in a[1]:
+			var r := _cmd_rarity(id)
+			var total := int(cases.shards.get(id, 0))
+			var lvl := _cmd_level(id)
+			full = full and lvl > 0
+			var c: Array = commanders.next_cost(id, r, total)
+			var card := {"id": id, "name": Cases.commander_name(id), "rarity": r, "level": lvl, "cap": Commanders.level_cap(dl),
+				"can": _cmd_block(id) == ""}
+			if lvl <= 0:
+				card["shards"] = [total, int(Commanders.UNLOCK[r])]
+				card["src"] = tr("cmdr.src." + String(id))
+			elif not c.is_empty():
+				card["shards"] = [commanders.free_shards(id, r, total), int(c[0])]
+			cards.append(card)
+		albums.append({"name": tr("cmdr.album." + String(a[0])), "full": full, "cards": cards})
+	ui.show_commanders({"title": tr("cmdr.collection") % [_cmd_owned_count(), Commanders.PASSIVES.size()], "albums": albums},
+		func(id: String): _open_commander(id))
+
+
+## The commander card (04 §15.7): portrait, biography, the passive by level, «Повысить», sources, «Цель».
+func _open_commander(id: String) -> void:
+	var r := _cmd_rarity(id)
+	var total := int(cases.shards.get(id, 0))
+	var lvl := _cmd_level(id)
+	var dl: int = econ.dev_level()
+	var table: Array = []
+	var shown: Array = Commanders.TABLE_LEVELS.duplicate()
+	if lvl > 0 and not shown.has(lvl):
+		shown.append(lvl)
+		shown.sort()
+	for l in shown:
+		var vals := PackedStringArray()
+		for p in Commanders.PASSIVES[id]:
+			if String(p[3]) != "":
+				vals.append(_cmd_value_text(p, l))
+		table.append([l, " / ".join(vals)])
+	var info := {"id": id, "name": Cases.commander_name(id), "rarity": r, "rarity_name": tr("cmdr.rarity." + r), "level": lvl,
+		"cap": Commanders.level_cap(dl), "bio": tr("cmdr.bio." + id), "passive": _cmd_passive_lines(id, maxi(1, lvl)),
+		"table": table, "src": tr("cmdr.src." + id), "album": tr("cmdr.album." + Commanders.album_of(id))}
+	var block := _cmd_block(id)
+	var c: Array = commanders.next_cost(id, r, total)
+	if lvl <= 0:
+		info["button"] = tr("cmdr.locked") % [total, int(Commanders.UNLOCK[r])]
+	elif c.is_empty():
+		info["button"] = tr("cmdr.max")
+	elif block == "dl":
+		info["button"] = tr("cmdr.need_dl") % int(c[2])
+	else:
+		info["button"] = tr("cmdr.upgrade") % [int(c[0]), GameUI.fmt_num(int(c[1]))]
+		info["shards"] = [commanders.free_shards(id, r, total), int(c[0])]
+	info["can"] = block == ""
+	var on_target := Callable()
+	if r in ["epic", "legendary"] and not Commanders.maxed(r, total):
+		info["target"] = cases.target_commander == id
+		on_target = func(): _set_cmd_target(id)
+	ui.show_commander(info, func(): _upgrade_commander(id), on_target, func(): _open_commanders())
+
+
+func _upgrade_commander(id: String) -> void:
+	var block := _cmd_block(id)
+	if block != "":
+		ui.toast(tr("cmdr.why." + block))
+		return
+	var gold: int = commanders.upgrade(id, _cmd_rarity(id), int(cases.shards.get(id, 0)), int(econ.res["gold"]), econ.dev_level())
+	econ.res["gold"] = int(econ.res["gold"]) - gold
+	sfx.play("fanfare")
+	ui.toast(tr("cmdr.leveled") % [Cases.commander_name(id), _cmd_level(id)])
+	_econ_tick()
+	_autosave()
+	_open_commander(id)
+
+
+## «Поставить Целью» (09): the Royal case's target — the toast says so and the card refreshes.
+func _set_cmd_target(id: String) -> void:
+	if cases.set_target(id):
+		ui.toast(tr("cmdr.target_set") % Cases.commander_name(id))
+		_autosave()
+	_open_commander(id)
 
 
 # ---------------------------------------------------------------------- «Державный патент» (canon §15.7, 09 §9.13)
@@ -4907,12 +5071,16 @@ func _army_items(now: int) -> Array:
 	items.append(new_item)
 	if ftue == 0:
 		items.append({"id": -2, "name": tr("hand.title"), "hand": _hand_display()})
+		items.append({"id": -3, "name": tr("cmdr.title"), "commanders": [_cmd_owned_count(), Commanders.PASSIVES.size()], "dot": _cmd_upgradable() > 0})
 	return items
 
 
 func _on_army_action(id: int, kind: String) -> void:
 	if kind == "hand":
 		_open_hand_picker()
+		return
+	if kind == "commanders":
+		_open_commanders()
 		return
 	if kind == "train":
 		_train_army()
@@ -5701,6 +5869,25 @@ func _demo(spec: String) -> void:
 		_chronicle_tick()
 		chronicle.claim("ach_first_peace")
 		_open_chronicle()
+		return
+	if what == "commanders":  # the collection mid-game (commanders:card — Vega's card; commanders:tab — the Army tab)
+		econ.res["gold"] = 40000
+		econ._find_type("residence")["level"] = 4
+		for id in ["cmd_lira", "cmd_vega", "cmd_frey", "cmd_seir", "cmd_irma", "cmd_bram", "cmd_vik"]:
+			cases.shards[id] = int(cases.shards.get(id, 0)) + Commanders.spent(_cmd_rarity(id), 1)
+		cases.shards["cmd_bram"] = int(cases.shards["cmd_bram"]) + 30
+		cases.shards["cmd_vega"] = int(cases.shards["cmd_vega"]) + 20
+		cases.shards["cmd_olm"] = 6
+		cases.shards["cmd_rai"] = 20
+		cases.shards["cmd_hawk"] = 14
+		commanders.levels = {"cmd_bram": 6, "cmd_lira": 5, "cmd_vega": 4, "cmd_frey": 3, "cmd_irma": 2}
+		if parts.size() > 1 and parts[1] == "tab":
+			_open_tab("army")
+			return
+		if parts.size() > 1 and parts[1] == "card":
+			_open_commander("cmd_vega")
+			return
+		_open_commanders()
 		return
 	if what == "patent":  # the subscription screen (patent:on — while active)
 		if parts.size() > 1 and parts[1] == "on":
