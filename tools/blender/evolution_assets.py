@@ -999,6 +999,26 @@ def residence_dl3(team):
     tree(-0.6, -0.3, 0.8)
 
 
+def castle_tower(x, y, r, h, roof, team, flag=True):
+    """A round castle tower as in the concept art: plinth, body, a string course, merlons, a tall cone roof
+    with a gilt finial and a pennant in the team colour."""
+    st = stone(STONE)
+    dk = stone(STONE_D)
+    cy(r + 0.012, 0.05, (x, y, 0.025), dk, 12)
+    cy(r, h, (x, y, h / 2), st, 12)
+    cy(r + 0.006, 0.016, (x, y, h * 0.55), dk, 12)
+    cy(r + 0.014, 0.035, (x, y, h - 0.012), dk, 12)
+    for k in range(8):
+        a = math.tau * k / 8
+        bx((r * 0.38, r * 0.3, 0.045), (x + math.cos(a) * r, y + math.sin(a) * r, h + 0.022), st, a, 0)
+    cn(r + 0.03, r * 3.4, (x, y, h + r * 1.7 + 0.02), roof, 12)
+    top = h + r * 3.4 + 0.02
+    uvs(0.012, (x, y, top + 0.01), flat("finial", GOLD, 0.35), 6, 4)
+    if flag:
+        rod((x, y, top), (x, y, top + 0.13), 0.004, flat("pole", "#d9d2c3", 0.5), n=4)
+        bx((0.07, 0.004, 0.04), (x + 0.036, y, top + 0.11), flat("pennant_" + team, team, 0.6), 0, 0)
+
+
 def residence_dl4(team):
     pad(0.84, stone(COBBLE, 1.8), 0.014, 14, 0.03, 14)
     st = stone(STONE)
@@ -1023,10 +1043,8 @@ def residence_dl4(team):
         x1, y1 = corners[(i + 1) % 4]
         wall(x0, y0, x1, y1, 0.22 if i == 0 else 0.0)
     for (x, y) in corners:
-        cy(0.1, 0.46, (x, y, 0.23), st, 10)
-        cy(0.11, 0.04, (x, y, 0.44), stone(STONE_D), 10)
-        cn(0.13, 0.3, (x, y, 0.6), roof, 10)
-        window(x, y - 0.1, 0.33, 0, 0.025, 0.045)
+        castle_tower(x, y, 0.1, 0.52, roof, team)
+        window(x, y - 0.1, 0.36, 0, 0.025, 0.045)
     # gatehouse
     bx((0.26, 0.16, 0.4), (0, -H, 0.2), st, bev=0.01)
     bx((0.12, 0.02, 0.18), (0, -H - 0.08, 0.09), tex("wood", "#4a2f19"), bev=0)
@@ -1037,9 +1055,8 @@ def residence_dl4(team):
     for i in range(4):
         window(-0.11 + i * 0.1, -0.044, 0.48, 0, 0.03, 0.06)
     for (x, y, h) in ((-0.16, -0.04, 0.86), (0.24, -0.04, 0.78)):
-        cy(0.08, h, (x, y, h / 2), st, 10)
-        cy(0.09, 0.035, (x, y, h - 0.015), stone(STONE_D), 10)
-        cn(0.105, 0.27, (x, y, h + 0.135), roof, 10)
+        castle_tower(x, y, 0.08, h, roof, team, flag=False)
+    castle_tower(0.04, 0.24, 0.085, 1.08, roof, team)  # the tall central tower — the castle's silhouette
     build_at(lambda: stone_house(0.3, 0.22, 0.28, team, STONE), -0.26, 0.3)
     banner(0.04, 0.12, 1.32, team, 0.2)
     banner(-H, -H, 0.95, team, 0.13)
