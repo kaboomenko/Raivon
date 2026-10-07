@@ -441,6 +441,63 @@ def catapult():
         sphere("pile", r, (x, y, z), rock, (1, 1, 0.9), 2)
 
 
+def cannon():
+    """Field gun of the bicorne era: a bronze barrel with reinforcing rings on a two-cheek trail carriage,
+    tall spoked wheels, a rammer, a powder keg and a pyramid of shot."""
+    wd = m("wood", "#6e4a2c")
+    dk = m("wheel", "#4a3020")
+    iron = mat("iron", "#3b3d42", 0.55, 0.6)
+    bronze = mat("bronze", "#b0823a", 0.35, 0.85)
+    # trail carriage: two cheeks running down to the ground behind, transoms, an iron trail plate
+    for dy in (-0.04, 0.04):
+        _beam("cheek", (0.08, dy, 0.13), (-0.26, dy * 0.6, 0.02), 0.03, wd)
+    for f in (0.15, 0.5):
+        x = 0.08 - 0.34 * f
+        box("transom", (0.025, 0.07, 0.02), (x, 0, 0.13 - 0.11 * f), wd, 0.004)
+    box("trail_plate", (0.05, 0.05, 0.012), (-0.255, 0, 0.012), iron, 0.002)
+    cyl("handspike_ring", 0.012, 0.008, (-0.24, 0, 0.035), iron, 8, 0.0).rotation_euler.x = math.pi / 2
+    # wheels: tall, twelve spokes, iron tyre and hub
+    cyl("axle", 0.012, 0.2, (0.05, 0, 0.1), iron, 8, 0.0).rotation_euler.x = math.pi / 2
+    for dy in (-0.085, 0.085):
+        t = cyl("tyre", 0.1, 0.016, (0.05, dy, 0.1), iron, 20, 0.003)
+        t.rotation_euler.x = math.pi / 2
+        r = cyl("felloe", 0.092, 0.02, (0.05, dy * 1.01, 0.1), dk, 20, 0.0)
+        r.rotation_euler.x = math.pi / 2
+        cyl("inner", 0.078, 0.022, (0.05, dy * 1.02, 0.1), m("planks", "#9c7a52"), 18, 0.0).rotation_euler.x = math.pi / 2
+        for k in range(6):
+            sp = box("spoke", (0.008, 0.026, 0.16), (0.05, dy * 1.06, 0.1), dk, 0.0)
+            sp.rotation_euler = (0, k * math.pi / 6, 0)
+        h = cyl("hub", 0.022, 0.05, (0.05, dy * 1.1, 0.1), dk, 10, 0.003)
+        h.rotation_euler.x = math.pi / 2
+        cyl("cap", 0.014, 0.015, (0.05, dy * 1.4, 0.1), iron, 8, 0.0).rotation_euler.x = math.pi / 2
+    # barrel along +X, slightly raised; breech, rings, muzzle swell and the cascabel knob
+    el = -0.1
+
+    def on_axis(x):
+        return (x, 0, 0.165 + math.sin(-el) * x)
+    b = cyl("barrel", 0.03, 0.32, on_axis(0.08), bronze, 14, 0.004, r2=0.022)
+    b.rotation_euler = (0, math.pi / 2 + el, 0)
+    for x, r in ((-0.06, 0.034), (0.0, 0.03), (0.1, 0.026), (0.2, 0.026)):
+        o = cyl("ring", r, 0.014, on_axis(x), bronze, 14, 0.002)
+        o.rotation_euler = (0, math.pi / 2 + el, 0)
+    mz = cyl("muzzle", 0.028, 0.03, on_axis(0.235), bronze, 14, 0.003)
+    mz.rotation_euler = (0, math.pi / 2 + el, 0)
+    sphere("breech", 0.03, on_axis(-0.075), bronze, (0.7, 1, 1), 2)
+    sphere("cascabel", 0.013, on_axis(-0.11), bronze, (1, 1, 1), 1)
+    cyl("bore", 0.014, 0.004, on_axis(0.252), mat("bore", "#141414", 0.9), 10, 0.0).rotation_euler = (0, math.pi / 2 + el, 0)
+    for dy in (-0.032, 0.032):
+        cyl("trunnion", 0.01, 0.02, (0.02, dy, 0.165), bronze, 8, 0.0).rotation_euler.x = math.pi / 2
+    # crew kit: rammer leaning on the wheel, a powder keg, a pyramid of shot
+    _beam("rammer", (-0.05, 0.14, 0.0), (0.2, 0.12, 0.05), 0.008, m("planks", "#a8743f"), 0.0)
+    cyl("sponge", 0.016, 0.04, (0.215, 0.12, 0.053), mat("sponge", "#3a2f28", 0.95), 8, 0.0).rotation_euler.y = math.pi / 2 - 0.2
+    cyl("keg", 0.035, 0.07, (-0.14, -0.13, 0.035), wd, 12, 0.006)
+    for z in (0.012, 0.058):
+        cyl("hoop", 0.037, 0.008, (-0.14, -0.13, z), iron, 12, 0.0)
+    shot = mat("shot", "#2b2c2f", 0.5, 0.7)
+    for (x, y, z) in ((0.2, -0.12, 0.016), (0.232, -0.12, 0.016), (0.216, -0.092, 0.016), (0.216, -0.11, 0.042)):
+        sphere("ball", 0.016, (x, y, z), shot, (1, 1, 1), 2)
+
+
 def mounted_knight(color):
     def build():
         horse = m("horse", "#6b4a2f", 0.75)
@@ -506,6 +563,7 @@ ASSETS = {
     "rock": rock,
     "mountain": mountain,
     "catapult": catapult,
+    "cannon": cannon,
     "knight_blue": mounted_knight(ROOF_BLUE),
     "knight_red": mounted_knight("#b3272b"),
     "squad_blue": infantry_squad(ROOF_BLUE),
