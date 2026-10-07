@@ -242,6 +242,7 @@ func _ready() -> void:
 	if ftue == 0:
 		_grant_bram()
 	hud.set_flag(flag)
+	map_view.set_flag(flag)
 	if loaded:
 		ui.toast(tr("toast.welcome_back"))
 	elif save_enabled:
@@ -5176,6 +5177,7 @@ func _open_flag_editor(draft: Dictionary = {}) -> void:
 		func():
 			flag = f
 			hud.set_flag(flag)
+			map_view.set_flag(flag)
 			sfx.play("seal")
 			_autosave()
 			_open_profile())
@@ -6089,6 +6091,14 @@ func _demo(spec: String) -> void:
 		_chronicle_tick()
 		chronicle.claim("ach_first_peace")
 		_open_chronicle()
+		return
+	if what == "flag_map":  # the player's flag on the map's banners, close to the first army
+		flag = {"div": "quarters", "c1": 0, "c2": 13, "em": "tower", "ec": 16, "frame": ""}
+		hud.set_flag(flag)
+		map_view.set_flag(flag)
+		var pa := _player_armies()
+		if not pa.is_empty():
+			rig.focus(map_view.cell_world(int(pa[0]["hex"])), 0.1)
 		return
 	if what == "flag":  # the flag constructor: flag[:colors|em|frame] opens that tab on a sample flag
 		ui._flag_tab = parts[1] if parts.size() > 1 else "div"

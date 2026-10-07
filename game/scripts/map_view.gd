@@ -6,6 +6,7 @@ extends Node3D
 const Types := preload("res://scripts/sim/types.gd")
 const MapGen := preload("res://scripts/sim/map_gen.gd")
 const HexGrid := preload("res://scripts/sim/hexgrid.gd")
+const FlagView := preload("res://scripts/flag_view.gd")
 
 const SQ3 := 1.7320508
 const DIRS := [Vector2i(1, 0), Vector2i(1, -1), Vector2i(0, -1), Vector2i(-1, 0), Vector2i(-1, 1), Vector2i(0, 1)]
@@ -17,6 +18,10 @@ const C_WILD := Color(0.75, 0.72, 0.62)
 var sim  # World (RefCounted)
 var at_war_with := -1
 var models := {}
+var flag: Dictionary = FlagView.DEFAULT.duplicate()  # the player's flag, painted on the player's banners
+var _flag_vp: SubViewport
+var _flag_view: Control
+var _flag_mat: StandardMaterial3D
 var rng := RandomNumberGenerator.new()
 
 # ceremony: hex id -> flip time (s); before flip the hex is drawn with prev_owner
@@ -211,7 +216,52 @@ func spawn(name: String, parent: Node, pos: Vector3, rot := 0.0, s := 1.0) -> No
 		var sails := n.get_node_or_null("sails")
 		if sails:
 			_sails.append(sails)
+	if name == "banner_blue":
+		_paint_flag(n)
 	return n
+
+
+## The player's flag (10 §4.23) on both faces of a banner's cloth (tools/blender/export_assets.py: the cloth is
+## 0.26 × 0.416 from x 0, its top at y 0.98, 0.012 thick): one viewport texture shared by every banner, so a new
+## flag repaints them all at once.
+func _paint_flag(banner: Node3D) -> void:
+	var quad := QuadMesh.new()
+	quad.size = Vector2(0.25, 0.4)
+	for face in [1.0, -1.0]:
+		var mi := MeshInstance3D.new()
+		mi.mesh = quad
+		mi.material_override = _flag_material()
+		mi.position = Vector3(0.13, 0.775, 0.0095 * face)
+		mi.rotation.y = 0.0 if face > 0 else PI
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		banner.add_child(mi)
+
+
+func _flag_material() -> StandardMaterial3D:
+	if _flag_mat == null:
+		_flag_vp = SubViewport.new()
+		_flag_vp.size = Vector2i(130, 208)
+		_flag_vp.transparent_bg = true
+		_flag_vp.disable_3d = true
+		_flag_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+		_flag_view = FlagView.new(flag)
+		_flag_view.size = Vector2(130, 208)
+		_flag_vp.add_child(_flag_view)
+		add_child(_flag_vp)
+		_flag_mat = StandardMaterial3D.new()
+		_flag_mat.albedo_texture = _flag_vp.get_texture()
+		_flag_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+		_flag_mat.alpha_scissor_threshold = 0.5
+		_flag_mat.roughness = 0.75
+	return _flag_mat
+
+
+func set_flag(f: Dictionary) -> void:
+	flag = f.duplicate()
+	if _flag_view:
+		_flag_view.set("flag", flag)
+		_flag_view.queue_redraw()
+		_flag_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 
 # ------------------------------------------------------------------ static terrain
