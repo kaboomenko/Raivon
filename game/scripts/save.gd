@@ -59,6 +59,8 @@ static func to_dict(g: Node) -> Dictionary:
 		"first_convoy_done": g.first_convoy_done,
 		"training": g.training,
 		"ad_counts": g.ad_counts,
+		"installed_at": g.installed_at,
+		"intro_offer_day": g.intro_offer_day,
 		"opinion": g.opinion,
 		"gift_at": g.gift_at,
 		"stats": g.stats,
@@ -187,6 +189,8 @@ static func apply(g: Node, d: Dictionary) -> bool:
 		tr[k] = int(st2[k])
 	g.training = tr
 	g.ad_counts = d.get("ad_counts", {})
+	g.installed_at = int(d.get("installed_at", g.installed_at))
+	g.intro_offer_day = int(d.get("intro_offer_day", -1))
 	var op := {}
 	var so: Dictionary = d.get("opinion", {})
 	for k in so:

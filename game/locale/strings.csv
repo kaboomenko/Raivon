@@ -908,3 +908,10 @@ pack.patent,Державный патент,Sovereign Patent
 pack.patent.desc,"Подписка: награды роликов сразу, +1 строитель и обоз, автосбор, 40 Райвитов в день, ключ Королевского кейса в неделю.","Subscription: video rewards at once, +1 builder and convoy, auto-collect, 40 Raivites a day, a Royal case key a week."
 pack.period_month,/ мес.,/ mo
 shop.open_key,Открыть ключом (%d),Open with a key (%d)
+cal.double_patent,×2 · Патент,×2 · Patent
+settings.manage_sub,Управление подпиской,Manage subscription
+settings.manage_soon,Откроется экран подписок App Store / Google Play,Opens the App Store / Google Play subscriptions screen
+patent.offer_title,Награды роликов — сразу,Video rewards — at once
+patent.offer_line,Получайте награды роликов без просмотра — 7 дней за %s.,Get video rewards without watching — 7 days for %s.
+patent.offer_more,Подробнее,Details
+patent.offer_later,Не сейчас,Not now

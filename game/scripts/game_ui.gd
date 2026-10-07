@@ -768,7 +768,7 @@ func show_calendar(info: Dictionary, on_claim: Callable) -> void:
 	if info["pending"]:
 		if info["can_double"]:
 			_button(box, Rect2(30, by, 400, 76), tr("ui.claim"), Color(0.75, 0.55, 0.12), func(): on_claim.call(false))
-			_button(box, Rect2(451, by, 400, 76), tr("cal.double"), Color(0.2, 0.55, 0.3), func(): on_claim.call(true))
+			_button(box, Rect2(451, by, 400, 76), tr("cal.double_patent" if info.get("patent", false) else "cal.double"), Color(0.2, 0.55, 0.3), func(): on_claim.call(true))
 		else:
 			_button(box, Rect2(30, by, 821, 76), tr("ui.claim"), Color(0.75, 0.55, 0.12), func(): on_claim.call(false))
 	else:
@@ -896,12 +896,12 @@ func show_choice(title: String, lines: Array, buttons: Array) -> void:
 
 ## Settings: sound, language (applies at once: `on_lang` gets "ru" / "en" and re-renders the game, then this
 ## modal is shown again by the caller), new game, build info.
-func show_settings(sound_on: bool, on_sound: Callable, on_new_game: Callable, on_lang: Callable) -> void:
-	var box := _modal_box(Rect2(90, 420, 761, 704))
+func show_settings(sound_on: bool, on_sound: Callable, on_new_game: Callable, on_lang: Callable, on_manage := Callable(), on_restore := Callable()) -> void:
+	var box := _modal_box(Rect2(90, 380, 761, 804))
 	_at(_label(tr("settings.title"), 36), box, Vector2(40, 30))
 	_button(box, Rect2(40, 110, 681, 84), tr("settings.sound_on") if sound_on else tr("settings.sound_off"), Color(0.2, 0.3, 0.45), func():
 		on_sound.call()
-		show_settings(not sound_on, on_sound, on_new_game, on_lang))
+		show_settings(not sound_on, on_sound, on_new_game, on_lang, on_manage, on_restore))
 	var ll := _label(tr("settings.language"), 24)
 	ll.size = Vector2(250, 84)
 	ll.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -933,7 +933,12 @@ func show_settings(sound_on: bool, on_sound: Callable, on_new_game: Callable, on
 				prog.size.x = 0.0)
 	_at(_label(tr("settings.autosave"), 18, MUTED, false), box, Vector2(40, 434))
 	_at(_label(tr("settings.build") % ProjectSettings.get_setting("application/config/version", "0.3"), 18, MUTED, false), box, Vector2(40, 470))
-	_button(box, Rect2(40, 584, 681, 84), tr("ui.close"), Color(0.13, 0.4, 0.9), close_modal)
+	# store purchases (09 §9.13.4, Apple 3.1.1): the system subscription screen and «Restore purchases»
+	if on_manage.is_valid():
+		_button(box, Rect2(40, 530, 333, 70), tr("settings.manage_sub"), Color(0.2, 0.25, 0.36), on_manage)
+	if on_restore.is_valid():
+		_button(box, Rect2(388, 530, 333, 70), tr("patent.restore"), Color(0.2, 0.25, 0.36), on_restore)
+	_button(box, Rect2(40, 684, 681, 84), tr("ui.close"), Color(0.13, 0.4, 0.9), close_modal)
 
 
 # ------------------------------------------------------------------ market (05 §13)

@@ -96,7 +96,9 @@ var bp  # «Военный пропуск» (scripts/sim/battlepass.gd)
 var weekly  # weekly tasks (scripts/sim/weekly.gd)
 var calendar  # the 28-day login calendar (scripts/sim/calendar.gd)
 var patent  # «Державный патент», the subscription (scripts/sim/patent.gd)
-var hand_pick: Array = []  # the player's slot cards (03 §5.2); empty — the default hand
+var hand_pick: Array = []
+var installed_at := 0  # the first launch (offers that start «from D2», 09 §9.9.2)
+var intro_offer_day := -1  # the game day the intro Patent offer was shown  # the player's slot cards (03 §5.2); empty — the default hand
 var _cal_auto := false  # a new calendar day waits to be shown once the player is free (08 §8.8.1)
 var _collect_counted := 0  # last «Собрать всё» counted for order_collect_3 (≥30 min apart)
 var camps  # marauder camps (scripts/sim/camps.gd)
@@ -177,6 +179,7 @@ func _ready() -> void:
 	weekly = Weekly.new()
 	calendar = Calendar.new()
 	patent = Patent.new()
+	installed_at = now_s()
 	camps = Camps.new(MAP_SEED ^ 0xCA4B)
 	save_enabled = save_enabled and not _scripted_run()
 	_init_language()
@@ -269,7 +272,11 @@ func _set_language(code: String) -> void:
 
 
 func _show_settings() -> void:
-	ui.show_settings(sfx.enabled, func(): sfx.enabled = not sfx.enabled, _new_game, _set_language)
+	var manage := Callable()
+	if _payments_enabled():
+		manage = func(): ui.toast(tr("settings.manage_soon"))  # showManageSubscriptions / the Play deep link with the SDK
+	ui.show_settings(sfx.enabled, func(): sfx.enabled = not sfx.enabled, _new_game, _set_language, manage,
+		func(): ui.toast(tr("patent.restored")))
 
 
 # ====================================================================== scene setup
@@ -4217,7 +4224,8 @@ func _open_calendar() -> void:
 		elif k == n:
 			state = "today"
 		days.append({"day": d, "text": " + ".join(parts), "state": state, "key": not bool(e[1])})
-	ui.show_calendar({"cycle": cyc, "days": days, "pending": calendar.pending, "can_double": calendar.can_double()},
+	ui.show_calendar({"cycle": cyc, "days": days, "pending": calendar.pending, "can_double": calendar.can_double(),
+		"patent": patent.active(now_s())},
 		func(double: bool): _claim_calendar(double))
 
 
@@ -4767,7 +4775,33 @@ func _rewarded(key: String, cap: int) -> bool:
 	ad_counts[key] = rec
 	# the subscriber gets the reward at once, in the same caps (09 §9.13.1)
 	ui.toast(tr("toast.patent_reward") if patent.active(now_s()) else tr("toast.test_ad_reward"))
+	_intro_offer_check(day)
 	return true
+
+
+## The intro Patent offer (09 §9.13.2): on the 3rd rewarded video of a day, from D2, once a day, only to those who
+## can still take it and only where payments work.
+func _intro_offer_check(day: int) -> void:
+	if not _payments_enabled() or patent.active(now_s()) or not patent.trial_eligible() or intro_offer_day == day:
+		return
+	if day < installed_at / 86400 + 1:
+		return
+	var total := 0
+	for k in ad_counts:
+		var rec: Array = ad_counts[k]
+		if int(rec[0]) == day:
+			total += int(rec[1])
+	if total != 3:
+		return
+	intro_offer_day = day
+	_show_intro_offer.call_deferred()
+
+
+func _show_intro_offer() -> void:
+	ui.show_choice(tr("patent.offer_title"), [tr("patent.offer_line") % "$1.99", tr("patent.trial") % ["$1.99", "$7.99"]], [
+		[tr("patent.offer_more"), Color(0.75, 0.55, 0.12), func(): _open_patent()],
+		[tr("patent.offer_later"), Color(0.3, 0.33, 0.4), func(): ui.close_modal()],
+	])
 
 
 func _army_items(now: int) -> Array:

@@ -561,6 +561,21 @@ func _run() -> void:
 	g.patent.until = 0
 	g._patent_tick(g.now_s())
 	_check(g.econ.bonus_builders == 0 and g.Economy.speedup_price(500) > 0 and g.econ.builders + g.econ.bonus_builders == pt_b0, "perks stop when it ends")
+	# the intro Patent offer on the 3rd rewarded video of a day, from D2 (09 §9.13.2)
+	g.installed_at = g.now_s() - 2 * 86400
+	g.ad_counts = {}
+	g.intro_offer_day = -1
+	var io_trial: bool = g.patent.trial_used
+	g.patent.trial_used = false
+	g._rewarded("t_a", 5)
+	g._rewarded("t_b", 5)
+	_check(g.intro_offer_day == -1, "no offer before the 3rd video")
+	g._rewarded("t_c", 5)
+	await process_frame
+	_check(not g._payments_enabled() or (g.intro_offer_day >= 0 and g.ui.has_modal()), "the 3rd video of the day brings the intro offer")
+	g.ui.close_modal()
+	g.patent.trial_used = io_trial
+	g.ad_counts = {}
 	# the hand (03 §5.2): «Атака» + 4 slots of the player's choice
 	var hand0: Array = g._hand_display()
 	_check(hand0[0] == "attack" and hand0.size() <= 1 + g._hand_slots(), "the default hand: «Атака» + slots")
