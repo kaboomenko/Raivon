@@ -151,7 +151,7 @@ func _draw() -> void:
 		if cmd == "cmd_lira":
 			for sx in [-1.0, 1.0]:
 				for i in 3:
-					_fill(_ellipse(hc + Vector2(sx * hw * (0.28 + i * 0.13), hh * (0.2 + (i % 2) * 0.07)), u * 0.006, u * 0.006, 0.0, TAU, 8), Color(0.7, 0.4, 0.25))  # freckles
+					draw_circle(hc + Vector2(sx * hw * (0.28 + i * 0.13), hh * (0.2 + (i % 2) * 0.07)), u * 0.004, Color(0.78, 0.5, 0.36, 0.8), true, -1.0, true)  # freckles
 		if cmd in ["cmd_bram", "cmd_frey"]:
 			draw_line(hc + Vector2(hw * 0.45, hh * 0.15), hc + Vector2(hw * 0.65, hh * 0.45), Color(0.75, 0.45, 0.4), u * 0.012, true)  # scar
 	# facial hair
