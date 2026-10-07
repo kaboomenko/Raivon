@@ -545,6 +545,22 @@ func _run() -> void:
 	_check(not bool(g._order_items()[1].get("swap", true)), "one free swap a day")
 	g._orders_chip()
 	_check(g.hud._orders_chip.visible and g.hud._orders_lbl.text.ends_with("/3"), "the HUD chip shows today's orders")
+	# «Державный патент» (09 §9.13): perks while active
+	var pt_b0: int = g.econ.builders + g.econ.bonus_builders
+	g._on_buy_sku("iap_sub_trial")
+	g.ui.close_modal()
+	_check(g.patent.active(g.now_s()) and g.econ.bonus_builders == 1 and g.deposits.bonus_convoys == 1, "the subscription adds a builder and a convoy")
+	_check(g.Economy.speedup_price(500) == 0 and g.Economy.speedup_price(700) > 0, "timers ≤10 min finish for free")
+	var pt_rv0: int = g.econ.res["raivite"]
+	g._claim_patent_daily()
+	_check(int(g.econ.res["raivite"]) == pt_rv0 + 40, "the day's 40 Raivites")
+	_check(g.cases.royal_keys >= 1 and g.cases.owned_cosmetics.has("cos_frame_patent_month"), "the week's Royal key and the month's frame")
+	g._open_patent()
+	_check(g.ui.has_modal(), "the subscription screen opens")
+	g.ui.close_modal()
+	g.patent.until = 0
+	g._patent_tick(g.now_s())
+	_check(g.econ.bonus_builders == 0 and g.Economy.speedup_price(500) > 0 and g.econ.builders + g.econ.bonus_builders == pt_b0, "perks stop when it ends")
 	# the hand (03 §5.2): «Атака» + 4 slots of the player's choice
 	var hand0: Array = g._hand_display()
 	_check(hand0[0] == "attack" and hand0.size() <= 1 + g._hand_slots(), "the default hand: «Атака» + slots")

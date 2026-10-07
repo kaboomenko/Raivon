@@ -56,6 +56,7 @@ var glitter: int = 0
 ## «Цель» of the Royal case (cmd_* id of an epic or legendary commander; "" = none).
 var target_commander: String = ""
 var free_crates: int = 0
+var royal_keys: int = 0  # Royal case keys (the subscription gives one a week, 09 §9.13.1); never expire
 ## Unix time of the next free crate; 0 = timer not running (not started yet, or storage full).
 var next_free_crate: int = 0
 ## Collection-case items already received this season (cos_* ids, in order).
@@ -936,6 +937,7 @@ func to_dict() -> Dictionary:
 		"glitter": glitter,
 		"target_commander": target_commander,
 		"free_crates": free_crates,
+		"royal_keys": royal_keys,
 		"next_free_crate": next_free_crate,
 		"collection_opened": collection_opened.duplicate(),
 		"collection_season": collection_season,
@@ -961,6 +963,7 @@ static func from_dict(d: Dictionary) -> RefCounted:
 	c.glitter = int(d.get("glitter", 0))
 	c.target_commander = String(d.get("target_commander", ""))
 	c.free_crates = int(d.get("free_crates", 0))
+	c.royal_keys = int(d.get("royal_keys", 0))
 	c.next_free_crate = int(d.get("next_free_crate", 0))
 	var co: Array = d.get("collection_opened", [])
 	for id in co:

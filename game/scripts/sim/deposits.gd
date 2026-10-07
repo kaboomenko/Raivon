@@ -80,8 +80,11 @@ func at(hex: int) -> Dictionary:
 	return {}
 
 
+var bonus_convoys := 0  # the subscription's extra convoy (09 §9.13.1), set by the game while it is active
+
+
 func free_convoys(dev_level: int) -> int:
-	return CONVOYS[clampi(dev_level, 0, 10)] - convoys.size()
+	return CONVOYS[clampi(dev_level, 0, 10)] + bonus_convoys - convoys.size()
 
 
 ## A deposit can be gathered when it is free, on passable land the player controls or on wild land,

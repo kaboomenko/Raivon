@@ -139,6 +139,9 @@ const SPEEDUP_POINTS := [[1, 1], [10, 6], [60, 20], [180, 50], [480, 100], [1440
 var res: Dictionary = {}
 var buildings: Array = []
 var builders: int = START_BUILDERS
+var bonus_builders := 0  # the subscription's temporary builder (09 §9.13.1), set by the game while it is active
+## Timers this short finish for free (canon §13.1: 5 min; 10 min with the subscription — the game sets it).
+static var free_finish := FREE_FINISH_SEC
 var last_tick: int = 0
 ## hex id -> {res: whole units} of uncollected income (only keys > 0; hexes with nothing are absent).
 var stock: Dictionary = {}
@@ -430,7 +433,7 @@ func speedup_cost(b: Dictionary, now: int) -> int:
 
 
 static func speedup_price(seconds_left: int) -> int:
-	if seconds_left <= FREE_FINISH_SEC:
+	if seconds_left <= free_finish:
 		return 0
 	if seconds_left <= 60:
 		return 1
@@ -775,7 +778,7 @@ func factory_pct() -> int:
 func _can_pay_and_staff(type: String, cost: Dictionary, now: int) -> String:
 	if TREASURY_LOCKED.has(type) and treasury_empty():
 		return "err.treasury_empty"
-	if busy_builders(now) >= builders:
+	if busy_builders(now) >= builders + bonus_builders:
 		return "err.builders_busy"
 	for r in ["gold", "food", "metal", "oil"]:
 		if int(cost.get(r, 0)) > int(res.get(r, 0)):

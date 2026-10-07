@@ -28,6 +28,7 @@ const Orders := preload("res://scripts/sim/orders.gd")
 const BattlePass := preload("res://scripts/sim/battlepass.gd")
 const Weekly := preload("res://scripts/sim/weekly.gd")
 const Calendar := preload("res://scripts/sim/calendar.gd")
+const Patent := preload("res://scripts/sim/patent.gd")
 const March := preload("res://scripts/sim/march.gd")
 const Camps := preload("res://scripts/sim/camps.gd")
 const RingGen := preload("res://scripts/sim/ring_gen.gd")
@@ -94,6 +95,7 @@ var pass_xp := 0  # legacy: pass XP saved before the pass existed, moved into `b
 var bp  # «Военный пропуск» (scripts/sim/battlepass.gd)
 var weekly  # weekly tasks (scripts/sim/weekly.gd)
 var calendar  # the 28-day login calendar (scripts/sim/calendar.gd)
+var patent  # «Державный патент», the subscription (scripts/sim/patent.gd)
 var hand_pick: Array = []  # the player's slot cards (03 §5.2); empty — the default hand
 var _cal_auto := false  # a new calendar day waits to be shown once the player is free (08 §8.8.1)
 var _collect_counted := 0  # last «Собрать всё» counted for order_collect_3 (≥30 min apart)
@@ -174,6 +176,7 @@ func _ready() -> void:
 	bp = BattlePass.new()
 	weekly = Weekly.new()
 	calendar = Calendar.new()
+	patent = Patent.new()
 	camps = Camps.new(MAP_SEED ^ 0xCA4B)
 	save_enabled = save_enabled and not _scripted_run()
 	_init_language()
@@ -3211,12 +3214,13 @@ func _econ_tick() -> void:
 			_finish_colonize(h)
 		else:
 			map_view.hex_label(h, "⛳ " + GameUI.fmt_time(int(colonizing[h]) - now))
-	hud.set_resources(econ.res, econ.income_per_hour(sim), econ.storage_cap(), econ.builders - econ.busy_builders(now), econ.builders)
+	hud.set_resources(econ.res, econ.income_per_hour(sim), econ.storage_cap(), econ.builders + econ.bonus_builders - econ.busy_builders(now), econ.builders + econ.bonus_builders)
 	hud.set_level(econ.dev_level())
 	hud.set_mail(_unread())
 	_market_hint()
 	_apply_remote_if_any()
 	hud.shop_dot.visible = cases.claim_free_crates(now) > 0
+	_patent_tick(now)
 	_calendar_tick(now)
 	_orders_chip()
 	_ai_tick(now)
@@ -3496,6 +3500,10 @@ func _on_open_case(case_id: String, times: int, pay: String) -> void:
 		"ad":
 			if not _rewarded("ad_free_crate", 2):
 				return
+		"key":
+			if int(cases.royal_keys) <= 0:
+				return
+			cases.royal_keys -= 1
 		"raivite":
 			var price: int = cases.price_x10(case_id) if times == 10 else cases.price(case_id)
 			if int(econ.res["raivite"]) < price:
@@ -3576,6 +3584,9 @@ func _demo_salient(s: int) -> void:
 
 ## Store purchases: no billing SDK yet. Debug (test) builds grant the item so flows can be tested.
 func _on_buy_sku(sku: String) -> void:
+	if sku == "patent_screen":
+		_open_patent()
+		return
 	if not OS.is_debug_build():
 		ui.toast(tr("toast.purchases_soon"))
 		return
@@ -3597,6 +3608,11 @@ func _on_buy_sku(sku: String) -> void:
 				cases.owned_cosmetics[String(BattlePass.data().get("elite_cosmetic", ""))] = true
 			ui.toast(tr("toast.pass_bought"))
 			_open_pass()
+		"iap_sub_patent", "iap_sub_trial":
+			patent.buy(now_s(), sku == "iap_sub_trial")
+			_patent_tick(now_s())
+			ui.toast(tr("toast.patent_on") % patent.days_left(now_s()))
+			_open_patent()
 		"iap_builder":
 			if first:
 				econ.builders += 1
@@ -3791,6 +3807,9 @@ func _world_items() -> Array:
 		bp.refresh(now_s())
 		items.append({"kind": "star", "id": "pass", "icon": "🎖", "open": true, "claimed": false,
 			"title": tr("pass.card") % bp.level(), "progress": bp.xp % BattlePass.XP_LEVEL, "need": BattlePass.XP_LEVEL})
+		if patent.active(now_s()):
+			items.append({"kind": "star", "id": "patent_daily", "icon": "📜", "title": tr("patent.card") % Patent.DAILY_RAIVITE,
+				"progress": 1 if patent.daily_ready(now_s()) else 0, "need": 1, "claimed": not patent.daily_ready(now_s())})
 		var cd: int = maxi(1, calendar.credited)
 		items.append({"kind": "star", "id": "calendar", "icon": "🗓", "open": true, "claimed": false, "ready": calendar.pending,
 			"title": tr("cal.card") % Calendar.day_in_cycle(cd), "progress": Calendar.day_in_cycle(cd), "need": Calendar.LENGTH})
@@ -3826,6 +3845,9 @@ func _on_world_action(id: String) -> void:
 		return
 	if id == "calendar":
 		_open_calendar()
+		return
+	if id == "patent_daily":
+		_claim_patent_daily()
 		return
 	if id.begins_with("weekly"):
 		_claim_weekly(id)
@@ -4691,6 +4713,47 @@ func _open_hand_picker() -> void:
 			ui.show_armies(_army_items(now_s())))
 
 
+# ---------------------------------------------------------------------- «Державный патент» (canon §15.7, 09 §9.13)
+
+## Applies the subscription's perks while it is active and pays its weekly key and monthly frame.
+func _patent_tick(now: int) -> void:
+	var on: bool = patent.active(now)
+	econ.bonus_builders = 1 if on else 0  # a task already started finishes; new ones need a free builder
+	deposits.bonus_convoys = 1 if on else 0
+	Economy.free_finish = Patent.FREE_FINISH_SEC if on else Economy.FREE_FINISH_SEC
+	if not on:
+		return
+	if patent.weekly_key(now):
+		cases.royal_keys += 1
+		_post("inbox.patent_key.title", "inbox.patent_key.text")
+	if patent.month_frame(now):
+		cases.owned_cosmetics["cos_frame_patent_month"] = true
+	# income is collected automatically (05 §5.4)
+	if not econ.stock.is_empty():
+		var got: Dictionary = econ.collect_all()
+		econ.collect_veins()
+		if not got.is_empty() and now - _collect_counted >= 1800:  # counts for «Приказы дня» like a tap
+			_collect_counted = now
+			_stat("collects")
+
+
+func _open_patent() -> void:
+	var now := now_s()
+	ui.show_patent({"active": patent.active(now), "days_left": patent.days_left(now), "trial": patent.trial_eligible(),
+		"can_buy": _payments_enabled(), "price": "$7.99", "trial_price": "$1.99"},
+		func(sku: String): _on_buy_sku(sku),
+		func(): ui.toast(tr("patent.restored")))
+
+
+func _claim_patent_daily() -> void:
+	if patent.claim_daily(now_s()):
+		econ.res["raivite"] = int(econ.res["raivite"]) + Patent.DAILY_RAIVITE
+		sfx.play("coin")
+		ui.toast(tr("toast.patent_daily") % Patent.DAILY_RAIVITE)
+		_autosave()
+	_open_tab("world")
+
+
 ## Rewarded placement with a daily cap (canon §15.2). Test builds grant the reward without an SDK.
 func _rewarded(key: String, cap: int) -> bool:
 	var day := now_s() / 86400
@@ -4702,7 +4765,8 @@ func _rewarded(key: String, cap: int) -> bool:
 		return false
 	rec[1] = int(rec[1]) + 1
 	ad_counts[key] = rec
-	ui.toast(tr("toast.test_ad_reward"))
+	# the subscriber gets the reward at once, in the same caps (09 §9.13.1)
+	ui.toast(tr("toast.patent_reward") if patent.active(now_s()) else tr("toast.test_ad_reward"))
 	return true
 
 
@@ -5510,6 +5574,12 @@ func _demo(spec: String) -> void:
 		bp.add_xp(4600, now_s())
 		bp.claim(1, "free")
 		_open_pass()
+		return
+	if what == "patent":  # the subscription screen (patent:on — while active)
+		if parts.size() > 1 and parts[1] == "on":
+			patent.buy(now_s())
+			_patent_tick(now_s())
+		_open_patent()
 		return
 	if what == "hand":  # the hand picker at DL6 (5 slots, the airstrike open); hand:tab — the Army tab card
 		econ._find_type("residence")["level"] = 6

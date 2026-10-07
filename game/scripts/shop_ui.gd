@@ -27,6 +27,7 @@ const PACK_SKUS := [
 	["iap_no_ads", "pack.no_ads", "$4,99", "pack.no_ads.desc", ""],
 	["iap_ration", "pack.ration", "$4,99", "pack.ration.desc", "pack.period_30d"],
 	["iap_pass", "pack.pass", "$7,99", "pack.pass.desc", "pack.period_season"],
+	["patent_screen", "pack.patent", "$7,99", "pack.patent.desc", "pack.period_month"],
 ]
 
 var ui: GameUI  # styles, labels, buttons, toast
@@ -125,7 +126,10 @@ func _cases_tab() -> void:
 	var tname: String = cases.commander_name(tgt) if tgt != "" else tr("shop.target_none")
 	ui._at(ui._label(tr("shop.target") % tname, 18, MUTED, false), c2, Vector2(24, 98))
 	var p1: int = cases.price("case_royal")
-	ui._button(c2, Rect2(24, 150, 360, 84), tr("shop.open_price") % p1, Color(0.45, 0.25, 0.75), func(): open_case.emit("case_royal", 1, "raivite"))
+	if int(cases.royal_keys) > 0:
+		ui._button(c2, Rect2(24, 150, 360, 84), tr("shop.open_key") % int(cases.royal_keys), Color(0.75, 0.55, 0.12), func(): open_case.emit("case_royal", 1, "key"))
+	else:
+		ui._button(c2, Rect2(24, 150, 360, 84), tr("shop.open_price") % p1, Color(0.45, 0.25, 0.75), func(): open_case.emit("case_royal", 1, "raivite"))
 	ui._button(c2, Rect2(400, 150, 360, 84), "×10 · %d 💎" % cases.price_x10("case_royal"), Color(0.6, 0.3, 0.85), func(): open_case.emit("case_royal", 10, "raivite"))
 	ui._at(ui._label(tr("shop.x10_note"), 17, MUTED, false), c2, Vector2(400, 244))
 	_info_button(c2, Vector2(780, 160), "case_royal")

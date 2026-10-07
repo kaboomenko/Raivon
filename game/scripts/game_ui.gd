@@ -780,6 +780,50 @@ func show_calendar(info: Dictionary, on_claim: Callable) -> void:
 	_button(box, Rect2(30, by + 90, 821, 76), tr("ui.close"), Color(0.13, 0.4, 0.9), close_modal)
 
 
+## «Державный патент» (09 §9.13.4, Apple 3.1.2): name and term, the renewal price biggest, the intro offer on one
+## line next to its button, the perks, the auto-renewal terms, the legal links, «Restore purchases», a close
+## cross visible at once.
+func show_patent(info: Dictionary, on_buy: Callable, on_restore: Callable) -> void:
+	var box := _modal_box(Rect2(30, 230, 881, 1060))
+	_button(box, Rect2(881 - 86, 18, 64, 56), "✕", Color(0.3, 0.33, 0.42), close_modal)
+	var t := _label(tr("patent.title"), 30, Color(1.0, 0.85, 0.4))
+	_fit(t, 30, 730)
+	_at(t, box, Vector2(30, 26))
+	var price := _label(tr("patent.price") % String(info["price"]), 46)
+	_at(price, box, Vector2(30, 76))
+	var y := 150.0
+	if info["active"]:
+		_at(_label(tr("patent.active") % int(info["days_left"]), 22, Color(0.5, 1.0, 0.6)), box, Vector2(30, y))
+		y += 40.0
+	var perks := ["patent.p_ads", "patent.p_builder", "patent.p_convoy", "patent.p_collect", "patent.p_timers",
+		"patent.p_raivite", "patent.p_key", "patent.p_frame"]
+	var icons := ["▶", "🔨", "🐎", "🧺", "⏱", "💎", "🔑", "🖼"]
+	for i in perks.size():
+		var row := _label("%s  %s" % [icons[i], tr(perks[i])], 21, TEXT, false)
+		row.autowrap_mode = TextServer.AUTOWRAP_WORD
+		row.custom_minimum_size = Vector2(821, 0)
+		_at(row, box, Vector2(30, y))
+		y += _line_h(tr(perks[i])) + 6.0
+	y += 10.0
+	if info["can_buy"]:
+		_button(box, Rect2(30, y, 821, 80), tr("patent.buy") % String(info["price"]), Color(0.75, 0.55, 0.12), func(): on_buy.call("iap_sub_patent"))
+		y += 92.0
+		if info["trial"]:
+			_button(box, Rect2(30, y, 821, 70), tr("patent.trial") % [String(info["trial_price"]), String(info["price"])], Color(0.2, 0.45, 0.35), func(): on_buy.call("iap_sub_trial"))
+			y += 82.0
+	else:
+		_at(_label(tr("patent.unavailable"), 20, MUTED, false), box, Vector2(30, y))
+		y += 40.0
+	var terms := _label(tr("patent.renewal"), 16, MUTED, false)
+	terms.autowrap_mode = TextServer.AUTOWRAP_WORD
+	terms.custom_minimum_size = Vector2(821, 0)
+	_at(terms, box, Vector2(30, y))
+	y += 70.0
+	_button(box, Rect2(30, y, 260, 56), tr("patent.terms_link"), Color(0.2, 0.25, 0.36), func(): toast(tr("patent.doc_soon")))
+	_button(box, Rect2(310, y, 260, 56), tr("patent.privacy_link"), Color(0.2, 0.25, 0.36), func(): toast(tr("patent.doc_soon")))
+	_button(box, Rect2(590, y, 261, 56), tr("patent.restore"), Color(0.2, 0.25, 0.36), func(): on_restore.call())
+
+
 ## AI ultimatum (canon §9.1): accept (cede the hex), pay tribute, or refuse (war).
 func show_ultimatum(enemy: String, hex_name: String, tribute: int, can_pay: bool, left_sec: int, on_accept: Callable, on_pay: Callable, on_refuse: Callable) -> void:
 	var box := _modal_box(Rect2(50, 380, 841, 860), true)

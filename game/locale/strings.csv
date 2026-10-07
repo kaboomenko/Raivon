@@ -878,3 +878,33 @@ star.c4_two_fronts,Война на два фронта: два победных 
 cal.pick_title,Осколки на выбор: %d,Shards of your choice: %d
 cal.pick_line,Кому отдать осколки? Рядом — сколько их уже у командира.,Who gets the shards? Next to each name — how many that commander already has.
 cal.pick_btn,%s · есть %d,%s · has %d
+toast.patent_reward,"Патент: награда сразу, без ролика","Patent: the reward at once, no video"
+toast.patent_on,Державный патент активен: %d дн.,Sovereign Patent active: %d d
+toast.patent_daily,Патент: +%d Райвитов,Patent: +%d Raivites
+inbox.patent_key.title,Ключ Королевского кейса,A Royal case key
+inbox.patent_key.text,Державный патент: ключ недели ждёт в Лавке — откройте Королевский кейс бесплатно.,Sovereign Patent: this week's key waits in the Shop — open a Royal case for free.
+patent.card,Патент: забрать %d Райвитов,Patent: take %d Raivites
+patent.title,Державный патент — подписка на 1 месяц,Sovereign Patent — a 1-month subscription
+patent.price,%s / месяц,%s / month
+patent.active,Активен ещё %d дн.,Active for %d more days
+patent.p_ads,"Награды роликов сразу, без просмотра (в тех же лимитах); межстраничной рекламы нет","Video rewards at once, no watching (same limits); no interstitial ads"
+patent.p_builder,+1 временный строитель,+1 temporary builder
+patent.p_convoy,+1 обоз к залежам,+1 convoy to deposits
+patent.p_collect,Доход собирается сам,Income is collected automatically
+patent.p_timers,Таймеры до 10 минут завершаются бесплатно,Timers up to 10 minutes finish for free
+patent.p_raivite,40 Райвитов каждый день (забирать ежедневно),40 Raivites every day (claim daily)
+patent.p_key,Ключ Королевского кейса каждую неделю,A Royal case key every week
+patent.p_frame,Анимированная рамка «Патент месяца» за каждый месяц,An animated «Patent of the Month» frame for every month
+patent.buy,Оформить · %s в месяц,Subscribe · %s a month
+patent.trial,"7 дней за %s, затем %s в месяц","7 days for %s, then %s a month"
+patent.unavailable,Подписка недоступна в вашем регионе,The subscription is not available in your region
+patent.renewal,"Подписка продлевается автоматически, пока вы её не отмените. Отменить можно в настройках App Store / Google Play не позднее чем за 24 ч до конца периода.",The subscription renews automatically until you cancel it. Cancel in the App Store / Google Play settings at least 24 h before the period ends.
+patent.terms_link,Условия,Terms
+patent.privacy_link,Конфиденциальность,Privacy
+patent.restore,Восстановить покупки,Restore purchases
+patent.restored,Покупки проверены — всё на месте,Purchases checked — all restored
+patent.doc_soon,Документ откроется в браузере после публикации в сторах,The document opens in the browser after the store release
+pack.patent,Державный патент,Sovereign Patent
+pack.patent.desc,"Подписка: награды роликов сразу, +1 строитель и обоз, автосбор, 40 Райвитов в день, ключ Королевского кейса в неделю.","Subscription: video rewards at once, +1 builder and convoy, auto-collect, 40 Raivites a day, a Royal case key a week."
+pack.period_month,/ мес.,/ mo
+shop.open_key,Открыть ключом (%d),Open with a key (%d)
