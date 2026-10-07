@@ -41,6 +41,8 @@ var _control_lbl: Label
 var _control_lbl2: Label
 var _score_lbl: Label
 var _laststand: Label
+var _war_flags: Array = []  # [player FlagView, enemy FlagView] at the ends of the control bar (concept panel 7)
+var _war_swords: Label
 var _battle: Control
 var _energy_lbl: Label
 var _energy_segs: Array = []
@@ -141,20 +143,36 @@ func _build_control_bar() -> void:
 	_control_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	root.add_child(_control_bar)
 	_panel(_control_bar, Rect2(108, 84, 612, 74), _style(PANEL, 12), Control.MOUSE_FILTER_IGNORE)
-	var bar := _panel(_control_bar, Rect2(122, 94, 584, 30), _style(Color(0.85, 0.15, 0.13), 14, Color(1, 1, 1, 0.9), 2), Control.MOUSE_FILTER_IGNORE)
-	_control_fill = _panel(bar, Rect2(2, 2, 290, 26), _style(Color(0.18, 0.45, 1.0), 12, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
-	_control_lbl = _at(_label("50%", 18), _control_bar, Vector2(134, 96)) as Label
-	_control_lbl2 = _at(_label("50%", 18), _control_bar, Vector2(650, 96)) as Label
+	var bar := _panel(_control_bar, Rect2(156, 94, 516, 30), _style(Color(0.85, 0.15, 0.13), 14, Color(1, 1, 1, 0.9), 2), Control.MOUSE_FILTER_IGNORE)
+	_control_fill = _panel(bar, Rect2(2, 2, 256, 26), _style(Color(0.18, 0.45, 1.0), 12, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
+	_control_lbl = _at(_label("50%", 18), _control_bar, Vector2(168, 96)) as Label
+	_control_lbl2 = _at(_label("50%", 18), _control_bar, Vector2(616, 96)) as Label
+	# the two sides' flags at the ends and crossed swords on the front line, as on the concept's Last Stand panel
+	for x in [116.0, 678.0]:
+		var fv := FlagView.new(FlagView.DEFAULT)
+		fv.position = Vector2(x, 90)
+		fv.size = Vector2(32, 40)
+		fv.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_control_bar.add_child(fv)
+		_war_flags.append(fv)
+	_war_swords = _at(_label("⚔", 26), _control_bar, Vector2(400, 90), Vector2(32, 34)) as Label
+	_war_swords.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_score_lbl = _at(_label(tr("ui.war_score_zero"), 15, MUTED, false), _control_bar, Vector2(126, 128)) as Label
 	_laststand = _at(_label(tr("ui.last_stand"), 17, Color(1, 0.4, 0.35)), _control_bar, Vector2(350, 128)) as Label
 	_control_bar.visible = false
 
 
-func set_control(score: float, control: int, enemy: String, visible_bar: bool) -> void:
+func set_control(score: float, control: int, enemy: String, visible_bar: bool, flags: Array = []) -> void:
 	_control_bar.visible = visible_bar
 	if not visible_bar:
 		return
-	_control_fill.size.x = 580.0 * clampf(control / 100.0, 0.0, 1.0)
+	_control_fill.size.x = 512.0 * clampf(control / 100.0, 0.0, 1.0)
+	_war_swords.position.x = 158.0 + _control_fill.size.x - 16.0
+	for i in mini(flags.size(), _war_flags.size()):
+		var fv: Control = _war_flags[i]
+		if fv.get("flag") != flags[i]:
+			fv.set("flag", flags[i])
+			fv.queue_redraw()
 	_control_lbl.text = "%d%%" % control
 	_control_lbl2.text = "%d%%" % (100 - control)
 	_score_lbl.text = tr("ui.war_status") % [enemy, score]

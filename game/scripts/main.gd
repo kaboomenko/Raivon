@@ -452,7 +452,8 @@ func _refresh_ui() -> void:
 	var enemy: int = war.get("enemy", -1)
 	map_view.at_war_with = enemy
 	var ws := War.war_score(sim, war) if not war.is_empty() else {}
-	ui.set_control(ws.get("score", 0.0), ws.get("control", 50), _state_name(enemy), not war.is_empty() and mode in [Mode.WAR, Mode.BATTLE, Mode.RESULT])
+	ui.set_control(ws.get("score", 0.0), ws.get("control", 50), _state_name(enemy), not war.is_empty() and mode in [Mode.WAR, Mode.BATTLE, Mode.RESULT],
+		[map_view.state_flag(Types.PLAYER), map_view.state_flag(enemy)])
 	ui.set_battle(mode == Mode.BATTLE and battle != null, battle.energy[Types.PLAYER] if battle else 0, Battle.ENERGY_UNIT, _cooldowns(), battle.seconds_left() if battle else 0, battle != null and battle.is_rush())
 	ui.set_corps(battle != null and (battle.opts.get("cards", []) as Array).has("corps") and not battle._corps_used.has(Types.PLAYER))
 	if mode not in [Mode.MAP, Mode.WAR]:
