@@ -6146,6 +6146,7 @@ func _ftue_tick(delta: float) -> void:
 # ====================================================================== frame
 
 func _process(delta: float) -> void:
+	map_view.set_zoom(rig.zoom)
 	if selection.visible:
 		var k := 1.0 + 0.03 * sin(Time.get_ticks_msec() / 160.0)
 		selection.scale = Vector3(k, 0.15, k)

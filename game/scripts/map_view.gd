@@ -1068,8 +1068,11 @@ func _rebuild_overlay() -> void:
 		m.albedo_color = Color(0.72, 0.62, 0.6) if o == at_war_with else Color(0.86, 0.8, 0.78)
 		m.cull_mode = BaseMaterial3D.CULL_DISABLED
 		_add(scorch[o], m)
+	_tint_mats = []
 	for o in tints:
-		_add(tints[o], _tint_mat(Color.WHITE, 1.0))
+		var tm := _tint_mat(Color.WHITE, _tint_k)
+		_tint_mats.append(tm)
+		_add(tints[o], tm)
 	for o in hatch:
 		_add(hatch[o], _hatch_mat(state_color(o)))
 	for o in lines:
@@ -1077,6 +1080,21 @@ func _rebuild_overlay() -> void:
 	for o in borders:
 		var e := 2.6 if (o == Types.PLAYER or o == at_war_with) else 1.6  # strong enough to glow, still coloured
 		_add(borders[o], _glow_mat(state_color(o), e, 1.0))
+
+
+var _tint_mats: Array = []
+var _tint_k := 1.0
+
+
+## The territory fills follow the zoom (art direction §1): rich colour on the strategic view, see-through up close
+## where the land, buildings and troops are the point. zoom: 0 close … 1 far (camera_rig.gd).
+func set_zoom(zoom: float) -> void:
+	var k := lerpf(0.5, 1.0, smoothstep(0.1, 0.6, zoom))
+	if absf(k - _tint_k) < 0.01:
+		return
+	_tint_k = k
+	for m in _tint_mats:
+		(m as StandardMaterial3D).albedo_color.a = k
 
 
 func _st(dict: Dictionary, key: int) -> SurfaceTool:
