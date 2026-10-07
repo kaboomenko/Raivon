@@ -1331,7 +1331,7 @@ func _road_segment(st: SurfaceTool, a: int, b: int) -> void:
 		prev_r = r
 
 
-## Shortest way from `from` to `to` over passable hexes of `own` (breadth first), [] if there is none.
+## Shortest way from `from` to `to` over passable hexes of `own` (-99: anyone's), breadth first; [] if there is none.
 func _land_path(from: int, to: int, own: int) -> Array:
 	var prev := {from: -1}
 	var queue: Array = [from]
@@ -1343,7 +1343,7 @@ func _land_path(from: int, to: int, own: int) -> Array:
 			if nb < 0 or prev.has(nb):
 				continue
 			var cn: Dictionary = sim.cells[nb]
-			if not Types.is_passable(cn) or owner_of(cn) != own:
+			if not Types.is_passable(cn) or (own != -99 and owner_of(cn) != own):
 				continue
 			prev[nb] = h
 			queue.append(nb)
@@ -1983,16 +1983,22 @@ func set_deposits(deposits: Array, convoys: Array) -> void:
 			_carts[id] = cart
 		var ph: Dictionary = cv["phase"]
 		var target := cell_world(int(cv["hex"]))
+		var route: Array = cart.get_meta("route", [])
+		if route.is_empty():  # along the hexes (and so the roads) instead of straight over the woods
+			var hexes := _land_path(int(sim.states[Types.PLAYER]["capital_id"]), int(cv["hex"]), -99)
+			for h in hexes:
+				route.append(cell_world(int(h)))
+			if route.size() < 2:
+				route = [cap, target]
+			cart.set_meta("route", route)
 		var p: Vector3
 		match String(ph["phase"]):
 			"out":
-				p = cap.lerp(target, float(ph["progress"]))
-				(cart.get_node("body") as Node3D).rotation.y = atan2(target.x - cap.x, target.z - cap.z)
+				p = _along(cart, route, float(ph["progress"]), false)
 			"gather":
 				p = target + Vector3(0.3, 0, 0.25)
 			_:
-				p = target.lerp(cap, float(ph["progress"]))
-				(cart.get_node("body") as Node3D).rotation.y = atan2(cap.x - target.x, cap.z - target.z)
+				p = _along(cart, route, float(ph["progress"]), true)
 		cart.position = p
 		var lbl: Label3D = cart.get_node("label")
 		lbl.text = ("⛏ " if String(ph["phase"]) == "gather" else "") + _fmt_left(int(ph["left"]))
@@ -2000,6 +2006,26 @@ func set_deposits(deposits: Array, convoys: Array) -> void:
 		if not live.has(id):
 			_carts[id].queue_free()
 			_carts.erase(id)
+
+
+## A point at `f` (0..1) of the way along the route polyline (backwards on the way home); turns the cart along it.
+func _along(cart: Node3D, route: Array, f: float, back: bool) -> Vector3:
+	var pts := route.duplicate()
+	if back:
+		pts.reverse()
+	var total := 0.0
+	for i in pts.size() - 1:
+		total += (pts[i] as Vector3).distance_to(pts[i + 1])
+	var want := clampf(f, 0.0, 1.0) * total
+	for i in pts.size() - 1:
+		var a: Vector3 = pts[i]
+		var b: Vector3 = pts[i + 1]
+		var d := a.distance_to(b)
+		if want <= d or i == pts.size() - 2:
+			(cart.get_node("body") as Node3D).rotation.y = atan2(b.x - a.x, b.z - a.z)
+			return a.lerp(b, clampf(want / maxf(d, 0.001), 0.0, 1.0))
+		want -= d
+	return pts[pts.size() - 1]
 
 
 static func _fmt_left(sec: int) -> String:

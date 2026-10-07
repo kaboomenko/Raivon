@@ -6238,6 +6238,10 @@ func _handle_args() -> void:
 
 
 
+func _hex_dist(a: int, b: int) -> int:
+	return HexGrid.distance(Vector2i(int(sim.cells[a]["q"]), int(sim.cells[a]["r"])), Vector2i(int(sim.cells[b]["q"]), int(sim.cells[b]["r"])))
+
+
 ## Scripted states for screenshots: plays the offensive with a simple bot (same as tests/test_sim.gd).
 func _demo(spec: String) -> void:
 	var parts := spec.split(":")
@@ -6304,6 +6308,22 @@ func _demo(spec: String) -> void:
 	if what == "flag_wizard":  # the FTUE 3-tap flag: flag_wizard[:1|2|3] — that step
 		var st := int(parts[1]) if parts.size() > 1 else 0
 		_open_flag_wizard(st, FlagView.random_flag(_flag_seed()), func(): pass)
+		return
+	if what == "convoy":  # a convoy half way out to the farthest reachable deposit, following the hexes
+		var best := -1
+		var cap_id: int = sim.states[Types.PLAYER]["capital_id"]
+		for d in deposits.active:
+			var h := int(d["hex"])
+			if deposits.can_send(sim, h, econ.dev_level()) == "" and (best < 0 or _hex_dist(h, cap_id) > _hex_dist(best, cap_id)):
+				best = h
+		if best >= 0:
+			deposits.send(sim, best, econ.dev_level(), now_s(), false)
+			var cv: Dictionary = deposits.convoy_for(best)
+			var shift := (int(cv["arrive"]) - int(cv["depart"])) / 2
+			for k in ["depart", "arrive", "gathered", "back"]:
+				cv[k] = int(cv[k]) - shift
+			_sync_deposits()
+			rig.focus(map_view.cell_world(best).lerp(map_view.cell_world(cap_id), 0.5), 0.3)
 		return
 	if what == "flag_map":  # the player's flag on the map's banners, close to the first army
 		flag = {"div": "quarters", "c1": 0, "c2": 13, "em": "tower", "ec": 16, "frame": ""}
