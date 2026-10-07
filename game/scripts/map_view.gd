@@ -830,9 +830,11 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 		return
 	match c["terrain"]:
 		"forest":
-			for i in rng.randi_range(8, 12):
-				var off := Vector3(rng.randf_range(-0.62, 0.62), 0, rng.randf_range(-0.62, 0.62))
-				spawn("tree_pine" if rng.randf() < 0.75 else "tree_round", holder, p + off, rng.randf() * TAU, rng.randf_range(0.85, 1.3))
+			# a thick wood as in the reference frames: more, closer trees, a few tall ones above the canopy
+			for i in rng.randi_range(12, 16):
+				var off := Vector3(rng.randf_range(-0.66, 0.66), 0, rng.randf_range(-0.66, 0.66))
+				var tall := rng.randf() < 0.2
+				spawn("tree_pine" if rng.randf() < 0.8 else "tree_round", holder, p + off, rng.randf() * TAU, rng.randf_range(1.2, 1.45) if tall else rng.randf_range(0.8, 1.15))
 			for i in rng.randi_range(1, 2):
 				spawn("bush", holder, p + Vector3(rng.randf_range(-0.6, 0.6), 0, rng.randf_range(-0.6, 0.6)), rng.randf() * TAU, rng.randf_range(1.0, 1.25))
 		"hills":
