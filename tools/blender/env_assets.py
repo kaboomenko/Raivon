@@ -171,7 +171,7 @@ def mountain_paint(grass_line=0.13, snow_line=0.78):
         rock = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.55, 0.9), 0.5), rock, "#b8ad9c")
         scree = p.mix(p.step(p.noise(18.0), 0.4, 0.6), "#8f7f62", "#a7966f")
         col = p.mix(p.step(zz, grass_line + 0.16, grass_line + 0.04), rock, scree)
-        grass = p.mix(p.step(p.noise(9.0, 3.0), 0.35, 0.65), "#467f2b", "#5f9c38")  # ≈ map plain grass
+        grass = p.mix(p.step(p.noise(9.0, 3.0), 0.35, 0.65), "#3f5f2a", "#526f33")  # ≈ map plain grass (muted, 2026-10-08)
         col = p.mix(p.step(zz, grass_line + 0.03, grass_line - 0.03), col, grass)
         sf = p.math("ADD", zz, p.math("MULTIPLY", p.math("SUBTRACT", p.nz, 0.55), 0.35))
         snow = p.mix(p.step(p.nz, 0.2, 0.8), "#c9d6e6", "#fbfdff")

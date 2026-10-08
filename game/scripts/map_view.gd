@@ -916,7 +916,7 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 		return
 	if not Types.is_passable(c):
 		if c["terrain"] == "mountain":
-			spawn("mountain", holder, Vector3.ZERO, rng.randf() * TAU, rng.randf_range(1.2, 1.6))
+			spawn("mountain", holder, Vector3.ZERO, rng.randf() * TAU, rng.randf_range(1.75, 2.05))  # massifs that rise over the map, as in the reference
 		return
 	var p := Vector3.ZERO
 	var side := _faction_suffix(c["owner"])
