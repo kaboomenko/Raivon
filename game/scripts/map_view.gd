@@ -1449,6 +1449,9 @@ func _build_horizon() -> void:
 	var tiles: Array = []  # fog-hex and forest-base cylinders, drawn as two MultiMeshes (one draw each)
 	var bases: Array = []
 	var clouds: Array = []  # [position, size] of the low clouds, one billboard MultiMesh
+	var zmax := -1e9  # the open world's near edge (toward the camera): the bay starts beyond it
+	for c in sim.cells:
+		zmax = maxf(zmax, cell_world(int(c["id"])).z)
 	var ring_mat := StandardMaterial3D.new()
 	ring_mat.albedo_color = Color(0.13, 0.2, 0.12)  # dark forest floor, as the wooded rim of the references
 	var rr: int = maxi(4, int(sim.radius))  # the horizon ring sits around the open world (grows by chapter)
@@ -1461,7 +1464,7 @@ func _build_horizon() -> void:
 				continue
 			var p := axial_to_world(q, r)
 			var roll := rng.randf()
-			var near := p.z > 3.0  # bottom of the screen: keep low so it never hides the player's land
+			var near := p.z > zmax - 0.5  # below the world's near edge (bottom of the screen): the open bay
 			if d <= rr + 2:
 				if near:  # below the player's land the open sea of the bay shows instead (reference frame 1)
 					if d == rr + 1 and roll < 0.3:
