@@ -1842,11 +1842,13 @@ def district_scifi(team):
     for ang in (0.0, math.pi / 3, -math.pi / 3):  # three glowing avenues across the plate
         bx((1.3, 0.016, 0.006), (0, 0, 0.016), street, ang, 0)
     gl = dark_glass()
+    steel = facade("#aab3bf", "#22436e", 0.045, 0.06, 0.62, 0.55, lit="#9fdcff", lit_p=0.4)  # the light steel of frame 2
     neon = team_neon(team)
     blocks = [(-0.3, 0.26, 0.2, 0.18, 0.42), (0.28, 0.3, 0.22, 0.2, 0.62), (0.34, -0.24, 0.18, 0.16, 0.34),
               (-0.26, -0.3, 0.24, 0.16, 0.5)]
-    for (x, y, w, d, h) in blocks:
-        build_at(lambda w=w, d=d, h=h: (neon_box(w, d, 0.012, h, team, gl),
+    for i, (x, y, w, d, h) in enumerate(blocks):
+        m_ = steel if i % 2 == 0 else gl
+        build_at(lambda w=w, d=d, h=h, m_=m_: (neon_box(w, d, 0.012, h, team, m_),
                                         bx((w * 0.6, d * 0.6, 0.04), (0, 0, 0.012 + h + 0.02), flat("roofdeck", "#4a515c", 0.6), bev=0.004)),
                  x, y, 0.2)
     beam((-0.3, 0.26, 0.3), (0.28, 0.3, 0.3), 0.04, flat("bridge", "#c9d0d8", 0.4))  # skybridge

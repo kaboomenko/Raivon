@@ -683,6 +683,36 @@ func pop_hex(id: int) -> void:
 	tw.tween_property(holder, "scale", Vector3.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
+## A pillar of light from the sci-fi capital's spire into the sky (reference frame 2), in the state's colour,
+## slowly breathing; drawn without depth writes so it reads as light, not a solid.
+func _sky_beam(holder: Node3D, owner: int) -> void:
+	var col := state_color(owner).lerp(Color(0.7, 0.9, 1.0), 0.45)
+	for layer in [[0.05, 1.0], [0.16, 0.28]]:  # a bright core and a soft halo
+		var mi := MeshInstance3D.new()
+		var cm := CylinderMesh.new()
+		cm.top_radius = layer[0] * 0.6
+		cm.bottom_radius = layer[0]
+		cm.height = 14.0
+		cm.radial_segments = 12
+		cm.cap_top = false
+		cm.cap_bottom = false
+		mi.mesh = cm
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+		m.cull_mode = BaseMaterial3D.CULL_DISABLED
+		m.no_depth_test = false
+		m.albedo_color = Color(col.r, col.g, col.b, layer[1])
+		mi.material_override = m
+		mi.position = Vector3(0, 2.2 + 7.0, 0)
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		holder.add_child(mi)
+		var tw := mi.create_tween().set_loops()
+		tw.tween_property(m, "albedo_color:a", layer[1] * 0.55, 1.6).set_trans(Tween.TRANS_SINE)
+		tw.tween_property(m, "albedo_color:a", layer[1], 1.6).set_trans(Tween.TRANS_SINE)
+
+
 ## Guards of the owner's era drilling in front of the capital gate (reference frame 4: soldiers in the castle yard
 ## and at the gate), small and animated like the field armies.
 func _place_guards(c: Dictionary, holder: Node3D, rot: float) -> void:
@@ -1037,6 +1067,8 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 				var early := rm.contains("_dl1_") or rm.contains("_dl2_") or rm.contains("_dl3_")
 				spawn(rm, holder, p, 0.3 if c["owner"] == Types.PLAYER else PI, 1.3 if early else 1.0, int(c["owner"]))  # small early buildings fill the hex
 				_place_guards(c, holder, 0.3 if c["owner"] == Types.PLAYER else PI)
+				if c["owner"] == Types.PLAYER and (rm.contains("_dl8_") or rm.contains("_dl9_") or rm.contains("_dl10_")):  # one beam, the player's
+					_sky_beam(holder, int(c["owner"]))
 			else:
 				var model := "castle" if c["owner"] == Types.PLAYER else ("castle_green" if c["owner"] == MapGen.HAMLETS else "castle_red")
 				spawn(model, holder, p, 0.3 if c["owner"] == Types.PLAYER else PI, 1.35)

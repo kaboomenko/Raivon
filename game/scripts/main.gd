@@ -6254,6 +6254,10 @@ func _handle_args() -> void:
 			econ._find_type("residence")["level"] = int(a.substr(5))
 			_econ_tick()
 			map_view.refresh_props()
+		elif a.begins_with("--ai-dl="):  # every AI state at that development level (late-game screenshots)
+			for st in _ai_states():
+				sim.states[st]["dev_level"] = int(a.substr(8))
+			map_view.refresh_props()
 		elif a.begins_with("--focus="):  # centre the camera on a hex: --focus=q,r[,zoom]
 			var fp := a.substr(8).split(",")
 			rig.focus(map_view.cell_world(sim.id_at(int(fp[0]), int(fp[1]))), float(fp[2]) if fp.size() > 2 else rig.zoom)
