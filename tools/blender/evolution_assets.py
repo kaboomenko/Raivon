@@ -1423,46 +1423,57 @@ def residence_dl7(team):
         tree(x, y, 0.75)
 
 
+def steel_facade():
+    """Light grey steel of the late-era citadel (reference frame 5): rows of dark slit windows, some lit cold blue."""
+    return facade("#737b86", "#1e2731", 0.04, 0.07, 0.5, 0.5, lit="#9ad8ff", lit_p=0.2)
+
+
+def citadel_tower(x, y, w, d, h, st, plate, neon, cap):
+    """A tall rectangular tower of the citadel: a body with a setback crown, a four-sided spire, vertical light
+    strips in the front corners and a glowing band at the setback."""
+    bx((w, d, h), (x, y, h / 2), st, bev=0.006)
+    bx((w + 0.012, d + 0.012, 0.03), (x, y, h * 0.35), plate, bev=0.003)  # string course
+    bx((w * 0.78, d * 0.78, h * 0.16), (x, y, h + h * 0.08), st, bev=0.005)  # setback crown
+    bx((w * 0.8 + 0.006, 0.008, 0.01), (x, y - d * 0.4 - 0.003, h + 0.006), neon, bev=0)  # a light line under the crown
+    cn(min(w, d) * 0.42, h * 0.32, (x, y, h * 1.16 + h * 0.16), cap, 4, rot=(0, 0, math.pi / 4))
+    for sx in (-1, 1):  # light strips running up the front corners
+        bx((0.008, 0.006, h * 0.8), (x + sx * w * 0.36, y - d / 2 - 0.003, h * 0.52), neon, bev=0)
+
+
 def residence_dl8(team):
-    gl = dark_glass()
-    neon = team_neon(team)
+    """The late-era capital after reference frame 5: a grey steel citadel of tall towers round a central keep with
+    a spire, cold-blue light strips, a portal hall at the head of a grand stair, side wings and great banners."""
+    st = steel_facade()
+    plate = flat("plate8", "#505760", 0.45)
+    cap = flat("spire8", "#a7afb9", 0.35)
+    neon = glow("strip" + team, shade(team, 1.25), 2.0)  # cold light strips: thin lines, not lamps (frame 5)
     cyan = glow("cyan", CYAN, 2.5)
-    base = flat("plaza8", "#2e333c", 0.6)
+    base = stone("#6a7079", 1.4)  # a paved concrete plaza
     extrude(ngon(0.86, 12, math.pi / 12), -0.01, 0.06, base)
     for k in range(12):  # neon rim of the podium
         a0, a1 = math.pi / 12 + k * math.tau / 12, math.pi / 12 + (k + 1) * math.tau / 12
         beam((math.cos(a0) * 0.80, math.sin(a0) * 0.80, 0.062), (math.cos(a1) * 0.80, math.sin(a1) * 0.80, 0.062), 0.014, neon)
-    extrude(ngon(0.52, 6, math.pi / 6), 0.06, 0.24, gl)
-    hx = ngon(0.525, 6, math.pi / 6)
-    for k in range(6):
-        beam((*hx[k], 0.235), (*hx[(k + 1) % 6], 0.235), 0.016, neon)
-    # main hexagonal tapered tower
-    z0, h, r0, r1 = 0.24, 2.0, 0.3, 0.15
-    cy(r0, h, (0, 0, z0 + h / 2), gl, 6, r2=r1, rot=(0, 0, math.pi / 6))
-    for f in (0.2, 0.4, 0.6, 0.8, 0.98):
-        r = r0 + (r1 - r0) * f
-        cy(r + 0.01, 0.018, (0, 0, z0 + h * f), neon, 6, rot=(0, 0, math.pi / 6))
-    # three buttress fins with neon edges
-    for k in range(3):
-        a = math.pi / 2 + k * math.tau / 3
-        ca, sa = math.cos(a), math.sin(a)
-        pts = [(0.24, 0.06), (0.62, 0.06), (0.62, 0.3), (0.24, 1.55)]
-        fin = extrude([(p[0], p[1]) for p in pts], -0.03, 0.03, flat("fin", "#3d4654", 0.45))
-        fin.rotation_euler = (math.pi / 2, 0, a)
-        beam((ca * 0.625, sa * 0.625, 0.3), (ca * 0.245, sa * 0.245, 1.56), 0.018, neon)
-    # crown: energy ring + spire
-    torus(0.24, 0.022, (0, 0, z0 + h - 0.12), cyan, seg=16, mseg=4)
-    cn(0.06, 0.5, (0, 0, z0 + h + 0.25), flat("spire", "#c9d0d8", 0.4), 6)
-    ico(0.025, (0, 0, z0 + h + 0.52), neon)
-    for sx in (-1, 1):  # satellite towers at the back
-        def sat():
-            cy(0.1, 0.72, (0, 0, 0.36 + 0.06), gl, 6, rot=(0, 0, math.pi / 6))
-            cy(0.106, 0.016, (0, 0, 0.78), neon, 6, rot=(0, 0, math.pi / 6))
-            cn(0.1, 0.12, (0, 0, 0.84), cyan, 6, rot=(0, 0, math.pi / 6))
-        build_at(sat, sx * 0.5, 0.36)
-    bx((0.3, 0.012, 0.12), (0, -0.48, 0.13), glow("holo" + team, shade(team, 1.35), 3.5), bev=0)
+    extrude(ngon(0.56, 8, math.pi / 8), 0.06, 0.14, flat("terrace8", "#59606a", 0.5))  # the citadel's terrace
+    # the central keep: a tall stepped tower with the spire
+    citadel_tower(0, 0.1, 0.26, 0.22, 1.45, st, plate, neon, cap)
+    rod((0, 0.1, 1.9), (0, 0.1, 2.15), 0.008, cap, n=5)
+    ico(0.022, (0, 0.1, 2.16), cyan)
+    # the ring of towers, tallest at the back so the silhouette climbs to the keep
+    for (x, y, w, h) in ((-0.21, -0.02, 0.13, 1.0), (0.21, -0.02, 0.13, 1.0), (-0.37, 0.16, 0.12, 0.82),
+                         (0.37, 0.16, 0.12, 0.82), (-0.17, 0.33, 0.12, 1.2), (0.17, 0.33, 0.12, 1.2)):
+        citadel_tower(x, y, w, w, h, st, plate, neon, cap)
+    # the portal hall in front of the keep, with a glowing gate
+    bx((0.46, 0.16, 0.3), (0, -0.2, 0.15 + 0.06), st, bev=0.008)
+    bx((0.48, 0.18, 0.025), (0, -0.2, 0.37), plate, bev=0.004)
+    bx((0.12, 0.012, 0.16), (0, -0.282, 0.14), cyan, bev=0)
+    cy(0.06, 0.012, (0, -0.282, 0.22), cyan, 12, rot=(math.pi / 2, 0, 0))
     for sx in (-1, 1):
-        cy(0.008, 0.2, (sx * 0.16, -0.48, 0.1), flat("mast", "#d0d4da", 0.5), 6)
+        bx((0.03, 0.03, 0.34), (sx * 0.1, -0.29, 0.06 + 0.17), plate, bev=0.004)  # portal pylons
+        bx((0.18, 0.28, 0.18), (sx * 0.5, -0.06, 0.06 + 0.09), st, bev=0.006)  # low side wings
+        bx((0.19, 0.29, 0.02), (sx * 0.5, -0.06, 0.25), plate, bev=0.003)
+        bx((0.19, 0.008, 0.008), (sx * 0.5, -0.205, 0.235), neon, bev=0)  # a light line along the wing's front
+    for sx in (-1, 1):  # holo masts at the hall corners
+        cy(0.008, 0.2, (sx * 0.2, -0.3, 0.46), flat("mast", "#d0d4da", 0.5), 6)
     # the base of reference frame 5: a grand stair up the podium, an energy orb on a pedestal, banners, plaza lamps
     stair = flat("stair", "#8a929c", 0.5)
     for k in range(5):
@@ -1474,8 +1485,9 @@ def residence_dl8(team):
     cy(0.075, 0.012, (ox, oy, 0.14), neon, 12)
     uvs(0.08, (ox, oy, 0.24), glow("orb" + team, shade(team, 1.05), 1.6), 14, 8)
     torus(0.11, 0.006, (ox, oy, 0.24), flat("ring_frame", "#c9d0d8", 0.4), (math.pi / 2.6, 0, 0.4), 20, 3)
-    for sx in (-1, 1):
-        facade_banner(sx * 0.19, -0.16, 1.05, 0.1, 0.42, team, 0.0, "#d0d4da")
+    for sx in (-1, 1):  # the two great banners of reference frame 5, down the flanking towers
+        facade_banner(sx * 0.21, -0.091, 0.92, 0.1, 0.42, team, 0.0, "#d0d4da")
+    facade_banner(0, -0.016, 1.3, 0.12, 0.5, team, 0.0, "#d0d4da")
     for (x, y) in ((-0.55, -0.4), (-0.3, -0.62), (0.28, -0.64), (0.62, -0.2)):
         cy(0.008, 0.16, (x, y, 0.14), flat("mast", "#d0d4da", 0.5), 6)
         ico(0.016, (x, y, 0.23), glow("lamp8", "#bfe8ff", 3.0))
@@ -1949,7 +1961,7 @@ def district_scifi(team):
     """DL8+ sprawl on an owned open hex (reference frame 2: the whole land is built up): a dark plate with glowing
     street lines, four dark-glass blocks of different heights with team neon edges, a skybridge, a small dome and a
     landing pad — low enough not to hide the capital."""
-    plate = flat("plate8", "#2c3139", 0.6)
+    plate = flat("plate8", "#59606a", 0.6)  # grey concrete (frames 2 and 5), not a navy slab
     pad(0.72, plate, 0.012, 12, 0.0, 41)
     street = glow("street" + team, shade(team, 1.25), 1.4)
     for ang in (0.0, math.pi / 3, -math.pi / 3):  # three glowing avenues across the plate
@@ -1974,7 +1986,7 @@ def district_scifi(team):
 
 def district_scifi_b(team):
     """Sprawl variant B: a round plaza with one tall needle tower, a glass arcology dome and low ring blocks."""
-    plate = flat("plate8", "#2c3139", 0.6)
+    plate = flat("plate8", "#59606a", 0.6)  # grey concrete (frames 2 and 5), not a navy slab
     pad(0.72, plate, 0.012, 12, 0.0, 42)
     neon = team_neon(team)
     steel = facade("#aab3bf", "#22436e", 0.045, 0.06, 0.62, 0.55, lit="#9fdcff", lit_p=0.4)
@@ -1996,7 +2008,7 @@ def district_scifi_b(team):
 
 def district_scifi_c(team):
     """Sprawl variant C: an energy hub — a raivite reactor core in a ring frame, two cooling towers, hangars."""
-    plate = flat("plate8", "#2c3139", 0.6)
+    plate = flat("plate8", "#59606a", 0.6)  # grey concrete (frames 2 and 5), not a navy slab
     pad(0.72, plate, 0.012, 12, 0.0, 43)
     neon = team_neon(team)
     core = glow("reactor", CYAN, 3.0)

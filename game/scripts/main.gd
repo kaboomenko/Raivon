@@ -364,7 +364,7 @@ func _apply_era_light(dl: int) -> void:
 	_light_era = era
 	if era == 1:
 		_sun.light_color = Color(0.86, 0.92, 1.0)
-		_env.ambient_light_color = Color(0.5, 0.64, 0.92)
+		_env.ambient_light_color = Color(0.62, 0.68, 0.82)  # steel-grey, not navy: frame 5 is grey with blue lights
 		_env.fog_light_color = Color(0.42, 0.55, 0.75)
 		_env.background_color = Color(0.08, 0.12, 0.2)
 	else:
