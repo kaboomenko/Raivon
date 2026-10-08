@@ -2373,6 +2373,8 @@ var _ghost_from := Vector2(-1, -1)
 var _ghost_to := Vector2(-1, -1)
 var _ghost_dot: Panel
 var _coach_t := 0.0
+## Screen rects of the buttons the coach points at (the big action button of hud.gd): framed instead of circled.
+const COACH_FRAMES := [Rect2(660, VH - 122, 266, 92)]
 
 
 func _build_coach() -> void:
@@ -2387,7 +2389,9 @@ func _build_coach() -> void:
 	_coach_lbl.custom_minimum_size = Vector2(576, 0)  # autowrap needs a fixed width
 	_coach_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	box.add_child(_coach_lbl)
-	_coach_ring = _panel(_coach, Rect2(0, 0, 120, 120), _style(Color(1, 1, 1, 0.0), 60, Color(1.0, 0.85, 0.3), 6), Control.MOUSE_FILTER_IGNORE)
+	var ring_sb := _style(Color(1, 1, 1, 0.0), 60, Color(1.0, 0.85, 0.3), 6)
+	ring_sb.shadow_size = 0  # through the empty middle the shadow darkened the very button it points at
+	_coach_ring = _panel(_coach, Rect2(0, 0, 120, 120), ring_sb, Control.MOUSE_FILTER_IGNORE)
 	_coach_arrow = _label("▼", 56, Color(1.0, 0.85, 0.3))
 	_coach.add_child(_coach_arrow)
 	_ghost_dot = _panel(_coach, Rect2(0, 0, 64, 64), _style(Color(1, 1, 1, 0.7), 32, Color(1.0, 0.85, 0.3), 5), Control.MOUSE_FILTER_IGNORE)
@@ -2428,8 +2432,20 @@ func _process_coach(delta: float) -> void:
 	_coach_arrow.visible = has_t
 	if has_t:
 		var k := 1.0 + 0.12 * sin(_coach_t * 6.0)
-		_coach_ring.size = Vector2(120, 120) * k
-		_coach_ring.position = _coach_target - _coach_ring.size / 2
+		var sb := _coach_ring.get_theme_stylebox("panel") as StyleBoxFlat
+		var frame := Rect2()
+		for f in COACH_FRAMES:
+			if (f as Rect2).has_point(_coach_target):
+				frame = f
+		if frame.size != Vector2.ZERO:  # a button: a pulsing frame around it, not a circle across its label
+			var g := 8.0 + 6.0 * (k - 1.0) / 0.12
+			_coach_ring.position = frame.position - Vector2(g, g)
+			_coach_ring.size = frame.size + Vector2(g, g) * 2.0
+			sb.set_corner_radius_all(22)
+		else:
+			_coach_ring.size = Vector2(120, 120) * k
+			_coach_ring.position = _coach_target - _coach_ring.size / 2
+			sb.set_corner_radius_all(int(60 * k))
 		_coach_arrow.position = _coach_target + Vector2(-20, -150 + 14 * sin(_coach_t * 5.0))
 	var has_g := _ghost_from.x >= 0
 	_ghost_dot.visible = has_g
