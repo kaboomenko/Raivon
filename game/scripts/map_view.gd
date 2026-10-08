@@ -1295,7 +1295,9 @@ func _rebuild_overlay() -> void:
 		m.blend_mode = BaseMaterial3D.BLEND_MODE_MUL
 		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		m.albedo_color = Color(0.72, 0.62, 0.6) if o == at_war_with else Color(0.86, 0.8, 0.78)
-		if o == Types.PLAYER:
+		if o >= 0 and o < sim.states.size() and o != at_war_with and int(sim.states[o]["dev_level"]) >= 8:
+			m.albedo_color = Color(0.62, 0.68, 0.8)  # the sci-fi stage: built-up, cool steel-grey land (reference frame 2)
+		elif o == Types.PLAYER:
 			m.albedo_color = Color(0.86, 0.9, 1.0)  # a cool deepening: the land reads bluish without losing its colours
 		m.cull_mode = BaseMaterial3D.CULL_DISABLED
 		_add(scorch[o], m)
