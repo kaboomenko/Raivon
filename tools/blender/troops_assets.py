@@ -644,6 +644,43 @@ def assault_dl8(team):
     cy(0.012, 0.012, (-0.06, 0.1, H + 0.222), gl, 6)
 
 
+def mech(team):
+    """DL8 walker (reference frames 2 and 5: mechs among the infantry) facing −Y: reverse-jointed legs with broad
+    feet, a hip block, an armoured cockpit with a glowing visor, a shoulder rail cannon and a missile pod, team plates
+    and light strips."""
+    plate = F("#d6dbe2", 0.45)
+    dk = F("#2c3139", 0.55)
+    tm = F(team, 0.5)
+    gl = team_glow(team)
+    for sx in (-1, 1):
+        x = sx * 0.075
+        hip = (x, 0.0, 0.26)
+        knee = (x, -0.06, 0.16)
+        ankle = (x, 0.03, 0.05)
+        beam(hip, knee, 0.045, plate)  # thigh forward
+        beam(knee, ankle, 0.034, dk)   # shin back (digitigrade)
+        cy(0.026, 0.05, knee, dk, 8, rot=(0, math.pi / 2, 0))
+        bx((0.007, 0.036, 0.05), (x + sx * 0.026, -0.02, 0.2), gl, bev=0)
+        bx((0.07, 0.1, 0.022), (x, -0.005, 0.012), dk, bev=0.006)  # foot
+        bx((0.05, 0.035, 0.018), (x, -0.06, 0.016), plate, bev=0.004)  # toe
+    bx((0.2, 0.09, 0.06), (0, 0.0, 0.27), dk, bev=0.01)  # hips
+    # cockpit torso, tilted forward
+    side_prism([(-0.07, 0.29), (0.06, 0.29), (0.09, 0.34), (0.05, 0.42), (-0.06, 0.43), (-0.09, 0.36)], 0.16, plate)
+    bx((0.11, 0.012, 0.03), (0, -0.081, 0.385), glow("visor" + team, team, 3.0), bev=0)
+    for sx in (-1, 1):
+        bx((0.012, 0.13, 0.1), (sx * 0.083, 0.0, 0.36), tm, bev=0.003)  # team side plates
+    # shoulder weapons: a rail cannon on the right, a missile pod on the left
+    bx((0.04, 0.06, 0.05), (0.11, 0.0, 0.42), dk, bev=0.006)
+    bx((0.022, 0.2, 0.022), (0.11, -0.12, 0.43), plate, bev=0.003)
+    bx((0.006, 0.18, 0.008), (0.11, -0.12, 0.444), gl, bev=0)
+    bx((0.07, 0.07, 0.06), (-0.12, 0.0, 0.42), dk, bev=0.008)
+    for i in range(2):
+        for j in range(2):
+            cy(0.01, 0.012, (-0.135 + i * 0.03, -0.036, 0.405 + j * 0.03), gl, 6, rot=(math.pi / 2, 0, 0))
+    cy(0.006, 0.08, (0.04, 0.05, 0.47), dk, 5)  # antenna
+    cy(0.009, 0.01, (0.04, 0.05, 0.512), gl, 6)
+
+
 ASSAULT = {2: assault_dl2, 3: assault_dl3, 4: assault_dl4, 5: assault_dl5, 6: assault_dl6, 7: assault_dl7, 8: assault_dl8}
 
 ASSETS = {}
@@ -653,6 +690,8 @@ for _n in range(1, 9):
 for _n in range(2, 9):
     for _t, _c in TEAMS.items():
         ASSETS[f"assault_dl{_n}_{_t}"] = (lambda n, c: (lambda: ASSAULT[n](c)))(_n, _c)
+for _t, _c in TEAMS.items():
+    ASSETS[f"mech_{_t}"] = (lambda c: (lambda: mech(c)))(_c)
 
 
 def export(name, out):

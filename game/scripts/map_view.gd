@@ -1926,6 +1926,11 @@ func _make_army(a: Dictionary) -> Node3D:
 		gun = "rocket_launcher"
 	if gun != "":
 		spawn(gun, model, Vector3(-0.46, 0, -0.22), 0.3, 0.85)
+	if dl >= 8 and has_model("mech_" + side):  # walkers among the infantry (reference frames 2 and 5)
+		for mp in [Vector3(0.24, 0, 0.42), Vector3(-0.42, 0, 0.32)]:
+			var mech := spawn("mech_" + side, model, mp, 0.0, 1.05)
+			if mech:
+				_animate_troops(mech, true, anim)
 	if dl >= 6:  # air cover circling over the army (reference frame 2): a fighter (DL6–7) or a hover gunship (DL8+)
 		var orbit := Node3D.new()
 		orbit.position = Vector3(0, 0.95, 0)
