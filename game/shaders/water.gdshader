@@ -23,7 +23,7 @@ void fragment() {
 	vec3 c = mix(deep, shallow, clamp(pow(shore, 2.0) * 0.8 + n * 0.25, 0.0, 1.0));
 	// glints on the ripples
 	float glint = smoothstep(0.68, 0.78, n);
-	c += vec3(0.14, 0.2, 0.22) * glint * mix(0.3, 1.0, shore_k);  // the open sea glints softly: far away, it read as snow
+	c += vec3(0.14, 0.2, 0.22) * glint * mix(0.15, 1.0, shore_k);  // the open sea glints softly: far away, it read as snow
 	// foam band on the shore, wobbling with the noise and the time
 	float band = shore - 0.93 + (n - 0.5) * 0.16 + sin(TIME * 1.6 + wpos.x * 3.0) * 0.025;
 	float foam = smoothstep(0.0, 0.06, band);

@@ -1268,6 +1268,10 @@ func _build_horizon() -> void:
 			var roll := rng.randf()
 			var near := p.z > 3.0  # bottom of the screen: keep low so it never hides the player's land
 			if d <= rr + 2:
+				if near:  # below the player's land the open sea of the bay shows instead (reference frame 1)
+					if d == rr + 1 and roll < 0.3:
+						_horizon_ship(q, r, p)
+					continue
 				# the unexplored land next to the open world (reference frame 1): dark slate hexes with a faint grid,
 				# drifting low clouds and a peak here and there
 				var tile := MeshInstance3D.new()
@@ -1278,15 +1282,13 @@ func _build_horizon() -> void:
 				tm.radial_segments = 6
 				tile.mesh = tm
 				tile.rotation.y = PI / 6.0
-				tile.position = p + Vector3(0, -0.82 - rng.randf() * 0.04, 0)  # a step below the open world: its cliffs and waterfalls show
+				tile.position = p + Vector3(0, -0.7 - rng.randf() * 0.04, 0)  # a step below the open world (its cliffs and waterfalls show), just above the sea
 				tile.material_override = _fog_hex_mat()
 				_horizon_root.add_child(tile)
-				if not near and d == rr + 2 and roll < 0.3:
-					spawn("mountain", _horizon_root, p + Vector3(0, -0.15, 0), rng.randf() * TAU, rng.randf_range(1.5, 2.4))
-				elif near and d == rr + 1 and roll < 0.3:
-					_horizon_ship(q, r, p)
-				elif not near and rng.randf() < 0.45:  # near the camera a low cloud is just a blurred white blob
-					_cloud(p + Vector3(rng.randf_range(-0.5, 0.5), rng.randf_range(0.25, 0.7), rng.randf_range(-0.5, 0.5)), rng.randf_range(1.8, 3.0))
+				if d == rr + 2 and roll < 0.3:
+					spawn("mountain", _horizon_root, p + Vector3(0, -0.2, 0), rng.randf() * TAU, rng.randf_range(1.5, 2.4))
+				elif rng.randf() < 0.3:
+					_cloud(p + Vector3(rng.randf_range(-0.5, 0.5), rng.randf_range(0.25, 0.7), rng.randf_range(-0.5, 0.5)), rng.randf_range(1.4, 2.4))
 				continue
 			if near:
 				for i in 5:
@@ -1306,8 +1308,8 @@ func _build_horizon() -> void:
 			base.position = p + Vector3(0, -0.62, 0)
 			base.material_override = ring_mat
 			_horizon_root.add_child(base)
-			if not near and rng.randf() < 0.55 + 0.1 * (d - rr - 1):
-				_cloud(p + Vector3(rng.randf_range(-0.5, 0.5), rng.randf_range(1.0, 2.6), rng.randf_range(-0.5, 0.5)), rng.randf_range(3.5, 6.0))
+			if not near and rng.randf() < 0.3 + 0.1 * (d - rr - 1):  # a lighter veil: the reference keeps its peaks in view
+				_cloud(p + Vector3(rng.randf_range(-0.5, 0.5), rng.randf_range(1.0, 2.6), rng.randf_range(-0.5, 0.5)), rng.randf_range(2.5, 4.5))
 
 
 ## A warship of the coastal state off the world's near shore (reference frame 1: ships under the state's sails in
