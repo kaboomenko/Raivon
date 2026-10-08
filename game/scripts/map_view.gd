@@ -16,7 +16,13 @@ const C_WAR := Color(1.0, 0.14, 0.1)
 const C_WILD := Color(0.75, 0.72, 0.62)
 
 var sim  # World (RefCounted)
-var at_war_with := -1
+var at_war_with := -1:
+	set(v):
+		if v == at_war_with:
+			return
+		at_war_with = v
+		if sim != null and _props_root != null and _props_root.get_child_count() > 0:
+			refresh_props.call_deferred()  # the enemy's land flies more banners while at war
 var models := {}
 var flag: Dictionary = FlagView.DEFAULT.duplicate()  # the player's flag, painted on the player's banners
 var _flag_mats := {}  # owner -> [SubViewport, FlagView, material]: one texture per state
@@ -1089,7 +1095,7 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 	if biome != "meadow" and String(c["terrain"]) in ["plain", "forest", "hills"]:
 		_place_biome_props(c, holder, p, biome)
 		_place_fort(c, holder)
-		if c["owner"] != Types.NOBODY and rng.randf() < 0.3:
+		if c["owner"] != Types.NOBODY and rng.randf() < _banner_chance(int(c["owner"])):
 			spawn("banner_" + side, holder, p + Vector3(rng.randf_range(-0.4, 0.4), 0, rng.randf_range(-0.4, 0.4)), 0.0, 1.0, int(c["owner"]))
 		return
 	match c["terrain"]:
@@ -1121,8 +1127,14 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 			if rng.randf() < 0.45:
 				spawn("flowers", holder, p + Vector3(rng.randf_range(-0.5, 0.5), 0, rng.randf_range(-0.5, 0.5)), rng.randf() * TAU, rng.randf_range(1.0, 1.3))
 	_place_fort(c, holder)
-	if c["owner"] != Types.NOBODY and rng.randf() < 0.3:
+	if c["owner"] != Types.NOBODY and rng.randf() < _banner_chance(int(c["owner"])):
 		spawn("banner_" + side, holder, p + Vector3(rng.randf_range(-0.4, 0.4), 0, rng.randf_range(-0.4, 0.4)), 0.0, 1.0, int(c["owner"]))
+
+
+## How often an owned open hex flies a banner: thicker on the land of the state at war with the player (reference
+## frame 3: the enemy side bristles with red banners).
+func _banner_chance(owner: int) -> float:
+	return 0.55 if owner == at_war_with and owner != Types.PLAYER else 0.3
 
 
 ## A warship of a coastal state on some water hexes along its shore (reference frame 1: ships under blue sails),
@@ -2013,6 +2025,10 @@ func _make_army(a: Dictionary) -> Node3D:
 		rider = spawn("knight_" + ("blue" if side == "blue" else "red"), model, Vector3(0.36, 0, 0.08), 0.0, 0.92)
 	if rider:
 		_animate_troops(rider, true, anim)
+		if assault != "" and dl <= 5:  # cavalry rides in pairs (reference frame 3: horsemen on both sides of the front)
+			var r2 := spawn(assault, model, Vector3(0.5, 0, -0.18), 0.12, 0.88)
+			if r2:
+				_animate_troops(r2, true, anim)
 	var gun := ""
 	if dl == 2 or dl == 3:  # the medieval armies drag a mangonel along (tools/blender/export_assets.py catapult)
 		gun = "catapult"
