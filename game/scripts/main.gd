@@ -5548,7 +5548,7 @@ func _building_items(now: int) -> Array:
 			if int(cost[r]) <= 0:
 				cost.erase(r)
 		var busy: bool = int(b["upgrade_end"]) > now
-		items.append({"id": b["id"], "name": tr(String(info["name"])), "level": b["level"], "max": econ.max_level(b),
+		items.append({"id": b["id"], "name": tr(String(info["name"])), "type": String(b["type"]), "level": b["level"], "max": econ.max_level(b),
 			"busy": busy, "left": int(b["upgrade_end"]) - now, "speed": econ.speedup_cost(b, now),
 			"cost": cost, "seconds": secs, "reason": L.t(reason), "stock": speed_minutes})
 	items.sort_custom(func(x, y): return int(x["busy"]) > int(y["busy"]))

@@ -249,13 +249,113 @@ def tower():
     box("pennant", (0.16, 0.01, 0.08), (0.08, 0, 0.8), mat("pennant_i", "#2f62c8", 0.5), 0.0)
 
 
+def crate():
+    """Warehouse: two stacked plank crates with iron corners and a sack."""
+    wd = mat("crate_w", "#b07d47", 0.7)
+    dk = mat("crate_d", "#6e4526", 0.7)
+    iron = mat("iron_i", "#4a4d52", 0.5, 0.6)
+    for (x, z, s_, r) in ((-0.18, -0.2, 0.46, 0.15), (0.2, -0.24, 0.38, -0.1), (0.0, 0.2, 0.36, 0.3)):
+        b = box("crate", (s_, s_, s_), (x, 0, z), wd, 0.02)
+        b.rotation_euler.z = r
+        for dz in (-s_ * 0.3, s_ * 0.3):
+            bb = box("plank", (s_ + 0.01, s_ + 0.01, 0.04), (x, 0, z + dz), dk, 0.005)
+            bb.rotation_euler.z = r
+        for dx in (-1, 1):
+            c = box("corner", (0.05, s_ + 0.02, s_ + 0.02), (x + dx * s_ * 0.5 * math.cos(r), dx * s_ * 0.5 * math.sin(r), z), iron, 0.005)
+            c.rotation_euler.z = r
+
+
+def flask():
+    """Infirmary: a round glass flask of green remedy with a cork and a herb sprig."""
+    glass = mat("flask_g", "#9fe0b0", 0.05, 0.0, "#3fbf6a", 0.4)
+    sphere("flask", 0.34, (0, 0, -0.14), glass, (1, 1, 1), 4)
+    cyl("neck", 0.1, 0.32, (0, 0, 0.3), mat("flask_n", "#c8f0d4", 0.05), 20, 0.01)
+    cyl("cork", 0.11, 0.12, (0, 0, 0.5), mat("cork", "#a8794a", 0.8), 20, 0.01)
+    cyl("lip", 0.13, 0.04, (0, 0, 0.44), mat("flask_n", "#c8f0d4", 0.05), 20, 0.01)
+    leaf = mat("leaf_i", "#4f9a3a", 0.6)
+    for k in range(3):
+        o = sphere("leaf", 0.08, (0.26 + k * 0.05, -0.25, 0.1 + k * 0.08), leaf, (0.4, 0.2, 1.0), 2)
+        o.rotation_euler.y = -0.6
+
+
+def cart():
+    """Convoy yard: a two-wheeled cart loaded with sacks."""
+    wd = mat("cart_w", "#a0713f", 0.7)
+    dk = mat("cart_d", "#5e3d22", 0.7)
+    box("bed", (0.7, 0.36, 0.08), (0, 0, -0.08), wd, 0.02)
+    for sy in (-1, 1):
+        box("side", (0.7, 0.04, 0.16), (0, sy * 0.18, 0.0), wd, 0.01)
+        w = cyl("wheel", 0.24, 0.06, (0.0, sy * 0.24, -0.2), dk, 20, 0.01)
+        w.rotation_euler.x = math.pi / 2
+        h = cyl("hub", 0.06, 0.08, (0.0, sy * 0.27, -0.2), mat("iron_i", "#4a4d52", 0.5, 0.6), 12, 0.0)
+        h.rotation_euler.x = math.pi / 2
+    s1 = cyl("shaft", 0.025, 0.6, (-0.6, 0.12, -0.12), dk, 8, 0.0)
+    s1.rotation_euler.y = math.pi / 2 + 0.15
+    s2 = cyl("shaft", 0.025, 0.6, (-0.6, -0.12, -0.12), dk, 8, 0.0)
+    s2.rotation_euler.y = math.pi / 2 + 0.15
+    sack = mat("sack_i", "#d8c08c", 0.9)
+    for (x, z) in ((-0.15, 0.1), (0.15, 0.1), (0.0, 0.26)):
+        sphere("sack", 0.16, (x, 0, z), sack, (1.0, 0.8, 0.75), 3)
+
+
+def stall():
+    """Market: a stall under a striped blue-and-white awning with goods on the counter."""
+    wd = mat("stall_w", "#a0713f", 0.7)
+    for sx in (-1, 1):
+        cyl("post", 0.03, 0.8, (sx * 0.38, 0, -0.05), wd, 8, 0.0)
+    box("counter", (0.82, 0.3, 0.24), (0, 0, -0.32), wd, 0.02)
+    for k, c in enumerate(("#2f62c8", "#f3efe6", "#2f62c8", "#f3efe6", "#2f62c8")):
+        a = box("awn", (0.18, 0.42, 0.03), (-0.36 + k * 0.18, -0.04, 0.38), mat("awn" + c, c, 0.6), 0.005)
+        a.rotation_euler.x = -0.35
+    for k, c in enumerate(("#d8452f", "#e8b84a", "#6faa3c")):
+        sphere("goods", 0.09, (-0.22 + k * 0.22, -0.02, -0.12), mat("goods" + c, c, 0.6), (1, 1, 0.85), 3)
+
+
+def anchor():
+    """Port: an iron anchor with a ring and a coil of rope."""
+    iron = mat("anchor_i", "#5d6672", 0.35, 0.8)
+    cyl("shank", 0.05, 0.9, (0, 0, 0.0), iron, 12, 0.01)
+    t = cyl("stock", 0.04, 0.5, (0, 0, 0.36), iron, 12, 0.01)
+    t.rotation_euler.y = math.pi / 2
+    r = bpy.ops.mesh.primitive_torus_add(major_radius=0.1, minor_radius=0.03, location=(0, 0, 0.52))
+    bpy.context.active_object.rotation_euler.x = math.pi / 2
+    bpy.context.active_object.data.materials.append(iron)
+    bpy.ops.mesh.primitive_torus_add(major_radius=0.36, minor_radius=0.045, location=(0, 0, -0.08))
+    arc = bpy.context.active_object
+    import bmesh
+    bm = bmesh.new()
+    bm.from_mesh(arc.data)
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.co.y > 0.02], context="VERTS")  # keep the lower arc only
+    bm.to_mesh(arc.data)
+    bm.free()
+    arc.rotation_euler.x = math.pi / 2  # local y < 0 → below the centre
+    arc.data.materials.append(iron)
+    for sx in (-1, 1):
+        c = cone("fluke", 0.09, 0.18, (sx * 0.36, 0, -0.02), iron, 12, 0.0)
+        c.rotation_euler.y = sx * 0.6
+
+
+def houses():
+    """Quarters: three town houses of different heights with blue roofs and lit windows."""
+    st = mat("plaster_i", "#e3d4b4", 0.7)
+    roof = mat("roof_i", "#2f62c8", 0.45)
+    lit = mat("lit", "#ffd27a", 0.4, 0.0, "#ffb84a", 2.0)
+    for (x, h, w) in ((-0.32, 0.5, 0.3), (0.0, 0.72, 0.32), (0.32, 0.42, 0.28)):
+        box("house", (w, 0.3, h), (x, 0, -0.45 + h / 2), st, 0.01)
+        r = cone("roof", w * 0.78, 0.22, (x, 0, -0.45 + h + 0.1), roof, 4, 0.0)
+        r.rotation_euler.z = math.pi / 4
+        for k in range(int(h / 0.22)):
+            box("win", (0.07, 0.03, 0.09), (x, -0.155, -0.33 + k * 0.2), lit, 0.0)
+
+
 ICONS = {"coin": coin, "food": food, "metal": metal, "raivite": raivite, "oil": oil, "builder": builder,
          "castle_icon": castle_icon, "helmet": helmet, "hammer": hammer, "hands": hands, "scales": globe,
          "trophy": trophy, "book": book, "mail": mail, "gear": gear,
-         "target": target, "pin": pin, "fort": fort, "tower": tower}
+         "target": target, "pin": pin, "fort": fort, "tower": tower,
+         "crate": crate, "flask": flask, "cart": cart, "stall": stall, "anchor": anchor, "houses": houses}
 
 
-ORTHO = {"target": 1.5, "pin": 1.45, "fort": 1.5, "tower": 1.7, "castle_icon": 1.75, "hammer": 1.6, "scales": 1.5, "trophy": 1.45, "gear": 1.4, "hands": 1.45}
+ORTHO = {"crate": 1.4, "cart": 1.6, "stall": 1.5, "anchor": 1.5, "houses": 1.45, "target": 1.5, "pin": 1.45, "fort": 1.5, "tower": 1.7, "castle_icon": 1.75, "hammer": 1.6, "scales": 1.5, "trophy": 1.45, "gear": 1.4, "hands": 1.45}
 
 
 def render(path, ortho=1.35):

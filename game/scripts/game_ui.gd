@@ -2218,6 +2218,12 @@ func hide_buildings() -> void:
 	_bkey = ""
 
 
+## The rendered icon of each building on its card (tools/blender/icon_assets.py → assets/ui/icons).
+const BUILDING_ICONS := {"residence": "castle_icon", "barracks": "helmet", "academy": "book", "warehouse": "crate",
+	"infirmary": "flask", "convoy_yard": "cart", "market": "stall", "embassy": "hands", "quarters": "houses",
+	"farm": "food", "mine": "metal", "port": "anchor", "military_base": "target"}
+
+
 func _building_card(it: Dictionary) -> Control:
 	if it.has("market"):
 		return _market_card(it)
@@ -2237,6 +2243,16 @@ func _building_card(it: Dictionary) -> Control:
 	lv.size = Vector2(150, 22)
 	lv.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	card.add_child(lv)
+	var pic_path := "res://assets/ui/icons/%s.png" % String(BUILDING_ICONS.get(String(it.get("type", "")), ""))
+	if not busy and ResourceLoader.exists(pic_path):  # the building's picture beside the cost (reference HUD cards)
+		var pic := TextureRect.new()
+		pic.texture = load(pic_path)
+		pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		pic.position = Vector2(86, 52)
+		pic.size = Vector2(58, 58)
+		pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card.add_child(pic)
 	var id: int = it["id"]
 	if busy:
 		var t := _label(fmt_time(int(it["left"])), 28, Color(1.0, 0.85, 0.4))
