@@ -200,12 +200,62 @@ def gear():
     h.rotation_euler.x = math.pi / 2
 
 
+def target():
+    """Focus on the front: crossed swords over a red target disc."""
+    disc = cyl("disc", 0.4, 0.06, (0, 0.1, 0), mat("disc", "#c0392b", 0.5), 32, 0.02)
+    disc.rotation_euler.x = math.pi / 2
+    ring = cyl("ring", 0.26, 0.07, (0, 0.09, 0), mat("disc_w", "#f3efe6", 0.5), 32, 0.0)
+    ring.rotation_euler.x = math.pi / 2
+    core = cyl("core", 0.13, 0.08, (0, 0.08, 0), mat("disc", "#c0392b", 0.5), 24, 0.0)
+    core.rotation_euler.x = math.pi / 2
+    for sx in (-1, 1):
+        b = box("blade", (0.07, 0.03, 0.8), (0, -0.05, 0.05), steel(), 0.01)
+        b.rotation_euler.y = sx * 0.7
+        g = box("guard", (0.26, 0.05, 0.05), (sx * -0.24, -0.06, -0.25), gold(), 0.01)
+        g.rotation_euler.y = sx * 0.7
+
+
+def pin():
+    """Focus on the capital: a map pin with the royal crown."""
+    red = mat("pin", "#2f62c8", 0.4)
+    sphere("head", 0.3, (0, 0, 0.18), red, (1, 1, 1), 3)
+    cone("point", 0.2, 0.42, (0, 0, -0.24), red, 24, 0.0).rotation_euler.x = math.pi
+    g = gold()
+    cyl("crown", 0.14, 0.1, (0, -0.26, 0.2), g, 16, 0.01).rotation_euler.x = math.pi / 2
+    for k in range(3):
+        cone("tine", 0.04, 0.1, (-0.08 + k * 0.08, -0.29, 0.3), g, 6, 0.0)
+
+
+def fort():
+    """Fortify: a stone wall span with merlons and a shield."""
+    st = mat("stone_i", "#c9c4ba", 0.7)
+    box("wall", (0.8, 0.26, 0.4), (0, 0, -0.1), st, 0.02)
+    for k in range(4):
+        box("merlon", (0.13, 0.28, 0.14), (-0.3 + k * 0.2, 0, 0.17), st, 0.01)
+    sh = cyl("shield", 0.2, 0.06, (0, -0.16, -0.08), mat("shield", "#2f62c8", 0.5), 6, 0.01)
+    sh.rotation_euler = (math.pi / 2, 0, 0)
+    box("emblem", (0.06, 0.07, 0.2), (0, -0.2, -0.08), mat("disc_w", "#f3efe6", 0.5), 0.005)
+
+
+def tower():
+    """Build a watchtower: a round stone tower with a blue cone roof and a pennant."""
+    st = mat("stone_i", "#c9c4ba", 0.7)
+    cyl("body", 0.2, 0.7, (0, 0, -0.12), st, 20, 0.01)
+    cyl("lip", 0.25, 0.08, (0, 0, 0.25), st, 20, 0.01)
+    cone("roof", 0.28, 0.38, (0, 0, 0.48), mat("roof_i", "#2f62c8", 0.45), 20, 0.0)
+    box("door", (0.1, 0.05, 0.16), (0, -0.2, -0.38), mat("door_i", "#4a2f19", 0.7), 0.01)
+    box("window", (0.06, 0.05, 0.1), (0, -0.2, 0.05), mat("lit", "#ffd27a", 0.4, 0.0, "#ffb84a", 2.0), 0.0)
+    cyl("pole", 0.012, 0.22, (0, 0, 0.75), mat("pole_i", "#d9d2c3", 0.5), 6, 0.0)
+    box("pennant", (0.16, 0.01, 0.08), (0.08, 0, 0.8), mat("pennant_i", "#2f62c8", 0.5), 0.0)
+
+
 ICONS = {"coin": coin, "food": food, "metal": metal, "raivite": raivite, "oil": oil, "builder": builder,
          "castle_icon": castle_icon, "helmet": helmet, "hammer": hammer, "hands": hands, "scales": globe,
-         "trophy": trophy, "book": book, "mail": mail, "gear": gear}
+         "trophy": trophy, "book": book, "mail": mail, "gear": gear,
+         "target": target, "pin": pin, "fort": fort, "tower": tower}
 
 
-ORTHO = {"castle_icon": 1.75, "hammer": 1.6, "scales": 1.5, "trophy": 1.45, "gear": 1.4, "hands": 1.45}
+ORTHO = {"target": 1.5, "pin": 1.45, "fort": 1.5, "tower": 1.7, "castle_icon": 1.75, "hammer": 1.6, "scales": 1.5, "trophy": 1.45, "gear": 1.4, "hands": 1.45}
 
 
 def render(path, ortho=1.35):
