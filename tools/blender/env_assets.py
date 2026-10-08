@@ -165,11 +165,11 @@ def mountain_paint(grass_line=0.13, snow_line=0.78):
         jit = p.math("MULTIPLY", p.math("SUBTRACT", p.noise(5.0, 3.0), 0.5), 0.16)
         zz = p.math("ADD", p.z, jit)
         strata = p.noise(2.2, 3.0, stretch=(1.0, 1.0, 9.0))
-        rock = p.mix(p.step(strata, 0.35, 0.68), "#7b746c", "#a39a8d")
-        rock = p.mix(p.math("MULTIPLY", p.step(p.noise(30.0, 2.0), 0.55, 0.75), 0.3), rock, "#5e5852")
-        rock = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.75, 0.25), 0.55), rock, "#5a544e")
-        rock = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.55, 0.9), 0.5), rock, "#b8ad9c")
-        scree = p.mix(p.step(p.noise(18.0), 0.4, 0.6), "#8f7f62", "#a7966f")
+        rock = p.mix(p.step(strata, 0.35, 0.68), "#6c6a67", "#97938d")  # cool grey granite (reference frame 1)
+        rock = p.mix(p.math("MULTIPLY", p.step(p.noise(30.0, 2.0), 0.55, 0.75), 0.3), rock, "#4f4d4b")
+        rock = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.75, 0.25), 0.55), rock, "#4a4846")
+        rock = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.55, 0.9), 0.5), rock, "#b0aca5")
+        scree = p.mix(p.step(p.noise(18.0), 0.4, 0.6), "#7d7870", "#958f84")
         col = p.mix(p.step(zz, grass_line + 0.16, grass_line + 0.04), rock, scree)
         grass = p.mix(p.step(p.noise(9.0, 3.0), 0.35, 0.65), "#3f5f2a", "#526f33")  # ≈ map plain grass (muted, 2026-10-08)
         col = p.mix(p.step(zz, grass_line + 0.03, grass_line - 0.03), col, grass)
@@ -415,8 +415,9 @@ def crag():
 
 def _mountain_height(x, y, k=0.84):
     x, y = x / k, y / k
-    peaks = [(-0.08, 0.12, 1.38, 0.72, 0.0), (0.37, -0.12, 0.98, 0.55, 1.7), (-0.42, -0.24, 0.8, 0.5, 3.1),
-             (0.2, 0.46, 0.78, 0.45, 4.4)]
+    # a massif of comparable sharp peaks (reference frame 1), not one cone
+    peaks = [(-0.1, 0.14, 1.2, 0.62, 0.0), (0.36, -0.08, 1.02, 0.5, 1.7), (-0.4, -0.22, 0.88, 0.46, 3.1),
+             (0.22, 0.44, 0.84, 0.42, 4.4)]
     hs = []
     for px, py, H, R, ph in peaks:
         dx, dy = x - px, y - py
@@ -429,6 +430,7 @@ def _mountain_height(x, y, k=0.84):
     h = hs[0] + 0.18 * hs[1]
     v = Vector((x * 3.5, y * 3.5, 0.7))
     h += 0.07 * mnoise.noise(v) * (0.35 + h) + 0.045 * abs(mnoise.noise(v * 2.7))
+    h += 0.1 * h * (1.0 - abs(mnoise.noise(v * 1.6 + Vector((3.1, 0.0, 0.0)))))  # ridged crests and gullies
     r = math.hypot(x, y)
     apron = 0.17 * max(0.0, 1 - r / 0.95) ** 1.1
     h = max(h, apron)
@@ -482,17 +484,17 @@ def mountain():
         boulder(x, y, s * 1.2, s, s * 1.1, rk, 70 + k, 12, z0=_mountain_height(x, y) - 0.03)
     mats = pine_mats()
     placed = []
-    cand = [(a, r) for a in [i * 0.37 for i in range(17)] for r in (0.6, 0.68)]
+    cand = [(a, r) for a in [i * 0.37 for i in range(17)] for r in (0.48, 0.56, 0.62, 0.7)]
     random.Random(5).shuffle(cand)
-    for a, r in cand:
+    for a, r in cand:  # pines climb the lower slopes (reference frame 1), not only the grassy foot
         x, y = r * math.cos(a), r * math.sin(a)
         h = _mountain_height(x, y)
-        if h > 0.16 or any(math.dist((x, y), p) < 0.2 for p in placed):
+        if h > 0.34 or any(math.dist((x, y), p) < 0.16 for p in placed):
             continue
         placed.append((x, y))
         build = (lambda s_, sd: (lambda: pine_tree(0, 0, s_, n=6, tiers=3, seed=sd, mats=mats)))(random.Random(len(placed)).uniform(0.38, 0.5), 30 + len(placed))
         ev.build_at(build, x, y, 0.0, 1.0, z=h - 0.02)
-        if len(placed) >= 7:
+        if len(placed) >= 12:
             break
 
 

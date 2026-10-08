@@ -1069,7 +1069,7 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 		return
 	if not Types.is_passable(c):
 		if c["terrain"] == "mountain":
-			spawn("mountain", holder, Vector3.ZERO, rng.randf() * TAU, rng.randf_range(1.75, 2.05))  # massifs that rise over the map, as in the reference
+			spawn("mountain", holder, Vector3.ZERO, rng.randf() * TAU, rng.randf_range(1.5, 1.75))  # massifs that rise over the map, as in the reference
 		elif c["terrain"] == "water":
 			_place_ship(c, holder)
 		return
