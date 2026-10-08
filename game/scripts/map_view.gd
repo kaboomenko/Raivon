@@ -1909,6 +1909,8 @@ func _sync_clash_fx(live: Dictionary) -> void:
 			fx = _make_sparks()
 			add_child(fx)
 			_clash_fx[cid] = fx
+			fx.add_child(_make_clash_dust())  # a churned-up dust cloud and muzzle flashes over the melee
+			fx.add_child(_make_flashes())
 		fx.position = live[cid] + Vector3(0, 0.35, 0)
 		var vt: float = _volley_t.get(cid, 0.0) - get_process_delta_time()
 		if vt <= 0.0:
@@ -1952,6 +1954,55 @@ func _make_sparks() -> CPUParticles3D:
 	fx.mesh = mesh
 	fx.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return fx
+
+
+## Dust kicked up by the melee: wide low puffs that drift and fade (reference frame 3: dust around the fighting).
+func _make_clash_dust() -> CPUParticles3D:
+	if _smoke_mat == null:
+		_smoke_mat = _fx_mat(_puff_tex(), false)
+	var d := CPUParticles3D.new()
+	d.amount = 12
+	d.lifetime = 1.8
+	d.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	d.emission_box_extents = Vector3(0.35, 0.02, 0.25)
+	d.direction = Vector3(0, 1, 0)
+	d.spread = 60.0
+	d.initial_velocity_min = 0.08
+	d.initial_velocity_max = 0.2
+	d.gravity = Vector3(0.05, 0.02, 0)
+	d.scale_amount_curve = _curve(0.4, 1.5)
+	d.color_ramp = _ramp([0.0, 0.2, 1.0], [Color(0.62, 0.53, 0.4, 0.0), Color(0.6, 0.52, 0.4, 0.5), Color(0.7, 0.65, 0.58, 0.0)])
+	var q := QuadMesh.new()
+	q.size = Vector2(0.45, 0.45)
+	q.material = _smoke_mat
+	d.mesh = q
+	d.position = Vector3(0, -0.3, 0)
+	d.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return d
+
+
+## Short bright flashes scattered over the fight (shots, struck steel): additive, a fraction of a second each.
+func _make_flashes() -> CPUParticles3D:
+	var f := CPUParticles3D.new()
+	f.amount = 5
+	f.lifetime = 0.18
+	f.explosiveness = 0.0
+	f.randomness = 1.0
+	f.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+	f.emission_box_extents = Vector3(0.35, 0.08, 0.25)
+	f.direction = Vector3.UP
+	f.initial_velocity_min = 0.0
+	f.initial_velocity_max = 0.05
+	f.gravity = Vector3.ZERO
+	f.scale_amount_curve = _curve(1.0, 0.2)
+	f.color_ramp = _ramp([0.0, 1.0], [Color(1.0, 0.95, 0.7, 1.0), Color(1.0, 0.5, 0.1, 0.0)])
+	var q := QuadMesh.new()
+	q.size = Vector2(0.22, 0.22)
+	q.material = _fx_mat(_flame_tex(), true)
+	f.mesh = q
+	f.position = Vector3(0, -0.15, 0)
+	f.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return f
 
 
 class ArmyNode extends Node3D:
