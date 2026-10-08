@@ -4,8 +4,8 @@ shader_type spatial;
 render_mode cull_back;
 
 uniform sampler2D noise_tex : filter_linear_mipmap, repeat_enable;
-uniform vec3 deep : source_color = vec3(0.025, 0.13, 0.24);
-uniform vec3 shallow : source_color = vec3(0.07, 0.34, 0.40);
+uniform vec3 deep : source_color = vec3(0.13, 0.33, 0.5);  // measured: the reference seas are (27, 80, 126) on screen
+uniform vec3 shallow : source_color = vec3(0.17, 0.48, 0.56);
 uniform float shore_k = 1.0;  // 0 for the open sea around the world (a plane without vertex colours)
 
 varying vec3 wpos;
