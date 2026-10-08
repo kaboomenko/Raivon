@@ -444,16 +444,34 @@ func _paint_flag(banner: Node3D, owner: int) -> void:
 	var mat := _flag_material(owner)
 	if mat == null:
 		return
-	var quad := QuadMesh.new()
-	quad.size = Vector2(0.25, 0.4)
+	var wave := _wave_material(owner, mat)
+	if _wave_quad == null:
+		_wave_quad = QuadMesh.new()
+		_wave_quad.size = Vector2(0.25, 0.4)
+		_wave_quad.subdivide_width = 8  # the cloth needs vertices along its length to ripple
 	for face in [1.0, -1.0]:
 		var mi := MeshInstance3D.new()
-		mi.mesh = quad
-		mi.material_override = mat
+		mi.mesh = _wave_quad
+		mi.material_override = wave
+		mi.set_instance_shader_parameter("side", face)
 		mi.position = Vector3(0.13, 0.775, 0.0095 * face)
 		mi.rotation.y = 0.0 if face > 0 else PI
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		banner.add_child(mi)
+
+
+var _wave_quad: QuadMesh
+var _wave_mats := {}  # owner -> ShaderMaterial (flag_wave.gdshader) over the flag's rendered texture
+
+
+## The fluttering banner cloth of a state: the flag texture of _flag_material on the flag_wave shader.
+func _wave_material(owner: int, flat: StandardMaterial3D) -> ShaderMaterial:
+	if not _wave_mats.has(owner):
+		var m := ShaderMaterial.new()
+		m.shader = load("res://shaders/flag_wave.gdshader")
+		m.set_shader_parameter("tex", flat.albedo_texture)
+		_wave_mats[owner] = m
+	return _wave_mats[owner]
 
 
 ## The flag a state flies: the player's own, or an AI state's from its name (FlagView.ai_flag).
