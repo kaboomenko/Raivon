@@ -1622,7 +1622,7 @@ func _sync_war_scars() -> void:
 		if _smoke_mat == null:
 			_smoke_mat = _fx_mat(_puff_tex(), false)
 		var sm := CPUParticles3D.new()
-		sm.amount = 9
+		sm.amount = 5  # a thin trail: the reference reads a war by its armies and banners, not by a pall of smoke
 		sm.lifetime = 3.4
 		sm.direction = Vector3(0.25, 1, 0)
 		sm.spread = 8.0
@@ -1630,20 +1630,22 @@ func _sync_war_scars() -> void:
 		sm.initial_velocity_max = 0.4
 		sm.gravity = Vector3(0.1, 0.04, 0)
 		sm.scale_amount_curve = _curve(0.35, 1.6)
-		sm.color_ramp = _ramp([0.0, 0.12, 0.55, 1.0], [Color(0.18, 0.15, 0.14, 0.0), Color(0.22, 0.19, 0.17, 0.6),
-			Color(0.4, 0.38, 0.37, 0.3), Color(0.6, 0.6, 0.62, 0.0)])
+		sm.color_ramp = _ramp([0.0, 0.12, 0.55, 1.0], [Color(0.18, 0.15, 0.14, 0.0), Color(0.22, 0.19, 0.17, 0.42),
+			Color(0.4, 0.38, 0.37, 0.18), Color(0.6, 0.6, 0.62, 0.0)])
 		var q := QuadMesh.new()
-		q.size = Vector2(0.55, 0.55)
+		q.size = Vector2(0.42, 0.42)
 		q.material = _smoke_mat
 		sm.mesh = q
 		sm.position.y = 0.25
 		sm.preprocess = 3.4
 		sm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(sm)
+		if g.randf() < 0.5:  # every other occupied hex still burns
+			continue
 		var fm := _fx_mat(_flame_tex(), false)
 		fm.render_priority = 1
 		var fl := CPUParticles3D.new()
-		fl.amount = 10
+		fl.amount = 7
 		fl.lifetime = 0.55
 		fl.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
 		fl.emission_sphere_radius = 0.06
@@ -1656,7 +1658,7 @@ func _sync_war_scars() -> void:
 		fl.color_ramp = _ramp([0.0, 0.2, 0.6, 1.0], [Color(1.0, 0.8, 0.35, 0.0), Color(1.0, 0.6, 0.14, 1.0),
 			Color(0.95, 0.3, 0.04, 0.85), Color(0.6, 0.08, 0.02, 0.0)])
 		var fq := QuadMesh.new()
-		fq.size = Vector2(0.28, 0.42)
+		fq.size = Vector2(0.2, 0.3)
 		fq.material = fm
 		fl.mesh = fq
 		fl.position.y = 0.1
@@ -2834,8 +2836,8 @@ func smoke(hex: int, seconds: float, fire := false) -> void:
 	root.position = cell_world(hex) + _fire_spot(hex) if fire else cell_world(hex) + Vector3(0.15, 0.2, -0.1)
 	add_child(root)
 	var sm := CPUParticles3D.new()
-	sm.amount = 30 if fire else 18
-	sm.lifetime = 3.6 if fire else 3.0
+	sm.amount = 12 if fire else 18
+	sm.lifetime = 2.6 if fire else 3.0  # a capture's smoke stays low: it must not veil the front
 	sm.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
 	sm.emission_sphere_radius = 0.12
 	sm.direction = Vector3(0.25, 1, 0)
@@ -2849,13 +2851,13 @@ func smoke(hex: int, seconds: float, fire := false) -> void:
 	sm.scale_amount_max = 1.1
 	sm.scale_amount_curve = _curve(0.4, 1.9)
 	if fire:
-		sm.color_ramp = _ramp([0.0, 0.1, 0.45, 1.0], [Color(0.16, 0.13, 0.12, 0.0), Color(0.2, 0.17, 0.15, 0.7),
-			Color(0.36, 0.34, 0.33, 0.42), Color(0.55, 0.55, 0.57, 0.0)])
+		sm.color_ramp = _ramp([0.0, 0.1, 0.45, 1.0], [Color(0.16, 0.13, 0.12, 0.0), Color(0.2, 0.17, 0.15, 0.55),
+			Color(0.36, 0.34, 0.33, 0.28), Color(0.55, 0.55, 0.57, 0.0)])
 	else:
 		sm.color_ramp = _ramp([0.0, 0.15, 0.6, 1.0], [Color(0.5, 0.47, 0.44, 0.0), Color(0.5, 0.48, 0.46, 0.4),
 			Color(0.68, 0.68, 0.7, 0.2), Color(0.85, 0.85, 0.88, 0.0)])
 	var q := QuadMesh.new()
-	q.size = Vector2(0.75, 0.75)
+	q.size = Vector2(0.6, 0.6) if fire else Vector2(0.75, 0.75)
 	q.material = _smoke_mat
 	sm.mesh = q
 	sm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
