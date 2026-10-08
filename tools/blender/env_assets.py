@@ -3,7 +3,7 @@
 Overwrites the simple placeholder props that export_assets.py makes (same file names, same footprints),
 so the map picks them up without code changes:
   tree_pine.glb  tree_round.glb  rock.glb  mountain.glb  wheat_field.glb  windmill.glb  mine.glb
-  bush.glb  flowers.glb   (new decoration, not used by the game yet)
+  bush.glb  flowers.glb  crop_field.glb (DL6–7 plots)  crag.glb (hills hexes)
 
 Run:   python3 tools/blender/env_assets.py game/assets/models [name ...]
 Sheet: python3 tools/blender/env_assets.py game/assets/models --sheet OUT.png
@@ -12,7 +12,7 @@ Sheet: python3 tools/blender/env_assets.py game/assets/models --sheet OUT.png
 Conventions as in evolution_assets.py: Z up, base on Z=0, origin = hex centre (1 hex = flat-top hexagon of
 circumradius 1.0), front faces −Y (Godot +Z, towards the camera). Procedural colours are painted in model
 space (height / facing gradients = cheap fake light, moss, snow) and baked into one 512 px texture per
-asset; emissive materials (mine lantern) stay separate so they glow in Godot.
+asset; emissive materials (mine lantern, windmill windows) stay separate so they glow in Godot.
 
 windmill.glb has two nodes: the tower and a separate node named "sails" whose origin is the hub; spin it
 about its local Z axis in Godot (the hub axis points to the model's front, Godot +Z).
@@ -158,24 +158,25 @@ def rock_paint(c1, c2, moss=("#4f7f2c", "#77a83a"), moss_at=0.62, scale=7.0):
     return cached(("rock", c1, c2, moss, moss_at, scale), build)
 
 
-def granite_paint(c1, c2, moss=("#34481f", "#4a6328"), moss_at=0.8, scale=6.0):
+def granite_paint(c1, c2, moss=("#34481f", "#4a6328"), moss_at=0.86, scale=6.0, cracks=0.4):
     """Cool grey granite of reference frames 1 and 3: horizontal strata, dark hairline cracks, pale sunlit top facets,
     darker steep faces, and only sparse dark moss on the flattest tops (the old lime moss turned small stones green)."""
     def build():
         p = Paint("granite")
         col = p.mix(p.step(p.noise(scale, 4.0), 0.3, 0.7), c1, c2)
         strata = p.noise(scale * 0.5, 3.0, stretch=(1.0, 1.0, 10.0))
-        col = p.mix(p.math("MULTIPLY", p.step(strata, 0.5, 0.7), 0.45), col, shade(c1, 0.78))
+        col = p.mix(p.math("MULTIPLY", p.step(strata, 0.48, 0.66), 0.55), col, shade(c1, 0.74))
         ridge = p.math("SUBTRACT", 1.0, p.math("ABSOLUTE", p.math("SUBTRACT", p.math("MULTIPLY", p.noise(scale * 2.6, 1.0), 2.0), 1.0)))
-        col = p.mix(p.math("MULTIPLY", p.step(ridge, 0.955, 0.99), 0.5), col, shade(c1, 0.5))
+        if cracks:
+            col = p.mix(p.math("MULTIPLY", p.step(ridge, 0.965, 0.995), cracks), col, shade(c1, 0.5))
         col = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.55, 0.9), 0.55), col, shade(c2, 1.22))
         col = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.35, -0.2), 0.4), col, shade(c1, 0.72))
         if moss:
-            mf = p.math("ADD", p.nz, p.math("MULTIPLY", p.math("SUBTRACT", p.noise(5.0, 3.0), 0.5), 0.9))
+            mf = p.math("ADD", p.nz, p.math("MULTIPLY", p.math("SUBTRACT", p.noise(5.0, 3.0), 0.5), 1.2))
             mcol = p.mix(p.step(p.noise(14.0), 0.35, 0.65), moss[0], moss[1])
             col = p.mix(p.step(mf, moss_at, moss_at + 0.1), col, mcol)
         return p.done(col, 0.9)
-    return cached(("granite", c1, c2, moss, moss_at, scale), build)
+    return cached(("granite", c1, c2, moss, moss_at, scale, cracks), build)
 
 
 def tor(cx, cy_, w, d, h, mt, seed, z0=-0.02, slant=0.25, rz=0.0, k=0.2):
@@ -436,12 +437,12 @@ def pine_tier(cx, cy_, z0, z1, r, n, rot, mt, droop=0.045, inner=0.66, seed=0):
 
 def tall_pine(x=0.0, y=0.0, s=1.0, seed=0, mt=None, bark=None, n=8, tiers=5):
     """Tall layered conifer of reference frames 1 and 3: narrow (height ≈ 3.2× width), five drooping tiers with
-    sunlit tips over a dark interior, and the trunk showing at the foot. ~0.75·s tall, ~0.23·s radius."""
+    sunlit tips over a dark interior, and the trunk showing at the foot. ~0.75·s tall, ~0.25·s radius."""
     rnd = random.Random(seed)
     mt = mt or pine_paint("#173c24", "#245a2f", "#79a443", "#0e2817")
     bark = bark or tex("wood", BARK)
     cy(0.042 * s, 0.2 * s, (x, y, 0.1 * s), bark, 6, 0.0, r2=0.02 * s)
-    radii = [0.215, 0.185, 0.155, 0.12, 0.085][-tiers:]
+    radii = [0.228, 0.19, 0.155, 0.12, 0.085][-tiers:]
     for i, r in enumerate(radii):
         z0 = (0.16 + i * 0.1) * s
         z1 = z0 + (0.22 if i < len(radii) - 1 else 0.185) * s
@@ -455,18 +456,6 @@ def pine_mats():
             foliage("#1d4425", "#2d5f2e", "#62893a", 0.1, 0.62, 0.45, 7.0),
             flat("pine_under", "#25502b", 0.9),
             tex("wood", BARK))
-
-
-def round_tree(x=0.0, y=0.0, s=1.0, seed=0, crowns=None, sub=2):
-    leaf = foliage("#2a511b", "#416f27", "#6c8f33", 0.15, 0.55, 0.55, 9.0)
-    bark = tex("wood", BARK)
-    cy(0.036 * s, 0.24 * s, (x, y, 0.12 * s), bark, 6, 0.0, r2=0.026 * s)
-    ev.rod((x, y, 0.17 * s), (x + 0.075 * s, y - 0.03 * s, 0.27 * s), 0.013 * s, bark, n=5)
-    ev.rod((x, y, 0.19 * s), (x - 0.07 * s, y + 0.03 * s, 0.28 * s), 0.012 * s, bark, n=5)
-    crowns = crowns or [(0.0, 0.0, 0.34, 0.15), (0.09, -0.06, 0.29, 0.11), (-0.09, 0.05, 0.31, 0.115),
-                        (0.03, 0.06, 0.44, 0.11), (-0.02, -0.08, 0.40, 0.09)]
-    for i, (cx, cy_, cz, r) in enumerate(crowns):
-        blob(r * s, (x + cx * s, y + cy_ * s, cz * s), leaf, (1, 1, 0.88), sub if r >= 0.1 else 1, seed * 7 + i)
 
 
 # ------------------------------------------------------------------ assets
@@ -520,13 +509,14 @@ def tree_round():
 
 
 def bush():
-    leaf = foliage("#2a521c", "#427228", "#6a9034", 0.0, 0.16, 0.55, 14.0)
+    leaf = crown_paint("#1f4518", "#346224", "#86ae40", "#112c0d", (0.0, 0.0, 0.03), 0.12)  # as the broadleaf crown
     for i, (x, y, z, r) in enumerate([(0, 0, 0.06, 0.085), (0.07, -0.03, 0.045, 0.06), (-0.065, 0.02, 0.045, 0.065),
                                       (0.01, 0.04, 0.1, 0.055)]):
         blob(r, (x, y, z), leaf, (1, 1, 0.85), 1, 40 + i, 0.15)
-    berry = flat("berry", "#d8344a", 0.6)
-    for x, y, z in [(0.03, -0.075, 0.08), (-0.05, -0.05, 0.07), (0.09, -0.06, 0.05)]:
-        ev.ico(0.012, (x, y, z), berry, (1, 1, 1), 1)
+    berry = flat("berry", "#e0304a", 0.6)  # a red accent that still reads at map size
+    for x, y, z in [(0.03, -0.078, 0.085), (-0.05, -0.055, 0.075), (0.09, -0.06, 0.055), (-0.1, -0.02, 0.06),
+                    (0.0, -0.035, 0.135), (0.065, 0.02, 0.1)]:
+        ev.ico(0.0135, (x, y, z), berry, (1, 1, 1), 1)
 
 
 def flowers():
@@ -555,7 +545,7 @@ def flowers():
 def rock():
     """A granite outcrop (reference frames 1 and 3): a leaning angular block, a second block and a flat slab at its
     foot, two loose stones — sharp facets, strata and cracks, pale tops."""
-    mt = granite_paint("#77736d", "#9c978e")
+    mt = granite_paint("#77736d", "#9c978e", moss_at=0.9, scale=9.0, cracks=0.0)
     tor(0.0, 0.02, 0.24, 0.19, 0.2, mt, 11, slant=0.3, rz=0.3)
     tor(0.15, -0.07, 0.13, 0.11, 0.115, mt, 12, slant=0.2, rz=-0.4)
     tor(-0.13, 0.07, 0.13, 0.12, 0.06, mt, 13, slant=0.1, rz=0.8, k=0.1)
@@ -570,9 +560,9 @@ def crag():
     dark = granite_paint("#5d5954", "#7f7a73", moss=None)
     # the main ridge (reference frame 3's grey crags): stacked angular tors with ledges, rising toward the back
     tor(-0.1, 0.18, 0.36, 0.28, 0.42, mt, 41, slant=0.15, rz=0.15)
-    tor(-0.05, 0.25, 0.26, 0.2, 0.6, dark, 49, slant=0.25, rz=-0.2, k=0.35)  # the summit
+    tor(-0.05, 0.25, 0.26, 0.2, 0.6, dark, 49, slant=0.3, rz=-0.2, k=0.5)  # the summit
     tor(0.2, 0.12, 0.3, 0.24, 0.3, mt, 42, slant=0.25, rz=-0.35)
-    tor(0.24, 0.2, 0.2, 0.16, 0.44, dark, 50, slant=0.25, rz=0.4, k=0.35)
+    tor(0.24, 0.2, 0.2, 0.16, 0.44, dark, 50, slant=0.3, rz=0.4, k=0.45)
     tor(-0.33, 0.0, 0.22, 0.2, 0.24, dark, 43, slant=0.3, rz=0.5)
     tor(0.38, -0.1, 0.18, 0.15, 0.16, mt, 44, slant=0.3, rz=-0.6)
     # ledges and broken blocks in front
@@ -585,7 +575,7 @@ def crag():
         x, y = rnd.uniform(-0.45, 0.45), rnd.uniform(-0.48, -0.17)
         r = rnd.uniform(0.02, 0.04)
         boulder(x, y, r, r * 0.9, r * 0.75, dark if k % 3 else mt, 60 + k, 8)
-    for (x, y, sc) in ((0.44, 0.3, 0.8), (-0.45, 0.33, 0.88), (0.08, 0.47, 0.72), (-0.52, -0.22, 0.62)):
+    for (x, y, sc) in ((0.44, 0.3, 0.78), (-0.45, 0.33, 0.82), (0.08, 0.47, 0.72), (-0.52, -0.22, 0.62)):
         tall_pine(x, y, sc, seed=int(abs(x) * 100 + abs(y) * 10))
 
 
@@ -674,41 +664,6 @@ def mountain():
             break
 
 
-def wheat_paint():
-    """Golden crop: darker stalks at the base, bright ears on top, fine vertical streaks."""
-    def build():
-        p = Paint("wheat")
-        col = p.mix(p.step(p.z, 0.04, 0.1), "#7a4a12", "#d08a12")
-        col = p.mix(p.step(p.z, 0.1, 0.16), col, "#f2b828")
-        streak = p.step(p.noise(5.0, 2.0, stretch=(14.0, 14.0, 1.2)), 0.5, 0.72)
-        col = p.mix(p.math("MULTIPLY", streak, 0.5), col, "#a86410")
-        return p.done(col, 0.8)
-    return cached(("wheat",), build)
-
-
-def wheat_row(x, y0, y1, mt, rnd, step=0.04):
-    """A continuous row of standing wheat along Y: rippled ridge-roof profile, wider at the top."""
-    n = max(2, round((y1 - y0) / step))
-    prof = []
-    for j in range(n + 1):
-        y = y0 + (y1 - y0) * j / n
-        h = rnd.uniform(0.11, 0.135) * (0.7 if j % 2 else 1.0)
-        w = 0.04 if j % 2 else 0.052
-        jx = rnd.uniform(-0.01, 0.01)
-        zb = 0.035
-        prof.append([(x - 0.024, y, zb), (x - w, y, zb + h * 0.72), (x + jx, y, zb + h),
-                     (x + w, y, zb + h * 0.72), (x + 0.024, y, zb)])
-    verts = [v for ring in prof for v in ring]
-    faces = []
-    for j in range(n):
-        for k in range(4):
-            a, b = j * 5 + k, j * 5 + k + 1
-            faces.append((a, b, b + 5, a + 5))
-    faces.append(tuple(range(4, -1, -1)))
-    faces.append(tuple(n * 5 + k for k in range(5)))
-    return poly(verts, faces, [mt], flat_shade=False, name="wheat_row")  # open bottom, wound outwards
-
-
 def ripe_paint():
     """Ripe wheat of reference frames 3–4: ochre stalks in the shade, warm gold ears, pale sunlit tips, fine
     vertical streaks — brighter and yellower than the old crop so a field reads as gold at map size."""
@@ -724,11 +679,13 @@ def ripe_paint():
     return cached(("ripe",), build)
 
 
-def wheat_bed(x, y0, y1, body_mt, ear_mt, rnd, w=0.104, lines=2, step=0.034, ear_z=0.118):
+def wheat_bed(x, y0, y1, body_mt, ear_mt, rnd, w=0.104, lines=2, step=0.034, ear_z=0.118, rr=(0.016, 0.021), top=0.034,
+              bottom=0.058, body_h=0.07, lean=0.012):
     """A bed of standing wheat along Y (reference frame 4: a dense bristly mass of ears, not a smooth ridge):
     a stalk body, and over it rows of upright ears — each a plump three-sided grain head with a blunt top and a
-    random lean, wide enough that neighbouring beds close into one golden mass."""
-    ev.extrude([(-w / 2, 0.0), (w / 2, 0.0), (w * 0.4, 0.07), (-w * 0.4, 0.07)], -y1, -y0, body_mt,
+    random lean, wide enough that neighbouring beds close into one golden mass. With bottom=None the heads are
+    open-bottomed pyramids sitting on the body (low leafy crops: three triangles each)."""
+    ev.extrude([(-w / 2, 0.0), (w / 2, 0.0), (w * 0.4, body_h), (-w * 0.4, body_h)], -y1, -y0, body_mt,
                (x, 0, 0.025), (math.pi / 2, 0, 0))
     verts, faces = [], []
     n = max(2, round((y1 - y0) / step))
@@ -739,19 +696,20 @@ def wheat_bed(x, y0, y1, body_mt, ear_mt, rnd, w=0.104, lines=2, step=0.034, ear
             cx_ = x + ox + rnd.uniform(-0.008, 0.008)
             cy_ = y + rnd.uniform(-0.006, 0.006)
             zm = ear_z + rnd.uniform(-0.012, 0.016)
-            r = rnd.uniform(0.016, 0.021)
-            lx, ly = rnd.uniform(-0.012, 0.012) + ox * 0.3, rnd.uniform(-0.012, 0.012)
+            r = rnd.uniform(*rr)
+            lx, ly = rnd.uniform(-lean, lean) + ox * 0.3, rnd.uniform(-lean, lean)
             rot = rnd.uniform(0, math.tau)
             b = len(verts)
-            verts.append((cx_ - lx * 0.6, cy_ - ly * 0.6, zm - 0.058))
+            verts.append((cx_ - lx * 0.6, cy_ - ly * 0.6, zm - (bottom or 0.0)))
             for k in range(3):
                 a = rot + k * math.tau / 3
                 verts.append((cx_ + r * math.cos(a), cy_ + r * math.sin(a), zm))
-            verts.append((cx_ + lx, cy_ + ly, zm + 0.034))
+            verts.append((cx_ + lx, cy_ + ly, zm + top))
             for k in range(3):
                 p0, p1 = b + 1 + k, b + 1 + (k + 1) % 3
                 faces.append((b + 4, p0, p1))
-                faces.append((b, p1, p0))
+                if bottom:
+                    faces.append((b, p1, p0))
     return poly(verts, faces, [ear_mt], flat_shade=True, name="ears")
 
 
@@ -815,15 +773,18 @@ def crop_field():
     soil = furrows("#5a3b21", "#7a5230", period=0.1)
     box = kit.box
     box("soil", (0.9, 0.7, 0.05), (0, 0, 0.0), soil, 0.012)
-    green = foliage("#3d6a22", "#558a2c", "#7aa83a", 0.02, 0.1, 0.55, 18.0)
-    wheat = wheat_paint()
+    greens = (foliage("#2f5a1c", "#4c8a2a", "#8cc244", 0.03, 0.1, 0.8, 22.0),  # two crops side by side
+              foliage("#3a6420", "#6a9a30", "#a8cf52", 0.03, 0.1, 0.8, 22.0))
+    ripe = ripe_paint()
     rnd = random.Random(9)
-    for i in range(8):  # crop rows; the two near rows ripe
+    for i in range(8):  # leafy crop rows (heads on a ridge, not smooth bars); the two near rows ripe wheat
         x = -0.38 + i * 0.105
         if i >= 6:
-            wheat_row(x, -0.3, 0.3, wheat, rnd)
+            wheat_bed(x, -0.3, 0.3, ripe, ripe, rnd, w=0.09, step=0.036)
         else:
-            bx((0.06, 0.6, 0.05), (x, 0.0, 0.05), green, 0.0, 0.012)
+            g = greens[(i // 2) % 2]
+            wheat_bed(x, -0.3, 0.3, g, g, rnd, w=0.08, step=0.036, ear_z=0.075, rr=(0.024, 0.03), top=0.03,
+                      bottom=None, body_h=0.05, lean=0.008)
     post = tex("wood", WOOD)
     wire = flat("wire", "#9aa0a6", 0.5)
     for (x0, y0, x1, y1) in ((-0.46, 0.37, 0.46, 0.37), (0.46, 0.37, 0.46, -0.35), (-0.46, -0.35, -0.46, 0.37)):
