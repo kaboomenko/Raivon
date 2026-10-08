@@ -1580,7 +1580,7 @@ var _fog_mat: StandardMaterial3D
 func _fog_hex_mat() -> StandardMaterial3D:
 	if _fog_mat == null:
 		_fog_mat = StandardMaterial3D.new()
-		_fog_mat.albedo_color = Color(0.2, 0.22, 0.25)
+		_fog_mat.albedo_color = Color(0.32, 0.33, 0.35)  # mid slate grey, as the unexplored land of reference frame 1
 		_fog_mat.roughness = 0.95
 	return _fog_mat
 
