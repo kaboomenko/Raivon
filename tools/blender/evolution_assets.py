@@ -65,6 +65,12 @@ def shade(c, k):
     return "#%02x%02x%02x" % tuple(int(max(0, min(255, round(x)))) for x in v)
 
 
+def slate(team, k=1.0):
+    """Roof tone of a team (the reference frames: deep slate-blue tiles, not the bright team colour)."""
+    base = {TEAMS["blue"]: "#34548f", TEAMS["red"]: "#8f3a30", TEAMS["green"]: "#3d6b3c"}.get(team, shade(team, 0.7))
+    return shade(base, k)
+
+
 # ------------------------------------------------------------------ materials
 
 
@@ -650,7 +656,7 @@ def barn(team):
 def stone_house(w, d, h, team, wall=STONE, roof_k=0.8, smoke=False):
     bx((w, d, h), (0, 0, h / 2), stone(wall, 1.6), bev=0.012)
     bx((w + 0.02, d + 0.02, 0.035), (0, 0, 0.0175), stone(STONE_D), bev=0)
-    prism_roof("roof", w, d, d * roof_k, (0, 0, h - 0.005), tex("roof", shade(team, 0.8)), overhang=0.045)
+    prism_roof("roof", w, d, d * roof_k, (0, 0, h - 0.005), tex("roof", slate(team, 1.00)), overhang=0.045)
     cy(0.028, 0.15, (w * 0.25, d * 0.15, h + d * roof_k * 0.55), stone(STONE_D), 8)
     if smoke:
         smoke_at(w * 0.25, d * 0.15, h + d * roof_k * 0.55 + 0.09)
@@ -669,7 +675,7 @@ def terem_block(w, d, h_stone, h_wood, team, roof_h, dome=True, dome_team=False)
     z1 = h_stone + h_wood
     bx((w2, d2, h_wood), (0, 0, h_stone + h_wood / 2), tex("wood", "#c98d4a", 2.5), bev=0.01)
     bx((w + 0.03, d + 0.03, 0.03), (0, 0, z1), flat("band" + team, shade(team, 0.9)), bev=0.006)
-    hip_roof(w, d, roof_h, (0, 0, z1 + 0.015), tex("roof", shade(team, 0.8)), oh=0.035)
+    hip_roof(w, d, roof_h, (0, 0, z1 + 0.015), tex("roof", slate(team, 1.00)), oh=0.035)
     nwin = 2 if w > 0.22 else 1
     for i in range(nwin):
         x = (i + 0.5) / nwin * w2 - w2 / 2
@@ -689,7 +695,7 @@ def mansion(w, d, floors, wall, team, fh=0.11):
     bx((w + 0.02, d + 0.02, 0.04), (0, 0, 0.02), stone(STONE_D), bev=0)
     bx((w, d, H), (0, 0, H / 2), facade(wall, WIN_D, 0.07, fh, 0.42, 0.5, lit_p=0.3), bev=0.01)
     bx((w + 0.03, d + 0.03, 0.025), (0, 0, H), flat("cornice", WHITE, 0.6), bev=0.006)
-    hip_roof(w, d, 0.14, (0, 0, H + 0.0125), tex("roof", shade(team, 0.8)), oh=0.02)
+    hip_roof(w, d, 0.14, (0, 0, H + 0.0125), tex("roof", slate(team, 1.00)), oh=0.02)
     for sx in (-1, 1):
         bx((0.035, 0.035, 0.1), (sx * w * 0.3, d * 0.15, H + 0.09), stone("#b0a594"), bev=0)
     bx((0.07, 0.016, 0.1), (0, -d / 2 - 0.004, 0.05), tex("wood", WOOD_D), bev=0)
@@ -842,7 +848,7 @@ def city_dl4(team):
         st = facade("#ddc9a0", WIN_D, 0.07, 0.12, 0.42, 0.5, lit_p=0.35)
         bx((0.58, 0.26, 0.28), (0, 0, 0.14), st, bev=0.01)
         bx((0.6, 0.28, 0.025), (0, 0, 0.28), flat("cornice", WHITE, 0.6), bev=0.006)
-        hip_roof(0.58, 0.26, 0.13, (0, 0, 0.29), tex("roof", shade(team, 0.8)), oh=0.02)
+        hip_roof(0.58, 0.26, 0.13, (0, 0, 0.29), tex("roof", slate(team, 1.00)), oh=0.02)
         tw = stone("#e6dcc4", 1.5)
         bx((0.15, 0.15, 0.66), (0, 0.0, 0.33), tw, bev=0.01)
         bx((0.18, 0.18, 0.025), (0, 0, 0.66), flat("cornice", WHITE, 0.6), bev=0.005)
@@ -851,7 +857,7 @@ def city_dl4(team):
             a = k * math.pi / 2
             clock_face(math.sin(a) * 0.076, -math.cos(a) * 0.076, 0.56, a)
             window(math.sin(a) * 0.066, -math.cos(a) * 0.066, 0.74, a, 0.04, 0.07)
-        hip_roof(0.13, 0.13, 0.3, (0, 0, 0.79), tex("roof", shade(team, 0.8)), oh=0.025)
+        hip_roof(0.13, 0.13, 0.3, (0, 0, 0.79), tex("roof", slate(team, 1.00)), oh=0.025)
         ico(0.02, (0, 0, 1.11), flat("gold", GOLD, 0.35))
         for x in (-0.09, -0.03, 0.03, 0.09):
             cy(0.014, 0.18, (x, -0.165, 0.09), flat("cornice", WHITE, 0.6), 8)
@@ -883,7 +889,7 @@ def city_dl5(team):
         bx((0.62, 0.3, 0.24), (0, 0, 0.12), f, bev=0.01)
         bx((0.64, 0.32, 0.02), (0, 0, 0.24), flat("cornice", "#d8cfc0", 0.6), bev=0)
         for i in range(3):
-            prism_roof("saw", 0.3, 0.2, 0.1, (-0.2 + i * 0.205, 0, 0.245), tex("roof", shade(team, 0.75)), overhang=0.01, rot_z=math.pi / 2)
+            prism_roof("saw", 0.3, 0.2, 0.1, (-0.2 + i * 0.205, 0, 0.245), tex("roof", slate(team, 0.94)), overhang=0.01, rot_z=math.pi / 2)
         cm = stone("#9a3d30", 2.0)
         for (x, y, h) in ((-0.2, 0.2, 0.86), (0.06, 0.21, 0.72)):
             cy(0.055, h, (x, y, h / 2), cm, 10, r2=0.038)
@@ -919,9 +925,9 @@ def city_dl6(team):
     def station():
         f = facade("#e6dcc4", "#3a4656", 0.06, 0.1, 0.5, 0.65, lit_p=0.4)
         bx((0.5, 0.18, 0.16), (0, 0, 0.08), f, bev=0.008)
-        hip_roof(0.5, 0.18, 0.08, (0, 0, 0.16), tex("roof", shade(team, 0.8)), oh=0.015)
+        hip_roof(0.5, 0.18, 0.08, (0, 0, 0.16), tex("roof", slate(team, 1.00)), oh=0.015)
         bx((0.17, 0.2, 0.27), (0, 0, 0.135), f, bev=0.008)
-        prism_roof("hallroof", 0.17, 0.2, 0.09, (0, 0, 0.27), tex("roof", shade(team, 0.8)), overhang=0.015, rot_z=math.pi / 2)
+        prism_roof("hallroof", 0.17, 0.2, 0.09, (0, 0, 0.27), tex("roof", slate(team, 1.00)), overhang=0.015, rot_z=math.pi / 2)
         clock_face(0, -0.105, 0.21, 0, 0.035)
         bx((0.6, 0.12, 0.015), (0, -0.17, 0.15), flat("canopy" + team, team, 0.6), bev=0)
         for x in (-0.27, -0.09, 0.09, 0.27):
@@ -1085,7 +1091,7 @@ def residence_dl3(team):
     # covered gallery joining the wing to the main terem
     gm = tex("wood", "#c98d4a", 2.5)
     bx((0.16, 0.1, 0.08), (-0.2, 0.06, 0.25), gm, bev=0.006)
-    prism_roof("gal", 0.16, 0.1, 0.06, (-0.2, 0.06, 0.29), tex("roof", shade(team, 0.8)), overhang=0.02)
+    prism_roof("gal", 0.16, 0.1, 0.06, (-0.2, 0.06, 0.29), tex("roof", slate(team, 1.00)), overhang=0.02)
     for x in (-0.26, -0.14):
         cy(0.012, 0.25, (x, 0.06, 0.125), gm, 6)
     # front porch with a tent roof
@@ -1093,7 +1099,7 @@ def residence_dl3(team):
         bx((0.16, 0.05, 0.04), (0, -0.0 - i * 0.045, 0.13 - i * 0.04), stone("#ece4d4"), bev=0)
     for sx in (-1, 1):
         cy(0.014, 0.28, (sx * 0.07, -0.08, 0.14 + 0.05), gm, 6)
-    hip_roof(0.16, 0.12, 0.12, (0, -0.05, 0.33), tex("roof", shade(team, 0.8)), oh=0.02)
+    hip_roof(0.16, 0.12, 0.12, (0, -0.05, 0.33), tex("roof", slate(team, 1.00)), oh=0.02)
     banner(-0.3, -0.45, 0.8, team, 0.15)
     banner(0.3, -0.45, 0.8, team, 0.15)
     tree(0.56, -0.2, 0.85)
@@ -1112,6 +1118,14 @@ def castle_tower(x, y, r, h, roof, team, flag=True):
     for k in range(8):
         a = math.tau * k / 8
         bx((r * 0.38, r * 0.3, 0.045), (x + math.cos(a) * r, y + math.sin(a) * r, h + 0.022), st, a, 0)
+    for zf, k0 in ((0.36, 0), (0.74, 1)):  # narrow lit windows and dark slits around the body
+        for k in range(3):
+            a = math.tau * (k + 0.5 * k0) / 3 - math.pi / 2
+            wx, wy = x + math.cos(a) * (r + 0.002), y + math.sin(a) * (r + 0.002)
+            if k == 0:
+                bx((0.022, 0.012, 0.04), (wx, wy, h * zf), win_lit(), a + math.pi / 2, 0)
+            else:
+                bx((0.014, 0.012, 0.034), (wx, wy, h * zf), flat("slit", "#1c1a19", 0.9), a + math.pi / 2, 0)
     cn(r + 0.03, r * 3.4, (x, y, h + r * 1.7 + 0.02), roof, 12)
     top = h + r * 3.4 + 0.02
     uvs(0.012, (x, y, top + 0.01), flat("finial", GOLD, 0.35), 6, 4)
@@ -1123,7 +1137,7 @@ def castle_tower(x, y, r, h, roof, team, flag=True):
 def residence_dl4(team):
     pad(0.84, stone(COBBLE, 1.8), 0.014, 14, 0.03, 14)
     st = stone(STONE)
-    roof = tex("roof", shade(team, 0.75))
+    roof = tex("roof", slate(team, 0.94))
     H = 0.48
     corners = [(-H, -H), (H, -H), (H, H), (-H, H)]
 
@@ -1168,7 +1182,7 @@ def residence_dl5(team):
     pad(0.86, stone("#b9b3a8", 2.2), 0.014, 14, 0.0, 15)
     bx((0.88, 0.46, 0.05), (0, 0.12, 0.025), stone("#a59d8e", 1.6), bev=0.01)
     f = facade("#e3cfa6", WIN_D, 0.068, 0.12, 0.42, 0.55, lit_p=0.35, z0=0.05)
-    roof = tex("roof", shade(team, 0.8))
+    roof = tex("roof", slate(team, 1.00))
     wh = flat("cornice", WHITE, 0.6)
     bx((0.62, 0.32, 0.36), (0, 0.14, 0.23), f, bev=0.01)
     bx((0.64, 0.34, 0.025), (0, 0.14, 0.41), wh, bev=0.006)
