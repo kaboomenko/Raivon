@@ -2294,22 +2294,22 @@ func _make_army(a: Dictionary) -> Node3D:
 		if assault == "" and has_model("assault_dl%d_%s" % [n, side]):
 			assault = "assault_dl%d_%s" % [n, side]
 	var anim: Array = []
-	# the reference frames: an army is a crowd of separate readable soldiers in loose groups, not one big block —
-	# three loose eight-man squads, slightly turned against each other
+	# the reference frames: an army is a handful of big readable soldiers and riders (frame 3: four to eight men a
+	# hex), not a crowd — two loose eight-man squads, slightly turned against each other
 	var sq_name := squad if squad != "" else "squad_" + side
-	for g in [[Vector3(-0.34, 0, 0.16), 0.12], [Vector3(0.1, 0, 0.38), -0.1], [Vector3(-0.06, 0, -0.16), 0.05]]:
-		var sq := spawn(sq_name, model, g[0], g[1], 0.8)
+	for g in [[Vector3(-0.26, 0, 0.2), 0.12], [Vector3(-0.02, 0, -0.18), 0.05]]:
+		var sq := spawn(sq_name, model, g[0], g[1], 0.98)
 		if sq:
 			_animate_troops(sq, false, anim)
 	var rider: Node3D = null
 	if assault != "":
-		rider = spawn(assault, model, Vector3(0.36, 0, 0.08), 0.0, 0.92)
+		rider = spawn(assault, model, Vector3(0.4, 0, 0.16), 0.0, 1.1)
 	elif dl >= 2 or squad == "":
-		rider = spawn("knight_" + ("blue" if side == "blue" else "red"), model, Vector3(0.36, 0, 0.08), 0.0, 0.92)
+		rider = spawn("knight_" + ("blue" if side == "blue" else "red"), model, Vector3(0.4, 0, 0.16), 0.0, 1.1)
 	if rider:
 		_animate_troops(rider, true, anim)
 		if assault != "" and dl <= 5:  # cavalry rides in pairs (reference frame 3: horsemen on both sides of the front)
-			var r2 := spawn(assault, model, Vector3(0.5, 0, -0.18), 0.12, 0.88)
+			var r2 := spawn(assault, model, Vector3(0.5, 0, -0.22), 0.12, 1.05)
 			if r2:
 				_animate_troops(r2, true, anim)
 	var gun := ""
