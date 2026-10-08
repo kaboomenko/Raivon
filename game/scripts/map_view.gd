@@ -625,6 +625,9 @@ func _build_grass() -> void:
 		var biome := String(c.get("biome", "meadow"))
 		var tint: Color = GRASS_TINT.get(biome, GRASS_TINT["meadow"])
 		var empty: bool = c["kind"] == "plain" and not camp_hexes.has(int(c["id"]))
+		var own_g: int = int(c["owner"])
+		if empty and own_g > Types.NOBODY and own_g < sim.states.size() and int(sim.states[own_g]["dev_level"]) >= 8:
+			empty = false  # a neon district's plate covers the hex: grass only on the rim, never through the plate
 		var n := 28
 		if t == "plain" and empty:
 			n = 100  # a carpet of tufts (reference frame 3: no bare earth between the farms)
@@ -634,7 +637,7 @@ func _build_grass() -> void:
 			n = n / 2
 		var center := axial_to_world(c["q"], c["r"])
 		for i in n:
-			var r := sqrt(g.randf()) * 0.86 if empty else g.randf_range(0.7, 0.9)
+			var r := sqrt(g.randf()) * 0.86 if empty else g.randf_range(0.82, 0.93)
 			var a := g.randf() * TAU
 			var pos := center + Vector3(cos(a) * r, 0.0, sin(a) * r)
 			var sc := g.randf_range(0.75, 1.3)
@@ -775,6 +778,8 @@ func faction_suffix(s: int) -> String:
 func refresh_props() -> void:
 	for c in _props_root.get_children():
 		c.queue_free()
+	if _grass_mi != null:
+		_build_grass()  # tufts follow what stands on the hexes (a DL8 district's plate leaves only its rim)
 	_place_props()
 	_flush_decor()
 	_build_bay()

@@ -1998,7 +1998,7 @@ def district_scifi(team):
     street lines, four dark-glass blocks of different heights with team neon edges, a skybridge, a small dome and a
     landing pad — low enough not to hide the capital."""
     plate = flat("plate8", "#6f6b65", 0.6)  # warm-grey concrete: the cool sci-fi light and grading turn it neutral grey (frames 2, 5)
-    pad(0.72, plate, 0.012, 12, 0.0, 41)
+    pad(0.82, plate, 0.012, 12, 0.0, 41)
     street = glow("street" + team, shade(team, 1.25), 1.4)
     for ang in (0.0, math.pi / 3, -math.pi / 3):  # three glowing avenues across the plate
         bx((1.3, 0.016, 0.006), (0, 0, 0.016), street, ang, 0)
@@ -2023,7 +2023,7 @@ def district_scifi(team):
 def district_scifi_b(team):
     """Sprawl variant B: a round plaza with one tall needle tower, a glass arcology dome and low ring blocks."""
     plate = flat("plate8", "#6f6b65", 0.6)  # warm-grey concrete: the cool sci-fi light and grading turn it neutral grey (frames 2, 5)
-    pad(0.72, plate, 0.012, 12, 0.0, 42)
+    pad(0.82, plate, 0.012, 12, 0.0, 42)
     neon = team_neon(team)
     steel = facade("#aab3bf", "#22436e", 0.045, 0.06, 0.62, 0.55, lit="#9fdcff", lit_p=0.4)
     gl = dark_glass()
@@ -2045,7 +2045,7 @@ def district_scifi_b(team):
 def district_scifi_c(team):
     """Sprawl variant C: an energy hub — a raivite reactor core in a ring frame, two cooling towers, hangars."""
     plate = flat("plate8", "#6f6b65", 0.6)  # warm-grey concrete: the cool sci-fi light and grading turn it neutral grey (frames 2, 5)
-    pad(0.72, plate, 0.012, 12, 0.0, 43)
+    pad(0.82, plate, 0.012, 12, 0.0, 43)
     neon = team_neon(team)
     core = glow("reactor", CYAN, 3.0)
     cy(0.16, 0.06, (0, 0.05, 0.04), flat("reactor_base", "#4a515c", 0.5), 16)
