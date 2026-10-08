@@ -38,8 +38,8 @@ WOOD_D = "#5a3a22"
 LOG = "#a06c3c"
 THATCH = "#d8b25c"
 DAUB = "#c7a77a"
-STONE = "#cbc3b4"
-STONE_D = "#8f877b"
+STONE = "#bdbab2"  # light grey stone (reference frames), was beige #cbc3b4
+STONE_D = "#86837c"
 COBBLE = "#a8a091"
 DIRT = "#9c7a52"
 PLASTER = "#e9dcc0"
@@ -1160,6 +1160,11 @@ def residence_dl4(team):
     for (x, y) in corners:
         castle_tower(x, y, 0.1, 0.52, roof, team)
         window(x, y - 0.1, 0.36, 0, 0.025, 0.045)
+    # mid-wall towers on the three plain walls and turrets flanking the gate (the many towers of reference frame 4)
+    for (x, y) in ((-H, 0.0), (H, 0.0), (0.0, H)):
+        castle_tower(x, y, 0.075, 0.42, roof, team, flag=False)
+    for sx in (-1, 1):
+        castle_tower(sx * 0.17, -H - 0.02, 0.06, 0.5, roof, team, flag=False)
     # gatehouse
     bx((0.26, 0.16, 0.4), (0, -H, 0.2), st, bev=0.01)
     bx((0.12, 0.02, 0.18), (0, -H - 0.08, 0.09), tex("wood", "#4a2f19"), bev=0)
@@ -1169,6 +1174,7 @@ def residence_dl4(team):
     prism_roof("keep_roof", 0.42, 0.34, 0.3, (0.04, 0.12, 0.66), roof)
     for i in range(4):
         window(-0.11 + i * 0.1, -0.044, 0.48, 0, 0.03, 0.06)
+        window(-0.11 + i * 0.1, -0.044, 0.28, 0, 0.026, 0.05)
     for (x, y, h) in ((-0.16, -0.04, 0.86), (0.24, -0.04, 0.78)):
         castle_tower(x, y, 0.08, h, roof, team, flag=False)
     castle_tower(0.04, 0.24, 0.085, 1.08, roof, team)  # the tall central tower — the castle's silhouette
