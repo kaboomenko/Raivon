@@ -671,7 +671,7 @@ def windmill():
 
 def mine():
     rk = rock_paint("#7f786e", "#a0978a", moss_at=0.82)
-    dirt = ev.pad(0.6, tex("plaster", "#9c7a52"), 0.012, 14, 0.12, 4, 1.0, 0.85)
+    dirt = ev.pad(0.6, ev.stone("#9a8f7f", 1.4), 0.012, 14, 0.12, 4, 1.0, 0.85)  # a flagged yard (reference frame 4)
     dirt.location.y = -0.12
     # rock face: big faceted mass behind, a flat-ish front where the adit is cut
     rnd = random.Random(9)
@@ -762,6 +762,40 @@ def mine():
     for x in (-0.45, -0.23):
         for y in (-0.09, -0.03):
             cy(0.01, 0.34, (x, y, 0.17), timber, 6)
+    # the timber headframe of reference frame 4 over a shaft on the left shoulder of the rock: four raked legs,
+    # braces, a platform and the sheave wheel on top, with the rope down into the shaft
+    hx, hy, top = -0.3, 0.16, 0.86
+    legs = [(-0.1, -0.1), (0.1, -0.1), (0.1, 0.1), (-0.1, 0.1)]
+    for (dx, dy) in legs:
+        ev.beam((hx + dx * 1.6, hy + dy * 1.6, 0.0), (hx + dx * 0.55, hy + dy * 0.55, top), 0.026, timber)
+    for z, k in ((0.3, 1.25), (0.58, 0.9)):  # horizontal braces at two levels
+        for i in range(4):
+            a, b = legs[i], legs[(i + 1) % 4]
+            ev.beam((hx + a[0] * k, hy + a[1] * k, z), (hx + b[0] * k, hy + b[1] * k, z), 0.016, timber)
+    for i in (0, 2):  # diagonal crosses on the front and back
+        a, b = legs[i], legs[(i + 1) % 4]
+        ev.beam((hx + a[0] * 1.25, hy + a[1] * 1.25, 0.3), (hx + b[0] * 0.9, hy + b[1] * 0.9, 0.58), 0.012, timber)
+    bx((0.16, 0.16, 0.018), (hx, hy, top), tex("wood", WOOD_L), 0.0, 0.003)
+    for sx in (-1, 1):  # the wheel's bearing posts
+        bx((0.02, 0.02, 0.07), (hx + sx * 0.035, hy, top + 0.035), timber, 0.0, 0.002)
+    cy(0.075, 0.016, (hx, hy, top + 0.08), tex("wood", "#6e4526"), 14, 0.0, rot=(0, math.pi / 2, 0))
+    cy(0.06, 0.02, (hx, hy, top + 0.08), flat("iron", "#2b2a2e", 0.5), 14, 0.0, rot=(0, math.pi / 2, 0))
+    ev.beam((hx, hy - 0.07, top + 0.08), (hx, hy - 0.07, 0.25), 0.005, rope)
+    ev.beam((hx, hy - 0.07, top + 0.08), (hx + 0.24, hy - 0.2, 0.12), 0.005, rope)  # to the winch
+    # a second cart heaped with glowing ore, by the yard's edge (the warm-lit carts of frame 4)
+    gx, gy = -0.12, -0.46
+    ev.taper_box((0.15, 0.11, 0.075), (gx, gy, 0.085), cart, top=(1.15, 1.15), bev=0.0)
+    for dx in (-0.05, 0.05):
+        bx((0.012, 0.13, 0.076), (gx + dx, gy, 0.085), band, 0, 0.0)
+    for dx in (-0.04, 0.04):
+        for dy in (-0.04, 0.04):
+            cy(0.024, 0.014, (gx + dx * 1.25, gy + dy, 0.032), band, 8, 0.0, rot=(0, math.pi / 2, 0))
+    hot = glow("ore_hot", "#ffb347", 2.2)
+    for k in range(6):
+        a = k / 6 * math.tau
+        r = 0.03 if k else 0.0
+        boulder(gx + r * math.cos(a), gy + r * math.sin(a), 0.03, 0.026, 0.034, hot if k % 2 == 0 else gold, 70 + k, 8,
+                z0=0.115)
 
 
 ASSETS = {
