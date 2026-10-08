@@ -1381,6 +1381,7 @@ func _rebuild_overlay() -> void:
 	for n in _overlay_root.get_children():
 		n.queue_free()
 	var tints := {}
+	var washes := {}  # owner -> the strategic-zoom fill: the rim gradient spread over the whole hex (reference frame 1)
 	var scorch := {}  # owner -> darkening layer under the fills (burnt ground under AI land, cooler under the player's)
 	var hatch := {}
 	var lines := {}
@@ -1402,7 +1403,7 @@ func _rebuild_overlay() -> void:
 			# border — per territory, not per hex, so the inner hexes don't read as tiles
 			var tc := Color(0.16, 0.33, 0.86) if own == Types.PLAYER else state_color(own).darkened(0.25)  # royal blue (measured against the reference), crimson
 			var built: bool = own >= 0 and own < sim.states.size() and int(sim.states[own]["dev_level"]) >= 8
-			var c_in := Color(tc.r, tc.g, tc.b, 0.08 if built else 0.14)  # built-up sci-fi land: a lighter veil, the city shows
+			var c_in := Color(tc.r, tc.g, tc.b, 0.08 if built else (0.07 if own == Types.PLAYER else 0.14))  # built-up sci-fi land: a lighter veil, the city shows
 			var c_rim := Color(tc.r, tc.g, tc.b, 0.38 if built else 0.5)
 			var rim := [false, false, false, false, false, false]
 			for d in 6:
@@ -1413,10 +1414,26 @@ func _rebuild_overlay() -> void:
 				for k in 6:
 					if (pts[k] as Vector3).distance_to(nc) < 1.3:
 						rim[k] = true
+			var ws := _st(washes, own)
+			var w_in := Color(tc.r, tc.g, tc.b, 0.08 if built else 0.14)
 			for k in 6:
-				st.set_color(c_in); st.add_vertex(center)
-				st.set_color(c_rim if rim[k] else c_in); st.add_vertex(pts[k])
-				st.set_color(c_rim if rim[(k + 1) % 6] else c_in); st.add_vertex(pts[(k + 1) % 6])
+				ws.set_color(w_in); ws.add_vertex(center)
+				ws.set_color(c_rim if rim[k] else w_in); ws.add_vertex(pts[k])
+				ws.set_color(c_rim if rim[(k + 1) % 6] else w_in); ws.add_vertex(pts[(k + 1) % 6])
+			# close up the glow hugs the border (reference frame 3: a narrow band, the land inside keeps its own
+			# colours): a flat-tinted core and a band over the outer quarter of the radius fading from the rim inward
+			var inner := _hex_pts(center, 0.74)
+			for k in 6:
+				var k2 := (k + 1) % 6
+				st.set_color(c_in); st.add_vertex(center); st.add_vertex(inner[k]); st.add_vertex(inner[k2])
+				var o1 := c_rim if rim[k] else c_in
+				var o2 := c_rim if rim[k2] else c_in
+				st.set_color(o1); st.add_vertex(pts[k])
+				st.set_color(o2); st.add_vertex(pts[k2])
+				st.set_color(c_in); st.add_vertex(inner[k2])
+				st.set_color(o1); st.add_vertex(pts[k])
+				st.set_color(c_in); st.add_vertex(inner[k2])
+				st.set_color(c_in); st.add_vertex(inner[k])
 			# a multiply layer under every fill: burnt ground for AI states, a cool deepening for the player
 			var ss := _st(scorch, own)
 			var sc := center - Vector3(0, 0.006, 0)
@@ -1460,14 +1477,19 @@ func _rebuild_overlay() -> void:
 		if o >= 0 and o < sim.states.size() and o != at_war_with and int(sim.states[o]["dev_level"]) >= 8:
 			m.albedo_color = Color(0.62, 0.68, 0.8)  # the sci-fi stage: built-up, cool steel-grey land (reference frame 2)
 		elif o == Types.PLAYER:
-			m.albedo_color = Color(0.86, 0.9, 1.0)  # a cool deepening: the land reads bluish without losing its colours
+			m.albedo_color = Color(0.96, 0.98, 1.0)  # a cool deepening: the land reads bluish without losing its colours
 		m.cull_mode = BaseMaterial3D.CULL_DISABLED
 		_add(scorch[o], m)
 	_tint_mats = []
+	_wash_mats = []
 	for o in tints:
-		var tm := _tint_mat(Color.WHITE, _tint_k)
+		var tm := _tint_mat(Color.WHITE, _tint_k * (1.0 - _wash_w))
 		_tint_mats.append(tm)
 		_add(tints[o], tm)
+	for o in washes:
+		var wm := _tint_mat(Color.WHITE, _tint_k * _wash_w)
+		_wash_mats.append(wm)
+		_add(washes[o], wm)
 	for o in hatch:
 		_add(hatch[o], _hatch_mat(state_color(o)))
 	for o in lines:
@@ -1695,18 +1717,24 @@ func _land_path(from: int, to: int, own: int) -> Array:
 
 
 var _tint_mats: Array = []
+var _wash_mats: Array = []
 var _tint_k := 1.0
+var _wash_w := 1.0  # 1 = the wide strategic fill, 0 = the narrow close-up rim band
 
 
 ## The territory fills follow the zoom (art direction §1): rich colour on the strategic view, see-through up close
 ## where the land, buildings and troops are the point. zoom: 0 close … 1 far (camera_rig.gd).
 func set_zoom(zoom: float) -> void:
 	var k := lerpf(0.3, 1.0, smoothstep(0.1, 0.6, zoom))
-	if absf(k - _tint_k) < 0.01:
+	var w := smoothstep(0.3, 0.6, zoom)  # reference frame 1 (far) washes the land in the state colour, frame 3 (near) doesn't
+	if absf(k - _tint_k) < 0.01 and absf(w - _wash_w) < 0.01:
 		return
 	_tint_k = k
+	_wash_w = w
 	for m in _tint_mats:
-		(m as StandardMaterial3D).albedo_color.a = k
+		(m as StandardMaterial3D).albedo_color.a = k * (1.0 - w)
+	for m in _wash_mats:
+		(m as StandardMaterial3D).albedo_color.a = k * w
 
 
 func _st(dict: Dictionary, key: int) -> SurfaceTool:
