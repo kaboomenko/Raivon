@@ -40,6 +40,7 @@ THATCH = "#d8b25c"
 DAUB = "#c7a77a"
 STONE = "#bdbab2"  # light grey stone (reference frames), was beige #cbc3b4
 STONE_D = "#86837c"
+WSTONE, WSTONE_D = "#c6b6a0", "#8e8070"  # the warm sandstone of reference frame 4's castle
 COBBLE = "#a8a091"
 DIRT = "#9c7a52"
 PLASTER = "#e9dcc0"
@@ -1153,8 +1154,8 @@ def residence_dl3(team):
 def castle_tower(x, y, r, h, roof, team, flag=True):
     """A round castle tower as in the concept art: plinth, body, a string course, merlons, a tall cone roof
     with a gilt finial and a pennant in the team colour."""
-    st = stone(STONE, 0.6)
-    dk = stone(STONE_D, 0.6)
+    st = stone(WSTONE, 0.6)
+    dk = stone(WSTONE_D, 0.6)
     cy(r + 0.012, 0.05, (x, y, 0.025), dk, 12)
     cy(r, h, (x, y, h / 2), st, 12)
     cy(r + 0.006, 0.016, (x, y, h * 0.55), dk, 12)
@@ -1181,8 +1182,8 @@ def castle_tower(x, y, r, h, roof, team, flag=True):
 def square_tower(x, y, w, h, roof, team, flag=True, roofed=True):
     """A square keep tower of reference frame 4: plinth, body with an arched lit window and slits, a corbelled
     crenellated parapet and (roofed) a steep team-slate pyramid roof with a gilt finial and pennant."""
-    st = stone(STONE, 0.6)
-    dk = stone(STONE_D, 0.6)
+    st = stone(WSTONE, 0.6)
+    dk = stone(WSTONE_D, 0.6)
     bx((w + 0.024, w + 0.024, 0.05), (x, y, 0.025), dk, bev=0.004)
     bx((w, w, h), (x, y, h / 2), st, bev=0.006)
     bx((w + 0.01, w + 0.01, 0.014), (x, y, h * 0.55), dk, bev=0)
@@ -1210,7 +1211,7 @@ def square_tower(x, y, w, h, roof, team, flag=True, roofed=True):
 
 def win_arch(x, y, z, w, h, rz=0.0):
     """An arched lit window (or doorway) on a wall facing −Y: a darker stone surround, a lit pane and a round head."""
-    sur = flat("arch_sur", "#6f6b64", 0.85)
+    sur = flat("arch_sur", "#6e6152", 0.85)
     bx((w + 0.014, 0.008, h + 0.01), (x, y, z), sur, rz, 0)
     cy(w / 2 + 0.007, 0.008, (x, y, z + h / 2), sur, 10, rot=(math.pi / 2, 0, rz))
     bx((w, 0.012, h), (x, y - 0.002, z), win_lit(), rz, 0)
@@ -1218,8 +1219,8 @@ def win_arch(x, y, z, w, h, rz=0.0):
 
 
 def residence_dl4(team):
-    pad(0.84, stone(COBBLE, 1.2), 0.014, 14, 0.03, 14)
-    st = stone(STONE, 0.6)  # larger blocks that survive the bake (reference frame 4 shows every stone)
+    pad(0.84, stone("#a48c6c", 1.2), 0.014, 14, 0.03, 14)  # warm paved court
+    st = stone(WSTONE, 0.6)  # larger blocks that survive the bake (reference frame 4 shows every stone)
     roof = tex("roof", slate(team, 0.94))
     H = 0.48
     corners = [(-H, -H), (H, -H), (H, H), (-H, H)]
@@ -1232,7 +1233,7 @@ def residence_dl4(team):
             f = (a + b) / 2 / ln
             cx, cy_ = x0 + (x1 - x0) * f, y0 + (y1 - y0) * f
             bx((b - a, 0.08, 0.28), (cx, cy_, 0.14), st, ang, bev=0.008)
-            bx((b - a, 0.095, 0.022), (cx, cy_, 0.272), stone(STONE_D, 0.6), ang, bev=0)  # wall-walk ledge
+            bx((b - a, 0.095, 0.022), (cx, cy_, 0.272), stone(WSTONE_D, 0.6), ang, bev=0)  # wall-walk ledge
             n = max(1, int((b - a) / 0.07))
             for i in range(0, n, 2):
                 g = (a + (i + 0.5) * (b - a) / n) / ln
@@ -1257,7 +1258,7 @@ def residence_dl4(team):
         castle_tower(sx * 0.17, -H - 0.02, 0.06, 0.5, roof, team, flag=False)
     # gatehouse: an arched gate with a lit passage and steps up to it
     bx((0.26, 0.16, 0.4), (0, -H, 0.2), st, bev=0.01)
-    sur = flat("arch_sur", "#6f6b64", 0.85)
+    sur = flat("arch_sur", "#6e6152", 0.85)
     bx((0.13, 0.012, 0.17), (0, -H - 0.081, 0.095), sur, bev=0)
     cy(0.065, 0.012, (0, -H - 0.081, 0.18), sur, 12, rot=(math.pi / 2, 0, 0))
     gl = mat("gate_glow", "#8a5426", 0.7, emission="#e0863a", emit_strength=0.45)  # torch-lit passage, not a lamp
@@ -1270,7 +1271,7 @@ def residence_dl4(team):
         bx((0.1, 0.006, 0.006), (0, -H - 0.093, z), iron, bev=0)
     for k in range(3):  # steps down to the square
         bx((0.18 - k * 0.02, 0.04, 0.012 + k * 0.012), (0, -H - 0.13 + k * 0.03, 0.006 + k * 0.006),
-           stone(STONE_D, 0.6), bev=0.002)
+           stone(WSTONE_D, 0.6), bev=0.002)
     win_arch(0, -H - 0.082, 0.3, 0.03, 0.04)
     prism_roof("gate_roof", 0.28, 0.18, 0.14, (0, -H, 0.4), roof)
     # keep with two turrets and a hall
@@ -1282,7 +1283,7 @@ def residence_dl4(team):
     for (x, y, h) in ((-0.16, -0.04, 0.86), (0.24, -0.04, 0.78)):
         castle_tower(x, y, 0.08, h, roof, team, flag=False)
     castle_tower(0.04, 0.24, 0.085, 1.08, roof, team)  # the tall central tower — the castle's silhouette
-    build_at(lambda: stone_house(0.3, 0.22, 0.28, team, STONE), -0.26, 0.3)
+    build_at(lambda: stone_house(0.3, 0.22, 0.28, team, WSTONE), -0.26, 0.3)
     banner(0.04, 0.12, 1.4, team, 0.3)  # the great hanging banners of reference frame 4
     banner(-H, -H, 1.12, team, 0.2)
     banner(H, -H, 1.12, team, 0.2)
