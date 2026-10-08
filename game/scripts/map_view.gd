@@ -37,6 +37,8 @@ var _terrain_mi: MeshInstance3D
 var _overlay_root: Node3D
 var _props_root: Node3D
 var _horizon_root: Node3D
+var _bay_root: Node3D  # warships off the near shore: rebuilt with the props, so they follow the states' eras
+var _bay_spots: Array = []  # [q, r, world position] of the sea hexes that hold a ship
 var _hex_props := {}  # hex id -> Node3D holder of that hex's props
 var _sails: Array = []  # windmill sail nodes, spun in _process (meta "still" = a burning mill)
 var _blazing := {}  # hex id -> true while a long fire burns there
@@ -58,18 +60,22 @@ func _ready() -> void:
 	add_child(_props_root)
 	_horizon_root = Node3D.new()
 	add_child(_horizon_root)
+	_bay_root = Node3D.new()
+	add_child(_bay_root)
 
 
 func set_world(w) -> void:
 	sim = w
 	for c in _horizon_root.get_children():
 		c.queue_free()
+	_bay_spots = []
 	_build_terrain()
 	_build_rivers()
 	_build_water()
 	refresh_props()
 	rng.seed = 11
 	_build_horizon()
+	_build_bay()
 	_dirty = true
 
 
@@ -652,6 +658,7 @@ func refresh_props() -> void:
 	for c in _props_root.get_children():
 		c.queue_free()
 	_place_props()
+	_build_bay()
 
 
 func _place_props() -> void:
@@ -1204,8 +1211,8 @@ func _place_ship(c: Dictionary, holder: Node3D) -> void:
 		var own: int = owner_of(sim.cells[nid])
 		if own <= Types.NOBODY or not Types.is_passable(sim.cells[nid]):
 			continue
-		var name := "warship_" + _faction_suffix(own)
-		if not has_model(name):
+		var name := _ship_model(own)
+		if name == "":
 			return
 		var ship := spawn(name, holder, Vector3(rng.randf_range(-0.25, 0.25), -0.08, rng.randf_range(-0.25, 0.25)), (PI / 2.0 if rng.randf() < 0.5 else -PI / 2.0) + rng.randf_range(-0.7, 0.7), 1.75)  # bow toward or away from the camera: the sails face it
 		if ship:
@@ -1254,6 +1261,7 @@ func _place_biome_props(c: Dictionary, holder: Node3D, p: Vector3, biome: String
 
 
 func _build_horizon() -> void:
+	_bay_spots = []
 	var ring_mat := StandardMaterial3D.new()
 	ring_mat.albedo_color = Color(0.13, 0.2, 0.12)  # dark forest floor, as the wooded rim of the references
 	var rr: int = maxi(4, int(sim.radius))  # the horizon ring sits around the open world (grows by chapter)
@@ -1270,7 +1278,7 @@ func _build_horizon() -> void:
 			if d <= rr + 2:
 				if near:  # below the player's land the open sea of the bay shows instead (reference frame 1)
 					if d == rr + 1 and roll < 0.3:
-						_horizon_ship(q, r, p)
+						_bay_spots.append([q, r, p])
 					continue
 				# the unexplored land next to the open world (reference frame 1): dark slate hexes with a faint grid,
 				# drifting low clouds and a peak here and there
@@ -1312,9 +1320,31 @@ func _build_horizon() -> void:
 				_cloud(p + Vector3(rng.randf_range(-0.5, 0.5), rng.randf_range(1.0, 2.6), rng.randf_range(-0.5, 0.5)), rng.randf_range(2.5, 4.5))
 
 
+## The warship of a state's era: a sailing ship under its colours (DL1–5), a steel destroyer (DL6–7), a hover
+## cruiser with neon strips (DL8+); "" when there is no model.
+func _ship_model(own: int) -> String:
+	var side := _faction_suffix(own)
+	var dl: int = int(sim.states[own]["dev_level"]) if own >= 0 and own < sim.states.size() else 1
+	for name in (["cruiser_scifi_" + side] if dl >= 8 else []) + (["destroyer_" + side] if dl >= 6 else []) + ["warship_" + side]:
+		if has_model(name):
+			return name
+	return ""
+
+
+## The bay's warships, one per recorded sea hex, each in its state's current era; a per-hex seed keeps them in
+## place across rebuilds.
+func _build_bay() -> void:
+	for c in _bay_root.get_children():
+		c.queue_free()
+	for spot in _bay_spots:
+		var lr := RandomNumberGenerator.new()
+		lr.seed = int(spot[0]) * 73 + int(spot[1]) * 19 + 5
+		_horizon_ship(int(spot[0]), int(spot[1]), spot[2], lr)
+
+
 ## A warship of the coastal state off the world's near shore (reference frame 1: ships under the state's sails in
 ## the bay below the land), rocking on the open sea.
-func _horizon_ship(q: int, r: int, p: Vector3) -> void:
+func _horizon_ship(q: int, r: int, p: Vector3, lr: RandomNumberGenerator) -> void:
 	for d in 6:
 		var nb: int = sim.id_at(q + int(DIRS[d].x), r + int(DIRS[d].y))
 		if nb < 0:
@@ -1322,15 +1352,15 @@ func _horizon_ship(q: int, r: int, p: Vector3) -> void:
 		var own := owner_of(sim.cells[nb])
 		if own <= Types.NOBODY or not Types.is_passable(sim.cells[nb]):
 			continue
-		var name := "warship_" + _faction_suffix(own)
-		if not has_model(name):
+		var name := _ship_model(own)
+		if name == "":
 			return
-		var ship := spawn(name, _horizon_root, p + Vector3(rng.randf_range(-0.3, 0.3), -0.26, rng.randf_range(-0.2, 0.2)), (PI / 2.0 if rng.randf() < 0.5 else -PI / 2.0) + rng.randf_range(-0.6, 0.6), 1.75)
+		var ship := spawn(name, _bay_root, p + Vector3(lr.randf_range(-0.3, 0.3), -0.26, lr.randf_range(-0.2, 0.2)), (PI / 2.0 if lr.randf() < 0.5 else -PI / 2.0) + lr.randf_range(-0.6, 0.6), 1.75)
 		if ship:
 			var tw := ship.create_tween().set_loops()
 			var r0 := ship.rotation
-			tw.tween_property(ship, "rotation", r0 + Vector3(0.05, 0, 0.03), 1.8 + rng.randf()).set_trans(Tween.TRANS_SINE)
-			tw.tween_property(ship, "rotation", r0 - Vector3(0.05, 0, 0.03), 1.8 + rng.randf()).set_trans(Tween.TRANS_SINE)
+			tw.tween_property(ship, "rotation", r0 + Vector3(0.05, 0, 0.03), 1.8 + lr.randf()).set_trans(Tween.TRANS_SINE)
+			tw.tween_property(ship, "rotation", r0 - Vector3(0.05, 0, 0.03), 1.8 + lr.randf()).set_trans(Tween.TRANS_SINE)
 		return
 
 

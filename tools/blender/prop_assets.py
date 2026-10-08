@@ -724,10 +724,81 @@ def warship(team):
     tri_plate((0.09, 0, 0.5), (0.09, 0, 0.2), (0.4, 0, 0.18), flat("jib", SAIL, 0.8), 0.005)
 
 
+def _turret(x, z, steel, dark, aim=1):
+    """A gun turret on the deck centreline: a squat round mount, an angled shield and a twin barrel toward ±X."""
+    cy(0.032, 0.026, (x, 0, z + 0.013), steel, 10)
+    bx((0.05, 0.05, 0.022), (x + aim * 0.006, 0, z + 0.035), steel, bev=0.004)
+    for sy in (-0.008, 0.008):
+        beam((x + aim * 0.02, sy, z + 0.036), (x + aim * 0.085, sy, z + 0.04), 0.0045, dark)
+
+
+def destroyer(team):
+    """A steel destroyer of the industrial and modern eras (DL6–7) along X (bow at +X): a grey hull with a team
+    boot stripe and hull number, a stepped bridge with windows, a raked funnel, a lattice mast with a radar bar,
+    turrets fore and aft and the state ensign at the stern."""
+    grey = flat("ship_grey", "#7b828a", 0.55)
+    deck = flat("ship_deck", "#5a6067", 0.7)
+    dark = flat("ship_dark", "#2c3035", 0.5)
+    stripe = flat("hull_stripe" + team, ev.slate(team, 1.1), 0.6)
+    hull(0.72, 0.16, 0.085, grey, deck, stripe)
+    win = flat("bridge_win", "#1c2a38", 0.2)
+    z0 = 0.085
+    bx((0.2, 0.1, 0.05), (-0.02, 0, z0 + 0.025), grey, bev=0.006)  # main deckhouse
+    bx((0.11, 0.085, 0.045), (0.04, 0, z0 + 0.072), grey, bev=0.006)  # bridge
+    bx((0.012, 0.075, 0.014), (0.096, 0, z0 + 0.08), win, bev=0)
+    for sy in (-1, 1):
+        bx((0.08, 0.004, 0.012), (0.04, sy * 0.043, z0 + 0.08), win, bev=0)
+    bx((0.07, 0.07, 0.012), (0.03, 0, z0 + 0.1), deck, bev=0.003)
+    rod((-0.07, 0, z0 + 0.05), (-0.09, 0, z0 + 0.13), 0.022, grey, n=10)  # raked funnel
+    cy(0.023, 0.012, (-0.091, 0, z0 + 0.13), dark, 10)
+    rod((0.02, 0, z0 + 0.1), (0.015, 0, z0 + 0.24), 0.006, dark, n=5)  # mast
+    for z, w in ((0.17, 0.07), (0.215, 0.045)):
+        bx((0.008, w, 0.006), (0.017, 0, z0 + z), dark, bev=0)
+    bx((0.02, 0.07, 0.012), (0.015, 0, z0 + 0.245), grey, bev=0.002)  # radar bar
+    _turret(0.2, z0, grey, dark, 1)
+    _turret(-0.2, z0, grey, dark, -1)
+    for k in range(3):  # hull number
+        bx((0.018, 0.004, 0.028), (0.24 + k * 0.024, -0.081, 0.055), flat("hull_no", "#e8e6e0", 0.6), bev=0)
+        bx((0.018, 0.004, 0.028), (0.24 + k * 0.024, 0.081, 0.055), flat("hull_no", "#e8e6e0", 0.6), bev=0)
+    rod((-0.33, 0, z0), (-0.33, 0, z0 + 0.1), 0.004, dark, n=4)  # ensign staff
+    bx((0.06, 0.004, 0.04), (-0.3, 0, z0 + 0.08), flat("flag" + team, team, 0.7), bev=0)
+    bx((0.022, 0.006, 0.015), (-0.3, 0, z0 + 0.08), flat("emblem", "#f3efe6", 0.6), bev=0)
+
+
+def cruiser_scifi(team):
+    """A hover cruiser of the late era (DL8+) along X (bow at +X): a dark faceted hull riding on a glowing skirt,
+    team-coloured neon strips, a wedge bridge, a missile block and a rail gun, an energy glow at the stern."""
+    hullc = flat("sf_hull", "#2b3240", 0.35)
+    plate = flat("sf_plate", "#454e5e", 0.4)
+    neon = ev.glow("team" + team, team, 3.0)
+    cyan = ev.glow("engine", "#7fe6ff", 4.0)
+    hull(0.74, 0.18, 0.075, hullc, plate)
+    for sy in (-1, 1):  # neon strips along both sides
+        bx((0.46, 0.006, 0.008), (0.0, sy * 0.088, 0.05), neon, bev=0)
+        bx((0.26, 0.006, 0.006), (-0.04, sy * 0.084, 0.025), cyan, bev=0)
+    z0 = 0.075
+    for k, (x, w, h, d) in enumerate(((0.0, 0.24, 0.05, 0.12), (-0.03, 0.15, 0.04, 0.09))):  # stepped wedge citadel
+        bx((w, d, h), (x, 0, z0 + h / 2 + k * 0.05), hullc if k == 0 else plate, bev=0.008)
+    bx((0.01, 0.07, 0.012), (0.042, 0, z0 + 0.075), cyan, bev=0)  # bridge glazing
+    rod((-0.05, 0, z0 + 0.09), (-0.05, 0, z0 + 0.2), 0.005, plate, n=5)  # sensor spire
+    uvs(0.012, (-0.05, 0, z0 + 0.205), neon, 6, 4)
+    bx((0.07, 0.07, 0.03), (0.2, 0, z0 + 0.015), plate, bev=0.005)  # missile block
+    for i in range(3):
+        for j in range(3):
+            bx((0.012, 0.012, 0.004), (0.18 + i * 0.02, -0.02 + j * 0.02, z0 + 0.031), neon, bev=0)
+    beam((-0.2, 0, z0 + 0.02), (-0.08, 0, z0 + 0.03), 0.009, plate)  # rail gun, aft-facing
+    cy(0.026, 0.02, (-0.2, 0, z0 + 0.01), hullc, 10)
+    bx((0.012, 0.11, 0.03), (-0.37, 0, 0.04), cyan, bev=0)  # engine glow at the stern
+    bx((0.05, 0.004, 0.03), (-0.31, 0, z0 + 0.055), flat("flag" + team, team, 0.7), bev=0)
+    rod((-0.34, 0, z0), (-0.34, 0, z0 + 0.07), 0.003, plate, n=4)
+
+
 PROPS = [raider_camp, port, military_base]
 ASSETS = {f.__name__: f for f in PROPS}
 for _t, _c in ev.TEAMS.items():
     ASSETS["warship_" + _t] = (lambda c: (lambda: warship(c)))(_c)
+    ASSETS["destroyer_" + _t] = (lambda c: (lambda: destroyer(c)))(_c)
+    ASSETS["cruiser_scifi_" + _t] = (lambda c: (lambda: cruiser_scifi(c)))(_c)
 
 
 # ------------------------------------------------------------------ export
