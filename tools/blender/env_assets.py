@@ -673,21 +673,24 @@ def mine():
     rk = rock_paint("#7f786e", "#a0978a", moss_at=0.82)
     dirt = ev.pad(0.6, ev.stone("#9a8f7f", 1.4), 0.012, 14, 0.12, 4, 1.0, 0.85)  # a flagged yard (reference frame 4)
     dirt.location.y = -0.12
-    # rock face: big faceted mass behind, a flat-ish front where the adit is cut
+    # the quarried cliff of reference frame 4: three stepped tiers of cut grey blocks, highest at the back, with
+    # ledges a man could stand on — not a smooth mossy boulder
     rnd = random.Random(9)
-    pts = []
-    for i in range(34):
-        x = rnd.uniform(-0.55, 0.55)
-        y = rnd.uniform(-0.02, 0.5)
-        top = 0.62 * (1 - (abs(x) / 0.62) ** 2) * (0.55 + 0.45 * min(1.0, (y + 0.05) / 0.3))
-        pts.append((x, y, rnd.uniform(0.35, 1.0) * max(0.05, top)))
-    for x in (-0.55, -0.35, -0.12, 0.12, 0.35, 0.55):
-        pts.append((x, -0.03 + rnd.uniform(-0.03, 0.03), -0.02))
-        pts.append((x * 0.9, 0.5, -0.02))
-    hull(pts, rk)
-    boulder(-0.42, 0.05, 0.17, 0.15, 0.3, rk, 31, 16)
-    boulder(0.43, 0.08, 0.16, 0.14, 0.26, rk, 32, 16)
-    boulder(0.0, 0.32, 0.25, 0.18, 0.62, rk, 33, 18)
+    cut = rock_paint("#7d776e", "#a39b8f", moss=None, scale=9.0)
+    cut_d = rock_paint("#6a645c", "#8a8278", moss=None, scale=9.0)
+    for t, (y0, y1, zmax, xr) in enumerate(((0.0, 0.2, 0.3, 0.56), (0.17, 0.36, 0.48, 0.5), (0.33, 0.5, 0.66, 0.38))):
+        x = -xr
+        while x < xr - 0.04:
+            w = rnd.uniform(0.11, 0.19)
+            w = min(w, xr - x)
+            h = zmax * rnd.uniform(0.82, 1.0) * (1.0 - 0.35 * (abs(x + w / 2) / xr) ** 2)
+            d = (y1 - y0) * rnd.uniform(0.9, 1.1)
+            bx((w * 0.98, d, h), (x + w / 2, (y0 + y1) / 2 + rnd.uniform(-0.015, 0.015), h / 2),
+               cut if (t + int(x * 10)) % 3 else cut_d, rnd.uniform(-0.08, 0.08), 0.008)
+            x += w
+    rk = rock_paint("#7f786e", "#a0978a", moss_at=0.82)
+    boulder(-0.48, 0.0, 0.1, 0.09, 0.12, rk, 31, 12)
+    boulder(0.5, 0.04, 0.09, 0.08, 0.1, rk, 32, 12)
     boulder(-0.33, -0.2, 0.06, 0.05, 0.06, rk, 34, 10)
     # adit + timber frame
     bx((0.22, 0.12, 0.26), (0, -0.04, 0.13), flat("adit", "#120d09", 1.0), 0, 0.0)
