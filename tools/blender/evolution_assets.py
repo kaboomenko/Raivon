@@ -391,6 +391,17 @@ def flag_at(name, x, y, z, w, h, t=0.015):
     return o
 
 
+def facade_banner(x, y, z_top, w, h, team, rz=0.0, rod_c="#d9d2c3"):
+    """A long banner hanging down a facade that faces −Y (rotated by rz): a rod on top, the cloth in the team colour
+    with a white emblem, and a cloth marker so the game paints the state's flag on it (reference frames 4 and 5)."""
+    def b():
+        bx((w + 0.02, 0.012, 0.012), (0, 0, z_top), flat("pole", rod_c, 0.5), bev=0)
+        bx((w, 0.008, h), (0, -0.004, z_top - 0.006 - h / 2), flat("flag" + team, team, 0.7), bev=0)
+        bx((w * 0.45, 0.011, w * 0.45), (0, -0.006, z_top - h * 0.35), flat("emblem", WHITE, 0.6), bev=0)
+        flag_at("flagt", 0, -0.004, z_top - 0.006 - h / 2, w + 0.004, h + 0.004, 0.014)
+    build_at(b, x, y, rz)
+
+
 def flagpole(x, y, h, team, w=0.15, pole="#d9d2c3"):
     cy(0.009, h, (x, y, h / 2), flat("pole", pole, 0.5), 6)
     bx((w, 0.008, w * 0.64), (x + w / 2 + 0.006, y, h - w * 0.34), flat("flag" + team, team, 0.7), bev=0)
@@ -1208,6 +1219,8 @@ def residence_dl5(team):
         cy(0.016, 0.3, (-0.12 + i * 0.06, -0.06, 0.24), wh, 8)
     bx((0.3, 0.1, 0.03), (0, -0.04, 0.405), wh, bev=0)
     prism_roof("pedi", 0.1, 0.28, 0.08, (0, -0.04, 0.42), wh, overhang=0.01, rot_z=math.pi / 2)
+    for sx in (-1, 1):
+        facade_banner(sx * 0.21, -0.025, 0.39, 0.07, 0.24, team)
     # central clock tower with a team dome
     bx((0.17, 0.17, 0.36), (0, 0.14, 0.62), stone("#efe6d2", 1.5), bev=0.01)
     bx((0.2, 0.2, 0.025), (0, 0.14, 0.8), wh, bev=0.006)
@@ -1262,8 +1275,9 @@ def residence_dl6(team):
     for i in range(6):
         cy(0.016, 0.26, (-0.15 + i * 0.06, -0.06, 0.18), trim, 8)
     bx((0.36, 0.1, 0.04), (0, -0.04, 0.33), trim, bev=0)
-    bx((0.1, 0.008, 0.3), (0, -0.0, 0.88), flat("flag" + team, team, 0.7), bev=0)
-    bx((0.04, 0.01, 0.04), (0, -0.003, 0.95), flat("emblem", WHITE, 0.6), bev=0)
+    facade_banner(0, 0.035, 0.98, 0.11, 0.4, team)
+    for sx in (-1, 1):
+        facade_banner(sx * 0.38, 0.09, 0.6, 0.08, 0.3, team)
     for x in (-0.3, 0.0, 0.3):
         flagpole(x, -0.5, 0.55, team, 0.14, "#d0d4da")
     for sx in (-1, 1):
@@ -1305,6 +1319,8 @@ def residence_dl7(team):
     ico(0.02, (0, 0.18, 2.05), glow("beacon", "#ff4a3a", 4.0))
     for x in (-0.18, 0.0, 0.18):
         flagpole(x, -0.5, 0.5, team, 0.13, "#d0d4da")
+    for sx in (-1, 1):  # tall banners down the tower front (reference frame 5)
+        facade_banner(sx * 0.1, 0.18 - 0.205, 1.2, 0.09, 0.6, team, 0.0, "#d0d4da")
     for (x, y) in ((-0.62, 0.3), (0.62, 0.3)):
         bx((0.08, 0.08, 0.04), (x, y, 0.02), flat("planter", "#7a7f88", 0.6), bev=0.006)
         tree(x, y, 0.75)
