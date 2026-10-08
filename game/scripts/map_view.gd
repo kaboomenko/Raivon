@@ -311,9 +311,16 @@ func spawn(name: String, parent: Node, pos: Vector3, rot := 0.0, s := 1.0, owner
 	return n
 
 
+## Multiply-blended layers (the scorch under the fills, the cloud shadows) must be scaled up on the Mobile renderer:
+## it keeps colours at half value in its 10-bit buffer, so an unscaled multiply halves the ground — on phones the
+## land went near black. 1 on Forward+ (the screenshots), 2 on Mobile (the phones).
+var MUL_K := 2.0 if RenderingServer.get_current_rendering_method() == "mobile" else 1.0
+
+
 ## Static scenery repeated by the dozen on every hex (and the horizon): drawn as one MultiMesh per model and parent
 ## instead of a node each — the map went from ~900 draw calls to a fraction of that.
-const DECOR := {"tree_pine": true, "tree_round": true, "bush": true, "flowers": true, "rock": true}
+const DECOR := {"tree_pine": true, "tree_round": true, "bush": true, "flowers": true, "rock": true, "wheat_field": true,
+		"crop_field": true, "mountain": true, "crag": true}
 var _pending_decor := {}  # parent Node3D -> {model name: [Transform3D relative to the parent]}
 var _decor_meshes := {}  # model name -> [[Mesh, Transform3D of the mesh inside the model]]
 
@@ -697,6 +704,7 @@ func _cloud_shadows() -> void:
 	var m := ShaderMaterial.new()
 	m.shader = load("res://shaders/cloud_shadows.gdshader")
 	m.set_shader_parameter("cloud_noise", _cloud_tex())
+	m.set_shader_parameter("mul_k", MUL_K)
 	m.render_priority = 1
 	_cloud_plane.material_override = m
 	add_child(_cloud_plane)
@@ -1705,6 +1713,7 @@ func _rebuild_overlay() -> void:
 		elif o == Types.PLAYER:
 			m.albedo_color = Color(0.96, 0.98, 1.0)  # a cool deepening: the land reads bluish without losing its colours
 		m.cull_mode = BaseMaterial3D.CULL_DISABLED
+		m.albedo_color *= MUL_K
 		_add(scorch[o], m)
 	_tint_mats = []
 	_wash_mats = []
