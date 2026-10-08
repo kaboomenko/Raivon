@@ -111,6 +111,71 @@ func _build_water() -> void:
 	_water_mi.material_override = mat
 	_water_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_water_mi)
+	_build_waterfalls()
+
+
+var _falls_mi: MeshInstance3D
+
+## Waterfalls where a water hex meets the edge of the open world (the reference frames: water pouring off the
+## plateau): a curtain from the water surface down the cliff with scrolling streaks, mist at the foot.
+func _build_waterfalls() -> void:
+	if _falls_mi:
+		_falls_mi.queue_free()
+		_falls_mi = null
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var any := false
+	for c in sim.cells:
+		if c["terrain"] != "water":
+			continue
+		var center := axial_to_world(c["q"], c["r"])
+		var pts := _hex_pts(center + Vector3(0, -0.07, 0), 1.0)
+		for k in 6:
+			var a: Vector3 = pts[k]
+			var b: Vector3 = pts[(k + 1) % 6]
+			var mid := (a + b) / 2.0
+			if id_at_world(center + 2.0 * (mid - center)) >= 0:
+				continue
+			any = true
+			var out := Vector3(mid.x - center.x, 0, mid.z - center.z).normalized()
+			var a2 := a + out * 0.12 + Vector3(0, -0.27, 0)
+			var b2 := b + out * 0.12 + Vector3(0, -0.27, 0)
+			for v in [[a, Vector2(0, 0)], [b, Vector2(1, 0)], [b2, Vector2(1, 1)], [a, Vector2(0, 0)], [b2, Vector2(1, 1)], [a2, Vector2(0, 1)]]:
+				st.set_uv(v[1])
+				st.set_normal(out)
+				st.add_vertex((v[0] as Vector3) + out * 0.01)
+			if _smoke_mat == null:
+				_smoke_mat = _fx_mat(_puff_tex(), false)
+			var mist := CPUParticles3D.new()  # spray where the fall hits the fog below
+			mist.amount = 6
+			mist.lifetime = 2.2
+			mist.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
+			mist.emission_box_extents = Vector3(0.4, 0.02, 0.1)
+			mist.direction = Vector3(0, 1, 0)
+			mist.initial_velocity_min = 0.05
+			mist.initial_velocity_max = 0.12
+			mist.gravity = Vector3.ZERO
+			mist.scale_amount_curve = _curve(0.4, 1.3)
+			mist.color_ramp = _ramp([0.0, 0.3, 1.0], [Color(1, 1, 1, 0.0), Color(0.95, 0.98, 1.0, 0.45), Color(1, 1, 1, 0.0)])
+			var q := QuadMesh.new()
+			q.size = Vector2(0.35, 0.35)
+			q.material = _smoke_mat
+			mist.mesh = q
+			mist.preprocess = 2.2
+			mist.position = (a2 + b2) / 2.0 + Vector3(0, 0.05, 0)
+			mist.rotation.y = atan2(-(b - a).z, (b - a).x)
+			mist.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			_horizon_root.add_child(mist)
+	if not any:
+		return
+	var m := ShaderMaterial.new()
+	m.shader = load("res://shaders/waterfall.gdshader")
+	m.set_shader_parameter("noise_tex", _noise_tex(3.0, 2, 404))
+	_falls_mi = MeshInstance3D.new()
+	_falls_mi.mesh = st.commit()
+	_falls_mi.material_override = m
+	_falls_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(_falls_mi)
 
 
 ## Rivers run along hex edges (canon §5.1): a blue ribbon on every river edge with round joints.
@@ -1129,7 +1194,7 @@ func _build_horizon() -> void:
 				tm.radial_segments = 6
 				tile.mesh = tm
 				tile.rotation.y = PI / 6.0
-				tile.position = p + Vector3(0, -0.52 - rng.randf() * 0.03, 0)
+				tile.position = p + Vector3(0, -0.82 - rng.randf() * 0.04, 0)  # a step below the open world: its cliffs and waterfalls show
 				tile.material_override = _fog_hex_mat()
 				_horizon_root.add_child(tile)
 				if not near and d == rr + 2 and roll < 0.3:
