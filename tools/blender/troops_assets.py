@@ -117,18 +117,119 @@ EAGLE = [(0.0, 0.5), (0.1, 0.3), (0.5, 0.46), (0.33, 0.02), (0.12, 0.04), (0.2, 
          (-0.12, 0.04), (-0.33, 0.02), (-0.5, 0.46), (-0.1, 0.3)]
 
 
-def badge(w, h, loc, mt, face="-y", pts=EAGLE, tilt=0.0):
-    """Flat one-polygon emblem w × h centred at loc, facing −Y ('-y') or sideways ('x', seen from ±X); `tilt` leans
-    its top back (radians) to lie on a sloped plate. glTF exports it double-sided, so it reads from both sides."""
+def face_obj(polys, n, mt, two=0.0):
+    """One-sided flat polygon(s) wound explicitly towards normal n — never `mesh_obj`, whose normal recalculation
+    picks an arbitrary side for a lone face, and the in-game troops shader culls back faces. `two` > 0 adds the
+    mirror face(s) `two` behind, wound the other way, for flags seen from both sides."""
+    verts, faces = [], []
+
+    def add(pts, nn):
+        # Newell normal: the true winding of any (also concave) outline, unlike the first-corner cross product
+        s = [0.0, 0.0, 0.0]
+        for i, p in enumerate(pts):
+            q = pts[(i + 1) % len(pts)]
+            s[0] += (p[1] - q[1]) * (p[2] + q[2])
+            s[1] += (p[2] - q[2]) * (p[0] + q[0])
+            s[2] += (p[0] - q[0]) * (p[1] + q[1])
+        if s[0] * nn[0] + s[1] * nn[1] + s[2] * nn[2] < 0:
+            pts = pts[::-1]
+        faces.append(tuple(range(len(verts), len(verts) + len(pts))))
+        verts.extend(tuple(p) for p in pts)
+    nx, ny, nz = n
+    for pts in polys:
+        if two:
+            h = two / 2
+            add([(p[0] + nx * h, p[1] + ny * h, p[2] + nz * h) for p in pts], n)
+            add([(p[0] - nx * h, p[1] - ny * h, p[2] - nz * h) for p in pts], (-nx, -ny, -nz))
+        else:
+            add(list(pts), n)
+    me = bpy.data.meshes.new("badge")
+    me.from_pydata(verts, [], faces)
+    me.update()
+    o = bpy.data.objects.new("badge", me)
+    bpy.context.collection.objects.link(o)
+    o.data.materials.append(mt)
+    return o
+
+
+def badge(w, h, loc, mt, face="-y", pts=EAGLE, tilt=0.0, side=-1, two=0.0):
+    """Flat one-polygon emblem w × h centred at loc. face '-y': upright, facing −Y (side=+1 faces +Y), `tilt` leans
+    its top back (radians) to lie on a sloped plate; 'x': on a flank, facing side·X; 'z': lying on a roof, facing up
+    with its top towards +Y so it reads upright from the game camera in front. Wound explicitly (see face_obj)."""
     x, y, z = loc
     ct, st = math.cos(tilt), math.sin(tilt)
     if face == "x":
         verts = [(x, y + u * w, z + v * h) for u, v in pts]
-    elif face == "z":  # lying flat, top towards −Y (read from the camera in front)
-        verts = [(x + u * w, y - v * h, z) for u, v in pts]
+        n = (side, 0, 0)
+    elif face == "z":
+        verts = [(x + u * w, y + v * h, z) for u, v in pts]
+        n = (0, 0, 1)
     else:
         verts = [(x + u * w, y + v * h * st, z + v * h * ct) for u, v in pts]
-    o = mesh_obj(verts, [tuple(range(len(pts)))], mt)
+        n = (0, side * ct, -side * st)
+    return face_obj([verts], n, mt, two)
+
+
+def badge_on(target, w, h, loc, mt, axis="y", side=-1, pts=EAGLE, off=0.0025):
+    """Emblem laid onto a curved, faceted surface (a caparison): every outline point is cast onto `target` along the
+    view axis and lifted `off` back towards the viewer, and the outline is cut in two along its vertical centre
+    line so each half follows its own facet instead of bridging under the cloth. axis 'y' + side −1 = seen from the
+    front, axis 'x' + side ±1 = seen from that flank."""
+    from mathutils import Vector
+    from mathutils.bvhtree import BVHTree
+    me = target.data
+    tree = BVHTree.FromPolygons([target.matrix_world @ v.co for v in me.vertices], [p.vertices for p in me.polygons])
+    x, y, z = loc
+    d = Vector((0, -side, 0)) if axis == "y" else Vector((-side, 0, 0))  # ray direction: into the surface
+
+    def place(u, v):
+        p = Vector((x + u * w, y + side, z + v * h)) if axis == "y" else Vector((x + side, y + u * w, z + v * h))
+        hit = tree.ray_cast(p, d, 2.0)[0]
+        assert hit is not None, "badge_on: outline point off the target surface"
+        return tuple(hit - d * off)
+    k0 = [i for i, (u, _) in enumerate(pts) if abs(u) < 1e-9]
+    if len(k0) == 2:  # symmetric outline: split at its two centre-line points
+        a, b = k0
+        halves = [pts[a:b + 1], pts[b:] + pts[:a + 1]]
+    else:
+        halves = [pts]
+    polys = [[place(u, v) for u, v in hp] for hp in halves]
+    return face_obj(polys, tuple(-d), mt)
+
+
+def surface_band(targets, c, tilt, phis, h, mt, off=0.0025):
+    """Strap lying on a faceted body (the horse's chest): a band of height h in the plane through c tilted `tilt`
+    about X (front dipping), its edge points cast onto `targets` from outside towards c and lifted `off` — so it
+    follows the facets instead of cutting through them. phis = angles round the body, 0 = the front (−Y)."""
+    from mathutils import Vector
+    from mathutils.bvhtree import BVHTree
+    bpy.context.view_layer.update()
+    vs, fs = [], []
+    for t in targets:
+        b = len(vs)
+        vs += [t.matrix_world @ v.co for v in t.data.vertices]
+        fs += [[b + i for i in p_.vertices] for p_ in t.data.polygons]
+    tree = BVHTree.FromPolygons(vs, fs)
+    c = Vector(c)
+    fwd = Vector((0, -math.cos(tilt), -math.sin(tilt)))
+    nrm = Vector((0, -math.sin(tilt), math.cos(tilt)))
+    rows = []
+    for e in (-h / 2, h / 2):
+        row = []
+        for ph in phis:
+            d = (fwd * math.cos(ph) + Vector((math.sin(ph), 0, 0))).normalized()
+            o = c + nrm * e + d * 0.4
+            hit = tree.ray_cast(o, -d, 0.8)[0]
+            row.append(tuple((hit if hit is not None else c + nrm * e) + d * off))
+        rows.append(row)
+    quads = []
+    for k in range(len(phis) - 1):
+        q = [rows[0][k], rows[0][k + 1], rows[1][k + 1], rows[1][k]]
+        mid = sum((Vector(p_) for p_ in q), Vector()) / 4
+        quads.append((q, tuple(mid - c - nrm * (nrm.dot(mid - c)))))
+    o = None
+    for q, n_ in quads:
+        o = face_obj([q], n_, mt)
     return o
 
 
@@ -168,12 +269,12 @@ def pennant(top, bot, length, mt, band=None, fork=0.35):
     (x, y0, z0), (_, y1, z1) = top, bot
     zm = (z0 + z1) / 2
     pts = [(y0, z0), (y0 + length, z0 - 0.006), (y0 + length * (1 - fork), zm), (y1 + length, z1 + 0.006), (y1, z1)]
-    o = mesh_obj([(x, a, b) for a, b in pts], [tuple(range(5))], mt)
+    o = face_obj([[(x, a, b) for a, b in pts]], (1, 0, 0), mt, two=0.0012)  # both faces: seen from either side
     if band:
         k = 0.28
         bp = [(y0, z0), (y0 + length * k, z0 - 0.006 * k), (y1 + length * k, z1 + 0.006 * k), (y1, z1)]
-        for dx in (-0.0025, 0.0025):
-            mesh_obj([(x + dx, a, b) for a, b in bp], [tuple(range(4))], band)
+        for sx in (-1, 1):  # the hoist band on each face, wound outwards
+            face_obj([[(x + sx * 0.0018, a, b) for a, b in bp]], (sx, 0, 0), band)
     return o
 
 
@@ -279,10 +380,11 @@ def _surcoat(Z, team, hem=0.085, top=0.302, waist=0.18, r=0.058, flare=0.066):
 
 
 def _pauldrons(Z, mt, r=0.03):
-    """Layered steel shoulder plates — the brightest spot of a reference soldier at map distance."""
+    """Layered steel shoulder plates — the brightest spot of a reference soldier at map distance: a domed plate
+    over a broader flat lame (both closed, so they hold up from every side)."""
     for sx in (-1, 1):
         uvs(r, (sx * 0.057, 0, Z + 0.3), mt, 6, 3, (1.1, 1.15, 0.72))
-        ring(r * 0.95, 0.014, (sx * 0.061, 0, Z + 0.277), mt, 6, r2=r * 1.02)
+        uvs(r, (sx * 0.061, 0, Z + 0.277), mt, 6, 3, (1.15, 1.2, 0.35))
 
 
 def _sash(Z, mt, r=0.057, h=0.012, tilt=0.6, z=0.245):
@@ -294,10 +396,19 @@ def _sash(Z, mt, r=0.057, h=0.012, tilt=0.6, z=0.245):
     return o
 
 
-def _cape(Z, c, top=0.305, length=0.2, w=0.1):
-    """Short cape hanging from the shoulders down the back, flaring a little."""
-    o = taper_box((w, 0.01, length), (0, 0.068, Z + top - length / 2), F(c, 0.8), (0.7, 1.0))
-    o.rotation_euler.x = 0.1
+def _cape(Z, c, top=0.3, hem=0.11, m=5):
+    """Short cloth cape wrapped round the back from under the pauldrons to above the surcoat hem: a curved shell
+    6 mm thick hugging the surcoat, widening and falling into folds at the hem (reference frame 4)."""
+    rings = []
+    for z, R, half, fold in ((top, 0.059, 0.95, 0.0), (0.2, 0.0625, 1.05, 0.0), (hem, 0.069, 1.15, 0.005)):
+        arc = [math.pi / 2 - half + 2 * half * k / (m - 1) for k in range(m)]
+        rr = [R + fold * (k % 2) for k in range(m)]
+        outer = [((r_ + 0.006) * math.cos(a), (r_ + 0.006) * math.sin(a), Z + z) for a, r_ in zip(arc, rr)]
+        inner = [(r_ * math.cos(a), r_ * math.sin(a), Z + z) for a, r_ in zip(arc, rr)]
+        rings.append(outer + inner[::-1])
+    o = loft(rings, F(c, 0.8), cap0=True, cap1=True)
+    for p_ in o.data.polygons:
+        p_.use_smooth = False
     return o
 
 
@@ -405,7 +516,7 @@ def figure(dl, team, v=0, seated=False):
             _vertical(Z, 0.06, -0.04, 0.05, 0.8, F("#d9d2c3", 0.5))
             bx((0.15, 0.008, 0.1), (0.135, -0.04, Z + 0.74), F(team, 0.7), bev=0)
             for sy in (-1, 1):  # the white eagle on both faces of the colour
-                badge(0.07, 0.074, (0.138, -0.04 + sy * 0.0065, Z + 0.74), F(WHITE, 0.6))
+                badge(0.07, 0.074, (0.138, -0.04 + sy * 0.0065, Z + 0.74), F(WHITE, 0.6), side=sy)
             uvs(0.012, (0.06, -0.04, Z + 0.81), F(GOLD, 0.4), 6, 4)
         else:
             _arm(Z, 1, (0.066, -0.035, 0.2), coat)
@@ -553,18 +664,23 @@ def sentry(dl, team):
 # ====================================================================== ASSAULT UNITS
 
 
-def horse(coat, mane, sock=None, saddle=None, covered=False, reins=False):
+def horse(coat, mane, sock=None, saddle=None, covered=False, reins=False, breast=None):
     """Horse facing −Y: back at z≈0.335, body y −0.17…0.17, head to y≈−0.33, height ≈0.5. A rounded barrel with
     chest and rump, an arched neck, a wedge head with a darker muzzle, eyes and a bridle, tapered legs with
     hooves, a mane crest and a full tail — so it reads as a horse at map zoom, not a box. Lean enough (≈720 tris)
-    to leave the budget for the cloth: `covered` skips the barrel, chest and rump a caparison hides anyway."""
+    to leave the budget for the cloth: `covered` skips the barrel, chest and rump a caparison hides anyway;
+    `breast` = colour of a breast collar lying on the chest, with a brass boss at the front."""
     c, mn = F(coat, 0.75), F(mane, 0.85)
     dark = F(mixc(coat, "#1a1410", 0.45), 0.8)
     leather = F("#3a2516", 0.7)
     if not covered:  # barrel, chest and rump
         bx((0.11, 0.26, 0.12), (0, 0, 0.27), c, bev=0.05)
-        uvs(0.075, (0, -0.12, 0.285), c, 8, 6, (0.85, 1.0, 1.0))
+        chest = uvs(0.075, (0, -0.12, 0.285), c, 8, 6, (0.85, 1.0, 1.0))
         uvs(0.078, (0, 0.12, 0.29), c, 8, 6, (0.9, 1.0, 0.95))
+        if breast:  # breast collar round the point of the shoulder, dipping at the front, back under the cloth
+            surface_band([chest], (0, -0.12, 0.29), 0.32, [math.radians(a) for a in range(-105, 106, 21)], 0.016,
+                         F(breast, 0.7))
+            uvs(0.011, (0, -0.193, 0.265), F(GOLD, 0.4), 6, 3, (1, 0.45, 1))
     # arched neck and head
     beam((0, -0.13, 0.31), (0, -0.2, 0.44), 0.082, c, 0.025)
     uvs(0.045, (0, -0.205, 0.45), c, 8, 5)
@@ -612,17 +728,15 @@ def saddle_cloth(team, trim, y0=0.005, length=0.16, drop=0.125, rear=0.0):
     for sx in (-1, 1):
         side_prism(prof_t, 0.006, tr, sx * 0.0675)  # trim: a border showing round the cloth
         side_prism(prof, 0.007, tc, sx * 0.0715)
-        badge(0.064, 0.064, (sx * 0.0785, y0 + 0.006, zt - drop * 0.46), F(WHITE, 0.6), face="x")
+        badge(0.064, 0.064, (sx * 0.0785, y0 + 0.006, zt - drop * 0.46), F(WHITE, 0.6), face="x", side=sx)
     return tc
 
 
 def assault_dl2(team):
     """Mounted spearman: bay horse with breast strap, team saddle cloth with a pale trim and the white eagle,
     rider in gambeson with the eagle shield; a team pennant below the spear head."""
-    horse("#7a5235", "#2a1d14", "#e8e0d0", reins=True)
+    horse("#7a5235", "#2a1d14", "#e8e0d0", reins=True, breast="#3a2516")
     saddle_cloth(team, "#e9e2cf")
-    leather = F("#3a2516", 0.7)
-    ring(0.07, 0.014, (0, -0.15, 0.3), leather, 8, r2=0.066).scale = (0.95, 0.7, 1)  # breast strap
     figure(2, team, 0, seated=True)
     hx, hy, Z = 0.068, -0.045, SEAT
     pennant((hx, hy + 0.008, Z + 0.69), (hx, hy + 0.008, Z + 0.635), 0.085, F(team, 0.7), F(WHITE, 0.6))
@@ -637,13 +751,16 @@ def assault_dl3(team):
     n = 24
     hem = lambda k: 0.155 if k % 2 == 0 else 0.192  # noqa: E731  dagged hem
     arch = lambda z, a: (lambda k: z + a * abs(math.sin(math.tau * k / n)))  # noqa: E731  withers and croup up
-    loft([ell(0.035, 0.15, 0.0, n, zf=arch(0.352, 0.016)), ell(0.062, 0.2, 0.0, n, zf=arch(0.34, 0.012)),
-          ell(0.075, 0.222, 0.29, n), ell(0.083, 0.232, 0.0, n, zf=hem)], tc, cap0=True)
-    # gold band round the cloth, 3 mm proud of it all the way round
-    loft([ell(0.0805, 0.228, 0.262, n), ell(0.0795, 0.2268, 0.274, n)], F(GOLD, 0.45))
-    for sx in (-1, 1):
-        badge(0.075, 0.075, (sx * 0.0835, 0.035, 0.245), F(WHITE, 0.6), face="x")
-    badge(0.065, 0.065, (0, -0.2325, 0.24), F(WHITE, 0.6), tilt=0.1)  # chest
+    # the flank ring at 0.215 keeps the panel above the dags flat, so the emblems lie on it
+    cap = loft([ell(0.035, 0.15, 0.0, n, zf=arch(0.352, 0.016)), ell(0.062, 0.2, 0.0, n, zf=arch(0.34, 0.012)),
+                ell(0.075, 0.222, 0.29, n), ell(0.0801, 0.2284, 0.215, n), ell(0.083, 0.232, 0.0, n, zf=hem)],
+               tc, cap0=True)
+    # gold border along the foot of that panel, above the dags, 3 mm proud of the cloth all the way round
+    loft([ell(0.0831, 0.2314, 0.215, n), ell(0.0823, 0.2304, 0.227, n)], F(GOLD, 0.45))
+    wh = F(WHITE, 0.6)
+    for sx in (-1, 1):  # the eagle on each flank, on the panel between the border and the back (clear of the boot)
+        badge_on(cap, 0.054, 0.056, (0, 0.03, 0.259), wh, "x", sx)
+    badge_on(cap, 0.04, 0.052, (0, 0, 0.259), wh, "y", -1)  # and on the chest
     beam((0, -0.19, 0.452), (0, -0.305, 0.392), 0.068, F(STEEL, 0.35))  # chanfron
     cn(0.014, 0.06, (0, -0.205, 0.5), tc, 5, rot=(-0.4, 0, 0))  # plume on the chanfron
     Z = SEAT
