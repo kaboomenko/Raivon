@@ -111,10 +111,13 @@ def disc(r, loc, mt, axis="x", n=10, h=0.01):
     return cy(r, h, loc, mt, n, rot=rot)
 
 
-# the white displayed eagle of the reference banners and shields (frames 3–5): wings raised, head up, forked tail —
-# a 12-point outline in a unit box (u right, v up), cheap enough for every soldier's chest and shield
-EAGLE = [(0.0, 0.5), (0.1, 0.3), (0.5, 0.46), (0.33, 0.02), (0.12, 0.04), (0.2, -0.5), (0.0, -0.32), (-0.2, -0.5),
-         (-0.12, 0.04), (-0.33, 0.02), (-0.5, 0.46), (-0.1, 0.3)]
+# the white displayed eagle of the reference banners and shields (frames 3–5): wings raised high with feathered
+# tips, a small head, legs with talons spread, a fanned tail — a 30-point outline in a unit box (u right, v up),
+# mirror-symmetric with exactly two centre-line points (badge_on cuts it there)
+_EAGLE_R = [(0.0, 0.36), (0.07, 0.28), (0.055, 0.18), (0.18, 0.3), (0.3, 0.5), (0.34, 0.36), (0.5, 0.4), (0.4, 0.2),
+            (0.5, 0.14), (0.3, 0.02), (0.11, -0.02), (0.1, -0.16), (0.24, -0.26), (0.08, -0.28), (0.14, -0.5),
+            (0.0, -0.42)]
+EAGLE = _EAGLE_R + [(-u, v) for u, v in _EAGLE_R[1:-1]][::-1]
 
 
 def face_obj(polys, n, mt, two=0.0):
@@ -748,7 +751,7 @@ def assault_dl3(team):
     heater shield, lance with a swallow-tailed pennant."""
     horse("#d4d0c8", "#6d6a66", "#3a3634", reins=True, covered=True)
     tc = F(shade(team, 0.86), 0.7)
-    n = 24
+    n = 20
     hem = lambda k: 0.155 if k % 2 == 0 else 0.192  # noqa: E731  dagged hem
     arch = lambda z, a: (lambda k: z + a * abs(math.sin(math.tau * k / n)))  # noqa: E731  withers and croup up
     # the flank ring at 0.215 keeps the panel above the dags flat, so the emblems lie on it
@@ -760,7 +763,7 @@ def assault_dl3(team):
     wh = F(WHITE, 0.6)
     for sx in (-1, 1):  # the eagle on each flank, on the panel between the border and the back (clear of the boot)
         badge_on(cap, 0.054, 0.056, (0, 0.03, 0.259), wh, "x", sx)
-    badge_on(cap, 0.04, 0.052, (0, 0, 0.259), wh, "y", -1)  # and on the chest
+    badge_on(cap, 0.046, 0.054, (0, 0, 0.259), wh, "y", -1)  # and on the chest
     beam((0, -0.19, 0.452), (0, -0.305, 0.392), 0.068, F(STEEL, 0.35))  # chanfron
     cn(0.014, 0.06, (0, -0.205, 0.5), tc, 5, rot=(-0.4, 0, 0))  # plume on the chanfron
     Z = SEAT
