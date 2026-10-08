@@ -2521,7 +2521,8 @@ func _make_army(a: Dictionary) -> Node3D:
 	lbl.no_depth_test = true
 	lbl.font_size = 64
 	lbl.outline_size = 14
-	lbl.pixel_size = 0.0036  # a small tag over the bar: the reference frames show bars, not big numbers
+	lbl.pixel_size = 0.00024  # a small tag over the bar: the reference frames show bars, not big numbers
+	lbl.fixed_size = true  # the same size on screen at every zoom: up close it no longer towers over the soldiers
 	lbl.position = Vector3(0, 1.04, 0)
 	lbl.outline_modulate = Color(0.05, 0.1, 0.25) if side == "blue" else Color(0.3, 0.05, 0.05)
 	node.add_child(lbl)
