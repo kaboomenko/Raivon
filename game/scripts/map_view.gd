@@ -723,7 +723,7 @@ func _place_guards(c: Dictionary, holder: Node3D, rot: float) -> void:
 	var side := Vector3(fwd.z, 0, -fwd.x)
 	var anim: Array = []
 	for k in [-1, 1]:
-		var g := spawn(sq, holder, fwd * 0.78 + side * 0.32 * k, rot, 0.42)
+		var g := spawn(sq, holder, fwd * 0.78 + side * 0.34 * k, rot, 0.5)
 		if g:
 			_animate_troops(g, false, anim)
 
@@ -2106,11 +2106,11 @@ func _make_army(a: Dictionary) -> Node3D:
 		if assault == "" and has_model("assault_dl%d_%s" % [n, side]):
 			assault = "assault_dl%d_%s" % [n, side]
 	var anim: Array = []
-	# the reference frames: an army is a crowd of small figures in loose groups, not one big block —
-	# three squads at a smaller scale, slightly turned against each other
+	# the reference frames: an army is a crowd of separate readable soldiers in loose groups, not one big block —
+	# three loose eight-man squads, slightly turned against each other
 	var sq_name := squad if squad != "" else "squad_" + side
-	for g in [[Vector3(-0.3, 0, 0.14), 0.12], [Vector3(0.08, 0, 0.34), -0.1], [Vector3(-0.04, 0, -0.14), 0.05]]:
-		var sq := spawn(sq_name, model, g[0], g[1], 0.68)
+	for g in [[Vector3(-0.34, 0, 0.16), 0.12], [Vector3(0.1, 0, 0.38), -0.1], [Vector3(-0.06, 0, -0.16), 0.05]]:
+		var sq := spawn(sq_name, model, g[0], g[1], 0.8)
 		if sq:
 			_animate_troops(sq, false, anim)
 	var rider: Node3D = null

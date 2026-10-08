@@ -395,19 +395,22 @@ def figure(dl, team, v=0, seated=False):
 
 # ---------------------------------------------------------------------- formations
 
-ROWS = [(-0.2 + i * 0.13 + (0.06 if j % 2 else 0), -0.12 + j * 0.13) for j in range(3) for i in range(4)]
+# eight figures in three loose staggered rows, a figure's width apart (reference frames 3–4: soldiers stand as
+# separate readable men, not a packed block); the footprint of the old 4×3 block is kept (x ≈ −0.26…0.32)
+LOOSE = [(-0.22, -0.15), (-0.02, -0.15), (0.18, -0.15), (-0.12, 0.0), (0.08, 0.0), (0.28, 0.0), (-0.2, 0.15), (0.0, 0.15)]
 
 
 def squad(dl, team):
-    """12 figures in the 4×3 block of squad_<team> (x ≈ −0.26…0.32, y ≈ −0.17…0.17)."""
+    """8 figures in a loose group of squad_<team> size (x ≈ −0.26…0.32, y ≈ −0.17…0.17); DL4's standard-bearer walks
+    in the back row."""
     rnd = random.Random(dl * 7)
-    for k, (x, y) in enumerate(ROWS):
-        jit = {1: 0.025, 2: 0.008, 3: 0.008, 6: 0.012, 7: 0.02}.get(dl, 0.0)
-        yaw = {1: 0.45, 6: 0.15, 7: 0.3}.get(dl, 0.06)
+    for k, (x, y) in enumerate(LOOSE):
+        jit = {1: 0.04, 7: 0.03}.get(dl, 0.02)
+        yaw = {1: 0.5, 6: 0.25, 7: 0.35}.get(dl, 0.15)
         dx, dy = rnd.uniform(-jit, jit), rnd.uniform(-jit, jit)
         rz = rnd.uniform(-yaw, yaw)
         s = 0.95 * (rnd.uniform(0.92, 1.04) if dl == 1 else 1.0) * (1.06 if dl == 8 else 1.0)
-        v = k if dl != 4 else (9 if k == 9 else k % 9)
+        v = 9 if (dl == 4 and k == 7) else k
         build_at(lambda d=dl, vv=v: figure(d, team, vv), x + dx, y + dy, rz, s)
 
 
