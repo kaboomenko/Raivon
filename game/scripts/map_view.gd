@@ -1425,6 +1425,7 @@ func _build_horizon() -> void:
 	_bay_spots = []
 	var tiles: Array = []  # fog-hex and forest-base cylinders, drawn as two MultiMeshes (one draw each)
 	var bases: Array = []
+	var clouds: Array = []  # [position, size] of the low clouds, one billboard MultiMesh
 	var ring_mat := StandardMaterial3D.new()
 	ring_mat.albedo_color = Color(0.13, 0.2, 0.12)  # dark forest floor, as the wooded rim of the references
 	var rr: int = maxi(4, int(sim.radius))  # the horizon ring sits around the open world (grows by chapter)
@@ -1450,7 +1451,7 @@ func _build_horizon() -> void:
 				if d == rr + 2 and roll < 0.3:
 					spawn("mountain", _horizon_root, p + Vector3(0, -0.2, 0), rng.randf() * TAU, rng.randf_range(1.5, 2.4))
 				elif rng.randf() < 0.3:
-					_cloud(p + Vector3(rng.randf_range(-0.5, 0.5), rng.randf_range(0.25, 0.7), rng.randf_range(-0.5, 0.5)), rng.randf_range(1.4, 2.4))
+					clouds.append([p + Vector3(rng.randf_range(-0.5, 0.5), rng.randf_range(0.25, 0.7), rng.randf_range(-0.5, 0.5)), rng.randf_range(1.4, 2.4)])
 				continue
 			if near:
 				for i in 5:
@@ -1462,7 +1463,7 @@ func _build_horizon() -> void:
 					spawn("tree_pine", _horizon_root, p + Vector3(rng.randf_range(-0.7, 0.7), -0.1, rng.randf_range(-0.7, 0.7)), rng.randf() * TAU, rng.randf_range(0.9, 1.4))
 			bases.append(Transform3D(Basis.IDENTITY, p + Vector3(0, -0.62, 0)))
 			if not near and rng.randf() < 0.3 + 0.1 * (d - rr - 1):  # a lighter veil: the reference keeps its peaks in view
-				_cloud(p + Vector3(rng.randf_range(-0.5, 0.5), rng.randf_range(1.0, 2.6), rng.randf_range(-0.5, 0.5)), rng.randf_range(2.5, 4.5))
+				clouds.append([p + Vector3(rng.randf_range(-0.5, 0.5), rng.randf_range(1.0, 2.6), rng.randf_range(-0.5, 0.5)), rng.randf_range(2.5, 4.5)])
 	for set in [[tiles, 0.985, _fog_hex_mat()], [bases, 1.16, ring_mat]]:  # 1.16: overlap, or the sky shows through
 		var xfs: Array = set[0]
 		if xfs.is_empty():
@@ -1483,6 +1484,24 @@ func _build_horizon() -> void:
 		mmi.multimesh = mm
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF  # below the world's edge: nothing to shade
 		_horizon_root.add_child(mmi)
+	if not clouds.is_empty():
+		_cloud(Vector3.ZERO, 1.0).queue_free()  # builds the shared cloud material
+		var cmat: StandardMaterial3D = _cloud_mat.duplicate()
+		cmat.billboard_keep_scale = true  # each instance keeps its own size
+		var q := QuadMesh.new()
+		q.size = Vector2(1.0, 0.6)
+		q.material = cmat
+		var cmm := MultiMesh.new()
+		cmm.transform_format = MultiMesh.TRANSFORM_3D
+		cmm.mesh = q
+		cmm.instance_count = clouds.size()
+		for i in clouds.size():
+			var sz: float = clouds[i][1]
+			cmm.set_instance_transform(i, Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * sz), clouds[i][0]))
+		var cmi := MultiMeshInstance3D.new()
+		cmi.multimesh = cmm
+		cmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_horizon_root.add_child(cmi)
 
 
 ## The warship of a state's era: a sailing ship under its colours (DL1–5), a steel destroyer (DL6–7), a hover
