@@ -3060,22 +3060,22 @@ func _add_blaze(root: Node3D, hex: int) -> void:
 	var spots: Array[Vector3] = [Vector3(0, 0.42, 0.12), Vector3(-0.2, 0.18, 0.2), Vector3(0.18, 0.24, 0.18)]
 	for i in spots.size():
 		var fl := CPUParticles3D.new()
-		fl.amount = 18 if i == 0 else 12
-		fl.lifetime = 0.65 if i == 0 else 0.5
+		fl.amount = 12 if i == 0 else 8
+		fl.lifetime = 0.45 if i == 0 else 0.36
 		fl.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
 		fl.emission_sphere_radius = 0.07
 		fl.direction = Vector3.UP
 		fl.spread = 8.0
-		fl.initial_velocity_min = 0.3
-		fl.initial_velocity_max = 0.5
-		fl.gravity = Vector3(0, 0.9, 0)
+		fl.initial_velocity_min = 0.22
+		fl.initial_velocity_max = 0.38
+		fl.gravity = Vector3(0, 0.7, 0)
 		fl.scale_amount_min = 0.75
 		fl.scale_amount_max = 1.15
 		fl.scale_amount_curve = _curve(1.0, 0.25)
 		fl.color_ramp = _ramp([0.0, 0.18, 0.6, 1.0], [Color(1.0, 0.8, 0.35, 0.0), Color(1.0, 0.62, 0.14, 1.0),
 			Color(0.95, 0.3, 0.04, 0.9), Color(0.6, 0.08, 0.02, 0.0)])
 		var fq := QuadMesh.new()
-		fq.size = Vector2(0.5, 0.8) * (1.0 if i == 0 else 0.8)
+		fq.size = Vector2(0.36, 0.56) * (1.0 if i == 0 else 0.8)  # a building on fire, not a pillar over the hex
 		fq.material = fm
 		fl.mesh = fq
 		fl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
