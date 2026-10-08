@@ -39,6 +39,8 @@ LOOK.update({
     "ldr_veilmark": ("#efcfb8", (0.31, 0.43), "#2a1830", "bob", "", "brooch", "#4a2a5e", "#c8ccd4"),    # Margravine Vedana
     "ldr_lakes": ("#e0b896", (0.33, 0.43), "#1d2533", "short", "", "glasses", "#2e6bff", "#e8e8f0"),     # Consul Arman
 })
+# the player's ruler on the HUD (reference frame 1: a bearded king in a gold crown and a royal-blue robe)
+LOOK["ruler"] = ("#e2b08c", (0.38, 0.42), "#5a3a22", "long", "beard", "crown", "#2e5bd8", "#e8b23a")
 HEAD_Z = 1.3
 
 

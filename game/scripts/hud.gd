@@ -133,10 +133,21 @@ func _build() -> void:
 	# ---- ruler portrait + level
 	var rp := _panel(Rect2(14, 132, 86, 92), _style(PANEL_2, 10, Color(0.85, 0.7, 0.35, 0.9), 3))
 	rp.gui_input.connect(_on_button_input.bind("profile"))  # the ruler's portrait opens the profile (10 §4.23)
-	var ruler := Icon.new("ruler")
-	ruler.position = Vector2(18, 136)
-	ruler.size = Vector2(78, 84)
-	add_child(ruler)
+	if ResourceLoader.exists("res://assets/ui/portraits/ruler.png"):  # the rendered king of reference frame 1
+		var face := TextureRect.new()
+		face.texture = load("res://assets/ui/portraits/ruler.png")
+		face.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		face.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		face.position = Vector2(18, 136)
+		face.size = Vector2(78, 84)
+		face.clip_contents = true
+		face.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(face)
+	else:
+		var ruler := Icon.new("ruler")
+		ruler.position = Vector2(18, 136)
+		ruler.size = Vector2(78, 84)
+		add_child(ruler)
 	var lvl := Icon.new("level")
 	lvl.position = Vector2(10, 196)
 	lvl.size = Vector2(40, 40)
