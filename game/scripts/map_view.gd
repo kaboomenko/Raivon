@@ -1178,12 +1178,23 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 			# a copse crowding the far edge (reference frame 3: woods fill every gap between the farms and towns);
 			# behind the centre, so it never hides a farmstead or an army from the camera at +Z
 			var ca := (7.0 + 2.0 * rng.randi_range(0, 2)) * PI / 6.0  # an edge midpoint at 210°, 270° or 330°
+			var cn := rng.randi_range(4, 7)
+			# trees never stand in front of a capital, a town or a farm behind this hex (they would hide its front):
+			# no copse at such an edge, and the lone trees keep to the near half of the hex
+			var busy := false
+			for k in [7.0, 9.0, 11.0]:
+				var a: float = k * PI / 6.0
+				var nb := id_at_world(p + Vector3(cos(a), 0, sin(a)) * SQ3)
+				if nb >= 0 and sim.cells[nb]["kind"] != "plain":
+					busy = true
+					if is_equal_approx(a, ca):
+						cn = 0
 			var cc := p + Vector3(cos(ca), 0, sin(ca)) * 0.58
-			for i in rng.randi_range(4, 7):
+			for i in cn:
 				var off := Vector3(rng.randf_range(-0.16, 0.16), 0, rng.randf_range(-0.24, 0.24)).rotated(Vector3.UP, -ca)
 				spawn("tree_pine" if rng.randf() < 0.8 else "tree_round", holder, cc + off, rng.randf() * TAU, rng.randf_range(0.75, 1.1))
 			for i in rng.randi_range(1, 3):
-				var off := Vector3(rng.randf_range(-0.6, 0.6), 0, rng.randf_range(-0.6, 0.6))
+				var off := Vector3(rng.randf_range(-0.6, 0.6), 0, rng.randf_range(-0.05 if busy else -0.6, 0.6))
 				spawn("tree_pine" if rng.randf() < 0.6 else "tree_round", holder, p + off, rng.randf() * TAU, rng.randf_range(0.7, 1.0))
 			if rng.randf() < 0.55:
 				spawn("bush", holder, p + Vector3(rng.randf_range(-0.55, 0.55), 0, rng.randf_range(-0.55, 0.55)), rng.randf() * TAU, rng.randf_range(1.0, 1.3))
