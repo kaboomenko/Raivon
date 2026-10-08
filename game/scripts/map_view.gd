@@ -992,9 +992,12 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 			for i in rng.randi_range(1, 2):
 				spawn("bush", holder, p + Vector3(rng.randf_range(-0.6, 0.6), 0, rng.randf_range(-0.6, 0.6)), rng.randf() * TAU, rng.randf_range(1.0, 1.25))
 		"hills":
-			for i in 3:
-				spawn("rock", holder, p + Vector3(rng.randf_range(-0.5, 0.5), 0, rng.randf_range(-0.5, 0.5)), rng.randf() * TAU, rng.randf_range(1.2, 2.0))
-			spawn("tree_pine", holder, p + Vector3(0.3, 0, 0.3), 0.0, 1.0)
+			if has_model("crag"):  # a grey rocky outcrop with pines (the reference frames' cliffs)
+				spawn("crag", holder, p + Vector3(rng.randf_range(-0.08, 0.08), 0, rng.randf_range(-0.08, 0.08)), rng.randf() * TAU, rng.randf_range(1.3, 1.5))
+			else:
+				for i in 3:
+					spawn("rock", holder, p + Vector3(rng.randf_range(-0.5, 0.5), 0, rng.randf_range(-0.5, 0.5)), rng.randf() * TAU, rng.randf_range(1.2, 2.0))
+				spawn("tree_pine", holder, p + Vector3(0.3, 0, 0.3), 0.0, 1.0)
 		_:
 			for i in rng.randi_range(1, 4):
 				var off := Vector3(rng.randf_range(-0.6, 0.6), 0, rng.randf_range(-0.6, 0.6))

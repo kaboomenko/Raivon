@@ -388,6 +388,31 @@ def rock():
     boulder(-0.1, -0.09, 0.032, 0.03, 0.03, mt, 15, 9)
 
 
+def crag():
+    """Hills hex (the rocky outcrops of the reference frames): a grey stone ridge of stacked faceted blocks with
+    ledges, a scree apron, moss on the tops and a few pines clinging to it."""
+    mt = rock_paint("#7f7a73", "#a29c92", moss_at=0.7)
+    dark = rock_paint("#6a655f", "#8a847b", moss=None)
+    # the main ridge: three stepped masses rising toward the back
+    boulder(-0.12, 0.18, 0.3, 0.2, 0.42, mt, 41, 22, lean=0.06)
+    boulder(0.2, 0.12, 0.24, 0.18, 0.32, mt, 42, 20, lean=-0.05)
+    boulder(-0.32, -0.02, 0.2, 0.16, 0.24, dark, 43, 18)
+    boulder(0.36, -0.12, 0.16, 0.13, 0.17, mt, 44, 16)
+    # ledges and broken blocks in front
+    boulder(0.02, -0.12, 0.17, 0.12, 0.13, dark, 45, 16)
+    boulder(-0.18, -0.3, 0.1, 0.08, 0.08, mt, 46, 12)
+    boulder(0.24, -0.34, 0.08, 0.07, 0.06, mt, 47, 10)
+    # scree: little stones spilling down the front
+    rnd = random.Random(48)
+    for k in range(14):
+        x, y = rnd.uniform(-0.45, 0.45), rnd.uniform(-0.48, -0.15)
+        r = rnd.uniform(0.018, 0.04)
+        boulder(x, y, r, r * 0.9, r * 0.8, dark if k % 3 else mt, 60 + k, 8)
+    pm = pine_mats()
+    for (x, y, sc) in ((0.42, 0.3, 0.75), (-0.45, 0.32, 0.85), (0.05, 0.46, 0.7), (-0.5, -0.25, 0.6)):
+        pine_tree(x, y, sc, seed=int(x * 100 + y * 10), mats=pm)
+
+
 def _mountain_height(x, y, k=0.84):
     x, y = x / k, y / k
     peaks = [(-0.08, 0.12, 1.38, 0.72, 0.0), (0.37, -0.12, 0.98, 0.55, 1.7), (-0.42, -0.24, 0.8, 0.5, 3.1),
@@ -683,6 +708,7 @@ ASSETS = {
     "tree_pine": tree_pine,
     "tree_round": tree_round,
     "rock": rock,
+    "crag": crag,
     "mountain": mountain,
     "wheat_field": wheat_field,
     "windmill": windmill,

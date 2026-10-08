@@ -6597,7 +6597,8 @@ func _demo(spec: String) -> void:
 		if parts.size() > 1:  # ch2:port / ch2:military_base / ch2:camp — look at a ring II feature
 			ui.close_modal()
 			for c in sim.cells:
-				if (parts[1] == "camp" and not camps.at(c["id"]).is_empty()) or c["kind"] == parts[1]:
+				if (parts[1] == "camp" and not camps.at(c["id"]).is_empty()) or c["kind"] == parts[1] \
+						or (parts[1] == "hills" and c["terrain"] == "hills" and c["kind"] == "plain" and camps.at(c["id"]).is_empty()):
 					_select(c["id"])
 					rig.focus(map_view.cell_world(c["id"]), 0.4)
 					break
