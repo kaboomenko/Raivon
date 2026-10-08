@@ -3278,6 +3278,8 @@ func now_s() -> int:
 func _econ_tick() -> void:
 	if ui:
 		ui.set_portrait_era(econ.dev_level())
+	if hud:
+		hud.set_ruler_era(econ.dev_level())
 	_apply_era_light(econ.dev_level())
 	var now := now_s()
 	var done_line: String = research.tick(now)

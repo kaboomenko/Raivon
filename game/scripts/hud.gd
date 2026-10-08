@@ -1,6 +1,7 @@
 extends CanvasLayer
 ## HUD laid out exactly like the owner's reference frames (docs/art_direction.md §3).
 
+const CmdPortrait := preload("res://scripts/cmd_portrait.gd")
 const PANEL := Color(0.055, 0.085, 0.14, 0.92)
 const PANEL_2 := Color(0.09, 0.13, 0.2, 0.95)
 const EDGE := Color(0.32, 0.42, 0.58, 0.55)
@@ -22,6 +23,8 @@ var _tab_icons := {}  # tab key -> Icon
 var res_labels := {}  # res -> [value Label, rate Label]
 var builders_label: Label
 var level_label: Label
+var ruler_face: TextureRect  # the rendered ruler portrait (assets/ui/portraits/ruler*.png), by the player's era
+var _ruler_era := 1
 var mail_badge: Array = []
 var book_badge: Array = []  # «Летопись»: rewards waiting
 var shop_dot: Panel  # red dot: a free crate is ready
@@ -63,6 +66,17 @@ func _style(bg: Color, radius := 14, border := EDGE, bw := 2) -> StyleBoxFlat:
 	s.shadow_color = Color(0, 0, 0, 0.45)
 	s.shadow_size = 6
 	return s
+
+
+## The ruler's portrait follows the player's era like the commanders' (a crown, a bicorne coat, a field cap, armour).
+func set_ruler_era(dl: int) -> void:
+	var era := CmdPortrait.era_of(dl)
+	if ruler_face == null or era == _ruler_era:
+		return
+	_ruler_era = era
+	var path := "res://assets/ui/portraits/ruler%s.png" % ("" if era == 1 else "_e%d" % era)
+	if ResourceLoader.exists(path):
+		ruler_face.texture = load(path)
 
 
 func _label(text: String, size: int, color := TEXT, bold := true) -> Label:
@@ -135,6 +149,7 @@ func _build() -> void:
 	rp.gui_input.connect(_on_button_input.bind("profile"))  # the ruler's portrait opens the profile (10 §4.23)
 	if ResourceLoader.exists("res://assets/ui/portraits/ruler.png"):  # the rendered king of reference frame 1
 		var face := TextureRect.new()
+		ruler_face = face
 		face.texture = load("res://assets/ui/portraits/ruler.png")
 		face.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		face.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
