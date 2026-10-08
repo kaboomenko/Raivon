@@ -1104,12 +1104,19 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 			if era != "":  # DL6–7 strip fields and a silo, DL8 hydroponics (reference frame 2)
 				spawn(era, holder, p, 0.2, 1.0)
 				return
-			spawn("wheat_field", holder, p + Vector3(0.1, 0, 0.1), 0.0, 0.95)
+			# a patchwork of walled fields round the mill (reference frame 3): the big field, two smaller plots turned
+			# a little against it, a hay barn
+			# (the field is ~0.96 × 0.76 at scale 1: these sizes keep the three apart and inside the hex)
+			spawn("wheat_field", holder, p + Vector3(0.16, 0, 0.16), 0.0, 0.72)
+			spawn("wheat_field", holder, p + Vector3(-0.42, 0, 0.28), PI, 0.42)
+			spawn("wheat_field", holder, p + Vector3(0.46, 0, -0.32), 0.0, 0.45)
 			spawn("windmill", holder, p + Vector3(-0.45, 0, -0.3), 0.4, 0.95)
+			_place_fort(c, holder)
 			return
 		"mine":
 			var era_m := _era_model("mine", int(c["owner"]), side)
 			spawn(era_m if era_m != "" else "mine", holder, p, 0.2, 1.0 if era_m != "" else 1.1)  # DL8: a raivite crystal pit
+			_place_fort(c, holder)
 			return
 		"raivite_vein":
 			_place_vein(holder)
