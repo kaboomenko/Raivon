@@ -6631,8 +6631,12 @@ func _demo(spec: String) -> void:
 			if not map_view.bridge_spots.is_empty():
 				rig.focus(map_view.bridge_spots[0], 0.12)
 			return
-		if parts.size() > 1:  # ch2:port / ch2:military_base / ch2:camp — look at a ring II feature
+		if parts.size() > 1:  # ch2:port / ch2:military_base / ch2:camp — look at a ring II feature (ch2:port:N — AI at DL N)
 			ui.close_modal()
+			if parts.size() > 2:
+				for st in _ai_states():
+					sim.states[st]["dev_level"] = int(parts[2])
+				map_view.refresh_props()
 			for c in sim.cells:
 				if (parts[1] == "camp" and not camps.at(c["id"]).is_empty()) or c["kind"] == parts[1] \
 						or (parts[1] == "hills" and c["terrain"] == "hills" and c["kind"] == "plain" and camps.at(c["id"]).is_empty()):

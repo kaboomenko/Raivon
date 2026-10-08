@@ -427,9 +427,8 @@ def crane():
         rod((0.27, 0.0, 0.21), (0.27 + math.cos(a) * 0.04, math.sin(a) * 0.04, 0.17), 0.0035, rope, n=3)
 
 
-def port():
-    """Fishing/trade port: a water cove opening at the +X edge, a plank pier into it, a sailboat and a rowboat
-    moored, a plank boathouse/warehouse with a blue door, crates, barrels, rope coils, a derrick, a fish rack."""
+def _cove(quay, water_c=WATER, shallow_c="#79c1df"):
+    """The port's water cove opening at the +X edge with a lighter rim and a quay along the land side."""
     # ---- water cove (an inlet so the port reads on any tile, whatever the neighbours are)
     cx = 0.5
     pts = []
@@ -440,11 +439,10 @@ def port():
         p = (cx + math.cos(a) * 0.42 * r, math.sin(a) * 0.66 * r)
         p, _ = clamp_hex(p, HEX_R)
         pts.append(p)
-    water = tex("plaster", WATER, 1.2)
+    water = tex("plaster", water_c, 1.2)
     ground_poly(pts, water, 0.012)
     # shallow lighter rim and the stone quay along the land side of the cove
-    shallow = tex("plaster", "#79c1df", 1.5)
-    quay = stone("#a39b8d", 1.4)
+    shallow = tex("plaster", shallow_c, 1.5)
     for k in range(len(pts)):
         p0, p1 = pts[k], pts[(k + 1) % len(pts)]
         _, c0 = clamp_hex((p0[0] * 1.03, p0[1] * 1.03), HEX_R)
@@ -458,6 +456,13 @@ def port():
         q0 = (p0[0] - dx / dl * 0.04, p0[1] - dy / dl * 0.04, 0.014)
         q1 = (p1[0] - dx / dl * 0.04, p1[1] - dy / dl * 0.04, 0.014)
         beam(q0, q1, 0.025, shallow)
+    return cx
+
+
+def port():
+    """Fishing/trade port: a water cove opening at the +X edge, a plank pier into it, a sailboat and a rowboat
+    moored, a plank boathouse/warehouse with a blue door, crates, barrels, rope coils, a derrick, a fish rack."""
+    _cove(stone("#a39b8d", 1.4))
     # cobbled quay yard on the land side
     ev.pad(0.36, tex("plaster", "#a89c86", 1.6), 0.008, 12, 0.08, 6, 1.0, 1.25)
     # ---- pier from the quay to the +X edge
@@ -793,12 +798,105 @@ def cruiser_scifi(team):
     rod((-0.34, 0, z0), (-0.34, 0, z0 + 0.07), 0.003, plate, n=4)
 
 
+def _containers(spots, team, seed=3):
+    """Stacks of shipping containers (one in the state's colour per stack), 1–3 high."""
+    rnd = random.Random(seed)
+    cols = [team, "#c23a2b", "#2f6f8f", "#d9962a", "#3f7a3a", "#8a8f96"]
+    for (x, y, rz) in spots:
+        for k in range(rnd.randint(1, 3)):
+            c = cols[0] if k == 0 else rnd.choice(cols[1:])
+            bx((0.13, 0.055, 0.052), (x, y, 0.03 + k * 0.053), flat("cont" + c, c, 0.55), rz, bev=0.004)
+
+
+def port_modern(team):
+    """The industrial port (DL6–7): a concrete quay and pier, a gantry container crane in the state's colour over the
+    water, container stacks, a cargo ship with containers on deck, a big shed with roller doors, lamps."""
+    conc = flat("conc_quay", "#8e9298", 0.85)
+    _cove(conc, "#3a7fae", "#6aaecc")
+    ev.pad(0.36, flat("conc_yard", "#83878d", 0.85), 0.008, 12, 0.08, 6, 1.0, 1.25)
+    py = -0.03
+    bx((0.78, 0.16, 0.05), (0.41, py, 0.05), conc, bev=0.004)  # concrete pier to the edge
+    for i in range(6):
+        cy(0.012, 0.03, (0.12 + i * 0.13, py - 0.07, 0.09), flat("bollard", "#2b2d31", 0.5), 8)
+    steel = flat("crane" + team, ev.shade(team, 0.9), 0.45)
+    dk = flat("crane_dk", "#2c3036", 0.5)
+    gx = 0.36
+    for sx in (-1, 1):  # the gantry's four legs and their sills
+        for sy in (-1, 1):
+            beam((gx + sx * 0.07, py + sy * 0.07, 0.07), (gx + sx * 0.06, py + sy * 0.06, 0.42), 0.014, steel)
+        beam((gx + sx * 0.07, py - 0.07, 0.42), (gx + sx * 0.07, py + 0.07, 0.42), 0.012, steel)
+    bx((0.72, 0.05, 0.035), (gx + 0.1, py, 0.45), steel, bev=0.003)  # boom out over the water, back-reach inland
+    bx((0.06, 0.06, 0.05), (gx + 0.05, py, 0.5), dk, bev=0.004)  # operator cab
+    beam((gx - 0.1, py, 0.45), (gx + 0.02, py, 0.62), 0.008, dk)
+    beam((gx + 0.02, py, 0.62), (gx + 0.42, py, 0.46), 0.005, dk)  # stay
+    bx((0.12, 0.05, 0.05), (gx + 0.36, py, 0.3), flat("cont" + team, team, 0.55), bev=0.004)  # a box on the hook
+    beam((gx + 0.36, py, 0.33), (gx + 0.36, py, 0.44), 0.003, dk)
+    # cargo ship moored on the +Y side
+    def ship():
+        hull(0.6, 0.15, 0.08, flat("hull_cargo", "#3b4048", 0.6), flat("deck_cargo", "#7a3a2c", 0.7),
+             flat("boot" + team, team, 0.6))
+        for i in range(3):
+            for j in range(2):
+                c = [team, "#c23a2b", "#d9962a"][(i + j) % 3]
+                bx((0.11, 0.05, 0.045), (-0.08 + i * 0.12, -0.028 + j * 0.056, 0.105), flat("cont" + c, c, 0.55), bev=0.003)
+        bx((0.08, 0.12, 0.09), (-0.22, 0, 0.125), flat("bridge_w", "#e8e6e0", 0.5), bev=0.006)
+        bx((0.09, 0.13, 0.012), (-0.22, 0, 0.175), flat("bridge_r", "#3b4048", 0.5), bev=0)
+        bx((0.006, 0.1, 0.014), (-0.18, 0, 0.15), flat("bridge_g", "#1d2a38", 0.2), bev=0)
+        cy(0.02, 0.07, (-0.26, 0, 0.2), flat("funnel" + team, team, 0.5), 10)
+    build_at(ship, 0.46, 0.2, 0.0, z=0.004)
+    _containers([(-0.24, -0.28, 0.0), (-0.24, -0.2, 0.0), (-0.08, -0.3, 0.1), (-0.08, -0.22, 0.1), (0.06, -0.3, 0.0),
+                 (-0.04, 0.16, 1.57), (0.04, 0.2, 1.57)], team)
+    # the shed: corrugated walls, a team band, roller doors
+    def shed():
+        w, d, h = 0.4, 0.26, 0.2
+        bx((w, d, h), (0, 0, h / 2), ev.facade("#9aa1a8", "#5b636c", 0.05, 0.05, 0.3, 0.2, lit_p=0.1), bev=0.006)
+        bx((w + 0.01, d + 0.01, 0.03), (0, 0, h - 0.02), flat("band" + team, team, 0.6), bev=0)
+        hip_roof(w, d, 0.05, (0, 0, h), flat("shed_roof", "#5b636c", 0.6), oh=0.01)
+        for x in (-0.1, 0.1):
+            bx((0.12, 0.012, 0.13), (x, -d / 2 - 0.004, 0.065), flat("roller", "#c8ccd1", 0.5), bev=0)
+    build_at(shed, -0.36, 0.32, -0.1)
+    for (x, y) in ((0.0, -0.12), (0.2, 0.08), (-0.36, -0.06)):
+        ev.street_lamp(x, y, 0.22, True)
+
+
+def port_scifi(team):
+    """The late-era port (DL8+): a dark plated quay with neon edges, a glowing pier, a hover cruiser at berth, a
+    control tower with a light ring, white cargo pods and a landing pad in the state's colour."""
+    plate = flat("sf_quay", "#3e434b", 0.5)
+    _cove(plate, "#2f6e9c", "#5aa0c4")
+    ev.pad(0.36, flat("sf_yard", "#4a4f58", 0.6), 0.008, 12, 0.08, 6, 1.0, 1.25)
+    neon = ev.glow("neon" + team, team, 3.0)
+    cyan = ev.glow("cyan", "#14d2ff", 2.5)
+    py = -0.03
+    bx((0.78, 0.15, 0.04), (0.41, py, 0.05), plate, bev=0.004)
+    for sy in (-1, 1):
+        bx((0.76, 0.008, 0.008), (0.41, py + sy * 0.077, 0.066), neon, bev=0)
+    build_at(lambda: cruiser_scifi(team), 0.46, 0.22, 0.0, 0.75, z=0.004)
+    def tower():
+        cy(0.07, 0.5, (0, 0, 0.25), flat("sf_tower", "#59606a", 0.4), 10)
+        cy(0.074, 0.014, (0, 0, 0.3), neon, 10)
+        cy(0.12, 0.05, (0, 0, 0.52), flat("sf_cab", "#2b3240", 0.3), 12)
+        cy(0.122, 0.012, (0, 0, 0.53), cyan, 12)
+        rod((0, 0, 0.55), (0, 0, 0.68), 0.006, flat("mast", "#d0d4da", 0.5), n=5)
+        ico(0.014, (0, 0, 0.69), neon)
+    build_at(tower, -0.42, 0.3)
+    pod = flat("pod", "#e8ecf0", 0.35)
+    for i, (x, y) in enumerate(((-0.22, -0.26), (-0.1, -0.3), (0.02, -0.26), (-0.16, -0.16), (-0.04, -0.18))):
+        bx((0.08, 0.06, 0.06), (x, y, 0.04), pod, 0.1 * i, bev=0.016)
+        bx((0.082, 0.008, 0.008), (x, y - 0.031, 0.05), neon if i % 2 else cyan, 0.1 * i, bev=0)
+    cy(0.11, 0.012, (-0.1, 0.18, 0.012), flat("pad_sf", "#2c323b", 0.5), 16)
+    cy(0.1, 0.006, (-0.1, 0.18, 0.02), ev.glow("padring" + team, team, 1.6), 16)
+    cy(0.085, 0.008, (-0.1, 0.18, 0.021), flat("pad_sf", "#2c323b", 0.5), 16)
+
+
 PROPS = [raider_camp, port, military_base]
 ASSETS = {f.__name__: f for f in PROPS}
 for _t, _c in ev.TEAMS.items():
     ASSETS["warship_" + _t] = (lambda c: (lambda: warship(c)))(_c)
     ASSETS["destroyer_" + _t] = (lambda c: (lambda: destroyer(c)))(_c)
     ASSETS["cruiser_scifi_" + _t] = (lambda c: (lambda: cruiser_scifi(c)))(_c)
+    ASSETS["port_modern_" + _t] = (lambda c: (lambda: port_modern(c)))(_c)
+    ASSETS["port_scifi_" + _t] = (lambda c: (lambda: port_scifi(c)))(_c)
 
 
 # ------------------------------------------------------------------ export

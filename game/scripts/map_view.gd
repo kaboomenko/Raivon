@@ -1138,8 +1138,9 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 			_place_fort(c, holder)
 			return
 		"port":
-			if has_model("port"):
-				spawn("port", holder, p, _water_side(c), 1.0)
+			var era_p := _era_model("port", int(c["owner"]), side)  # a container port (DL6–7), a hover dock (DL8+)
+			if era_p != "" or has_model("port"):
+				spawn(era_p if era_p != "" else "port", holder, p, _water_side(c), 1.0)
 				_place_fort(c, holder)
 				return
 		"military_base":
