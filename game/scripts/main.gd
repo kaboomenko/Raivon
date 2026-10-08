@@ -6730,6 +6730,10 @@ func _demo(spec: String) -> void:
 		return
 	_end_offensive()
 	if what == "result":
+		if parts.size() > 1 and parts[1] == "map":  # result:map — the occupied front without the modal
+			ui.close_modal()
+			_set_mode(Mode.WAR)
+			rig.focus(_front_center(), 0.3)
 		return
 	ui.close_modal()
 	_open_peace()

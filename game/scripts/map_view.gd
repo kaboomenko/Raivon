@@ -1406,6 +1406,88 @@ func _rebuild_overlay() -> void:
 	for o in cores:
 		_add(cores[o], _glow_mat(state_color(o).lerp(Color.WHITE, 0.6), 3.2, 1.0))
 	_build_roads()
+	_sync_war_scars()
+
+
+var _scars := {}  # occupied hex -> Node3D (smoke and embers)
+
+## Occupied land smoulders (reference frame 3: the enemy side of the front is on fire): a dark smoke column, a small
+## fire and a scorched patch on every hex held by another state's troops; gone once the hex is freed or annexed.
+func _sync_war_scars() -> void:
+	var want := {}
+	for c in sim.cells:
+		if Types.is_passable(c) and c["controller"] != c["owner"] and c["controller"] != Types.NOBODY and c["owner"] != Types.NOBODY:
+			want[int(c["id"])] = true
+	for h in _scars.keys():
+		if not want.has(h):
+			(_scars[h] as Node3D).queue_free()
+			_scars.erase(h)
+	for h in want:
+		if _scars.has(h):
+			continue
+		var root := Node3D.new()
+		var g := RandomNumberGenerator.new()
+		g.seed = int(h) * 31 + 7
+		root.position = cell_world(int(h)) + Vector3(g.randf_range(-0.35, 0.35), 0.0, g.randf_range(-0.35, 0.35))
+		add_child(root)
+		_scars[h] = root
+		var patch := MeshInstance3D.new()
+		var pm := CylinderMesh.new()
+		pm.top_radius = 0.22
+		pm.bottom_radius = 0.22
+		pm.height = 0.004
+		pm.radial_segments = 10
+		var dm := StandardMaterial3D.new()
+		dm.albedo_color = Color(0.1, 0.08, 0.07)
+		dm.roughness = 1.0
+		pm.material = dm
+		patch.mesh = pm
+		patch.position.y = 0.036
+		root.add_child(patch)
+		if _smoke_mat == null:
+			_smoke_mat = _fx_mat(_puff_tex(), false)
+		var sm := CPUParticles3D.new()
+		sm.amount = 9
+		sm.lifetime = 3.4
+		sm.direction = Vector3(0.25, 1, 0)
+		sm.spread = 8.0
+		sm.initial_velocity_min = 0.25
+		sm.initial_velocity_max = 0.4
+		sm.gravity = Vector3(0.1, 0.04, 0)
+		sm.scale_amount_curve = _curve(0.35, 1.6)
+		sm.color_ramp = _ramp([0.0, 0.12, 0.55, 1.0], [Color(0.18, 0.15, 0.14, 0.0), Color(0.22, 0.19, 0.17, 0.6),
+			Color(0.4, 0.38, 0.37, 0.3), Color(0.6, 0.6, 0.62, 0.0)])
+		var q := QuadMesh.new()
+		q.size = Vector2(0.55, 0.55)
+		q.material = _smoke_mat
+		sm.mesh = q
+		sm.position.y = 0.25
+		sm.preprocess = 3.4
+		sm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(sm)
+		var fm := _fx_mat(_flame_tex(), false)
+		fm.render_priority = 1
+		var fl := CPUParticles3D.new()
+		fl.amount = 10
+		fl.lifetime = 0.55
+		fl.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
+		fl.emission_sphere_radius = 0.06
+		fl.direction = Vector3.UP
+		fl.spread = 8.0
+		fl.initial_velocity_min = 0.2
+		fl.initial_velocity_max = 0.35
+		fl.gravity = Vector3(0, 0.7, 0)
+		fl.scale_amount_curve = _curve(1.0, 0.25)
+		fl.color_ramp = _ramp([0.0, 0.2, 0.6, 1.0], [Color(1.0, 0.8, 0.35, 0.0), Color(1.0, 0.6, 0.14, 1.0),
+			Color(0.95, 0.3, 0.04, 0.85), Color(0.6, 0.08, 0.02, 0.0)])
+		var fq := QuadMesh.new()
+		fq.size = Vector2(0.28, 0.42)
+		fq.material = fm
+		fl.mesh = fq
+		fl.position.y = 0.1
+		fl.preprocess = 0.6
+		fl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		root.add_child(fl)
 
 
 const ROAD_W := 0.1
