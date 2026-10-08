@@ -1601,7 +1601,7 @@ func _rebuild_overlay() -> void:
 				continue
 			var e := _edge_pts(center, n, d)
 			if other == own:
-				_strip(_st(lines, own), e[0], e[1], 0.028, center.y + 0.005)
+				_strip(_st(lines, own), e[0], e[1], 0.04, center.y + 0.005)
 			else:
 				var w := 0.12
 				var prog := 1.0
@@ -1633,8 +1633,11 @@ func _rebuild_overlay() -> void:
 		_add(washes[o], wm)
 	for o in hatch:
 		_add(hatch[o], _hatch_mat(state_color(o)))
-	for o in lines:
-		_add(lines[o], _glow_mat(state_color(o), 0.8, 0.5))  # the faint inner hex grid of the references
+	_line_mats = []
+	for o in lines:  # the inner hex grid: faint far out (frame 1), glowing up close (frames 3–4) — see set_zoom
+		var lm := _glow_mat(state_color(o), lerpf(0.7, 2.0, _line_k), lerpf(0.35, 0.85, _line_k))
+		_line_mats.append(lm)
+		_add(lines[o], lm)
 	for o in borders:
 		var e := 2.6 if (o == Types.PLAYER or o == at_war_with) else 1.6  # strong enough to glow, still coloured
 		_add(borders[o], _glow_mat(state_color(o), e * 0.8, 0.5))
@@ -1907,6 +1910,8 @@ func _land_path(from: int, to: int, own: int) -> Array:
 
 var _tint_mats: Array = []
 var _wash_mats: Array = []
+var _line_mats: Array = []
+var _line_k := 0.0  # 0 far (a faint inner grid), 1 close (the glowing lines between one's own hexes)
 var _tint_k := 1.0
 var _wash_w := 1.0  # 1 = the wide strategic fill, 0 = the narrow close-up rim band
 
@@ -1916,10 +1921,16 @@ var _wash_w := 1.0  # 1 = the wide strategic fill, 0 = the narrow close-up rim b
 func set_zoom(zoom: float) -> void:
 	var k := lerpf(0.3, 1.0, smoothstep(0.1, 0.6, zoom))
 	var w := smoothstep(0.3, 0.6, zoom)  # reference frame 1 (far) washes the land in the state colour, frame 3 (near) doesn't
-	if absf(k - _tint_k) < 0.01 and absf(w - _wash_w) < 0.01:
+	var lk := 1.0 - smoothstep(0.12, 0.5, zoom)
+	if absf(k - _tint_k) < 0.01 and absf(w - _wash_w) < 0.01 and absf(lk - _line_k) < 0.01:
 		return
 	_tint_k = k
 	_wash_w = w
+	_line_k = lk
+	for m in _line_mats:
+		var lm: StandardMaterial3D = m
+		lm.emission_energy_multiplier = lerpf(0.7, 2.0, lk)
+		lm.albedo_color.a = lerpf(0.35, 0.85, lk)
 	for m in _tint_mats:
 		(m as StandardMaterial3D).albedo_color.a = k * (1.0 - w)
 	for m in _wash_mats:
