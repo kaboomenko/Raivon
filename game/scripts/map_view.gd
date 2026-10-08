@@ -210,22 +210,27 @@ func _build_rivers() -> void:
 		var along := Vector3(-across.z, 0, across.x)
 		var p := mid - along * 0.5
 		var q := mid + along * 0.5
-		var quad := [p - across * w, q - across * w, q + across * w, p + across * w]
-		for i in [0, 1, 2, 0, 2, 3]:
-			st.set_normal(Vector3.UP)
-			st.add_vertex((quad[i] as Vector3) + Vector3(0, y, 0))
+		# two strips, bank to mid-stream (vertex colour r: 1 at a bank, 0 mid-stream) for the shader's foam
+		for half in [[p - across * w, q - across * w, q, p], [p + across * w, q + across * w, q, p]]:
+			var cols := [1.0, 1.0, 0.0, 0.0]
+			for i in [0, 1, 2, 0, 2, 3]:
+				st.set_normal(Vector3.UP)
+				st.set_color(Color(cols[i], 0, 0))
+				st.add_vertex((half[i] as Vector3) + Vector3(0, y, 0))
 		for c in [p, q]:
 			for k in 8:
 				var a0 := TAU * k / 8.0
 				var a1 := TAU * (k + 1) / 8.0
+				var yc := y - 0.002  # the round joints sit under the strips: only their outer arcs show at a bend
 				st.set_normal(Vector3.UP)
-				st.add_vertex(c + Vector3(0, y, 0))
-				st.add_vertex(c + Vector3(cos(a1) * w, y, sin(a1) * w))
-				st.add_vertex(c + Vector3(cos(a0) * w, y, sin(a0) * w))
-	var m := StandardMaterial3D.new()
-	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED  # the ribbon's faces point down: lit, it went black
-	m.albedo_color = Color(0.12, 0.42, 0.52)  # teal, a shade lighter than the open water
-	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+				st.set_color(Color(0, 0, 0))
+				st.add_vertex(c + Vector3(0, yc, 0))
+				st.set_color(Color(1, 0, 0))
+				st.add_vertex(c + Vector3(cos(a1) * w, yc, sin(a1) * w))
+				st.add_vertex(c + Vector3(cos(a0) * w, yc, sin(a0) * w))
+	var m := ShaderMaterial.new()  # flowing ripples and foam along the banks (unshaded: the faces point down)
+	m.shader = load("res://shaders/river.gdshader")
+	m.set_shader_parameter("noise_tex", _noise_tex(2.0, 3, 303))
 	_river_mi = MeshInstance3D.new()
 	_river_mi.mesh = st.commit()
 	_river_mi.material_override = m
