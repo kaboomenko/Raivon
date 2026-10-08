@@ -1,9 +1,13 @@
 """Whole-hex props for special hex kinds (raider camp on a wild hex, port, military base).
 
 Builds and exports to OUT (default game/assets/models):
-  raider_camp.glb     marauder camp: серые шатры, частокол, дым костра, флажок с рваным полотнищем
-  port.glb            fishing / trade port: water cove, pier toward +X, boathouse, moored boats, crane
-  military_base.glb   early-era garrison: low stone-wall compound, barracks, tents, training yard, white banner
+  raider_camp.glb     marauder camp: шатры из шкур с полосами, частокол с воротами, факелы, костёр с котлом
+                      (маркер smoke_fire), красное знамя с белой волчьей головой, вышка
+  port.glb            fishing / trade port: deep-water cove, pier toward +X, stone and half-timbered warehouse,
+                      round harbour tower with a lantern, moored boats, crane, fish stall
+  military_base.glb   early-era garrison: stone walls, gatehouse with an arch and banners, slate-roofed towers,
+                      stone barracks (маркер smoke_barracks), tents, training yard, smithy, white banner
+  warship_<team>.glb  war cog: planked hull, castles with team parapets, lit stern, team sails with the white eagle
 
 Run:   python3 tools/blender/prop_assets.py game/assets/models [name ...]
 Sheet: python3 tools/blender/prop_assets.py game/assets/models --sheet OUT.png [--cols 1,2,3] [--tile 1.0]
@@ -12,7 +16,8 @@ Sheet: python3 tools/blender/prop_assets.py game/assets/models --sheet OUT.png [
 Conventions (same as evolution_assets.py): Z up, base on Z=0, origin = hex centre, 1 hex = flat-top
 hexagon of circumradius 1.0, front faces −Y. Unlike towers these props fill the WHOLE hex: everything stays
 within radius ~0.85. Team-neutral. Procedural colours are baked into one 512 px texture; emissive materials
-(camp fire, lanterns) stay separate so they keep glowing in Godot.
+(camp fire, lanterns, lit windows) stay separate so they keep glowing in Godot; empties named smoke* are exported
+as plain nodes (map_view hangs chimney smoke on them).
 """
 import math
 import os
@@ -947,6 +952,18 @@ def port():
         ico(0.045, (-0.09, 0.1, 0.0), flat("net2", "#7a6a4a", 0.9), (1.1, 1.0, 0.4))
         torus(0.03, 0.006, (0.02, 0.09, 0.022), flat("float", "#d9962a", 0.6), seg=6, mseg=3)
     build_at(fish_rack, -0.47, -0.3, 0.35)
+    # a boat turned keel-up on trestles for caulking, a tar pot beside it (front left, on the grass)
+    def boat_repair():
+        wd = tex("wood", "#6a4327", 2.5)
+        for x in (-0.06, 0.06):
+            for sy in (-1, 1):
+                tube((x, sy * 0.045, -0.005), (x, 0.0, 0.05), 0.005, wd, n=4)
+        build_at(lambda: hull(0.24, 0.1, 0.045, tex("wood", "#8a6440", 3.0), tex("wood", "#5e4126", 3.0),
+                              flat("trim_blue", TRIM_BLUE, 0.6)), 0.0, 0.0, 0.0, tilt=(math.pi, 0.0), z=0.1)
+        beam((-0.1, 0.0, 0.104), (0.105, 0.0, 0.104), 0.012, tex("wood", "#4a2f19", 2.0))  # the keel, upward
+        lathe([(0.016, 0.0), (0.019, 0.03)], (flat("tarpot", "#2b2a2c", 0.5),), 6, top=flat("tar", "#141210", 0.4),
+              loc=(0.0, -0.09, 0.0))
+    build_at(boat_repair, -0.4, -0.52, 0.25)
     # mooring bollards on the quay edge
     for (x, y) in ((0.15, -0.34), (0.12, 0.3)):
         lathe([(0.02, 0.0), (0.016, 0.05), (0.024, 0.065), (0.0, 0.075)], (post, post, post), 6, loc=(x, y, 0.0))
@@ -1319,7 +1336,10 @@ def warship(team):
     lit = ev.win_lit()
     # ---- stern castle: walls, floor, team parapet, lit windows on the stern and the sides, a door to the waist
     xs0, xs1 = -L / 2 - 0.028, -0.165
-    ship_castle(xs0, xs1, 0.145, 0.1, 0.078, 0.2, 0.225, L, W, castle_w, teamc, floor)
+    ring = ship_castle(xs0, xs1, 0.145, 0.1, 0.078, 0.2, 0.225, L, W, castle_w, teamc, floor)
+    for (x, y) in ring:  # corner merlons crenellate the castle (the war cogs' fighting tops)
+        bx((0.026, 0.026, 0.028), (x - 0.013 * math.copysign(1, x - (xs0 + xs1) / 2), y - 0.013 * math.copysign(1, y),
+                                   0.239), teamc, bev=0)
     frame = flat("win_frame", "#3a2414", 0.8)
     for y in (-0.042, 0.0, 0.042):  # stern gallery: three lit windows over the rudder, the castle overhanging
         mesh_obj([(xs0 - 0.002, y + sy * 0.0145, z) for sy, z in ((-1, 0.151), (1, 0.151), (1, 0.19), (-1, 0.19))],
@@ -1339,7 +1359,7 @@ def warship(team):
     tube((xs0 + 0.01, 0.0, 0.225), (xs0 + 0.01, 0.0, 0.27), 0.005, iron, n=4)
     bx((0.024, 0.024, 0.03), (xs0 + 0.01, 0.0, 0.288), ev.glow("ship_lantern", "#ffcf6b", 2.5), bev=0)
     cn(0.022, 0.022, (xs0 + 0.01, 0.0, 0.314), iron, 4, rot=(0, 0, math.pi / 4))
-    fy = -0.06
+    fy = -0.036
     tube((xs0 + 0.012, fy, 0.2), (xs0 + 0.012, fy, 0.37), 0.004, tex("wood", "#5a3a20", 3.0), n=4)
     flag = flat("ensign" + team, team, 0.7)
     fz, fw, fh = 0.328, 0.12, 0.075
@@ -1659,7 +1679,7 @@ def export(name, out):
     bpy.ops.object.select_all(action="DESELECT")
     ob.select_set(True)
     for o in bpy.context.scene.objects:  # smoke markers travel with the model as plain nodes (map_view adds smoke)
-        if o.type == "EMPTY" and o.name.startswith(("smoke", "flag")):
+        if o.type == "EMPTY" and o.name.startswith("smoke"):
             o.select_set(True)
     bpy.context.view_layer.objects.active = ob
     path = os.path.join(out, f"{name}.glb")
