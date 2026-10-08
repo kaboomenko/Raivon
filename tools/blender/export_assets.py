@@ -681,7 +681,7 @@ def catapult():
             _bx("strap", (0.016, 0.046, 0.05), (x, sy * RY, 0.098), iron)
     for x in (-0.215, -0.06, 0.06, 0.215):
         _bx("cross", (0.034, 0.22, 0.03), (x, 0, 0.1), wd, B)
-    _bx("floor", (0.1, 0.13, 0.01), (-0.17, 0, 0.12), wl)
+    _bx("floor", (0.1, 0.126, 0.01), (-0.17, 0, 0.121), wl)
     # four open wheels on iron axles
     for x in (-0.16, 0.16):
         _cy("axle", 0.011, 0.32, (x, 0, 0.072), iron, 8, rot=YROT)
@@ -739,8 +739,8 @@ def catapult():
     ax = (math.sin(tilt), 0, math.cos(tilt))
     cc = (-0.031, 0, 0.472)
     _cy("bucket", 0.032, 0.034, cc, dk, 10, r2=0.047, rot=(0, tilt, 0))
-    _cy("bucket_in", 0.041, 0.004, tuple(cc[i] + ax[i] * 0.014 for i in range(3)), mat("dark", "#2c1d12", 0.9), 10, rot=(0, tilt, 0))
-    _cy("bucket_hoop", 0.043, 0.008, tuple(cc[i] + ax[i] * 0.008 for i in range(3)), iron, 10, rot=(0, tilt, 0))
+    _cy("bucket_in", 0.04, 0.004, tuple(cc[i] + ax[i] * 0.0185 for i in range(3)), mat("dark", "#2c1d12", 0.9), 10, rot=(0, tilt, 0))
+    _cy("bucket_hoop", 0.0458, 0.008, tuple(cc[i] + ax[i] * 0.008 for i in range(3)), iron, 10, rot=(0, tilt, 0))
     _ico("shot", 0.031, tuple(cc[i] + ax[i] * 0.036 for i in range(3)), rock, (1, 1, 0.92), 2, 0.1, 7, smooth=False)
     # capstan winch at the back: posts, a drum with rope coils, star handles, the rope up to the arm
     for sy in (-1, 1):
@@ -753,117 +753,189 @@ def catapult():
         _cy("coil", 0.025, 0.035, (-0.205, y, 0.165), rope, 10, rot=YROT)
     _rbeam("winch_rope", (-0.2, 0, 0.188), arm_at(0.3), 0.007, rope)
     # spare shot: hewn stones piled beside the engine
-    for i, (x, y, z, r) in enumerate(((0.0, 0.205, 0.026, 0.032), (0.066, 0.212, 0.026, 0.033), (0.032, 0.25, 0.024, 0.03),
-                                      (0.03, 0.185, 0.024, 0.028), (0.034, 0.215, 0.072, 0.031))):
+    for i, (x, y, z, r) in enumerate(((0.0, -0.205, 0.026, 0.032), (0.066, -0.212, 0.026, 0.033), (0.032, -0.25, 0.024, 0.03),
+                                      (0.03, -0.185, 0.024, 0.028), (0.034, -0.215, 0.072, 0.031))):
         _ico("pile", r, (x, y, z), rock, (1, 1, 0.88), 2, 0.12, 11 + i, smooth=False)
 
 
 def cannon():
-    """Field gun of the bicorne era: a bronze barrel with reinforcing rings on a two-cheek trail carriage,
-    tall spoked wheels, a rammer, a powder keg and a pyramid of shot."""
-    wd = m("wood", "#6e4a2c")
-    dk = m("wheel", "#4a3020")
+    """Field gun of the bicorne era: a bronze barrel with reinforcing rings, a muzzle swell, dolphins and a cascabel on
+    a bracket-trail carriage strapped and bolted in iron, cap squares over the trunnions, an elevating screw, tall open
+    spoked wheels with iron tyres, a rammer and a water bucket, a powder keg, an ammunition chest and a pyramid of shot."""
+    wd = _timber("#6e4a2c")
+    wl = _timber("#9c7a52")
+    dk = _timber("#4a3020")
     iron = mat("iron", "#3b3d42", 0.55, 0.6)
+    bolt = mat("bolt", "#e2dccb", 0.5)
     bronze = mat("bronze", "#b0823a", 0.35, 0.85)
-    # trail carriage: two cheeks running down to the ground behind, transoms, an iron trail plate
-    for dy in (-0.04, 0.04):
-        _beam("cheek", (0.08, dy, 0.13), (-0.26, dy * 0.6, 0.02), 0.03, wd)
-    for f in (0.15, 0.5):
-        x = 0.08 - 0.34 * f
-        box("transom", (0.025, 0.07, 0.02), (x, 0, 0.13 - 0.11 * f), wd, 0.004)
-    box("trail_plate", (0.05, 0.05, 0.012), (-0.255, 0, 0.012), iron, 0.002)
-    cyl("handspike_ring", 0.012, 0.008, (-0.24, 0, 0.035), iron, 8, 0.0).rotation_euler.x = math.pi / 2
-    # wheels: tall, twelve spokes, iron tyre and hub
-    cyl("axle", 0.012, 0.2, (0.05, 0, 0.1), iron, 8, 0.0).rotation_euler.x = math.pi / 2
-    for dy in (-0.085, 0.085):
-        t = cyl("tyre", 0.1, 0.016, (0.05, dy, 0.1), iron, 20, 0.003)
-        t.rotation_euler.x = math.pi / 2
-        r = cyl("felloe", 0.092, 0.02, (0.05, dy * 1.01, 0.1), dk, 20, 0.0)
-        r.rotation_euler.x = math.pi / 2
-        cyl("inner", 0.078, 0.022, (0.05, dy * 1.02, 0.1), m("planks", "#9c7a52"), 18, 0.0).rotation_euler.x = math.pi / 2
-        for k in range(6):
-            sp = box("spoke", (0.008, 0.026, 0.16), (0.05, dy * 1.06, 0.1), dk, 0.0)
-            sp.rotation_euler = (0, k * math.pi / 6, 0)
-        h = cyl("hub", 0.022, 0.05, (0.05, dy * 1.1, 0.1), dk, 10, 0.003)
-        h.rotation_euler.x = math.pi / 2
-        cyl("cap", 0.014, 0.015, (0.05, dy * 1.4, 0.1), iron, 8, 0.0).rotation_euler.x = math.pi / 2
-    # barrel along +X, slightly raised; breech, rings, muzzle swell and the cascabel knob
-    el = -0.1
+    # bracket-trail carriage: two cheeks down to the ground behind, raised brackets under the trunnions, transoms
+    c0, c1 = (0.1, 0.135), (-0.26, 0.022)
 
-    def on_axis(x):
-        return (x, 0, 0.165 + math.sin(-el) * x)
-    b = cyl("barrel", 0.03, 0.32, on_axis(0.08), bronze, 14, 0.004, r2=0.022)
-    b.rotation_euler = (0, math.pi / 2 + el, 0)
-    for x, r in ((-0.06, 0.034), (0.0, 0.03), (0.1, 0.026), (0.2, 0.026)):
-        o = cyl("ring", r, 0.014, on_axis(x), bronze, 14, 0.002)
-        o.rotation_euler = (0, math.pi / 2 + el, 0)
-    mz = cyl("muzzle", 0.028, 0.03, on_axis(0.235), bronze, 14, 0.003)
-    mz.rotation_euler = (0, math.pi / 2 + el, 0)
-    sphere("breech", 0.03, on_axis(-0.075), bronze, (0.7, 1, 1), 2)
-    sphere("cascabel", 0.013, on_axis(-0.11), bronze, (1, 1, 1), 1)
-    cyl("bore", 0.014, 0.004, on_axis(0.252), mat("bore", "#141414", 0.9), 10, 0.0).rotation_euler = (0, math.pi / 2 + el, 0)
-    for dy in (-0.032, 0.032):
-        cyl("trunnion", 0.01, 0.02, (0.02, dy, 0.165), bronze, 8, 0.0).rotation_euler.x = math.pi / 2
-    # crew kit: rammer leaning on the wheel, a powder keg, a pyramid of shot
-    _beam("rammer", (-0.05, 0.14, 0.0), (0.2, 0.12, 0.05), 0.008, m("planks", "#a8743f"), 0.0)
-    cyl("sponge", 0.016, 0.04, (0.215, 0.12, 0.053), mat("sponge", "#3a2f28", 0.95), 8, 0.0).rotation_euler.y = math.pi / 2 - 0.2
-    cyl("keg", 0.035, 0.07, (-0.14, -0.13, 0.035), wd, 12, 0.006)
+    def cheek_at(f, sy):
+        return (c0[0] + (c1[0] - c0[0]) * f, sy * (0.042 - 0.016 * f), c0[1] + (c1[1] - c0[1]) * f)
+    for sy in (-1, 1):
+        _rbeam("cheek", cheek_at(0, sy), cheek_at(1, sy), 0.024, wd, 0.004, h=0.05)
+        _bx("bracket", (0.11, 0.028, 0.05), (0.035, sy * 0.042, 0.135), wd, 0.004)
+        for f in (0.32, 0.62, 0.9):
+            _rbeam("strap", cheek_at(f - 0.02, sy), cheek_at(f + 0.02, sy), 0.029, iron, h=0.055)
+        _bolts([(x, sy * 0.056, z) for (x, z) in ((0.075, 0.145), (0.0, 0.145), (0.075, 0.122), (0.0, 0.122))], bolt)
+        _bolts([(p[0], sy * (abs(p[1]) + 0.014), p[2]) for p in (cheek_at(0.47, sy), cheek_at(0.77, sy))], bolt)
+        _bx("cap_square", (0.03, 0.028, 0.008), (0.02, sy * 0.042, 0.179), iron)
+    for f in (0.12, 0.45, 0.8):
+        p = cheek_at(f, 1)
+        _bx("transom", (0.025, 2 * p[1] - 0.01, 0.024), (p[0], 0, p[2]), wd, 0.003)
+    _bx("trail_plate", (0.05, 0.05, 0.012), (-0.255, 0, 0.012), iron)
+    _cy("handspike_ring", 0.012, 0.008, (-0.24, 0, 0.035), iron, 8, rot=YROT)
+    # tall open wheels on an iron axle
+    _cy("axle", 0.012, 0.2, (0.05, 0, 0.1), iron, 8, rot=YROT)
+    for sy in (-1, 1):
+        _spoked_wheel("wheel", (0.05, sy * 0.085, 0.1), 0.1, 0.02, 12, wl, dk, iron, rim_t=0.018, hub_r=0.022, n=18)
+    # barrel along +X, slightly raised: rings, muzzle swell and lip, breech and cascabel, dolphins, trunnions
+    el = -0.1
+    brot = (0, math.pi / 2 + el, 0)
+
+    def on_axis(x, up=0.0):
+        return (x - math.sin(-el) * up, 0, 0.165 + math.sin(-el) * x + up)
+    _cy("barrel", 0.03, 0.32, on_axis(0.08), bronze, 14, r2=0.022, rot=brot)
+    for x, r in ((-0.06, 0.034), (0.0, 0.031), (0.1, 0.027), (0.2, 0.026)):
+        _cy("ring", r, 0.014, on_axis(x), bronze, 14, rot=brot)
+    _cy("muzzle", 0.026, 0.03, on_axis(0.232), bronze, 14, r2=0.029, rot=brot)
+    _cy("muzzle_lip", 0.031, 0.008, on_axis(0.249), bronze, 14, rot=brot)
+    _cy("bore", 0.014, 0.004, on_axis(0.254), mat("bore", "#141414", 0.9), 10, rot=brot)
+    _ico("breech", 0.03, on_axis(-0.075), bronze, (0.7, 1, 1), 2)
+    _ico("cascabel", 0.013, on_axis(-0.11), bronze, (1, 1, 1), 1)
+    for sy in (-1, 1):
+        _cy("trunnion", 0.01, 0.02, (0.02, sy * 0.032, 0.165), bronze, 8, rot=YROT)
+        for x in (0.015, 0.055):
+            lg = on_axis(x, 0.031)
+            _bx("dolphin_leg", (0.006, 0.006, 0.016), (lg[0], sy * 0.012, lg[2]), bronze, rot=(0, el, 0))
+        d = on_axis(0.035, 0.04)
+        _bx("dolphin", (0.048, 0.007, 0.006), (d[0], sy * 0.012, d[2]), bronze, rot=(0, el, 0))
+    _bx("vent_field", (0.02, 0.014, 0.004), on_axis(-0.04, 0.033), mat("bore", "#141414", 0.9), rot=(0, el, 0))
+    # elevating screw under the breech with its cross handle
+    _cy("screw", 0.006, 0.036, (-0.07, 0, 0.112), iron, 6)
+    _bx("screw_handle", (0.045, 0.005, 0.005), (-0.07, 0, 0.106), iron)
+    # crew kit: rammer and sponge on the ground, a water bucket, a powder keg, an ammunition chest, a pyramid of shot
+    ra = math.atan2(0.03, 0.22)
+    _rbeam("rammer", (-0.2, 0.172, 0.008), (0.02, 0.202, 0.008), 0.008, wl)
+    _cy("sponge", 0.015, 0.04, (0.04, 0.205, 0.015), mat("sponge", "#3a2f28", 0.95), 8, rot=(0, math.pi / 2, ra))
+    _cy("bucket", 0.022, 0.034, (0.13, 0.175, 0.017), wd, 10, r2=0.025)
+    _cy("bucket_hoop", 0.0268, 0.006, (0.13, 0.175, 0.026), iron, 10)
+    _cy("keg", 0.035, 0.07, (-0.14, -0.13, 0.035), wd, 12)
     for z in (0.012, 0.058):
-        cyl("hoop", 0.037, 0.008, (-0.14, -0.13, z), iron, 12, 0.0)
+        _cy("hoop", 0.037, 0.008, (-0.14, -0.13, z), iron, 12)
+    _cy("keg_bulge", 0.038, 0.022, (-0.14, -0.13, 0.035), wd, 12)
+    _bx("chest", (0.09, 0.06, 0.048), (-0.165, 0.125, 0.024), wd, 0.004)
+    _bx("chest_lid", (0.096, 0.066, 0.012), (-0.165, 0.125, 0.054), wl, 0.003)
+    for x in (-0.19, -0.14):
+        _bx("chest_strap", (0.008, 0.068, 0.062), (x, 0.125, 0.032), iron)
+    for sx in (-1, 1):
+        _bx("chest_handle", (0.005, 0.022, 0.008), (-0.165 + sx * 0.047, 0.125, 0.036), iron)
     shot = mat("shot", "#2b2c2f", 0.5, 0.7)
-    for (x, y, z) in ((0.2, -0.12, 0.016), (0.232, -0.12, 0.016), (0.216, -0.092, 0.016), (0.216, -0.11, 0.042)):
-        sphere("ball", 0.016, (x, y, z), shot, (1, 1, 1), 2)
+    d, r = 0.031, 0.015
+    for layer, n in enumerate((3, 2, 1)):
+        for i in range(n):
+            for j in range(n - i):
+                x = 0.165 + (j + i * 0.5 + layer * 0.5) * d
+                y = -0.145 + (i + layer / 3) * d * 0.866
+                _ico("ball", r, (x, y, r + layer * d * 0.8165), shot, (1, 1, 1), 1)
 
 
 def howitzer():
-    """Field howitzer of the trench era: an olive barrel with a recoil cylinder over the cradle, a gun shield,
-    split trails with spades, pressed-steel wheels with rubber tyres, shells and a crate."""
-    od = mat("olive", "#5b6436", 0.7, 0.2)
+    """Field howitzer of the trench era in disruptive camouflage: a barrel with a recoil cylinder above and a
+    recuperator below on the cradle, a muzzle brake, a riveted gun shield with a folded top, a sight port, a telescope
+    and an apron, elevation and traverse hand wheels, split trails with spades, pressed-steel wheels with rubber tyres
+    and steel rims, an open crate of brass shells, stacked ammunition boxes, spent cases and a camo net roll."""
+    camo = _camo(("#5b6436", "#73603b", "#a39a68"), 13.0)
     od_d = mat("olive_d", "#454c2a", 0.7, 0.2)
     steel = mat("steel", "#3d4044", 0.5, 0.6)
     tyre = mat("tyre", "#1f1f21", 0.9)
-    # split trails spreading back to the spades
+    rivet = mat("rivet", "#b9b59c", 0.5)
+    brass = mat("brass", "#c9a043", 0.35, 0.8)
+    crate = _timber("#7a6442", 3.0, 0.8)
+    # split trails spreading back to the spades, a cross tie and the spade handles
     for sy in (-1, 1):
-        _beam("trail", (0.0, sy * 0.03, 0.1), (-0.3, sy * 0.13, 0.02), 0.03, od_d)
-        box("spade", (0.02, 0.06, 0.05), (-0.31, sy * 0.135, 0.03), steel, 0.004)
-    # axle, wheels with rubber tyres and pressed-steel discs
-    cyl("axle", 0.014, 0.24, (0.0, 0, 0.09), steel, 8, 0.0).rotation_euler.x = math.pi / 2
+        t0, t1 = (0.0, sy * 0.03, 0.1), (-0.3, sy * 0.13, 0.025)
+
+        def trail_at(f, up=0.0):
+            return (t0[0] + (t1[0] - t0[0]) * f, t0[1] + (t1[1] - t0[1]) * f, t0[2] + (t1[2] - t0[2]) * f + up)
+        _rbeam("trail", t0, t1, 0.03, camo, 0.004, h=0.036)
+        _bx("spade", (0.02, 0.07, 0.055), (-0.312, sy * 0.135, 0.03), steel, 0.003)
+        _rbeam("spade_grip", trail_at(0.72, 0.034), trail_at(0.88, 0.034), 0.007, steel)
+        for f in (0.72, 0.88):
+            _rbeam("spade_grip_leg", trail_at(f, 0.012), trail_at(f, 0.037), 0.007, steel)
+    _bx("trail_tie", (0.025, 0.17, 0.02), (-0.16, 0, 0.065), od_d, 0.003)
+    # axle, wheels: rubber tyre, steel rim, pressed disc in the paint, hub and bolt ring
+    _cy("axle", 0.014, 0.24, (0.0, 0, 0.09), steel, 8, rot=YROT)
     for sy in (-1, 1):
-        t = cyl("tyre", 0.09, 0.04, (0.0, sy * 0.115, 0.09), tyre, 18, 0.008)
-        t.rotation_euler.x = math.pi / 2
-        d = cyl("disc", 0.065, 0.044, (0.0, sy * 0.115, 0.09), od, 16, 0.003)
-        d.rotation_euler.x = math.pi / 2
-        h = cyl("hub", 0.024, 0.05, (0.0, sy * 0.12, 0.09), steel, 8, 0.002)
-        h.rotation_euler.x = math.pi / 2
-        for k in range(5):
-            a = k * math.tau / 5
-            cyl("bolt", 0.006, 0.05, (math.cos(a) * 0.04, sy * 0.12, 0.09 + math.sin(a) * 0.04), steel, 6, 0.0).rotation_euler.x = math.pi / 2
-    # cradle, barrel and recoil cylinder, raised to a firing angle
+        c = (0.0, sy * 0.115, 0.09)
+        _ring("tyre", 0.09, 0.064, 0.04, c, tyre, 18, surfaces=(0, 1, 3))
+        _ring("rim", 0.066, 0.056, 0.043, c, steel, 18, surfaces=(1, 3))
+        _cy("disc", 0.058, 0.03, c, camo, 16, rot=YROT)
+        _cy("hub", 0.022, 0.05, (0.0, sy * 0.12, 0.09), steel, 8, rot=YROT)
+        for k in range(6):
+            a = k * math.tau / 6
+            _bx("hub_bolt", (0.007, 0.01, 0.007), (math.cos(a) * 0.036, sy * 0.132, 0.09 + math.sin(a) * 0.036), rivet)
+    # cradle, barrel, recoil cylinder above and recuperator below, raised to a firing angle
     el = 0.32
+    brot = (0, math.pi / 2 - el, 0)
 
     def at(x, z=0.0):
         return (x * math.cos(el) - z * math.sin(el) + 0.02, 0, 0.16 + x * math.sin(el) + z * math.cos(el))
-    box("cradle", (0.1, 0.07, 0.06), (0.02, 0, 0.15), od, 0.008)
-    b = cyl("barrel", 0.024, 0.42, at(0.16), od, 14, 0.003, r2=0.02)
-    b.rotation_euler = (0, math.pi / 2 - el, 0)
-    r = cyl("recoil", 0.018, 0.22, at(0.06, 0.036), od_d, 12, 0.003)
-    r.rotation_euler = (0, math.pi / 2 - el, 0)
-    m_ = cyl("muzzle_brake", 0.03, 0.05, at(0.37), steel, 12, 0.003)
-    m_.rotation_euler = (0, math.pi / 2 - el, 0)
-    box("breech", (0.07, 0.06, 0.06), at(-0.06), steel, 0.006).rotation_euler.y = -el
-    # gun shield with a sight window and a riveted rim
-    sh = box("shield", (0.012, 0.24, 0.16), (0.1, 0, 0.2), od, 0.004)
-    sh.rotation_euler.y = -0.15
-    box("shield_top", (0.012, 0.2, 0.05), (0.095, 0, 0.3), od, 0.004).rotation_euler.y = -0.35
-    box("sight", (0.014, 0.04, 0.025), (0.104, 0.06, 0.24), mat("glass", "#1a1d22", 0.3), 0.0)
-    # shells, an ammo crate and a camo net roll on the trail
-    brass = mat("brass", "#c9a043", 0.35, 0.8)
-    for k in range(3):
-        x = 0.17 + k * 0.035
-        cyl("case", 0.013, 0.07, (x, -0.17, 0.035), brass, 10, 0.0)
-        cone("tip", 0.013, 0.03, (x, -0.17, 0.085), steel, 10, 0.0)
-    box("crate", (0.1, 0.07, 0.055), (0.2, 0.17, 0.028), mat("crate", "#6b5a3a", 0.85), 0.006)
-    cyl("net", 0.028, 0.16, (-0.16, 0, 0.085), mat("net", "#4f5a32", 0.95), 10, 0.01).rotation_euler.x = math.pi / 2
+    _bx("cradle", (0.12, 0.07, 0.06), (0.02, 0, 0.15), camo, 0.008)
+    _cy("barrel", 0.024, 0.42, at(0.16), camo, 12, r2=0.02, rot=brot)
+    _cy("recoil", 0.019, 0.22, at(0.06, 0.037), od_d, 10, rot=brot)
+    _cy("recuperator", 0.015, 0.2, at(0.05, -0.032), od_d, 10, rot=brot)
+    for x in (-0.03, 0.15):
+        _cy("band", 0.027, 0.012, at(x, 0.0), steel, 10, rot=brot)
+    _cy("muzzle_brake", 0.03, 0.05, at(0.37), steel, 12, rot=brot)
+    for sy in (-1, 1):
+        _bx("brake_port", (0.03, 0.006, 0.014), (at(0.37)[0], sy * 0.029, at(0.37)[2]), mat("bore", "#141414", 0.9), rot=(0, -el, 0))
+    _cy("bore", 0.013, 0.004, at(0.396), mat("bore", "#141414", 0.9), 10, rot=brot)
+    _bx("breech", (0.07, 0.06, 0.06), at(-0.06), steel, 0.006, rot=(0, -el, 0))
+    _bx("breech_lever", (0.008, 0.008, 0.05), (at(-0.09)[0], -0.035, at(-0.09)[2] - 0.01), steel, rot=(0, 0.6, 0))
+    # gun shield: main plate, folded top, apron below the axle, rivets along the edges, sight port and telescope
+    _bx("shield", (0.012, 0.26, 0.17), (0.1, 0, 0.2), camo, rot=(0, -0.15, 0))
+    _bx("shield_top", (0.012, 0.22, 0.05), (0.095, 0, 0.3), camo, rot=(0, -0.35, 0))
+    _bx("apron", (0.01, 0.17, 0.05), (0.098, 0, 0.075), camo, rot=(0, -0.1, 0))
+    tilt = -0.15
+    nx, nz = math.cos(tilt), -math.sin(tilt)  # the plate's front normal and its up direction
+    ux, uz = math.sin(tilt), math.cos(tilt)
+
+    def on_shield(y, lz):
+        return (0.1 + 0.0085 * nx + lz * ux, y, 0.2 + 0.0085 * nz + lz * uz)
+    edge = [(-0.115 + k * 0.02875, lz) for k in range(9) for lz in (-0.074, 0.074)]
+    edge += [(sy * 0.12, lz) for sy in (-1, 1) for lz in (-0.037, 0.0, 0.037)]
+    for (y, lz) in edge:
+        _bx("rivet", (0.006, 0.008, 0.008), on_shield(y, lz), rivet, rot=(0, tilt, 0))
+    _bx("sight_port", (0.014, 0.04, 0.025), (0.106, 0.06, 0.24), mat("glass", "#1a1d22", 0.3))
+    _cy("telescope", 0.008, 0.07, (0.07, -0.07, 0.3), steel, 8, rot=(0, math.pi / 2 - 0.2, 0))
+    # hand wheels: elevation on the left of the cradle, traverse on the right
+    for (x, y, z) in ((-0.03, -0.062, 0.15), (-0.05, 0.062, 0.125)):
+        _ring("handwheel", 0.026, 0.02, 0.006, (x, y, z), steel, 12, surfaces=(0, 1, 3))
+        for a in (0.0, math.pi / 2):
+            _bx("handwheel_spoke", (0.004, 0.004, 0.048), (x, y, z), steel, rot=(0, a, 0))
+        _cy("handwheel_shaft", 0.004, abs(y) - 0.03, (x, y * 0.75, z), steel, 6, rot=YROT)
+        _cy("handwheel_grip", 0.004, 0.016, (x + 0.02, y * 1.12, z + 0.012), od_d, 6, rot=YROT)
+    # ammunition: an open crate of brass shells in front, stacked boxes on the other side, spent cases, the net roll
+    cx, cy0 = 0.2, -0.17
+    _bx("crate_floor", (0.1, 0.07, 0.008), (cx, cy0, 0.004), crate)
+    for sx in (-1, 1):
+        _bx("crate_end", (0.008, 0.07, 0.04), (cx + sx * 0.046, cy0, 0.02), crate)
+        _bx("crate_side", (0.1, 0.008, 0.032), (cx, cy0 + sx * 0.031, 0.016), crate)
+    for k in range(4):
+        y = cy0 - 0.021 + k * 0.014
+        _cy("case", 0.0065, 0.055, (cx - 0.012, y, 0.0145), brass, 8, rot=XROT)
+        _cy("tip", 0.0065, 0.025, (cx + 0.028, y, 0.0145), steel, 8, r2=0.0, rot=XROT)
+    _bx("ammo_box", (0.1, 0.07, 0.05), (0.2, 0.17, 0.025), crate, 0.004)
+    _bx("ammo_box", (0.09, 0.065, 0.045), (0.205, 0.168, 0.0725), crate, 0.004)
+    for z in (0.025, 0.0725):
+        _bx("stencil", (0.04, 0.072, 0.012), (0.2, 0.17, z), mat("stencil", "#e8e2c8", 0.6))
+    for (x, y, a) in ((0.12, -0.2, 0.4), (0.27, -0.12, 1.3)):
+        _cy("spent", 0.0065, 0.05, (x, y, 0.0065), brass, 8, rot=(math.pi / 2, 0, a))
+    _cy("net", 0.028, 0.16, (-0.16, 0, 0.1), mat("net", "#4f5a32", 0.95), 10, rot=YROT)
+    for y in (-0.05, 0.05):
+        _cy("net_strap", 0.03, 0.01, (-0.16, y, 0.1), mat("strap", "#3b2f22", 0.9), 10, rot=YROT)
 
 
 def rocket_launcher():
@@ -917,45 +989,122 @@ def rocket_launcher():
 
 
 def bridge():
-    """Stone arch bridge along X (length 0.5, deck width 0.15): an arched span over the river, parapets with
-    coping, cutwaters and a cobbled deck (the bridges over the rivers in the reference frames)."""
-    st = m("stone", STONE)
-    std = m("stone_d", STONE_D)
-    cob = m("cobble", "#a59b8a")
-    def profile(name, outline, y0, y1, mt):
-        """An outline in XZ extruded along Y from y0 to y1 (one solid: front, back and side faces)."""
-        nv = len(outline)
-        verts = [(x, y0, z) for (x, z) in outline] + [(x, y1, z) for (x, z) in outline]
-        faces = [tuple(range(nv - 1, -1, -1)), tuple(range(nv, 2 * nv))]
-        faces += [(i, (i + 1) % nv, nv + (i + 1) % nv, nv + i) for i in range(nv)]
-        me = bpy.data.meshes.new(name)
-        me.from_pydata(verts, [], faces)
-        me.validate()
-        o = bpy.data.objects.new(name, me)
-        bpy.context.scene.collection.objects.link(o)
-        me.materials.append(mt)
-        return o
+    """Stone humpback bridge along X (length 0.71, deck width 0.12) after the river crossings of reference frames 1
+    and 3: coursed masonry on every face, an arch ringed with voussoirs and a pale keystone, a flagstone deck that runs
+    down to the banks, parapets under a light coping, crenellated turret piers over the springings of the arch and
+    lanterns with a warm glow on the end posts."""
+    L = 0.355
+
+    def deck_z(x):
+        t = min(max((abs(x) - 0.08) / (L - 0.08), 0.0), 1.0)
+        return 0.03 + 0.14 * (1 - t * t * (3 - 2 * t))
+    st = _masonry(STONE)
+    std = _masonry(STONE_D)
+    flags = _masonry("#b09c80", 0.6, 0.05)
+    cope = kit.textured("plaster", "#ddd4c2")
+    xs = [-L + 2 * L * k / 28 for k in range(29)]
+    # the span: masonry from the banks up under the deck with the arched opening through it
     arch = [(-math.cos(math.pi * k / 12) * 0.15, math.sin(math.pi * k / 12) * 0.1) for k in range(13)]
-    # the span: masonry from the banks up to the deck with an arched opening through it
-    body = [(-0.25, 0.0)] + [(x, z) for (x, z) in arch] + [(0.25, 0.0), (0.25, 0.145), (-0.25, 0.145)]
-    profile("span", body, -0.075, 0.075, st)
-    # a darker ring of voussoirs proud of both faces
-    ring = [(x * 1.25, z * 1.3) for (x, z) in arch] + [(x, z) for (x, z) in reversed(arch)]
-    for y0, y1 in ((-0.082, -0.074), (0.074, 0.082)):
-        profile("voussoirs", ring, y0, y1, std)
-    box("deck", (0.5, 0.15, 0.025), (0, 0, 0.155), cob, 0.004)
-    # parapets with a coping stone and little end posts
+    body = [(-L, 0.0)] + arch + [(L, 0.0)] + [(x, deck_z(x) - 0.004) for x in reversed(xs)]
+    _extrude_xz("span", body, -0.072, 0.072, st)
+    # flagstone deck following the hump down to the road on both banks
+    _extrude_xz("deck", [(x, deck_z(x) + 0.006) for x in xs] + [(x, deck_z(x) - 0.012) for x in reversed(xs)], -0.062, 0.062, flags)
+    # parapets and their coping stones between the end posts
+    px = [x for x in xs if abs(x) <= 0.3 + 1e-6]
+    px = [-0.3] + [x for x in px if abs(x) < 0.3 - 1e-6] + [0.3]
     for sy in (-1, 1):
-        box("parapet", (0.5, 0.022, 0.045), (0, sy * 0.068, 0.19), st, 0.004)
-        box("coping", (0.52, 0.03, 0.012), (0, sy * 0.068, 0.218), std, 0.003)
-        for x in (-0.25, 0.25):
-            box("post", (0.035, 0.035, 0.08), (x, sy * 0.068, 0.2), std, 0.004)
-    # cutwaters at the springing points and the ramps down to the banks
-    for x in (-0.19, 0.19):
-        c = cyl("cutwater", 0.035, 0.09, (x, 0, 0.035), std, 6, 0.004)
+        y0, y1 = sorted((sy * 0.058, sy * 0.08))
+        _extrude_xz("parapet", [(x, deck_z(x) + 0.046) for x in px] + [(x, deck_z(x) - 0.006) for x in reversed(px)], y0, y1, st)
+        y0, y1 = sorted((sy * 0.054, sy * 0.085))
+        _extrude_xz("coping", [(x, deck_z(x) + 0.058) for x in px] + [(x, deck_z(x) + 0.045) for x in reversed(px)], y0, y1, cope)
+    # voussoirs round the arch on both faces, alternating tones, with a proud pale keystone at the crown
+    n = 11
+    tones = (kit.textured("plaster", "#9d968a"), kit.textured("plaster", "#bdb5a6"))
+    key = kit.textured("plaster", "#e2d9c6")
+    for k in range(n):
+        a0 = math.pi * k / n + 0.012
+        a1 = math.pi * (k + 1) / n - 0.012
+        ko = 1.38 if k == n // 2 else 1.27
+        ring = [(-math.cos(a0) * 0.15, math.sin(a0) * 0.1), (-math.cos(a1) * 0.15, math.sin(a1) * 0.1),
+                (-math.cos(a1) * 0.15 * ko, math.sin(a1) * 0.1 * ko), (-math.cos(a0) * 0.15 * ko, math.sin(a0) * 0.1 * ko)]
+        mt = key if k == n // 2 else tones[k % 2]
+        proud = 0.011 if k == n // 2 else 0.008
+        for sy in (-1, 1):
+            y0, y1 = sorted((sy * 0.07, sy * (0.072 + proud)))
+            _extrude_xz("voussoir", ring, y0, y1, mt)
+    # crenellated turret piers standing out of both faces over the springings (reference frame 3)
+    dark = mat("dark", "#2a2622", 0.9)
     for sx in (-1, 1):
-        r = box("ramp", (0.12, 0.15, 0.02), (sx * 0.3, 0, 0.11), cob, 0.003)
-        r.rotation_euler.y = sx * 0.55
+        for sy in (-1, 1):
+            x, y = sx * 0.168, sy * 0.096
+            _bx("turret", (0.062, 0.05, 0.216), (x, y, 0.108), st, 0.004)
+            _bx("cornice", (0.072, 0.06, 0.012), (x, y, 0.218), std, 0.003)
+            _bx("turret_floor", (0.048, 0.036, 0.004), (x, y, 0.225), dark)
+            for dx in (-1, 1):
+                for dy in (-1, 1):
+                    _bx("merlon", (0.02, 0.018, 0.026), (x + dx * 0.026, y + dy * 0.021, 0.236), st)
+            _bx("slit", (0.012, 0.004, 0.03), (x, y + sy * 0.0255, 0.15), dark)
+    # end posts with iron lanterns glowing warm, like the lit windows of the reference frames
+    glow = m("win_lit", "#ffcf6b", 0.5, emission="#ffb84a", strength=2.0)
+    iron = mat("iron", "#3b3d42", 0.55, 0.6)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            x, y = sx * 0.318, sy * 0.07
+            _bx("end_post", (0.036, 0.036, 0.15), (x, y, 0.075), std, 0.004)
+            _bx("lamp_base", (0.03, 0.03, 0.006), (x, y, 0.153), iron)
+            _bx("lamp", (0.02, 0.02, 0.026), (x, y, 0.169), glow)
+            for dx in (-1, 1):
+                for dy in (-1, 1):
+                    _bx("lamp_bar", (0.004, 0.004, 0.026), (x + dx * 0.011, y + dy * 0.011, 0.169), iron)
+            _cy("lamp_cap", 0.022, 0.018, (x, y, 0.191), iron, 4, r2=0.0, rot=(0, 0, math.pi / 4))
+
+
+def war_banner(color):
+    """A war banner on its pole. The cloth hangs exactly where banner() hangs it, because the game paints the state's
+    flag over it there (map_view._paint_flag: x 0.13, z 0.775, 0.25 × 0.4); around it: a dark wooden staff with iron
+    bands set in a dressed-stone plinth, the crossbar lashed on with rope and capped in gold, a gold spear finial and a
+    shield in the side's colour leaning on the plinth (reference frame 3: banners on dark poles with gold fittings)."""
+    def build():
+        h, w = 1.0, 0.26
+        box("cloth", (w, 0.012, w * 1.6), (w / 2, 0, h - 0.02 - w * 0.8), m("banner" + color, color, 0.7), 0.003)
+        box("emblem", (w * 0.45, 0.016, w * 0.45), (w / 2, 0, h - 0.02 - w * 0.65), m("emblem", "#f4f4f4", 0.6), 0.003)
+        wood = _timber("#5e3d24", 9.0, 0.72)
+        gold = mat("gold", GOLD, 0.3, 0.7)
+        iron = mat("iron", "#3b3d42", 0.55, 0.6)
+        rope = mat("rope", "#c9b48a", 0.95)
+        # plinth of two dressed blocks, an iron socket, a few loose stones at its foot
+        _bx("plinth", (0.13, 0.13, 0.046), (0, 0, 0.023), _masonry(STONE, 1.6), 0.005)
+        _bx("plinth_top", (0.086, 0.086, 0.04), (0, 0, 0.066), _masonry("#c9c1b2", 1.6), 0.004)
+        _cy("socket", 0.02, 0.03, (0, 0, 0.1), iron, 8)
+        for i, (x, y, r) in enumerate(((0.075, 0.045, 0.02), (-0.07, 0.06, 0.017), (-0.072, -0.068, 0.015))):
+            _ico("stone", r, (x, y, r * 0.5), m("rock", "#9a948a"), (1.2, 1, 0.75), 1, 0.15, 30 + i, smooth=False)
+        # the staff with two iron bands, the crossbar with gold caps and a rope lashing, the gold spear finial
+        _cy("pole", 0.012, h - 0.08, (0, 0, 0.08 + (h - 0.08) / 2), wood, 8)
+        for z in (0.26, 0.46):
+            _cy("band", 0.0145, 0.014, (0, 0, z), iron, 8)
+        _cy("bar", 0.008, w + 0.03, (w / 2, 0, h - 0.02), wood, 6, rot=XROT)
+        for x in (-0.017, w + 0.017):
+            _ico("bar_cap", 0.013, (x, 0, h - 0.02), gold, (1, 1, 1), 1)
+        _cy("lashing", 0.016, 0.026, (0, 0, h - 0.02), rope, 8)
+        _cy("collar", 0.017, 0.012, (0, 0, h + 0.006), gold, 8)
+        _ico("knop", 0.016, (0, 0, h + 0.024), gold, (1, 1, 1), 1)
+        _cy("spear", 0.014, 0.05, (0, 0, h + 0.06), gold, 6, r2=0.0)
+        # a round shield in the side's colour with an iron rim and a gold boss, leaning on the plinth
+        tilt = math.pi / 2 - 0.3
+        _cy("shield", 0.042, 0.008, (0.018, -0.079, 0.043), m("shield" + color, color, 0.6), 12, rot=(tilt, 0, 0))
+        rim = _ring("shield_rim", 0.044, 0.037, 0.011, (0.018, -0.079, 0.043), iron, 12, surfaces=(0, 1, 3))
+        rim.rotation_euler = (-0.3, 0, 0)
+        nrm = (0, -math.sin(tilt), math.cos(tilt))
+        _ico("boss", 0.012, (0.018, -0.079 + nrm[1] * 0.006, 0.043 + nrm[2] * 0.006), gold, (1, 1, 0.8), 1)
+        # one mesh, so export() bakes it at 512 like the plain banner was (the game paints over most of the cloth)
+        parts = [o for o in bpy.context.scene.objects if o.type == "MESH"]
+        bpy.ops.object.select_all(action="DESELECT")
+        for o in parts:
+            o.select_set(True)
+        bpy.context.view_layer.objects.active = parts[0]
+        bpy.ops.object.convert(target="MESH")
+        bpy.ops.object.join()
+    return build
 
 
 def gunship():
@@ -1046,7 +1195,7 @@ ASSETS = {
     "castle_red": lambda: castle(ROOF_RED, "#b3272b"),
     "castle_green": lambda: castle("#2f7d3a", "#2f8f3f"),
     "house_green": house("#3a7d34"),
-    "banner_green": lambda: banner(0, 0, "#2f8f3f", 1.0, 0.26),
+    "banner_green": war_banner("#2f8f3f"),
     "squad_green": infantry_squad("#2f8f3f"),
     "house_blue": house(ROOF_BLUE),
     "house_red": house(ROOF_RED),
@@ -1070,8 +1219,8 @@ ASSETS = {
     "knight_red": mounted_knight("#b3272b"),
     "squad_blue": infantry_squad(ROOF_BLUE),
     "squad_red": infantry_squad("#b3272b"),
-    "banner_blue": lambda: banner(0, 0, ROOF_BLUE, 1.0, 0.26),
-    "banner_red": lambda: banner(0, 0, "#b3272b", 1.0, 0.26),
+    "banner_blue": war_banner(ROOF_BLUE),
+    "banner_red": war_banner("#b3272b"),
     "tent_red": tent("#b3272b"),
 }
 

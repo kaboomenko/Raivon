@@ -51,6 +51,158 @@ HEX_R = 0.84
 # ------------------------------------------------------------------ small parts
 
 
+def tube(p0, p1, r, mt, r2=None, n=6, cap=False):
+    """Open-ended n-sided pole (tapered with r2) from p0 to p1 — no hidden end caps (spars, masts, rigging)."""
+    a, b = Vector(p0), Vector(p1)
+    d = (b - a).normalized()
+    ref = Vector((0, 0, 1)) if abs(d.z) < 0.9 else Vector((1, 0, 0))
+    u = d.cross(ref).normalized()
+    v = d.cross(u)
+    r2 = r if r2 is None else r2
+    vs = [tuple(c + (u * math.cos(math.tau * k / n) + v * math.sin(math.tau * k / n)) * rr)
+          for c, rr in ((a, r), (b, r2)) for k in range(n)]
+    faces = [(k, (k + 1) % n, n + (k + 1) % n, n + k) for k in range(n)]
+    if cap:
+        faces.append(tuple(range(n, 2 * n)))
+    o = mesh_obj(vs, faces, mt)
+    for p_ in o.data.polygons:
+        p_.use_smooth = True
+    return o
+
+
+def planks(color, row=0.014, length=0.12, deck=False):
+    """Boards in rows with dark seams and staggered butts (object space): rows follow Z on hull sides and walls,
+    run along X on a deck (deck=True). Every board a slightly different tone."""
+    key = ("planks", color, row, length, deck)
+    if key in kit._MATS:
+        return kit._MATS[key]
+    m = bpy.data.materials.new("planks")
+    m.use_nodes = True
+    nt = m.node_tree
+    L = nt.links
+    bsdf = nt.nodes["Principled BSDF"]
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    sp = nt.nodes.new("ShaderNodeSeparateXYZ")
+    L.new(tc.outputs["Object"], sp.inputs[0])
+    co = nt.nodes.new("ShaderNodeCombineXYZ")
+    L.new(sp.outputs[0], co.inputs[0])
+    L.new(sp.outputs[1 if deck else 2], co.inputs[1])
+    br = nt.nodes.new("ShaderNodeTexBrick")
+    L.new(co.outputs[0], br.inputs["Vector"])
+    br.offset = 0.37
+    br.inputs["Scale"].default_value = 1.0
+    br.inputs["Brick Width"].default_value = length
+    br.inputs["Row Height"].default_value = row
+    br.inputs["Mortar Size"].default_value = row * 0.16
+    br.inputs["Mortar Smooth"].default_value = 0.2
+    br.inputs["Bias"].default_value = 0.0
+    br.inputs["Color1"].default_value = (*kit.srgb(color), 1)
+    br.inputs["Color2"].default_value = (*kit.srgb(shade(color, 0.8)), 1)
+    br.inputs["Mortar"].default_value = (*kit.srgb(shade(color, 0.42)), 1)
+    grain = nt.nodes.new("ShaderNodeTexNoise")  # streaky grain along the boards
+    mp = nt.nodes.new("ShaderNodeMapping")
+    mp.inputs["Scale"].default_value = (6.0, 60.0, 60.0) if not deck else (6.0, 60.0, 60.0)
+    L.new(co.outputs[0], mp.inputs["Vector"])
+    L.new(mp.outputs[0], grain.inputs["Vector"])
+    grain.inputs["Scale"].default_value = 1.0
+    grain.inputs["Detail"].default_value = 3.0
+    mix = nt.nodes.new("ShaderNodeMix")
+    mix.data_type = "RGBA"
+    mix.blend_type = "MULTIPLY"
+    mix.inputs["Factor"].default_value = 0.28
+    L.new(br.outputs["Color"], mix.inputs["A"])
+    L.new(grain.outputs["Color"], mix.inputs["B"])
+    L.new(mix.outputs["Result"], bsdf.inputs["Base Color"])
+    bsdf.inputs["Roughness"].default_value = 0.8
+    kit._MATS[key] = m
+    return m
+
+
+def sailcloth(color):
+    """Sail canvas: vertical cloths sewn edge to edge (faint seams) with a soft mottle (object space Y/Z)."""
+    key = ("sailcloth", color)
+    if key in kit._MATS:
+        return kit._MATS[key]
+    m = bpy.data.materials.new("sailcloth")
+    m.use_nodes = True
+    nt = m.node_tree
+    L = nt.links
+    bsdf = nt.nodes["Principled BSDF"]
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    sp = nt.nodes.new("ShaderNodeSeparateXYZ")
+    L.new(tc.outputs["Object"], sp.inputs[0])
+    co = nt.nodes.new("ShaderNodeCombineXYZ")
+    L.new(sp.outputs[1], co.inputs[0])
+    L.new(sp.outputs[2], co.inputs[1])
+    br = nt.nodes.new("ShaderNodeTexBrick")
+    L.new(co.outputs[0], br.inputs["Vector"])
+    br.inputs["Scale"].default_value = 1.0
+    br.inputs["Brick Width"].default_value = 0.04
+    br.inputs["Row Height"].default_value = 2.0
+    br.inputs["Mortar Size"].default_value = 0.0025
+    br.inputs["Bias"].default_value = 0.0
+    br.inputs["Color1"].default_value = (*kit.srgb(color), 1)
+    br.inputs["Color2"].default_value = (*kit.srgb(shade(color, 0.95)), 1)
+    br.inputs["Mortar"].default_value = (*kit.srgb(shade(color, 0.84)), 1)
+    noise = nt.nodes.new("ShaderNodeTexNoise")
+    noise.inputs["Scale"].default_value = 30.0
+    L.new(tc.outputs["Object"], noise.inputs["Vector"])
+    mix = nt.nodes.new("ShaderNodeMix")
+    mix.data_type = "RGBA"
+    mix.blend_type = "MULTIPLY"
+    mix.inputs["Factor"].default_value = 0.18
+    L.new(br.outputs["Color"], mix.inputs["A"])
+    L.new(noise.outputs["Color"], mix.inputs["B"])
+    L.new(mix.outputs["Result"], bsdf.inputs["Base Color"])
+    bsdf.inputs["Roughness"].default_value = 0.85
+    kit._MATS[key] = m
+    return m
+
+
+def spike(p0, p1, r, mt, n=5):
+    """Open cone (no base) from a ring of radius r at p0 to a point at p1 — a sharpened stake tip, a flame."""
+    a, b = Vector(p0), Vector(p1)
+    d = (b - a).normalized()
+    ref = Vector((0, 0, 1)) if abs(d.z) < 0.9 else Vector((1, 0, 0))
+    u = d.cross(ref).normalized()
+    v = d.cross(u)
+    vs = [tuple(a + (u * math.cos(math.tau * k / n) + v * math.sin(math.tau * k / n)) * r) for k in range(n)]
+    o = mesh_obj(vs + [tuple(b)], [(k, (k + 1) % n, n) for k in range(n)], mt)
+    for p_ in o.data.polygons:
+        p_.use_smooth = True
+    return o
+
+
+def lathe(prof, mats, n=8, top=None, bottom=None, rot=0.0, loc=(0.0, 0.0, 0.0)):
+    """Surface of revolution about Z from prof = [(r, z), ...] bottom → top, one material per band (r = 0 closes a
+    band to a point); optional flat caps `top` / `bottom` (materials). No hidden faces."""
+    cx, cy_, cz = loc
+
+    def ring(r, z):
+        return [(cx + r * math.cos(rot + math.tau * k / n), cy_ + r * math.sin(rot + math.tau * k / n), cz + z)
+                for k in range(n)]
+    for i in range(len(prof) - 1):
+        (r0, z0), (r1, z1) = prof[i], prof[i + 1]
+        if r1 == 0:
+            vs, fs = ring(r0, z0) + [(cx, cy_, cz + z1)], [(k, (k + 1) % n, n) for k in range(n)]
+        elif r0 == 0:
+            vs, fs = [(cx, cy_, cz + z0)] + ring(r1, z1), [(0, 1 + (k + 1) % n, 1 + k) for k in range(n)]
+        else:
+            vs, fs = ring(r0, z0) + ring(r1, z1), [(k, (k + 1) % n, n + (k + 1) % n, n + k) for k in range(n)]
+        o = mesh_obj(vs, fs, mats[i])
+        for p_ in o.data.polygons:
+            p_.use_smooth = True
+    if top:
+        mesh_obj(ring(*prof[-1]), [tuple(range(n))], top)
+    if bottom:
+        mesh_obj(ring(*prof[0]), [tuple(range(n))], bottom)
+
+
+def flat_poly(pts, z, mt):
+    """One flat polygon lying at height z (ground decals: trampled paths, mud, shadows of the yard)."""
+    return mesh_obj([(x, y, z) for x, y in pts], [tuple(range(len(pts)))], mt)
+
+
 def tri_plate(p0, p1, p2, mt, t=0.008):
     """Thin triangular plate (sails, torn cloth, tent doors) with thickness t along its normal."""
     a, b, c = Vector(p0), Vector(p1), Vector(p2)
@@ -66,12 +218,13 @@ def quad_plate(p0, p1, p2, p3, mt, t=0.008):
 
 
 def stake(x, y, h, r, lean, mt, tip, n=5):
-    """Sharpened log: base at (x, y, -0.01), leaning by `lean` (dx, dy) at the top, pointed tip."""
+    """Sharpened log: base at (x, y, -0.01), leaning by `lean` (dx, dy) at the top, pointed tip (open shaft and
+    tip: no hidden caps)."""
     p0 = Vector((x, y, -0.01))
     p1 = Vector((x + lean[0], y + lean[1], h))
     d = (p1 - p0).normalized()
-    rod(tuple(p0), tuple(p1), r, mt, n=n)
-    rod(tuple(p1), tuple(p1 + d * r * 2.4), r, tip, r2=0.001, n=n)
+    tube(tuple(p0), tuple(p1), r, mt, n=n)
+    spike(tuple(p1), tuple(p1 + d * r * 2.4), r, tip, n)
 
 
 def ridge_tent(L, W, h, canvas, patches=(), door=True, sticks=True, seed=0):
@@ -136,12 +289,12 @@ def crate(x, y, s, rz=0.0, z=0.0, c="#a07a4a"):
 
 
 def barrel(x, y, r=0.034, h=0.085, z=0.0, c="#8a5e36", lie=None):
+    """Barrel: staves swelling between two dark iron-bound ends, a lighter lid (one lean lathe, no hidden faces)."""
     def b():
-        cy(r, h, (0, 0, h / 2), tex("wood", c, 3.0), 8, r2=r)
-        cy(r * 1.08, h * 0.14, (0, 0, h / 2), tex("wood", c, 3.0), 8)
-        for zz in (h * 0.14, h * 0.86):
-            cy(r * 1.03, h * 0.08, (0, 0, zz), flat("hoop", IRON, 0.6), 8)
-        cy(r * 0.85, 0.004, (0, 0, h + 0.001), tex("wood", shade(c, 1.2), 3.0), 8)
+        wd = tex("wood", c, 3.0)
+        hoop = flat("hoop", IRON, 0.6)
+        lathe([(r * 0.86, 0.0), (r * 0.98, h * 0.15), (r * 0.98, h * 0.85), (r * 0.86, h)], (hoop, wd, hoop), 8,
+              top=tex("wood", shade(c, 1.2), 3.0), bottom=hoop if lie is not None else None)
     if lie is None:
         build_at(b, x, y, z=z)
     else:
@@ -150,15 +303,15 @@ def barrel(x, y, r=0.034, h=0.085, z=0.0, c="#8a5e36", lie=None):
 
 def sack(x, y, s=1.0, rz=0.0, z=0.0, c="#b9a27a"):
     m = tex("plaster", c, 3.0)
-    o = uvs(0.04 * s, (x, y, z + 0.032 * s), m, 8, 5, (1.0, 0.8, 0.85))
+    o = uvs(0.04 * s, (x, y, z + 0.032 * s), m, 6, 4, (1.0, 0.8, 0.85))
     o.rotation_euler.z = rz
-    cy(0.014 * s, 0.018 * s, (x, y, z + 0.068 * s), m, 6, r2=0.008 * s)
+    spike((x, y, z + 0.058 * s), (x, y, z + 0.08 * s), 0.012 * s, m, 5)
 
 
 def rope_coil(x, y, r=0.035, z=0.0):
     m = tex("plaster", "#cdb88c", 4.0)
-    torus(r, 0.008, (x, y, z + 0.008), m, seg=10, mseg=4)
-    torus(r * 0.7, 0.008, (x, y, z + 0.018), m, seg=8, mseg=4)
+    torus(r, 0.008, (x, y, z + 0.008), m, seg=8, mseg=3)
+    torus(r * 0.7, 0.008, (x, y, z + 0.018), m, seg=6, mseg=3)
 
 
 def spear(p0, p1, wood, iron, r=0.006):
@@ -703,30 +856,227 @@ def military_base():
               tex("wood", "#9a7046", 3.0), flat("iron", IRON, 0.5))
 
 
+# the white displayed eagle of the reference sails (frame 1): head up, wings raised with two feather tips each,
+# forked tail — an outline in a unit box (u right, v up); glTF draws it double-sided
+EAGLE_SAIL = [(0.0, 0.5), (0.07, 0.4), (0.12, 0.3), (0.5, 0.5), (0.4, 0.32), (0.49, 0.28), (0.36, 0.14), (0.44, 0.1),
+              (0.15, -0.02), (0.22, -0.5), (0.0, -0.34), (-0.22, -0.5), (-0.15, -0.02), (-0.44, 0.1), (-0.36, 0.14),
+              (-0.49, 0.28), (-0.4, 0.32), (-0.5, 0.5), (-0.12, 0.3), (-0.07, 0.4)]
+HEATER = [(-0.5, 0.5), (0.5, 0.5), (0.5, 0.05), (0.0, -0.5), (-0.5, 0.05)]
+
+
+def emblem_yz(x, y, z, w, h, mt, pts=EAGLE_SAIL):
+    """Flat one-polygon emblem w × h centred at (x, y, z) in a plane facing ±X."""
+    return mesh_obj([(x, y + u * w, z + v * h) for u, v in pts], [tuple(range(len(pts)))], mt)
+
+
+def square_sail(mx, zt, zb, wt, wb, belly, cloth, em=None, yard=None):
+    """Square sail hung from a yard at zt in front (+X) of a mast at x = mx, its belly blown toward the bow: a 3×3
+    grid whose middle panel is flat, so the white emblem lies on it — once on each face. wt / wb: head / foot width."""
+    us, su = (0.0, 0.16, 0.84, 1.0), (0.0, 1.0, 1.0, 0.0)
+    vs, tv = (0.0, 0.16, 0.84, 1.0), (0.6, 1.0, 1.0, 0.1)
+    x0 = mx + 0.017
+    verts = []
+    for j, v in enumerate(vs):
+        hw = (wb + (wt - wb) * v) / 2
+        for i, u in enumerate(us):
+            verts.append((x0 + belly * su[i] * tv[j], -hw + 2 * hw * u, zb + (zt - zb) * v))
+    faces = [(j * 4 + i, j * 4 + i + 1, (j + 1) * 4 + i + 1, (j + 1) * 4 + i) for j in range(3) for i in range(3)]
+    o = mesh_obj(verts, faces, cloth)
+    for p_ in o.data.polygons:
+        p_.use_smooth = True
+    if em:
+        ew, eh = 0.64 * min(wt, wb), 0.62 * (zt - zb)
+        for dx in (0.003, -0.003):
+            emblem_yz(x0 + belly + dx, 0.0, (zt + zb) / 2, ew, eh, em)
+    if yard:
+        tube((x0 - 0.003, -wt / 2 - 0.02, zt + 0.004), (x0 - 0.003, wt / 2 + 0.02, zt + 0.004), 0.0075, yard, n=5)
+    return o
+
+
+# stations of the cog's hull from the transom (t = 0) to the stem (t = 1): half-beam factor, gunwale height, keel z
+_COG_T = (0.0, 0.14, 0.38, 0.6, 0.78, 0.91, 1.0)
+_COG_W = (0.8, 0.96, 1.0, 0.98, 0.84, 0.55, 0.0)
+_COG_SH = (0.155, 0.13, 0.114, 0.112, 0.12, 0.142, 0.168)
+_COG_K = (0.03, 0.006, 0.0, 0.0, 0.006, 0.03, 0.075)
+
+
+def _cog_at(L, W, x):
+    """Half-beam (at the gunwale) and gunwale height of the cog hull at x (linear between stations)."""
+    t = min(max((x + L / 2) / L, 0.0), 1.0)
+    for i in range(len(_COG_T) - 1):
+        if t <= _COG_T[i + 1]:
+            f = (t - _COG_T[i]) / (_COG_T[i + 1] - _COG_T[i])
+            w = (_COG_W[i] + (_COG_W[i + 1] - _COG_W[i]) * f) * W / 2
+            return w * 0.95, _COG_SH[i] + (_COG_SH[i + 1] - _COG_SH[i]) * f
+    return 0.0, _COG_SH[-1]
+
+
+def cog_hull(L, W, bands, transom, deck, deck_z=0.078):
+    """Round-bellied cog hull along X (bow at +X), open-topped shell with a raked stem and transom, a sheer that
+    rises fore and aft, and horizontal colour bands (tarred bottom, planking, a dark wale, lighter upper strakes,
+    a pale rail cap) — `bands` = 5 materials from the keel up. A planked deck inside at deck_z."""
+    n = len(_COG_T)
+    rows = []  # rows[i] = [(x, y, z) ...] of one side's profile from the keel to the gunwale (y >= 0)
+    for i, t in enumerate(_COG_T):
+        w = _COG_W[i] * W / 2
+        sh, kz = _COG_SH[i], _COG_K[i]
+        prof = [(0.0, kz), (0.9 * w, 0.05), (w, sh - 0.036), (0.995 * w, sh - 0.024), (0.96 * w, sh - 0.009),
+                (0.95 * w, sh)]
+        out, zp = [], -1.0
+        for y, z in prof:
+            z = max(z, zp + 0.006)
+            zp = z
+            f = (z - prof[0][1]) / max(sh - prof[0][1], 1e-6)
+            rake = 0.06 * f if i == n - 1 else (-0.025 * f if i == 0 else 0.0)
+            out.append((-L / 2 + t * L + rake, y, z))
+        rows.append(out)
+    verts, idx = [], {}
+
+    def vid(p):
+        k = tuple(round(c, 6) for c in p)
+        if k not in idx:
+            idx[k] = len(verts)
+            verts.append(p)
+        return idx[k]
+    band_faces = [[] for _ in range(5)]
+    for sy in (1, -1):
+        for i in range(n - 1):
+            for k in range(5):
+                a, b = rows[i][k], rows[i][k + 1]
+                c, d = rows[i + 1][k + 1], rows[i + 1][k]
+                q = [vid((p[0], sy * p[1], p[2])) for p in (a, b, c, d)]
+                q = list(dict.fromkeys(q))
+                if len(q) >= 3:
+                    band_faces[k].append(tuple(q))
+    for k in range(5):
+        used = sorted({v for f in band_faces[k] for v in f})
+        remap = {v: i for i, v in enumerate(used)}
+        o = mesh_obj([verts[v] for v in used], [tuple(remap[v] for v in f) for f in band_faces[k]], bands[k])
+        for p_ in o.data.polygons:
+            p_.use_smooth = True
+    # transom: the flat stern between the two sides
+    st = rows[0]
+    ring = [(p[0], p[1], p[2]) for p in reversed(st)] + [(p[0], -p[1], p[2]) for p in st[1:]]
+    mesh_obj(ring, [tuple(range(len(ring)))], transom)
+    # deck: the hull outline at deck height, a little inside the shell
+    pts = []
+    for i in range(n - 1):
+        w, _ = _cog_at(L, W, -L / 2 + _COG_T[i] * L)
+        pts.append((-L / 2 + _COG_T[i] * L + (0.006 if i == 0 else 0.0), 0.93 * w))
+    pts.append((L / 2 - 0.01, 0.0))
+    ring = pts + [(x, -y) for x, y in reversed(pts[:-1])]
+    mesh_obj([(x, y, deck_z) for x, y in ring], [tuple(range(len(ring)))], deck)
+
+
+def ship_castle(xa, xb, z_out, z_side, z_in, zf, zt, L, W, wall, band, floor):
+    """Raised castle on the cog between its outer end xa (stern or bow) and its inner end xb (facing the waist):
+    plank walls standing just inside the hull sides (the outer wall from z_out, the sides from z_side, the inner
+    wall from the deck at z_in), a floor at zf and a parapet band in the team colour up to zt."""
+    (wa, _), (wb, _) = _cog_at(L, W, xa), _cog_at(L, W, xb)
+    ring = [(xa, wa * 0.97), (xb, wb * 0.97), (xb, -wb * 0.97), (xa, -wa * 0.97)]
+    z0s = (z_side, z_in, z_side, z_out)
+    for k in range(4):
+        (xa_, ya_), (xb_, yb_) = ring[k], ring[(k + 1) % 4]
+        for (za, zb, mt) in ((z0s[k], zf, wall), (zf, zt, band)):
+            mesh_obj([(xa_, ya_, za), (xb_, yb_, za), (xb_, yb_, zb), (xa_, ya_, zb)], [(0, 1, 2, 3)], mt)
+    mesh_obj([(x, y, zf) for x, y in ring], [(0, 1, 2, 3)], floor)
+    return ring
+
+
 def warship(team):
-    """A two-masted warship along X (bow at +X) for the open water (reference frame 1): a dark hull with a team
-    stripe and gun ports, square sails in the team colour with a white emblem, a raised stern castle, pennants."""
-    body = tex("wood", "#4e3420", 3.0)
-    deck = tex("wood", "#a07a4c", 4.0)
-    stripe = flat("hull_stripe" + team, ev.slate(team, 1.15), 0.6)
-    hull(0.62, 0.2, 0.1, body, deck, stripe)
-    for k in range(5):  # gun ports along both sides
+    """A two-masted war cog along X (bow at +X) for the open water (reference frame 1: ships under the state's
+    sails with the white eagle in the bay). A round planked hull with a rising sheer, tarred bottom, dark wale and
+    pale rail; raised castles fore and aft with team-coloured parapets; lit stern windows and a stern lantern; big
+    bellied square sails in the team colour, each course with the white eagle on both faces; light yards, a crow's
+    nest, shrouds and stays, team pennants and a stern ensign; shields hung along the waist; cargo on the deck.
+    The game spins it so the bow or the stern faces the camera — the sails and both castles read face-on."""
+    L, W = 0.62, 0.2
+    wood = planks("#9c6230", 0.0135)
+    upper = planks("#bd8446", 0.0115)
+    cog_hull(L, W, (flat("tar", "#2b211a", 0.8), wood, flat("wale", "#3e2615", 0.7), upper,
+                    flat("rail", "#d9ad6c", 0.7)), planks("#7e4f28", 0.0135), planks("#c09060", 0.018, 0.16, True))
+    teamc = flat("parapet" + team, ev.shade(team, 0.8), 0.6)
+    castle_w = planks("#9c6838", 0.012)
+    floor = planks("#b88a58", 0.016, 0.14, True)
+    white = flat("emblem", "#f3efe6", 0.6)
+    iron = flat("iron", IRON, 0.5)
+    lit = ev.win_lit()
+    # ---- stern castle: walls, floor, team parapet, lit windows on the stern and the sides, a door to the waist
+    xs0, xs1 = -L / 2 - 0.028, -0.165
+    ship_castle(xs0, xs1, 0.145, 0.1, 0.078, 0.2, 0.225, L, W, castle_w, teamc, floor)
+    frame = flat("win_frame", "#3a2414", 0.8)
+    for y in (-0.042, 0.0, 0.042):  # stern gallery: three lit windows over the rudder, the castle overhanging
+        mesh_obj([(xs0 - 0.002, y + sy * 0.0145, z) for sy, z in ((-1, 0.151), (1, 0.151), (1, 0.19), (-1, 0.19))],
+                 [(0, 1, 2, 3)], frame)
+        mesh_obj([(xs0 - 0.004, y + sy * 0.0095, z) for sy, z in ((-1, 0.156), (1, 0.156), (1, 0.185), (-1, 0.185))],
+                 [(0, 1, 2, 3)], lit)
+    for sy in (-1, 1):
+        w, _ = _cog_at(L, W, -0.235)
+        mesh_obj([(x, sy * (w * 0.97 + 0.003), z) for x, z in ((-0.252, 0.152), (-0.218, 0.152), (-0.218, 0.185),
+                                                                (-0.252, 0.185))], [(0, 1, 2, 3)], lit)
+        mesh_obj([(xs1 + 0.003, sy * 0.05 + d, z) for d, z in ((-0.011, 0.162), (0.011, 0.162), (0.011, 0.19),
+                                                                (-0.011, 0.19))], [(0, 1, 2, 3)], lit)
+    mesh_obj([(xs1 + 0.003, y, z) for y, z in ((-0.02, 0.08), (0.02, 0.08), (0.02, 0.15), (-0.02, 0.15))],
+             [(0, 1, 2, 3)], flat("door", "#4a2d17", 0.8))
+    bx((0.012, 0.016, 0.115), (-L / 2 - 0.016, 0.0, 0.088), planks("#6e4426", 0.012), bev=0, rot=(0, -0.2, 0))  # rudder
+    # stern lantern on a bracket over the rail, the state's ensign on a staff beside it
+    tube((xs0 + 0.01, 0.0, 0.225), (xs0 + 0.01, 0.0, 0.27), 0.005, iron, n=4)
+    bx((0.024, 0.024, 0.03), (xs0 + 0.01, 0.0, 0.288), ev.glow("ship_lantern", "#ffcf6b", 2.5), bev=0)
+    cn(0.022, 0.022, (xs0 + 0.01, 0.0, 0.314), iron, 4, rot=(0, 0, math.pi / 4))
+    fy = -0.06
+    tube((xs0 + 0.012, fy, 0.2), (xs0 + 0.012, fy, 0.37), 0.004, tex("wood", "#5a3a20", 3.0), n=4)
+    flag = flat("ensign" + team, team, 0.7)
+    fz, fw, fh = 0.328, 0.12, 0.075
+    mesh_obj([(xs0 + 0.012, fy - fw * k, fz + fh / 2 * s) for k, s in ((0, 1), (1, 1), (1, -1), (0, -1))],
+             [(0, 1, 2, 3)], flag)
+    for dx in (0.003, -0.003):
+        emblem_yz(xs0 + 0.012 + dx, fy - fw / 2, fz, fh * 0.75, fh * 0.75, white)
+    # ---- forecastle over the bow
+    ship_castle(0.3, 0.2, 0.14, 0.1, 0.078, 0.19, 0.212, L, W, castle_w, teamc, floor)
+    # ---- shields hung along the waist rail, team colour and white in turn
+    for k, x in enumerate((-0.13, -0.07, -0.01, 0.05, 0.11, 0.165)):
+        w, sh = _cog_at(L, W, x)
         for sy in (-1, 1):
-            bx((0.022, 0.006, 0.018), (-0.18 + k * 0.085, sy * 0.098, 0.06), flat("port_d", "#1a1410", 0.9), bev=0)
-    bx((0.16, 0.19, 0.07), (-0.24, 0, 0.135), body, bev=0.006)  # stern castle
-    bx((0.17, 0.2, 0.012), (-0.24, 0, 0.172), deck, bev=0)
-    wd = tex("wood", "#3e2a1a", 2.0)
-    sail_c = flat("sail" + team, ev.slate(team, 1.12), 0.8)
-    em = flat("emblem", "#f3efe6", 0.6)
-    for (mx, h, w) in ((0.08, 0.56, 0.24), (-0.1, 0.48, 0.2)):
-        cy(0.011, h, (mx, 0, 0.1 + h / 2), wd, 6)
-        for (z, sw) in ((0.28, w), (0.45, w * 0.8)):
-            bx((0.012, sw, 0.16), (mx + 0.012, 0, 0.1 + z), sail_c, bev=0.004)
-            beam((mx, -sw / 2 - 0.01, 0.1 + z + 0.07), (mx, sw / 2 + 0.01, 0.1 + z + 0.07), 0.008, wd)
-        bx((0.016, w * 0.32, 0.06), (mx + 0.02, 0, 0.1 + 0.28), em, bev=0)
-        bx((0.06, 0.004, 0.025), (mx + 0.03, 0, 0.1 + h + 0.01), flat("pennant" + team, team, 0.6), bev=0)
-    beam((0.31, 0, 0.1), (0.46, 0, 0.16), 0.01, wd)  # bowsprit
-    tri_plate((0.09, 0, 0.5), (0.09, 0, 0.2), (0.4, 0, 0.18), flat("jib", SAIL, 0.8), 0.005)
+            m_ = teamc if (k + (sy > 0)) % 2 == 0 else white
+            mesh_obj([(x + u * 0.034, sy * (w / 0.95 + 0.004), sh - 0.016 + v * 0.036) for u, v in HEATER],
+                     [tuple(range(5))], m_)
+    # ---- masts, sails, yards, crow's nest, pennants
+    spar = tex("wood", "#c99a5c", 3.0)
+    mastm = tex("wood", "#6e4426", 3.0)
+    rope = flat("rigging", "#3a2c20", 0.8)
+    cloth = sailcloth(ev.shade(team, 0.82))
+    pen = flat("pennant" + team, team, 0.6)
+    mm, mf = -0.02, 0.175
+    tube((mm, 0.0, 0.07), (mm, 0.0, 0.705), 0.0115, mastm, r2=0.008, n=6)
+    tube((mf, 0.0, 0.07), (mf, 0.0, 0.565), 0.0095, mastm, r2=0.007, n=6)
+    square_sail(mm, 0.465, 0.225, 0.3, 0.33, 0.034, cloth, white, spar)  # main course with the eagle
+    square_sail(mm, 0.655, 0.555, 0.19, 0.24, 0.02, cloth, None, spar)  # main topsail
+    square_sail(mf, 0.43, 0.215, 0.24, 0.27, 0.03, cloth, white, spar)  # fore course with the eagle
+    tube((mm, 0.0, 0.49), (mm, 0.0, 0.528), 0.03, planks("#7a4b28", 0.01), n=8)  # crow's nest (open tub)
+    mesh_obj([(mm + 0.029 * math.cos(math.tau * k / 8), 0.029 * math.sin(math.tau * k / 8), 0.494) for k in range(8)],
+             [tuple(range(8))], planks("#5a3a20"))
+    for (x, z, ln) in ((mm, 0.705, 0.15), (mf, 0.565, 0.11)):  # swallow-tailed pennants streaming abeam
+        mesh_obj([(x, 0.0, z), (x, ln, z - 0.012), (x, ln * 0.78, z - 0.019), (x, ln * 0.98, z - 0.03),
+                  (x, 0.0, z - 0.026)], [(0, 1, 2, 3, 4)], pen)
+    # ---- bowsprit, jib, rigging
+    tube((0.27, 0.0, 0.19), (0.44, 0.0, 0.245), 0.0085, spar, r2=0.005, n=5)
+    mesh_obj([(0.212, 0.0, 0.503), (0.415, 0.0, 0.24), (0.28, 0.0, 0.222)], [(0, 1, 2)], flat("jib", SAIL, 0.8))
+    for (mx, zt, xs) in ((mm, 0.5, (-0.05, -0.1)), (mf, 0.42, (0.13,))):
+        for sy in (-1, 1):
+            for x in xs:
+                w, sh = _cog_at(L, W, x)
+                tube((mx, 0.0, zt), (x, sy * w, sh), 0.0022, rope, n=3)
+    tube((mm, 0.0, 0.69), (mf, 0.0, 0.43), 0.0022, rope, n=3)  # stays
+    tube((mf, 0.0, 0.55), (0.43, 0.0, 0.243), 0.0022, rope, n=3)
+    tube((mm, 0.0, 0.69), (xs0 + 0.04, 0.0, 0.225), 0.0022, rope, n=3)
+    # ---- cargo in the waist: crates, a barrel pair, a grated hatch
+    bx((0.04, 0.04, 0.036), (0.07, 0.03, 0.096), planks("#a77a46", 0.01), 0.3, bev=0)
+    bx((0.034, 0.034, 0.03), (0.105, -0.035, 0.093), planks("#8e6438", 0.01), -0.2, bev=0)
+    bx((0.03, 0.03, 0.026), (0.075, 0.032, 0.127), planks("#b98c55", 0.01), 0.7, bev=0)
+    for (x, y) in ((-0.13, 0.04), (-0.13, -0.035)):
+        tube((x, y, 0.078), (x, y, 0.13), 0.019, tex("wood", "#8a5e36", 3.0), n=7, cap=True)
+        tube((x, y, 0.1), (x, y, 0.106), 0.0205, iron, n=7)
+    bx((0.07, 0.06, 0.008), (-0.075, 0.0, 0.082), planks("#5a3a20", 0.008, 0.02, True), bev=0)
 
 
 def _turret(x, z, steel, dark, aim=1):
