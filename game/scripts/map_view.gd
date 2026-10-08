@@ -1162,7 +1162,14 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 			if hs != "" and rng.randf() < 0.55:
 				# settled countryside (the reference frames): a farmstead in the owner's colours and era on open land
 				spawn(hs, holder, p + Vector3(rng.randf_range(-0.25, 0.25), 0, rng.randf_range(-0.25, 0.25)), rng.randf() * TAU, 1.25)
-			for i in rng.randi_range(1, 4):
+			# a copse crowding the far edge (reference frame 3: woods fill every gap between the farms and towns);
+			# behind the centre, so it never hides a farmstead or an army from the camera at +Z
+			var ca := (7.0 + 2.0 * rng.randi_range(0, 2)) * PI / 6.0  # an edge midpoint at 210°, 270° or 330°
+			var cc := p + Vector3(cos(ca), 0, sin(ca)) * 0.58
+			for i in rng.randi_range(4, 7):
+				var off := Vector3(rng.randf_range(-0.16, 0.16), 0, rng.randf_range(-0.24, 0.24)).rotated(Vector3.UP, -ca)
+				spawn("tree_pine" if rng.randf() < 0.8 else "tree_round", holder, cc + off, rng.randf() * TAU, rng.randf_range(0.75, 1.1))
+			for i in rng.randi_range(1, 3):
 				var off := Vector3(rng.randf_range(-0.6, 0.6), 0, rng.randf_range(-0.6, 0.6))
 				spawn("tree_pine" if rng.randf() < 0.6 else "tree_round", holder, p + off, rng.randf() * TAU, rng.randf_range(0.7, 1.0))
 			if rng.randf() < 0.55:
