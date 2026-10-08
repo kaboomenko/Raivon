@@ -1674,6 +1674,9 @@ var bridge_spots: Array = []  # world positions of the bridges (screenshots, tes
 func _build_roads() -> void:
 	bridge_spots = []
 	var tools := {}  # era 0 dirt (DL1–5), 1 asphalt (DL6–7), 2 dark neon road (DL8+) -> SurfaceTool
+	var dashes := SurfaceTool.new()
+	dashes.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var any_dash := false
 	var done := {}
 	var joints := {}  # hex -> era
 	for c in sim.cells:
@@ -1702,7 +1705,8 @@ func _build_roads() -> void:
 			if done.has(key):
 				continue
 			done[key] = true
-			_road_segment(st, a, b)
+			_road_segment(st, a, b, ROAD_W, dashes if era == 1 else null)
+			any_dash = any_dash or era == 1
 			if era == 0 and (sim.rivers.has("%d:%d" % [a, b]) or sim.rivers.has("%d:%d" % [b, a])):
 				# a stone arch bridge where the road crosses a river (the reference frames)
 				var pa := cell_world(a)
@@ -1750,7 +1754,7 @@ func _build_roads() -> void:
 		var mi := MeshInstance3D.new()
 		mi.mesh = (tools[era] as SurfaceTool).commit()
 		var m := StandardMaterial3D.new()
-		m.albedo_color = [Color(0.64, 0.5, 0.32), Color(0.32, 0.33, 0.35), Color(0.12, 0.14, 0.18)][era]
+		m.albedo_color = [Color(0.64, 0.5, 0.32), Color(0.42, 0.43, 0.45), Color(0.12, 0.14, 0.18)][era]
 		m.roughness = 1.0 if era == 0 else 0.6
 		if era == 2:  # the glowing roads of reference frame 2
 			m.emission_enabled = true
@@ -1760,6 +1764,16 @@ func _build_roads() -> void:
 		mi.material_override = m
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_overlay_root.add_child(mi)
+	if any_dash:
+		var dm := MeshInstance3D.new()
+		dm.mesh = dashes.commit()
+		var wm := StandardMaterial3D.new()
+		wm.albedo_color = Color(0.92, 0.9, 0.82)
+		wm.roughness = 0.8
+		wm.cull_mode = BaseMaterial3D.CULL_DISABLED
+		dm.material_override = wm
+		dm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_overlay_root.add_child(dm)
 
 
 ## A road ends at the edge of a building's pad; through open land it runs to the hex centre.
@@ -1767,7 +1781,7 @@ func _road_stop(h: int) -> bool:
 	return sim.cells[h]["kind"] != "plain" or camp_hexes.has(h)
 
 
-func _road_segment(st: SurfaceTool, a: int, b: int, w := ROAD_W) -> void:
+func _road_segment(st: SurfaceTool, a: int, b: int, w := ROAD_W, dash: SurfaceTool = null) -> void:
 	var pa := cell_world(a)
 	var pb := cell_world(b)
 	var dir := (pb - pa).normalized()
@@ -1790,6 +1804,15 @@ func _road_segment(st: SurfaceTool, a: int, b: int, w := ROAD_W) -> void:
 			st.set_normal(Vector3.UP)
 			st.add_vertex(prev_l); st.add_vertex(r); st.add_vertex(prev_r)
 			st.add_vertex(prev_l); st.add_vertex(l); st.add_vertex(r)
+			if dash and i % 2 == 1:  # a dashed centre line on the asphalt roads of DL6–7
+				var c0 := (prev_l + prev_r) / 2.0 + Vector3(0, 0.002, 0)
+				var c1 := (l + r) / 2.0 + Vector3(0, 0.002, 0)
+				var m0 := c0.lerp(c1, 0.2)
+				var m1 := c0.lerp(c1, 0.8)
+				var sd := side * 0.007
+				dash.set_normal(Vector3.UP)
+				dash.add_vertex(m0 - sd); dash.add_vertex(m1 + sd); dash.add_vertex(m0 + sd)
+				dash.add_vertex(m0 - sd); dash.add_vertex(m1 - sd); dash.add_vertex(m1 + sd)
 		prev_l = l
 		prev_r = r
 
