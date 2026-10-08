@@ -1366,6 +1366,22 @@ def residence_dl8(team):
     bx((0.3, 0.012, 0.12), (0, -0.48, 0.13), glow("holo" + team, shade(team, 1.35), 3.5), bev=0)
     for sx in (-1, 1):
         cy(0.008, 0.2, (sx * 0.16, -0.48, 0.1), flat("mast", "#d0d4da", 0.5), 6)
+    # the base of reference frame 5: a grand stair up the podium, an energy orb on a pedestal, banners, plaza lamps
+    stair = flat("stair", "#8a929c", 0.5)
+    for k in range(5):
+        bx((0.34 - k * 0.02, 0.06, 0.036), (0, -0.62 + k * 0.035, 0.018 + k * 0.036), stair, bev=0.004)
+    for sx in (-1, 1):
+        bx((0.04, 0.2, 0.012), (sx * 0.19, -0.56, 0.11), neon, bev=0)  # light rails along the stair
+    ox, oy = 0.5, -0.42
+    cy(0.07, 0.08, (ox, oy, 0.1), flat("pedestal", "#4a515c", 0.5), 12)
+    cy(0.075, 0.012, (ox, oy, 0.14), neon, 12)
+    uvs(0.08, (ox, oy, 0.24), glow("orb" + team, shade(team, 1.05), 1.6), 14, 8)
+    torus(0.11, 0.006, (ox, oy, 0.24), flat("ring_frame", "#c9d0d8", 0.4), (math.pi / 2.6, 0, 0.4), 20, 3)
+    for sx in (-1, 1):
+        facade_banner(sx * 0.19, -0.16, 1.05, 0.1, 0.42, team, 0.0, "#d0d4da")
+    for (x, y) in ((-0.55, -0.4), (-0.3, -0.62), (0.28, -0.64), (0.62, -0.2)):
+        cy(0.008, 0.16, (x, y, 0.14), flat("mast", "#d0d4da", 0.5), 6)
+        ico(0.016, (x, y, 0.23), glow("lamp8", "#bfe8ff", 3.0))
 
 
 # ------------------------------------------------------------------ FORTIFICATIONS (team-neutral)
