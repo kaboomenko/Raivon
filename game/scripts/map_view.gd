@@ -1514,6 +1514,9 @@ func _build_horizon() -> void:
 		_cloud(Vector3.ZERO, 1.0).queue_free()  # builds the shared cloud material
 		var cmat: StandardMaterial3D = _cloud_mat.duplicate()
 		cmat.billboard_keep_scale = true  # each instance keeps its own size
+		cmat.distance_fade_mode = BaseMaterial3D.DISTANCE_FADE_PIXEL_ALPHA  # up close they were blurry white blobs
+		cmat.distance_fade_min_distance = 9.0  # gone when the camera is this near
+		cmat.distance_fade_max_distance = 15.0  # fully there from the middle zoom out (camera 7.5–34 away)
 		var q := QuadMesh.new()
 		q.size = Vector2(1.0, 0.6)
 		q.material = cmat
