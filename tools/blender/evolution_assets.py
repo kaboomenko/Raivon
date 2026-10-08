@@ -1859,6 +1859,48 @@ def district_scifi(team):
     torus(0.07, 0.005, (-0.02, -0.5, 0.024), neon)
 
 
+def district_scifi_b(team):
+    """Sprawl variant B: a round plaza with one tall needle tower, a glass arcology dome and low ring blocks."""
+    plate = flat("plate8", "#2c3139", 0.6)
+    pad(0.72, plate, 0.012, 12, 0.0, 42)
+    neon = team_neon(team)
+    steel = facade("#aab3bf", "#22436e", 0.045, 0.06, 0.62, 0.55, lit="#9fdcff", lit_p=0.4)
+    gl = dark_glass()
+    cy(0.3, 0.008, (0, 0, 0.016), flat("plaza", "#454c57", 0.5), 24)
+    torus(0.3, 0.008, (0, 0, 0.022), neon, seg=24)
+    build_at(lambda: (neon_box(0.14, 0.14, 0.012, 0.82, team, steel),
+                      cn(0.05, 0.22, (0, 0, 0.94), flat("spire", "#c9d0d8", 0.4), 6),
+                      ico(0.016, (0, 0, 1.06), neon)), 0.0, 0.08)
+    uvs(0.2, (-0.3, -0.24, 0.012), flat("dome_glass", "#9fd4ef", 0.25), 14, 7, (1, 1, 0.65))
+    cy(0.205, 0.016, (-0.3, -0.24, 0.02), neon, 20)
+    for k in range(5):  # low ring blocks round the plaza
+        a = 0.6 + k * 1.05
+        x, y = math.cos(a) * 0.5, math.sin(a) * 0.5
+        if x < -0.15 and y < -0.05:
+            continue
+        build_at(lambda: neon_box(0.16, 0.12, 0.012, 0.18 + 0.04 * (k % 2), team, gl if k % 2 else steel), x, y, a + math.pi / 2)
+
+
+def district_scifi_c(team):
+    """Sprawl variant C: an energy hub — a raivite reactor core in a ring frame, two cooling towers, hangars."""
+    plate = flat("plate8", "#2c3139", 0.6)
+    pad(0.72, plate, 0.012, 12, 0.0, 43)
+    neon = team_neon(team)
+    core = glow("reactor", CYAN, 3.0)
+    cy(0.16, 0.06, (0, 0.05, 0.04), flat("reactor_base", "#4a515c", 0.5), 16)
+    cn(0.07, 0.3, (0, 0.05, 0.22), core, 6)
+    cn(0.07, 0.2, (0, 0.05, 0.03), core, 6, rot=(math.pi, 0, 0))
+    torus(0.2, 0.016, (0, 0.05, 0.22), flat("ring_frame", "#c9d0d8", 0.4), (math.pi / 2, 0, 0), 20, 4)
+    torus(0.2, 0.006, (0, 0.05, 0.22), neon, (math.pi / 2, 0, 0), 20, 3)
+    for x in (-0.38, 0.38):  # cooling towers with a glow band
+        cy(0.13, 0.36, (x, 0.28, 0.19), flat("tower_c", "#b9c0c9", 0.5), 16, r2=0.09)
+        cy(0.11, 0.02, (x, 0.28, 0.3), neon, 16)
+    for x in (-0.25, 0.25):  # hangars with rounded roofs
+        build_at(lambda: (bx((0.22, 0.14, 0.08), (0, 0, 0.052), flat("hangar", "#8a929c", 0.5), bev=0.006),
+                          cy(0.07, 0.22, (0, 0, 0.092), flat("hangar_r", "#6e7681", 0.5), 12, rot=(0, math.pi / 2, 0)),
+                          bx((0.2, 0.004, 0.012), (0, -0.072, 0.05), neon, bev=0)), x, -0.32)
+
+
 CITY = [city_dl1, city_dl2, city_dl3, city_dl4, city_dl5, city_dl6, city_dl7, city_dl8]
 RES = [residence_dl1, residence_dl2, residence_dl3, residence_dl4, residence_dl5, residence_dl6, residence_dl7, residence_dl8]
 
@@ -1871,6 +1913,8 @@ for _t, _c in TEAMS.items():
     ASSETS[f"farm_scifi_{_t}"] = (lambda c: (lambda: farm_scifi(c)))(_c)
     ASSETS[f"mine_scifi_{_t}"] = (lambda c: (lambda: mine_scifi(c)))(_c)
     ASSETS[f"district_scifi_{_t}"] = (lambda c: (lambda: district_scifi(c)))(_c)
+    ASSETS[f"district_scifi_b_{_t}"] = (lambda c: (lambda: district_scifi_b(c)))(_c)
+    ASSETS[f"district_scifi_c_{_t}"] = (lambda c: (lambda: district_scifi_c(c)))(_c)
 for _n in range(1, 9):
     for _t, _c in TEAMS.items():
         ASSETS[f"city_dl{_n}_{_t}"] = (lambda f, c: (lambda: f(c)))(CITY[_n - 1], _c)

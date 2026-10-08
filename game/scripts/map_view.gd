@@ -1149,7 +1149,9 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 		_:
 			var district := _era_model("district", int(c["owner"]), side)
 			if district != "":  # the built-up land of the sci-fi stage (reference frame 2): a neon district, a tree or two
-				spawn(district, holder, p, rng.randi_range(0, 5) * PI / 3.0, 1.0)
+				var variant: String = ["", "_b", "_c"][int(c["id"]) % 3]  # three layouts so neighbouring hexes don't repeat
+				var dname := district.replace("district_scifi_", "district_scifi%s_" % variant)
+				spawn(dname if has_model(dname) else district, holder, p, rng.randi_range(0, 5) * PI / 3.0, 1.0)
 				for i in rng.randi_range(0, 2):
 					spawn("tree_round", holder, p + Vector3(rng.randf_range(-0.6, 0.6), 0, rng.randf_range(-0.6, 0.6)), rng.randf() * TAU, 0.7)
 				_place_fort(c, holder)
