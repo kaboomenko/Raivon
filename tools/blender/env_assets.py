@@ -702,6 +702,27 @@ def mine():
     for k in range(5):
         boulder(0.13 + rnd.uniform(-0.04, 0.04), -0.48 + rnd.uniform(-0.03, 0.03), 0.04, 0.035, 0.035,
                 gold if k == 1 else ore, 60 + k, 9)
+    # the quarry of reference frames 3–4: a wooden treadwheel crane over a cut ledge, stacked dressed blocks,
+    # scaffolding up the rock face
+    blk = tex("plaster", "#c8c2b6", 2.0)
+    for i, (x, y, z) in enumerate(((0.36, -0.36, 0.03), (0.44, -0.36, 0.03), (0.4, -0.28, 0.03), (0.4, -0.32, 0.085),
+                                   (0.32, -0.28, 0.03), (0.48, -0.28, 0.03))):
+        bx((0.075, 0.07, 0.055), (x, y, z), blk, 0.1 * (i % 3), 0.005)
+    cx, cy0 = 0.46, -0.12  # crane: an A-frame with a jib reaching over the blocks, rope and a hook with a block
+    for sy in (-1, 1):
+        ev.beam((cx - 0.06, cy0 + sy * 0.05, 0.0), (cx, cy0, 0.42), 0.022, timber)
+        ev.beam((cx + 0.06, cy0 + sy * 0.05, 0.0), (cx, cy0, 0.42), 0.022, timber)
+    ev.beam((cx - 0.06, cy0 + 0.04, 0.36), (cx - 0.04, cy0 - 0.24, 0.46), 0.02, timber)
+    cy(0.06, 0.03, (cx - 0.02, cy0 + 0.09, 0.12), tex("wood", WOOD_L), 12, 0.0, rot=(math.pi / 2, 0, 0))  # treadwheel
+    cy(0.065, 0.02, (cx - 0.02, cy0 + 0.09, 0.12), tex("wood", "#6e4526"), 12, 0.0, rot=(math.pi / 2, 0, 0))
+    rope = flat("rope", "#d8c8a0", 0.9)
+    ev.beam((cx - 0.04, cy0 - 0.24, 0.46), (cx - 0.04, cy0 - 0.24, 0.2), 0.006, rope)
+    bx((0.06, 0.055, 0.045), (cx - 0.04, cy0 - 0.24, 0.17), blk, 0.3, 0.004)
+    for z in (0.14, 0.28):  # scaffolding planks and poles against the rock face, left of the adit
+        bx((0.24, 0.06, 0.012), (-0.34, -0.06, z), tex("wood", WOOD_L), 0.0, 0.002)
+    for x in (-0.45, -0.23):
+        for y in (-0.09, -0.03):
+            cy(0.01, 0.34, (x, y, 0.17), timber, 6)
 
 
 ASSETS = {
