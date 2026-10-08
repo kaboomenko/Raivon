@@ -1461,7 +1461,7 @@ def residence_dl7(team):
 
 def steel_facade():
     """Light grey steel of the late-era citadel (reference frame 5): rows of dark slit windows, some lit cold blue."""
-    return facade("#737b86", "#1e2731", 0.04, 0.07, 0.5, 0.5, lit="#9ad8ff", lit_p=0.2)
+    return facade("#5f6670", "#1a222c", 0.04, 0.07, 0.5, 0.5, lit="#9ad8ff", lit_p=0.2)  # darker steel: frame 5 is a dim, cool scene
 
 
 def citadel_tower(x, y, w, d, h, st, plate, neon, cap):
