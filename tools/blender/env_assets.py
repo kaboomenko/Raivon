@@ -158,6 +158,48 @@ def rock_paint(c1, c2, moss=("#4f7f2c", "#77a83a"), moss_at=0.62, scale=7.0):
     return cached(("rock", c1, c2, moss, moss_at, scale), build)
 
 
+def granite_paint(c1, c2, moss=("#34481f", "#4a6328"), moss_at=0.8, scale=6.0):
+    """Cool grey granite of reference frames 1 and 3: horizontal strata, dark hairline cracks, pale sunlit top facets,
+    darker steep faces, and only sparse dark moss on the flattest tops (the old lime moss turned small stones green)."""
+    def build():
+        p = Paint("granite")
+        col = p.mix(p.step(p.noise(scale, 4.0), 0.3, 0.7), c1, c2)
+        strata = p.noise(scale * 0.5, 3.0, stretch=(1.0, 1.0, 10.0))
+        col = p.mix(p.math("MULTIPLY", p.step(strata, 0.5, 0.7), 0.45), col, shade(c1, 0.78))
+        ridge = p.math("SUBTRACT", 1.0, p.math("ABSOLUTE", p.math("SUBTRACT", p.math("MULTIPLY", p.noise(scale * 2.6, 1.0), 2.0), 1.0)))
+        col = p.mix(p.math("MULTIPLY", p.step(ridge, 0.955, 0.99), 0.5), col, shade(c1, 0.5))
+        col = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.55, 0.9), 0.55), col, shade(c2, 1.22))
+        col = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.35, -0.2), 0.4), col, shade(c1, 0.72))
+        if moss:
+            mf = p.math("ADD", p.nz, p.math("MULTIPLY", p.math("SUBTRACT", p.noise(5.0, 3.0), 0.5), 0.9))
+            mcol = p.mix(p.step(p.noise(14.0), 0.35, 0.65), moss[0], moss[1])
+            col = p.mix(p.step(mf, moss_at, moss_at + 0.1), col, mcol)
+        return p.done(col, 0.9)
+    return cached(("granite", c1, c2, moss, moss_at, scale), build)
+
+
+def tor(cx, cy_, w, d, h, mt, seed, z0=-0.02, slant=0.25, rz=0.0, k=0.2):
+    """Angular block of stone (a granite tor): a jittered box hull with a slanted, broken top — sharp facets and
+    flat ledges instead of a round boulder."""
+    rnd = random.Random(seed)
+    pts = []
+    c, s_ = math.cos(rz), math.sin(rz)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            for zz, kk in ((z0, 1.0), (z0 + h * rnd.uniform(0.35, 0.55), 1.0 - k * 0.3)):
+                pts.append((sx * w / 2 * kk * rnd.uniform(0.85, 1.05), sy * d / 2 * kk * rnd.uniform(0.85, 1.05), zz))
+            ztop = z0 + h * (1.0 - slant * (0.5 - 0.5 * sy) * rnd.uniform(0.6, 1.0)) * rnd.uniform(0.86, 1.0)
+            pts.append((sx * w / 2 * (1 - k) * rnd.uniform(0.7, 1.0), sy * d / 2 * (1 - k) * rnd.uniform(0.7, 1.0), ztop))
+    for _ in range(4):  # a broken crest
+        pts.append((rnd.uniform(-w, w) * 0.32, rnd.uniform(-d, d) * 0.32, z0 + h * rnd.uniform(0.84, 1.04)))
+    for (ux, uy) in ((1, 0), (-1, 0), (0, 1), (0, -1)):  # bulging / pinched flanks: no two faces alike
+        b = rnd.uniform(0.95, 1.18)
+        pts.append((ux * w / 2 * b + uy * rnd.uniform(-0.2, 0.2) * w, uy * d / 2 * b + ux * rnd.uniform(-0.2, 0.2) * d,
+                    z0 + h * rnd.uniform(0.25, 0.6)))
+    pts = [(cx + x * c - y * s_, cy_ + x * s_ + y * c, z) for x, y, z in pts]
+    return hull(pts, mt)
+
+
 def mountain_paint(grass_line=0.13, snow_line=0.78):
     """Grassy foot → scree → stratified rock (darker on steep faces) → snow on high / flat faces."""
     def build():
@@ -202,6 +244,31 @@ def furrows(c_dark, c_light, period=0.13, axis=0):
         col = p.mix(p.math("MULTIPLY", p.step(p.noise(16.0), 0.45, 0.7), 0.4), col, shade(c_dark, 0.8))
         return p.done(col, 0.95)
     return cached(("furrows", c_dark, c_light, period, axis), build)
+
+
+def shingle_paint(c, z0, hc, row=0.024, scale=1.0):
+    """Roof shingles in horizontal rows (staggered tiles, world space) whose colour darkens towards the foot of each
+    course of height hc above z0 — the overlap shadow that makes a coursed cap read as layered (reference frame 4)."""
+    def build():
+        p = Paint("shingles")
+        co = p.nt.nodes.new("ShaderNodeCombineXYZ")
+        p.L.new(p.math("MULTIPLY", p.math("ADD", p.x, p.y), 1.0 / scale), co.inputs[0])
+        p.L.new(p.math("MULTIPLY", p.z, 1.0 / scale), co.inputs[1])
+        br = p.nt.nodes.new("ShaderNodeTexBrick")
+        p.L.new(co.outputs[0], br.inputs["Vector"])
+        br.inputs["Color1"].default_value = (*kit.srgb(c), 1)
+        br.inputs["Color2"].default_value = (*kit.srgb(shade(c, 0.82)), 1)
+        br.inputs["Mortar"].default_value = (*kit.srgb(shade(c, 0.5)), 1)
+        br.inputs["Scale"].default_value = 1.0
+        br.inputs["Mortar Size"].default_value = 0.004
+        br.inputs["Brick Width"].default_value = row * 1.5
+        br.inputs["Row Height"].default_value = row
+        col = br.outputs["Color"]
+        col = p.mix(p.math("MULTIPLY", p.step(p.noise(18.0, 2.0), 0.5, 0.8), 0.35), col, shade(c, 1.25))
+        f = p.math("FRACT", p.math("DIVIDE", p.math("SUBTRACT", p.z, z0), hc))
+        col = p.mix(p.math("MULTIPLY", p.step(f, 0.32, 0.0), 0.75), col, shade(c, 0.45))
+        return p.done(col, 0.8)
+    return cached(("shingle", c, z0, hc, row, scale), build)
 
 
 # ------------------------------------------------------------------ geometry helpers
@@ -316,6 +383,73 @@ def pine_tree(x=0.0, y=0.0, s=1.0, n=9, tiers=4, seed=0, mats=None):
                   droop=0.028 * s, seed=seed * 10 + i)
 
 
+def pine_paint(dark, mid, light, deep, seed=0.0):
+    """Conifer needles lit per tier (reference frames 1 and 3): deep blue-green inside, mottled mid green, sunlit
+    yellow-green branch tips. The tip factor comes from a point attribute "tip" written by pine_tier (1 at the
+    branch tips, 0 at the trunk), so the layering reads wherever the tree stands and however it is scaled."""
+    def build():
+        p = Paint("pine")
+        at = p.nt.nodes.new("ShaderNodeAttribute")
+        at.attribute_name = "tip"
+        tip = at.outputs["Fac"]
+        n = p.noise(9.0, 4.0)
+        col = p.mix(p.step(n, 0.3, 0.62), dark, mid)
+        lit = p.math("MULTIPLY", p.step(tip, 0.72, 0.98), p.step(p.nz, -0.2, 0.5))
+        lit = p.math("MULTIPLY", lit, p.math("ADD", 0.55, p.math("MULTIPLY", p.step(p.noise(5.0, 2.0), 0.3, 0.6), 0.45)))
+        col = p.mix(lit, col, light)
+        col = p.mix(p.step(tip, 0.45, 0.1), col, deep)
+        col = p.mix(p.step(p.nz, -0.1, -0.6), col, shade(deep, 0.8))
+        return p.done(col, 0.9)
+    return cached(("pinepaint", dark, mid, light, deep, seed), build)
+
+
+def pine_tier(cx, cy_, z0, z1, r, n, rot, mt, droop=0.045, inner=0.66, seed=0):
+    """One pine tier: a star skirt of n drooping branch tips around an apex, with a dark concave underside; writes
+    the "tip" attribute (apex 0.15, notches 0.5, tips 1, underside 0) for pine_paint."""
+    rnd = random.Random(seed)
+    verts, tip = [(cx, cy_, z1)], [0.12]
+    for k in range(2 * n):
+        a = rot + math.pi * k / n + rnd.uniform(-0.08, 0.08)
+        if k % 2 == 0:
+            rr = r * rnd.uniform(0.9, 1.08)
+            z = z0 - droop * rnd.uniform(0.75, 1.2)
+            tip.append(1.0)
+        else:
+            rr = r * inner
+            z = z0 + (z1 - z0) * 0.16
+            tip.append(0.5)
+        verts.append((cx + rr * math.cos(a), cy_ + rr * math.sin(a), z))
+    verts.append((cx, cy_, z0 + (z1 - z0) * 0.3))
+    tip.append(0.0)
+    c = len(verts) - 1
+    faces = []
+    for k in range(2 * n):
+        a, b = 1 + k, 1 + (k + 1) % (2 * n)
+        faces.append((0, a, b))
+        faces.append((c, b, a))
+    o = poly(verts, faces, [mt], flat_shade=False, name="tier")
+    at = o.data.attributes.new("tip", "FLOAT", "POINT")
+    for i, v in enumerate(tip):
+        at.data[i].value = v
+    return o
+
+
+def tall_pine(x=0.0, y=0.0, s=1.0, seed=0, mt=None, bark=None, n=8, tiers=5):
+    """Tall layered conifer of reference frames 1 and 3: narrow (height ≈ 3.2× width), five drooping tiers with
+    sunlit tips over a dark interior, and the trunk showing at the foot. ~0.75·s tall, ~0.23·s radius."""
+    rnd = random.Random(seed)
+    mt = mt or pine_paint("#173c24", "#245a2f", "#79a443", "#0e2817")
+    bark = bark or tex("wood", BARK)
+    cy(0.042 * s, 0.2 * s, (x, y, 0.1 * s), bark, 6, 0.0, r2=0.02 * s)
+    radii = [0.215, 0.185, 0.155, 0.12, 0.085][-tiers:]
+    for i, r in enumerate(radii):
+        z0 = (0.16 + i * 0.1) * s
+        z1 = z0 + (0.22 if i < len(radii) - 1 else 0.185) * s
+        ox, oy = rnd.uniform(-0.01, 0.01) * s, rnd.uniform(-0.01, 0.01) * s
+        pine_tier(x + ox, y + oy, z0, z1, r * s, n if i < 3 else n - 1, rnd.uniform(0, 1), mt,
+                  droop=0.045 * s, seed=seed * 10 + i)
+
+
 def pine_mats():
     return (foliage("#1a3f22", "#29592b", "#5a8236", 0.1, 0.62, 0.45, 7.0),
             foliage("#1d4425", "#2d5f2e", "#62893a", 0.1, 0.62, 0.45, 7.0),
@@ -339,11 +473,50 @@ def round_tree(x=0.0, y=0.0, s=1.0, seed=0, crowns=None, sub=2):
 
 
 def tree_pine():
-    pine_tree(seed=3)
+    tall_pine(seed=3)
+
+
+def crown_paint(dark, mid, light, deep, centre, radius):
+    """Broadleaf crown: mottled greens, a sunlit top, and a baked "occlusion" that darkens everything near the crown's
+    centre — the gaps between clumps go deep green, so the crown reads as lumpy and layered, not as one pale ball."""
+    def build():
+        p = Paint("crown")
+        vm = p.nt.nodes.new("ShaderNodeVectorMath")
+        vm.operation = "DISTANCE"
+        p.L.new(p.pos, vm.inputs[0])
+        vm.inputs[1].default_value = centre
+        occ = p.step(p.math("DIVIDE", vm.outputs["Value"], radius), 0.55, 0.95)
+        col = p.mix(p.step(p.noise(8.0, 4.0), 0.3, 0.62), dark, mid)
+        top = p.math("MULTIPLY", p.step(p.nz, 0.55, 0.95), p.step(p.noise(5.0, 2.0), 0.32, 0.6))
+        col = p.mix(p.math("MULTIPLY", top, p.math("MULTIPLY", occ, 0.7)), col, light)
+        col = p.mix(p.math("SUBTRACT", 1.0, occ), col, deep)
+        col = p.mix(p.step(p.nz, -0.05, -0.6), col, shade(deep, 0.85))
+        return p.done(col, 0.9)
+    return cached(("crown", dark, mid, light, deep, tuple(centre), radius), build)
+
+
+def lush_tree(x=0.0, y=0.0, s=1.0, seed=0):
+    """Broadleaf of the reference frames: a full crown built in two layers — a ring of four clumps round a central
+    mass, two smaller clumps on top — sunlit on top, deep green inside, on a flared trunk with forked limbs."""
+    rnd = random.Random(seed)
+    leaf = crown_paint("#1f4518", "#346224", "#86ae40", "#112c0d", (x, y, 0.26 * s), 0.22 * s)
+    bark = tex("wood", BARK)
+    cy(0.045 * s, 0.26 * s, (x, y, 0.13 * s), bark, 6, 0.0, r2=0.024 * s)
+    for a in (0.4, 2.5, 4.4):  # forked limbs reaching into the crown
+        ev.rod((x, y, 0.17 * s), (x + 0.09 * s * math.cos(a), y + 0.09 * s * math.sin(a), 0.29 * s), 0.014 * s, bark, n=5,
+               r2=0.008 * s)
+    crowns = [(0.0, 0.0, 0.35, 0.13, 2)]
+    for k in range(4):
+        a = k * math.pi / 2 + 0.6 + rnd.uniform(-0.25, 0.25)
+        d = rnd.uniform(0.085, 0.1)
+        crowns.append((d * math.cos(a), d * math.sin(a), rnd.uniform(0.29, 0.32), rnd.uniform(0.095, 0.11), 2))
+    crowns += [(0.03, -0.04, 0.45, 0.085, 1), (-0.05, 0.05, 0.43, 0.08, 1)]
+    for i, (cx, cy_, cz, r, sub) in enumerate(crowns):
+        blob(r * s, (x + cx * s, y + cy_ * s, cz * s), leaf, (1, 1, 0.86), sub, seed * 7 + i, 0.14)
 
 
 def tree_round():
-    round_tree(seed=2)
+    lush_tree(seed=2)
 
 
 def bush():
@@ -380,37 +553,40 @@ def flowers():
 
 
 def rock():
-    mt = rock_paint("#8a8580", "#aaa59c")
-    boulder(0.0, 0.01, 0.15, 0.12, 0.2, mt, 11, 18, lean=0.08)
-    boulder(0.14, -0.07, 0.085, 0.075, 0.11, mt, 12, 14)
-    boulder(-0.12, 0.08, 0.07, 0.065, 0.085, mt, 13, 12)
-    boulder(0.06, -0.15, 0.04, 0.035, 0.04, mt, 14, 10)
-    boulder(-0.1, -0.09, 0.032, 0.03, 0.03, mt, 15, 9)
+    """A granite outcrop (reference frames 1 and 3): a leaning angular block, a second block and a flat slab at its
+    foot, two loose stones — sharp facets, strata and cracks, pale tops."""
+    mt = granite_paint("#77736d", "#9c978e")
+    tor(0.0, 0.02, 0.24, 0.19, 0.2, mt, 11, slant=0.3, rz=0.3)
+    tor(0.15, -0.07, 0.13, 0.11, 0.115, mt, 12, slant=0.2, rz=-0.4)
+    tor(-0.13, 0.07, 0.13, 0.12, 0.06, mt, 13, slant=0.1, rz=0.8, k=0.1)
+    boulder(0.05, -0.16, 0.045, 0.04, 0.04, mt, 14, 9)
+    boulder(-0.11, -0.1, 0.036, 0.032, 0.032, mt, 15, 8)
 
 
 def crag():
     """Hills hex (the rocky outcrops of the reference frames): a grey stone ridge of stacked faceted blocks with
     ledges, a scree apron, moss on the tops and a few pines clinging to it."""
-    mt = rock_paint("#7f7a73", "#a29c92", moss_at=0.7)
-    dark = rock_paint("#6a655f", "#8a847b", moss=None)
-    # the main ridge: three stepped masses rising toward the back
-    boulder(-0.12, 0.18, 0.3, 0.2, 0.42, mt, 41, 22, lean=0.06)
-    boulder(0.2, 0.12, 0.24, 0.18, 0.32, mt, 42, 20, lean=-0.05)
-    boulder(-0.32, -0.02, 0.2, 0.16, 0.24, dark, 43, 18)
-    boulder(0.36, -0.12, 0.16, 0.13, 0.17, mt, 44, 16)
+    mt = granite_paint("#6f6b65", "#959088", moss_at=0.76)
+    dark = granite_paint("#5d5954", "#7f7a73", moss=None)
+    # the main ridge (reference frame 3's grey crags): stacked angular tors with ledges, rising toward the back
+    tor(-0.1, 0.18, 0.36, 0.28, 0.42, mt, 41, slant=0.15, rz=0.15)
+    tor(-0.05, 0.25, 0.26, 0.2, 0.6, dark, 49, slant=0.25, rz=-0.2, k=0.35)  # the summit
+    tor(0.2, 0.12, 0.3, 0.24, 0.3, mt, 42, slant=0.25, rz=-0.35)
+    tor(0.24, 0.2, 0.2, 0.16, 0.44, dark, 50, slant=0.25, rz=0.4, k=0.35)
+    tor(-0.33, 0.0, 0.22, 0.2, 0.24, dark, 43, slant=0.3, rz=0.5)
+    tor(0.38, -0.1, 0.18, 0.15, 0.16, mt, 44, slant=0.3, rz=-0.6)
     # ledges and broken blocks in front
-    boulder(0.02, -0.12, 0.17, 0.12, 0.13, dark, 45, 16)
-    boulder(-0.18, -0.3, 0.1, 0.08, 0.08, mt, 46, 12)
-    boulder(0.24, -0.34, 0.08, 0.07, 0.06, mt, 47, 10)
+    tor(0.02, -0.08, 0.3, 0.14, 0.13, mt, 45, slant=0.15, rz=0.05, k=0.12)
+    tor(-0.18, -0.27, 0.12, 0.1, 0.08, dark, 46, slant=0.2, rz=0.9)
+    tor(0.24, -0.32, 0.1, 0.09, 0.06, mt, 47, slant=0.2, rz=-0.3)
     # scree: little stones spilling down the front
     rnd = random.Random(48)
-    for k in range(14):
-        x, y = rnd.uniform(-0.45, 0.45), rnd.uniform(-0.48, -0.15)
-        r = rnd.uniform(0.018, 0.04)
-        boulder(x, y, r, r * 0.9, r * 0.8, dark if k % 3 else mt, 60 + k, 8)
-    pm = pine_mats()
-    for (x, y, sc) in ((0.42, 0.3, 0.75), (-0.45, 0.32, 0.85), (0.05, 0.46, 0.7), (-0.5, -0.25, 0.6)):
-        pine_tree(x, y, sc, seed=int(x * 100 + y * 10), mats=pm)
+    for k in range(12):
+        x, y = rnd.uniform(-0.45, 0.45), rnd.uniform(-0.48, -0.17)
+        r = rnd.uniform(0.02, 0.04)
+        boulder(x, y, r, r * 0.9, r * 0.75, dark if k % 3 else mt, 60 + k, 8)
+    for (x, y, sc) in ((0.44, 0.3, 0.8), (-0.45, 0.33, 0.88), (0.08, 0.47, 0.72), (-0.52, -0.22, 0.62)):
+        tall_pine(x, y, sc, seed=int(abs(x) * 100 + abs(y) * 10))
 
 
 def _mountain_height(x, y, k=0.84):
@@ -533,22 +709,78 @@ def wheat_row(x, y0, y1, mt, rnd, step=0.04):
     return poly(verts, faces, [mt], flat_shade=False, name="wheat_row")  # open bottom, wound outwards
 
 
+def ripe_paint():
+    """Ripe wheat of reference frames 3–4: ochre stalks in the shade, warm gold ears, pale sunlit tips, fine
+    vertical streaks — brighter and yellower than the old crop so a field reads as gold at map size."""
+    def build():
+        p = Paint("ripe")
+        col = p.mix(p.step(p.z, 0.04, 0.085), "#8a5a12", "#dc9e1c")
+        col = p.mix(p.step(p.z, 0.085, 0.12), col, "#f6c425")
+        col = p.mix(p.step(p.z, 0.12, 0.15), col, "#ffe35c")
+        streak = p.step(p.noise(6.0, 2.0, stretch=(22.0, 22.0, 1.5)), 0.58, 0.78)
+        col = p.mix(p.math("MULTIPLY", streak, 0.22), col, "#c0801a")
+        col = p.mix(p.math("MULTIPLY", p.step(p.noise(40.0, 1.0), 0.6, 0.8), 0.45), col, "#fff4b0")
+        return p.done(col, 0.75)
+    return cached(("ripe",), build)
+
+
+def wheat_bed(x, y0, y1, body_mt, ear_mt, rnd, w=0.104, lines=2, step=0.034, ear_z=0.118):
+    """A bed of standing wheat along Y (reference frame 4: a dense bristly mass of ears, not a smooth ridge):
+    a stalk body, and over it rows of upright ears — each a plump three-sided grain head with a blunt top and a
+    random lean, wide enough that neighbouring beds close into one golden mass."""
+    ev.extrude([(-w / 2, 0.0), (w / 2, 0.0), (w * 0.4, 0.07), (-w * 0.4, 0.07)], -y1, -y0, body_mt,
+               (x, 0, 0.025), (math.pi / 2, 0, 0))
+    verts, faces = [], []
+    n = max(2, round((y1 - y0) / step))
+    for li in range(lines):
+        ox = (li - (lines - 1) / 2) * (w * 0.56)
+        for j in range(n + (0 if li % 2 else 1)):
+            y = y0 + (j + (0.5 if li % 2 else 0.0)) * (y1 - y0) / n
+            cx_ = x + ox + rnd.uniform(-0.008, 0.008)
+            cy_ = y + rnd.uniform(-0.006, 0.006)
+            zm = ear_z + rnd.uniform(-0.012, 0.016)
+            r = rnd.uniform(0.016, 0.021)
+            lx, ly = rnd.uniform(-0.012, 0.012) + ox * 0.3, rnd.uniform(-0.012, 0.012)
+            rot = rnd.uniform(0, math.tau)
+            b = len(verts)
+            verts.append((cx_ - lx * 0.6, cy_ - ly * 0.6, zm - 0.058))
+            for k in range(3):
+                a = rot + k * math.tau / 3
+                verts.append((cx_ + r * math.cos(a), cy_ + r * math.sin(a), zm))
+            verts.append((cx_ + lx, cy_ + ly, zm + 0.034))
+            for k in range(3):
+                p0, p1 = b + 1 + k, b + 1 + (k + 1) % 3
+                faces.append((b + 4, p0, p1))
+                faces.append((b, p1, p0))
+    return poly(verts, faces, [ear_mt], flat_shade=True, name="ears")
+
+
+def stook(x, y, mt, band, s=1.0, rz=0.0):
+    """A medieval stook: a bundle of cut sheaves standing on end, tied round the waist, ears splayed on top."""
+    def b():
+        cy(0.036, 0.075, (0, 0, 0.0375), mt, 6, 0.0, r2=0.026)
+        ev.cn(0.04, 0.05, (0, 0, 0.095), mt, 6)
+        cy(0.029, 0.012, (0, 0, 0.058), band, 6, 0.0)
+    ev.build_at(b, x, y, rz, s)
+
+
 def wheat_field():
     soil = furrows("#5e3d22", "#80552f", period=0.12)
     box = kit.box
     box("soil", (0.9, 0.7, 0.05), (0, 0, 0.0), soil, 0.012)
-    ridge = tex("plaster", "#6b4628")
-    wheat = wheat_paint()
+    body = ripe_paint()
     rnd = random.Random(5)
     xs = [-0.36 + i * 0.12 for i in range(7)]
     for i, x in enumerate(xs):
-        # ridge (triangular prism along Y)
-        ev.extrude([(-0.045, 0.0), (0.045, 0.0), (0.0, 0.03)], -0.31, 0.31, ridge, (x, 0, 0.025), (math.pi / 2, 0, 0))
-        y0 = -0.13 if i == 6 else -0.3  # a bare corner for the bale
-        wheat_row(x, y0, 0.3, wheat, rnd)
-    # hay bale on the bare corner
-    hay = zgrad("#b98f3a", "#dcb455", "#ecd07a", 0.03, 0.12, 30.0)
-    cy(0.05, 0.08, (0.36, -0.22, 0.075), hay, 10, 0.0, rot=(0, math.pi / 2, 0.3))
+        y0 = -0.08 if i == 6 else -0.3  # a reaped corner for the stooks
+        wheat_bed(x, y0, 0.3, body, body, rnd)
+    # the reaped corner: stubble, three stooks of sheaves and a sickle-cut swath (reference frames: lived-in fields)
+    stub = zgrad("#a8792c", "#c99a40", "#ddb456", 0.025, 0.05, 30.0)
+    bx((0.1, 0.2, 0.012), (0.36, -0.2, 0.03), stub, 0.0, 0.0)
+    sheaf = zgrad("#b07a22", "#dcae3e", "#f4d468", 0.0, 0.13, 26.0)
+    tie = flat("tie", "#7a5a34", 0.9)
+    for (sx, sy, s, rz) in ((0.36, -0.13, 1.0, 0.2), (0.33, -0.25, 0.9, 1.1), (0.41, -0.3, 0.85, 2.0)):
+        stook(sx, sy, sheaf, tie, s, rz)
     # a low dry-stone wall round the field (reference frame 4: fields in stone enclosures), a gap at the front
     post = tex("wood", WOOD)
     st = ev.stone("#b9b4aa", 1.2)
@@ -564,13 +796,14 @@ def wheat_field():
     for x in (-0.12, 0.08):  # gateposts
         bx((0.06, 0.06, 0.11), (x, -0.37, 0.055), cap, 0.0, 0.008)
     # scarecrow
+    hay = zgrad("#b98f3a", "#dcb455", "#ecd07a", 0.03, 0.12, 30.0)
     sx, sy = -0.12, 0.04
     cy(0.012, 0.32, (sx, sy, 0.16), post, 5)
     ev.beam((sx - 0.1, sy, 0.24), (sx + 0.1, sy, 0.24), 0.014, post)
     ev.taper_box((0.1, 0.045, 0.11), (sx, sy, 0.215), flat("shirt", "#b8402f", 0.9), top=(0.75, 1.0))
     for d in (-1, 1):
         ev.beam((sx + d * 0.035, sy, 0.25), (sx + d * 0.1, sy, 0.235), 0.032, flat("shirt", "#b8402f", 0.9))
-        ev.ico(0.016, (sx + d * 0.11, sy, 0.234), wheat, (1, 1, 1), 1)
+        ev.ico(0.016, (sx + d * 0.11, sy, 0.234), sheaf, (1, 1, 1), 1)
     ev.ico(0.034, (sx, sy, 0.31), flat("sack", "#d8c08c", 0.9), (1, 1, 1.05), 1)
     cy(0.06, 0.008, (sx, sy, 0.335), hay, 10)
     cy(0.03, 0.05, (sx, sy, 0.36), hay, 8, 0.0, r2=0.018)
@@ -616,56 +849,132 @@ def crop_field():
         cy(0.04, 0.055, (x, y, 0.04), hay, 10, 0.0, rot=(math.pi / 2, 0, 0.2))
 
 
+def coursed_cone(z0, r0, h, mt, n=8, courses=4, lip=0.013, rot=math.pi / 8, x=0.0, y=0.0):
+    """Steep conical cap laid in overlapping shingle courses (reference frames 3–4: the windmill's dark-blue cap):
+    each course is a frustum a little wider at its foot than the top of the one below, so every course casts a
+    dark line — readable layering at game size, where a plain cone reads as one flat colour."""
+    for k in range(courses):
+        t0, t1 = k / courses, (k + 1) / courses
+        zb = z0 + h * t0 - (lip * 0.5 if k else 0.0)
+        zt = z0 + h * t1
+        rb = r0 * (1 - t0) + lip * (1.0 - 0.4 * t0)
+        if k == courses - 1:
+            o = ev.cn(rb, zt - zb, (x, y, (zb + zt) / 2), mt, n)
+        else:
+            o = cy(rb, zt - zb, (x, y, (zb + zt) / 2), mt, n, 0.0, r2=r0 * (1 - t1) + lip * 0.25)
+        o.rotation_euler.z = rot
+
+
+def grain_sack(x, y, z, mt, tie, s=1.0, lie=0.0, rz=0.0):
+    """A plump burlap sack with a tied neck (standing, or lying when lie≈π/2)."""
+    def b():
+        ev.ico(0.034 * s, (0, 0, 0.036 * s), mt, (1.0, 0.82, 1.12), 1)
+        ev.cn(0.014 * s, 0.026 * s, (0, 0, 0.082 * s), tie, 4)
+    ev.build_at(b, x, y, rz, 1.0, (0.0, lie), z)
+
+
+def hand_cart(load, tie, wood_mt, wheel_mt, iron_mt):
+    """Two-wheeled hand cart (reference frame 4: carts at the foot of every work site), shafts resting on the
+    ground towards −X, loaded with sacks."""
+    bx((0.13, 0.085, 0.016), (0, 0, 0.056), wood_mt, 0, 0.0)
+    for sy in (-1, 1):
+        bx((0.13, 0.008, 0.034), (0, sy * 0.043, 0.077), wood_mt, 0, 0.0)
+        cy(0.042, 0.012, (0.012, sy * 0.054, 0.042), wheel_mt, 8, 0.0, rot=(math.pi / 2, 0, 0))
+        ev.beam((-0.06, sy * 0.034, 0.05), (-0.17, sy * 0.03, 0.006), 0.012, wood_mt)
+    grain_sack(-0.05, -0.018, 0.094, load, tie, 0.95, math.pi / 2 - 0.2, 0.1)
+    grain_sack(-0.035, 0.022, 0.09, load, tie, 0.9, math.pi / 2 - 0.1, -0.15)
+
+
 def windmill():
-    st = ev.stone(STONE, 1.1)
-    std = ev.stone(STONE_D, 1.1)
+    """Tower mill of reference frames 3–4: a tall tapered stone tower in bold courses, a reefing gallery, a steep
+    dark-blue cap in shingle courses with the windshaft housing on its front, four big lattice sails with canvas,
+    an arched door, warm-lit windows, and sacks and a loaded cart at its foot."""
+    st = ev.stone("#bab09f", 0.72)  # big warm-grey blocks: the courses must still read at game size
+    std = ev.stone(STONE_D, 0.72)
     wood = tex("wood", WOOD)
     woodd = tex("wood", WOOD_D)
-    roof = tex("roof", ROOF_BLUE)
-    cy(0.2, 0.07, (0, 0, 0.035), std, 8, 0.01)
-    cy(0.175, 0.5, (0, 0, 0.32), st, 8, 0.008, r2=0.135)
-    cy(0.152, 0.045, (0, 0, 0.585), woodd, 8, 0.006)
-    # gallery: little plank ring + posts
-    cy(0.21, 0.02, (0, 0, 0.36), tex("wood", WOOD_L), 8, 0.004)
+    woodl = tex("wood", WOOD_L)
+    roof = tex("roof", "#30509a", 0.9)  # deep slate-blue like the reference roofs, not the bright team blue
+    cap_h, cap_z0 = 0.3, 0.652
+    cap = shingle_paint("#3a5aa6", cap_z0, cap_h / 4)
+    iron = flat("iron", "#2b2a2e", 0.5)
+    rot8 = math.pi / 8  # a flat octagon face looks at the camera (−Y), not a corner
+
+    zb, zt, rb, rt = 0.05, 0.63, 0.172, 0.118  # the tower: a tapered octagon
+
+    def r_at(z):
+        return rb + (rt - rb) * (z - zb) / (zt - zb)
+
+    def apo(z):  # distance from the axis to a flat face at height z
+        return r_at(z) * math.cos(rot8)
+
+    cy(0.205, 0.06, (0, 0, 0.03), std, 8, 0.0).rotation_euler.z = rot8  # plinth
+    cy(rb, zt - zb, (0, 0, (zb + zt) / 2), st, 8, 0.006, r2=rt).rotation_euler.z = rot8
+    cy(r_at(0.28) + 0.01, 0.024, (0, 0, 0.28), std, 8, 0.0).rotation_euler.z = rot8  # string course
+    # reefing gallery: plank ring on struts, posts and a hand rail
+    zg = 0.4
+    cy(0.205, 0.018, (0, 0, zg), woodl, 8, 0.004).rotation_euler.z = rot8
     for k in range(8):
-        a = (k + 0.5) / 8 * math.tau
-        ev.beam((0.2 * math.cos(a), 0.2 * math.sin(a), 0.37), (0.2 * math.cos(a), 0.2 * math.sin(a), 0.43), 0.012, woodd)
-    cy(0.205, 0.012, (0, 0, 0.43), woodd, 8, 0.0)
-    # cap
-    cn = ev.cn(0.19, 0.24, (0, 0, 0.6 + 0.12), roof, 8)
-    cn.rotation_euler.z = math.pi / 8
-    ev.ico(0.022, (0, 0, 0.85), flat("gold", "#ffc933", 0.4), (1, 1, 1), 1)
-    # door + windows (front −Y)
-    bx((0.085, 0.03, 0.14), (0, -0.172, 0.14), tex("wood", "#4a2f19"), 0, 0.006)
-    bx((0.105, 0.025, 0.02), (0, -0.168, 0.215), std, 0, 0.004)
-    win = flat("win_dark", "#2a1d12", 0.9)
-    for a, z in ((math.pi * 0.25, 0.48), (math.pi * 0.75, 0.3), (-math.pi * 0.5 + 0.9, 0.5)):
-        r = 0.15 if z > 0.4 else 0.163
-        bx((0.035, 0.02, 0.05), (r * math.cos(a), r * math.sin(a), z), win, a + math.pi / 2, 0.003)
-    # flour sacks + a crate by the door
-    sack = tex("plaster", "#e6dcc4")
-    ev.ico(0.04, (0.12, -0.2, 0.035), sack, (1, 0.85, 0.9), 1)
-    ev.ico(0.035, (0.17, -0.15, 0.03), sack, (1, 0.85, 0.9), 1)
-    bx((0.07, 0.07, 0.065), (-0.14, -0.18, 0.0325), tex("wood", WOOD_L), 0.3, 0.006)
-    # hub + sails (separate node)
-    hub_y, hub_z = -0.2, 0.62
-    cy(0.035, 0.1, (0, -0.17, hub_z), wood, 8, 0.0, rot=(math.pi / 2, 0, 0))
+        a = k / 8 * math.tau + rot8
+        c, s_ = math.cos(a), math.sin(a)
+        ev.beam((0.19 * c, 0.19 * s_, zg + 0.005), (0.19 * c, 0.19 * s_, zg + 0.07), 0.011, woodd)
+    ev.torus(0.19, 0.0065, (0, 0, zg + 0.07), woodd, (0, 0, rot8), 8, 3)
+    # cap: curb, shingle courses, finial
+    cy(rt + 0.014, 0.03, (0, 0, zt + 0.01), woodd, 8, 0.0).rotation_euler.z = rot8
+    coursed_cone(cap_z0, 0.15, cap_h, cap, 8, 4, lip=0.02)
+    cy(0.006, 0.05, (0, 0, cap_z0 + cap_h + 0.015), iron, 4)
+    ev.ico(0.017, (0, 0, cap_z0 + cap_h + 0.045), flat("gold", "#ffc933", 0.4), (1, 1, 1), 1)
+    # windshaft housing on the cap's front: a little gabled box the axle comes out of
+    hub_y, hub_z = -0.25, 0.67
+    bx((0.085, 0.1, 0.07), (0, -0.115, hub_z), woodd, 0, 0.0)
+    ev.extrude([(-0.055, 0.0), (0.055, 0.0), (0.0, 0.042)], 0.06, 0.172, roof, (0, 0, hub_z + 0.035), (math.pi / 2, 0, 0))
+    cy(0.024, 0.09, (0, -0.205, hub_z), wood, 8, 0.0, rot=(math.pi / 2, 0, 0))  # windshaft
+    # arched door in a stone surround, iron straps, a step
+    door_mt = tex("wood", "#5c3a1f", 2.2)
+    for (w, d, y, mt) in ((0.104, 0.03, -apo(0.12) + 0.001, std), (0.07, 0.02, -apo(0.12) - 0.007, door_mt)):
+        bx((w, d, 0.11), (0, y, 0.06 + 0.055), mt, 0, 0.0)
+        cy(w / 2, d, (0, y, 0.17), mt, 8, 0.0, rot=(math.pi / 2, 0, 0))
+    for z in (0.095, 0.155):
+        bx((0.06, 0.006, 0.008), (0, -apo(0.12) - 0.019, z), iron, 0, 0.0)
+    bx((0.13, 0.055, 0.03), (0, -0.21, 0.015), std, 0, 0.004)
+    # small windows: dark frame, warm lit glass, stone lintel (reference frames: lamplight in every building)
+    frame_mt = flat("frame", "#3a2616", 0.8)
+    for th, z in ((-math.pi / 4, 0.2), (-3 * math.pi / 4, 0.3), (-math.pi / 2, 0.52), (math.pi, 0.46)):  # normals at k·45°
+        d = apo(z)
+        c, s_ = math.cos(th), math.sin(th)
+        rz = th + math.pi / 2
+        bx((0.046, 0.012, 0.062), (c * (d + 0.002), s_ * (d + 0.002), z), frame_mt, rz, 0.0)
+        bx((0.03, 0.014, 0.046), (c * (d + 0.004), s_ * (d + 0.004), z - 0.002), ev.win_lit(), rz, 0.0)
+        bx((0.058, 0.018, 0.012), (c * (d + 0.004), s_ * (d + 0.004), z + 0.037), std, rz, 0.0)
+    # life at the foot: a sack pile, a loaded hand cart, a barrel
+    sack = tex("plaster", "#c9a46a", 1.6)  # burlap: tan, so the pile does not read as white balls
+    tie = flat("tie", "#7a5a34", 0.9)
+    for (x, y, z, s, rz) in ((0.13, -0.245, 0.0, 1.0, 0.3), (0.2, -0.19, 0.0, 1.05, -0.5), (0.235, -0.11, 0.0, 0.9, 1.2),
+                             (0.165, -0.215, 0.07, 0.9, 0.9)):
+        grain_sack(x, y, z, sack, tie, s, 0.0, rz)
+    ev.build_at(lambda: hand_cart(sack, tie, woodl, wood, iron), -0.25, -0.13, -0.6)
+    cy(0.03, 0.068, (-0.1, -0.245, 0.034), wood, 8, 0.0)
+    cy(0.032, 0.008, (-0.1, -0.245, 0.05), iron, 8, 0.0)
+    # sails (separate node, spun about the hub): stout boss, four stocks, lattice of bars and rails, canvas
     sails = []
-    sails.append(cy(0.045, 0.04, (0, hub_y - 0.02, hub_z), woodd, 8, 0.0, rot=(math.pi / 2, 0, 0)))
-    cloth = tex("plaster", "#f1e7d0")
+    sails.append(cy(0.05, 0.045, (0, hub_y - 0.0225, hub_z), woodd, 8, 0.0, rot=(math.pi / 2, 0, 0)))
+    sails.append(cy(0.028, 0.016, (0, hub_y - 0.05, hub_z), iron, 8, 0.0, rot=(math.pi / 2, 0, 0)))
+    cloth = tex("plaster", "#ecdcb8", 1.4)
+    L = 0.4
     for i in range(4):
         a = i * math.pi / 2 + 0.35
 
         def P(rad, off=0.0, dy=0.0):  # point along the arm (rad from hub) shifted sideways by off
             return (math.sin(a) * rad + math.cos(a) * off, hub_y - 0.03 + dy, hub_z + math.cos(a) * rad - math.sin(a) * off)
 
-        sails.append(ev.beam(P(0.02), P(0.4), 0.018, wood))
-        o = bx((0.1, 0.008, 0.29), P(0.245, 0.058, 0.004), cloth, 0, 0.0)
+        sails.append(ev.beam(P(0.02, 0.0, -0.002), P(L + 0.01, 0.0, -0.002), 0.024, woodd))  # the stock
+        o = bx((0.118, 0.005, L - 0.09), P(0.09 + (L - 0.09) / 2, 0.072, 0.008), cloth, 0, 0.0)
         o.rotation_euler.y = a
         sails.append(o)
-        sails.append(ev.beam(P(0.1, 0.112, -0.004), P(0.395, 0.112, -0.004), 0.01, woodd))
-        for rad in (0.12, 0.2, 0.28, 0.37):
-            sails.append(ev.beam(P(rad, -0.005, -0.006), P(rad, 0.115, -0.006), 0.008, woodd))
+        sails.append(ev.beam(P(0.085, 0.135, -0.004), P(L, 0.135, -0.004), 0.012, wood))  # outer rail
+        for k in range(5):
+            rad = 0.09 + (L - 0.09) * k / 4
+            sails.append(ev.beam(P(rad, -0.03, 0.0), P(rad, 0.141, 0.0), 0.01, wood))  # bars
     for o in sails:
         o["sails"] = True
     return (0.0, hub_y, hub_z)
