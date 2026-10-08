@@ -377,6 +377,253 @@ def _beam(name, p0, p1, t, mt, bevel=0.004):
     return o
 
 
+# ------------------------------------------------------------------ low-poly helpers for the siege engines, the bridge
+# and the war banners: one bevel segment (or crisp flat/edge-split shading), open spoked wheels, coursed masonry.
+
+
+def _bx(name, size, loc, mt, bev=0.0, rot=None):
+    """Box with a single-segment bevel (44 tris) or none (12 tris, flat shaded)."""
+    o = box(name, size, loc, mt, bev)
+    if bev > 0:
+        o.modifiers["bevel"].segments = 1
+    else:
+        for p in o.data.polygons:
+            p.use_smooth = False
+    if rot:
+        o.rotation_euler = rot
+    return o
+
+
+def _cy(name, r, h, loc, mt, verts=8, r2=None, rot=None):
+    """Cylinder with smooth sides and crisp caps (edge split), no bevel."""
+    o = cyl(name, r, h, loc, mt, verts, 0.0, r2)
+    es = o.modifiers.new("split", "EDGE_SPLIT")
+    es.split_angle = math.radians(70)
+    if rot:
+        o.rotation_euler = rot
+    return o
+
+
+YROT = (math.pi / 2, 0, 0)  # a cylinder lying along Y (axles, wheels)
+XROT = (0, math.pi / 2, 0)  # a cylinder lying along X
+
+
+def _ico(name, r, loc, mt, scale=(1, 1, 1), sub=1, jitter=0.0, seed=0, smooth=True):
+    """Ico sphere (20 / 80 tris); jitter roughens it into a hewn stone (flat shaded)."""
+    o = sphere(name, r, loc, mt, scale, sub)
+    if jitter > 0:
+        rnd = random.Random(seed)
+        for v in o.data.vertices:
+            v.co *= 1.0 + rnd.uniform(-jitter, jitter)
+    for p in o.data.polygons:
+        p.use_smooth = smooth
+    return o
+
+
+def _newell(pts):
+    n = [0.0, 0.0, 0.0]
+    for i, a in enumerate(pts):
+        b = pts[(i + 1) % len(pts)]
+        n[0] += (a[1] - b[1]) * (a[2] + b[2])
+        n[1] += (a[2] - b[2]) * (a[0] + b[0])
+        n[2] += (a[0] - b[0]) * (a[1] + b[1])
+    return n
+
+
+def _mesh(name, verts, faces, mt, outward, smooth=None):
+    """Mesh from raw faces; each face is turned so its normal agrees with outward(face_index, centre)."""
+    fixed = []
+    for i, f in enumerate(faces):
+        pts = [verts[k] for k in f]
+        c = [sum(p[j] for p in pts) / len(pts) for j in range(3)]
+        want = outward(i, c)
+        n = _newell(pts)
+        fixed.append(tuple(reversed(f)) if sum(n[j] * want[j] for j in range(3)) < 0 else tuple(f))
+    me = bpy.data.meshes.new(name)
+    me.from_pydata(verts, [], fixed)
+    me.validate()
+    o = bpy.data.objects.new(name, me)
+    bpy.context.scene.collection.objects.link(o)
+    me.materials.append(mt)
+    for i, p in enumerate(me.polygons):
+        p.use_smooth = bool(smooth and smooth[i])
+    return o
+
+
+def _ring(name, r_out, r_in, w, loc, mt, n=14, rz=0.0, surfaces=(0, 1, 2, 3)):
+    """Annulus around local Y (a wheel rim or an iron tyre). Surfaces: 0 outer, 1 +Y side, 2 inner, 3 −Y side;
+    each has its own vertices so the round faces shade smooth and the flat sides stay crisp."""
+    prof = {0: ((r_out, -w / 2), (r_out, w / 2)), 1: ((r_out, w / 2), (r_in, w / 2)),
+            2: ((r_in, w / 2), (r_in, -w / 2)), 3: ((r_in, -w / 2), (r_out, -w / 2))}
+    verts, faces, smooth, want = [], [], [], []
+    for si in surfaces:
+        pa, pb = prof[si]
+        base = len(verts)
+        for k in range(n):
+            a = math.tau * k / n
+            for (r, y) in (pa, pb):
+                verts.append((r * math.cos(a), y, r * math.sin(a)))
+        for k in range(n):
+            k2 = (k + 1) % n
+            faces.append((base + 2 * k, base + 2 * k2, base + 2 * k2 + 1, base + 2 * k + 1))
+            smooth.append(si in (0, 2))
+            am = math.tau * (k + 0.5) / n
+            radial = (math.cos(am), 0.0, math.sin(am))
+            want.append({0: radial, 1: (0, 1, 0), 2: tuple(-v for v in radial), 3: (0, -1, 0)}[si])
+    o = _mesh(name, verts, faces, mt, lambda i, c: want[i], smooth)
+    o.location = loc
+    o.rotation_euler.z = rz
+    return o
+
+
+def _extrude_xz(name, outline, y0, y1, mt):
+    """An outline in XZ (any winding) extruded along Y from y0 to y1: one closed solid."""
+    area = sum(outline[i][0] * outline[(i + 1) % len(outline)][1] - outline[(i + 1) % len(outline)][0] * outline[i][1]
+               for i in range(len(outline)))
+    if area < 0:
+        outline = list(reversed(outline))
+    nv = len(outline)
+    verts = [(x, y0, z) for (x, z) in outline] + [(x, y1, z) for (x, z) in outline]
+    faces = [tuple(range(nv)), tuple(range(nv, 2 * nv))]
+    faces += [(i, (i + 1) % nv, nv + (i + 1) % nv, nv + i) for i in range(nv)]
+
+    def outward(i, c):
+        if i == 0:
+            return (0, -1, 0)
+        if i == 1:
+            return (0, 1, 0)
+        a, b = outline[i - 2], outline[(i - 1) % nv]
+        return (b[1] - a[1], 0, -(b[0] - a[0]))  # CCW outline: the edge's right-hand side is outside
+    return _mesh(name, verts, faces, mt, outward)
+
+
+def _rbeam(name, p0, p1, t, mt, bev=0.0, h=None):
+    """Timber of section t × h (h along the beam's local up) from p0 to p1."""
+    d = [p1[i] - p0[i] for i in range(3)]
+    ln = math.sqrt(sum(v * v for v in d))
+    o = _bx(name, (ln, t, h or t), tuple((p0[i] + p1[i]) / 2 for i in range(3)), mt, bev)
+    o.rotation_euler = (0, -math.atan2(d[2], math.hypot(d[0], d[1])), math.atan2(d[1], d[0]))
+    return o
+
+
+def _spoked_wheel(name, c, r, w, spokes, wood, dark, iron, rim_t=0.016, hub_r=None, cap=True, n=14):
+    """An open wooden wheel on an axle along Y: felloe ring, iron tyre, spokes through the hub, iron hub cap."""
+    x, y, z = c
+    _ring(name + "_felloe", r - 0.003, r - rim_t, w, c, dark, n, surfaces=(1, 2, 3))
+    _ring(name + "_tyre", r + 0.002, r - 0.005, w * 0.82, c, iron, n, surfaces=(0, 1, 3))
+    for k in range(spokes // 2):
+        sp = _bx(name + "_spoke", (w * 0.32, w * 0.42, 2 * (r - rim_t * 0.6)), c, wood)
+        sp.rotation_euler = (0, k * math.tau / spokes + math.pi / spokes, 0)
+    hr = hub_r or r * 0.24
+    _cy(name + "_hub", hr, w * 1.7, c, dark, 8, rot=YROT)
+    if cap:
+        sy = 1 if y >= 0 else -1
+        _cy(name + "_cap", hr * 0.62, w * 0.5, (x, y + sy * w * 0.95, z), iron, 6, rot=YROT)
+
+
+def _timber(color):
+    """Wood with a grain fine enough to read on beams a few centimetres thick."""
+    return kit.textured("wood", color, 4.0)
+
+
+def _masonry(color, scale=1.0, mortar=0.03):
+    """Dressed stone courses on every face: the brick pattern runs in plan on tops and along X+Y / Z on walls
+    (kit's stone texture is planar in XY, so on walls it smears into stripes)."""
+    key = ("masonry", color, scale, mortar)
+    if key in kit._MATS:
+        return kit._MATS[key]
+    mt = bpy.data.materials.new(f"masonry_{color}")
+    mt.use_nodes = True
+    nt = mt.node_tree
+    bsdf = nt.nodes["Principled BSDF"]
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    geo = nt.nodes.new("ShaderNodeNewGeometry")
+    sp = nt.nodes.new("ShaderNodeSeparateXYZ")
+    nt.links.new(tc.outputs["Object"], sp.inputs["Vector"])
+    sn = nt.nodes.new("ShaderNodeSeparateXYZ")
+    nt.links.new(geo.outputs["Normal"], sn.inputs["Vector"])
+    ab = nt.nodes.new("ShaderNodeMath")
+    ab.operation = "ABSOLUTE"
+    nt.links.new(sn.outputs["Z"], ab.inputs[0])
+    gt = nt.nodes.new("ShaderNodeMath")
+    gt.operation = "GREATER_THAN"
+    gt.inputs[1].default_value = 0.7
+    nt.links.new(ab.outputs[0], gt.inputs[0])
+    add = nt.nodes.new("ShaderNodeMath")
+    add.operation = "ADD"
+    nt.links.new(sp.outputs["X"], add.inputs[0])
+    nt.links.new(sp.outputs["Y"], add.inputs[1])
+    side = nt.nodes.new("ShaderNodeCombineXYZ")
+    nt.links.new(add.outputs[0], side.inputs["X"])
+    nt.links.new(sp.outputs["Z"], side.inputs["Y"])
+    mix = nt.nodes.new("ShaderNodeMix")
+    mix.data_type = "VECTOR"
+    nt.links.new(gt.outputs[0], mix.inputs["Factor"])
+    nt.links.new(side.outputs["Vector"], mix.inputs[4])
+    nt.links.new(tc.outputs["Object"], mix.inputs[5])
+    base = kit.srgb(color)
+    br = nt.nodes.new("ShaderNodeTexBrick")
+    nt.links.new(mix.outputs[1], br.inputs["Vector"])
+    br.inputs["Color1"].default_value = (*base, 1)
+    br.inputs["Color2"].default_value = (*tuple(c * 0.74 for c in base), 1)
+    br.inputs["Mortar"].default_value = (*tuple(c * 0.42 for c in base), 1)
+    br.inputs["Scale"].default_value = 7.0 * scale
+    br.inputs["Mortar Size"].default_value = mortar
+    br.inputs["Brick Width"].default_value = 0.62
+    br.inputs["Row Height"].default_value = 0.3
+    noise = nt.nodes.new("ShaderNodeTexNoise")
+    noise.inputs["Scale"].default_value = 30.0
+    nt.links.new(tc.outputs["Object"], noise.inputs["Vector"])
+    mul = nt.nodes.new("ShaderNodeMix")
+    mul.data_type = "RGBA"
+    mul.blend_type = "MULTIPLY"
+    mul.inputs["Factor"].default_value = 0.3
+    nt.links.new(br.outputs["Color"], mul.inputs["A"])
+    nt.links.new(noise.outputs["Color"], mul.inputs["B"])
+    nt.links.new(mul.outputs["Result"], bsdf.inputs["Base Color"])
+    bsdf.inputs["Roughness"].default_value = 0.85
+    kit._MATS[key] = mt
+    return mt
+
+
+def _camo(colors, scale=16.0):
+    """Disruptive paint of the trench era: hard-edged blotches of three or four tones."""
+    key = ("camo", tuple(colors), scale)
+    if key in kit._MATS:
+        return kit._MATS[key]
+    mt = bpy.data.materials.new("camo")
+    mt.use_nodes = True
+    nt = mt.node_tree
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    noise = nt.nodes.new("ShaderNodeTexNoise")
+    noise.inputs["Scale"].default_value = scale
+    noise.inputs["Detail"].default_value = 1.5
+    noise.inputs["Roughness"].default_value = 0.4
+    nt.links.new(tc.outputs["Object"], noise.inputs["Vector"])
+    ramp = nt.nodes.new("ShaderNodeValToRGB")
+    ramp.color_ramp.interpolation = "CONSTANT"
+    els = ramp.color_ramp.elements
+    stops = [0.0, 0.43, 0.5, 0.57][:len(colors)]
+    els[0].position, els[0].color = stops[0], (*kit.srgb(colors[0]), 1)
+    els[1].position, els[1].color = stops[1], (*kit.srgb(colors[1]), 1)
+    for s, ccol in zip(stops[2:], colors[2:]):
+        e = els.new(s)
+        e.color = (*kit.srgb(ccol), 1)
+    nt.links.new(noise.outputs["Fac"], ramp.inputs["Fac"])
+    nt.links.new(ramp.outputs["Color"], nt.nodes["Principled BSDF"].inputs["Base Color"])
+    nt.nodes["Principled BSDF"].inputs["Roughness"].default_value = 0.7
+    kit._MATS[key] = mt
+    return mt
+
+
+def _bolts(pts, mt, s=0.008, axis="y"):
+    """Square bolt heads (12 tris each) standing proud of a face; axis is the face normal."""
+    t = s * 0.6
+    size = {"x": (t, s, s), "y": (s, t, s), "z": (s, s, t)}[axis]
+    for p in pts:
+        _bx("bolt", size, p, mt)
+
+
 def catapult():
     """Siege mangonel: a braced timber bed on four spoked wheels, an A-frame with a straw-padded stop beam,
     a torsion skein of rope, the throwing arm with a cup and a stone, a winch at the back and spare shot."""
