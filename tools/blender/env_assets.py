@@ -574,6 +574,46 @@ def wheat_field():
     cy(0.03, 0.05, (sx, sy, 0.36), hay, 8, 0.0, r2=0.018)
 
 
+def crop_field():
+    """A modern field (DL6–7 countryside): long rows of green crops and a ripe golden strip on ploughed soil, a wire
+    fence on posts, a red tractor at the headland and round bales — the industrial cousin of the walled wheat plot."""
+    soil = furrows("#5a3b21", "#7a5230", period=0.1)
+    box = kit.box
+    box("soil", (0.9, 0.7, 0.05), (0, 0, 0.0), soil, 0.012)
+    green = foliage("#3d6a22", "#558a2c", "#7aa83a", 0.02, 0.1, 0.55, 18.0)
+    wheat = wheat_paint()
+    rnd = random.Random(9)
+    for i in range(8):  # crop rows; the two near rows ripe
+        x = -0.38 + i * 0.105
+        if i >= 6:
+            wheat_row(x, -0.3, 0.3, wheat, rnd)
+        else:
+            bx((0.06, 0.6, 0.05), (x, 0.0, 0.05), green, 0.0, 0.012)
+    post = tex("wood", WOOD)
+    wire = flat("wire", "#9aa0a6", 0.5)
+    for (x0, y0, x1, y1) in ((-0.46, 0.37, 0.46, 0.37), (0.46, 0.37, 0.46, -0.35), (-0.46, -0.35, -0.46, 0.37)):
+        ln = math.dist((x0, y0), (x1, y1))
+        n = max(2, int(ln / 0.15))
+        for k in range(n + 1):
+            cy(0.006, 0.08, (x0 + (x1 - x0) * k / n, y0 + (y1 - y0) * k / n, 0.04), post, 5)
+        for z in (0.05, 0.075):
+            ev.beam((x0, y0, z), (x1, y1, z), 0.0025, wire)
+    # a red tractor at the near headland
+    red = flat("tractor", "#c23a2b", 0.5)
+    dk = flat("tyre", "#1f1f21", 0.9)
+    tx, ty = 0.18, -0.4
+    bx((0.12, 0.06, 0.05), (tx, ty, 0.06), red, 0.0, 0.008)
+    bx((0.05, 0.055, 0.06), (tx - 0.03, ty, 0.115), flat("cab", "#2c3a48", 0.3), 0.0, 0.006)
+    bx((0.06, 0.06, 0.008), (tx - 0.03, ty, 0.15), red, 0.0, 0.003)
+    for sx, r in ((-0.04, 0.032), (0.045, 0.02)):
+        for sy in (-1, 1):
+            cy(r, 0.016, (tx + sx, ty + sy * 0.038, r), dk, 10, rot=(math.pi / 2, 0, 0))
+    cy(0.006, 0.04, (tx + 0.035, ty + 0.012, 0.1), dk, 5)  # exhaust
+    hay = zgrad("#b98f3a", "#dcb455", "#ecd07a", 0.03, 0.12, 30.0)
+    for (x, y) in ((-0.3, -0.42), (-0.2, -0.43)):
+        cy(0.04, 0.055, (x, y, 0.04), hay, 10, 0.0, rot=(math.pi / 2, 0, 0.2))
+
+
 def windmill():
     st = ev.stone(STONE, 1.1)
     std = ev.stone(STONE_D, 1.1)
@@ -731,6 +771,7 @@ ASSETS = {
     "crag": crag,
     "mountain": mountain,
     "wheat_field": wheat_field,
+    "crop_field": crop_field,
     "windmill": windmill,
     "mine": mine,
     "bush": bush,

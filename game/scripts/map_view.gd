@@ -1169,12 +1169,13 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 			if hs != "" and rng.randf() < 0.55:
 				# settled countryside (the reference frames): a farmstead in the owner's colours and era on open land
 				spawn(hs, holder, p + Vector3(rng.randf_range(-0.25, 0.25), 0, rng.randf_range(-0.25, 0.25)), rng.randf() * TAU, 1.25)
-			if hs.begins_with("homestead_") and not hs.begins_with("homestead_modern") and not hs.begins_with("homestead_scifi") \
-					and rng.randf() < 0.4:
-				# a small walled wheat plot on the near edge (reference frame 3: the player's land is patched with
-				# fields); half the size of a farm hex's field, so a real farm still reads as one
+			if hs != "" and not hs.begins_with("homestead_scifi") and rng.randf() < 0.4:
+				# a small field on the near edge (reference frame 3: the player's land is patched with fields): a walled
+				# wheat plot up to DL5, a fenced crop field with a tractor from DL6; half the size of a farm hex's
+				# field, so a real farm still reads as one
 				var fa := (1.0 + 2.0 * rng.randi_range(0, 2)) * PI / 6.0  # an edge midpoint at 30°, 90° or 150°
-				spawn("wheat_field", holder, p + Vector3(cos(fa), 0, sin(fa)) * 0.5, -fa + PI / 2.0, 0.5)
+				var plot := "crop_field" if hs.begins_with("homestead_modern") and has_model("crop_field") else "wheat_field"
+				spawn(plot, holder, p + Vector3(cos(fa), 0, sin(fa)) * 0.5, -fa + PI / 2.0, 0.5)
 			# a copse crowding the far edge (reference frame 3: woods fill every gap between the farms and towns);
 			# behind the centre, so it never hides a farmstead or an army from the camera at +Z
 			var ca := (7.0 + 2.0 * rng.randi_range(0, 2)) * PI / 6.0  # an edge midpoint at 210°, 270° or 330°
