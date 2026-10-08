@@ -106,6 +106,21 @@ class Paint:
         self.L.new(vec, n.inputs["Vector"])
         return n.outputs["Fac"]
 
+    def voronoi(self, scale, feature="F1", stretch=None):
+        """Voronoi cells of the model-space position: (distance, per-cell random colour) outputs."""
+        n = self.nt.nodes.new("ShaderNodeTexVoronoi")
+        n.feature = feature
+        n.inputs["Scale"].default_value = scale
+        vec = self.pos
+        if stretch:
+            vm = self.nt.nodes.new("ShaderNodeVectorMath")
+            vm.operation = "MULTIPLY"
+            self.L.new(self.pos, vm.inputs[0])
+            vm.inputs[1].default_value = stretch
+            vec = vm.outputs[0]
+        self.L.new(vec, n.inputs["Vector"])
+        return n.outputs["Distance"], n.outputs.get("Color")
+
     def mix(self, fac, a, b):
         n = self.nt.nodes.new("ShaderNodeMix")
         n.data_type = "RGBA"
@@ -158,25 +173,37 @@ def rock_paint(c1, c2, moss=("#4f7f2c", "#77a83a"), moss_at=0.62, scale=7.0):
     return cached(("rock", c1, c2, moss, moss_at, scale), build)
 
 
-def granite_paint(c1, c2, moss=("#34481f", "#4a6328"), moss_at=0.86, scale=6.0, cracks=0.4):
-    """Cool grey granite of reference frames 1 and 3: horizontal strata, dark hairline cracks, pale sunlit top facets,
-    darker steep faces, and only sparse dark moss on the flattest tops (the old lime moss turned small stones green)."""
+def granite_paint(c1, c2, moss=("#34481f", "#4a6328"), moss_at=0.86, scale=6.0, cracks=0.4, moss_z=0.08, cover=0.3):
+    """Mid-grey granite of reference frames 1 and 3: horizontal strata, dark shadowed fissures down the steep faces
+    (joints, not marble veins), lighter sunlit top facets, darker steep faces and foot, and a few solid patches of dark
+    moss on the flattest high tops only (about `cover` of them; none on small stones below moss_z)."""
     def build():
         p = Paint("granite")
         col = p.mix(p.step(p.noise(scale, 4.0), 0.3, 0.7), c1, c2)
         strata = p.noise(scale * 0.5, 3.0, stretch=(1.0, 1.0, 10.0))
-        col = p.mix(p.math("MULTIPLY", p.step(strata, 0.48, 0.66), 0.55), col, shade(c1, 0.74))
-        ridge = p.math("SUBTRACT", 1.0, p.math("ABSOLUTE", p.math("SUBTRACT", p.math("MULTIPLY", p.noise(scale * 2.6, 1.0), 2.0), 1.0)))
-        if cracks:
-            col = p.mix(p.math("MULTIPLY", p.step(ridge, 0.965, 0.995), cracks), col, shade(c1, 0.5))
-        col = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.55, 0.9), 0.55), col, shade(c2, 1.22))
-        col = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.35, -0.2), 0.4), col, shade(c1, 0.72))
-        if moss:
-            mf = p.math("ADD", p.nz, p.math("MULTIPLY", p.math("SUBTRACT", p.noise(5.0, 3.0), 0.5), 1.2))
+        col = p.mix(p.math("MULTIPLY", p.step(strata, 0.48, 0.66), 0.45), col, shade(c1, 0.78))
+        col = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.55, 0.9), 0.4), col, shade(c2, 1.12))
+        col = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.35, -0.2), 0.45), col, shade(c1, 0.68))
+        col = p.mix(p.math("MULTIPLY", p.step(p.z, 0.05, 0.0), 0.35), col, shade(c1, 0.6))  # grounded foot
+        if cracks:  # granite jointing (reference frames 1, 3): tall blocks of slightly different tone parted by dark,
+            # straight-edged joints that read as shadowed crevices — not as the meandering veins of marble
+            vs = (1.0, 1.0, 0.45)
+            _, cell = p.voronoi(scale * 1.4, "F1", vs)
+            col = p.mix(p.math("MULTIPLY", p.step(cell, 0.45, 0.1), 0.45), col, shade(c1, 0.8))
+            col = p.mix(p.math("MULTIPLY", p.step(cell, 0.6, 0.95), 0.35), col, shade(c2, 1.08))
+            edge, _ = p.voronoi(scale * 1.4, "DISTANCE_TO_EDGE", vs)
+            steep = p.math("ADD", 0.45, p.math("MULTIPLY", p.step(p.nz, 0.7, 0.35), 0.55))
+            fis = p.math("MULTIPLY", p.step(edge, 0.05, 0.018), steep)
+            col = p.mix(p.math("MULTIPLY", fis, cracks), col, shade(c1, 0.3))
+        if moss:  # solid patches (so no strata show through), flattest high tops only
+            lo = 0.5 + (0.5 - cover) * 0.26  # noise Fac ≈ N(0.5, 0.1): P(Fac > lo) ≈ cover
+            patch = p.step(p.noise(scale * 1.6, 2.0), lo, lo + 0.03)
+            mf = p.math("MULTIPLY", p.math("MULTIPLY", p.step(p.nz, moss_at, moss_at + 0.04), patch),
+                        p.step(p.z, moss_z, moss_z + 0.02))
             mcol = p.mix(p.step(p.noise(14.0), 0.35, 0.65), moss[0], moss[1])
-            col = p.mix(p.step(mf, moss_at, moss_at + 0.1), col, mcol)
+            col = p.mix(mf, col, mcol)
         return p.done(col, 0.9)
-    return cached(("granite", c1, c2, moss, moss_at, scale, cracks), build)
+    return cached(("granite", c1, c2, moss, moss_at, scale, cracks, moss_z, cover), build)
 
 
 def tor(cx, cy_, w, d, h, mt, seed, z0=-0.02, slant=0.25, rz=0.0, k=0.2):
@@ -545,7 +572,7 @@ def flowers():
 def rock():
     """A granite outcrop (reference frames 1 and 3): a leaning angular block, a second block and a flat slab at its
     foot, two loose stones — sharp facets, strata and cracks, pale tops."""
-    mt = granite_paint("#77736d", "#9c978e", moss_at=0.9, scale=9.0, cracks=0.0)
+    mt = granite_paint("#69645c", "#8a8479", moss_at=0.74, scale=9.0, cracks=0.45, moss_z=0.1)
     tor(0.0, 0.02, 0.24, 0.19, 0.2, mt, 11, slant=0.3, rz=0.3)
     tor(0.15, -0.07, 0.13, 0.11, 0.115, mt, 12, slant=0.2, rz=-0.4)
     tor(-0.13, 0.07, 0.13, 0.12, 0.06, mt, 13, slant=0.1, rz=0.8, k=0.1)
@@ -556,8 +583,8 @@ def rock():
 def crag():
     """Hills hex (the rocky outcrops of the reference frames): a grey stone ridge of stacked faceted blocks with
     ledges, a scree apron, moss on the tops and a few pines clinging to it."""
-    mt = granite_paint("#6f6b65", "#959088", moss_at=0.76)
-    dark = granite_paint("#5d5954", "#7f7a73", moss=None)
+    mt = granite_paint("#625d56", "#837d73", moss_at=0.72, cracks=0.5, moss_z=0.1, cover=0.4)
+    dark = granite_paint("#544f49", "#716b63", moss=None, cracks=0.55)
     # the main ridge (reference frame 3's grey crags): stacked angular tors with ledges, rising toward the back
     tor(-0.1, 0.18, 0.36, 0.28, 0.42, mt, 41, slant=0.15, rz=0.15)
     tor(-0.05, 0.25, 0.26, 0.2, 0.6, dark, 49, slant=0.3, rz=-0.2, k=0.5)  # the summit
@@ -1096,6 +1123,38 @@ def reset():
     _PAINT.clear()
 
 
+# models whose bake atlas gets its empty space filled (fill_atlas); mountain, mine and flowers keep the plain bake
+FILL_ATLAS = {"windmill", "wheat_field", "crop_field", "tree_pine", "tree_round", "bush", "rock", "crag"}
+
+
+def fill_atlas(ob):
+    """Fill the atlas pixels that no UV island covers (the bake leaves them black) with the colour of the nearest
+    islands, by a push-pull pyramid. Many small islands (wheat ears, crop heads, pine tiers) leave 20–45 % of a
+    512 px atlas empty; the mipmaps Godot builds would average that black in and darken the model at map zoom."""
+    import numpy as np
+    img = next(n.image for s in ob.material_slots if s.material and s.material.name.startswith("baked")
+               for n in s.material.node_tree.nodes if n.type == "TEX_IMAGE")
+    w, h = img.size
+    a = np.empty(w * h * 4, np.float32)
+    img.pixels.foreach_get(a)
+    a = a.reshape(h, w, 4)
+    cov = (a[..., :3].max(-1) > 0).astype(np.float32)  # nothing in these models bakes to pure black
+    cols, wts = [a[..., :3] * cov[..., None]], [cov]
+    while cols[-1].shape[0] > 1 and cols[-1].shape[1] > 1:  # pull: sums of colour and coverage per level
+        c, wt = cols[-1], wts[-1]
+        hh, ww = c.shape[0] // 2, c.shape[1] // 2
+        cols.append(c.reshape(hh, 2, ww, 2, 3).sum((1, 3)))
+        wts.append(wt.reshape(hh, 2, ww, 2).sum((1, 3)))
+    fill = cols[-1] / np.maximum(wts[-1], 1e-8)[..., None]
+    for c, wt in zip(reversed(cols[:-1]), reversed(wts[:-1])):  # push: holes take the coarser level's average
+        up = fill.repeat(2, 0).repeat(2, 1)
+        fill = np.where(wt[..., None] > 0, c / np.maximum(wt, 1e-8)[..., None], up)
+    a[..., :3] = np.where(cov[..., None] > 0, a[..., :3], fill)
+    img.pixels.foreach_set(a.ravel())
+    img.update()
+    img.pack()
+
+
 def export(name, out, pivot=None):
     objs = [o for o in bpy.context.scene.objects if o.type == "MESH"]
     bpy.context.view_layer.update()
@@ -1110,6 +1169,8 @@ def export(name, out, pivot=None):
         vg = o.vertex_groups.new(name="sails")
         vg.add(list(range(len(o.data.vertices))), 1.0, "REPLACE")
     ob = ea.bake_asset(objs, 512)
+    if name in FILL_ATLAS:
+        fill_atlas(ob)
     ob.name = name
     ob.data.name = name
     parts = [ob]

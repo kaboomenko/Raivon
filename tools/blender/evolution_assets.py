@@ -652,6 +652,13 @@ class _MB:
             return None
         me = bpy.data.meshes.new(name)
         me.from_pydata(self.v, [], self.f)
+        # weld the shared corners: every face was laid with its own vertices, and loose faces each become a UV
+        # island of their own (thousands of sub-texel islands that bake to the black gutter)
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
+        bm.to_mesh(me)
+        bm.free()
         me.update()
         o = bpy.data.objects.new(name, me)
         bpy.context.collection.objects.link(o)
@@ -736,8 +743,8 @@ def gable_roof(w, d, h, loc, roof_c, gable_mt, rz=0.0, oh=0.035, ohx=0.03, n=5, 
         eb, rb = (sy * ye, ze), (0.0, h)
         et, rt = (eb[0] + ny * tk, eb[1] + nz * tk), (rb[0] + ny * tk, rb[1] + nz * tk)
         nrm = P(0, ny, nz) - P(0, 0, 0)
-        # slab: top, bottom, eave edge, verge ends (the ridge edge is hidden under the ridge cap)
-        slab.face([P(-L, *et), P(L, *et), P(L, *rt), P(-L, *rt)], nrm)
+        # slab: bottom, eave edge, verge ends (its top lies under the courses and the ridge edge under the ridge
+        # cap: both hidden, left out so their texels go to the visible parts)
         slab.face([P(-L, *eb), P(L, *eb), P(L, *rb), P(-L, *rb)], -nrm)
         slab.face([P(-L, *eb), P(L, *eb), P(L, *et), P(-L, *et)], P(0, sy, -k * 0.2) - P(0, 0, 0))
         for sx in (-1, 1):
@@ -2662,12 +2669,47 @@ def lowpoly(objs):
         bpy.ops.object.shade_smooth_by_angle(angle=math.radians(50))
 
 
+SETTLED = {"homestead", "city_dl1", "city_dl2", "city_dl3", "city_dl4", "residence_dl1", "residence_dl2",
+           "residence_dl3"}
+
+
+def _drop_ground_faces(objs):
+    """Delete the faces that lie flat on the ground facing down (the pad's underside, the bottoms of walls, plinths
+    and barrels standing on it): the camera and the sun are always above, so they never show or cast a shadow, and
+    leaving them out gives their share of the bake to the parts that are seen."""
+    for o in objs:
+        if o.modifiers:  # a bevelled box: leave its chamfered bottom alone
+            continue
+        me = o.data
+        if me.users > 1:
+            o.data = me = me.copy()
+        mw = o.matrix_world
+        n3 = mw.to_3x3()
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        doomed = []
+        for f in bm.faces:
+            nz = (n3 @ f.normal).normalized().z if f.normal.length > 0 else 0.0
+            if nz < -0.985 and max((mw @ v.co).z for v in f.verts) < 0.016:
+                doomed.append(f)
+        if doomed and len(doomed) < len(bm.faces):
+            bmesh.ops.delete(bm, geom=doomed, context="FACES_ONLY")
+            bm.to_mesh(me)
+            me.update()
+        bm.free()
+
+
 def export(name, out):
     objs = [o for o in bpy.context.scene.objects if o.type == "MESH"]
     bpy.context.view_layer.update()
     lowpoly(objs)
     smokes = [o for o in bpy.context.scene.objects if o.type == "EMPTY" and o.name.startswith(("smoke", "flag"))]
-    ob = ea.bake_asset(objs, 1024 if name.startswith("residence") else 512)  # the hero model is seen up close
+    if name.rsplit("_", 1)[0] in SETTLED:
+        _drop_ground_faces(objs)
+    # the hero model is seen up close, and the dense towns carry hundreds of thin beams and tile courses that need
+    # the texels (at 512 they shrink below a pixel and sample the black gutter)
+    ob = ea.bake_asset(objs, 1024 if name.startswith(("residence", "city_dl1", "city_dl2", "city_dl3", "city_dl4"))
+                       else 512)
     ob.name = name
     ob.data.calc_loop_triangles()
     tris = len(ob.data.loop_triangles)
