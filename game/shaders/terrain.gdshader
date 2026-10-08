@@ -31,8 +31,11 @@ void fragment() {
 	c = mix(c, dirt_color * (0.8 + 0.4 * fine), dirt);
 	// fine grass speckle
 	c *= mix(0.86, 1.1, fine);
-	// darker rocky cliffs on the tile skirts
-	c = mix(c * 0.55, c, top);
+	// rocky cliffs on the tile skirts (the reference's plateau edges): layered grey-brown strata with a grassy lip
+	float strata = sin(wpos.y * 38.0 + texture(noise_fine, wpos.xz * 0.9 + wpos.y).r * 4.0) * 0.5 + 0.5;
+	vec3 rock = mix(vec3(0.2, 0.18, 0.16), vec3(0.42, 0.39, 0.34), strata * 0.6 + fine * 0.4);
+	float lip = smoothstep(-0.12, -0.02, wpos.y);  // the turf overhang just under the hex top
+	c = mix(mix(rock, c * 0.7, lip), c, top);
 	ALBEDO = c;
 	ROUGHNESS = 0.92;
 	SPECULAR = 0.2;

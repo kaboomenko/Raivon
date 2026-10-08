@@ -1698,10 +1698,21 @@ def fort_post(level):
 
 # ------------------------------------------------------------------ export
 
+def homestead(team):
+    """A farmstead on an owned open hex (the settled countryside of the reference frames): a stone cottage under a
+    tiled roof in the owner's colour with a smoking chimney, a fenced vegetable patch, a haystack and a woodpile."""
+    build_at(lambda: stone_house(0.22, 0.17, 0.15, team, "#c9c0ae", smoke=True), 0.0, 0.05, 0.15)
+    build_at(lambda: garden(0.2, 0.13, 3), -0.02, -0.22, 0.15)
+    haystack(0.2, -0.06, 0.7)
+    build_at(lambda: woodpile(2), 0.27, 0.16, 1.4, 0.7)
+
+
 CITY = [city_dl1, city_dl2, city_dl3, city_dl4, city_dl5, city_dl6, city_dl7, city_dl8]
 RES = [residence_dl1, residence_dl2, residence_dl3, residence_dl4, residence_dl5, residence_dl6, residence_dl7, residence_dl8]
 
 ASSETS = {}
+for _t, _c in TEAMS.items():
+    ASSETS[f"homestead_{_t}"] = (lambda c: (lambda: homestead(c)))(_c)
 for _n in range(1, 9):
     for _t, _c in TEAMS.items():
         ASSETS[f"city_dl{_n}_{_t}"] = (lambda f, c: (lambda: f(c)))(CITY[_n - 1], _c)
