@@ -547,21 +547,20 @@ def wheat_field():
     # hay bale on the bare corner
     hay = zgrad("#b98f3a", "#dcb455", "#ecd07a", 0.03, 0.12, 30.0)
     cy(0.05, 0.08, (0.36, -0.22, 0.075), hay, 10, 0.0, rot=(0, math.pi / 2, 0.3))
-    # fence along the back (+Y) and right (+X) sides
-    wd = tex("wood", WOOD_L)
+    # a low dry-stone wall round the field (reference frame 4: fields in stone enclosures), a gap at the front
     post = tex("wood", WOOD)
-    pts = [(-0.45, 0.37), (0.47, 0.37), (0.47, -0.35)]
-    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+    st = ev.stone("#b9b4aa", 1.2)
+    cap = ev.stone("#9f998e", 1.2)
+    for (x0, y0, x1, y1) in ((-0.47, 0.39, 0.49, 0.39), (0.49, 0.39, 0.49, -0.37), (-0.47, -0.37, -0.47, 0.39),
+                             (0.49, -0.37, 0.08, -0.37), (-0.12, -0.37, -0.47, -0.37)):
         ln = math.dist((x0, y0), (x1, y1))
-        n = max(2, round(ln / 0.15))
-        for k in range(n + 1):
-            f = k / n
-            if (x0, y0) != pts[0] and k == 0:
-                continue
-            px, py = x0 + (x1 - x0) * f, y0 + (y1 - y0) * f
-            bx((0.026, 0.026, 0.16), (px, py, 0.08), post, rnd.uniform(-0.2, 0.2), 0.0)
-        for z in (0.07, 0.125):
-            ev.beam((x0, y0, z), (x1, y1, z), 0.018, wd)
+        ang = math.atan2(y1 - y0, x1 - x0)
+        bx((ln - 0.06, 0.05, 0.07), ((x0 + x1) / 2, (y0 + y1) / 2, 0.035), st, ang, 0.008)
+        bx((ln - 0.06, 0.06, 0.016), ((x0 + x1) / 2, (y0 + y1) / 2, 0.075), cap, ang, 0.004)
+    for (x, y) in ((-0.47, 0.39), (0.49, 0.39), (0.49, -0.37), (-0.47, -0.37)):  # corner piers hide the joints
+        bx((0.08, 0.08, 0.1), (x, y, 0.05), cap, 0.0, 0.008)
+    for x in (-0.12, 0.08):  # gateposts
+        bx((0.06, 0.06, 0.11), (x, -0.37, 0.055), cap, 0.0, 0.008)
     # scarecrow
     sx, sy = -0.12, 0.04
     cy(0.012, 0.32, (sx, sy, 0.16), post, 5)
