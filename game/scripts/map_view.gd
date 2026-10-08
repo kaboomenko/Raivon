@@ -622,6 +622,18 @@ func _homestead(owner: int, side: String) -> String:
 	return name + side if has_model(name + side) else ""
 
 
+## A later-era model of a production building: "<kind>_scifi_<side>" from DL8, "<kind>_modern_<side>" from DL6;
+## "" when the owner's era has none (the base model is used).
+func _era_model(kind: String, owner: int, side: String) -> String:
+	if owner <= Types.NOBODY or owner >= sim.states.size():
+		return ""
+	var dl: int = int(sim.states[owner]["dev_level"])
+	for name in (["%s_scifi_%s" % [kind, side]] if dl >= 8 else []) + (["%s_modern_%s" % [kind, side]] if dl >= 6 else []):
+		if has_model(name):
+			return name
+	return ""
+
+
 ## Model name for `kind` ("city", "residence") in the style of the owner's development level
 ## (canon §6: every DL changes how the state looks); falls back to lower levels, "" if none exist.
 func evolved(kind: String, owner: int) -> String:
@@ -952,11 +964,16 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 			_place_fort(c, holder)
 			return
 		"farm":
+			var era := _era_model("farm", int(c["owner"]), side)
+			if era != "":  # DL6–7 strip fields and a silo, DL8 hydroponics (reference frame 2)
+				spawn(era, holder, p, 0.2, 1.0)
+				return
 			spawn("wheat_field", holder, p + Vector3(0.1, 0, 0.1), 0.0, 0.95)
 			spawn("windmill", holder, p + Vector3(-0.45, 0, -0.3), 0.4, 0.95)
 			return
 		"mine":
-			spawn("mine", holder, p, 0.2, 1.1)
+			var era_m := _era_model("mine", int(c["owner"]), side)
+			spawn(era_m if era_m != "" else "mine", holder, p, 0.2, 1.0 if era_m != "" else 1.1)  # DL8: a raivite crystal pit
 			return
 		"raivite_vein":
 			_place_vein(holder)

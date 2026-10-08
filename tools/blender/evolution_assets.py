@@ -1749,6 +1749,69 @@ def homestead_scifi(team):
         cn(0.012, 0.05, (0.2 + k * 0.018, -0.04, 0.07), glow("raivite_c", CYAN, 2.0), 6)
 
 
+def farm_modern(team):
+    """DL6–7 farm: ploughed strips of crops, a tall grain silo with a team band, a barn and a red tractor."""
+    pad(0.7, tex("plaster", "#6b5032", 2.0), 0.01, 12, 0.05, 31)
+    crops = [flat("crop_a", "#d9b84a", 0.8), flat("crop_b", "#6f9a3a", 0.8)]
+    for i in range(5):
+        bx((0.62, 0.09, 0.03), (-0.1, -0.32 + i * 0.12, 0.02), crops[i % 2], 0.0, 0.01)
+    cy(0.09, 0.5, (0.36, 0.3, 0.25), flat("silo", "#c9ced4", 0.4), 16)
+    uvs(0.09, (0.36, 0.3, 0.5), flat("silo", "#c9ced4", 0.4), 12, 6, (1, 1, 0.6))
+    cy(0.093, 0.04, (0.36, 0.3, 0.38), flat("band" + team, slate(team, 1.2), 0.5), 16)
+    build_at(lambda: barn(team), 0.42, -0.02, 1.57, 0.8)
+    trc = flat("tractor", "#c0392b", 0.5)
+    bx((0.09, 0.05, 0.05), (-0.42, 0.3, 0.05), trc, 0.3, 0.01)
+    for (dx, r) in ((-0.035, 0.03), (0.035, 0.02)):
+        for sy in (-1, 1):
+            cy(r, 0.015, (-0.42 + dx, 0.3 + sy * 0.032, r), flat("tyre", "#1f1f21", 0.9), 10, rot=(math.pi / 2, 0, 0.3))
+
+
+def farm_scifi(team):
+    """DL8 farm: hydroponic domes over glowing green beds, a water tank, a harvester drone pad."""
+    pad(0.72, flat("plate", "#4a515c", 0.6), 0.012, 12, 0.0, 32)
+    leaf = glow("hydro", "#5cff8a", 1.2)
+    glass = flat("dome_glass", "#a9d6f0", 0.12)
+    rib = flat("rib", "#d8dee6", 0.4)
+    for (x, y) in ((-0.3, 0.2), (0.0, 0.25), (0.3, 0.2), (-0.15, -0.1), (0.15, -0.1)):
+        def bed():
+            bx((0.22, 0.14, 0.02), (0, 0, 0.02), leaf, 0, 0.004)
+            for k in range(4):  # greenhouse ribs arching over the glowing bed
+                torus(0.075, 0.005, (-0.08 + k * 0.053, 0, 0.02), rib, (0, 0, math.pi / 2), 12, 3)
+            bx((0.2, 0.006, 0.006), (0, 0, 0.095), rib, 0, 0)
+            frame(0.23, 0.15, 0.025, team_neon(team))
+        build_at(bed, x, y)
+    cy(0.07, 0.24, (0.36, -0.3, 0.12), flat("tank", "#c9ced4", 0.35), 16)
+    cy(0.072, 0.02, (0.36, -0.3, 0.2), team_neon(team), 16)
+    cy(0.08, 0.012, (-0.3, -0.32, 0.006), flat("pad", "#2c323b", 0.5), 16)
+    torus(0.07, 0.005, (-0.3, -0.32, 0.014), team_neon(team))
+
+
+def mine_scifi(team):
+    """DL8 mine: an open pit of glowing raivite crystals under an extractor gantry, crates of crystals."""
+    pad(0.7, flat("plate", "#4a515c", 0.6), 0.012, 12, 0.0, 33)
+    cy(0.32, 0.03, (0, 0.05, 0.015), flat("pit", "#232830", 0.8), 20)
+    cr = glow("crystal", "#3f9bff", 2.2)
+    cr2 = glow("crystal2", "#7fc0ff", 2.8)
+    rnd = random.Random(7)
+    for k in range(16):
+        a = rnd.uniform(0, math.tau)
+        rr = rnd.uniform(0.0, 0.24)
+        h = rnd.uniform(0.16, 0.34)
+        o = cn(0.055, h, (math.cos(a) * rr, 0.05 + math.sin(a) * rr, 0.03 + h / 2), cr if k % 2 else cr2, 6)
+        o.rotation_euler = (rnd.uniform(-0.3, 0.3), rnd.uniform(-0.3, 0.3), 0)
+    st = flat("gantry", "#5d6470", 0.5)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            cy(0.022, 0.46, (sx * 0.3, 0.05 + sy * 0.3, 0.23), st, 8)
+    for sy in (-1, 1):
+        bx((0.64, 0.045, 0.05), (0, 0.05 + sy * 0.3, 0.46), st, 0, 0.004)
+    bx((0.06, 0.64, 0.05), (0.05, 0.05, 0.47), st, 0, 0.004)
+    bx((0.14, 0.14, 0.1), (0.05, 0.05, 0.4), flat("extractor", "#e3e8ee", 0.4), 0, 0.01)
+    cy(0.02, 0.18, (0.05, 0.05, 0.22), team_neon(team), 8)
+    for k in range(2):
+        bx((0.08, 0.08, 0.06), (0.38, -0.3 + k * 0.1, 0.03), flat("crate", "#3e4550", 0.5), 0.2, 0.006)
+
+
 CITY = [city_dl1, city_dl2, city_dl3, city_dl4, city_dl5, city_dl6, city_dl7, city_dl8]
 RES = [residence_dl1, residence_dl2, residence_dl3, residence_dl4, residence_dl5, residence_dl6, residence_dl7, residence_dl8]
 
@@ -1757,6 +1820,9 @@ for _t, _c in TEAMS.items():
     ASSETS[f"homestead_{_t}"] = (lambda c: (lambda: homestead(c)))(_c)
     ASSETS[f"homestead_modern_{_t}"] = (lambda c: (lambda: homestead_modern(c)))(_c)
     ASSETS[f"homestead_scifi_{_t}"] = (lambda c: (lambda: homestead_scifi(c)))(_c)
+    ASSETS[f"farm_modern_{_t}"] = (lambda c: (lambda: farm_modern(c)))(_c)
+    ASSETS[f"farm_scifi_{_t}"] = (lambda c: (lambda: farm_scifi(c)))(_c)
+    ASSETS[f"mine_scifi_{_t}"] = (lambda c: (lambda: mine_scifi(c)))(_c)
 for _n in range(1, 9):
     for _t, _c in TEAMS.items():
         ASSETS[f"city_dl{_n}_{_t}"] = (lambda f, c: (lambda: f(c)))(CITY[_n - 1], _c)
