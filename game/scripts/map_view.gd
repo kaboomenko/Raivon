@@ -476,10 +476,10 @@ func _build_terrain() -> void:
 	plane.size = Vector2(90, 90)
 	water.mesh = plane
 	water.position = Vector3(0, -0.25, 0)
-	var wm := StandardMaterial3D.new()
-	wm.albedo_color = Color(0.03, 0.14, 0.24)
-	wm.metallic = 0.3
-	wm.roughness = 0.12
+	var wm := ShaderMaterial.new()  # the open sea round the world (reference frame 1: ships on rippling water)
+	wm.shader = load("res://shaders/water.gdshader")
+	wm.set_shader_parameter("noise_tex", _noise_tex(2.0, 3, 303))
+	wm.set_shader_parameter("shore_k", 0.0)
 	water.material_override = wm
 	add_child(water)
 
@@ -1283,7 +1283,9 @@ func _build_horizon() -> void:
 				_horizon_root.add_child(tile)
 				if not near and d == rr + 2 and roll < 0.3:
 					spawn("mountain", _horizon_root, p + Vector3(0, -0.15, 0), rng.randf() * TAU, rng.randf_range(1.5, 2.4))
-				elif rng.randf() < 0.45:
+				elif near and d == rr + 1 and roll < 0.3:
+					_horizon_ship(q, r, p)
+				elif not near and rng.randf() < 0.45:  # near the camera a low cloud is just a blurred white blob
 					_cloud(p + Vector3(rng.randf_range(-0.5, 0.5), rng.randf_range(0.25, 0.7), rng.randf_range(-0.5, 0.5)), rng.randf_range(1.8, 3.0))
 				continue
 			if near:
@@ -1306,6 +1308,28 @@ func _build_horizon() -> void:
 			_horizon_root.add_child(base)
 			if not near and rng.randf() < 0.55 + 0.1 * (d - rr - 1):
 				_cloud(p + Vector3(rng.randf_range(-0.5, 0.5), rng.randf_range(1.0, 2.6), rng.randf_range(-0.5, 0.5)), rng.randf_range(3.5, 6.0))
+
+
+## A warship of the coastal state off the world's near shore (reference frame 1: ships under the state's sails in
+## the bay below the land), rocking on the open sea.
+func _horizon_ship(q: int, r: int, p: Vector3) -> void:
+	for d in 6:
+		var nb: int = sim.id_at(q + int(DIRS[d].x), r + int(DIRS[d].y))
+		if nb < 0:
+			continue
+		var own := owner_of(sim.cells[nb])
+		if own <= Types.NOBODY or not Types.is_passable(sim.cells[nb]):
+			continue
+		var name := "warship_" + _faction_suffix(own)
+		if not has_model(name):
+			return
+		var ship := spawn(name, _horizon_root, p + Vector3(rng.randf_range(-0.3, 0.3), -0.26, rng.randf_range(-0.2, 0.2)), (PI / 2.0 if rng.randf() < 0.5 else -PI / 2.0) + rng.randf_range(-0.6, 0.6), 1.75)
+		if ship:
+			var tw := ship.create_tween().set_loops()
+			var r0 := ship.rotation
+			tw.tween_property(ship, "rotation", r0 + Vector3(0.05, 0, 0.03), 1.8 + rng.randf()).set_trans(Tween.TRANS_SINE)
+			tw.tween_property(ship, "rotation", r0 - Vector3(0.05, 0, 0.03), 1.8 + rng.randf()).set_trans(Tween.TRANS_SINE)
+		return
 
 
 var _fog_mat: StandardMaterial3D
