@@ -926,6 +926,29 @@ def city_dl4(team):
     town_props(team, [(-0.64, -0.24), (0.64, -0.26)])
 
 
+def street_lamp(x, y, h=0.2, modern=False):
+    """A street lamp: a gas lantern on a cast-iron post (DL5), a slim steel pole with a cold head (DL6+)."""
+    post = flat("lamp_post", "#2f3237" if not modern else "#7c838c", 0.5)
+    cy(0.006, h, (x, y, h / 2), post, 6)
+    if modern:
+        bx((0.05, 0.014, 0.008), (x + 0.02, y, h), post, bev=0)
+        bx((0.026, 0.016, 0.006), (x + 0.04, y, h - 0.006), glow("lamp_cold", "#d8f0ff", 3.0), bev=0)
+    else:
+        bx((0.022, 0.022, 0.03), (x, y, h + 0.014), glow("lamp_gas", "#ffcf7a", 3.0), bev=0)
+        cn(0.02, 0.016, (x, y, h + 0.036), post, 4)
+
+
+def car(x, y, rz, color):
+    """A small parked car: a coloured body, a dark glass cabin, four wheels."""
+    def b():
+        bx((0.1, 0.048, 0.026), (0, 0, 0.024), flat("car" + color, color, 0.4), bev=0.006)
+        bx((0.054, 0.044, 0.024), (-0.006, 0, 0.048), flat("car_glass", "#1d2a38", 0.2), bev=0.005)
+        for sx in (-0.032, 0.032):
+            for sy in (-0.024, 0.024):
+                cy(0.012, 0.008, (sx, sy, 0.012), flat("tyre", "#1f1f21", 0.9), 8, rot=(math.pi / 2, 0, 0))
+    build_at(b, x, y, rz)
+
+
 def city_dl5(team):
     pad(0.76, stone("#8f8a82", 2.2), 0.012, 14, 0.03, 5)
 
@@ -959,6 +982,9 @@ def city_dl5(team):
     for (x, y) in ((0.2, -0.47), (0.25, -0.43), (0.22, -0.52)):
         bx((0.05, 0.05, 0.05), (x, y, 0.025), crate, bev=0.005)
     flagpole(0.2, 0.06, 0.55, team, 0.14)
+    for (x, y) in ((-0.28, -0.24), (0.24, -0.3), (0.1, 0.0), (-0.42, 0.24)):  # gas lamps along the yard
+        street_lamp(x, y, 0.2)
+    build_at(lambda: cart(team, "sacks"), 0.02, -0.2, 0.4)  # a carter at the factory gate
 
 
 def city_dl6(team):
@@ -989,6 +1015,11 @@ def city_dl6(team):
     tree(0.22, 0.14, 0.85)
     tree(0.0, 0.1, 0.75)
     flagpole(-0.32, -0.3, 0.45, team, 0.12)
+    for (x, y, rz, c) in ((-0.3, -0.02, 0.1, "#b8332a"), (-0.18, -0.04, 0.1, "#e8e4da"), (0.3, -0.03, -0.1, "#2f5f9a"),
+                          (0.18, 0.02, 3.0, "#3f6b3a")):  # parked cars in front of the blocks
+        car(x, y, rz, c)
+    for (x, y) in ((-0.38, 0.22), (0.38, 0.24), (-0.1, -0.06), (0.1, -0.08)):
+        street_lamp(x, y, 0.2, True)
 
 
 def city_dl7(team):
@@ -1008,6 +1039,11 @@ def city_dl7(team):
         tree(x, y, 0.75)
     for x in (-0.12, -0.04, 0.04):
         flagpole(x, -0.58, 0.42, team, 0.11, "#d0d4da")
+    build_at(lambda: glass_tower(0.18, 0.18, 0.55, team, 0), 0.54, -0.24, 0.15)
+    for (x, y, rz, c) in ((-0.2, -0.36, 0.2, "#e8e4da"), (-0.06, -0.4, 0.2, "#c23a2b"), (0.1, 0.06, 1.7, "#2b2f36")):
+        car(x, y, rz, c)
+    for (x, y) in ((-0.3, -0.42), (0.02, -0.26), (0.16, 0.2), (-0.3, 0.02)):
+        street_lamp(x, y, 0.24, True)
 
 
 def city_dl8(team):
