@@ -698,8 +698,36 @@ def military_base():
               tex("wood", "#9a7046", 3.0), flat("iron", IRON, 0.5))
 
 
+def warship(team):
+    """A two-masted warship along X (bow at +X) for the open water (reference frame 1): a dark hull with a team
+    stripe and gun ports, square sails in the team colour with a white emblem, a raised stern castle, pennants."""
+    body = tex("wood", "#4e3420", 3.0)
+    deck = tex("wood", "#a07a4c", 4.0)
+    stripe = flat("hull_stripe" + team, ev.slate(team, 1.15), 0.6)
+    hull(0.62, 0.2, 0.1, body, deck, stripe)
+    for k in range(5):  # gun ports along both sides
+        for sy in (-1, 1):
+            bx((0.022, 0.006, 0.018), (-0.18 + k * 0.085, sy * 0.098, 0.06), flat("port_d", "#1a1410", 0.9), bev=0)
+    bx((0.16, 0.19, 0.07), (-0.24, 0, 0.135), body, bev=0.006)  # stern castle
+    bx((0.17, 0.2, 0.012), (-0.24, 0, 0.172), deck, bev=0)
+    wd = tex("wood", "#3e2a1a", 2.0)
+    sail_c = flat("sail" + team, ev.slate(team, 1.12), 0.8)
+    em = flat("emblem", "#f3efe6", 0.6)
+    for (mx, h, w) in ((0.08, 0.56, 0.24), (-0.1, 0.48, 0.2)):
+        cy(0.011, h, (mx, 0, 0.1 + h / 2), wd, 6)
+        for (z, sw) in ((0.28, w), (0.45, w * 0.8)):
+            bx((0.012, sw, 0.16), (mx + 0.012, 0, 0.1 + z), sail_c, bev=0.004)
+            beam((mx, -sw / 2 - 0.01, 0.1 + z + 0.07), (mx, sw / 2 + 0.01, 0.1 + z + 0.07), 0.008, wd)
+        bx((0.016, w * 0.32, 0.06), (mx + 0.02, 0, 0.1 + 0.28), em, bev=0)
+        bx((0.06, 0.004, 0.025), (mx + 0.03, 0, 0.1 + h + 0.01), flat("pennant" + team, team, 0.6), bev=0)
+    beam((0.31, 0, 0.1), (0.46, 0, 0.16), 0.01, wd)  # bowsprit
+    tri_plate((0.09, 0, 0.5), (0.09, 0, 0.2), (0.4, 0, 0.18), flat("jib", SAIL, 0.8), 0.005)
+
+
 PROPS = [raider_camp, port, military_base]
 ASSETS = {f.__name__: f for f in PROPS}
+for _t, _c in ev.TEAMS.items():
+    ASSETS["warship_" + _t] = (lambda c: (lambda: warship(c)))(_c)
 
 
 # ------------------------------------------------------------------ export

@@ -939,6 +939,8 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 	if not Types.is_passable(c):
 		if c["terrain"] == "mountain":
 			spawn("mountain", holder, Vector3.ZERO, rng.randf() * TAU, rng.randf_range(1.75, 2.05))  # massifs that rise over the map, as in the reference
+		elif c["terrain"] == "water":
+			_place_ship(c, holder)
 		return
 	var p := Vector3.ZERO
 	var side := _faction_suffix(c["owner"])
@@ -1040,6 +1042,29 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 	_place_fort(c, holder)
 	if c["owner"] != Types.NOBODY and rng.randf() < 0.3:
 		spawn("banner_" + side, holder, p + Vector3(rng.randf_range(-0.4, 0.4), 0, rng.randf_range(-0.4, 0.4)), 0.0, 1.0, int(c["owner"]))
+
+
+## A warship of a coastal state on some water hexes along its shore (reference frame 1: ships under blue sails),
+## sitting low in the water and rocking gently.
+func _place_ship(c: Dictionary, holder: Node3D) -> void:
+	if rng.randf() > 0.45:
+		return
+	for nid in sim.neighbors[c["id"]]:
+		if nid < 0:
+			continue
+		var own: int = owner_of(sim.cells[nid])
+		if own <= Types.NOBODY or not Types.is_passable(sim.cells[nid]):
+			continue
+		var name := "warship_" + _faction_suffix(own)
+		if not has_model(name):
+			return
+		var ship := spawn(name, holder, Vector3(rng.randf_range(-0.25, 0.25), -0.08, rng.randf_range(-0.25, 0.25)), (PI / 2.0 if rng.randf() < 0.5 else -PI / 2.0) + rng.randf_range(-0.7, 0.7), 1.75)  # bow toward or away from the camera: the sails face it
+		if ship:
+			var tw := ship.create_tween().set_loops()
+			var r0 := ship.rotation
+			tw.tween_property(ship, "rotation", r0 + Vector3(0.05, 0, 0.03), 1.8 + rng.randf()).set_trans(Tween.TRANS_SINE)
+			tw.tween_property(ship, "rotation", r0 - Vector3(0.05, 0, 0.03), 1.8 + rng.randf()).set_trans(Tween.TRANS_SINE)
+		return
 
 
 ## Plain / forest / hills props of a non-meadow biome: dense dark pines in the taiga; grass, shrubs and a few
