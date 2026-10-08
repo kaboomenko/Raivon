@@ -1324,10 +1324,9 @@ var bridge_spots: Array = []  # world positions of the bridges (screenshots, tes
 ## borders, so a conquered town joins the new owner's roads.
 func _build_roads() -> void:
 	bridge_spots = []
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var tools := {}  # era 0 dirt (DL1–5), 1 asphalt (DL6–7), 2 dark neon road (DL8+) -> SurfaceTool
 	var done := {}
-	var joints := {}
+	var joints := {}  # hex -> era
 	for c in sim.cells:
 		if c["kind"] in ["plain", "capital"] or not Types.is_passable(c):
 			continue
@@ -1340,6 +1339,13 @@ func _build_roads() -> void:
 		var path := _land_path(int(c["id"]), cap, own)
 		if path.size() < 2 or path.size() > 7:
 			continue
+		var dl: int = int(sim.states[own]["dev_level"])
+		var era := 2 if dl >= 8 else (1 if dl >= 6 else 0)
+		if not tools.has(era):
+			var t := SurfaceTool.new()
+			t.begin(Mesh.PRIMITIVE_TRIANGLES)
+			tools[era] = t
+		var st: SurfaceTool = tools[era]
 		for i in path.size() - 1:
 			var a: int = path[i]
 			var b: int = path[i + 1]
@@ -1348,7 +1354,7 @@ func _build_roads() -> void:
 				continue
 			done[key] = true
 			_road_segment(st, a, b)
-			if sim.rivers.has("%d:%d" % [a, b]) or sim.rivers.has("%d:%d" % [b, a]):
+			if era == 0 and (sim.rivers.has("%d:%d" % [a, b]) or sim.rivers.has("%d:%d" % [b, a])):
 				# a stone arch bridge where the road crosses a river (the reference frames)
 				var pa := cell_world(a)
 				var pb := cell_world(b)
@@ -1357,10 +1363,9 @@ func _build_roads() -> void:
 				bridge_spots.append((pa + pb) / 2.0)
 			for h in [a, b]:
 				if not _road_stop(h):
-					joints[h] = true
-	if done.is_empty():
-		return
+					joints[h] = era
 	for h in joints:  # a round patch where roads meet in an open hex hides the joints
+		var st: SurfaceTool = tools[joints[h]]
 		var cc := cell_world(int(h)) + Vector3(0, 0.033, 0)
 		for k in 10:
 			var a0 := k * TAU / 10.0
@@ -1369,15 +1374,20 @@ func _build_roads() -> void:
 			st.add_vertex(cc)
 			st.add_vertex(cc + Vector3(cos(a0), 0, sin(a0)) * ROAD_W * 0.62)
 			st.add_vertex(cc + Vector3(cos(a1), 0, sin(a1)) * ROAD_W * 0.62)
-	var mi := MeshInstance3D.new()
-	mi.mesh = st.commit()
-	var m := StandardMaterial3D.new()
-	m.albedo_color = Color(0.64, 0.5, 0.32)
-	m.roughness = 1.0
-	m.cull_mode = BaseMaterial3D.CULL_DISABLED
-	mi.material_override = m
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_overlay_root.add_child(mi)
+	for era in tools:
+		var mi := MeshInstance3D.new()
+		mi.mesh = (tools[era] as SurfaceTool).commit()
+		var m := StandardMaterial3D.new()
+		m.albedo_color = [Color(0.64, 0.5, 0.32), Color(0.32, 0.33, 0.35), Color(0.12, 0.14, 0.18)][era]
+		m.roughness = 1.0 if era == 0 else 0.6
+		if era == 2:  # the glowing roads of reference frame 2
+			m.emission_enabled = true
+			m.emission = Color(0.1, 0.55, 1.0)
+			m.emission_energy_multiplier = 0.9
+		m.cull_mode = BaseMaterial3D.CULL_DISABLED
+		mi.material_override = m
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_overlay_root.add_child(mi)
 
 
 ## A road ends at the edge of a building's pad; through open land it runs to the hex centre.
