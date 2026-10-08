@@ -1144,8 +1144,9 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 				_place_fort(c, holder)
 				return
 		"military_base":
-			if has_model("military_base"):
-				spawn("military_base", holder, p, 0.3, 1.0)
+			var era_b := _era_model("military_base", int(c["owner"]), side)  # a concrete compound (DL6–7), a neon one (DL8+)
+			if era_b != "" or has_model("military_base"):
+				spawn(era_b if era_b != "" else "military_base", holder, p, 0.3, 1.0)
 				_place_fort(c, holder)
 				return
 	var biome: String = c.get("biome", "meadow")

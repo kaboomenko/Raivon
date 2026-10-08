@@ -889,6 +889,81 @@ def port_scifi(team):
     cy(0.085, 0.008, (-0.1, 0.18, 0.021), flat("pad_sf", "#2c323b", 0.5), 16)
 
 
+def _compound_walls(S, wall, cap, h=0.1, gate=0.12):
+    """Four straight walls round a square yard with a gate gap in the front (−Y) wall."""
+    for (x0, y0, x1, y1) in ((-S, S, S, S), (S, S, S, -S), (-S, -S, -S, S), (S, -S, gate, -S), (-gate, -S, -S, -S)):
+        ln = math.dist((x0, y0), (x1, y1))
+        ang = math.atan2(y1 - y0, x1 - x0)
+        bx((ln, 0.045, h), ((x0 + x1) / 2, (y0 + y1) / 2, h / 2), wall, ang, bev=0.004)
+        bx((ln, 0.055, 0.014), ((x0 + x1) / 2, (y0 + y1) / 2, h + 0.007), cap, ang, bev=0)
+
+
+def military_base_modern(team):
+    """The industrial base (DL6–7): a concrete-walled compound, two steel watchtowers, a quonset hangar with the
+    state's band, a helipad with an H, parked trucks, a sandbag nest, a flag."""
+    S = 0.55
+    ground_poly([(-S, -S), (S, -S), (S, S), (-S, S)], flat("base_asph", "#5d6166", 0.85), 0.006)
+    conc = flat("base_conc", "#a3a6aa", 0.8)
+    _compound_walls(S, conc, flat("base_cap", "#7d8186", 0.7))
+    steel = flat("steel_dk", "#3a3e44", 0.5)
+    for (x, y) in ((-S, -S), (S, S)):  # watchtowers on two corners
+        for sx in (-1, 1):
+            for sy in (-1, 1):
+                beam((x + sx * 0.05, y + sy * 0.05, 0.0), (x + sx * 0.035, y + sy * 0.035, 0.3), 0.008, steel)
+        bx((0.11, 0.11, 0.07), (x, y, 0.335), flat("tower_cab", "#6f747a", 0.6), bev=0.004)
+        bx((0.13, 0.13, 0.012), (x, y, 0.376), steel, bev=0)
+        bx((0.112, 0.006, 0.02), (x, y - 0.056, 0.34), flat("cab_glass", "#1d2a38", 0.2), bev=0)
+    def hangar():  # a half-cylinder of ribbed steel with end walls and a door
+        cy(0.17, 0.42, (0, 0, 0.0), flat("hangar", "#8a9097", 0.55), 16, rot=(0, math.pi / 2, 0))  # half sunk: an arch
+        for x in (-0.21, 0.21):
+            cy(0.172, 0.012, (x, 0, 0.0), flat("band" + team, team, 0.6), 16, rot=(0, math.pi / 2, 0))
+        bx((0.012, 0.16, 0.12), (-0.215, 0, 0.06), flat("hangar_door", "#3a3e44", 0.6), bev=0)
+    build_at(hangar, -0.12, 0.3)
+    # helipad
+    cy(0.16, 0.01, (0.28, -0.22, 0.012), flat("pad_c", "#7d8186", 0.7), 20)
+    cy(0.13, 0.004, (0.28, -0.22, 0.018), flat("pad_w", "#e8e6e0", 0.6), 20)
+    cy(0.122, 0.006, (0.28, -0.22, 0.019), flat("pad_c", "#7d8186", 0.7), 20)
+    for (dx, w, d) in ((-0.035, 0.016, 0.1), (0.035, 0.016, 0.1), (0.0, 0.07, 0.016)):
+        bx((w, d, 0.004), (0.28 + dx, -0.22, 0.022), flat("pad_w", "#e8e6e0", 0.6), bev=0)
+    # parked trucks
+    olive = flat("truck", "#4f5a3a", 0.6)
+    for (x, y) in ((-0.3, -0.2), (-0.3, -0.06)):
+        bx((0.16, 0.07, 0.06), (x, y, 0.045), olive, bev=0.006)
+        bx((0.05, 0.068, 0.05), (x + 0.1, y, 0.04), olive, bev=0.006)
+        bx((0.006, 0.05, 0.02), (x + 0.125, y, 0.05), flat("cab_glass", "#1d2a38", 0.2), bev=0)
+        for dx in (-0.05, 0.03, 0.1):
+            for sy in (-1, 1):
+                cy(0.016, 0.01, (x + dx, y + sy * 0.036, 0.016), flat("tyre", "#1f1f21", 0.9), 8, rot=(math.pi / 2, 0, 0))
+    ev.sandbag_ring(0.0, -0.42, 0.07, 2)
+    ev.flagpole(0.3, 0.3, 0.42, team, 0.12)
+
+
+def military_base_scifi(team):
+    """The late-era base (DL8+): a dark plated compound with neon wall strips, a wedge hangar with a glowing door, a
+    parked walker, a pad with a hover gunship, sensor masts."""
+    S = 0.55
+    ground_poly([(-S, -S), (S, -S), (S, S), (-S, S)], flat("sf_ground", "#3e434b", 0.6), 0.006)
+    neon = ev.glow("neon" + team, team, 3.0)
+    cyan = ev.glow("cyan", "#14d2ff", 2.5)
+    _compound_walls(S, flat("sf_wall", "#59606a", 0.45), neon, 0.09)
+    def hangar():
+        side_w = 0.42
+        extrude([(-0.2, 0.0), (0.2, 0.0), (0.14, 0.2), (-0.14, 0.2)], -side_w / 2, side_w / 2,
+                flat("sf_hangar", "#4a515c", 0.4), (0, 0, 0), (math.pi / 2, 0, 0))
+        bx((0.2, 0.012, 0.12), (0, -0.215, 0.07), cyan, bev=0)
+        bx((0.3, 0.44, 0.012), (0, 0, 0.205), flat("sf_roof", "#2b3240", 0.4), bev=0.004)
+        bx((0.006, 0.42, 0.008), (0.15, 0, 0.2), neon, bev=0)
+        bx((0.006, 0.42, 0.008), (-0.15, 0, 0.2), neon, bev=0)
+    build_at(hangar, -0.22, 0.26, math.pi / 2)
+    cy(0.17, 0.012, (0.26, -0.2, 0.012), flat("pad_sf", "#2c323b", 0.5), 20)
+    cy(0.15, 0.006, (0.26, -0.2, 0.02), ev.glow("padring" + team, team, 1.6), 20)
+    cy(0.135, 0.008, (0.26, -0.2, 0.021), flat("pad_sf", "#2c323b", 0.5), 20)
+    build_at(ea.gunship, 0.26, -0.2, 0.6, 0.5, z=0.03)
+    for (x, y) in ((0.36, 0.34), (-0.4, -0.38)):
+        rod((x, y, 0.0), (x, y, 0.32), 0.008, flat("mast", "#d0d4da", 0.5), n=5)
+        uvs(0.02, (x, y, 0.33), cyan, 8, 5)
+
+
 PROPS = [raider_camp, port, military_base]
 ASSETS = {f.__name__: f for f in PROPS}
 for _t, _c in ev.TEAMS.items():
@@ -897,6 +972,8 @@ for _t, _c in ev.TEAMS.items():
     ASSETS["cruiser_scifi_" + _t] = (lambda c: (lambda: cruiser_scifi(c)))(_c)
     ASSETS["port_modern_" + _t] = (lambda c: (lambda: port_modern(c)))(_c)
     ASSETS["port_scifi_" + _t] = (lambda c: (lambda: port_scifi(c)))(_c)
+    ASSETS["military_base_modern_" + _t] = (lambda c: (lambda: military_base_modern(c)))(_c)
+    ASSETS["military_base_scifi_" + _t] = (lambda c: (lambda: military_base_scifi(c)))(_c)
 
 
 # ------------------------------------------------------------------ export
