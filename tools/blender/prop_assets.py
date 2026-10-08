@@ -409,7 +409,7 @@ def emblem_xz(x, y, z, w, h, mt, pts):
 
 def torch(x, y, z, wood):
     """Burning torch: a stick ending at z with a pitch-black head and a two-tone flame (glow, kept out of the bake)."""
-    tube((x, y, z - 0.08), (x, y, z), 0.006, wood, n=4)
+    tube((x, y, z - 0.08), (x, y, z), 0.008, wood, n=4)
     tube((x, y, z - 0.004), (x, y, z + 0.018), 0.011, flat("pitch", "#2a211c", 0.9), r2=0.014, n=5, cap=True)
     spike((x, y, z + 0.012), (x + 0.004, y, z + 0.085), 0.017, glow("flame", FLAME, 3.0), 5)
     spike((x, y, z + 0.016), (x + 0.002, y - 0.003, z + 0.06), 0.011, glow("flame_y", FLAME_Y, 3.5), 5)
@@ -468,21 +468,23 @@ def lookout_l1(wood, plank, hide, torch_wood):
             tops.append(t0)
     for (a, b) in (((-1, -1), (1, -1)), ((1, -1), (1, 1))):  # X-braces on the front and the right side
         p = [(sx * 0.093, sy * 0.093) for sx, sy in (a, b)]
-        tube((p[0][0], p[0][1], 0.03), (p[1][0], p[1][1], H - 0.03), 0.006, wood, n=4)
-        tube((p[1][0], p[1][1], 0.03), (p[0][0], p[0][1], H - 0.03), 0.006, wood, n=4)
+        tube((p[0][0], p[0][1], 0.03), (p[1][0], p[1][1], H - 0.03), 0.009, wood, n=4)
+        tube((p[1][0], p[1][1], 0.03), (p[0][0], p[0][1], H - 0.03), 0.009, wood, n=4)
     bx((0.19, 0.19, 0.018), (0, 0, H), plank, bev=0)
     for k in range(4):  # rail of sticks round the deck
         a, b = tops[(0, 1, 3, 2)[k]], tops[(1, 3, 2, 0)[k]]
-        tube((a[0], a[1], H + 0.065), (b[0], b[1], H + 0.065), 0.006, wood, n=4)
+        tube((a[0], a[1], H + 0.065), (b[0], b[1], H + 0.065), 0.008, wood, n=4)
     mesh_obj([(-0.1, 0.1, H + 0.14), (0.1, 0.1, H + 0.14), (0.11, -0.11, H + 0.1), (-0.11, -0.11, H + 0.1)],
              [(0, 1, 2, 3)], hide)
     for sx in (-1, 1):  # ladder up the front
-        tube((sx * 0.032, -0.2, -0.01), (sx * 0.032, -0.1, H + 0.01), 0.006, wood, n=4)
+        tube((sx * 0.034, -0.2, -0.01), (sx * 0.034, -0.1, H + 0.01), 0.008, wood, n=4)
     for k in range(4):
         f = (k + 0.6) / 4.6
         y, z = -0.2 + 0.1 * f, H * f
-        tube((-0.034, y, z), (0.034, y, z), 0.004, wood, n=3)
-    torch(0.075, -0.075, H + 0.13, torch_wood)
+        tube((-0.036, y, z), (0.036, y, z), 0.006, wood, n=4)
+    # torch on a bracket off the front-right leg, out in front of the awning (its flame clears the hide roof)
+    tube((0.07, -0.072, H + 0.03), (0.078, -0.138, H + 0.03), 0.007, wood, n=4)
+    torch(0.078, -0.14, H + 0.09, torch_wood)
 
 
 def raider_camp():
@@ -552,7 +554,7 @@ def raider_camp():
         stake(x, y, 0.36, 0.032, (0.0, -0.01), wd2, tip, n=6)
         gp.append((x, y - 0.01))
         torch(x, y - 0.045, 0.3, wd2)
-        tube((x, y - 0.01, 0.24), (x, y - 0.045, 0.24), 0.005, wd2, n=3)  # bracket
+        tube((x, y - 0.01, 0.24), (x, y - 0.045, 0.24), 0.008, wd2, n=4)  # bracket
     tube((gp[0][0] - 0.03, gp[0][1], 0.31), (gp[1][0] + 0.03, gp[1][1], 0.32), 0.02, wd2, n=6)
     rope = flat("lash_rope", "#b49a6a", 0.8)
     for (x, y) in gp:
@@ -575,7 +577,7 @@ def raider_camp():
         awn = flat("awning", RAG_RED, 0.85)
         y0, y1 = -L_ / 2, -L_ / 2 - 0.13
         for sx in (-1, 1):
-            tube((sx * 0.1, y1, -0.01), (sx * 0.1, y1, h_ * 0.7), 0.006, wd2, n=4)
+            tube((sx * 0.1, y1, -0.01), (sx * 0.1, y1, h_ * 0.7), 0.008, wd2, n=4)
         dag = [(-0.11, y1, h_ * 0.69)] + [(-0.11 + 0.22 * k / 6, y1 - 0.004, h_ * (0.69 if k % 2 == 0 else 0.6))
                                           for k in range(1, 6)] + [(0.11, y1, h_ * 0.69)]
         mesh_obj([(0.0, y0 + 0.005, h_ * 0.86)] + dag, [tuple(range(len(dag) + 1))], awn)
@@ -599,9 +601,9 @@ def raider_camp():
     cn(0.026, 0.08, (fx + 0.005, fy - 0.004, 0.06), glow("flame_y", FLAME_Y, 3.5), 6)
     for k in range(3):  # tripod over the fire, a cauldron on a chain
         a = k * math.tau / 3 + 0.5
-        tube((fx + math.cos(a) * 0.11, fy + math.sin(a) * 0.11, -0.005), (fx, fy, 0.25), 0.007, wd2, n=4)
+        tube((fx + math.cos(a) * 0.11, fy + math.sin(a) * 0.11, -0.005), (fx, fy, 0.25), 0.009, wd2, n=4)
     pot = flat("cauldron", "#2b2a2c", 0.5)
-    tube((fx, fy, 0.25), (fx, fy, 0.16), 0.003, pot, n=3)
+    tube((fx, fy, 0.25), (fx, fy, 0.16), 0.004, pot, n=3)
     lathe([(0.018, 0.115), (0.032, 0.13), (0.03, 0.16)], (pot, pot), 8, top=flat("stew", "#6b4a2a", 0.6),
           loc=(fx, fy, 0.0))
     bpy.ops.object.empty_add(location=(fx, fy, 0.2))
@@ -618,10 +620,10 @@ def raider_camp():
              -0.25)
     # ---- a hide stretched on a frame, a woodpile
     def hide_frame():
-        tube((-0.07, 0.0, -0.01), (-0.07, 0.0, 0.2), 0.008, wd2, n=4)
-        tube((0.07, 0.0, -0.01), (0.07, 0.0, 0.2), 0.008, wd2, n=4)
-        tube((-0.085, 0.0, 0.19), (0.085, 0.0, 0.19), 0.007, wd2, n=4)
-        tube((-0.075, 0.0, 0.035), (0.075, 0.0, 0.035), 0.006, wd2, n=4)
+        tube((-0.07, 0.0, -0.01), (-0.07, 0.0, 0.2), 0.01, wd2, n=4)
+        tube((0.07, 0.0, -0.01), (0.07, 0.0, 0.2), 0.01, wd2, n=4)
+        tube((-0.085, 0.0, 0.19), (0.085, 0.0, 0.19), 0.009, wd2, n=4)
+        tube((-0.075, 0.0, 0.035), (0.075, 0.0, 0.035), 0.009, wd2, n=4)
         hide_pts = [(-0.05, 0.18), (0.0, 0.17), (0.05, 0.18), (0.058, 0.12), (0.048, 0.05), (0.0, 0.045),
                     (-0.048, 0.05), (-0.058, 0.12)]
         mesh_obj([(x, -0.004, z) for x, z in hide_pts], [tuple(range(len(hide_pts)))], flat("hide", "#9a7650", 0.9))
@@ -708,9 +710,9 @@ def sailboat():
     st = flat("sail_blue", TRIM_BLUE, 0.7)
     quad_plate((mx - 0.006, 0, 0.28), (mx - 0.006, 0, 0.25), (mx - 0.112, 0, 0.18), (mx - 0.083, 0, 0.215), st, 0.009)
     ico(0.012, (mx, 0, 0.535), flat("pennant", TRIM_BLUE, 0.6))
-    rope = flat("rope", "#e8dcc0", 0.8)
-    rod((mx, 0, 0.5), (0.2, 0, 0.08), 0.003, rope, n=3)  # forestay
-    rod((mx, 0, 0.5), (-0.19, 0, 0.08), 0.003, rope, n=3)  # backstay
+    rig = flat("rigging", "#3a2c20", 0.8)  # thin dark rigging, as on the reference ships
+    rod((mx, 0, 0.5), (0.2, 0, 0.08), 0.0045, rig, n=3)  # forestay
+    rod((mx, 0, 0.5), (-0.19, 0, 0.08), 0.0045, rig, n=3)  # backstay
     crate(-0.1, 0.02, 0.045, 0.3, z=0.068)
     barrel(-0.1, -0.035, 0.018, 0.04, z=0.068)
 
@@ -722,7 +724,7 @@ def rowboat():
     bx((0.016, 0.085, 0.01), (0.0, 0, 0.05), tex("wood", WOOD_L, 3.0), bev=0)
     oar = tex("wood", "#c9a06a", 3.0)
     for sy in (-1, 1):
-        rod((-0.03, sy * 0.03, 0.055), (0.07, sy * 0.13, 0.012), 0.004, oar, n=4)
+        rod((-0.03, sy * 0.03, 0.055), (0.07, sy * 0.13, 0.012), 0.0055, oar, n=4)
         bx((0.035, 0.016, 0.004), (0.075, sy * 0.135, 0.01), oar, math.atan2(0.1, 0.1) * sy, bev=0)
 
 
@@ -739,8 +741,8 @@ def crane():
     beam(jib0, jib1, 0.022, wl)
     beam((0, 0, 0.43), (0.18, 0, 0.395), 0.012, wl)
     rope = flat("rope", "#e8dcc0", 0.8)
-    rod((0.0, 0.0, 0.44), (0.27, 0.0, 0.48), 0.003, rope, n=3)
-    rod(jib1, (0.27, 0.0, 0.2), 0.003, rope, n=3)
+    rod((0.0, 0.0, 0.44), (0.27, 0.0, 0.48), 0.0045, rope, n=3)
+    rod(jib1, (0.27, 0.0, 0.2), 0.0045, rope, n=3)
     cy(0.03, 0.04, (-0.035, 0.0, 0.13), wl, 8, rot=(math.pi / 2, 0, 0))  # winch drum
     torus(0.03, 0.005, (-0.035, 0.0, 0.13), rope, rot=(math.pi / 2, 0, 0), seg=8, mseg=3)
     # hanging bundle (net of sacks)
@@ -766,7 +768,7 @@ def _cove(quay, water_c=WATER, shallow_c="#79c1df", joints=False):
     ground_poly(pts, water, 0.012)
     # shallow lighter rim and the stone quay along the land side of the cove
     shallow = tex("plaster", shallow_c, 1.5)
-    capped = set()
+    runs = {}  # k -> (quay p0, p1, shallow q0, q1) of the stretches that are built
     for k in range(len(pts)):
         p0, p1 = pts[k], pts[(k + 1) % len(pts)]
         _, c0 = clamp_hex((p0[0] * 1.03, p0[1] * 1.03), HEX_R)
@@ -780,16 +782,40 @@ def _cove(quay, water_c=WATER, shallow_c="#79c1df", joints=False):
         q0 = (p0[0] - dx / dl * 0.04, p0[1] - dy / dl * 0.04, 0.014)
         q1 = (p1[0] - dx / dl * 0.04, p1[1] - dy / dl * 0.04, 0.014)
         beam(q0, q1, 0.025, shallow)
-        if joints:  # one cap per joint, just above the overlapping stone tops (no coplanar faces left in view)
-            for (x, y) in (p0, p1):
-                if (round(x, 4), round(y, 4)) in capped:
-                    continue
-                capped.add((round(x, 4), round(y, 4)))
-                d_ = math.hypot(x - cx, y)
-                flat_poly(ev.ngon(0.028, 6, 0.0), 0.047, quay).location = (x, y, 0.0)
-                flat_poly(ev.ngon(0.02, 6, 0.0), 0.028, shallow).location = (x - (x - cx) / d_ * 0.04,
-                                                                             y - y / d_ * 0.04, 0.0)
+        runs[k] = (p0, p1, q0[:2], q1[:2])
+    if joints:  # where two runs meet at an angle, one cap over both stone ends, 0.003 above their tops
+        for k, a in runs.items():
+            b = runs.get((k + 1) % len(pts))
+            if b is None:
+                continue
+            flat_poly(_joint_cap(a[0], a[1], b[0], b[1], 0.05, 0.02), 0.048, quay)
+            flat_poly(_joint_cap(a[2], a[3], b[2], b[3], 0.025, 0.012), 0.0295, shallow)
     return cx
+
+
+def _joint_cap(a0, a1, b0, b1, w, e):
+    """Outline (convex hull) covering the last `e` of a beam of width w from a0 to a1 and the first `e` of the next
+    one from b0 to b1, with the wedge between their ends: a cap the width of the beams, lying along both runs."""
+    pts = []
+    for (p, q, back) in ((a0, a1, True), (b0, b1, False)):
+        dx, dy = q[0] - p[0], q[1] - p[1]
+        ln = math.hypot(dx, dy)
+        dx, dy = dx / ln, dy / ln
+        end = q if back else p
+        for s_ in (0.0, -e if back else e):
+            for sn in (-1, 1):
+                pts.append((end[0] + dx * s_ - dy * sn * w / 2, end[1] + dy * s_ + dx * sn * w / 2))
+    pts = sorted(set(pts))
+    def half(seq):
+        h = []
+        for p in seq:
+            while len(h) >= 2 and ((h[-1][0] - h[-2][0]) * (p[1] - h[-2][1]) -
+                                   (h[-1][1] - h[-2][1]) * (p[0] - h[-2][0])) <= 0:
+                h.pop()
+            h.append(p)
+        return h
+    lo, hi = half(pts), half(reversed(pts))
+    return lo[:-1] + hi[:-1]
 
 
 def harbour_tower():
@@ -811,13 +837,18 @@ def harbour_tower():
     lathe([(0.024, 0.385), (0.024, 0.435)], (glow("beacon", "#ffcf6b", 3.0),), 6)
     lathe([(0.05, 0.438), (0.0, 0.52)], (tex("roof", SLATE_N, 2.0),), 8, bottom=flat("eave", ev.ROOF_TRIM, 0.8))
     spike((0.0, 0.0, 0.515), (0.0, 0.0, 0.55), 0.007, flat("gold", GOLD, 0.35), 4)
-    fy = -0.0625
-    mesh_obj([(-0.022, fy, 0.03), (0.022, fy, 0.03), (0.022, fy, 0.1), (0.0, fy - 0.001, 0.115), (-0.022, fy, 0.1)],
-             [(0, 1, 2, 3, 4)], planks("#4a2d17", 0.014, 0.3))
+    def fy(z, off):
+        """y of a point `off` in front of the battered −Y face of the 10-gon shaft at height z (z >= 0.035)."""
+        return -((0.068 - 0.008 * (z - 0.035) / 0.295) * math.cos(math.pi / 10) + off)
+    # door on the top of the batter: a pale stone surround round a pointed plank door, both on the sloping face
+    for (hw, z0, z1, zp, off, m_) in ((0.02, 0.035, 0.108, 0.128, 0.002, flat("door_surround", "#c8c0b0", 0.85)),
+                                      (0.016, 0.035, 0.1, 0.116, 0.0035, planks("#4a2d17", 0.014, 0.3))):
+        mesh_obj([(-hw, fy(z0, off), z0), (hw, fy(z0, off), z0), (hw, fy(z1, off), z1), (0.0, fy(zp, off), zp),
+                  (-hw, fy(z1, off), z1)], [(0, 1, 2, 3, 4)], m_)
     lit = ev.win_lit()
     for z in (0.19, 0.27):
-        mesh_obj([(-0.009, -0.0605, z), (0.009, -0.0605, z), (0.009, -0.0605, z + 0.035), (-0.009, -0.0605, z + 0.035)],
-                 [(0, 1, 2, 3)], lit)
+        mesh_obj([(-0.009, fy(z, 0.002), z), (0.009, fy(z, 0.002), z), (0.009, fy(z + 0.035, 0.002), z + 0.035),
+                  (-0.009, fy(z + 0.035, 0.002), z + 0.035)], [(0, 1, 2, 3)], lit)
 
 
 def warehouse():
@@ -851,7 +882,7 @@ def warehouse():
     # hoist beam out of the +X gable with a pulley, a rope and a sack
     beam((W1 / 2 - 0.02, 0, z1 + 0.05), (W1 / 2 + 0.1, 0, z1 + 0.05), 0.022, tex("wood", WOOD_D, 2.0))
     bx((0.06, 0.012, 0.07), (W1 / 2 + 0.003, 0, z0 + 0.045), flat("loft", "#2b2420", 0.9), math.pi / 2, bev=0)
-    tube((W1 / 2 + 0.09, 0, z1 + 0.04), (W1 / 2 + 0.09, 0, 0.1), 0.003, rope, n=3)
+    tube((W1 / 2 + 0.09, 0, z1 + 0.04), (W1 / 2 + 0.09, 0, 0.1), 0.0045, rope, n=3)
     sack(W1 / 2 + 0.09, 0, 0.8, 0, z=0.04)
 
 
@@ -860,7 +891,7 @@ def fish_stall():
     wd = tex("wood", "#6a4327", 2.5)
     for sx in (-1, 1):
         for sy in (-1, 1):
-            tube((sx * 0.075, sy * 0.04, -0.005), (sx * 0.075, sy * 0.04, 0.13 + (0.025 if sy > 0 else 0.0)), 0.006, wd,
+            tube((sx * 0.075, sy * 0.04, -0.005), (sx * 0.075, sy * 0.04, 0.13 + (0.025 if sy > 0 else 0.0)), 0.008, wd,
                  n=4)
     bx((0.16, 0.07, 0.05), (0, 0, 0.025), tex("wood", "#8a6440", 3.0), bev=0)
     mesh_obj([(-0.07, -0.03, 0.051), (0.07, -0.03, 0.051), (0.07, 0.03, 0.051), (-0.07, 0.03, 0.051)], [(0, 1, 2, 3)],
@@ -917,8 +948,8 @@ def port():
     # ---- moored boats: sailboat on the +Y side of the pier, rowboat on the −Y side
     build_at(sailboat, 0.44, 0.17, 0.04, z=0.004)
     build_at(rowboat, 0.5, -0.27, -0.1, z=0.004)
-    tube((0.36, py + 0.085, 0.11), (0.3, 0.12, 0.07), 0.003, rope, n=3)
-    tube((0.5, py - 0.085, 0.11), (0.42, -0.25, 0.05), 0.003, rope, n=3)
+    tube((0.36, py + 0.085, 0.11), (0.3, 0.12, 0.07), 0.0045, rope, n=3)
+    tube((0.5, py - 0.085, 0.11), (0.42, -0.25, 0.05), 0.0045, rope, n=3)
     # ---- warehouse, harbour tower, derrick
     build_at(warehouse, -0.36, 0.32, -0.1)
     build_at(harbour_tower, 0.27, 0.6)
@@ -1009,7 +1040,7 @@ def archery_target(x, y, rz=0.0):
                       for i in range(10)], [tuple(range(10))], flat("tgt_" + c, c, 0.7))
         ar = flat("arrow", "#d8c49a", 0.8)
         for dx, dz in ((0.012, 0.01), (-0.02, -0.015)):
-            tube((dx, -0.02, 0.1 + dz), (dx + 0.01, -0.08, 0.1 + dz + 0.012), 0.003, ar, n=3)
+            tube((dx, -0.02, 0.1 + dz), (dx + 0.01, -0.08, 0.1 + dz + 0.012), 0.0045, ar, n=3)
     build_at(b, x, y, rz)
 
 
@@ -1035,7 +1066,8 @@ def tower_sq(x, y, w, h, st, cap, roof, slit=None, lit=None, front_y=None):
 
 def hanging_banner(x, y, z_top, w, h, cloth, em, rod_m):
     """A long banner hanging down a wall facing −Y: a rod, a swallow-tailed cloth, a shield emblem."""
-    tube((x - w / 2 - 0.012, y - 0.006, z_top + 0.004), (x + w / 2 + 0.012, y - 0.006, z_top + 0.004), 0.005, rod_m, n=4)
+    tube((x - w / 2 - 0.012, y - 0.006, z_top + 0.004), (x + w / 2 + 0.012, y - 0.006, z_top + 0.004), 0.0065, rod_m,
+         n=4)
     mesh_obj([(x - w / 2, y, z_top), (x + w / 2, y, z_top), (x + w / 2, y, z_top - h), (x, y, z_top - h * 0.82),
               (x - w / 2, y, z_top - h)], [(0, 1, 2, 3, 4)], cloth)
     mesh_obj([(x + u * w * 0.62, y - 0.002, z_top - h * 0.36 + v * w * 0.72) for u, v in HEATER], [tuple(range(5))], em)
@@ -1098,9 +1130,9 @@ def military_base():
     mesh_obj(intr, [(2 * k, 2 * k + 1, 2 * k + 3, 2 * k + 2) for k in range(8)], sd)  # the arch's underside
     door = planks("#7a5232", 0.016, 0.3)
     band = flat("door_band", IRON, 0.5)
-    for sx in (-1, 1):  # leaves swung open into the yard
+    for sx in (-1, 1):  # leaves swung half open into the yard: their planks and iron bands show through the arch
         hx = gx0 + sx * gate
-        a = math.radians(72)
+        a = math.radians(45)
         cxl, cyl = hx - sx * math.cos(a) * gate * 0.48, -S + 0.03 + math.sin(a) * gate * 0.48
         bx((gate * 0.96, 0.014, 0.17), (cxl, cyl, 0.085), door, -sx * a, bev=0)
         bx((gate * 0.97, 0.018, 0.012), (cxl, cyl, 0.13), band, -sx * a, bev=0)
@@ -1665,12 +1697,19 @@ for _t, _c in ev.TEAMS.items():
 # ------------------------------------------------------------------ export
 
 
+# the whole-hex props carry many thin poles (stakes, braces, ladders, posts, flagpoles): in a 512 px atlas their faces
+# get UV islands under a texel wide that no texel centre falls into, so they bake black — they get a 1024 px atlas
+# (like the residences); one of each per map, so the extra texture memory stays small
+BAKE_1024 = {"raider_camp", "port", "military_base"}
+
+
 def export(name, out):
-    """evolution_assets.export (lowpoly, 512 px bake, glTF) with the mesh origin moved to the model origin."""
+    """evolution_assets.export (lowpoly, 512 px bake — 1024 for BAKE_1024 — glTF) with the mesh origin moved to the
+    model origin."""
     objs = [o for o in bpy.context.scene.objects if o.type == "MESH"]
     bpy.context.view_layer.update()
     ev.lowpoly(objs)
-    ob = ea.bake_asset(objs, 512)
+    ob = ea.bake_asset(objs, 1024 if name in BAKE_1024 else 512)
     ob.name = name
     ob.data.transform(ob.matrix_world)
     ob.matrix_world = Matrix.Identity(4)
