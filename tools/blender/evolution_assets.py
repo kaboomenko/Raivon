@@ -1832,6 +1832,31 @@ def mine_scifi(team):
         bx((0.08, 0.08, 0.06), (0.38, -0.3 + k * 0.1, 0.03), flat("crate", "#3e4550", 0.5), 0.2, 0.006)
 
 
+def district_scifi(team):
+    """DL8+ sprawl on an owned open hex (reference frame 2: the whole land is built up): a dark plate with glowing
+    street lines, four dark-glass blocks of different heights with team neon edges, a skybridge, a small dome and a
+    landing pad — low enough not to hide the capital."""
+    plate = flat("plate8", "#2c3139", 0.6)
+    pad(0.72, plate, 0.012, 12, 0.0, 41)
+    street = glow("street" + team, shade(team, 1.25), 1.4)
+    for ang in (0.0, math.pi / 3, -math.pi / 3):  # three glowing avenues across the plate
+        bx((1.3, 0.016, 0.006), (0, 0, 0.016), street, ang, 0)
+    gl = dark_glass()
+    neon = team_neon(team)
+    blocks = [(-0.3, 0.26, 0.2, 0.18, 0.42), (0.28, 0.3, 0.22, 0.2, 0.62), (0.34, -0.24, 0.18, 0.16, 0.34),
+              (-0.26, -0.3, 0.24, 0.16, 0.5)]
+    for (x, y, w, d, h) in blocks:
+        build_at(lambda w=w, d=d, h=h: (neon_box(w, d, 0.012, h, team, gl),
+                                        bx((w * 0.6, d * 0.6, 0.04), (0, 0, 0.012 + h + 0.02), flat("roofdeck", "#4a515c", 0.6), bev=0.004)),
+                 x, y, 0.2)
+    beam((-0.3, 0.26, 0.3), (0.28, 0.3, 0.3), 0.04, flat("bridge", "#c9d0d8", 0.4))  # skybridge
+    beam((-0.3, 0.26, 0.3), (0.28, 0.3, 0.3), 0.012, neon)
+    uvs(0.11, (0.02, -0.02, 0.012), flat("dome_glass", "#9fd4ef", 0.25), 12, 6, (1, 1, 0.6))
+    cy(0.115, 0.012, (0.02, -0.02, 0.02), neon, 16)
+    cy(0.08, 0.01, (-0.02, -0.5, 0.017), flat("pad", "#3e4550", 0.5), 12)
+    torus(0.07, 0.005, (-0.02, -0.5, 0.024), neon)
+
+
 CITY = [city_dl1, city_dl2, city_dl3, city_dl4, city_dl5, city_dl6, city_dl7, city_dl8]
 RES = [residence_dl1, residence_dl2, residence_dl3, residence_dl4, residence_dl5, residence_dl6, residence_dl7, residence_dl8]
 
@@ -1843,6 +1868,7 @@ for _t, _c in TEAMS.items():
     ASSETS[f"farm_modern_{_t}"] = (lambda c: (lambda: farm_modern(c)))(_c)
     ASSETS[f"farm_scifi_{_t}"] = (lambda c: (lambda: farm_scifi(c)))(_c)
     ASSETS[f"mine_scifi_{_t}"] = (lambda c: (lambda: mine_scifi(c)))(_c)
+    ASSETS[f"district_scifi_{_t}"] = (lambda c: (lambda: district_scifi(c)))(_c)
 for _n in range(1, 9):
     for _t, _c in TEAMS.items():
         ASSETS[f"city_dl{_n}_{_t}"] = (lambda f, c: (lambda: f(c)))(CITY[_n - 1], _c)

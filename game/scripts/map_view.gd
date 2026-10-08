@@ -1115,6 +1115,15 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 					spawn("rock", holder, p + Vector3(rng.randf_range(-0.5, 0.5), 0, rng.randf_range(-0.5, 0.5)), rng.randf() * TAU, rng.randf_range(1.2, 2.0))
 				spawn("tree_pine", holder, p + Vector3(0.3, 0, 0.3), 0.0, 1.0)
 		_:
+			var district := _era_model("district", int(c["owner"]), side)
+			if district != "":  # the built-up land of the sci-fi stage (reference frame 2): a neon district, a tree or two
+				spawn(district, holder, p, rng.randi_range(0, 5) * PI / 3.0, 1.0)
+				for i in rng.randi_range(0, 2):
+					spawn("tree_round", holder, p + Vector3(rng.randf_range(-0.6, 0.6), 0, rng.randf_range(-0.6, 0.6)), rng.randf() * TAU, 0.7)
+				_place_fort(c, holder)
+				if rng.randf() < _banner_chance(int(c["owner"])):
+					spawn("banner_" + side, holder, p + Vector3(rng.randf_range(-0.4, 0.4), 0, rng.randf_range(-0.4, 0.4)), 0.0, 1.0, int(c["owner"]))
+				return
 			var hs := _homestead(int(c["owner"]), side)
 			if hs != "" and rng.randf() < 0.55:
 				# settled countryside (the reference frames): a farmstead in the owner's colours and era on open land
@@ -1358,8 +1367,9 @@ func _rebuild_overlay() -> void:
 			# the reference frames (docs/reference): a light tint over the land that deepens toward the territory's
 			# border — per territory, not per hex, so the inner hexes don't read as tiles
 			var tc := Color(0.16, 0.33, 0.86) if own == Types.PLAYER else state_color(own).darkened(0.25)  # royal blue (measured against the reference), crimson
-			var c_in := Color(tc.r, tc.g, tc.b, 0.14)
-			var c_rim := Color(tc.r, tc.g, tc.b, 0.5)
+			var built: bool = own >= 0 and own < sim.states.size() and int(sim.states[own]["dev_level"]) >= 8
+			var c_in := Color(tc.r, tc.g, tc.b, 0.08 if built else 0.14)  # built-up sci-fi land: a lighter veil, the city shows
+			var c_rim := Color(tc.r, tc.g, tc.b, 0.38 if built else 0.5)
 			var rim := [false, false, false, false, false, false]
 			for d in 6:
 				var nb: int = sim.neighbors[c["id"]][d]

@@ -336,9 +336,11 @@ func _environment() -> void:
 	e.adjustment_contrast = 1.25
 	we.environment = e
 	add_child(we)
+	_env = e
 
 	_add_tilt_shift()
 	var sun := DirectionalLight3D.new()
+	_sun = sun
 	sun.rotation_degrees = Vector3(-48, -35, 0)
 	sun.light_color = Color(1.0, 0.93, 0.82)
 	sun.light_energy = 1.3
@@ -346,6 +348,30 @@ func _environment() -> void:
 	sun.shadow_blur = 1.5
 	sun.directional_shadow_max_distance = 60
 	add_child(sun)
+
+
+var _env: Environment
+var _sun: DirectionalLight3D
+var _light_era := -1
+
+
+## The light follows the player's era (reference frames 1 vs 2): warm sun and a blue-grey ambient for the medieval
+## and industrial stages, a cool steel-blue sun, ambient and fog for the sci-fi stage (DL8+).
+func _apply_era_light(dl: int) -> void:
+	var era := 1 if dl >= 8 else 0
+	if era == _light_era or _env == null or _sun == null:
+		return
+	_light_era = era
+	if era == 1:
+		_sun.light_color = Color(0.86, 0.92, 1.0)
+		_env.ambient_light_color = Color(0.5, 0.64, 0.92)
+		_env.fog_light_color = Color(0.42, 0.55, 0.75)
+		_env.background_color = Color(0.08, 0.12, 0.2)
+	else:
+		_sun.light_color = Color(1.0, 0.93, 0.82)
+		_env.ambient_light_color = Color(0.62, 0.7, 0.85)
+		_env.fog_light_color = Color(0.55, 0.62, 0.72)
+		_env.background_color = Color(0.13, 0.16, 0.2)
 
 
 func _make_selection() -> void:
@@ -3252,6 +3278,7 @@ func now_s() -> int:
 func _econ_tick() -> void:
 	if ui:
 		ui.set_portrait_era(econ.dev_level())
+	_apply_era_light(econ.dev_level())
 	var now := now_s()
 	var done_line: String = research.tick(now)
 	if done_line != "":
