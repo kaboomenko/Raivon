@@ -1727,12 +1727,36 @@ def homestead(team):
     build_at(lambda: woodpile(2), 0.27, 0.16, 1.4, 0.7)
 
 
+def homestead_modern(team):
+    """DL6–7 countryside: a two-storey panel house with a flat roof, a fenced lot with greenhouse rows, a car."""
+    build_at(lambda: panel_block(0.24, 0.18, 2, team), 0.0, 0.06, 0.15)
+    gh = flat("greenhouse", "#cfe6ee", 0.2)
+    for i in range(2):
+        build_at(lambda: (bx((0.2, 0.06, 0.05), (0, 0, 0.025), gh, bev=0.01)), -0.04, -0.17 - i * 0.09, 0.15)
+    bx((0.09, 0.05, 0.04), (0.22, -0.02, 0.03), flat("car" + team, slate(team, 1.1), 0.4), 0.3, 0.012)
+
+
+def homestead_scifi(team):
+    """DL8 countryside: a dark-glass habitat pod with team neon edges, a landing pad with a glowing ring and a
+    crate of raivite crystals."""
+    gl = dark_glass()
+    build_at(lambda: neon_box(0.2, 0.16, 0.0, 0.16, team, gl), 0.0, 0.08, 0.15)
+    uvs(0.09, (0.0, 0.08, 0.17), flat("dome", "#a9d6f0", 0.15), 12, 6, (1, 1, 0.5))
+    cy(0.11, 0.015, (0.02, -0.2, 0.008), flat("pad", "#4a515c", 0.5), 16)
+    torus(0.095, 0.006, (0.02, -0.2, 0.018), team_neon(team))
+    bx((0.07, 0.07, 0.05), (0.22, -0.04, 0.025), flat("crate", "#3e4550", 0.5), 0.4, 0.006)
+    for k in range(3):
+        cn(0.012, 0.05, (0.2 + k * 0.018, -0.04, 0.07), glow("raivite_c", CYAN, 2.0), 6)
+
+
 CITY = [city_dl1, city_dl2, city_dl3, city_dl4, city_dl5, city_dl6, city_dl7, city_dl8]
 RES = [residence_dl1, residence_dl2, residence_dl3, residence_dl4, residence_dl5, residence_dl6, residence_dl7, residence_dl8]
 
 ASSETS = {}
 for _t, _c in TEAMS.items():
     ASSETS[f"homestead_{_t}"] = (lambda c: (lambda: homestead(c)))(_c)
+    ASSETS[f"homestead_modern_{_t}"] = (lambda c: (lambda: homestead_modern(c)))(_c)
+    ASSETS[f"homestead_scifi_{_t}"] = (lambda c: (lambda: homestead_scifi(c)))(_c)
 for _n in range(1, 9):
     for _t, _c in TEAMS.items():
         ASSETS[f"city_dl{_n}_{_t}"] = (lambda f, c: (lambda: f(c)))(CITY[_n - 1], _c)

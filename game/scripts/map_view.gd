@@ -612,6 +612,16 @@ func pop_hex(id: int) -> void:
 	tw.tween_property(holder, "scale", Vector3.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
+## The farmstead of an owner's era: a stone cottage (DL1–5), a panel house with greenhouses (DL6–7), a neon habitat
+## pod (DL8+); "" for no owner.
+func _homestead(owner: int, side: String) -> String:
+	if owner <= Types.NOBODY or owner >= sim.states.size():
+		return ""
+	var dl: int = int(sim.states[owner]["dev_level"])
+	var name := "homestead_scifi_" if dl >= 8 else ("homestead_modern_" if dl >= 6 else "homestead_")
+	return name + side if has_model(name + side) else ""
+
+
 ## Model name for `kind` ("city", "residence") in the style of the owner's development level
 ## (canon §6: every DL changes how the state looks); falls back to lower levels, "" if none exist.
 func evolved(kind: String, owner: int) -> String:
@@ -999,9 +1009,10 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 					spawn("rock", holder, p + Vector3(rng.randf_range(-0.5, 0.5), 0, rng.randf_range(-0.5, 0.5)), rng.randf() * TAU, rng.randf_range(1.2, 2.0))
 				spawn("tree_pine", holder, p + Vector3(0.3, 0, 0.3), 0.0, 1.0)
 		_:
-			if c["owner"] != Types.NOBODY and rng.randf() < 0.55 and has_model("homestead_" + side):
-				# settled countryside (the reference frames): a farmstead in the owner's colours on open land
-				spawn("homestead_" + side, holder, p + Vector3(rng.randf_range(-0.25, 0.25), 0, rng.randf_range(-0.25, 0.25)), rng.randf() * TAU, 1.25)
+			var hs := _homestead(int(c["owner"]), side)
+			if hs != "" and rng.randf() < 0.55:
+				# settled countryside (the reference frames): a farmstead in the owner's colours and era on open land
+				spawn(hs, holder, p + Vector3(rng.randf_range(-0.25, 0.25), 0, rng.randf_range(-0.25, 0.25)), rng.randf() * TAU, 1.25)
 			for i in rng.randi_range(1, 4):
 				var off := Vector3(rng.randf_range(-0.6, 0.6), 0, rng.randf_range(-0.6, 0.6))
 				spawn("tree_pine" if rng.randf() < 0.6 else "tree_round", holder, p + off, rng.randf() * TAU, rng.randf_range(0.7, 1.0))
