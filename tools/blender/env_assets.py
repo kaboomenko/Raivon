@@ -1117,6 +1117,9 @@ def export(name, out, pivot=None):
         bpy.ops.object.select_all(action="DESELECT")
         ob.select_set(True)
         bpy.context.view_layer.objects.active = ob
+        # the join keeps the first object's transform (the windmill's plinth is turned π/8): bake the rotation into
+        # the mesh so the split-off sails get an identity rotation and spin about their true axle in Godot
+        bpy.ops.object.transform_apply(location=False, rotation=True, scale=False)
         bpy.ops.object.mode_set(mode="EDIT")
         bpy.ops.mesh.select_all(action="DESELECT")
         ob.vertex_groups.active_index = ob.vertex_groups["sails"].index
