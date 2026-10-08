@@ -37,6 +37,8 @@ CANVAS = "#a29d93"
 CANVAS_D = "#858076"
 CANVAS_W = "#d3c9b0"
 RAG = "#6e1c1a"
+RAG_RED = "#a3241b"
+SLATE_N = "#56667c"  # neutral slate: the blue-grey roofs of the reference without a team colour
 BONE = "#ece3cf"
 IRON = "#2e3034"
 WATER = "#3f8fc2"
@@ -227,9 +229,17 @@ def stake(x, y, h, r, lean, mt, tip, n=5):
     spike(tuple(p1), tuple(p1 + d * r * 2.4), r, tip, n)
 
 
-def ridge_tent(L, W, h, canvas, patches=(), door=True, sticks=True, seed=0):
-    """A-frame canvas tent at the origin: ridge along Y, opening on the −Y gable, patches on the slopes."""
+def ridge_tent(L, W, h, canvas, patches=(), door=True, sticks=True, seed=0, stripes=()):
+    """A-frame canvas tent at the origin: ridge along Y, opening on the −Y gable, patches on the slopes; `stripes`
+    = (y fraction of L, width, material) bands painted across both slopes."""
     prism_roof("tent", L, W, h, (0, 0, 0), canvas, overhang=0.0, rot_z=math.pi / 2)
+    nl = math.hypot(h, W / 2)
+    for (fy, sw, mt) in stripes:
+        y0, y1 = fy * L - sw / 2, fy * L + sw / 2
+        for sx in (-1, 1):
+            ox, oz = sx * h / nl * 0.003, W / 2 / nl * 0.003
+            mesh_obj([(ox, y0, h + oz), (sx * W / 2 + ox, y0, oz), (sx * W / 2 + ox, y1, oz), (ox, y1, h + oz)],
+                     [(0, 1, 2, 3)], mt)
     dark = flat("tent_in", "#2b2420", 0.9)
     if door:
         tri_plate((-W * 0.22, -L / 2 - 0.004, 0.0), (W * 0.22, -L / 2 - 0.004, 0.0), (0, -L / 2 - 0.004, h * 0.78),
@@ -256,9 +266,12 @@ def ridge_tent(L, W, h, canvas, patches=(), door=True, sticks=True, seed=0):
            pm, bev=0, rot=(0, sx * ang, 0))
 
 
-def cone_tent(r, h, canvas, patches=(), seed=0):
-    """Round marauder tent (yurt-like cone), a dark doorway toward −Y, poles crossing above the apex."""
+def cone_tent(r, h, canvas, patches=(), seed=0, bands=()):
+    """Round marauder tent (yurt-like cone), a dark doorway toward −Y, poles crossing above the apex; `bands` =
+    (from, to height fraction, material) rings painted round the hide."""
     cn(r, h, (0, 0, h / 2), canvas, 8, rot=(0, 0, math.pi / 8))
+    for (f0, f1, mt) in bands:
+        lathe([(r * (1 - f0) + 0.004, h * f0), (r * (1 - f1) + 0.004, h * f1)], (mt,), 8, rot=math.pi / 8)
     ap = r * math.cos(math.pi / 8)
     dark = flat("tent_in", "#2b2420", 0.9)
     f = 0.42
@@ -315,9 +328,9 @@ def rope_coil(x, y, r=0.035, z=0.0):
 
 
 def spear(p0, p1, wood, iron, r=0.006):
-    rod(p0, p1, r, wood, n=4)
+    tube(p0, p1, r, wood, n=4)
     d = (Vector(p1) - Vector(p0)).normalized()
-    rod(p1, tuple(Vector(p1) + d * 0.04), 0.011, iron, r2=0.001, n=4)
+    spike(p1, tuple(Vector(p1) + d * 0.04), 0.011, iron, 4)
 
 
 def weapon_rack(x, y, rz, n_spears=4, shields=0, shield_c=None, axes=0):
@@ -327,22 +340,24 @@ def weapon_rack(x, y, rz, n_spears=4, shields=0, shield_c=None, axes=0):
         wl = tex("wood", "#9a7046", 3.0)
         iron = flat("iron", IRON, 0.5)
         for sx in (-1, 1):
-            beam((sx * 0.1, -0.035, 0.0), (sx * 0.1, 0.0, 0.11), 0.016, wd)
-            beam((sx * 0.1, 0.035, 0.0), (sx * 0.1, 0.0, 0.11), 0.016, wd)
-        beam((-0.115, 0.0, 0.105), (0.115, 0.0, 0.105), 0.016, wd)
-        beam((-0.1, 0.0, 0.035), (0.1, 0.0, 0.035), 0.012, wd)
+            tube((sx * 0.1, -0.035, 0.0), (sx * 0.1, 0.0, 0.11), 0.008, wd, n=4)
+            tube((sx * 0.1, 0.035, 0.0), (sx * 0.1, 0.0, 0.11), 0.008, wd, n=4)
+        tube((-0.115, 0.0, 0.105), (0.115, 0.0, 0.105), 0.008, wd, n=4)
+        tube((-0.1, 0.0, 0.035), (0.1, 0.0, 0.035), 0.006, wd, n=4)
         for i in range(n_spears):
             xx = -0.07 + i * 0.14 / max(1, n_spears - 1)
             spear((xx, -0.05, 0.0), (xx + 0.004, 0.01, 0.2), wl, iron)
         for i in range(axes):
             xx = 0.05 - i * 0.07
-            rod((xx, 0.04, 0.0), (xx, 0.012, 0.12), 0.006, wl, n=4)
+            tube((xx, 0.04, 0.0), (xx, 0.012, 0.12), 0.006, wl, n=4)
             bx((0.012, 0.035, 0.03), (xx, 0.022, 0.11), iron, bev=0, rot=(-0.23, 0, 0))
         for i in range(shields):
             xx = -0.06 + i * 0.12
             sm = tex("wood", shield_c or "#8a6440", 2.0)
-            cy(0.042, 0.01, (xx, -0.05, 0.045), sm, 10, rot=(math.pi / 2 - 0.25, 0, 0))
-            ico(0.011, (xx, -0.057, 0.047), flat("iron", IRON, 0.5), (1, 0.6, 1))
+            nrm = Vector((0.0, -math.cos(0.25), math.sin(0.25)))
+            c = Vector((xx, -0.05, 0.045))
+            tube(tuple(c + nrm * 0.005), tuple(c - nrm * 0.005), 0.042, sm, n=10, cap=True)
+            spike(tuple(c - nrm * 0.004), tuple(c - nrm * 0.016), 0.012, iron, 4)
     build_at(b, x, y, rz)
 
 
@@ -372,12 +387,112 @@ def clamp_hex(p, r=HEX_R):
 # ------------------------------------------------------------------ raider camp
 
 
+# the white beast's head of the enemy war banners (reference frame 1, the red side: red banners with a white wolf):
+# pricked ears, ruffed cheeks, a long muzzle — an outline in a unit box (u right, v up)
+WOLF = [(0.0, 0.1), (0.24, 0.5), (0.33, 0.1), (0.48, 0.0), (0.33, -0.07), (0.4, -0.2), (0.15, -0.17), (0.07, -0.5),
+        (-0.07, -0.5), (-0.15, -0.17), (-0.4, -0.2), (-0.33, -0.07), (-0.48, 0.0), (-0.33, 0.1), (-0.24, 0.5)]
+
+
+def emblem_xz(x, y, z, w, h, mt, pts):
+    """Flat one-polygon emblem w × h centred at (x, y, z) in a plane facing ±Y."""
+    return mesh_obj([(x + u * w, y, z + v * h) for u, v in pts], [tuple(range(len(pts)))], mt)
+
+
+def torch(x, y, z, wood):
+    """Burning torch: a stick ending at z with a pitch-black head and a two-tone flame (glow, kept out of the bake)."""
+    tube((x, y, z - 0.08), (x, y, z), 0.006, wood, n=4)
+    tube((x, y, z - 0.004), (x, y, z + 0.018), 0.011, flat("pitch", "#2a211c", 0.9), r2=0.014, n=5, cap=True)
+    spike((x, y, z + 0.012), (x + 0.004, y, z + 0.085), 0.017, glow("flame", FLAME, 3.0), 5)
+    spike((x, y, z + 0.016), (x + 0.002, y - 0.003, z + 0.06), 0.011, glow("flame_y", FLAME_Y, 3.5), 5)
+
+
+def war_banner(px, py, H, cloth_c=RAG_RED, em_c=BONE):
+    """Marauder war banner: a rough pole with a lashed cross stick, a long red cloth with a ragged foot and the white
+    wolf's head on both faces (facing −Y), a horned skull on the pole top, two tattered streamers."""
+    pole = tex("wood", "#5a3e27", 2.0)
+    tube((px, py, -0.01), (px - 0.008, py + 0.006, H), 0.016, pole, r2=0.011, n=6)
+    rk = tex("plaster", "#7f7b75", 1.5)
+    for k in range(3):
+        a = k * math.tau / 3 + 0.3
+        ico(0.028, (px + math.cos(a) * 0.034, py + math.sin(a) * 0.034, 0.01), rk, (1.1, 1.0, 0.7))
+    top = H - 0.06
+    yc = py - 0.016
+    tube((px - 0.135, yc + 0.004, top + 0.01), (px + 0.135, yc + 0.004, top + 0.006), 0.008, pole, n=5)
+    cloth = flat("war_cloth", cloth_c, 0.85)
+    w, h = 0.11, 0.32
+    foot = [(1.0, -0.8), (0.75, -1.0), (0.5, -0.82), (0.22, -1.03), (0.0, -0.85), (-0.25, -1.04), (-0.52, -0.83),
+            (-0.76, -1.0), (-1.0, -0.82)]
+    pts = [(px - w, 0.0), (px + w, 0.0)] + [(px + u * w, v * h) for u, v in foot]
+    mesh_obj([(x, yc, top + z) for x, z in pts], [tuple(range(len(pts)))], cloth)
+    trim = flat("war_trim", shade(cloth_c, 0.55), 0.85)  # dark band along the head of the cloth
+    mesh_obj([(px - w, yc - 0.002, top), (px + w, yc - 0.002, top), (px + w, yc - 0.002, top - 0.03),
+              (px - w, yc - 0.002, top - 0.03)], [(0, 1, 2, 3)], trim)
+    mesh_obj([(px - w, yc + 0.002, top), (px + w, yc + 0.002, top), (px + w, yc + 0.002, top - 0.03),
+              (px - w, yc + 0.002, top - 0.03)], [(0, 1, 2, 3)], trim)
+    em = flat("war_emblem", em_c, 0.7)
+    eye = flat("war_eye", "#2a1512", 0.9)
+    ez = top - 0.15
+    for dy in (-0.003, 0.003):
+        emblem_xz(px, yc + dy, ez, 0.19, 0.21, em, WOLF)
+        for sx in (-1, 1):  # slanted eyes
+            mesh_obj([(px + sx * 0.012, yc + 2 * dy, ez + 0.006), (px + sx * 0.05, yc + 2 * dy, ez + 0.026),
+                      (px + sx * 0.03, yc + 2 * dy, ez - 0.006)], [(0, 1, 2)], eye)
+        mesh_obj([(px - 0.014, yc + 2 * dy, ez - 0.085), (px + 0.014, yc + 2 * dy, ez - 0.085),
+                  (px, yc + 2 * dy, ez - 0.105)], [(0, 1, 2)], eye)  # nose
+    rag_d = flat("rag_d", shade(RAG, 0.7), 0.9)
+    for sx, ln in ((-1, 0.16), (1, 0.12)):  # streamers off the stick ends
+        x = px + sx * 0.128
+        mesh_obj([(x - 0.009, yc, top + 0.006), (x + 0.009, yc, top + 0.006), (x + 0.012 * sx, yc, top - ln),
+                  (x - 0.006, yc, top - ln * 0.8)], [(0, 1, 2, 3)], rag_d)
+    skull(px - 0.008, py + 0.006, H + 0.016, 1.25)
+
+
+def lookout_l1(wood, plank, hide, torch_wood):
+    """Crude raised lookout of lashed poles: splayed legs with X-braces, a plank deck with a stick rail, a hide
+    awning, a ladder up the front and a torch."""
+    H = 0.34
+    tops = []
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            b0, t0 = (sx * 0.1, sy * 0.1, -0.01), (sx * 0.068, sy * 0.068, H + 0.12)
+            tube(b0, t0, 0.012, wood, r2=0.009, n=5)
+            tops.append(t0)
+    for (a, b) in (((-1, -1), (1, -1)), ((1, -1), (1, 1))):  # X-braces on the front and the right side
+        p = [(sx * 0.093, sy * 0.093) for sx, sy in (a, b)]
+        tube((p[0][0], p[0][1], 0.03), (p[1][0], p[1][1], H - 0.03), 0.006, wood, n=4)
+        tube((p[1][0], p[1][1], 0.03), (p[0][0], p[0][1], H - 0.03), 0.006, wood, n=4)
+    bx((0.19, 0.19, 0.018), (0, 0, H), plank, bev=0)
+    for k in range(4):  # rail of sticks round the deck
+        a, b = tops[(0, 1, 3, 2)[k]], tops[(1, 3, 2, 0)[k]]
+        tube((a[0], a[1], H + 0.065), (b[0], b[1], H + 0.065), 0.006, wood, n=4)
+    mesh_obj([(-0.1, 0.1, H + 0.14), (0.1, 0.1, H + 0.14), (0.11, -0.11, H + 0.1), (-0.11, -0.11, H + 0.1)],
+             [(0, 1, 2, 3)], hide)
+    for sx in (-1, 1):  # ladder up the front
+        tube((sx * 0.032, -0.2, -0.01), (sx * 0.032, -0.1, H + 0.01), 0.006, wood, n=4)
+    for k in range(4):
+        f = (k + 0.6) / 4.6
+        y, z = -0.2 + 0.1 * f, H * f
+        tube((-0.034, y, z), (0.034, y, z), 0.004, wood, n=3)
+    torch(0.075, -0.075, H + 0.13, torch_wood)
+
+
 def raider_camp():
-    """Marauder camp: grey patched tents, crude sharpened-log palisade (gap at the front), camp fire with
-    smoke, a pole with a torn dark-red rag and a skull, a weapon rack and a pile of loot."""
+    """Marauder camp (reference frame 1, the enemy side: red war banners with a white beast's head, fires and
+    smoke): a sharpened-log palisade with a lashed gate frame, skulls and torches; hide tents painted with dark and
+    red bands, the chief's tent under a red awning; a camp fire with a tripod and cauldron (smoke marker for the
+    game); the red wolf banner; a raised lookout with a torch; a hide on a stretching frame, a woodpile, a weapon
+    rack, a pile of loot, trampled paths and grass at the foot of the stakes."""
     dirt = tex("plaster", "#86684a", 1.4)
     ev.pad(0.79, dirt, 0.006, 16, 0.05, 7)
     ev.pad(0.42, tex("plaster", "#6f553c", 1.6), 0.01, 12, 0.12, 8)  # trampled centre
+    mud = flat("mud_path", "#674c36", 0.95)
+    flat_poly([(-0.12, -0.755), (-0.02, -0.74), (0.11, -0.755), (0.1, -0.62), (0.07, -0.5), (0.12, -0.36), (0.05, -0.27),
+               (-0.04, -0.3), (-0.07, -0.42), (-0.05, -0.56), (-0.1, -0.68)], 0.012, mud)  # worn from the gate in
+    flat_poly([(0.1, 0.0), (0.17, 0.06), (0.21, 0.15), (0.15, 0.19), (0.1, 0.12), (0.04, 0.06)], 0.012, mud)
+    lawn = flat("camp_lawn", "#5f7432", 0.95)  # tufty grass left where nobody walks, by the stakes
+    for (cx_, cy2, r_, n_, sd) in ((-0.56, 0.3, 0.1, 7, 1), (0.08, 0.64, 0.09, 6, 2), (-0.62, -0.32, 0.08, 6, 3),
+                                   (0.6, -0.34, 0.08, 6, 4), (-0.2, 0.62, 0.07, 6, 5)):
+        flat_poly(ev.ngon(r_, n_, 0.3, 1.3, 0.8, 0.25, sd), 0.0, lawn).location = (cx_, cy2, 0.009)
     # ---- palisade ring with a gap at the front (−Y)
     wd = tex("wood", "#6e4c30", 2.0)
     wd2 = tex("wood", "#5a3e27", 2.0)
@@ -386,7 +501,6 @@ def raider_camp():
     R = 0.74
     n = 60
     gap = math.radians(24)
-    ring_pts = []
     for k in range(n):
         a = -math.pi / 2 + (k + 0.5) * math.tau / n
         if abs(math.atan2(math.sin(a + math.pi / 2), math.cos(a + math.pi / 2))) < gap:
@@ -399,7 +513,6 @@ def raider_camp():
         lean = 0.03 + rnd.uniform(-0.01, 0.015)
         stake(x, y, h, 0.024, (math.cos(a) * lean + rnd.uniform(-0.01, 0.01), math.sin(a) * lean), wd if k % 3 else wd2,
               tip)
-        ring_pts.append(a)
     # lashed cross rails in sections (inner side)
     rail = tex("wood", "#7d5a38", 3.0)
     sec = math.tau / 9
@@ -407,26 +520,62 @@ def raider_camp():
     while a + sec * 0.6 < math.tau - math.pi / 2 - gap:
         a1 = min(a + sec, math.tau - math.pi / 2 - gap - 0.03)
         rr = R - 0.03
-        beam((math.cos(a) * rr, math.sin(a) * rr, 0.1 + rnd.uniform(-0.01, 0.01)),
-             (math.cos(a1) * rr, math.sin(a1) * rr, 0.11 + rnd.uniform(-0.01, 0.01)), 0.018, rail)
+        tube((math.cos(a) * rr, math.sin(a) * rr, 0.1 + rnd.uniform(-0.01, 0.01)),
+             (math.cos(a1) * rr, math.sin(a1) * rr, 0.11 + rnd.uniform(-0.01, 0.01)), 0.01, rail, n=4)
         a = a1 + 0.02
-    # taller gate posts with a skull on one of them
+    # grass growing at the foot of the stakes, inside and out
+    grass = flat("camp_grass", "#5d7a2e", 0.9)
+    grass2 = flat("camp_grass2", "#8a9a40", 0.9)
+    for k in range(14):
+        a = -math.pi / 2 + gap + 0.15 + k * (math.tau - 2 * gap - 0.3) / 13
+        rr = R - 0.07 + rnd.uniform(-0.012, 0.012)
+        cx_, cy2 = math.cos(a) * rr, math.sin(a) * rr
+        for j in range(4):
+            b = j * math.tau / 4 + k
+            spike((cx_ + math.cos(b) * 0.014, cy2 + math.sin(b) * 0.014, 0.0),
+                  (cx_ + math.cos(b) * 0.04, cy2 + math.sin(b) * 0.04, 0.06 + 0.02 * ((j + k) % 3)), 0.011,
+                  grass if (j + k) % 2 else grass2, 3)
+    # gate: two tall posts, a lashed lintel log with a skull and bones, a torch on each post
+    gp = []
     for sx in (-1, 1):
         a = -math.pi / 2 + sx * (gap + 0.04)
         x, y = math.cos(a) * R, math.sin(a) * R
-        stake(x, y, 0.32, 0.032, (0.0, -0.01), wd2, tip, n=6)
-    gx, gy = math.cos(-math.pi / 2 + gap + 0.04) * R, math.sin(-math.pi / 2 + gap + 0.04) * R - 0.01
-    skull(gx, gy - 0.004, 0.3, 1.0)
-    # ---- tents
+        stake(x, y, 0.36, 0.032, (0.0, -0.01), wd2, tip, n=6)
+        gp.append((x, y - 0.01))
+        torch(x, y - 0.045, 0.3, wd2)
+        tube((x, y - 0.01, 0.24), (x, y - 0.045, 0.24), 0.005, wd2, n=3)  # bracket
+    tube((gp[0][0] - 0.03, gp[0][1], 0.31), (gp[1][0] + 0.03, gp[1][1], 0.32), 0.02, wd2, n=6)
+    rope = flat("lash_rope", "#b49a6a", 0.8)
+    for (x, y) in gp:
+        tube((x, y, 0.29), (x, y, 0.34), 0.024, rope, n=6)
+    skull(0.0, gp[0][1] - 0.012, 0.255, 1.15)
+    tube((0.0, gp[0][1] - 0.004, 0.31), (0.0, gp[0][1] - 0.008, 0.285), 0.003, rope, n=3)
+    # ---- tents: hide and canvas with painted bands, patches; the chief's tent with a red awning
     pA = tex("plaster", "#b8a684", 2.5)
     pB = tex("plaster", "#6c6257", 2.5)
     pC = tex("plaster", "#8b7a62", 2.5)
-    build_at(lambda: cone_tent(0.22, 0.4, tex("plaster", CANVAS, 1.8), (pA, pB, pC, pA), 3), -0.3, 0.32, 0.0)
-    build_at(lambda: ridge_tent(0.32, 0.27, 0.21, tex("plaster", CANVAS_D, 1.8), (pA, pB, pA, pC), seed=5),
-             0.25, 0.38, -0.45)
-    build_at(lambda: ridge_tent(0.22, 0.2, 0.15, tex("plaster", "#9a948a", 1.8), (pB, pA, pC), seed=9),
+    band_d = flat("tent_band_d", "#3e2f24", 0.9)
+    band_r = flat("tent_band_r", "#8a2a20", 0.85)
+    build_at(lambda: cone_tent(0.22, 0.4, tex("plaster", "#a38a66", 1.8), (pA, pB, pC, pA), 3,
+                               bands=((0.12, 0.2, band_d), (0.46, 0.53, band_r))), -0.3, 0.32, 0.0)
+
+    def chief_tent():
+        L_, W_, h_ = 0.32, 0.27, 0.21
+        ridge_tent(L_, W_, h_, tex("plaster", "#8f7a5a", 1.8), (pA, pB, pA, pC), seed=5,
+                   stripes=((-0.3, 0.035, band_d), (0.3, 0.035, band_d), (0.0, 0.03, band_r)))
+        awn = flat("awning", RAG_RED, 0.85)
+        y0, y1 = -L_ / 2, -L_ / 2 - 0.13
+        for sx in (-1, 1):
+            tube((sx * 0.1, y1, -0.01), (sx * 0.1, y1, h_ * 0.7), 0.006, wd2, n=4)
+        dag = [(-0.11, y1, h_ * 0.69)] + [(-0.11 + 0.22 * k / 6, y1 - 0.004, h_ * (0.69 if k % 2 == 0 else 0.6))
+                                          for k in range(1, 6)] + [(0.11, y1, h_ * 0.69)]
+        mesh_obj([(0.0, y0 + 0.005, h_ * 0.86)] + dag, [tuple(range(len(dag) + 1))], awn)
+        skull(0.0, y0 - 0.012, h_ * 0.78, 0.9)
+    build_at(chief_tent, 0.25, 0.38, -0.45)
+    build_at(lambda: ridge_tent(0.22, 0.2, 0.15, tex("plaster", "#9a948a", 1.8), (pB, pA, pC), seed=9,
+                                stripes=((-0.25, 0.03, band_d), (0.25, 0.03, band_d))),
              -0.5, -0.12, -math.pi / 2 - 0.35)
-    # ---- camp fire: stone ring, crossed logs, flame, smoke column
+    # ---- camp fire: stone ring, crossed logs, flame, a tripod with a cauldron; the game adds the smoke
     fx, fy = 0.04, -0.06
     rk = tex("plaster", "#7f7b75", 1.5)
     for k in range(9):
@@ -436,43 +585,52 @@ def raider_camp():
     logm = tex("wood", "#5e3d24", 2.5)
     for k in range(4):
         a = k * math.pi / 2 + 0.4
-        rod((fx + math.cos(a) * 0.065, fy + math.sin(a) * 0.065, 0.01), (fx, fy, 0.085), 0.011, logm, n=5)
+        tube((fx + math.cos(a) * 0.065, fy + math.sin(a) * 0.065, 0.01), (fx, fy, 0.075), 0.011, logm, n=5)
     cn(0.045, 0.11, (fx, fy, 0.065), glow("flame", FLAME, 3.0), 6)
     cn(0.026, 0.08, (fx + 0.005, fy - 0.004, 0.06), glow("flame_y", FLAME_Y, 3.5), 6)
-    for i, (dx, dy, z, r) in enumerate(((0.0, 0.0, 0.155, 0.026), (0.02, 0.012, 0.215, 0.038), (0.06, 0.03, 0.29, 0.05),
-                                        (0.12, 0.05, 0.36, 0.042))):  # drifting smoke, darker at the bottom
-        c = ("#5e5955", "#7d7873", "#9a958f", "#b2ada7")[i]
-        ico(r, (fx + dx, fy + dy, z), flat("smoke%d" % i, c, 0.95), (1.25, 1.0, 0.8), sub=1)
+    for k in range(3):  # tripod over the fire, a cauldron on a chain
+        a = k * math.tau / 3 + 0.5
+        tube((fx + math.cos(a) * 0.11, fy + math.sin(a) * 0.11, -0.005), (fx, fy, 0.25), 0.007, wd2, n=4)
+    pot = flat("cauldron", "#2b2a2c", 0.5)
+    tube((fx, fy, 0.25), (fx, fy, 0.16), 0.003, pot, n=3)
+    lathe([(0.018, 0.115), (0.032, 0.13), (0.03, 0.16)], (pot, pot), 8, top=flat("stew", "#6b4a2a", 0.6),
+          loc=(fx, fy, 0.0))
+    bpy.ops.object.empty_add(location=(fx, fy, 0.2))
+    bpy.context.active_object.name = "smoke_fire"
     # log seats
     seat = tex("wood", "#7a5232", 2.5)
     for a, ln in ((math.radians(200), 0.16), (math.radians(-20), 0.14)):
         x, y = fx + math.cos(a) * 0.19, fy + math.sin(a) * 0.19
         cy(0.026, ln, (x, y, 0.026), seat, 6, rot=(math.pi / 2, 0, a))
-    # ---- flag pole with a torn dark-red rag and a skull on top
-    px, py = 0.0, 0.5
-    pole = tex("wood", "#5a3e27", 2.0)
-    H = 0.82
-    rod((px, py, 0.0), (px - 0.012, py + 0.008, H), 0.017, pole, r2=0.012, n=6)
-    for k in range(3):
-        a = k * math.tau / 3
-        ico(0.03, (px + math.cos(a) * 0.035, py + math.sin(a) * 0.035, 0.012), rk, (1.1, 1.0, 0.7))
-    rag = flat("rag", RAG, 0.9)
-    rag_d = flat("rag_d", shade(RAG, 0.7), 0.9)
-    top = H - 0.07
-    x0 = px - 0.004
-    # ragged strips of different length hanging off a cross stick toward +X, jagged ends, two tatters
-    strips = ((0.22, 0.0), (0.17, 0.045), (0.2, 0.09), (0.11, 0.135))
-    for i, (ln, dz) in enumerate(strips):
-        z = top - dz
-        m_ = rag if i % 2 == 0 else rag_d
-        bx((ln, 0.007, 0.046), (x0 + ln / 2, py, z), m_, bev=0, rot=(0.0, 0.05 * i, 0.0))
-        tri_plate((x0 + ln, py, z + 0.023), (x0 + ln, py, z - 0.023), (x0 + ln + 0.04, py, z - 0.03 - 0.01 * i), m_, 0.007)
-    for xx, ln in ((x0 + 0.05, 0.075), (x0 + 0.12, 0.05)):  # tatters
-        bx((0.016, 0.006, ln), (xx, py, top - 0.155 - ln / 2), rag_d, bev=0)
-    bx((0.25, 0.013, 0.013), (x0 + 0.11, py, top + 0.028), pole, bev=0)  # cross stick
-    skull(px - 0.012, py + 0.008, H + 0.015, 1.25)
+    # ---- the red war banner with the white wolf, at the back of the camp
+    war_banner(0.0, 0.52, 0.86)
+    # ---- raised lookout over the palisade on the right
+    build_at(lambda: lookout_l1(wd, tex("wood", "#8a6440", 3.0), tex("plaster", "#7d6a50", 2.0), wd2), 0.5, 0.06,
+             -0.25)
+    # ---- a hide stretched on a frame, a woodpile
+    def hide_frame():
+        tube((-0.07, 0.0, -0.01), (-0.07, 0.0, 0.2), 0.008, wd2, n=4)
+        tube((0.07, 0.0, -0.01), (0.07, 0.0, 0.2), 0.008, wd2, n=4)
+        tube((-0.085, 0.0, 0.19), (0.085, 0.0, 0.19), 0.007, wd2, n=4)
+        tube((-0.075, 0.0, 0.035), (0.075, 0.0, 0.035), 0.006, wd2, n=4)
+        hide_pts = [(-0.05, 0.18), (0.0, 0.17), (0.05, 0.18), (0.058, 0.12), (0.048, 0.05), (0.0, 0.045),
+                    (-0.048, 0.05), (-0.058, 0.12)]
+        mesh_obj([(x, -0.004, z) for x, z in hide_pts], [tuple(range(len(hide_pts)))], flat("hide", "#9a7650", 0.9))
+        mesh_obj([(x * 0.5, -0.006, 0.112 + (z - 0.112) * 0.5) for x, z in hide_pts], [tuple(range(len(hide_pts)))],
+                 flat("hide_d", "#6e5034", 0.9))
+    build_at(hide_frame, -0.3, -0.03, 0.15)
+    def woodpile():
+        cap = flat("logcut", "#d9b27a", 0.8)
+        for row, ys in enumerate(((-0.028, 0.0, 0.028), (-0.014, 0.014))):
+            for yy in ys:
+                z = 0.016 + row * 0.026
+                tube((-0.07, yy, z), (0.07, yy, z), 0.014, tex("wood", "#7a5232", 3.0), n=5)
+                for sx in (-1, 1):
+                    mesh_obj([(sx * 0.0705, yy + 0.013 * math.cos(math.tau * k / 5), z + 0.013 * math.sin(
+                        math.tau * k / 5)) for k in range(5)], [tuple(range(5))], cap)
+    build_at(woodpile, -0.06, 0.24, 0.3)
     # ---- weapon rack (front left) and a pile of loot (front right)
-    weapon_rack(-0.4, -0.4, 0.75, 3, 1, "#5a4636", 1)
+    weapon_rack(-0.4, -0.4, 0.75, 3, 1, RAG_RED, 1)
     crate(0.36, -0.36, 0.085, 0.3)
     crate(0.44, -0.27, 0.07, -0.2)
     crate(0.37, -0.35, 0.06, 0.6, z=0.085)
@@ -487,19 +645,21 @@ def raider_camp():
              0.18, -0.4, 0.15)
     # bones on the ground
     bone = flat("bone", BONE, 0.7)
-    rod((-0.14, -0.3, 0.008), (-0.08, -0.33, 0.008), 0.006, bone, n=4)
-    rod((-0.12, -0.36, 0.008), (-0.09, -0.29, 0.008), 0.006, bone, n=4)
+    tube((-0.14, -0.3, 0.008), (-0.08, -0.33, 0.008), 0.006, bone, n=4)
+    tube((-0.12, -0.36, 0.008), (-0.09, -0.29, 0.008), 0.006, bone, n=4)
 
 
 def skull(x, y, z, s=1.0):
+    """Horned skull facing −Y: a round cranium, a jaw block, dark eye sockets."""
     def b():
         bone = flat("bone", BONE, 0.7)
         hole = flat("socket", "#1c1714", 0.9)
         ico(0.028, (0, 0, 0.0), bone, (1.0, 1.0, 1.0))
         bx((0.034, 0.03, 0.02), (0, -0.008, -0.02), bone, bev=0)
         for sx in (-1, 1):
-            ico(0.0085, (sx * 0.011, -0.024, 0.0), hole, (1, 0.6, 1))
-            cn(0.008, 0.03, (sx * 0.024, 0.0, 0.022), bone, 5, rot=(0, sx * 0.6, 0))  # little horns
+            mesh_obj([(sx * 0.004, -0.0265, 0.008), (sx * 0.02, -0.0235, 0.008), (sx * 0.012, -0.0262, -0.006)],
+                     [(0, 1, 2)], hole)
+            spike((sx * 0.02, 0.0, 0.016), (sx * 0.042, 0.0, 0.045), 0.008, bone, 4)  # little horns
     build_at(b, x, y, z=z, s=s)
 
 
@@ -713,98 +873,160 @@ def dummy(x, y, rz=0.0):
         wd = tex("wood", "#6a4327", 2.5)
         straw = tex("wood", STRAW, 4.0)
         for a in (0, math.pi / 2):
-            beam((math.cos(a) * -0.045, math.sin(a) * -0.045, 0.008), (math.cos(a) * 0.045, math.sin(a) * 0.045, 0.008),
-                 0.016, wd)
-        cy(0.008, 0.2, (0, 0, 0.1), wd, 5)
-        uvs(0.035, (0, 0, 0.115), straw, 8, 5, (1.0, 0.8, 1.35))
-        beam((-0.06, 0, 0.14), (0.06, 0, 0.14), 0.014, wd)
+            tube((math.cos(a) * -0.045, math.sin(a) * -0.045, 0.008), (math.cos(a) * 0.045, math.sin(a) * 0.045, 0.008),
+                 0.008, wd, n=4)
+        tube((0, 0, 0.0), (0, 0, 0.17), 0.008, wd, n=5)
+        uvs(0.035, (0, 0, 0.115), straw, 6, 4, (1.0, 0.8, 1.35))
+        tube((-0.06, 0, 0.14), (0.06, 0, 0.14), 0.007, wd, n=4)
         for sx in (-1, 1):
-            cn(0.014, 0.025, (sx * 0.065, 0, 0.14), straw, 5, rot=(0, sx * math.pi / 2, 0))
+            spike((sx * 0.055, 0, 0.14), (sx * 0.085, 0, 0.14), 0.014, straw, 5)
         ico(0.024, (0, 0, 0.185), tex("plaster", "#c9b48a", 3.0), (1, 1, 1.05))
-        torus(0.012, 0.005, (0, 0, 0.165), flat("rope", "#8a6a40", 0.8), seg=6, mseg=3)
-        bx((0.028, 0.006, 0.006), (0, -0.024, 0.19), flat("socket", "#2b2420", 0.9), bev=0)
+        mesh_obj([(-0.014, -0.0245, 0.193), (0.014, -0.0245, 0.193), (0.014, -0.0235, 0.186), (-0.014, -0.0235, 0.186)],
+                 [(0, 1, 2, 3)], flat("socket", "#2b2420", 0.9))
     build_at(b, x, y, rz)
 
 
 def archery_target(x, y, rz=0.0):
+    """Straw butt on a tripod with a painted face (white, red, white) and two arrows in it."""
     def b():
         wd = tex("wood", "#6a4327", 2.5)
-        beam((-0.05, 0.03, 0.0), (0.0, 0.0, 0.16), 0.014, wd)
-        beam((0.05, 0.03, 0.0), (0.0, 0.0, 0.16), 0.014, wd)
-        beam((0.0, 0.07, 0.0), (0.0, 0.0, 0.15), 0.014, wd)
+        for p0 in ((-0.05, 0.03, 0.0), (0.05, 0.03, 0.0), (0.0, 0.07, 0.0)):
+            tube(p0, (0.0, 0.0, 0.16), 0.007, wd, n=4)
         t = 0.2
-        cy(0.06, 0.026, (0, -0.01, 0.1), tex("wood", STRAW, 4.0), 10, rot=(math.pi / 2 - t, 0, 0))
-        cy(0.045, 0.026, (0, -0.013, 0.1), flat("tgt_w", "#efe9da", 0.7), 10, rot=(math.pi / 2 - t, 0, 0))
-        cy(0.028, 0.026, (0, -0.016, 0.1), flat("tgt_r", "#b8352c", 0.7), 10, rot=(math.pi / 2 - t, 0, 0))
-        cy(0.012, 0.026, (0, -0.019, 0.1), flat("tgt_w", "#efe9da", 0.7), 8, rot=(math.pi / 2 - t, 0, 0))
+        ax = Vector((0.0, -math.cos(t), math.sin(t)))  # the face normal, leaning back by t
+        c0 = Vector((0.0, -0.01, 0.1))
+        tube(tuple(c0 - ax * 0.013), tuple(c0 + ax * 0.013), 0.06, tex("wood", STRAW, 4.0), n=10, cap=True)
+        u = Vector((1, 0, 0))
+        v = ax.cross(u)
+        for k, (r, c) in enumerate(((0.046, "#efe9da"), (0.03, "#b8352c"), (0.013, "#efe9da"))):
+            cc = c0 + ax * (0.0135 + 0.001 * k)
+            mesh_obj([tuple(cc + (u * math.cos(math.tau * i / 10) + v * math.sin(math.tau * i / 10)) * r)
+                      for i in range(10)], [tuple(range(10))], flat("tgt_" + c, c, 0.7))
         ar = flat("arrow", "#d8c49a", 0.8)
         for dx, dz in ((0.012, 0.01), (-0.02, -0.015)):
-            rod((dx, -0.02, 0.1 + dz), (dx + 0.01, -0.08, 0.1 + dz + 0.012), 0.003, ar, n=3)
+            tube((dx, -0.02, 0.1 + dz), (dx + 0.01, -0.08, 0.1 + dz + 0.012), 0.003, ar, n=3)
     build_at(b, x, y, rz)
 
 
+def tower_sq(x, y, w, h, st, cap, roof, slit=None, lit=None, front_y=None):
+    """Square stone tower: a corbelled parapet, four corner merlons and a pyramid slate roof inside them; a dark
+    arrow slit and a lit window on the −Y face."""
+    bx((w, w, h), (x, y, h / 2), st, bev=0)
+    W2 = w + 0.024
+    bx((W2, W2, 0.032), (x, y, h + 0.012), cap, bev=0)
+    m = 0.036
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            bx((m, m, 0.036), (x + sx * (W2 - m) / 2, y + sy * (W2 - m) / 2, h + 0.046), st, bev=0)
+    ev._hip_roof(w - 0.012, w - 0.012, w * 1.05, (x, y, h + 0.026), roof, 0.0)
+    fy = y - w / 2 - 0.002
+    if slit:
+        mesh_obj([(x - 0.009, fy, h * 0.38), (x + 0.009, fy, h * 0.38), (x + 0.009, fy, h * 0.55), (x - 0.009, fy, h * 0.55)],
+                 [(0, 1, 2, 3)], slit)
+    if lit:
+        mesh_obj([(x - 0.014, fy, h * 0.68), (x + 0.014, fy, h * 0.68), (x + 0.014, fy, h * 0.86), (x - 0.014, fy, h * 0.86)],
+                 [(0, 1, 2, 3)], lit)
+
+
+def hanging_banner(x, y, z_top, w, h, cloth, em, rod_m):
+    """A long banner hanging down a wall facing −Y: a rod, a swallow-tailed cloth, a shield emblem."""
+    tube((x - w / 2 - 0.012, y - 0.006, z_top + 0.004), (x + w / 2 + 0.012, y - 0.006, z_top + 0.004), 0.005, rod_m, n=4)
+    mesh_obj([(x - w / 2, y, z_top), (x + w / 2, y, z_top), (x + w / 2, y, z_top - h), (x, y, z_top - h * 0.82),
+              (x - w / 2, y, z_top - h)], [(0, 1, 2, 3, 4)], cloth)
+    mesh_obj([(x + u * w * 0.62, y - 0.002, z_top - h * 0.36 + v * w * 0.72) for u, v in HEATER], [tuple(range(5))], em)
+
+
 def military_base():
-    """Early garrison: low stone-wall square with a timber gate (front), barracks hall at the back, a row of soldier
-    tents, a training yard with straw dummies and an archery target, weapon racks, a corner lookout, white banner."""
+    """Early garrison (reference frames 1 and 4: stone gate towers with arched gates, banners on the towers, warm
+    windows): a stone-walled square with a gatehouse of two square towers joined by an arch (crenels, slate pyramid
+    roofs, open timber doors, banners), slate-roofed corner towers, a stone barracks with lit windows and a smoking
+    chimney, a row of soldier tents, a training yard with straw dummies and an archery target, weapon racks, guards
+    at the gate, a neutral white banner."""
     S = 0.55
     # ---- ground: packed earth inside, sand yard, gravel path from the gate
     ground_poly([(-S, -S), (S, -S), (S, S), (-S, S)], tex("plaster", "#a58a62", 1.5), 0.006)
     ground_poly([(0.06, -0.5), (0.5, -0.5), (0.5, -0.06), (0.06, -0.06)], tex("plaster", "#cdb482", 2.0), 0.012)
-    ground_poly([(-0.07, -0.6), (0.03, -0.6), (0.03, 0.05), (-0.07, 0.05)], tex("plaster", "#b9ad97", 2.5), 0.01)
-    # ---- low stone walls with a coping, corner pillars, gate gap at the front
+    ground_poly([(-0.07, -0.66), (0.03, -0.66), (0.03, 0.05), (-0.07, 0.05)], stone("#b9ad97", 2.2), 0.01)
+    # ---- low stone walls with a coping and merlons between the towers
     st = stone(STONE, 1.3)
     sd = stone(STONE_D, 1.3)
+    slate = tex("roof", SLATE_N, 1.6)
+    lit = ev.win_lit()
+    slit_m = flat("slit", "#2a2420", 0.9)
     H, T = 0.11, 0.05
-    gate = 0.1
-    segs = [((-S, S), (S, S)), ((S, -S), (S, S)), ((-S, -S), (-S, S)),
-            ((-S, -S), (-0.02 - gate, -S)), ((-0.02 + gate, -S), (S, -S))]
+    gate, gx0 = 0.1, -0.02
+    TS = 0.13  # gate tower
+    xl, xr = gx0 - gate - TS, gx0 + gate + TS  # outer faces of the gate towers
+    segs = [((-S, S), (S, S)), ((S, -S), (S, S)), ((-S, -S), (-S, S)), ((-S, -S), (xl, -S)), ((xr, -S), (S, -S))]
     for (a, b) in segs:
         L = math.dist(a, b)
         ang = math.atan2(b[1] - a[1], b[0] - a[0])
         mx, my = (a[0] + b[0]) / 2, (a[1] + b[1]) / 2
         bx((L, T, H), (mx, my, H / 2), st, ang, bev=0)
         bx((L + 0.01, T + 0.016, 0.022), (mx, my, H + 0.011), sd, ang, bev=0)
-        nb = int(L / 0.14)
-        for i in range(nb):  # little merlons
-            f = (i + 0.5) / nb
+        nb = int((L - 0.1) / 0.14)
+        for i in range(nb):  # little merlons, clear of the towers at the ends
+            f = (0.05 + (i + 0.5) * (L - 0.1) / nb) / L
             bx((0.05, T + 0.004, 0.03), (a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, H + 0.036), st, ang, bev=0)
-    for sx in (-1, 1):
+    for sx in (-1, 1):  # corner towers with slate roofs (set in a little: the model stays within its radius)
         for sy in (-1, 1):
-            bx((0.085, 0.085, 0.17), (sx * S, sy * S, 0.085), sd, bev=0.008)
-            cn(0.07, 0.05, (sx * S, sy * S, 0.195), tex("wood", "#6d5640", 2.0), 4, rot=(0, 0, math.pi / 4))
-    # ---- timber gate: two posts, lintel beam with a white plaque, open leaves swung inside
-    wd = tex("wood", "#6a4327", 2.0)
-    wl = tex("wood", "#8c6a44", 3.0)
-    gx0 = -0.02
-    for sx in (-1, 1):
-        x = gx0 + sx * (gate + 0.02)
-        bx((0.05, 0.07, 0.28), (x, -S, 0.14), wd, bev=0.006)
-        cn(0.04, 0.05, (x, -S, 0.305), wd, 4, rot=(0, 0, math.pi / 4))
-    bx((2 * gate + 0.13, 0.05, 0.04), (gx0, -S, 0.25), wd, bev=0.006)
-    bx((0.08, 0.012, 0.05), (gx0, -S - 0.03, 0.25), flat("flag_white", "#ecebe6", 0.7), bev=0)
-    bx((0.025, 0.014, 0.025), (gx0, -S - 0.032, 0.25), flat("flag_grey", "#8d9096", 0.7), math.pi / 4, bev=0)
-    for sx in (-1, 1):
+            tower_sq(sx * (S - 0.02), sy * (S - 0.02), 0.11, 0.23, st, sd, slate, slit_m if sy < 0 else None)
+    # ---- gatehouse: two towers, an arched bridge with crenels, open plank doors, banners
+    for x in (gx0 - gate - TS / 2, gx0 + gate + TS / 2):
+        tower_sq(x, -S, TS, 0.3, st, sd, slate)
+    bz0, bz1 = 0.19, 0.27
+    bx((2 * gate, 0.074, bz1 - bz0), (gx0, -S, (bz0 + bz1) / 2), st, bev=0)
+    bx((2 * gate + 0.01, 0.09, 0.02), (gx0, -S, bz1 + 0.01), sd, bev=0)
+    for i in range(3):
+        bx((0.04, 0.074, 0.032), (gx0 - 0.07 + i * 0.07, -S, bz1 + 0.036), st, bev=0)
+    for (m_, hw, z0, z1, dy) in ((flat("win_frame", "#3a2a1e", 0.8), 0.02, 0.205, 0.262, 0.002), (lit, 0.013, 0.211, 0.256,
+                                                                                               0.004)):
+        mesh_obj([(gx0 - hw, -S - 0.037 - dy, z0), (gx0 + hw, -S - 0.037 - dy, z0), (gx0 + hw, -S - 0.037 - dy, z1),
+                  (gx0 - hw, -S - 0.037 - dy, z1)], [(0, 1, 2, 3)], m_)  # a lit window over the arch
+    zs = bz0 - gate  # arch springing: a semicircle of radius `gate` closing under the bridge
+    arc = [(gx0 + gate * math.cos(math.pi * k / 8), zs + gate * math.sin(math.pi * k / 8)) for k in range(9)]
+    for yy in (-S - 0.038, -S + 0.038):  # the spandrels either side of the arch, front and back
+        for corner, half in (((gx0 + gate, bz0), arc[0:5]), ((gx0 - gate, bz0), arc[4:9])):
+            pts = [corner] + half
+            mesh_obj([(x, yy, z) for x, z in pts], [tuple(range(len(pts)))], st)
+    intr = [(x, y_, z) for x, z in arc for y_ in (-S - 0.038, -S + 0.038)]
+    mesh_obj(intr, [(2 * k, 2 * k + 1, 2 * k + 3, 2 * k + 2) for k in range(8)], sd)  # the arch's underside
+    door = planks("#7a5232", 0.016, 0.3)
+    band = flat("door_band", IRON, 0.5)
+    for sx in (-1, 1):  # leaves swung open into the yard
         hx = gx0 + sx * gate
-        a = math.radians(70)
-        bx((gate * 0.95, 0.018, 0.17), (hx - sx * math.cos(a) * gate * 0.475, -S + math.sin(a) * gate * 0.475, 0.095),
-           wl, -sx * a, bev=0)
-    # ---- barracks hall along the back wall
+        a = math.radians(72)
+        cxl, cyl = hx - sx * math.cos(a) * gate * 0.48, -S + 0.03 + math.sin(a) * gate * 0.48
+        bx((gate * 0.96, 0.014, 0.17), (cxl, cyl, 0.085), door, -sx * a, bev=0)
+        bx((gate * 0.97, 0.018, 0.012), (cxl, cyl, 0.13), band, -sx * a, bev=0)
+    cloth = flat("banner_white", "#ecebe6", 0.7)
+    em = flat("banner_grey", "#7d838c", 0.6)
+    rod_m = flat("banner_rod", GOLD, 0.4)
+    for x in (gx0 - gate - TS / 2, gx0 + gate + TS / 2):
+        hanging_banner(x, -S - TS / 2 - 0.006, 0.27, 0.07, 0.14, cloth, em, rod_m)
+    # ---- barracks along the back wall: stone walls, slate roof, lit windows, a door with a hood, a chimney
     def barracks():
         w, d, h = 0.5, 0.2, 0.13
         bx((w + 0.02, d + 0.02, 0.025), (0, 0, 0.0125), sd, bev=0)
-        bx((w, d, h), (0, 0, h / 2), tex("wood", "#8a6440", 3.0), bev=0.008)
-        for sx in (-1, 0, 1):
-            for sy in (-1, 1):
-                bx((0.024, 0.024, h + 0.005), (sx * w / 2, sy * d / 2, h / 2), tex("wood", WOOD_D, 2.0), bev=0)
-        prism_roof("roof", w, d, 0.12, (0, 0, h - 0.005), tex("roof", "#7a6450", 1.6), overhang=0.04)
+        bx((w, d, h), (0, 0, h / 2), stone("#b3aa9a", 1.6), bev=0)
+        bx((w + 0.008, d + 0.008, 0.016), (0, 0, h - 0.008), tex("wood", WOOD_D, 2.0), bev=0)  # timber wall plate
+        prism_roof("roof", w, d, 0.12, (0, 0, h - 0.005), slate, overhang=0.04)
         bx((w + 0.1, 0.03, 0.025), (0, 0, h + 0.115), tex("wood", "#4f3a28", 2.0), bev=0)
-        bx((0.06, 0.012, 0.1), (0, -d / 2 - 0.004, 0.05), tex("wood", "#4a2f19", 2.0), bev=0)
-        bx((0.09, 0.05, 0.012), (0, -d / 2 - 0.03, 0.075), tex("wood", "#6d5640", 2.0), bev=0, rot=(0.3, 0, 0))
-        for x in (-0.17, -0.09, 0.09, 0.17):
-            bx((0.035, 0.012, 0.03), (x, -d / 2 - 0.004, 0.085), flat("slit", "#2a2420", 0.9), bev=0)
-        cy(0.024, 0.09, (0.16, 0.04, h + 0.085), stone(STONE_D), 6)
+        mesh_obj([(-0.032, -d / 2 - 0.002, 0.0), (0.032, -d / 2 - 0.002, 0.0), (0.032, -d / 2 - 0.002, 0.1),
+                  (-0.032, -d / 2 - 0.002, 0.1)], [(0, 1, 2, 3)], planks("#4a2f19", 0.014, 0.3))
+        bx((0.09, 0.05, 0.012), (0, -d / 2 - 0.03, 0.11), tex("wood", "#6d5640", 2.0), bev=0, rot=(0.3, 0, 0))
+        fr = flat("win_frame", "#3a2a1e", 0.8)
+        for x in (-0.18, -0.09, 0.09, 0.18):
+            for (yy, m_, hw, z0, z1) in ((-d / 2 - 0.002, fr, 0.022, 0.058, 0.108), (-d / 2 - 0.004, lit, 0.015, 0.064,
+                                                                                       0.102)):
+                mesh_obj([(x - hw, yy, z0), (x + hw, yy, z0), (x + hw, yy, z1), (x - hw, yy, z1)], [(0, 1, 2, 3)], m_)
         for sx in (-1, 1):
-            bx((0.03, 0.012, 0.03), (sx * w / 2 + sx * 0.004, 0, 0.085), flat("slit", "#2a2420", 0.9), math.pi / 2, bev=0)
+            mesh_obj([(sx * (w / 2 + 0.003), y_, z) for y_, z in ((-0.016, 0.064), (0.016, 0.064), (0.016, 0.102),
+                                                                   (-0.016, 0.102))], [(0, 1, 2, 3)], lit)
+        cy(0.026, 0.11, (0.16, 0.04, h + 0.09), stone(STONE_D), 6)
+        cy(0.031, 0.016, (0.16, 0.04, h + 0.15), sd, 6)
+        bpy.ops.object.empty_add(location=(0.16, 0.04, h + 0.17))
+        bpy.context.active_object.name = "smoke_barracks"
     build_at(barracks, 0.1, 0.34)
     # ---- row of soldier tents on the left, opening toward the parade ground (+X)
     canvas = tex("plaster", CANVAS_W, 2.0)
@@ -813,23 +1035,6 @@ def military_base():
                           beam((0, -0.1, 0.163), (0, 0.1, 0.163), 0.016, flat("ridge_grey", "#7d8086", 0.7)),
                           bx((0.155, 0.2, 0.012), (0, 0, 0.006), tex("plaster", "#7d6a50", 1.5), bev=0)),
                  -0.37, y, math.pi / 2)
-    # ---- corner lookout platform (back left)
-    def lookout():
-        H2 = 0.3
-        for sx in (-1, 1):
-            for sy in (-1, 1):
-                beam((sx * 0.07, sy * 0.07, 0.0), (sx * 0.055, sy * 0.055, H2 + 0.12), 0.02, wd)
-        for k in range(4):
-            a = k * math.pi / 2
-            c, s_ = math.cos(a), math.sin(a)
-            beam((c * 0.065 - s_ * 0.065, s_ * 0.065 + c * 0.065, 0.04), (c * 0.06 + s_ * 0.06, s_ * 0.06 - c * 0.06, H2 - 0.04),
-                 0.012, wl)
-        bx((0.16, 0.16, 0.02), (0, 0, H2), wl, bev=0)
-        for k in range(4):
-            a = k * math.pi / 2
-            bx((0.16, 0.014, 0.05), (math.sin(a) * 0.075, -math.cos(a) * 0.075, H2 + 0.035), wl, a, bev=0)
-        hip_roof(0.13, 0.13, 0.09, (0, 0, H2 + 0.12), tex("wood", "#6d5640", 2.0), oh=0.025)
-    build_at(lookout, -0.43, 0.43)
     # ---- flagpole with a neutral white banner on a stone base
     fx, fy = -0.12, 0.06
     cy(0.05, 0.04, (fx, fy, 0.02), sd, 8)
@@ -842,18 +1047,18 @@ def military_base():
     archery_target(0.44, -0.14, math.pi / 2 + 0.3)
     weapon_rack(0.44, 0.1, math.pi / 2, 4, 2, "#8a8f96")
     weapon_rack(-0.18, -0.28, math.pi / 2, 3, 1, "#8a8f96", 1)
-    # ---- supplies: crates, barrels, hay by the barracks
+    # ---- supplies: crates, barrels, hay by the barracks; a water trough
     crate(0.42, 0.24, 0.06, 0.2)
     crate(0.46, 0.31, 0.05, -0.3)
     barrel(-0.2, 0.25)
     barrel(-0.14, 0.27, r=0.03, h=0.075)
     ev.haystack(0.47, -0.45, 0.45)
-    # ---- guards at the gate
+    # ---- guards flanking the gate outside
     for sx in (-1, 1):
-        hands = build_at(lambda: ta.man("#8d9096", "#5a4f45", "idle", "helmet", 1.15), gx0 + sx * 0.2, -S + 0.075, 0.0)
+        gx_, gy_ = gx0 + sx * 0.135, -S - 0.1
+        hands = build_at(lambda: ta.man("#8d9096", "#5a4f45", "idle", "helmet", 1.15), gx_, gy_, 0.0)
         hx, hy, hz = hands[0 if sx < 0 else 1]
-        spear((gx0 + sx * 0.2 + hx, -S + 0.075 + hy, 0.0), (gx0 + sx * 0.2 + hx, -S + 0.075 + hy, 0.2),
-              tex("wood", "#9a7046", 3.0), flat("iron", IRON, 0.5))
+        spear((gx_ + hx, gy_ + hy, 0.0), (gx_ + hx, gy_ + hy, 0.2), tex("wood", "#9a7046", 3.0), flat("iron", IRON, 0.5))
 
 
 # the white displayed eagle of the reference sails (frame 1): head up, wings raised with two feather tips each,
@@ -1342,6 +1547,9 @@ def export(name, out):
     tris = len(ob.data.loop_triangles)
     bpy.ops.object.select_all(action="DESELECT")
     ob.select_set(True)
+    for o in bpy.context.scene.objects:  # smoke markers travel with the model as plain nodes (map_view adds smoke)
+        if o.type == "EMPTY" and o.name.startswith(("smoke", "flag")):
+            o.select_set(True)
     bpy.context.view_layer.objects.active = ob
     path = os.path.join(out, f"{name}.glb")
     bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", use_selection=True, export_apply=True, export_yup=True)
