@@ -414,6 +414,13 @@ def squad(dl, team):
         build_at(lambda d=dl, vv=v: figure(d, team, vv), x + dx, y + dy, rz, s)
 
 
+def sentry(dl, team):
+    """Two sentries of the era standing a pace apart, turned a little toward each other (reference frames 3–4:
+    single soldiers guard the farms, the quarry and the gates)."""
+    for k, (x, y, rz) in enumerate(((-0.06, 0.0, 0.35), (0.07, 0.03, -0.25))):
+        build_at(lambda d=dl, vv=k + 3: figure(d, team, vv), x, y, rz, 0.95 * (1.06 if dl == 8 else 1.0))
+
+
 # ====================================================================== ASSAULT UNITS
 
 
@@ -690,6 +697,7 @@ ASSETS = {}
 for _n in range(1, 9):
     for _t, _c in TEAMS.items():
         ASSETS[f"squad_dl{_n}_{_t}"] = (lambda n, c: (lambda: squad(n, c)))(_n, _c)
+        ASSETS[f"sentry_dl{_n}_{_t}"] = (lambda n, c: (lambda: sentry(n, c)))(_n, _c)
 for _n in range(2, 9):
     for _t, _c in TEAMS.items():
         ASSETS[f"assault_dl{_n}_{_t}"] = (lambda n, c: (lambda: ASSAULT[n](c)))(_n, _c)

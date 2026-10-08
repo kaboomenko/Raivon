@@ -1111,11 +1111,13 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 			spawn("wheat_field", holder, p + Vector3(-0.42, 0, 0.28), PI, 0.42)
 			spawn("wheat_field", holder, p + Vector3(0.46, 0, -0.32), 0.0, 0.45)
 			spawn("windmill", holder, p + Vector3(-0.45, 0, -0.3), 0.4, 0.95)
+			_place_sentries(c, holder, p + Vector3(-0.02, 0, 0.62))
 			_place_fort(c, holder)
 			return
 		"mine":
 			var era_m := _era_model("mine", int(c["owner"]), side)
 			spawn(era_m if era_m != "" else "mine", holder, p, 0.2, 1.0 if era_m != "" else 1.1)  # DL8: a raivite crystal pit
+			_place_sentries(c, holder, p + Vector3(0.36, 0, 0.56))
 			_place_fort(c, holder)
 			return
 		"raivite_vein":
@@ -1250,6 +1252,16 @@ func _front_gun(c: Dictionary, holder: Node3D, p: Vector3) -> bool:
 		spawn("tree_pine", holder, p + off, rng.randf() * TAU, rng.randf_range(0.75, 1.0))
 	spawn("banner_" + _faction_suffix(own), holder, p + back * 0.3 + Vector3(back.z, 0, -back.x) * 0.25, 0.0, 1.0, own)
 	return true
+
+
+## A pair of sentries of the owner's era guarding a farm or a quarry (reference frames 3–4: single soldiers stand
+## about the fields and the quarry yard), on two hexes in three; none on unowned land.
+func _place_sentries(c: Dictionary, holder: Node3D, at: Vector3) -> void:
+	if int(c["owner"]) <= Types.NOBODY or (int(c["id"]) * 7) % 3 == 0:
+		return
+	var model := evolved("sentry", int(c["owner"]))
+	if model != "":
+		spawn(model, holder, at, rng.randf_range(-0.4, 0.4), 0.98)
 
 
 ## How often an owned open hex flies a banner: thicker on the land of the state at war with the player (reference
