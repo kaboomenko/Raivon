@@ -187,7 +187,7 @@ def granite_paint(c1, c2, moss=("#34481f", "#4a6328"), moss_at=0.86, scale=6.0, 
         col = p.mix(p.math("MULTIPLY", p.step(p.z, 0.05, 0.0), 0.35), col, shade(c1, 0.6))  # grounded foot
         if cracks:  # granite jointing (reference frames 1, 3): tall blocks of slightly different tone parted by dark,
             # straight-edged joints that read as shadowed crevices — not as the meandering veins of marble
-            vs = (1.0, 1.0, 0.45)
+            vs = (1.0, 1.0, 0.15)  # nearly vertical joint planes: upright blocks on the steep faces
             _, cell = p.voronoi(scale * 1.4, "F1", vs)
             col = p.mix(p.math("MULTIPLY", p.step(cell, 0.45, 0.1), 0.45), col, shade(c1, 0.8))
             col = p.mix(p.math("MULTIPLY", p.step(cell, 0.6, 0.95), 0.35), col, shade(c2, 1.08))
@@ -572,7 +572,7 @@ def flowers():
 def rock():
     """A granite outcrop (reference frames 1 and 3): a leaning angular block, a second block and a flat slab at its
     foot, two loose stones — sharp facets, strata and cracks, pale tops."""
-    mt = granite_paint("#69645c", "#8a8479", moss_at=0.74, scale=9.0, cracks=0.45, moss_z=0.1)
+    mt = granite_paint("#69645c", "#8a8479", moss_at=0.74, scale=9.0, cracks=0.4, moss_z=0.1, cover=0.4)
     tor(0.0, 0.02, 0.24, 0.19, 0.2, mt, 11, slant=0.3, rz=0.3)
     tor(0.15, -0.07, 0.13, 0.11, 0.115, mt, 12, slant=0.2, rz=-0.4)
     tor(-0.13, 0.07, 0.13, 0.12, 0.06, mt, 13, slant=0.1, rz=0.8, k=0.1)
@@ -740,6 +740,48 @@ def wheat_bed(x, y0, y1, body_mt, ear_mt, rnd, w=0.104, lines=2, step=0.034, ear
     return poly(verts, faces, [ear_mt], flat_shade=True, name="ears")
 
 
+def leafy_paint(dark, mid, light, z0, z1):
+    """Leafy row crops: mottled greens, a sunlit crown on every clump, and deep shade low down (z0..z1) — between the
+    clumps and under their rims — so each clump stands out as its own round plant."""
+    def build():
+        p = Paint("leafy")
+        col = p.mix(p.step(p.noise(22.0, 3.0), 0.3, 0.65), dark, mid)
+        col = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.8, 0.98), 0.55), col, light)
+        col = p.mix(p.math("MULTIPLY", p.step(p.z, z1, z0), 0.85), col, shade(dark, 0.6))
+        return p.done(col, 0.9)
+    return cached(("leafy", dark, mid, light, z0, z1), build)
+
+
+def crop_row(x, y0, y1, body_mt, leaf_mt, rnd, w=0.08, step=0.05, z=0.066, rr=(0.027, 0.034), body_h=0.04):
+    """A row of leafy crops (beet, potatoes, cabbage): a low green ridge under two staggered lines of round leafy
+    clumps. Each clump is a squat five-leaf dome (height about half its width) with soft normals, so a row reads
+    as rounded foliage, not as crystal shards; heads stay inside y0..y1 so the leaves keep to the soil bed."""
+    ev.extrude([(-w / 2, 0.0), (w / 2, 0.0), (w * 0.36, body_h), (-w * 0.36, body_h)], -y1, -y0, body_mt,
+               (x, 0, 0.025), (math.pi / 2, 0, 0))
+    verts, faces = [], []
+    n = max(2, round((y1 - y0) / step))
+    for li in range(2):
+        ox = (li - 0.5) * w * 0.48
+        for j in range(n + (0 if li else 1)):
+            r = rnd.uniform(*rr)
+            t = (j + (0.5 if li else 0.0)) / n
+            cx_ = x + ox + rnd.uniform(-0.006, 0.006)
+            cy_ = y0 + r * 0.8 + (y1 - y0 - r * 1.6) * t + rnd.uniform(-0.005, 0.005)
+            zm = z + rnd.uniform(-0.006, 0.01)
+            b = len(verts)
+            verts.append((cx_ + rnd.uniform(-0.004, 0.004), cy_ + rnd.uniform(-0.004, 0.004), zm + r * rnd.uniform(0.72, 0.86)))
+            rot = rnd.uniform(0, math.tau)
+            for k in range(5):
+                a = rot + k * math.tau / 5 + rnd.uniform(-0.15, 0.15)
+                rk = r * rnd.uniform(0.86, 1.12)
+                verts.append((cx_ + rk * math.cos(a), cy_ + rk * math.sin(a), zm - r * rnd.uniform(0.05, 0.3)))
+            for k in range(5):
+                faces.append((b, b + 1 + k, b + 1 + (k + 1) % 5))
+    o = poly(verts, faces, [leaf_mt], flat_shade=False, name="crops")
+    o["flat"] = True  # keep the soft normals: lowpoly's 50° auto-smooth would split the squat domes into facets
+    return o
+
+
 def stook(x, y, mt, band, s=1.0, rz=0.0):
     """A medieval stook: a bundle of cut sheaves standing on end, tied round the waist, ears splayed on top."""
     def b():
@@ -800,8 +842,9 @@ def crop_field():
     soil = furrows("#5a3b21", "#7a5230", period=0.1)
     box = kit.box
     box("soil", (0.9, 0.7, 0.05), (0, 0, 0.0), soil, 0.012)
-    greens = (foliage("#2f5a1c", "#4c8a2a", "#8cc244", 0.03, 0.1, 0.8, 22.0),  # two crops side by side
-              foliage("#3a6420", "#6a9a30", "#a8cf52", 0.03, 0.1, 0.8, 22.0))
+    # two crops side by side; dark low down (ridge, clump rims), lit clump tops, so each clump stands out
+    greens = (leafy_paint("#2f5a1c", "#4c8a2a", "#8cc244", 0.056, 0.08),
+              leafy_paint("#3a6420", "#6a9a30", "#a8cf52", 0.056, 0.08))
     ripe = ripe_paint()
     rnd = random.Random(9)
     for i in range(8):  # leafy crop rows (heads on a ridge, not smooth bars); the two near rows ripe wheat
@@ -810,8 +853,7 @@ def crop_field():
             wheat_bed(x, -0.3, 0.3, ripe, ripe, rnd, w=0.09, step=0.036)
         else:
             g = greens[(i // 2) % 2]
-            wheat_bed(x, -0.3, 0.3, g, g, rnd, w=0.08, step=0.036, ear_z=0.075, rr=(0.024, 0.03), top=0.03,
-                      bottom=None, body_h=0.05, lean=0.008)
+            crop_row(x, -0.28, 0.28, g, g, rnd)
     post = tex("wood", WOOD)
     wire = flat("wire", "#9aa0a6", 0.5)
     for (x0, y0, x1, y1) in ((-0.46, 0.37, 0.46, 0.37), (0.46, 0.37, 0.46, -0.35), (-0.46, -0.35, -0.46, 0.37)):
@@ -1128,16 +1170,30 @@ FILL_ATLAS = {"windmill", "wheat_field", "crop_field", "tree_pine", "tree_round"
 
 
 def fill_atlas(ob):
-    """Fill the atlas pixels that no UV island covers (the bake leaves them black) with the colour of the nearest
+    """Fill the atlas pixels that no UV island touches (the bake leaves them black) with the colour of the nearest
     islands, by a push-pull pyramid. Many small islands (wheat ears, crop heads, pine tiers) leave 20–45 % of a
-    512 px atlas empty; the mipmaps Godot builds would average that black in and darken the model at map zoom."""
+    512 px atlas empty; the mipmaps Godot builds would average that black in and darken the model at map zoom.
+    Pixels under an island stay as baked, so a sliver too thin to bake (a fence wire) keeps its old dark colour."""
     import numpy as np
+    from PIL import Image, ImageDraw
     img = next(n.image for s in ob.material_slots if s.material and s.material.name.startswith("baked")
                for n in s.material.node_tree.nodes if n.type == "TEX_IMAGE")
     w, h = img.size
     a = np.empty(w * h * 4, np.float32)
     img.pixels.foreach_get(a)
     a = a.reshape(h, w, 4)
+    me = ob.data
+    me.calc_loop_triangles()
+    uv = np.empty(len(me.loops) * 2, np.float32)
+    me.uv_layers.active.data.foreach_get("uv", uv)
+    uv = uv.reshape(-1, 2) * (w, h) - 0.5
+    tl = np.empty(len(me.loop_triangles) * 3, np.int32)
+    me.loop_triangles.foreach_get("loops", tl)
+    mask = Image.new("L", (w, h), 0)
+    dr = ImageDraw.Draw(mask)
+    for tri in uv[tl].reshape(-1, 3, 2):  # image rows run bottom-up like v, so no flip
+        dr.polygon([tuple(p) for p in tri], fill=1, outline=1)
+    island = np.asarray(mask, np.float32) > 0
     cov = (a[..., :3].max(-1) > 0).astype(np.float32)  # nothing in these models bakes to pure black
     cols, wts = [a[..., :3] * cov[..., None]], [cov]
     while cols[-1].shape[0] > 1 and cols[-1].shape[1] > 1:  # pull: sums of colour and coverage per level
@@ -1149,7 +1205,8 @@ def fill_atlas(ob):
     for c, wt in zip(reversed(cols[:-1]), reversed(wts[:-1])):  # push: holes take the coarser level's average
         up = fill.repeat(2, 0).repeat(2, 1)
         fill = np.where(wt[..., None] > 0, c / np.maximum(wt, 1e-8)[..., None], up)
-    a[..., :3] = np.where(cov[..., None] > 0, a[..., :3], fill)
+    empty = (cov == 0) & ~island
+    a[..., :3] = np.where(empty[..., None], fill, a[..., :3])
     img.pixels.foreach_set(a.ravel())
     img.update()
     img.pack()
