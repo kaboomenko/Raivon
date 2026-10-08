@@ -1153,8 +1153,8 @@ def residence_dl3(team):
 def castle_tower(x, y, r, h, roof, team, flag=True):
     """A round castle tower as in the concept art: plinth, body, a string course, merlons, a tall cone roof
     with a gilt finial and a pennant in the team colour."""
-    st = stone(STONE)
-    dk = stone(STONE_D)
+    st = stone(STONE, 0.6)
+    dk = stone(STONE_D, 0.6)
     cy(r + 0.012, 0.05, (x, y, 0.025), dk, 12)
     cy(r, h, (x, y, h / 2), st, 12)
     cy(r + 0.006, 0.016, (x, y, h * 0.55), dk, 12)
@@ -1178,9 +1178,48 @@ def castle_tower(x, y, r, h, roof, team, flag=True):
         bx((0.07, 0.004, 0.04), (x + 0.036, y, top + 0.11), flat("pennant_" + team, team, 0.6), 0, 0)
 
 
+def square_tower(x, y, w, h, roof, team, flag=True, roofed=True):
+    """A square keep tower of reference frame 4: plinth, body with an arched lit window and slits, a corbelled
+    crenellated parapet and (roofed) a steep team-slate pyramid roof with a gilt finial and pennant."""
+    st = stone(STONE, 0.6)
+    dk = stone(STONE_D, 0.6)
+    bx((w + 0.024, w + 0.024, 0.05), (x, y, 0.025), dk, bev=0.004)
+    bx((w, w, h), (x, y, h / 2), st, bev=0.006)
+    bx((w + 0.01, w + 0.01, 0.014), (x, y, h * 0.55), dk, bev=0)
+    bx((w + 0.03, w + 0.03, 0.04), (x, y, h - 0.005), dk, bev=0.003)  # corbelled parapet
+    n = 3
+    for sd in range(4):
+        a = sd * math.pi / 2
+        for i in range(n):
+            t = -w / 2 - 0.006 + (i + 0.5) * (w + 0.012) / n
+            px = x + math.cos(a) * t - math.sin(a) * (w / 2 + 0.012)
+            py = y + math.sin(a) * t + math.cos(a) * (w / 2 + 0.012)
+            bx(((w + 0.012) / n * 0.55, 0.018, 0.04), (px, py, h + 0.034), st, a, 0)
+    win_arch(x, y - w / 2 - 0.003, h * 0.7, 0.026, 0.05)
+    for sx in (-1, 1):  # arrow slits on the side faces
+        bx((0.012, 0.012, 0.04), (x + sx * (w / 2 + 0.002), y, h * 0.4), flat("slit", "#1c1a19", 0.9), math.pi / 2, 0)
+    top = h + 0.02
+    if roofed:
+        hip_roof(w - 0.01, w - 0.01, w * 1.6, (x, y, h + 0.012), roof, oh=0.008)
+        top = h + 0.012 + w * 1.6
+        uvs(0.011, (x, y, top + 0.008), flat("finial", GOLD, 0.35), 6, 4)
+    if flag:
+        rod((x, y, top), (x, y, top + 0.13), 0.004, flat("pole", "#d9d2c3", 0.5), n=4)
+        bx((0.07, 0.004, 0.04), (x + 0.036, y, top + 0.11), flat("pennant_" + team, team, 0.6), 0, 0)
+
+
+def win_arch(x, y, z, w, h, rz=0.0):
+    """An arched lit window (or doorway) on a wall facing −Y: a darker stone surround, a lit pane and a round head."""
+    sur = flat("arch_sur", "#6f6b64", 0.85)
+    bx((w + 0.014, 0.008, h + 0.01), (x, y, z), sur, rz, 0)
+    cy(w / 2 + 0.007, 0.008, (x, y, z + h / 2), sur, 10, rot=(math.pi / 2, 0, rz))
+    bx((w, 0.012, h), (x, y - 0.002, z), win_lit(), rz, 0)
+    cy(w / 2, 0.012, (x, y - 0.002, z + h / 2), win_lit(), 10, rot=(math.pi / 2, 0, rz))
+
+
 def residence_dl4(team):
-    pad(0.84, stone(COBBLE, 1.8), 0.014, 14, 0.03, 14)
-    st = stone(STONE)
+    pad(0.84, stone(COBBLE, 1.2), 0.014, 14, 0.03, 14)
+    st = stone(STONE, 0.6)  # larger blocks that survive the bake (reference frame 4 shows every stone)
     roof = tex("roof", slate(team, 0.94))
     H = 0.48
     corners = [(-H, -H), (H, -H), (H, H), (-H, H)]
@@ -1193,43 +1232,67 @@ def residence_dl4(team):
             f = (a + b) / 2 / ln
             cx, cy_ = x0 + (x1 - x0) * f, y0 + (y1 - y0) * f
             bx((b - a, 0.08, 0.28), (cx, cy_, 0.14), st, ang, bev=0.008)
-            n = max(1, int((b - a) / 0.085))
+            bx((b - a, 0.095, 0.022), (cx, cy_, 0.272), stone(STONE_D, 0.6), ang, bev=0)  # wall-walk ledge
+            n = max(1, int((b - a) / 0.07))
             for i in range(0, n, 2):
                 g = (a + (i + 0.5) * (b - a) / n) / ln
                 bx(((b - a) / n, 0.085, 0.06), (x0 + (x1 - x0) * g, y0 + (y1 - y0) * g, 0.31), st, ang, bev=0)
+            for i in range(1, int((b - a) / 0.12)):  # arrow slits along the curtain
+                g = (a + i * 0.12) / ln
+                bx((0.012, 0.086, 0.045), (x0 + (x1 - x0) * g, y0 + (y1 - y0) * g, 0.17), flat("slit", "#1c1a19", 0.9),
+                   ang, 0)
     for i in range(4):
         x0, y0 = corners[i]
         x1, y1 = corners[(i + 1) % 4]
         wall(x0, y0, x1, y1, 0.22 if i == 0 else 0.0)
-    for (x, y) in corners:
+    # front corners: square towers with steep slate pyramids (reference frame 4); back corners stay round
+    for (x, y) in corners[:2]:
+        square_tower(x, y, 0.19, 0.56, roof, team)
+    for (x, y) in corners[2:]:
         castle_tower(x, y, 0.1, 0.52, roof, team)
-        window(x, y - 0.1, 0.36, 0, 0.025, 0.045)
-    # mid-wall towers on the three plain walls and turrets flanking the gate (the many towers of reference frame 4)
+    # open crenellated mid-wall towers and slate-capped turrets flanking the gate
     for (x, y) in ((-H, 0.0), (H, 0.0), (0.0, H)):
-        castle_tower(x, y, 0.075, 0.42, roof, team, flag=False)
+        square_tower(x, y, 0.14, 0.4, roof, team, flag=False, roofed=False)
     for sx in (-1, 1):
         castle_tower(sx * 0.17, -H - 0.02, 0.06, 0.5, roof, team, flag=False)
-    # gatehouse
+    # gatehouse: an arched gate with a lit passage and steps up to it
     bx((0.26, 0.16, 0.4), (0, -H, 0.2), st, bev=0.01)
-    bx((0.12, 0.02, 0.18), (0, -H - 0.08, 0.09), tex("wood", "#4a2f19"), bev=0)
+    sur = flat("arch_sur", "#6f6b64", 0.85)
+    bx((0.13, 0.012, 0.17), (0, -H - 0.081, 0.095), sur, bev=0)
+    cy(0.065, 0.012, (0, -H - 0.081, 0.18), sur, 12, rot=(math.pi / 2, 0, 0))
+    gl = mat("gate_glow", "#8a5426", 0.7, emission="#e0863a", emit_strength=0.45)  # torch-lit passage, not a lamp
+    bx((0.1, 0.014, 0.15), (0, -H - 0.084, 0.085), gl, bev=0)
+    cy(0.05, 0.014, (0, -H - 0.084, 0.16), gl, 12, rot=(math.pi / 2, 0, 0))
+    iron = flat("portcullis", "#2a2724", 0.6)
+    for k in range(5):  # the raised portcullis hanging in the arch head
+        bx((0.006, 0.006, 0.07), (-0.04 + k * 0.02, -H - 0.093, 0.165 - abs(k - 2) * 0.012), iron, bev=0)
+    for z in (0.15, 0.185):
+        bx((0.1, 0.006, 0.006), (0, -H - 0.093, z), iron, bev=0)
+    for k in range(3):  # steps down to the square
+        bx((0.18 - k * 0.02, 0.04, 0.012 + k * 0.012), (0, -H - 0.13 + k * 0.03, 0.006 + k * 0.006),
+           stone(STONE_D, 0.6), bev=0.002)
+    win_arch(0, -H - 0.082, 0.3, 0.03, 0.04)
     prism_roof("gate_roof", 0.28, 0.18, 0.14, (0, -H, 0.4), roof)
     # keep with two turrets and a hall
     bx((0.4, 0.32, 0.66), (0.04, 0.12, 0.33), st, bev=0.012)
     prism_roof("keep_roof", 0.42, 0.34, 0.3, (0.04, 0.12, 0.66), roof)
     for i in range(4):
-        window(-0.11 + i * 0.1, -0.044, 0.48, 0, 0.03, 0.06)
+        win_arch(-0.11 + i * 0.1, -0.042, 0.47, 0.03, 0.05)
         window(-0.11 + i * 0.1, -0.044, 0.28, 0, 0.026, 0.05)
     for (x, y, h) in ((-0.16, -0.04, 0.86), (0.24, -0.04, 0.78)):
         castle_tower(x, y, 0.08, h, roof, team, flag=False)
     castle_tower(0.04, 0.24, 0.085, 1.08, roof, team)  # the tall central tower — the castle's silhouette
     build_at(lambda: stone_house(0.3, 0.22, 0.28, team, STONE), -0.26, 0.3)
     banner(0.04, 0.12, 1.4, team, 0.3)  # the great hanging banners of reference frame 4
-    banner(-H, -H, 1.05, team, 0.2)
-    banner(H, -H, 1.05, team, 0.2)
+    banner(-H, -H, 1.12, team, 0.2)
+    banner(H, -H, 1.12, team, 0.2)
     for x in (-0.03, 0.11):  # long banners hanging down the keep front, between the turrets
         flag_at("flagt", x, -0.056, 0.5, 0.09, 0.22, 0.012)
         bx((0.09, 0.008, 0.22), (x, -0.056, 0.5), flat("flag" + team, team, 0.7), bev=0)
         bx((0.11, 0.012, 0.012), (x, -0.056, 0.615), flat("pole", "#d9d2c3", 0.5), bev=0)
+    for sx in (-1, 1):  # torches either side of the gate
+        cy(0.006, 0.05, (sx * 0.085, -H - 0.09, 0.2), tex("wood", WOOD), 5)
+        uvs(0.012, (sx * 0.085, -H - 0.095, 0.235), glow("torch", "#ffb347", 4.0), 6, 4)
 
 
 def residence_dl5(team):
@@ -2002,7 +2065,7 @@ def export(name, out):
     bpy.context.view_layer.update()
     lowpoly(objs)
     smokes = [o for o in bpy.context.scene.objects if o.type == "EMPTY" and o.name.startswith(("smoke", "flag"))]
-    ob = ea.bake_asset(objs, 512)
+    ob = ea.bake_asset(objs, 1024 if name.startswith("residence") else 512)  # the hero model is seen up close
     ob.name = name
     ob.data.calc_loop_triangles()
     tris = len(ob.data.loop_triangles)
