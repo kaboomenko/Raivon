@@ -836,6 +836,9 @@ func _sky_beam(holder: Node3D, owner: int) -> void:
 		m.cull_mode = BaseMaterial3D.CULL_DISABLED
 		m.no_depth_test = false
 		m.albedo_color = Color(col.r, col.g, col.b, layer[1])
+		m.distance_fade_mode = BaseMaterial3D.DISTANCE_FADE_PIXEL_ALPHA  # a marker for the far view (frame 2): up close
+		m.distance_fade_min_distance = 3.0  # (frame 5) it washed out the top of the screen, so it thins out there
+		m.distance_fade_max_distance = 14.0
 		mi.material_override = m
 		mi.position = Vector3(0, 2.2 + 7.0, 0)
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
