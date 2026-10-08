@@ -1179,9 +1179,13 @@ def residence_dl4(team):
         castle_tower(x, y, 0.08, h, roof, team, flag=False)
     castle_tower(0.04, 0.24, 0.085, 1.08, roof, team)  # the tall central tower — the castle's silhouette
     build_at(lambda: stone_house(0.3, 0.22, 0.28, team, STONE), -0.26, 0.3)
-    banner(0.04, 0.12, 1.32, team, 0.2)
-    banner(-H, -H, 0.95, team, 0.13)
-    banner(H, -H, 0.95, team, 0.13)
+    banner(0.04, 0.12, 1.4, team, 0.3)  # the great hanging banners of reference frame 4
+    banner(-H, -H, 1.05, team, 0.2)
+    banner(H, -H, 1.05, team, 0.2)
+    for x in (-0.03, 0.11):  # long banners hanging down the keep front, between the turrets
+        flag_at("flagt", x, -0.056, 0.5, 0.09, 0.22, 0.012)
+        bx((0.09, 0.008, 0.22), (x, -0.056, 0.5), flat("flag" + team, team, 0.7), bev=0)
+        bx((0.11, 0.012, 0.012), (x, -0.056, 0.615), flat("pole", "#d9d2c3", 0.5), bev=0)
 
 
 def residence_dl5(team):

@@ -677,6 +677,21 @@ func pop_hex(id: int) -> void:
 	tw.tween_property(holder, "scale", Vector3.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 
 
+## Guards of the owner's era drilling in front of the capital gate (reference frame 4: soldiers in the castle yard
+## and at the gate), small and animated like the field armies.
+func _place_guards(c: Dictionary, holder: Node3D, rot: float) -> void:
+	var sq := evolved("squad", int(c["owner"]))
+	if sq == "":
+		return
+	var fwd := Vector3(sin(rot), 0, cos(rot))  # the model's −Y front in Godot space after the turn
+	var side := Vector3(fwd.z, 0, -fwd.x)
+	var anim: Array = []
+	for k in [-1, 1]:
+		var g := spawn(sq, holder, fwd * 0.78 + side * 0.32 * k, rot, 0.42)
+		if g:
+			_animate_troops(g, false, anim)
+
+
 ## The farmstead of an owner's era: a stone cottage (DL1–5), a panel house with greenhouses (DL6–7), a neon habitat
 ## pod (DL8+); "" for no owner.
 func _homestead(owner: int, side: String) -> String:
@@ -1015,6 +1030,7 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 			if rm != "":
 				var early := rm.contains("_dl1_") or rm.contains("_dl2_") or rm.contains("_dl3_")
 				spawn(rm, holder, p, 0.3 if c["owner"] == Types.PLAYER else PI, 1.3 if early else 1.0, int(c["owner"]))  # small early buildings fill the hex
+				_place_guards(c, holder, 0.3 if c["owner"] == Types.PLAYER else PI)
 			else:
 				var model := "castle" if c["owner"] == Types.PLAYER else ("castle_green" if c["owner"] == MapGen.HAMLETS else "castle_red")
 				spawn(model, holder, p, 0.3 if c["owner"] == Types.PLAYER else PI, 1.35)
