@@ -839,6 +839,28 @@ def city_dl2(team):
     flagpole(0.14, 0.16, 0.45, team, 0.13, "#8a6a44")
 
 
+def market_stall(team, awn):
+    """A market stall: four posts, a striped awning, a counter with goods (reference frame 3: the town square)."""
+    wd = tex("wood", WOOD, 3.0)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            cy(0.006, 0.11, (sx * 0.05, sy * 0.035, 0.055), wd, 5)
+    bx((0.11, 0.08, 0.02), (0, 0, 0.05), tex("wood", WOOD_L), bev=0.003)
+    for k, c in enumerate((awn, WHITE, awn)):
+        o = bx((0.13, 0.034, 0.008), (0, -0.03 + k * 0.03, 0.118 - k * 0.004), flat("awn" + c, c, 0.7), bev=0)
+        o.rotation_euler.x = -0.25
+    for k, c in enumerate(("#d8452f", "#e8b84a", "#6faa3c")):
+        ico(0.014, (-0.03 + k * 0.03, 0.0, 0.07), flat("goods" + c, c, 0.7), (1, 1, 0.8))
+
+
+def town_props(team, spots):
+    """Barrels and crates in little heaps at the given spots."""
+    for i, (x, y) in enumerate(spots):
+        cy(0.022, 0.05, (x, y, 0.025), tex("wood", WOOD), 8, 0.004)
+        cy(0.023, 0.006, (x, y, 0.04), flat("band", "#3d3f45", 0.5), 8)
+        bx((0.04, 0.04, 0.035), (x + 0.04, y + 0.01, 0.018), tex("wood", WOOD_L), 0.3 * i, 0.004)
+
+
 def city_dl3(team):
     pad(0.7, stone(COBBLE, 1.8), 0.012, 14, 0.06, 3)
     build_at(lambda: (terem_block(0.3, 0.26, 0.16, 0.18, team, 0.3),
@@ -850,6 +872,12 @@ def city_dl3(team):
     tree(-0.12, 0.62, 0.9)
     tree(0.36, 0.56, 0.8)
     flagpole(0.05, -0.12, 0.55, team, 0.14)
+    # denser like the town of reference frame 3: two more cottages, a market on the square, goods in heaps
+    build_at(lambda: stone_house(0.2, 0.16, 0.15, team, "#cfc6b4"), -0.46, 0.42, 0.5)
+    build_at(lambda: stone_house(0.19, 0.15, 0.14, team, "#d8cdb6", smoke=True), 0.52, 0.38, -0.5)
+    for (x, y, rz, c) in ((-0.17, -0.14, 0.2, "#c0392b"), (0.2, -0.16, -0.2, "#2f62c8"), (-0.02, -0.26, 0.0, "#e8b84a")):
+        build_at(lambda c=c: market_stall(team, c), x, y, rz)
+    town_props(team, [(-0.62, -0.18), (0.62, -0.2), (0.12, 0.12)])
 
 
 def city_dl4(team):
@@ -890,6 +918,11 @@ def city_dl4(team):
     tree(-0.24, 0.0, 0.8)
     tree(0.26, -0.06, 0.8)
     flagpole(0.2, 0.18, 0.5, team, 0.14)
+    for (x, y, rz, c) in ((-0.1, -0.24, 0.15, "#c0392b"), (0.14, -0.25, -0.15, "#2f62c8")):
+        build_at(lambda c=c: market_stall(team, c), x, y, rz)
+    build_at(lambda: stone_house(0.2, 0.16, 0.16, team, "#e6d7bd", smoke=True), -0.5, 0.42, 0.45)
+    build_at(lambda: stone_house(0.18, 0.15, 0.15, team, "#d9cbb0"), 0.52, 0.4, -0.45)
+    town_props(team, [(-0.64, -0.24), (0.64, -0.26)])
 
 
 def city_dl5(team):
