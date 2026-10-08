@@ -90,10 +90,125 @@ def builder():
     b.rotation_euler.y = 0.6 - math.pi / 2 + math.pi / 2
 
 
-ICONS = {"coin": coin, "food": food, "metal": metal, "raivite": raivite, "oil": oil, "builder": builder}
+def steel():
+    return mat("steel_i", "#b8c2cf", 0.25, 1.0)
 
 
-def render(path):
+def castle_icon():
+    st = mat("stone_i", "#c9c4ba", 0.7)
+    roof = mat("roof_i", "#2f62c8", 0.45)
+    box("wall", (0.7, 0.3, 0.32), (0, 0, -0.18), st, 0.02)
+    for x in (-0.36, 0.36):
+        cyl("tower", 0.13, 0.62, (x, 0, -0.04), st, 16, 0.01)
+        cone("cone", 0.16, 0.34, (x, 0, 0.44), roof, 16, 0.0)
+    cyl("keep", 0.16, 0.8, (0, 0.05, 0.05), st, 16, 0.01)
+    cone("keep_cone", 0.2, 0.42, (0, 0.05, 0.66), roof, 16, 0.0)
+    box("gate", (0.16, 0.05, 0.2), (0, -0.16, -0.24), mat("door_i", "#4a2f19", 0.7), 0.01)
+    for k in range(4):
+        box("merlon", (0.08, 0.32, 0.07), (-0.27 + k * 0.18, 0, 0.0), st, 0.005)
+
+
+def helmet():
+    s_ = steel()
+    sphere("dome", 0.36, (0, 0, 0.05), mat("steel_h", "#9aa6b4", 0.35, 0.9), (1, 1, 1.05), 3)
+    cyl("brim", 0.38, 0.06, (0, 0, -0.16), s_, 32, 0.02)
+    box("nasal", (0.07, 0.06, 0.32), (0, -0.37, -0.05), s_, 0.01)
+    box("crest", (0.62, 0.07, 0.14), (0, 0.0, 0.42), mat("crest", "#2f62c8", 0.6), 0.02)
+    box("visor", (0.5, 0.05, 0.05), (0, -0.35, 0.0), mat("slot", "#1d1b1a", 0.8), 0.01)
+
+
+def hammer():
+    head = steel()
+    handle = mat("handle_i", "#8a5e36", 0.6)
+    h = cyl("handle", 0.06, 0.9, (0.0, 0, -0.08), handle, 12, 0.01)
+    h.rotation_euler.y = 0.55
+    b = box("head", (0.5, 0.2, 0.2), (0.235, 0, 0.31), head, 0.03)  # on the top end of the handle
+    b.rotation_euler.y = 0.55 + math.pi / 2
+    sc = box("scroll", (0.5, 0.06, 0.34), (0.18, 0.15, -0.2), mat("paper", "#e8dcb8", 0.8), 0.02)
+    sc.rotation_euler.y = -0.3
+
+
+def hands():
+    """Diplomacy: a treaty scroll tied with a ribbon and a red wax seal."""
+    paper = mat("paper_d", "#efe4c6", 0.8)
+    r = cyl("roll", 0.16, 0.8, (0, 0, 0), paper, 24, 0.02)
+    r.rotation_euler.y = math.pi / 2
+    for sx in (-1, 1):
+        e = cyl("knob", 0.07, 0.08, (sx * 0.43, 0, 0), mat("wood_d", "#6e4a2c", 0.6), 16, 0.01)
+        e.rotation_euler.y = math.pi / 2
+    cyl("ribbon", 0.165, 0.08, (0, 0, 0), mat("ribbon", "#2f62c8", 0.6), 24, 0.0).rotation_euler.y = math.pi / 2
+    s2 = cyl("seal", 0.12, 0.05, (0.0, -0.17, -0.05), mat("wax", "#b5302a", 0.5), 20, 0.01)
+    s2.rotation_euler.x = math.pi / 2
+    for sx in (-1, 1):
+        t = box("tail", (0.07, 0.02, 0.24), (sx * 0.05, -0.17, -0.22), mat("ribbon", "#2f62c8", 0.6), 0.005)
+        t.rotation_euler.y = sx * 0.25
+
+
+def globe():
+    sea = mat("sea_i", "#2a6fd0", 0.3)
+    land = mat("land_i", "#4f9a34", 0.6)
+    sphere("globe", 0.42, (0, 0, 0.04), sea, (1, 1, 1), 4)
+    for (x, y, z, r) in ((-0.15, -0.3, 0.2, 0.14), (0.18, -0.32, -0.05, 0.12), (-0.05, -0.36, -0.18, 0.09), (0.25, -0.2, 0.25, 0.1)):
+        sphere("land", r, (x, y, z), land, (1.2, 0.5, 1), 2)
+    t = cyl("ring", 0.5, 0.03, (0, 0, 0.04), gold(), 48, 0.0)
+    t.rotation_euler = (math.radians(70), math.radians(20), 0)
+    cyl("stand", 0.2, 0.06, (0, 0, -0.45), mat("wood_i", "#6e4a2c", 0.6), 24, 0.02)
+
+
+def trophy():
+    g = gold()
+    cyl("cup", 0.17, 0.42, (0, 0, 0.18), g, 32, 0.02, r2=0.32)
+    cyl("stem", 0.06, 0.25, (0, 0, -0.15), g, 12, 0.0)
+    cyl("base", 0.24, 0.08, (0, 0, -0.32), g, 24, 0.02)
+    for sx in (-1, 1):
+        bpy.ops.mesh.primitive_torus_add(major_radius=0.1, minor_radius=0.025, location=(sx * 0.3, 0, 0.22),
+                                         rotation=(math.pi / 2, 0, 0))
+        bpy.context.active_object.data.materials.append(g)
+    sphere("gem", 0.06, (0, -0.24, 0.18), mat("gem", "#2f62c8", 0.1), (1, 0.5, 1), 2)
+
+
+def book():
+    cover = mat("cover", "#8a3b2a", 0.6)
+    pages = mat("pages", "#efe4c6", 0.8)
+    box("pages", (0.62, 0.42, 0.14), (0, 0, 0), pages, 0.02)
+    box("cover_t", (0.66, 0.46, 0.04), (0, 0, 0.09), cover, 0.02)
+    box("cover_b", (0.66, 0.46, 0.04), (0, 0, -0.09), cover, 0.02)
+    box("spine", (0.06, 0.46, 0.22), (-0.33, 0, 0), cover, 0.02)
+    box("clasp", (0.16, 0.1, 0.05), (0.0, -0.24, 0.1), gold(), 0.01)
+    for o in [o for o in bpy.context.scene.objects if o.type == "MESH"]:
+        o.rotation_euler.x += math.radians(60)
+
+
+def mail():
+    paper = mat("env", "#f0e6cc", 0.8)
+    box("env", (0.8, 0.06, 0.52), (0, 0, 0), paper, 0.02)
+    for sx in (-1, 1):
+        f = box("flap", (0.47, 0.065, 0.02), (sx * 0.19, -0.035, 0.1), mat("env_d", "#d8caa4", 0.8), 0.005)
+        f.rotation_euler.y = sx * 0.55
+    cyl("seal", 0.1, 0.04, (0, -0.05, -0.02), mat("wax", "#b5302a", 0.5), 20, 0.01).rotation_euler.x = math.pi / 2
+
+
+def gear():
+    s_ = steel()
+    g = cyl("gear", 0.36, 0.14, (0, 0, 0), s_, 32, 0.02)
+    g.rotation_euler.x = math.pi / 2
+    for k in range(8):
+        a = k * math.tau / 8
+        t = box("tooth", (0.13, 0.14, 0.13), (math.cos(a) * 0.42, 0, math.sin(a) * 0.42), s_, 0.01)
+        t.rotation_euler.y = -a
+    h = cyl("hole", 0.12, 0.16, (0, 0, 0), mat("hole", "#2b2d31", 0.6), 24, 0.0)
+    h.rotation_euler.x = math.pi / 2
+
+
+ICONS = {"coin": coin, "food": food, "metal": metal, "raivite": raivite, "oil": oil, "builder": builder,
+         "castle_icon": castle_icon, "helmet": helmet, "hammer": hammer, "hands": hands, "scales": globe,
+         "trophy": trophy, "book": book, "mail": mail, "gear": gear}
+
+
+ORTHO = {"castle_icon": 1.75, "hammer": 1.6, "scales": 1.5, "trophy": 1.45, "gear": 1.4, "hands": 1.45}
+
+
+def render(path, ortho=1.35):
     sc = bpy.context.scene
     bpy.ops.object.light_add(type="AREA", location=(-1.5, -2.5, 2.5))
     k = bpy.context.active_object
@@ -113,7 +228,7 @@ def render(path):
     cam = bpy.data.objects.new("cam", bpy.data.cameras.new("cam"))
     sc.collection.objects.link(cam)
     cam.data.type = "ORTHO"
-    cam.data.ortho_scale = 1.35
+    cam.data.ortho_scale = ortho
     cam.location = (0, -6, 0.6)
     cam.rotation_euler = (math.radians(84), 0, 0)
     sc.camera = cam
@@ -136,5 +251,5 @@ if __name__ == "__main__":
     for name in (args[1:] or list(ICONS)):
         reset()
         ICONS[name]()
-        render(os.path.join(os.path.abspath(out), name + ".png"))
+        render(os.path.join(os.path.abspath(out), name + ".png"), ORTHO.get(name, 1.35))
         print("ICON", name, flush=True)

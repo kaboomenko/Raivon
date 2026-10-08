@@ -492,14 +492,25 @@ class Icon extends Control:
 	var kind: String
 	var lit := false  # tab icons: bright when their tab is selected
 
+	var _tex: Texture2D  # a rendered 3D icon (tools/blender/icon_assets.py → assets/ui/icons), drawn instead of the vector one
+
 	func _init(k: String) -> void:
 		kind = k
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var p := "res://assets/ui/icons/%s.png" % k
+		if ResourceLoader.exists(p):
+			_tex = load(p)
 
 	func _draw() -> void:
 		var w := size.x
 		var h := size.y
 		var c := size / 2
+		if _tex != null:
+			var side := minf(w, h) * 1.15
+			var tab := kind in ["castle_icon", "helmet", "hammer", "hands", "scales"]
+			draw_texture_rect(_tex, Rect2(c - Vector2(side, side) / 2.0, Vector2(side, side)), false,
+				Color(1, 1, 1) if lit or not tab else Color(0.62, 0.66, 0.74, 0.85))  # a tab icon dims until selected
+			return
 		match kind:
 			"coin":
 				draw_circle(c, w * 0.46, Color(0.75, 0.5, 0.08))
