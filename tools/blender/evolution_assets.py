@@ -1638,7 +1638,7 @@ def residence_dl1(team):
             beam((math.cos(a) * 0.36, math.sin(a) * 0.36, 0.0), (-math.cos(a) * 0.05, -math.sin(a) * 0.05, 0.8), 0.022, wd)
         mesh_obj([(-0.085, -0.352, 0.0), (0.085, -0.352, 0.0), (0.0, -0.262, 0.2), (-0.085, -0.362, 0.0), (0.085, -0.362, 0.0), (0.0, -0.272, 0.2)],
                  [(0, 1, 2), (5, 4, 3), (0, 3, 4, 1), (1, 4, 5, 2), (2, 5, 3, 0)], flat("hole", "#1e140c", 0.95))
-        # a team cloth hung over the door, with a white mark: two panels laid on the two thatch facets that meet
+        # a team cloth hung over the door, with a white stripe: two panels laid on the two thatch facets that meet
         # above the door (the tier is a ten-sided frustum with an edge at −Y), so the cloth hugs the thatch
         from mathutils import Vector
 
@@ -1661,7 +1661,7 @@ def residence_dl1(team):
                 mb.face([p + nrm * lift for p in q], nrm)
             mb.obj(mt, "cloth")
         cloth(0.25, 0.322, 0.45, 0.004, flat("flag" + team, team, 0.7))
-        cloth(0.272, 0.3, 0.2, 0.0065, flat("emblem", WHITE, 0.6))
+        cloth(0.262, 0.274, 0.45, 0.0065, flat("emblem", WHITE, 0.6))  # a white stripe woven across the hem
     build_at(shalash, 0.0, 0.2)
 
     def small_hut():
