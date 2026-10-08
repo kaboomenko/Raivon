@@ -6586,6 +6586,10 @@ func _demo(spec: String) -> void:
 			await _world_expansion()
 		else:
 			_world_expansion()
+		if parts.size() > 1 and parts[1] == "view":  # ch2:view — the grown world from above, no modal
+			ui.close_modal()
+			rig.focus(map_view.cell_world(sim.states[Types.PLAYER]["capital_id"]), 0.95)
+			return
 		if parts.size() > 1 and parts[1] == "bridge":  # ch2:bridge — a stone bridge where a road crosses a river
 			ui.close_modal()
 			map_view.mark_dirty()

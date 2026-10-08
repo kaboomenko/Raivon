@@ -15,7 +15,7 @@ void vertex() {
 }
 
 void fragment() {
-	ALBEDO = COLOR.rgb * 0.62;
+	ALBEDO = COLOR.rgb * 0.52;
 	NORMAL = normalize((VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz);  // both faces lit like the ground
 	ROUGHNESS = 1.0;
 }

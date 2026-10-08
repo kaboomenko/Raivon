@@ -359,11 +359,11 @@ func _build_terrain() -> void:
 	for c in sim.cells:
 		var center := axial_to_world(c["q"], c["r"])
 		var top := 0.0
-		var col := Color(0.27, 0.4, 0.19)  # a natural meadow green — the old one went lime under the colour grade
+		var col := Color(0.25, 0.3, 0.16)  # a muted, warm meadow (reference frames), not lime  # a natural meadow green — the old one went lime under the colour grade
 		var pal: Dictionary = BIOME_GROUND.get(String(c.get("biome", "meadow")), {})
 		match c["terrain"]:
 			"forest":
-				col = Color(0.18, 0.31, 0.15)
+				col = Color(0.14, 0.2, 0.12)
 			"hills":
 				col = Color(0.45, 0.46, 0.27)
 			"mountain":
@@ -417,7 +417,7 @@ var _grass_mi: MultiMeshInstance3D
 var _pebble_mi: MultiMeshInstance3D
 
 ## Grass tint by biome: tufts a shade lighter than the ground, so empty land reads as a meadow, not plastic.
-const GRASS_TINT := {"meadow": Color(0.3, 0.5, 0.2), "taiga": Color(0.3, 0.5, 0.28), "steppe": Color(0.72, 0.68, 0.34), "badlands": Color(0.66, 0.55, 0.3)}
+const GRASS_TINT := {"meadow": Color(0.33, 0.39, 0.2), "taiga": Color(0.3, 0.5, 0.28), "steppe": Color(0.72, 0.68, 0.34), "badlands": Color(0.66, 0.55, 0.3)}
 
 
 ## Grass tufts and pebbles over the land (one MultiMesh each): a whole meadow on an empty plain, a fringe along
