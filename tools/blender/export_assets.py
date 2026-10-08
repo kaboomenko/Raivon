@@ -521,9 +521,43 @@ def _spoked_wheel(name, c, r, w, spokes, wood, dark, iron, rim_t=0.016, hub_r=No
         _cy(name + "_cap", hr * 0.62, w * 0.5, (x, y + sy * w * 0.95, z), iron, 6, rot=YROT)
 
 
-def _timber(color):
-    """Wood with a grain fine enough to read on beams a few centimetres thick."""
-    return kit.textured("wood", color, 4.0)
+def _timber(color, scale=2.6, dark=0.74):
+    """Wood with a soft grain fine enough to read on beams a few centimetres thick (kit's wood bands are sized for
+    whole buildings, and scaled up they turn into zebra stripes)."""
+    key = ("timber", color, scale, dark)
+    if key in kit._MATS:
+        return kit._MATS[key]
+    mt = bpy.data.materials.new(f"timber_{color}")
+    mt.use_nodes = True
+    nt = mt.node_tree
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    wave = nt.nodes.new("ShaderNodeTexWave")
+    wave.wave_type = "BANDS"
+    wave.inputs["Scale"].default_value = scale
+    wave.inputs["Distortion"].default_value = 3.0
+    wave.inputs["Detail"].default_value = 2.0
+    wave.inputs["Detail Roughness"].default_value = 0.4
+    nt.links.new(tc.outputs["Object"], wave.inputs["Vector"])
+    noise = nt.nodes.new("ShaderNodeTexNoise")
+    noise.inputs["Scale"].default_value = 40.0
+    nt.links.new(tc.outputs["Object"], noise.inputs["Vector"])
+    base = kit.srgb(color)
+    ramp = nt.nodes.new("ShaderNodeValToRGB")
+    ramp.color_ramp.elements[0].position = 0.15
+    ramp.color_ramp.elements[0].color = (*tuple(c * dark for c in base), 1)
+    ramp.color_ramp.elements[1].position = 0.85
+    ramp.color_ramp.elements[1].color = (*base, 1)
+    nt.links.new(wave.outputs["Fac"], ramp.inputs["Fac"])
+    mul = nt.nodes.new("ShaderNodeMix")
+    mul.data_type = "RGBA"
+    mul.blend_type = "MULTIPLY"
+    mul.inputs["Factor"].default_value = 0.18
+    nt.links.new(ramp.outputs["Color"], mul.inputs["A"])
+    nt.links.new(noise.outputs["Color"], mul.inputs["B"])
+    nt.links.new(mul.outputs["Result"], nt.nodes["Principled BSDF"].inputs["Base Color"])
+    nt.nodes["Principled BSDF"].inputs["Roughness"].default_value = 0.8
+    kit._MATS[key] = mt
+    return mt
 
 
 def _masonry(color, scale=1.0, mortar=0.03):
@@ -625,67 +659,103 @@ def _bolts(pts, mt, s=0.008, axis="y"):
 
 
 def catapult():
-    """Siege mangonel: a braced timber bed on four spoked wheels, an A-frame with a straw-padded stop beam,
-    a torsion skein of rope, the throwing arm with a cup and a stone, a winch at the back and spare shot."""
-    wd = m("wood", WOOD)
-    wl = m("planks", WOOD_L)
-    dk = m("wheel", "#5a3a22")
+    """Siege mangonel after the engines on the front in reference frame 1: a heavy timber bed on four open spoked
+    wheels with iron tyres, two tall cross-braced trusses carrying a massive stop beam with a straw pad, iron plates
+    with bright bolt heads at the joints, a rope torsion skein with iron ratchets and levers, the throwing arm with a
+    bucket and a stone, a capstan winch with its rope at the back and a pile of hewn shot beside it."""
+    wd = _timber(WOOD)
+    wl = _timber(WOOD_L)
+    dk = _timber("#5a3a22")
     iron = mat("iron", "#3b3d42", 0.55, 0.6)
+    bolt = mat("bolt", "#e2dccb", 0.5)
     rope = mat("rope", "#c9b48a", 0.95)
+    rope_d = mat("rope_d", "#9c8560", 0.95)
     straw = mat("straw", "#d8b25c", 0.95)
-    rock = m("stone", STONE_D)
-    # bed: two long side beams, cross members, a plank deck at the front
-    for dy in (-0.075, 0.075):
-        box("rail", (0.44, 0.035, 0.035), (0, dy, 0.085), wd, 0.006)
-        for x in (-0.16, 0.0, 0.16):
-            box("band", (0.012, 0.038, 0.038), (x, dy, 0.085), iron, 0.002)
-    for x in (-0.19, -0.06, 0.08, 0.19):
-        box("cross", (0.03, 0.18, 0.025), (x, 0, 0.085), wd, 0.005)
-    box("deck", (0.12, 0.13, 0.012), (0.13, 0, 0.105), wl, 0.003)
-    # wheels: dark rim, lighter disc, six spokes, iron hub
-    for dx in (-0.14, 0.14):
-        cyl("axle", 0.01, 0.24, (dx, 0, 0.06), iron, 8, 0.0).rotation_euler.x = math.pi / 2
-        for dy in (-0.105, 0.105):
-            r = cyl("rim", 0.06, 0.02, (dx, dy, 0.06), dk, 16, 0.004)
-            r.rotation_euler.x = math.pi / 2
-            d = cyl("disc", 0.045, 0.012, (dx, dy * 1.03, 0.06), wl, 14, 0.0)
-            d.rotation_euler.x = math.pi / 2
-            for k in range(6):
-                a = k * math.pi / 3
-                sp = box("spoke", (0.009, 0.016, 0.09), (dx, dy * 1.07, 0.06), dk, 0.0)
-                sp.rotation_euler = (0, a, 0)
-            h = cyl("hub", 0.014, 0.03, (dx, dy * 1.1, 0.06), iron, 8, 0.0)
-            h.rotation_euler.x = math.pi / 2
-    # A-frame uprights with diagonal braces and the padded stop beam
-    for dy in (-0.075, 0.075):
-        _beam("post", (0.06, dy, 0.1), (0.04, dy, 0.33), 0.034, wd)
-        _beam("brace", (0.18, dy, 0.1), (0.05, dy, 0.3), 0.024, wd)
-        _beam("brace2", (-0.06, dy, 0.1), (0.035, dy, 0.24), 0.022, wd)
-    box("stop", (0.04, 0.2, 0.04), (0.04, 0, 0.34), wd, 0.006)
-    cyl("pad", 0.03, 0.15, (0.015, 0, 0.34), straw, 10, 0.004).rotation_euler.x = math.pi / 2
-    for y in (-0.05, 0.0, 0.05):
-        cyl("tie", 0.032, 0.008, (0.015, y, 0.34), rope, 10, 0.0).rotation_euler.x = math.pi / 2
-    # torsion skein between the side beams, the arm rising from it towards the stop beam
-    cyl("skein", 0.035, 0.12, (-0.1, 0, 0.1), rope, 12, 0.006).rotation_euler.x = math.pi / 2
-    for dy in (-0.075, 0.075):
-        cyl("lever", 0.016, 0.03, (-0.1, dy, 0.1), iron, 8, 0.0).rotation_euler.x = math.pi / 2
-        _beam("lever_bar", (-0.13, dy * 1.2, 0.1), (-0.07, dy * 1.2, 0.1), 0.012, iron, 0.0)
-    _beam("arm", (-0.1, 0, 0.1), (-0.02, 0, 0.42), 0.032, wl)
-    for f in (0.3, 0.6):
-        box("arm_band", (0.04, 0.04, 0.012), (-0.1 + 0.08 * f, 0, 0.1 + 0.32 * f), iron, 0.002).rotation_euler.y = -0.24
-    cyl("cup", 0.05, 0.035, (-0.04, 0, 0.45), wd, 12, 0.004, r2=0.035).rotation_euler.y = 0.4
-    sphere("shot", 0.038, (-0.045, 0, 0.475), rock, (1, 1, 0.9), 2)
-    # winch at the back: drum with a rope to the arm and two crank handles
-    cyl("drum", 0.022, 0.15, (-0.2, 0, 0.125), wl, 10, 0.003).rotation_euler.x = math.pi / 2
-    for dy in (-0.075, 0.075):
-        box("winch_post", (0.025, 0.02, 0.06), (-0.2, dy, 0.11), wd, 0.003)
-        for k in range(2):
-            hd = box("handle", (0.008, 0.008, 0.09), (-0.2, dy * 1.25, 0.125), wd, 0.0)
-            hd.rotation_euler = (0, k * math.pi / 2, 0)
-    _beam("winch_rope", (-0.2, 0, 0.14), (-0.075, 0, 0.18), 0.008, rope, 0.0)
-    # spare shot beside the machine
-    for (x, y, z, r) in ((0.05, 0.2, 0.03, 0.032), (0.11, 0.21, 0.03, 0.03), (0.08, 0.17, 0.028, 0.028), (0.08, 0.2, 0.075, 0.03)):
-        sphere("pile", r, (x, y, z), rock, (1, 1, 0.9), 2)
+    rock = m("rock", "#a7a197")
+    B = 0.006  # bevel of the big timbers
+    RY = 0.085  # side rails and trusses
+    # bed: two long side rails, four cross beams, iron straps over the axles
+    for sy in (-1, 1):
+        _bx("rail", (0.47, 0.04, 0.042), (0, sy * RY, 0.1), wd, B)
+        for x in (-0.16, 0.16):
+            _bx("strap", (0.016, 0.046, 0.05), (x, sy * RY, 0.098), iron)
+    for x in (-0.215, -0.06, 0.06, 0.215):
+        _bx("cross", (0.034, 0.22, 0.03), (x, 0, 0.1), wd, B)
+    _bx("floor", (0.1, 0.13, 0.01), (-0.17, 0, 0.12), wl)
+    # four open wheels on iron axles
+    for x in (-0.16, 0.16):
+        _cy("axle", 0.011, 0.32, (x, 0, 0.072), iron, 8, rot=YROT)
+        for sy in (-1, 1):
+            _spoked_wheel("wheel", (x, sy * 0.148, 0.072), 0.072, 0.024, 8, wl, dk, iron, rim_t=0.017, n=14)
+    # the two trusses: front and back posts leaning in under the stop beam, a mid rail, an X of braces below
+    front = ((0.2, 0.11), (0.07, 0.42))
+    back = ((-0.1, 0.11), (0.025, 0.42))
+
+    def on(post, z):
+        (x0, z0), (x1, z1) = post
+        return x0 + (x1 - x0) * (z - z0) / (z1 - z0)
+    for sy in (-1, 1):
+        y = sy * RY
+        for (x0, z0), (x1, z1) in (front, back):
+            _rbeam("post", (x0, y, z0), (x1, y, z1), 0.036, wd, B)
+        _bx("mid_rail", (0.21, 0.03, 0.03), (0.05, y, 0.27), wd, B)
+        _rbeam("brace", (0.18, y, 0.125), (-0.03, y, 0.26), 0.022, wl)
+        _rbeam("brace", (-0.08, y, 0.125), (0.125, y, 0.26), 0.018, wl)
+        _rbeam("tie", (on(front, 0.36) - 0.01, y, 0.36), (on(back, 0.36) + 0.01, y, 0.36), 0.024, wd)
+        # iron plates over the joints, each with bright bolt heads
+        for x in (0.2, -0.1):
+            _bx("plate", (0.05, 0.006, 0.046), (x, y + sy * 0.023, 0.1), iron)
+            _bolts([(x + dx, y + sy * 0.027, 0.1 + dz) for dx in (-0.015, 0.015) for dz in (-0.013, 0.013)], bolt)
+        for x in (on(front, 0.27), on(back, 0.27)):
+            _bx("plate", (0.042, 0.006, 0.042), (x, y + sy * 0.021, 0.27), iron)
+            _bolts([(x - 0.011, y + sy * 0.025, 0.281), (x + 0.011, y + sy * 0.025, 0.259)], bolt)
+    # the stop beam on top with iron end caps and a straw pad lashed to its back
+    _bx("stop", (0.052, 0.25, 0.05), (0.048, 0, 0.44), wd, B)
+    for sy in (-1, 1):
+        _bx("stop_cap", (0.058, 0.008, 0.056), (0.048, sy * 0.127, 0.44), iron)
+        _bolts([(0.048 + dx, sy * 0.132, 0.44) for dx in (-0.015, 0.015)], bolt)
+    _cy("pad", 0.026, 0.15, (0.0, 0, 0.435), straw, 10, rot=YROT)
+    for y in (-0.045, 0.0, 0.045):
+        _cy("tie", 0.0275, 0.009, (0.0, y, 0.435), rope_d, 10, rot=YROT)
+    # torsion skein between the rails, iron ratchets with crossed levers outside them
+    _cy("skein", 0.034, 0.13, (-0.1, 0, 0.1), rope, 10, rot=YROT)
+    for y in (-0.03, 0.03):
+        _cy("skein_band", 0.036, 0.012, (-0.1, y, 0.1), rope_d, 10, rot=YROT)
+    for sy in (-1, 1):
+        _cy("ratchet", 0.03, 0.01, (-0.1, sy * 0.111, 0.1), iron, 8, rot=YROT)
+        for a in (0.4, 0.4 + math.pi / 2):
+            _bx("lever", (0.007, 0.007, 0.08), (-0.1, sy * 0.119, 0.1), iron, rot=(0, a, 0))
+    # the throwing arm resting on the pad, two iron bands, the bucket with a stone in it
+    p0, p1 = (-0.1, 0, 0.1), (-0.035, 0, 0.455)
+
+    def arm_at(t):
+        return tuple(p0[i] + (p1[i] - p0[i]) * t for i in range(3))
+    _rbeam("arm", p0, p1, 0.03, wl, B, h=0.034)
+    for t in (0.36, 0.68):
+        _rbeam("arm_band", arm_at(t - 0.03), arm_at(t + 0.03), 0.036, iron, h=0.04)
+        a = arm_at(t)
+        _bolts([(a[0], sy * 0.02, a[2]) for sy in (-1, 1)], bolt)
+    tilt = math.atan2(p1[0] - p0[0], p1[2] - p0[2])
+    ax = (math.sin(tilt), 0, math.cos(tilt))
+    cc = (-0.031, 0, 0.472)
+    _cy("bucket", 0.032, 0.034, cc, dk, 10, r2=0.047, rot=(0, tilt, 0))
+    _cy("bucket_in", 0.041, 0.004, tuple(cc[i] + ax[i] * 0.014 for i in range(3)), mat("dark", "#2c1d12", 0.9), 10, rot=(0, tilt, 0))
+    _cy("bucket_hoop", 0.043, 0.008, tuple(cc[i] + ax[i] * 0.008 for i in range(3)), iron, 10, rot=(0, tilt, 0))
+    _ico("shot", 0.031, tuple(cc[i] + ax[i] * 0.036 for i in range(3)), rock, (1, 1, 0.92), 2, 0.1, 7, smooth=False)
+    # capstan winch at the back: posts, a drum with rope coils, star handles, the rope up to the arm
+    for sy in (-1, 1):
+        _bx("winch_post", (0.026, 0.026, 0.075), (-0.205, sy * RY, 0.155), wd, 0.004)
+        _cy("capstan", 0.017, 0.022, (-0.205, sy * 0.11, 0.165), dk, 8, rot=YROT)
+        for a in (0.3, 0.3 + math.pi / 2):
+            _bx("handle", (0.008, 0.008, 0.09), (-0.205, sy * 0.118, 0.165), wl, rot=(0, a, 0))
+    _cy("drum", 0.02, 0.21, (-0.205, 0, 0.165), wl, 8, rot=YROT)
+    for y in (-0.03, 0.025):
+        _cy("coil", 0.025, 0.035, (-0.205, y, 0.165), rope, 10, rot=YROT)
+    _rbeam("winch_rope", (-0.2, 0, 0.188), arm_at(0.3), 0.007, rope)
+    # spare shot: hewn stones piled beside the engine
+    for i, (x, y, z, r) in enumerate(((0.0, 0.205, 0.026, 0.032), (0.066, 0.212, 0.026, 0.033), (0.032, 0.25, 0.024, 0.03),
+                                      (0.03, 0.185, 0.024, 0.028), (0.034, 0.215, 0.072, 0.031))):
+        _ico("pile", r, (x, y, z), rock, (1, 1, 0.88), 2, 0.12, 11 + i, smooth=False)
 
 
 def cannon():
@@ -1013,3 +1083,10 @@ if __name__ == "__main__":  # importable by evolution_assets.py (shared bake/exp
         reset()
         build()
         export(name)
+        ob = bpy.context.view_layer.objects.active
+        ob.data.calc_loop_triangles()
+        vs = [ob.matrix_world @ v.co for v in ob.data.vertices]
+        print(f"EXPORTED {name}: tris={len(ob.data.loop_triangles)} radius={max(math.hypot(v.x, v.y) for v in vs):.3f} "
+              f"x={min(v.x for v in vs):.3f}..{max(v.x for v in vs):.3f} y={min(v.y for v in vs):.3f}..{max(v.y for v in vs):.3f} "
+              f"zmin={min(v.z for v in vs):.3f} height={max(v.z for v in vs):.3f} "
+              f"mats={[s.material.name for s in ob.material_slots]}", flush=True)
