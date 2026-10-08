@@ -6,7 +6,7 @@ render_mode blend_mul, unshaded, depth_draw_never, cull_disabled, shadows_disabl
 
 uniform sampler2D cloud_noise : filter_linear_mipmap, repeat_enable;
 uniform float strength = 0.65;
-uniform vec3 shade : source_color = vec3(0.6, 0.66, 0.84);
+uniform vec3 shade : source_color = vec3(0.62, 0.64, 0.72);  // a cool but near-neutral shade: bluer, it turned the sci-fi ground navy
 uniform vec2 wind = vec2(0.11, 0.05);
 
 varying vec3 wpos;

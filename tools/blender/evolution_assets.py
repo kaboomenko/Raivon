@@ -1484,12 +1484,12 @@ def residence_dl8(team):
     cap = flat("spire8", "#a7afb9", 0.35)
     neon = glow("strip" + team, shade(team, 1.25), 2.0)  # cold light strips: thin lines, not lamps (frame 5)
     cyan = glow("cyan", CYAN, 2.5)
-    base = stone("#6a7079", 1.4)  # a paved concrete plaza
+    base = stone("#726e68", 1.4)  # a paved concrete plaza (warm grey: reads neutral under the cool light)
     extrude(ngon(0.86, 12, math.pi / 12), -0.01, 0.06, base)
     for k in range(12):  # neon rim of the podium
         a0, a1 = math.pi / 12 + k * math.tau / 12, math.pi / 12 + (k + 1) * math.tau / 12
         beam((math.cos(a0) * 0.80, math.sin(a0) * 0.80, 0.062), (math.cos(a1) * 0.80, math.sin(a1) * 0.80, 0.062), 0.014, neon)
-    extrude(ngon(0.56, 8, math.pi / 8), 0.06, 0.14, flat("terrace8", "#59606a", 0.5))  # the citadel's terrace
+    extrude(ngon(0.56, 8, math.pi / 8), 0.06, 0.14, flat("terrace8", "#64615c", 0.5))  # the citadel's terrace
     # the central keep: a tall stepped tower with the spire
     citadel_tower(0, 0.1, 0.26, 0.22, 1.45, st, plate, neon, cap)
     rod((0, 0.1, 1.9), (0, 0.1, 2.15), 0.008, cap, n=5)
@@ -1997,7 +1997,7 @@ def district_scifi(team):
     """DL8+ sprawl on an owned open hex (reference frame 2: the whole land is built up): a dark plate with glowing
     street lines, four dark-glass blocks of different heights with team neon edges, a skybridge, a small dome and a
     landing pad — low enough not to hide the capital."""
-    plate = flat("plate8", "#59606a", 0.6)  # grey concrete (frames 2 and 5), not a navy slab
+    plate = flat("plate8", "#6f6b65", 0.6)  # warm-grey concrete: the cool sci-fi light and grading turn it neutral grey (frames 2, 5)
     pad(0.72, plate, 0.012, 12, 0.0, 41)
     street = glow("street" + team, shade(team, 1.25), 1.4)
     for ang in (0.0, math.pi / 3, -math.pi / 3):  # three glowing avenues across the plate
@@ -2022,7 +2022,7 @@ def district_scifi(team):
 
 def district_scifi_b(team):
     """Sprawl variant B: a round plaza with one tall needle tower, a glass arcology dome and low ring blocks."""
-    plate = flat("plate8", "#59606a", 0.6)  # grey concrete (frames 2 and 5), not a navy slab
+    plate = flat("plate8", "#6f6b65", 0.6)  # warm-grey concrete: the cool sci-fi light and grading turn it neutral grey (frames 2, 5)
     pad(0.72, plate, 0.012, 12, 0.0, 42)
     neon = team_neon(team)
     steel = facade("#aab3bf", "#22436e", 0.045, 0.06, 0.62, 0.55, lit="#9fdcff", lit_p=0.4)
@@ -2044,7 +2044,7 @@ def district_scifi_b(team):
 
 def district_scifi_c(team):
     """Sprawl variant C: an energy hub — a raivite reactor core in a ring frame, two cooling towers, hangars."""
-    plate = flat("plate8", "#59606a", 0.6)  # grey concrete (frames 2 and 5), not a navy slab
+    plate = flat("plate8", "#6f6b65", 0.6)  # warm-grey concrete: the cool sci-fi light and grading turn it neutral grey (frames 2, 5)
     pad(0.72, plate, 0.012, 12, 0.0, 43)
     neon = team_neon(team)
     core = glow("reactor", CYAN, 3.0)

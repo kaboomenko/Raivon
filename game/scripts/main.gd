@@ -367,11 +367,13 @@ func _apply_era_light(dl: int) -> void:
 		_env.ambient_light_color = Color(0.62, 0.68, 0.82)  # steel-grey, not navy: frame 5 is grey with blue lights
 		_env.fog_light_color = Color(0.42, 0.55, 0.75)
 		_env.background_color = Color(0.08, 0.12, 0.2)
+		_env.glow_intensity = 0.55  # the sci-fi land is full of neon: full glow washed the grey ground navy (frame 5)
 	else:
 		_sun.light_color = Color(1.0, 0.93, 0.82)
 		_env.ambient_light_color = Color(0.7, 0.72, 0.8)
 		_env.fog_light_color = Color(0.55, 0.62, 0.72)
 		_env.background_color = Color(0.13, 0.16, 0.2)
+		_env.glow_intensity = 1.0
 
 
 func _make_selection() -> void:
