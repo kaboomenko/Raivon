@@ -163,7 +163,7 @@ func _build() -> void:
 	var left := ["trophy", "book", "mail", "gear"]
 	for i in left.size():
 		var y := 244.0 + i * 70.0
-		var lb := _panel(Rect2(16, y, 64, 60), _style(PANEL, 14))
+		var lb := _panel(Rect2(16, y, 64, 60), _style(PANEL, 12, Color(0.66, 0.7, 0.78, 0.7), 2))  # a silver edge, as the reference column
 		lb.gui_input.connect(_on_button_input.bind(left[i]))
 		var ic := Icon.new(left[i])
 		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
