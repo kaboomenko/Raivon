@@ -75,6 +75,7 @@ func set_world(w) -> void:
 	refresh_props()
 	rng.seed = 11
 	_build_horizon()
+	_flush_decor()
 	_build_bay()
 	_dirty = true
 
@@ -284,6 +285,13 @@ func spawn(name: String, parent: Node, pos: Vector3, rot := 0.0, s := 1.0, owner
 		if not ResourceLoader.exists("res://assets/models/%s.glb" % name):
 			return null
 		models[name] = load("res://assets/models/%s.glb" % name)
+	if DECOR.has(name):  # batched: one MultiMesh per model and parent (see _flush_decor), no node of its own
+		var per: Dictionary = _pending_decor.get(parent, {})
+		_pending_decor[parent] = per
+		var list: Array = per.get(name, [])
+		per[name] = list
+		list.append(Transform3D(Basis(Vector3.UP, rot).scaled(Vector3.ONE * s), pos))
+		return null
 	var n: Node3D = models[name].instantiate()
 	n.position = pos
 	n.rotation.y = rot
@@ -301,6 +309,53 @@ func spawn(name: String, parent: Node, pos: Vector3, rot := 0.0, s := 1.0, owner
 		for m in n.find_children("flag*", "", true, false):
 			_flag_cloth(m as Node3D, owner)
 	return n
+
+
+## Static scenery repeated by the dozen on every hex (and the horizon): drawn as one MultiMesh per model and parent
+## instead of a node each — the map went from ~900 draw calls to a fraction of that.
+const DECOR := {"tree_pine": true, "tree_round": true, "bush": true, "flowers": true, "rock": true}
+var _pending_decor := {}  # parent Node3D -> {model name: [Transform3D relative to the parent]}
+var _decor_meshes := {}  # model name -> [[Mesh, Transform3D of the mesh inside the model]]
+
+
+func _decor_parts(name: String) -> Array:
+	if not _decor_meshes.has(name):
+		var parts: Array = []
+		var root: Node3D = models[name].instantiate()
+		for mi in root.find_children("*", "MeshInstance3D", true, false):
+			var xf := Transform3D.IDENTITY
+			var n: Node = mi
+			while n != root and n is Node3D:
+				xf = (n as Node3D).transform * xf
+				n = n.get_parent()
+			parts.append([(mi as MeshInstance3D).mesh, xf])
+		root.free()
+		_decor_meshes[name] = parts
+	return _decor_meshes[name]
+
+
+## Turns the batched scenery into MultiMeshes under their parents.
+func _flush_decor() -> void:
+	for parent in _pending_decor:
+		if not is_instance_valid(parent):
+			continue
+		var per: Dictionary = _pending_decor[parent]
+		for name in per:
+			var list: Array = per[name]
+			for part in _decor_parts(name):
+				var mm := MultiMesh.new()
+				mm.transform_format = MultiMesh.TRANSFORM_3D
+				mm.mesh = part[0]
+				mm.instance_count = list.size()
+				for i in list.size():
+					mm.set_instance_transform(i, (list[i] as Transform3D) * (part[1] as Transform3D))
+				var mmi := MultiMeshInstance3D.new()
+				mmi.name = "decor_" + name
+				mmi.multimesh = mm
+				if name in ["flowers", "bush", "rock"] or parent == _horizon_root:  # too small (or too far) to shade
+					mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				(parent as Node).add_child(mmi)
+	_pending_decor.clear()
 
 
 ## The state's own flag over a cloth marker baked into a building model (evolution_assets.flag_at): the node's
@@ -1048,6 +1103,7 @@ func _place_hex_props(c: Dictionary) -> void:
 	_props_root.add_child(holder)
 	_hex_props[c["id"]] = holder
 	_place_hex_props_into(c, holder)
+	_flush_decor()
 	if _blazing.has(c["id"]):
 		_still_sails(c["id"], true)
 
@@ -1334,6 +1390,8 @@ func _place_biome_props(c: Dictionary, holder: Node3D, p: Vector3, biome: String
 
 func _build_horizon() -> void:
 	_bay_spots = []
+	var tiles: Array = []  # fog-hex and forest-base cylinders, drawn as two MultiMeshes (one draw each)
+	var bases: Array = []
 	var ring_mat := StandardMaterial3D.new()
 	ring_mat.albedo_color = Color(0.13, 0.2, 0.12)  # dark forest floor, as the wooded rim of the references
 	var rr: int = maxi(4, int(sim.radius))  # the horizon ring sits around the open world (grows by chapter)
@@ -1354,17 +1412,8 @@ func _build_horizon() -> void:
 					continue
 				# the unexplored land next to the open world (reference frame 1): dark slate hexes with a faint grid,
 				# drifting low clouds and a peak here and there
-				var tile := MeshInstance3D.new()
-				var tm := CylinderMesh.new()
-				tm.top_radius = 0.985
-				tm.bottom_radius = 0.985
-				tm.height = 1.0
-				tm.radial_segments = 6
-				tile.mesh = tm
-				tile.rotation.y = PI / 6.0
-				tile.position = p + Vector3(0, -0.7 - rng.randf() * 0.04, 0)  # a step below the open world (its cliffs and waterfalls show), just above the sea
-				tile.material_override = _fog_hex_mat()
-				_horizon_root.add_child(tile)
+				# a step below the open world (its cliffs and waterfalls show), just above the sea
+				tiles.append(Transform3D(Basis(Vector3.UP, PI / 6.0), p + Vector3(0, -0.7 - rng.randf() * 0.04, 0)))
 				if d == rr + 2 and roll < 0.3:
 					spawn("mountain", _horizon_root, p + Vector3(0, -0.2, 0), rng.randf() * TAU, rng.randf_range(1.5, 2.4))
 				elif rng.randf() < 0.3:
@@ -1378,18 +1427,29 @@ func _build_horizon() -> void:
 			elif d <= rr + 2:
 				for i in 5:
 					spawn("tree_pine", _horizon_root, p + Vector3(rng.randf_range(-0.7, 0.7), -0.1, rng.randf_range(-0.7, 0.7)), rng.randf() * TAU, rng.randf_range(0.9, 1.4))
-			var base := MeshInstance3D.new()
-			var cm := CylinderMesh.new()
-			cm.top_radius = 1.16  # overlap: with the exact radius the sky showed through as blue triangles
-			cm.bottom_radius = 1.16
-			cm.height = 1.0
-			cm.radial_segments = 6
-			base.mesh = cm
-			base.position = p + Vector3(0, -0.62, 0)
-			base.material_override = ring_mat
-			_horizon_root.add_child(base)
+			bases.append(Transform3D(Basis.IDENTITY, p + Vector3(0, -0.62, 0)))
 			if not near and rng.randf() < 0.3 + 0.1 * (d - rr - 1):  # a lighter veil: the reference keeps its peaks in view
 				_cloud(p + Vector3(rng.randf_range(-0.5, 0.5), rng.randf_range(1.0, 2.6), rng.randf_range(-0.5, 0.5)), rng.randf_range(2.5, 4.5))
+	for set in [[tiles, 0.985, _fog_hex_mat()], [bases, 1.16, ring_mat]]:  # 1.16: overlap, or the sky shows through
+		var xfs: Array = set[0]
+		if xfs.is_empty():
+			continue
+		var cm := CylinderMesh.new()
+		cm.top_radius = set[1]
+		cm.bottom_radius = set[1]
+		cm.height = 1.0
+		cm.radial_segments = 6
+		cm.material = set[2]
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = cm
+		mm.instance_count = xfs.size()
+		for i in xfs.size():
+			mm.set_instance_transform(i, xfs[i])
+		var mmi := MultiMeshInstance3D.new()
+		mmi.multimesh = mm
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF  # below the world's edge: nothing to shade
+		_horizon_root.add_child(mmi)
 
 
 ## The warship of a state's era: a sailing ship under its colours (DL1–5), a steel destroyer (DL6–7), a hover
@@ -3417,6 +3477,8 @@ func floater(hex: int, text: String, color := Color.WHITE) -> void:
 func _process(delta: float) -> void:
 	if sim == null:
 		return
+	if not _pending_decor.is_empty():  # scenery spawned outside a hex rebuild (a safety net)
+		_flush_decor()
 	var snap := _territory_snapshot()
 	if _dirty or snap != _snapshot or ceremony_t >= 0.0:
 		_snapshot = snap

@@ -347,6 +347,7 @@ func _environment() -> void:
 	sun.shadow_enabled = true
 	sun.shadow_blur = 1.5
 	sun.directional_shadow_max_distance = 60
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS  # half the shadow passes of 4 splits
 	add_child(sun)
 
 
@@ -6810,5 +6811,11 @@ func _shot(path: String) -> void:
 			await get_tree().create_timer(float(a.substr(13))).timeout
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png(path)
+	# the frame's rendering cost, for checking the scene against the phone budget (docs/dev/how_to_run.md)
+	print("perf draw_calls=%d objects=%d primitives=%d video_mem_mb=%.0f" % [
+		Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
+		Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME),
+		Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME),
+		Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1048576.0])
 	print("shot saved ", path)
 	get_tree().quit()
