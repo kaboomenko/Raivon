@@ -2221,7 +2221,10 @@ func hide_buildings() -> void:
 ## The rendered icon of each building on its card (tools/blender/icon_assets.py → assets/ui/icons).
 const BUILDING_ICONS := {"residence": "castle_icon", "barracks": "helmet", "academy": "book", "warehouse": "crate",
 	"infirmary": "flask", "convoy_yard": "cart", "market": "stall", "embassy": "hands", "quarters": "houses",
-	"farm": "food", "mine": "metal", "port": "anchor", "military_base": "target"}
+	"farm": "food", "mine": "metal", "port": "anchor", "military_base": "target",
+	# the Academy's research lines (the Development tab uses the same cards)
+	"rs_infantry": "helmet", "rs_reserve": "fort", "rs_drill": "target", "rs_taxes": "coin", "rs_harvest": "food",
+	"rs_metallurgy": "metal", "rs_cellars": "crate", "rs_logistics": "cart", "rs_thrift": "stall", "rs_colonization": "pin"}
 
 
 func _building_card(it: Dictionary) -> Control:
@@ -2243,8 +2246,11 @@ func _building_card(it: Dictionary) -> Control:
 	lv.size = Vector2(150, 22)
 	lv.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	card.add_child(lv)
-	var pic_path := "res://assets/ui/icons/%s.png" % String(BUILDING_ICONS.get(String(it.get("type", "")), ""))
-	if not busy and ResourceLoader.exists(pic_path):  # the building's picture beside the cost (reference HUD cards)
+	var icon_name := String(BUILDING_ICONS.get(String(it.get("type", "")), ""))
+	var pic_path := "res://assets/ui/icons/%s.png" % icon_name
+	if not ResourceLoader.exists(pic_path):  # the resource icons (coin, food, metal) sit one folder up
+		pic_path = "res://assets/ui/%s.png" % icon_name
+	if not busy and icon_name != "" and ResourceLoader.exists(pic_path):  # the building's picture beside the cost (reference HUD cards)
 		var pic := TextureRect.new()
 		pic.texture = load(pic_path)
 		pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE

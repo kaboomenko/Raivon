@@ -3767,7 +3767,7 @@ func _research_items(now: int) -> Array:
 		var busy: bool = not research.current.is_empty() and research.current["line"] == line
 		var left := int(research.current["end"]) - now if busy else 0
 		var maxed: bool = research.level(line) >= int(spec["max"])
-		items.append({"id": -1, "line": line, "name": tr(String(spec["name"])), "level": research.level(line),
+		items.append({"id": -1, "line": line, "type": "rs_" + line, "name": tr(String(spec["name"])), "level": research.level(line),
 			"max": research.max_level(line, dl, acad), "busy": busy, "left": left,
 			"speed": Economy.speedup_price(left) if busy else 0, "cost": research.cost(line) if not maxed else {},
 			"seconds": research.seconds(line, acad) if not maxed else 0,
