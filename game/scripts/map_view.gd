@@ -1165,6 +1165,9 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 				if rng.randf() < _banner_chance(int(c["owner"])):
 					spawn("banner_" + side, holder, p + Vector3(rng.randf_range(-0.4, 0.4), 0, rng.randf_range(-0.4, 0.4)), 0.0, 1.0, int(c["owner"]))
 				return
+			if _front_gun(c, holder, p):
+				_place_fort(c, holder)
+				return
 			var hs := _homestead(int(c["owner"]), side)
 			if hs != "" and rng.randf() < 0.55:
 				# settled countryside (the reference frames): a farmstead in the owner's colours and era on open land
@@ -1204,6 +1207,34 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 	_place_fort(c, holder)
 	if c["owner"] != Types.NOBODY and rng.randf() < _banner_chance(int(c["owner"])):
 		spawn("banner_" + side, holder, p + Vector3(rng.randf_range(-0.4, 0.4), 0, rng.randf_range(-0.4, 0.4)), 0.0, 1.0, int(c["owner"]))
+
+
+## Siege works along a front (reference frames 1 and 3: catapults stand on the land by the border, aimed across
+## it): an open hex of the player or of the state at war with them that touches the other side gets, one time in
+## two, a big siege engine of its owner's era turned toward the enemy, with a few trees behind it. True if placed.
+func _front_gun(c: Dictionary, holder: Node3D, p: Vector3) -> bool:
+	var own: int = int(c["owner"])
+	if at_war_with < 0 or not (own == Types.PLAYER or own == at_war_with) or (int(c["id"]) * 5) % 2 == 1:
+		return false
+	var foe: int = at_war_with if own == Types.PLAYER else Types.PLAYER
+	var aim := Vector3.ZERO
+	for nb in sim.neighbors[c["id"]]:
+		if nb >= 0 and Types.is_passable(sim.cells[nb]) and owner_of(sim.cells[nb]) == foe:
+			aim += cell_world(nb) - p
+	if aim == Vector3.ZERO:
+		return false
+	var dl: int = int(sim.states[own]["dev_level"]) if own < sim.states.size() else 1
+	var gun := "rocket_launcher" if dl >= 8 else ("howitzer" if dl >= 6 else ("cannon" if dl >= 4 else "catapult"))
+	if not has_model(gun):
+		return false
+	var yaw := atan2(aim.x, aim.z) + PI  # the models face −Z; turn the muzzle toward the enemy
+	spawn(gun, holder, p + Vector3(rng.randf_range(-0.12, 0.12), 0, rng.randf_range(-0.12, 0.12)), yaw, 1.45)
+	var back := -aim.normalized()
+	for i in rng.randi_range(2, 3):
+		var off := back * rng.randf_range(0.45, 0.62) + Vector3(back.z, 0, -back.x) * rng.randf_range(-0.4, 0.4)
+		spawn("tree_pine", holder, p + off, rng.randf() * TAU, rng.randf_range(0.75, 1.0))
+	spawn("banner_" + _faction_suffix(own), holder, p + back * 0.3 + Vector3(back.z, 0, -back.x) * 0.25, 0.0, 1.0, own)
+	return true
 
 
 ## How often an owned open hex flies a banner: thicker on the land of the state at war with the player (reference
