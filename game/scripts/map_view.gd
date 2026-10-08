@@ -1345,7 +1345,7 @@ func _rebuild_overlay() -> void:
 				tints[own] = st
 			# the reference frames (docs/reference): a light tint over the land that deepens toward the territory's
 			# border — per territory, not per hex, so the inner hexes don't read as tiles
-			var tc := Color(0.1, 0.3, 0.95) if own == Types.PLAYER else state_color(own).darkened(0.25)  # royal blue, crimson
+			var tc := Color(0.16, 0.33, 0.86) if own == Types.PLAYER else state_color(own).darkened(0.25)  # royal blue (measured against the reference), crimson
 			var c_in := Color(tc.r, tc.g, tc.b, 0.14)
 			var c_rim := Color(tc.r, tc.g, tc.b, 0.5)
 			var rim := [false, false, false, false, false, false]
