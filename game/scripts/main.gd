@@ -314,7 +314,7 @@ func _environment() -> void:
 	e.background_mode = Environment.BG_COLOR
 	e.background_color = Color(0.13, 0.16, 0.2)
 	e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	e.ambient_light_color = Color(0.62, 0.7, 0.85)
+	e.ambient_light_color = Color(0.7, 0.72, 0.8)
 	e.ambient_light_energy = 0.45
 	e.ssao_enabled = true
 	e.ssao_radius = 1.2
@@ -369,7 +369,7 @@ func _apply_era_light(dl: int) -> void:
 		_env.background_color = Color(0.08, 0.12, 0.2)
 	else:
 		_sun.light_color = Color(1.0, 0.93, 0.82)
-		_env.ambient_light_color = Color(0.62, 0.7, 0.85)
+		_env.ambient_light_color = Color(0.7, 0.72, 0.8)
 		_env.fog_light_color = Color(0.55, 0.62, 0.72)
 		_env.background_color = Color(0.13, 0.16, 0.2)
 

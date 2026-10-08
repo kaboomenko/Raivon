@@ -317,14 +317,14 @@ def pine_tree(x=0.0, y=0.0, s=1.0, n=9, tiers=4, seed=0, mats=None):
 
 
 def pine_mats():
-    return (foliage("#143f26", "#1f5a2f", "#3f7a35", 0.1, 0.62, 0.45, 7.0),
-            foliage("#17452a", "#245f32", "#47823a", 0.1, 0.62, 0.45, 7.0),
-            flat("pine_under", "#20532f", 0.9),
+    return (foliage("#1a3f22", "#29592b", "#5a8236", 0.1, 0.62, 0.45, 7.0),
+            foliage("#1d4425", "#2d5f2e", "#62893a", 0.1, 0.62, 0.45, 7.0),
+            flat("pine_under", "#25502b", 0.9),
             tex("wood", BARK))
 
 
 def round_tree(x=0.0, y=0.0, s=1.0, seed=0, crowns=None, sub=2):
-    leaf = foliage("#20521b", "#326f24", "#558a30", 0.15, 0.55, 0.55, 9.0)
+    leaf = foliage("#2a511b", "#416f27", "#6c8f33", 0.15, 0.55, 0.55, 9.0)
     bark = tex("wood", BARK)
     cy(0.036 * s, 0.24 * s, (x, y, 0.12 * s), bark, 6, 0.0, r2=0.026 * s)
     ev.rod((x, y, 0.17 * s), (x + 0.075 * s, y - 0.03 * s, 0.27 * s), 0.013 * s, bark, n=5)
@@ -347,7 +347,7 @@ def tree_round():
 
 
 def bush():
-    leaf = foliage("#22541c", "#357426", "#5a8e34", 0.0, 0.16, 0.55, 14.0)
+    leaf = foliage("#2a521c", "#427228", "#6a9034", 0.0, 0.16, 0.55, 14.0)
     for i, (x, y, z, r) in enumerate([(0, 0, 0.06, 0.085), (0.07, -0.03, 0.045, 0.06), (-0.065, 0.02, 0.045, 0.065),
                                       (0.01, 0.04, 0.1, 0.055)]):
         blob(r, (x, y, z), leaf, (1, 1, 0.85), 1, 40 + i, 0.15)
