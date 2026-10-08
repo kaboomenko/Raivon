@@ -1861,6 +1861,15 @@ func _make_army(a: Dictionary) -> Node3D:
 		gun = "rocket_launcher"
 	if gun != "":
 		spawn(gun, model, Vector3(-0.46, 0, -0.22), 0.3, 0.85)
+	if dl >= 6:  # air cover circling over the army (reference frame 2): a fighter (DL6–7) or a hover gunship (DL8+)
+		var orbit := Node3D.new()
+		orbit.position = Vector3(0, 0.95, 0)
+		model.add_child(orbit)
+		var plane := spawn("gunship" if dl >= 8 else "fighter", orbit, Vector3(0.45, 0, 0), PI / 2.0, 1.6)
+		if plane:
+			plane.rotation.z = -0.35  # banked into the turn
+			var tw := orbit.create_tween().set_loops()
+			tw.tween_property(orbit, "rotation:y", -TAU, 7.0).from(0.0)
 	node.set_meta("anim", anim)
 	spawn("banner_" + side, model, Vector3(0.05, 0, -0.35), 0.0, 0.9, int(a["side"]))
 	var lbl := Label3D.new()

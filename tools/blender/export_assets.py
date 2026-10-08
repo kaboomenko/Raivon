@@ -641,6 +641,43 @@ def bridge():
         r.rotation_euler.y = sx * 0.55
 
 
+def gunship():
+    """DL8 hover gunship flying over the army (reference frame 2: aircraft over the front): a wedge composite body,
+    swept wings with glowing ducted fans, a dark canopy and a nose gun."""
+    comp = mat("composite", "#e3e8ee", 0.4)
+    trim = mat("comptrim", "#3e4550", 0.5)
+    cyan = mat("cyan", "#14d2ff", 0.4, 0.0, "#14d2ff", 3.0)
+    glass = mat("glass", "#1b2533", 0.2)
+    b = box("body", (0.34, 0.1, 0.06), (0, 0, 0), comp, 0.02)
+    cone("nose", 0.05, 0.12, (0.22, 0, 0), comp, 8, 0.0).rotation_euler.y = math.pi / 2
+    sphere("canopy", 0.045, (0.08, 0, 0.035), glass, (1.6, 0.8, 0.6), 2)
+    box("tail", (0.08, 0.012, 0.07), (-0.16, 0, 0.04), trim, 0.006)
+    for sy in (-1, 1):
+        w = box("wing", (0.14, 0.2, 0.014), (-0.04, sy * 0.13, -0.005), comp, 0.006)
+        w.rotation_euler.z = sy * 0.35
+        cyl("fan", 0.045, 0.03, (-0.06, sy * 0.21, 0.0), trim, 16, 0.004)
+        cyl("fan_glow", 0.036, 0.034, (-0.06, sy * 0.21, 0.0), cyan, 16, 0.0)
+    box("stripe", (0.3, 0.104, 0.008), (0, 0, 0.005), cyan, 0.0)
+    cyl("gun", 0.008, 0.1, (0.2, 0, -0.03), trim, 6, 0.0).rotation_euler.y = math.pi / 2
+
+
+def fighter():
+    """DL6–7 propeller fighter flying over the army: olive fuselage, straight wings with roundels, a spinning-disc
+    propeller and a bubble canopy."""
+    od = mat("olive", "#5b6436", 0.6)
+    white = mat("white", "#f3efe6", 0.5)
+    f = cyl("fuselage", 0.035, 0.34, (0, 0, 0), od, 12, 0.01, r2=0.02)
+    f.rotation_euler.y = math.pi / 2
+    sphere("nose", 0.036, (0.17, 0, 0), od, (0.7, 1, 1), 2)
+    cyl("prop", 0.06, 0.003, (0.2, 0, 0), mat("prop", "#4a4f55", 0.5), 16, 0.0).rotation_euler.y = math.pi / 2
+    box("wing", (0.08, 0.42, 0.01), (0.03, 0, -0.01), od, 0.004)
+    box("tailplane", (0.04, 0.14, 0.008), (-0.15, 0, 0.0), od, 0.003)
+    box("fin", (0.05, 0.008, 0.06), (-0.15, 0, 0.03), od, 0.003)
+    sphere("canopy", 0.025, (0.04, 0, 0.03), mat("canopy", "#9fd4ff", 0.15), (1.6, 0.8, 0.8), 2)
+    for sy in (-1, 1):
+        cyl("roundel", 0.03, 0.012, (0.03, sy * 0.15, -0.004), white, 12, 0.0)
+
+
 def mounted_knight(color):
     def build():
         horse = m("horse", "#6b4a2f", 0.75)
@@ -710,6 +747,8 @@ ASSETS = {
     "howitzer": howitzer,
     "rocket_launcher": rocket_launcher,
     "bridge": bridge,
+    "gunship": gunship,
+    "fighter": fighter,
     "knight_blue": mounted_knight(ROOF_BLUE),
     "knight_red": mounted_knight("#b3272b"),
     "squad_blue": infantry_squad(ROOF_BLUE),
