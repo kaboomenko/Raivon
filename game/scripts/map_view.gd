@@ -441,7 +441,7 @@ func _build_terrain() -> void:
 	for c in sim.cells:
 		var center := axial_to_world(c["q"], c["r"])
 		var top := 0.0
-		var col := Color(0.28, 0.3, 0.15)  # a muted, warm meadow: hue measured against the reference greens (~73°), not lime
+		var col := Color(0.31, 0.33, 0.16)  # a muted, warm meadow: hue measured against the reference greens (~73°), not lime
 		var pal: Dictionary = BIOME_GROUND.get(String(c.get("biome", "meadow")), {})
 		match c["terrain"]:
 			"forest":
@@ -521,11 +521,11 @@ func _build_grass() -> void:
 		var biome := String(c.get("biome", "meadow"))
 		var tint: Color = GRASS_TINT.get(biome, GRASS_TINT["meadow"])
 		var empty: bool = c["kind"] == "plain" and not camp_hexes.has(int(c["id"]))
-		var n := 14
+		var n := 28
 		if t == "plain" and empty:
-			n = 46
+			n = 100  # a carpet of tufts (reference frame 3: no bare earth between the farms)
 		elif t == "hills":
-			n = 20
+			n = 32
 		if biome == "badlands":
 			n = n / 2
 		var center := axial_to_world(c["q"], c["r"])
@@ -536,7 +536,10 @@ func _build_grass() -> void:
 			var sc := g.randf_range(0.75, 1.3)
 			var basis := Basis(Vector3.UP, g.randf() * TAU).scaled(Vector3(sc, sc * g.randf_range(0.8, 1.3), sc))
 			xf.append(Transform3D(basis, pos))
-			cols.append(tint * g.randf_range(0.82, 1.15))
+			var tc := tint * g.randf_range(0.82, 1.18)
+			if g.randf() < 0.3:  # sunlit yellow-green tips here and there
+				tc = tc.lerp(Color(0.62, 0.62, 0.26), 0.35)
+			cols.append(tc)
 		if t != "forest" and g.randf() < (0.9 if t == "hills" else 0.5):
 			for i in g.randi_range(1, 3):
 				var r2 := g.randf_range(0.3, 0.85)

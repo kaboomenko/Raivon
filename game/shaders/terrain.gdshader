@@ -23,14 +23,14 @@ void fragment() {
 	float fine = texture(noise_fine, wpos.xz * 1.6).r;
 	float top = smoothstep(0.6, 0.9, wnormal.y);
 	// large light/dark meadow patches
-	vec3 c = base * mix(0.78, 1.18, big);
+	vec3 c = base * mix(0.7, 1.26, big);  // the reference's lit meadow tops and shaded hollows
 	// warm sunlit tufts vs cool shade
 	c = mix(c, c * vec3(1.12, 1.08, 0.82), smoothstep(0.55, 0.8, mid) * 0.6);
 	// dirt patches on flat ground
 	float dirt = smoothstep(0.62, 0.78, mid * 0.6 + big * 0.5) * dirt_amount * top;
 	c = mix(c, dirt_color * (0.8 + 0.4 * fine), dirt);
 	// fine grass speckle
-	c *= mix(0.86, 1.1, fine);
+	c *= mix(0.8, 1.16, fine);
 	// rocky cliffs on the tile skirts (the reference's plateau edges): layered grey-brown strata with a grassy lip
 	float strata = sin(wpos.y * 38.0 + texture(noise_fine, wpos.xz * 0.9 + wpos.y).r * 4.0) * 0.5 + 0.5;
 	vec3 rock = mix(vec3(0.2, 0.18, 0.16), vec3(0.42, 0.39, 0.34), strata * 0.6 + fine * 0.4);
