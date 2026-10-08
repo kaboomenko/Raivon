@@ -334,28 +334,52 @@ func _decor_parts(name: String) -> Array:
 	return _decor_meshes[name]
 
 
-## Turns the batched scenery into MultiMeshes under their parents.
+## Turns the batched scenery into map-wide MultiMeshes: one per model part for the map and one for the horizon
+## (a hex rebuild replaces its own entries and the sets are rebuilt — a few thousand transforms, well under a ms).
+var _decor_store := {}  # parent Node3D -> {model name: [Transform3D local to the parent]}
+var _decor_nodes: Array = []
+
+
 func _flush_decor() -> void:
 	for parent in _pending_decor:
-		if not is_instance_valid(parent):
-			continue
-		var per: Dictionary = _pending_decor[parent]
-		for name in per:
-			var list: Array = per[name]
-			for part in _decor_parts(name):
-				var mm := MultiMesh.new()
-				mm.transform_format = MultiMesh.TRANSFORM_3D
-				mm.mesh = part[0]
-				mm.instance_count = list.size()
-				for i in list.size():
-					mm.set_instance_transform(i, (list[i] as Transform3D) * (part[1] as Transform3D))
-				var mmi := MultiMeshInstance3D.new()
-				mmi.name = "decor_" + name
-				mmi.multimesh = mm
-				if name in ["flowers", "bush", "rock"] or parent == _horizon_root:  # too small (or too far) to shade
-					mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-				(parent as Node).add_child(mmi)
+		_decor_store[parent] = _pending_decor[parent]
 	_pending_decor.clear()
+	for n in _decor_nodes:
+		if is_instance_valid(n):
+			(n as Node).queue_free()
+	_decor_nodes.clear()
+	var sets := {}  # [name, horizon] key -> [world Transform3D]
+	for parent in _decor_store.keys():
+		if not is_instance_valid(parent) or (parent as Node).is_queued_for_deletion() or not (parent as Node).is_inside_tree():
+			_decor_store.erase(parent)
+			continue
+		var base: Transform3D = global_transform.affine_inverse() * (parent as Node3D).global_transform
+		var horizon: bool = parent == _horizon_root
+		var per: Dictionary = _decor_store[parent]
+		for name in per:
+			var key := "%s|%d" % [name, int(horizon)]
+			var list: Array = sets.get(key, [])
+			sets[key] = list
+			for xf in per[name]:
+				list.append(base * (xf as Transform3D))
+	for key in sets:
+		var name: String = String(key).split("|")[0]
+		var horizon: bool = String(key).ends_with("|1")
+		var list: Array = sets[key]
+		for part in _decor_parts(name):
+			var mm := MultiMesh.new()
+			mm.transform_format = MultiMesh.TRANSFORM_3D
+			mm.mesh = part[0]
+			mm.instance_count = list.size()
+			for i in list.size():
+				mm.set_instance_transform(i, (list[i] as Transform3D) * (part[1] as Transform3D))
+			var mmi := MultiMeshInstance3D.new()
+			mmi.name = "decor_" + name
+			mmi.multimesh = mm
+			if name in ["flowers", "bush", "rock"] or horizon:  # too small (or too far) to shade
+				mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			add_child(mmi)
+			_decor_nodes.append(mmi)
 
 
 ## The state's own flag over a cloth marker baked into a building model (evolution_assets.flag_at): the node's
@@ -721,6 +745,7 @@ func refresh_props() -> void:
 	for c in _props_root.get_children():
 		c.queue_free()
 	_place_props()
+	_flush_decor()
 	_build_bay()
 
 
@@ -741,6 +766,7 @@ func refresh_hex(id: int, neighbours := true) -> void:
 		for n in sim.neighbors[id]:
 			if n >= 0 and int(sim.cells[n]["fort"]) > 0:
 				refresh_hex(n, false)
+		_flush_decor()  # once for the hex and its neighbours
 
 
 ## Ceremony «pop»: the hex's buildings jump to 1.08 and settle back.
@@ -1103,7 +1129,6 @@ func _place_hex_props(c: Dictionary) -> void:
 	_props_root.add_child(holder)
 	_hex_props[c["id"]] = holder
 	_place_hex_props_into(c, holder)
-	_flush_decor()
 	if _blazing.has(c["id"]):
 		_still_sails(c["id"], true)
 
