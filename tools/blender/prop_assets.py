@@ -201,8 +201,12 @@ def lathe(prof, mats, n=8, top=None, bottom=None, rot=0.0, loc=(0.0, 0.0, 0.0)):
 
 
 def flat_poly(pts, z, mt):
-    """One flat polygon lying at height z (ground decals: trampled paths, mud, shadows of the yard)."""
-    return mesh_obj([(x, y, z) for x, y in pts], [tuple(range(len(pts)))], mt)
+    """One flat polygon lying at height z, facing up (ground decals: trampled paths, lawn, joint caps)."""
+    o = mesh_obj([(x, y, z) for x, y in pts], [tuple(range(len(pts)))], mt)
+    for p_ in o.data.polygons:
+        if p_.normal.z < 0:
+            p_.flip()
+    return o
 
 
 def tri_plate(p0, p1, p2, mt, t=0.008):
@@ -740,8 +744,9 @@ def crane():
         rod((0.27, 0.0, 0.21), (0.27 + math.cos(a) * 0.04, math.sin(a) * 0.04, 0.17), 0.0035, rope, n=3)
 
 
-def _cove(quay, water_c=WATER, shallow_c="#79c1df"):
-    """The port's water cove opening at the +X edge with a lighter rim and a quay along the land side."""
+def _cove(quay, water_c=WATER, shallow_c="#79c1df", joints=False):
+    """The port's water cove opening at the +X edge with a lighter rim and a quay along the land side; `joints`
+    caps the joints between the quay stones (no dark notches where two runs meet at an angle)."""
     # ---- water cove (an inlet so the port reads on any tile, whatever the neighbours are)
     cx = 0.5
     pts = []
@@ -756,6 +761,7 @@ def _cove(quay, water_c=WATER, shallow_c="#79c1df"):
     ground_poly(pts, water, 0.012)
     # shallow lighter rim and the stone quay along the land side of the cove
     shallow = tex("plaster", shallow_c, 1.5)
+    capped = set()
     for k in range(len(pts)):
         p0, p1 = pts[k], pts[(k + 1) % len(pts)]
         _, c0 = clamp_hex((p0[0] * 1.03, p0[1] * 1.03), HEX_R)
@@ -769,17 +775,116 @@ def _cove(quay, water_c=WATER, shallow_c="#79c1df"):
         q0 = (p0[0] - dx / dl * 0.04, p0[1] - dy / dl * 0.04, 0.014)
         q1 = (p1[0] - dx / dl * 0.04, p1[1] - dy / dl * 0.04, 0.014)
         beam(q0, q1, 0.025, shallow)
+        if joints:  # one cap per joint, just above the overlapping stone tops (no coplanar faces left in view)
+            for (x, y) in (p0, p1):
+                if (round(x, 4), round(y, 4)) in capped:
+                    continue
+                capped.add((round(x, 4), round(y, 4)))
+                d_ = math.hypot(x - cx, y)
+                flat_poly(ev.ngon(0.028, 6, 0.0), 0.047, quay).location = (x, y, 0.0)
+                flat_poly(ev.ngon(0.02, 6, 0.0), 0.028, shallow).location = (x - (x - cx) / d_ * 0.04,
+                                                                             y - y / d_ * 0.04, 0.0)
     return cx
 
 
+def harbour_tower():
+    """Round stone harbour tower (the sea-wall towers of reference frame 1): a battered foot, a corbelled
+    crenellated top, a lantern glowing for the boats under a slate cone with a gold finial, a door and lit slits
+    toward the quay."""
+    st = stone(ev.STONE, 1.4)
+    sd = stone(STONE_D, 1.4)
+    lathe([(0.078, 0.0), (0.068, 0.035), (0.06, 0.33)], (sd, st), 10)
+    lathe([(0.06, 0.33), (0.076, 0.355), (0.076, 0.38)], (sd, sd), 10, top=sd)
+    for k in range(6):  # merlons round the parapet
+        a = math.tau * k / 6 + math.pi / 6
+        bx((0.022, 0.034, 0.032), (math.cos(a) * 0.064, math.sin(a) * 0.064, 0.396), st, a, bev=0)
+    iron = flat("iron", IRON, 0.5)
+    for k in range(4):  # lantern room: posts round a glowing lamp
+        a = math.tau * k / 4 + math.pi / 4
+        tube((math.cos(a) * 0.032, math.sin(a) * 0.032, 0.38), (math.cos(a) * 0.032, math.sin(a) * 0.032, 0.44), 0.004,
+             iron, n=3)
+    lathe([(0.024, 0.385), (0.024, 0.435)], (glow("beacon", "#ffcf6b", 3.0),), 6)
+    lathe([(0.05, 0.438), (0.0, 0.52)], (tex("roof", SLATE_N, 2.0),), 8, bottom=flat("eave", ev.ROOF_TRIM, 0.8))
+    spike((0.0, 0.0, 0.515), (0.0, 0.0, 0.55), 0.007, flat("gold", GOLD, 0.35), 4)
+    fy = -0.0625
+    mesh_obj([(-0.022, fy, 0.03), (0.022, fy, 0.03), (0.022, fy, 0.1), (0.0, fy - 0.001, 0.115), (-0.022, fy, 0.1)],
+             [(0, 1, 2, 3, 4)], planks("#4a2d17", 0.014, 0.3))
+    lit = ev.win_lit()
+    for z in (0.19, 0.27):
+        mesh_obj([(-0.009, -0.0605, z), (0.009, -0.0605, z), (0.009, -0.0605, z + 0.035), (-0.009, -0.0605, z + 0.035)],
+                 [(0, 1, 2, 3)], lit)
+
+
+def warehouse():
+    """Harbour warehouse of the reference towns: a stone ground floor with a blue double loading door, a jettied
+    half-timbered loft with lit windows and blue shutters, a coursed slate roof, a hoist beam out of the gable over
+    the water with a pulley and a sack."""
+    w, d, h0, h1 = 0.38, 0.26, 0.12, 0.1
+    rope = flat("rope", "#e8dcc0", 0.8)
+    bx((w + 0.02, d + 0.02, 0.03), (0, 0, 0.015), stone(STONE_D, 1.2), bev=0)
+    bx((w, d, h0), (0, 0, h0 / 2), stone(ev.STONE, 1.4), bev=0)
+    W1, D1 = w + 0.024, d + 0.024
+    bx((W1 + 0.008, D1 + 0.008, 0.016), (0, 0, h0 + 0.008), flat("timber", ev.TIMBER, 0.85), bev=0)  # jetty beam
+    pm = tex("plaster", ev.PLASTER, 1.5)
+    z0, z1 = h0 + 0.016, h0 + 0.016 + h1
+    bx((W1, D1, h1), (0, 0, (z0 + z1) / 2), pm, bev=0)
+    wins = {0: [-0.1, 0.1], 2: [0.0], 3: [0.0]}
+    zw = ev.timber_walls(W1, D1, z0, z1, wins, None, rail=0.32, posts="strip")
+    for f, us in wins.items():
+        a = f * math.pi / 2
+        dist = (D1 if f % 2 == 0 else W1) / 2 + 0.006
+        for u in us:
+            ev.shutter_window(math.sin(a) * dist + math.cos(a) * u, -math.cos(a) * dist + math.sin(a) * u, zw, a,
+                              TRIM_BLUE, shutters=(f == 0))
+    # loading door: two blue plank leaves in a dark frame under a timber lintel
+    fr = flat("frame" + ev.TIMBER, ev.TIMBER, 0.85)
+    bx((0.13, 0.008, 0.115), (-0.04, -d / 2 - 0.002, 0.0575), fr, bev=0)
+    for sx in (-1, 1):
+        bx((0.054, 0.012, 0.1), (-0.04 + sx * 0.029, -d / 2 - 0.005, 0.05), planks(TRIM_BLUE, 0.016, 0.3), bev=0)
+    bx((0.14, 0.016, 0.016), (-0.04, -d / 2 - 0.006, 0.112), fr, bev=0)
+    ev.gable_roof(W1, D1, 0.15, (0, 0, z1), SLATE_N, pm, n=4, eave_z=0.0)
+    # hoist beam out of the +X gable with a pulley, a rope and a sack
+    beam((W1 / 2 - 0.02, 0, z1 + 0.05), (W1 / 2 + 0.1, 0, z1 + 0.05), 0.022, tex("wood", WOOD_D, 2.0))
+    bx((0.06, 0.012, 0.07), (W1 / 2 + 0.003, 0, z0 + 0.045), flat("loft", "#2b2420", 0.9), math.pi / 2, bev=0)
+    tube((W1 / 2 + 0.09, 0, z1 + 0.04), (W1 / 2 + 0.09, 0, 0.1), 0.003, rope, n=3)
+    sack(W1 / 2 + 0.09, 0, 0.8, 0, z=0.04)
+
+
+def fish_stall():
+    """Quay stall facing −Y: four posts, a counter with the catch and a basket, a red-and-cream striped awning."""
+    wd = tex("wood", "#6a4327", 2.5)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            tube((sx * 0.075, sy * 0.04, -0.005), (sx * 0.075, sy * 0.04, 0.13 + (0.025 if sy > 0 else 0.0)), 0.006, wd,
+                 n=4)
+    bx((0.16, 0.07, 0.05), (0, 0, 0.025), tex("wood", "#8a6440", 3.0), bev=0)
+    mesh_obj([(-0.07, -0.03, 0.051), (0.07, -0.03, 0.051), (0.07, 0.03, 0.051), (-0.07, 0.03, 0.051)], [(0, 1, 2, 3)],
+             flat("ice", "#cfd8dc", 0.4))
+    fish = flat("fish", "#a9b8c2", 0.4)
+    for i in range(4):  # the catch laid on the counter
+        x = -0.05 + i * 0.033
+        mesh_obj([(x - 0.012, -0.018, 0.053), (x + 0.008, -0.022, 0.053), (x + 0.014, 0.0, 0.053),
+                  (x + 0.008, 0.02, 0.053), (x - 0.012, 0.016, 0.053), (x - 0.004, 0.0, 0.053)],
+                 [(0, 1, 2, 3, 4, 5)], fish)
+    tube((0.11, -0.02, -0.005), (0.11, -0.02, 0.04), 0.022, tex("wood", STRAW, 4.0), r2=0.026, n=6, cap=True)
+    stripes = (flat("awn_red", "#b8352c", 0.7), flat("awn_cream", "#efe7d2", 0.7))
+    for k in range(5):
+        x0, x1 = -0.095 + k * 0.038, -0.095 + (k + 1) * 0.038
+        mesh_obj([(x0, 0.05, 0.158), (x1, 0.05, 0.158), (x1, -0.075, 0.122), (x0, -0.075, 0.122)], [(0, 1, 2, 3)],
+                 stripes[k % 2])
+
+
 def port():
-    """Fishing/trade port: a water cove opening at the +X edge, a plank pier into it, a sailboat and a rowboat
-    moored, a plank boathouse/warehouse with a blue door, crates, barrels, rope coils, a derrick, a fish rack."""
-    _cove(stone("#a39b8d", 1.4))
+    """Fishing/trade port (reference frame 1: the harbour with stone towers, wooden jetties and deep blue water): a
+    deep-water cove opening at the +X edge with a stone quay, a cobbled yard, a plank pier with mooring posts and a
+    lantern, a sailboat and a rowboat moored, a round harbour tower with a glowing lantern, a stone and
+    half-timbered warehouse with a slate roof and a hoist, a derrick, a fish stall with a striped awning, a fish
+    drying rack and heaps of nets, crates, barrels, sacks and rope coils."""
+    _cove(stone("#a39b8d", 1.4), "#235b8c", "#3f8db4", joints=True)
     # cobbled quay yard on the land side
-    ev.pad(0.36, tex("plaster", "#a89c86", 1.6), 0.008, 12, 0.08, 6, 1.0, 1.25)
+    ev.pad(0.36, stone("#a89c86", 2.2), 0.008, 12, 0.08, 6, 1.0, 1.25)
     # ---- pier from the quay to the +X edge
-    deck = tex("wood", "#a8814f", 4.0)
+    deck = planks("#a8814f", 0.02, 0.15, True)
     post = tex("wood", "#5a3e27", 2.0)
     py, pw, z = -0.03, 0.15, 0.075
     x0, x1 = 0.02, 0.79
@@ -789,10 +894,13 @@ def port():
     for i in range(n):
         x = x0 + (i + 0.5) / n * (x1 - x0)
         bx((((x1 - x0) / n) - 0.006, pw + (0.012 if i % 3 == 0 else 0.0), 0.014), (x, py, z), deck, bev=0)
-    for i in range(5):
+    rope = flat("rope", "#e8dcc0", 0.8)
+    for i in range(5):  # mooring posts with rope lashings
         x = 0.22 + i * 0.14
         for sy in (-1, 1):
-            cy(0.015, 0.13 + (0.02 if i == 4 else 0.0), (x, py + sy * 0.085, 0.065 + (0.01 if i == 4 else 0.0)), post, 6)
+            hh = 0.13 + (0.02 if i == 4 else 0.0)
+            tube((x, py + sy * 0.085, 0.0), (x, py + sy * 0.085, hh), 0.015, post, n=6, cap=True)
+            tube((x, py + sy * 0.085, hh - 0.04), (x, py + sy * 0.085, hh - 0.025), 0.0165, rope, n=6)
     rope_coil(0.5, py + 0.03, 0.026, z + 0.007)
     crate(0.36, py - 0.025, 0.05, 0.25, z=z + 0.007)
     barrel(0.68, py - 0.025, 0.022, 0.05, z=z + 0.007)
@@ -804,36 +912,12 @@ def port():
     # ---- moored boats: sailboat on the +Y side of the pier, rowboat on the −Y side
     build_at(sailboat, 0.44, 0.17, 0.04, z=0.004)
     build_at(rowboat, 0.5, -0.27, -0.1, z=0.004)
-    rope = flat("rope", "#e8dcc0", 0.8)
-    rod((0.36, py + 0.085, 0.13), (0.3, 0.12, 0.07), 0.003, rope, n=3)
-    rod((0.5, py - 0.085, 0.13), (0.42, -0.25, 0.05), 0.003, rope, n=3)
-    # ---- warehouse / boathouse (plank walls, thatch roof, blue door and shutters)
-    def warehouse():
-        w, d, h = 0.38, 0.26, 0.2
-        bx((w, d, h), (0, 0, h / 2), tex("wood", "#8a6a48", 3.0), bev=0.008)
-        bx((w + 0.02, d + 0.02, 0.03), (0, 0, 0.015), stone(STONE_D, 1.2), bev=0)
-        for sx in (-1, 1):
-            for sy in (-1, 1):
-                bx((0.026, 0.026, h + 0.01), (sx * w / 2, sy * d / 2, h / 2), tex("wood", WOOD_D, 2.0), bev=0)
-        prism_roof("roof", w, d, 0.17, (0, 0, h - 0.005), tex("wood", "#c9a55a", 3.0), overhang=0.045)
-        bx((w + 0.12, 0.035, 0.03), (0, 0, h + 0.165), tex("wood", "#8a6a3c", 2.0), bev=0)  # ridge cap
-        door = flat("door_blue", TRIM_BLUE, 0.7)
-        bx((0.11, 0.012, 0.14), (-0.06, -d / 2 - 0.004, 0.07), door, bev=0)
-        bx((0.12, 0.016, 0.016), (-0.06, -d / 2 - 0.006, 0.145), tex("wood", WOOD_D, 2.0), bev=0)
-        for sxd in (-1, 1):
-            beam((-0.06 + sxd * 0.05, -d / 2 - 0.012, 0.01), (-0.06 - sxd * 0.05, -d / 2 - 0.012, 0.13), 0.01,
-                 tex("wood", "#2f4f78", 2.0))
-        ev.window(0.11, -d / 2 - 0.004, 0.12, 0, 0.045, 0.045, TRIM_BLUE)
-        ev.window(0.0, d / 2 + 0.004, 0.12, 0, 0.045, 0.045, TRIM_BLUE)
-        ev.window(-w / 2 - 0.004, 0.0, 0.12, math.pi / 2, 0.045, 0.045, TRIM_BLUE)
-        # hoist beam out of the gable toward the water with a pulley and a sack
-        beam((w / 2 - 0.02, 0, h + 0.07), (w / 2 + 0.1, 0, h + 0.07), 0.024, tex("wood", WOOD_D, 2.0))
-        bx((0.06, 0.012, 0.07), (w / 2 + 0.006, 0, h + 0.0), flat("loft", "#2b2420", 0.9), math.pi / 2, bev=0)
-        rod((w / 2 + 0.09, 0, h + 0.06), (w / 2 + 0.09, 0, 0.1), 0.003, rope, n=3)
-        sack(w / 2 + 0.09, 0, 0.8, 0, z=0.04)
+    tube((0.36, py + 0.085, 0.11), (0.3, 0.12, 0.07), 0.003, rope, n=3)
+    tube((0.5, py - 0.085, 0.11), (0.42, -0.25, 0.05), 0.003, rope, n=3)
+    # ---- warehouse, harbour tower, derrick
     build_at(warehouse, -0.36, 0.32, -0.1)
-    # ---- derrick on the quay at the back, jib over the water
-    build_at(crane, 0.13, 0.48, 0.25)
+    build_at(harbour_tower, 0.27, 0.6)
+    build_at(crane, 0.06, 0.42, 0.15)
     # ---- cargo on the quay
     crate(-0.03, -0.2, 0.07, 0.2)
     crate(0.05, -0.25, 0.06, -0.3)
@@ -845,23 +929,27 @@ def port():
     rope_coil(-0.02, 0.2, 0.032)
     sack(0.06, 0.3, 1.0, 0.3)
     sack(0.0, 0.33, 0.9, -0.2)
-    # ---- fish drying rack (front left)
+    # ---- fish stall on the yard, fish drying rack and heaps of nets (front left)
+    build_at(fish_stall, -0.2, -0.36, 0.1)
     def fish_rack():
         wd = tex("wood", "#6a4327", 2.5)
         for sx in (-1, 1):
-            beam((sx * 0.12, -0.03, 0.0), (sx * 0.12, 0.0, 0.17), 0.016, wd)
-            beam((sx * 0.12, 0.03, 0.0), (sx * 0.12, 0.0, 0.17), 0.016, wd)
-        beam((-0.13, 0, 0.165), (0.13, 0, 0.165), 0.012, wd)
+            tube((sx * 0.12, -0.03, 0.0), (sx * 0.12, 0.0, 0.17), 0.008, wd, n=4)
+            tube((sx * 0.12, 0.03, 0.0), (sx * 0.12, 0.0, 0.17), 0.008, wd, n=4)
+        tube((-0.13, 0, 0.165), (0.13, 0, 0.165), 0.006, wd, n=4)
         fish = flat("fish", "#a9b8c2", 0.4)
         for i in range(6):
             x = -0.09 + i * 0.036
             ico(0.014, (x, 0, 0.125), fish, (0.6, 0.35, 2.2))
-            cn(0.011, 0.016, (x, 0, 0.087), fish, 4, rot=(math.pi, 0, 0))
-        torus(0.07, 0.006, (0.0, 0.07, 0.006), flat("net", "#6d6a58", 0.9), seg=10, mseg=3)
-    build_at(fish_rack, -0.45, -0.3, 0.35)
-    # a few posts and a mooring bollard on the quay edge
+            spike((x, 0, 0.098), (x, 0, 0.08), 0.011, fish, 4)
+        net = flat("net", "#5d6b5a", 0.9)
+        ico(0.06, (0.02, 0.09, 0.0), net, (1.2, 0.9, 0.35))
+        ico(0.045, (-0.09, 0.1, 0.0), flat("net2", "#7a6a4a", 0.9), (1.1, 1.0, 0.4))
+        torus(0.03, 0.006, (0.02, 0.09, 0.022), flat("float", "#d9962a", 0.6), seg=6, mseg=3)
+    build_at(fish_rack, -0.47, -0.3, 0.35)
+    # mooring bollards on the quay edge
     for (x, y) in ((0.15, -0.34), (0.12, 0.3)):
-        cy(0.02, 0.06, (x, y, 0.04), post, 6)
+        lathe([(0.02, 0.0), (0.016, 0.05), (0.024, 0.065), (0.0, 0.075)], (post, post, post), 6, loc=(x, y, 0.0))
 
 
 # ------------------------------------------------------------------ military base
@@ -1004,6 +1092,12 @@ def military_base():
     rod_m = flat("banner_rod", GOLD, 0.4)
     for x in (gx0 - gate - TS / 2, gx0 + gate + TS / 2):
         hanging_banner(x, -S - TS / 2 - 0.006, 0.27, 0.07, 0.14, cloth, em, rod_m)
+    iron = flat("iron", IRON, 0.5)
+    for sx in (-1, 1):  # lanterns on brackets either side of the arch (the lit gate of reference frame 4)
+        x = gx0 + sx * (gate + 0.022)
+        tube((x, -S - 0.065, 0.165), (x, -S - 0.092, 0.165), 0.004, iron, n=3)
+        bx((0.018, 0.018, 0.024), (x, -S - 0.092, 0.15), ev.glow("gate_lamp", "#ffcf6b", 2.5), bev=0)
+        spike((x, -S - 0.092, 0.161), (x, -S - 0.092, 0.178), 0.014, iron, 4)
     # ---- barracks along the back wall: stone walls, slate roof, lit windows, a door with a hood, a chimney
     def barracks():
         w, d, h = 0.5, 0.2, 0.13
@@ -1030,8 +1124,10 @@ def military_base():
     build_at(barracks, 0.1, 0.34)
     # ---- row of soldier tents on the left, opening toward the parade ground (+X)
     canvas = tex("plaster", CANVAS_W, 2.0)
+    stripe = flat("tent_stripe", "#4f6688", 0.8)
     for y in (-0.33, -0.1, 0.13):
-        build_at(lambda: (ridge_tent(0.19, 0.15, 0.16, canvas, (), True, True),
+        build_at(lambda: (ridge_tent(0.19, 0.15, 0.16, canvas, (), True, True,
+                                     stripes=((-0.3, 0.028, stripe), (0.3, 0.028, stripe))),
                           beam((0, -0.1, 0.163), (0, 0.1, 0.163), 0.016, flat("ridge_grey", "#7d8086", 0.7)),
                           bx((0.155, 0.2, 0.012), (0, 0, 0.006), tex("plaster", "#7d6a50", 1.5), bev=0)),
                  -0.37, y, math.pi / 2)
@@ -1047,15 +1143,30 @@ def military_base():
     archery_target(0.44, -0.14, math.pi / 2 + 0.3)
     weapon_rack(0.44, 0.1, math.pi / 2, 4, 2, "#8a8f96")
     weapon_rack(-0.18, -0.28, math.pi / 2, 3, 1, "#8a8f96", 1)
-    # ---- supplies: crates, barrels, hay by the barracks; a water trough
-    crate(0.42, 0.24, 0.06, 0.2)
-    crate(0.46, 0.31, 0.05, -0.3)
+    # ---- smithy lean-to against the back wall: a slate pent roof on posts, a glowing forge, an anvil, a quench tub
+    def smithy():
+        wdk = tex("wood", WOOD_D, 2.0)
+        for sx in (-1, 1):
+            tube((sx * 0.065, 0.0, -0.01), (sx * 0.065, 0.0, 0.14), 0.008, wdk, n=4)
+        bx((0.16, 0.13, 0.012), (0.0, 0.06, 0.155), tex("wood", "#7a5a3a", 2.5), bev=0, rot=(-0.25, 0, 0))  # pent roof
+        bx((0.08, 0.06, 0.05), (-0.02, -0.04, 0.025), stone(STONE_D, 1.6), bev=0)  # hearth
+        mesh_obj([(-0.052, -0.062, 0.051), (0.012, -0.062, 0.051), (0.012, -0.018, 0.051), (-0.052, -0.018, 0.051)],
+                 [(0, 1, 2, 3)], ev.glow("forge", "#ff7a1e", 3.0))
+        bx((0.034, 0.03, 0.12), (-0.02, -0.01, 0.13), stone(STONE_D, 1.6), bev=0)  # flue up through the roof
+        tube((0.05, -0.1, -0.005), (0.05, -0.1, 0.04), 0.014, tex("wood", "#7a5232", 3.0), n=6, cap=True)
+        bx((0.034, 0.014, 0.014), (0.05, -0.1, 0.047), iron, bev=0)  # anvil on a stump
+        spike((0.067, -0.1, 0.047), (0.082, -0.1, 0.05), 0.007, iron, 4)
+    build_at(smithy, 0.42, 0.42)
+    barrel(0.49, 0.29, 0.026, 0.05, c="#6e4c30")
+    # ---- supplies: crates, barrels, hay by the barracks
+    crate(-0.27, 0.4, 0.06, 0.2)
+    crate(-0.2, 0.44, 0.05, -0.3)
     barrel(-0.2, 0.25)
     barrel(-0.14, 0.27, r=0.03, h=0.075)
     ev.haystack(0.47, -0.45, 0.45)
     # ---- guards flanking the gate outside
     for sx in (-1, 1):
-        gx_, gy_ = gx0 + sx * 0.135, -S - 0.1
+        gx_, gy_ = gx0 + sx * 0.235, -S - 0.1
         hands = build_at(lambda: ta.man("#8d9096", "#5a4f45", "idle", "helmet", 1.15), gx_, gy_, 0.0)
         hx, hy, hz = hands[0 if sx < 0 else 1]
         spear((gx_ + hx, gy_ + hy, 0.0), (gx_ + hx, gy_ + hy, 0.2), tex("wood", "#9a7046", 3.0), flat("iron", IRON, 0.5))
