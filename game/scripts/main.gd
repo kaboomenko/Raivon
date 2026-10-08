@@ -2043,6 +2043,8 @@ func _describe(id: int) -> Dictionary:
 		owner_text = tr("tile.occupied") % owner_text
 	var bonus: String = tr("tile.value") % c["value"]
 	var tile_key: String = c["kind"] if String(c["kind"]) != "plain" else String(c["terrain"])
+	if tile_key in ["capital", "city"] and own > Types.NOBODY and own < sim.states.size():  # the owner's era and colour
+		tile_key = "%s_dl%d_%s" % [tile_key, clampi(int(sim.states[own]["dev_level"]), 1, 8), map_view.faction_suffix(own)]
 	if c["terrain"] == "forest":
 		bonus += " · " + tr("tile.forest_def")
 	elif c["terrain"] == "hills":

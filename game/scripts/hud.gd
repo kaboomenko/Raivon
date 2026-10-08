@@ -499,7 +499,10 @@ func select_tab(key: String) -> void:
 
 func show_tile(info: Dictionary) -> void:
 	_tile_set = true
-	var pic := "res://assets/ui/cards/tile_%s.png" % String(info.get("tile", "plain"))
+	var key := String(info.get("tile", "plain"))
+	var pic := "res://assets/ui/cards/tile_%s.png" % key
+	if not ResourceLoader.exists(pic):  # an era tile ("capital_dl4_red") falls back to the kind's own picture
+		pic = "res://assets/ui/cards/tile_%s.png" % key.get_slice("_dl", 0)
 	if not ResourceLoader.exists(pic):
 		pic = "res://assets/ui/cards/tile_plain.png"
 	var has_pic := ResourceLoader.exists(pic)

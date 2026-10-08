@@ -334,6 +334,11 @@ TILE_MODELS = {
     "port": [("port", (0, 0), 1.0)],
     "military_base": [("military_base", (0, 0), 1.0)],
 }
+# the capital and the city of each development level in each state colour (the hex panel follows the owner's era)
+for _n in range(1, 9):
+    for _side in ("blue", "red", "green"):
+        TILE_MODELS["capital_dl%d_%s" % (_n, _side)] = [("residence_dl%d_%s" % (_n, _side), (0, 0), 0.9 if _n >= 7 else 1.0)]
+        TILE_MODELS["city_dl%d_%s" % (_n, _side)] = [("city_dl%d_%s" % (_n, _side), (0, 0), 1.0 if _n >= 7 else 1.15)]
 
 
 def tile(kind):

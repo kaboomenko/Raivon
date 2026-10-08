@@ -747,6 +747,11 @@ func _faction_suffix(s: int) -> String:
 	return "red"
 
 
+## The model colour suffix of a state ("blue" / "red" / "green") for UI pictures that follow the map.
+func faction_suffix(s: int) -> String:
+	return _faction_suffix(s)
+
+
 ## Re-spawns buildings, trees and banners (after a treaty or colonization changes owners).
 ## Each cell has its own seed, so trees stay where they were.
 func refresh_props() -> void:
