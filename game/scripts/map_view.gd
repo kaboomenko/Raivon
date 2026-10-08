@@ -1645,6 +1645,29 @@ func _build_roads() -> void:
 			for h in [a, b]:
 				if not _road_stop(h):
 					joints[h] = era
+	# footpaths (reference frame 3: trails tie every farmstead into the road net): an open meadow hex next to a road
+	# of the dirt-road era gets a narrow trail from that road to its centre
+	var net := {}
+	for key in done:
+		for part in String(key).split("-"):
+			net[int(part)] = true
+	for c in sim.cells:
+		var h := int(c["id"])
+		if net.has(h) or _road_stop(h) or c["terrain"] != "plain" or not Types.is_passable(c) or (h * 7) % 10 >= 7:
+			continue
+		var own := owner_of(c)
+		if own <= Types.NOBODY or own >= sim.states.size() or int(sim.states[own]["dev_level"]) >= 6:
+			continue
+		for nb in sim.neighbors[h]:
+			if nb >= 0 and net.has(nb) and owner_of(sim.cells[nb]) == own:
+				if not tools.has(0):
+					var t0 := SurfaceTool.new()
+					t0.begin(Mesh.PRIMITIVE_TRIANGLES)
+					tools[0] = t0
+				_road_segment(tools[0], nb, h, ROAD_W * 0.55)
+				if not _road_stop(nb):
+					joints[nb] = 0
+				break
 	for h in joints:  # a round patch where roads meet in an open hex hides the joints
 		var st: SurfaceTool = tools[joints[h]]
 		var cc := cell_world(int(h)) + Vector3(0, 0.033, 0)
@@ -1676,7 +1699,7 @@ func _road_stop(h: int) -> bool:
 	return sim.cells[h]["kind"] != "plain" or camp_hexes.has(h)
 
 
-func _road_segment(st: SurfaceTool, a: int, b: int) -> void:
+func _road_segment(st: SurfaceTool, a: int, b: int, w := ROAD_W) -> void:
 	var pa := cell_world(a)
 	var pb := cell_world(b)
 	var dir := (pb - pa).normalized()
@@ -1693,8 +1716,8 @@ func _road_segment(st: SurfaceTool, a: int, b: int) -> void:
 		var t := float(i) / n
 		var wob := sin(t * PI) * sin(t * TAU + seed_) * 0.06  # a gentle meander, none at the ends
 		var p := pa.lerp(pb, t) + side * wob + Vector3(0, 0.033, 0)  # over the fill, under the hex grid lines
-		var l := p - side * ROAD_W * 0.5
-		var r := p + side * ROAD_W * 0.5
+		var l := p - side * w * 0.5
+		var r := p + side * w * 0.5
 		if i > 0:
 			st.set_normal(Vector3.UP)
 			st.add_vertex(prev_l); st.add_vertex(r); st.add_vertex(prev_r)
