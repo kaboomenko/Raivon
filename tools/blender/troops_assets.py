@@ -363,12 +363,12 @@ def figure(dl, team, v=0, seated=False):
         beam((-0.04, -0.085, Z + 0.3), (-0.07, -0.088, Z + 0.33), 0.007, gun)
         bx((0.012, 0.014, 0.035), (0.0, -0.08, Z + 0.235), gun, bev=0, rot=(0, -0.65, 0))
         bx((0.03, 0.012, 0.012), (0.02, -0.08, Z + 0.287), F("#141516"), bev=0, rot=(0, -0.7, 0))
-    else:  # dl 8 power armour: white plates, team plates, glowing visor, heavy energy rifle
-        plate = F("#dfe3e8", 0.45)
-        joint = F("#2e333a", 0.6)
+    else:  # dl 8 power armour: gunmetal plates (reference frame 5), team plates, glowing visor, heavy energy rifle
+        plate = F("#5b636e", 0.4)
+        joint = F("#23272d", 0.6)
         tm = F(team, 0.5)
         if seated:
-            _legs(Z, True, "#2e333a", "#dfe3e8", 0.022, 0.04)
+            _legs(Z, True, "#23272d", "#5b636e", 0.022, 0.04)
         else:
             for sx in (-1, 1):
                 rod((sx * 0.026, 0, 0.18), (sx * 0.03, 0, 0.1), 0.023, joint, n=6)
@@ -617,8 +617,8 @@ def assault_dl7(team):
 
 
 def assault_dl8(team):
-    """Heavy hover tank: white wedge on team nacelles floating over glowing pads, twin rail cannon, light strips."""
-    plate = F("#d6dbe2", 0.45)
+    """Heavy hover tank: a gunmetal wedge on team nacelles floating over glowing pads, twin rail cannon, light strips."""
+    plate = F("#68707b", 0.4)
     dk = F("#2c3139", 0.55)
     gl = team_glow(team)
     H = 0.09  # hover gap
@@ -650,8 +650,8 @@ def assault_dl8(team):
 def mech(team):
     """DL8 walker (reference frames 2 and 5: mechs among the infantry) facing −Y: reverse-jointed legs with broad
     feet, a hip block, an armoured cockpit with a glowing visor, a shoulder rail cannon and a missile pod, team plates
-    and light strips."""
-    plate = F("#d6dbe2", 0.45)
+    and light strips. Gunmetal like the walkers of reference frames 2 and 5."""
+    plate = F("#626a75", 0.4)
     dk = F("#2c3139", 0.55)
     tm = F(team, 0.5)
     gl = team_glow(team)

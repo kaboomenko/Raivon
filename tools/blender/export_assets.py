@@ -551,8 +551,8 @@ def howitzer():
 
 def rocket_launcher():
     """Late-era launcher: a six-wheeled composite chassis with a cab, a raised pod of rocket tubes with glowing
-    mouths, a radar mast and side lights, in the white-and-graphite look of the DL8 troops."""
-    comp = mat("composite", "#e3e8ee", 0.4)
+    mouths, a radar mast and side lights, in the gunmetal-and-graphite look of the DL8 troops."""
+    comp = mat("gunmetal", "#68707b", 0.4)  # gunmetal like frame 5's machines
     trim = mat("comptrim", "#3e4550", 0.5)
     tyre = mat("tyre", "#1f1f21", 0.9)
     cyan = mat("cyan", "#14d2ff", 0.4, 0.0, "#14d2ff", 3.0)
@@ -644,7 +644,7 @@ def bridge():
 def gunship():
     """DL8 hover gunship flying over the army (reference frame 2: aircraft over the front): a wedge composite body,
     swept wings with glowing ducted fans, a dark canopy and a nose gun."""
-    comp = mat("composite", "#e3e8ee", 0.4)
+    comp = mat("gunmetal", "#68707b", 0.4)  # gunmetal like frame 5's machines
     trim = mat("comptrim", "#3e4550", 0.5)
     cyan = mat("cyan", "#14d2ff", 0.4, 0.0, "#14d2ff", 3.0)
     glass = mat("glass", "#1b2533", 0.2)
