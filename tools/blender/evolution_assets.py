@@ -3670,89 +3670,1142 @@ def homestead(team):
         cy(0.021, 0.006, (x, y, 0.034), flat("band", "#3d3f45", 0.5), 8)
 
 
-def homestead_modern(team):
-    """DL6–7 countryside: a two-storey panel house with a flat roof, a fenced lot with greenhouse rows, a car."""
-    build_at(lambda: panel_block(0.24, 0.18, 2, team), 0.0, 0.06, 0.15)
-    gh = flat("greenhouse", "#cfe6ee", 0.2)
+# ------------------------------------------------------------------ LATE-ERA COUNTRYSIDE (DL6+ homesteads, farms, mine)
+# Reference frame 3 shows how lived-in the countryside is (houses with gardens, fences, carts, fields round a mill);
+# frame 2 shows the late-era version (fields with machinery, greenhouse domes, silos, small compounds, glowing
+# crystal extraction). These builders bring the DL6+ homesteads, farms and the DL8 mine up to that density.
+
+
+def lr_bands(key, axis, period, c1, c2):
+    """Two-colour bands across one world axis (0 x, 1 y, 2 z), one pair per period: lap siding, corrugated steel,
+    ploughed furrows, mown lawn stripes, garage door panels (baked like every procedural colour)."""
+    def s_of(nt, L, pos):
+        sp = nt.nodes.new("ShaderNodeSeparateXYZ")
+        L.new(pos, sp.inputs[0])
+        dv = nt.nodes.new("ShaderNodeMath")
+        dv.operation = "DIVIDE"
+        L.new(sp.outputs[axis], dv.inputs[0])
+        dv.inputs[1].default_value = period
+        return dv.outputs[0]
+    return _stripe_mat(("lr_bands", key, axis, period, c1, c2), s_of, c1, c2)
+
+
+def lr_window(x, y, z, rz, w=0.032, h=0.036, lit=True, frame="#33373d"):
+    """A window on a wall facing −Y (rotated rz), all flat plates (a mobile homestead has a dozen of them): a dark
+    frame, warm lit (or dark) glass, a mullion and a pale sill."""
+    def b():
+        fm, gl, sl = _MB(), _MB(), _MB()
+        fm.face([(-w / 2 - 0.005, -0.003, -h / 2 - 0.005), (w / 2 + 0.005, -0.003, -h / 2 - 0.005),
+                 (w / 2 + 0.005, -0.003, h / 2 + 0.005), (-w / 2 - 0.005, -0.003, h / 2 + 0.005)], (0, -1, 0))
+        gl.face([(-w / 2, -0.005, -h / 2), (w / 2, -0.005, -h / 2), (w / 2, -0.005, h / 2), (-w / 2, -0.005, h / 2)],
+                (0, -1, 0))
+        fm.face([(-0.002, -0.0065, -h / 2), (0.002, -0.0065, -h / 2), (0.002, -0.0065, h / 2), (-0.002, -0.0065, h / 2)],
+                (0, -1, 0))
+        z0 = -h / 2 - 0.004
+        sl.face([(-w / 2 - 0.008, 0.0, z0), (w / 2 + 0.008, 0.0, z0), (w / 2 + 0.008, -0.014, z0),
+                 (-w / 2 - 0.008, -0.014, z0)], (0, 0, 1))
+        sl.face([(-w / 2 - 0.008, -0.014, z0), (w / 2 + 0.008, -0.014, z0), (w / 2 + 0.008, -0.014, z0 - 0.006),
+                 (-w / 2 - 0.008, -0.014, z0 - 0.006)], (0, -1, 0))
+        fm.obj(flat("frame" + frame, frame, 0.6), "win_frame")
+        gl.obj(win_lit() if lit else flat("glass_d", "#2b3a4c", 0.25), "win_glass")
+        sl.obj(flat("sill", "#f4f2ec", 0.6), "win_sill")
+    build_at(b, x, y, rz, z=z)
+
+
+def lr_picket_fence(segs, h=0.034, gap=0.024, c="#f4f2ec"):
+    """A white picket fence (the bright outline of a suburban lot that reads at map distance): a post at every
+    segment end, two rails and square pickets along each (x0, y0, x1, y1) segment, all two-sided plates."""
+    from mathutils import Vector
+    fm = flat("picket", c, 0.6)
+    mb = _MB()
+    posts = {}
+    for (x0, y0, x1, y1) in segs:
+        L = math.dist((x0, y0), (x1, y1))
+        e = Vector(((x1 - x0) / L, (y1 - y0) / L, 0))
+        nrm = Vector((-e.y, e.x, 0))
+        p0, p1 = Vector((x0, y0, 0)), Vector((x1, y1, 0))
+        for side in (1, -1):
+            o = nrm * (0.0055 * side)
+            for z in (h * 0.32, h * 0.74):
+                mb.face([p0 + o + Vector((0, 0, z - 0.003)), p1 + o + Vector((0, 0, z - 0.003)),
+                         p1 + o + Vector((0, 0, z + 0.003)), p0 + o + Vector((0, 0, z + 0.003))], nrm * side)
+        for p in ((x0, y0), (x1, y1)):
+            posts[(round(p[0], 4), round(p[1], 4))] = p
+        k = max(2, int(L / gap))
+        for i in range(k):
+            c0 = p0 + e * (L * (i + 0.5) / k)
+            for side in (1, -1):
+                o = nrm * (0.004 * side)
+                mb.face([c0 - e * 0.0045 + o, c0 + e * 0.0045 + o, c0 + e * 0.0045 + o + Vector((0, 0, h)),
+                         c0 - e * 0.0045 + o + Vector((0, 0, h))], nrm * side)
+    mb.obj(fm, "pickets")
+    for (px, py) in posts.values():
+        bx((0.012, 0.012, h + 0.008), (px, py, (h + 0.008) / 2), fm, bev=0)
+
+
+def lr_polytunnel(x, y, L, r, rz=0.0):
+    """A polytunnel greenhouse: a pale film barrel vault on white hoops, dark doors at both ends."""
+    def b():
+        film = flat("film", "#dcecef", 0.25)
+        hoop = flat("hoop", "#fbfbf8", 0.5)
+        seg = 6
+        arc = [(r * math.cos(math.pi * i / seg), r * math.sin(math.pi * i / seg) * 1.05) for i in range(seg + 1)]
+        vault, ends, ribs = _MB(), _MB(), _MB()
+        for i in range(seg):
+            (y0, z0), (y1, z1) = arc[i], arc[i + 1]
+            n = (0, (y0 + y1) / 2, (z0 + z1) / 2)
+            vault.face([(-L / 2, y0, z0), (L / 2, y0, z0), (L / 2, y1, z1), (-L / 2, y1, z1)], n)
+            for k in range(5):
+                xr = -L / 2 + 0.006 + k * (L - 0.012) / 4
+                ribs.strip((xr, y0, z0), (xr, y1, z1), n, 0.007, 0.002)
+        for sx in (-1, 1):
+            ends.face([(sx * L / 2, yy, zz) for yy, zz in arc], (sx, 0, 0))
+        vault.obj(film, "tunnel")
+        ends.obj(film, "tunnel_ends")
+        ribs.obj(hoop, "hoops")
+        for sx in (-1, 1):
+            bx((0.004, r * 0.7, r * 0.8), (sx * (L / 2 + 0.002), 0, r * 0.4), flat("tunnel_door", "#5d6b6e", 0.6), bev=0)
+        bx((L * 0.8, 0.004, 0.006), (0, -r * 0.62, r * 0.82), flat("crop_in", "#5f9a3a", 0.8), bev=0)
+    build_at(b, x, y, rz)
+
+
+def lr_raised_bed(x, y, w, d, rz=0.0, crop="#4f9a34", n=4):
+    """A plank raised bed with dark soil and a row of leafy heads in two greens."""
+    def b():
+        bx((w, d, 0.026), (0, 0, 0.013), tex("wood", "#8a5e36", 3.0), bev=0)
+        bx((w - 0.01, d - 0.01, 0.004), (0, 0, 0.027), flat("soil_d", "#4a3322", 0.95), bev=0)
+        for i in range(n):
+            u = (i + 0.5) / n * (w - 0.014) - (w - 0.014) / 2
+            c = crop if i % 2 == 0 else shade(crop, 1.3)
+            ico(min(d * 0.36, 0.016), (u, 0, 0.034), flat("crop" + c, c, 0.8), (1, 1, 0.75), sub=1)
+    build_at(b, x, y, rz)
+
+
+def lr_porch(x, y, team, w=0.07):
+    """A front porch on a wall facing −Y: a door in the team colour, a step, a pale canopy on two posts, a lamp."""
+    trim = flat("trim_w", "#f7f5ef", 0.6)
+    bx((0.034, 0.008, 0.062), (x, y - 0.002, 0.051), flat("frame#33373d", "#33373d", 0.6), bev=0)
+    bx((0.028, 0.012, 0.056), (x, y - 0.004, 0.048), flat("door" + team, shade(team, 0.8), 0.5), bev=0)
+    bx((w, 0.04, 0.012), (x, y - 0.02, 0.014), flat("plinth_c", "#8d8a84", 0.8), bev=0)
+    bx((w + 0.01, 0.05, 0.008), (x, y - 0.022, 0.086), trim, bev=0)
+    for sx in (-1, 1):
+        bx((0.007, 0.007, 0.07), (x + sx * w * 0.42, y - 0.04, 0.054), trim, bev=0)
+    bx((0.01, 0.006, 0.012), (x + 0.026, y - 0.006, 0.07), glow("lamp_warm", "#ffcf7a", 3.0), bev=0)
+
+
+def lr_farmhouse(team, smoke=True):
+    """The DL6–7 farmhouse (reference frame 3's cottages brought up to date): a concrete plinth, cream lap siding
+    with white corner boards, warm lit windows in dark frames on two floors, a gable roof laid in team-slate courses
+    with an attic window, a brick chimney with smoke, a porch with a team door, and an attached garage under a flat
+    roof with solar panels and a panelled door."""
+    w, d, h = 0.2, 0.14, 0.125
+    siding = lr_bands("siding", 2, 0.017, "#f2ede2", "#d9d2c3")
+    trim = flat("trim_w", "#f7f5ef", 0.6)
+    bx((w + 0.012, d + 0.012, 0.018), (0, 0, 0.009), flat("plinth_c", "#8d8a84", 0.8), bev=0)
+    bx((w, d, h), (0, 0, h / 2), siding, bev=0)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            bx((0.01, 0.01, h - 0.018), (sx * w / 2, sy * d / 2, 0.018 + (h - 0.018) / 2), trim, bev=0)
+    bx((w + 0.008, d + 0.008, 0.008), (0, 0, 0.066), trim, bev=0)  # the floor band between the storeys
+    z1, z2 = 0.042, 0.097
+    for (u, z, lit) in ((-0.065, z1, True), (-0.065, z2, False), (0.0, z2, True), (0.065, z2, True)):
+        lr_window(u, -d / 2 - 0.004, z, 0.0, lit=lit)
+    for (u, z, lit) in ((-0.06, z1, False), (0.03, z1, True), (-0.06, z2, True), (0.03, z2, False)):
+        lr_window(u, d / 2 + 0.004, z, math.pi, lit=lit)
+    for sx in (-1, 1):
+        for (u, z, lit) in ((0.0, z1, sx > 0), (0.0, z2, sx < 0)):
+            lr_window(sx * (w / 2 + 0.004), u, z, -sx * math.pi / 2, lit=lit)
+    lr_porch(0.06, -d / 2 - 0.004, team)
+    bx((0.11, 0.016, 0.014), (-0.04, -d / 2 - 0.012, 0.007), flat("bed_soil", "#5a3d26", 0.9), bev=0)  # flower bed
+    for i, c in enumerate(("#e0485c", "#f4c84a", "#e0485c", "#f2f0ea", "#c95ad6")):
+        ico(0.011, (-0.088 + i * 0.024, -d / 2 - 0.013, 0.018), flat("flower" + c, c, 0.8), (1, 1, 0.8), sub=1)
+    rh = 0.078
+    gable_roof(w, d, rh, (0, 0, h), slate(team), siding, n=5, barge="#ebe8e1", ridge="#2c3036", ridge_t=0.02,
+               gable_timber=None, gable_win=True, eave_z=0.0, **SOFT_ROOF)
+    cx_, cy_ = -0.055, 0.035
+    top = chimney(cx_, cy_, h, h + roof_surface(cy_, d / 2, rh, eave_z=0.0) + 0.05, w=0.036)
+    if smoke:
+        smoke_at(cx_, cy_, top)
+    # the garage: siding, a flat roof with a pale parapet, a panelled door with a lamp over it, solar panels
+    gx, gw, gd, gh = w / 2 + 0.06, 0.12, 0.13, 0.08
+    bx((gw, gd, gh), (gx, 0.0, gh / 2), siding, bev=0)
+    bx((gw + 0.01, gd + 0.01, 0.012), (gx, 0.0, gh + 0.006), trim, bev=0)
+    bx((gw - 0.012, gd - 0.012, 0.004), (gx, 0.0, gh + 0.012), flat("roof_d", "#4a4e55", 0.8), bev=0)
+    bx((0.084, 0.008, 0.062), (gx, -gd / 2 - 0.002, 0.032), flat("frame#33373d", "#33373d", 0.6), bev=0)
+    bx((0.076, 0.012, 0.056), (gx, -gd / 2 - 0.004, 0.029), lr_bands("gdoor", 2, 0.011, "#f5f3ee", "#c9c6bf"), bev=0)
+    bx((0.012, 0.006, 0.01), (gx, -gd / 2 - 0.006, 0.07), glow("lamp_warm", "#ffcf7a", 3.0), bev=0)
+    sm = solar8()
     for i in range(2):
-        build_at(lambda: (bx((0.2, 0.06, 0.05), (0, 0, 0.025), gh, bev=0.01)), -0.04, -0.17 - i * 0.09, 0.15)
-    bx((0.09, 0.05, 0.04), (0.22, -0.02, 0.03), flat("car" + team, slate(team, 1.1), 0.4), 0.3, 0.012)
+        for j in range(2):
+            px, py = gx - 0.026 + i * 0.052, -0.03 + j * 0.06
+            bx((0.046, 0.05, 0.005), (px, py, gh + 0.03), sm, bev=0, rot=(0.42, 0, 0))
+            bx((0.04, 0.006, 0.02), (px, py + 0.018, gh + 0.02), flat("rail_s", "#9aa1a9", 0.5), bev=0)
+    return gx
+
+
+def homestead_modern(team):
+    """DL6–7 countryside (reference frame 3's lived-in homesteads, brought up to date): a farmhouse with a team-slate
+    gable roof, a smoking chimney and a porch, an attached garage with solar panels, a car in the team colour on the
+    concrete drive, a white picket fence round a mown lawn, a polytunnel and raised vegetable beds, a doghouse, a
+    mailbox, a shade tree and a pine."""
+    X0, X1, Y0, Y1 = -0.26, 0.245, -0.195, 0.195
+    bx((X1 - X0, Y1 - Y0, 0.006), ((X0 + X1) / 2, (Y0 + Y1) / 2, 0.003),
+       lr_bands("lawn", 0, 0.052, "#6ba849", "#5c963f"), bev=0)
+    hx, hy = -0.09, 0.095
+    gx = build_at(lambda: lr_farmhouse(team), hx, hy)
+    dx = hx + gx
+    bx((0.09, hy - 0.065 - Y0, 0.006), (dx, (hy - 0.065 + Y0) / 2, 0.006), flat("drive", "#aaa69e", 0.85), bev=0)
+    bx((0.05, 0.035, 0.006), (hx + 0.06, hy - 0.11, 0.006), flat("drive", "#aaa69e", 0.85), bev=0)  # porch path
+    car(dx, -0.1, math.pi / 2 + 0.04, team)
+    lr_picket_fence([(X0, Y0, dx - 0.05, Y0), (dx + 0.05, Y0, X1, Y0), (X1, Y0, X1, Y1), (X1, Y1, X0, Y1),
+                     (X0, Y1, X0, Y0)])
+    # the kitchen garden in the front corner: a polytunnel and two raised beds
+    lr_polytunnel(-0.15, -0.15, 0.17, 0.036)
+    lr_raised_bed(-0.21, -0.06, 0.1, 0.04)
+    lr_raised_bed(-0.095, -0.06, 0.1, 0.04, crop="#7aa83a")
+    # the side lawn: a trampoline in the team colour, a mailbox by the drive, a shade tree; a pine and a rain barrel
+    # behind the house
+    tx, ty = 0.185, -0.075
+    for k in range(4):
+        a = math.pi / 4 + k * math.pi / 2
+        cy(0.003, 0.024, (tx + math.cos(a) * 0.04, ty + math.sin(a) * 0.04, 0.012), flat("post_d", "#3a3e44", 0.6), 4)
+    cy(0.047, 0.008, (tx, ty, 0.026), flat("tramp" + team, team, 0.5), 12)
+    cy(0.035, 0.002, (tx, ty, 0.031), flat("tramp_mat", "#22252a", 0.9), 12)
+    cy(0.004, 0.044, (dx + 0.064, Y0 - 0.014, 0.022), flat("post_d", "#3a3e44", 0.6), 6)
+    bx((0.016, 0.026, 0.014), (dx + 0.064, Y0 - 0.014, 0.05), flat("mail" + team, team, 0.5), bev=0)
+    tree(0.2, 0.13, 1.0)
+    pine(-0.215, 0.135, 0.78)
+    cy(0.018, 0.04, (X0 + 0.05, hy - 0.04, 0.02), flat("barrel_g", "#4f6b4a", 0.7), 8)
+
+
+def lr_dome_ribs(x, y, z0, R, C, mt, n=8, phis=(0.0, 0.4, 0.8, 1.15, 1.4), ring=0.62, t=0.01):
+    """Pale ribs over a dome of radius R and rise C standing at z0 (the ribbed glass domes of frame 2): n meridian
+    ribs and one ring rib round the shoulder."""
+    def pt(phi, a):
+        return (x + R * math.cos(phi) * math.cos(a), y + R * math.cos(phi) * math.sin(a), z0 + C * math.sin(phi))
+
+    def nrm(phi, a):
+        v = (math.cos(phi) * math.cos(a) / R, math.cos(phi) * math.sin(a) / R, math.sin(phi) / C)
+        ln = math.sqrt(sum(c * c for c in v))
+        return tuple(c / ln for c in v)
+    ribs = _MB()
+    for k in range(n):
+        a = math.tau * k / n + math.pi / n
+        for i in range(len(phis) - 1):
+            ribs.strip(pt(phis[i], a), pt(phis[i + 1], a), nrm((phis[i] + phis[i + 1]) / 2, a), t, 0.003)
+    m = 2 * n
+    if ring:
+        for k in range(m):
+            a0, a1 = math.tau * k / m, math.tau * (k + 1) / m
+            ribs.strip(pt(ring, a0), pt(ring, a1), nrm(ring, (a0 + a1) / 2), t * 0.9, 0.003)
+    ribs.obj(mt, "ribs")
+
+
+def lr_ring_panes(x, y, r, z0, z1, n, mt, fill=0.62, off=0.003):
+    """n flat panes round a drum of radius r between z0 and z1 (a ribbon of windows broken by the drum's mullions)."""
+    mb = _MB()
+    for k in range(n):
+        a0 = math.tau * k / n
+        a1 = a0 + math.tau / n * fill
+        am = (a0 + a1) / 2
+        p = [(x + (r + off) * math.cos(a), y + (r + off) * math.sin(a)) for a in (a0, a1)]
+        mb.face([(p[0][0], p[0][1], z0), (p[1][0], p[1][1], z0), (p[1][0], p[1][1], z1), (p[0][0], p[0][1], z1)],
+                (math.cos(am), math.sin(am), 0))
+    return mb.obj(mt, "panes")
+
+
+def lr_drone(x, y, z, team, mats, rz=0.0, s=1.0):
+    """A quadcopter drone (the small craft over the fields of frame 2): a steel body with a team top and a cold eye,
+    four arms, dark rotor discs with lit hubs."""
+    st, plate, seam, panel, cap, neon, tip = mats
+
+    def b():
+        bx((0.036, 0.036, 0.014), (0, 0, 0.007), seam, bev=0)
+        bx((0.028, 0.028, 0.005), (0, 0, 0.016), flat("hullteam" + team, team, 0.5), bev=0)
+        bx((0.01, 0.004, 0.006), (0, -0.019, 0.007), tip, bev=0)
+        for k in range(4):
+            a = math.pi / 4 + k * math.pi / 2
+            ex, ey = math.cos(a) * 0.04, math.sin(a) * 0.04
+            beam((0, 0, 0.01), (ex, ey, 0.012), 0.006, plate)
+            cy(0.019, 0.003, (ex, ey, 0.016), flat("rotor", "#1d2026", 0.4), 7)
+            cy(0.004, 0.006, (ex, ey, 0.016), tip, 4)
+        for sx in (-1, 1):  # landing skids
+            bx((0.004, 0.04, 0.004), (sx * 0.014, 0, -0.004), plate, bev=0)
+    build_at(b, x, y, rz, s=s, z=z)
+
+
+def lr_lit_path(pts, w, mats, z=0.009):
+    """A dark footpath with a thin cold light line along each edge, along the polyline pts."""
+    st, plate, seam, panel, cap, neon, tip = mats
+    road, edge = _MB(), _MB()
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):
+        ln = math.hypot(x1 - x0, y1 - y0)
+        ux, uy = (x1 - x0) / ln, (y1 - y0) / ln
+        nx, ny = -uy * w / 2, ux * w / 2
+        road.face([(x0 - nx, y0 - ny, z), (x1 - nx, y1 - ny, z), (x1 + nx, y1 + ny, z), (x0 + nx, y0 + ny, z)], (0, 0, 1))
+        for sd in (-1, 1):
+            ex, ey = x0 + sd * nx, y0 + sd * ny
+            fx, fy = x1 + sd * nx, y1 + sd * ny
+            ox, oy = -uy * 0.003, ux * 0.003
+            edge.face([(ex - ox, ey - oy, z + 0.002), (fx - ox, fy - oy, z + 0.002), (fx + ox, fy + oy, z + 0.002),
+                       (ex + ox, ey + oy, z + 0.002)], (0, 0, 1))
+    road.obj(flat("path8", "#2f343b", 0.7), "path")
+    edge.obj(neon, "path_lights")
+    for (x0, y0), (x1, y1) in zip(pts, pts[1:]):  # the path's kerb: a thin pale slab under it
+        ln = math.hypot(x1 - x0, y1 - y0)
+        bx((ln + w * 0.2, w + 0.012, z - 0.003), ((x0 + x1) / 2, (y0 + y1) / 2, (z - 0.003) / 2), seam,
+           math.atan2(y1 - y0, x1 - x0), bev=0)
+
+
+def lr_planter(x, y, L, mats, rz=0.0):
+    """A hydroponic trough: a steel box with a glowing nutrient channel and a row of leafy heads on it."""
+    st, plate, seam, panel, cap, neon, tip = mats
+
+    def b():
+        bx((L, 0.034, 0.03), (0, 0, 0.015), plate, bev=0)
+        bx((L - 0.012, 0.022, 0.004), (0, 0, 0.031), glow("hydro", "#5cff8a", 1.2), bev=0)
+        n = max(3, int(L / 0.026))
+        for i in range(n):
+            u = (i + 0.5) / n * (L - 0.016) - (L - 0.016) / 2
+            c = "#3f8f3a" if i % 2 else "#62b347"
+            ico(0.012, (u, 0, 0.039), flat("crop" + c, c, 0.8), (1, 1, 0.8), sub=1)
+        bx((0.006, 0.04, 0.034), (-L / 2 - 0.003, 0, 0.017), seam, bev=0)
+        bx((0.006, 0.04, 0.034), (L / 2 + 0.003, 0, 0.017), seam, bev=0)
+    build_at(b, x, y, rz)
 
 
 def homestead_scifi(team):
-    """DL8 countryside: a dark-glass habitat pod with team neon edges, a landing pad with a glowing ring and a
-    crate of raivite crystals."""
-    gl = dark_glass()
-    build_at(lambda: neon_box(0.2, 0.16, 0.0, 0.16, team, gl), 0.0, 0.08, 0.15)
-    uvs(0.09, (0.0, 0.08, 0.17), flat("dome", "#a9d6f0", 0.15), 12, 6, (1, 1, 0.5))
-    cy(0.11, 0.015, (0.02, -0.2, 0.008), flat("pad", "#4a515c", 0.5), 16)
-    torus(0.095, 0.006, (0.02, -0.2, 0.018), team_neon(team))
-    bx((0.07, 0.07, 0.05), (0.22, -0.04, 0.025), flat("crate", "#3e4550", 0.5), 0.4, 0.006)
+    """DL8 countryside (frames 2 and 5: small steel compounds with domes and cold light): a habitat pod in the
+    citadel's steel kit — a plinth, a drum with a ribbon of warm lit windows over a team band with a light strip, a
+    ribbed glass dome with a lit lantern and a needle — joined by a tube to a glowing hydroponic greenhouse dome and
+    to a steel wing with an inset team panel, solar panels and a dish; an airlock porch; a landing pad with a
+    parked drone; hydroponic planters; lit paths, light masts and pines."""
+    mats = d8_mats(team)
+    st, plate, seam, panel, cap, neon, tip = mats
+    # the deck under the buildings: steel slabs with a pale kerb
+    deck = [(-0.25, 0.0), (-0.21, -0.04), (0.21, -0.04), (0.25, 0.0), (0.25, 0.17), (0.2, 0.21), (-0.2, 0.21),
+            (-0.25, 0.17)]
+    extrude(deck, -0.01, 0.014, seam)
+    extrude([(px * 0.96, py * 0.96 + 0.004) for px, py in deck], 0.0, 0.02, flat("ground8#4d545e", "#4d545e", 0.6))
+    # the habitat pod
+    px_, py_, r, h = 0.0, 0.085, 0.1, 0.07
+    cy(r + 0.016, 0.02, (px_, py_, 0.03), plate, 16)
+    cy(r, h, (px_, py_, 0.02 + h / 2), flat("hab_steel", "#626a74", 0.5), 16)
+    cy(r + 0.004, 0.022, (px_, py_, 0.042), flat("hab_team" + team, shade(team, 0.78), 0.5), 16)
+    cy(r + 0.006, 0.006, (px_, py_, 0.056), neon, 16)
+    lr_ring_panes(px_, py_, r, 0.064, 0.084, 10, win_lit())
+    zc = 0.02 + h
+    cy(r * 1.1, 0.012, (px_, py_, zc + 0.006), plate, 16)
+    R, C = r * 0.94, r * 0.94 * 0.74
+    hemi(R, (px_, py_, zc + 0.012), flat("dome_glass", "#6fa9cf", 0.3), 16, 3, (1, 1, 0.74))
+    lr_dome_ribs(px_, py_, zc + 0.012, R, C, seam)
+    zt = zc + 0.012 + C
+    cy(R * 0.26, 0.016, (px_, py_, zt + 0.004), plate, 8)
+    cy(R * 0.18, 0.012, (px_, py_, zt + 0.016), tip, 8)
+    rod((px_, py_, zt + 0.02), (px_, py_, 0.236), 0.005, cap, r2=0.0015, n=4)
+    # the airlock porch on the front
+    build_at(lambda: d8_portal(0, 0, 0, mats), px_, py_ - r - 0.012, 0.0, s=0.62, z=0.02)
+    # the greenhouse dome on the left (glowing beds under the glass) and the tube to it
+    gx, gy, gr = -0.175, 0.1, 0.062
+    cy(gr + 0.01, 0.022, (gx, gy, 0.031), plate, 12)
+    cy(gr + 0.012, 0.006, (gx, gy, 0.044), neon, 12)
+    hemi(gr, (gx, gy, 0.042), glow("hydro", "#5cff8a", 1.2), 12, 3, (1, 1, 0.9))
+    lr_dome_ribs(gx, gy, 0.042, gr, gr * 0.9, seam, n=6, phis=(0.0, 0.5, 0.95, 1.3), ring=0.55, t=0.009)
+    rod((gx + gr * 0.6, gy - 0.004, 0.05), (px_ - r * 0.8, py_, 0.05), 0.02, plate, n=8)
+    for f in (0.35, 0.65):
+        x_ = gx + gr * 0.6 + (px_ - r * 0.8 - gx - gr * 0.6) * f
+        cy(0.023, 0.008, (x_, gy - 0.004 + (py_ - gy + 0.004) * f, 0.05), seam, 8, rot=(0, math.pi / 2, 0))
+    # the steel wing on the right: warm shopfront band, inset team panel with a light strip, solar panels and a dish
+    wx, wy, ww, wd, wh = 0.168, 0.095, 0.105, 0.13, 0.07
+    d8_podium(wx, wy, ww, wd, wh, mats, 0.0, plant=False, lights=False)
+    pm, sm_ = _MB(), _MB()
+    for (nx, ny, L, off) in ((0, -1, ww, wd / 2), (1, 0, wd, ww / 2)):
+        qx, qy = wx + nx * (off + 0.003), wy + ny * (off + 0.003)
+        tx, ty = -ny * L * 0.24, nx * L * 0.24
+        pm.face([(qx - tx, qy - ty, 0.042), (qx + tx, qy + ty, 0.042), (qx + tx, qy + ty, 0.074),
+                 (qx - tx, qy - ty, 0.074)], (nx, ny, 0))
+        qx, qy = wx + nx * (off + 0.005), wy + ny * (off + 0.005)
+        ux, uy = -ny * L * 0.2, nx * L * 0.2
+        sm_.face([(qx - ux, qy - uy, 0.055), (qx + ux, qy + uy, 0.055), (qx + ux, qy + uy, 0.061),
+                  (qx - ux, qy - uy, 0.061)], (nx, ny, 0))
+    pm.obj(flat("hab_team" + team, shade(team, 0.78), 0.5), "panels")
+    sm_.obj(neon, "strips")
+    sol = solar8()
+    for j in range(2):
+        bx((0.07, 0.04, 0.005), (wx - 0.006, wy - 0.03 + j * 0.05, 0.108), sol, bev=0, rot=(0.4, 0, 0))
+        bx((0.06, 0.006, 0.014), (wx - 0.006, wy - 0.016 + j * 0.05, 0.1), cap, bev=0)
+    cy(0.004, 0.05, (wx + 0.035, wy + 0.045, 0.115), seam, 6)
+    o = cy(0.022, 0.006, (wx + 0.035, wy + 0.045, 0.142), seam, 10, r2=0.012)
+    o.rotation_euler = (0.6, 0, -0.6)
+    bx((0.008, 0.008, 0.008), (wx + 0.035, wy + 0.045, 0.172), tip, bev=0)
+    # the front yard: lit paths, the landing pad with the drone, the hydroponic planters, light masts
+    lr_lit_path([(px_, -0.035), (px_, -0.12), (0.12, -0.155)], 0.04, mats)
+    lr_lit_path([(px_ - 0.02, -0.12), (-0.105, -0.12)], 0.034, mats)
+    d8_pad(0.17, -0.155, 0.072, 0.03, mats)
+    lr_drone(0.17, -0.155, 0.045, team, mats, rz=0.35, s=1.15)
     for k in range(3):
-        cn(0.012, 0.05, (0.2 + k * 0.018, -0.04, 0.07), glow("raivite_c", CYAN, 2.0), 6)
+        lr_planter(-0.185, -0.075 - k * 0.048, 0.13, mats)
+    d8_mast(-0.07, -0.2, 0.1, mats)
+    d8_mast(0.075, -0.06, 0.1, mats)
+    # pines behind the compound (frame 2: trees between the buildings)
+    for (x, y, s_) in ((-0.1, 0.235, 0.62), (0.085, 0.24, 0.56), (-0.215, 0.165, 0.48)):
+        pine(x, y, s_)
+
+
+def lr_boards(key, period, c1, c2):
+    """Vertical boards in two tones (barn siding) on walls facing any way: bands across x + y."""
+    def s_of(nt, L, pos):
+        sp = nt.nodes.new("ShaderNodeSeparateXYZ")
+        L.new(pos, sp.inputs[0])
+        ad = nt.nodes.new("ShaderNodeMath")
+        ad.operation = "ADD"
+        L.new(sp.outputs[0], ad.inputs[0])
+        L.new(sp.outputs[1], ad.inputs[1])
+        dv = nt.nodes.new("ShaderNodeMath")
+        dv.operation = "DIVIDE"
+        L.new(ad.outputs[0], dv.inputs[0])
+        dv.inputs[1].default_value = period
+        return dv.outputs[0]
+    return _stripe_mat(("lr_boards", key, period, c1, c2), s_of, c1, c2)
+
+
+def lr_field(rect, z, mt, clip=None):
+    """A field plate: the rectangle (x0, y0, x1, y1) clipped to the convex outline clip (CCW), standing z high."""
+    x0, y0, x1, y1 = rect
+    poly = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+    if clip:
+        poly = _clip_convex(poly, clip)
+    extrude(poly, -0.004, z, mt)
+    return poly
+
+
+def lr_span(c, lo, hi, R):
+    """The part of [lo, hi] along a row at offset c that stays inside a circle of radius R."""
+    lim = math.sqrt(max(R * R - c * c, 0.0))
+    return max(lo, -lim), min(hi, lim)
+
+
+def lr_ridges(rows, w, wt, h, z, mt, name="ridges"):
+    """Crop ridges: a trapezoid prism from (xa, ya) to (xb, yb) for each row (bottom width w, top width wt, height h)
+    standing on z; one mesh for all of them."""
+    mb = _MB()
+    for (xa, ya, xb, yb) in rows:
+        L = math.hypot(xb - xa, yb - ya)
+        if L < 0.02:
+            continue
+        ux, uy = (xb - xa) / L, (yb - ya) / L
+        nx, ny = -uy, ux
+
+        def P(px, py, s_, hh):
+            return (px + nx * s_, py + ny * s_, z + hh)
+        b0l, b0r, b1l, b1r = P(xa, ya, -w / 2, 0), P(xa, ya, w / 2, 0), P(xb, yb, -w / 2, 0), P(xb, yb, w / 2, 0)
+        t0l, t0r, t1l, t1r = P(xa, ya, -wt / 2, h), P(xa, ya, wt / 2, h), P(xb, yb, -wt / 2, h), P(xb, yb, wt / 2, h)
+        mb.face([t0l, t0r, t1r, t1l], (0, 0, 1))
+        mb.face([b0r, b1r, t1r, t0r], (nx, ny, 0.5))
+        mb.face([b1l, b0l, t0l, t1l], (-nx, -ny, 0.5))
+        mb.face([b0l, b0r, t0r, t0l], (-ux, -uy, 0.3))
+        mb.face([b1r, b1l, t1l, t1r], (ux, uy, 0.3))
+    return mb.obj(mt, name)
+
+
+def lr_ears(pts, mts, rnd, r=(0.013, 0.018), top=0.03, lean=0.008):
+    """Ears of ripe grain: open three-sided pyramids at the points (x, y, z), each in one of the materials mts — a
+    bristly golden mass at map distance (reference frame 3's wheat)."""
+    mbs = [_MB() for _ in mts]
+    for (x, y, zm) in pts:
+        rr = rnd.uniform(*r)
+        rot = rnd.uniform(0, math.tau)
+        ap = (x + rnd.uniform(-lean, lean), y + rnd.uniform(-lean, lean), zm + top)
+        base = [(x + rr * math.cos(rot + k * math.tau / 3), y + rr * math.sin(rot + k * math.tau / 3), zm)
+                for k in range(3)]
+        mb = mbs[rnd.randrange(len(mbs))]
+        for k in range(3):
+            p0, p1 = base[k], base[(k + 1) % 3]
+            mb.face([p0, p1, ap], ((p0[0] + p1[0]) / 2 - x, (p0[1] + p1[1]) / 2 - y, rr * 0.6))
+    for mb, mt in zip(mbs, mts):
+        mb.obj(mt, "ears")
+
+
+def lr_clumps(pts, mts, rnd, r=(0.02, 0.026)):
+    """Leafy row crops: a squat five-leaf dome at each point (x, y, z), in one of the greens mts."""
+    mbs = [_MB() for _ in mts]
+    for (x, y, z) in pts:
+        rr = rnd.uniform(*r)
+        c = (x + rnd.uniform(-0.003, 0.003), y + rnd.uniform(-0.003, 0.003), z + rr * 0.8)
+        rot = rnd.uniform(0, math.tau)
+        rim = []
+        for k in range(5):
+            a = rot + k * math.tau / 5 + rnd.uniform(-0.15, 0.15)
+            rk = rr * rnd.uniform(0.88, 1.12)
+            rim.append((x + rk * math.cos(a), y + rk * math.sin(a), z - rr * rnd.uniform(0.05, 0.25)))
+        mb = mbs[rnd.randrange(len(mbs))]
+        for k in range(5):
+            p0, p1 = rim[k], rim[(k + 1) % 5]
+            mb.face([c, p0, p1], ((p0[0] + p1[0]) / 2 - x, (p0[1] + p1[1]) / 2 - y, rr))
+    for mb, mt in zip(mbs, mts):
+        mb.obj(mt, "clumps")
+
+
+def lr_gambrel_barn(team, w=0.22, d=0.3, h=0.11):
+    """A gambrel barn, gable ends to the front and back (the barns of frame 3, brought up to date): red board walls,
+    four roof slopes laid in team-slate courses, white fascia and corner trim, a cupola on the ridge, big X-braced
+    doors and a hay loft door in the front gable under a team barn star, lit side windows."""
+    from mathutils import Vector
+    boards = lr_boards("barn", 0.017, "#a8473b", "#8f3b31")
+    white = flat("trim_w", "#f7f5ef", 0.6)
+    roof_c = slate(team)
+    k1 = 1.6
+    xk = w * 0.3
+    zk = h + (w / 2 - xk) * k1
+    zr = zk + xk * 0.55
+    oh = 0.022
+    xe, ze = w / 2 + oh, h - oh * k1
+    L = d / 2 + 0.018
+    prof = [(-w / 2, 0.0), (w / 2, 0.0), (w / 2, h), (xk, zk), (0.0, zr), (-xk, zk), (-w / 2, h)]
+    extrude(prof, -d / 2, d / 2, boards, rot=(math.pi / 2, 0, 0))
+    MBs, BUTT, slab = [_MB(), _MB()], _MB(), _MB()
+    tk, ct = 0.007, 0.009
+    for sx in (-1, 1):
+        for (p, q, n_) in (((xe, ze), (xk, zk), 3), ((xk, zk), (0.0, zr), 2)):
+            nv = Vector((sx * (q[1] - p[1]), 0, abs(p[0] - q[0]))).normalized()
+            A = Vector((sx * p[0], -L, p[1])) + nv * tk
+            B = Vector((sx * p[0], L, p[1])) + nv * tk
+            C = Vector((sx * q[0], L, q[1])) + nv * tk
+            D = Vector((sx * q[0], -L, q[1])) + nv * tk
+            slab.face([A, B, C, D], nv)
+            for yy, sg in ((-L, -1), (L, 1)):  # verge edges
+                a0 = Vector((sx * p[0], yy, p[1]))
+                b0 = Vector((sx * q[0], yy, q[1]))
+                slab.face([a0, b0, b0 + nv * tk, a0 + nv * tk], (0, sg, 0))
+            course_rows(MBs, tuple(A), tuple(B), tuple(C), tuple(D), n_, ct, butt=BUTT, band=0.8)
+        a0 = Vector((sx * xe, -L, ze))
+        slab.face([a0, Vector((sx * xe, L, ze)), Vector((sx * xe, L, ze)) + Vector((0, 0, tk + ct)),
+                   a0 + Vector((0, 0, tk + ct))], (sx, 0, -0.3))
+    slab.obj(tex("roof", shade(roof_c, 0.8), 1.6), "roof_slab")
+    for mb, mt in zip(MBs, _roof_mats(roof_c, 0.84, "roof")):
+        mb.obj(mt, "roof_courses")
+    BUTT.obj(tex("roof", shade(roof_c, 0.68), 1.6), "roof_butts")
+    lift = tk + ct + 0.004
+    for yy in (-L - 0.004, L + 0.004):  # white fascia along both gables
+        for sx in (-1, 1):
+            beam((sx * xe, yy, ze + lift), (sx * xk, yy, zk + lift), 0.014, white)
+            beam((sx * xk, yy, zk + lift), (0.0, yy, zr + lift), 0.014, white)
+    beam((0, -L - 0.006, zr + lift), (0, L + 0.006, zr + lift), 0.016, flat("ridge#2c3036", "#2c3036", 0.8))
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            bx((0.012, 0.012, h), (sx * w / 2, sy * d / 2, h / 2), white, bev=0)
+    # the cupola on the ridge
+    bx((0.044, 0.05, 0.036), (0, 0, zr + lift + 0.016), white, bev=0)
+    bx((0.046, 0.052, 0.014), (0, 0, zr + lift + 0.02), flat("louvre", "#55595f", 0.7), bev=0)
+    _hip_roof(0.044, 0.05, 0.03, (0, 0, zr + lift + 0.034), flat("cupola" + team, slate(team, 1.05), 0.6), 0.008)
+    # the front gable: big X-braced doors, the hay loft door, the barn star in the team colour
+    yf = -d / 2 - 0.003
+    bx((0.11, 0.008, 0.094), (0, yf, 0.047), white, bev=0)
+    bx((0.096, 0.01, 0.084), (0, yf - 0.001, 0.042), flat("barn_door", "#7d3029", 0.8), bev=0)
+    for sx in (-1, 1):
+        beam((sx * 0.044, yf - 0.007, 0.006), (0.0, yf - 0.007, 0.078), 0.008, white)
+        beam((sx * 0.044, yf - 0.007, 0.078), (0.0, yf - 0.007, 0.006), 0.008, white)
+    bx((0.004, 0.012, 0.084), (0, yf - 0.006, 0.042), white, bev=0)
+    bx((0.05, 0.008, 0.046), (0, yf, h + 0.016), white, bev=0)
+    bx((0.04, 0.01, 0.038), (0, yf - 0.001, h + 0.016), flat("loft", "#2b2420", 0.9), bev=0)
+    bx((0.03, 0.008, 0.03), (0, yf - 0.002, zk + 0.004), flat("star" + team, team, 0.5), bev=0, rot=(0, math.pi / 4, 0))
+    for sx in (-1, 1):
+        for u in (-0.07, 0.07):
+            lr_window(sx * (w / 2 + 0.003), u, 0.07, -sx * math.pi / 2, w=0.03, h=0.03, lit=(u > 0) == (sx > 0),
+                      frame="#f7f5ef")
+
+
+def lr_silo(x, y, r, h, team, ladder_a=-2.2):
+    """A grain silo: a concrete footing, corrugated steel rings, a band in the team colour, a pale domed cap with a
+    vent and a dark ladder line down its side."""
+    corr = lr_bands("silo", 2, 0.017, "#d6dadf", "#aeb5bd")
+    cy(r + 0.012, 0.02, (x, y, 0.01), flat("conc", CONC, 0.8), 14)
+    cy(r, h, (x, y, h / 2), corr, 14)
+    cy(r + 0.004, 0.034, (x, y, h * 0.84), flat("band" + team, slate(team, 1.2), 0.5), 14)
+    cy(r + 0.004, 0.01, (x, y, h * 0.4), flat("silo_ring", "#8d949c", 0.5), 14)
+    hemi(r * 1.03, (x, y, h), flat("silo_cap", "#e8ebee", 0.4), 14, 3, (1, 1, 0.55))
+    cy(0.014, 0.016, (x, y, h + r * 0.56 + 0.004), flat("silo_ring", "#8d949c", 0.5), 6)
+    ca, sa = math.cos(ladder_a), math.sin(ladder_a)
+    lad = _MB()
+    lad.strip((x + ca * r, y + sa * r, 0.03), (x + ca * r, y + sa * r, h + 0.01), (ca, sa, 0), 0.014, 0.004)
+    lad.obj(flat("ladder", "#3a3f46", 0.6), "ladder")
+
+
+def lr_bin(x, y, r, h):
+    """A hopper-bottom feed bin on four legs, with a cone roof."""
+    leg = flat("silo_ring", "#8d949c", 0.5)
+    for k in range(4):
+        a = math.pi / 4 + k * math.pi / 2
+        beam((x + math.cos(a) * r * 0.8, y + math.sin(a) * r * 0.8, 0.0),
+             (x + math.cos(a) * r * 0.7, y + math.sin(a) * r * 0.7, 0.07), 0.008, leg)
+    cy(0.012, 0.04, (x, y, 0.05), leg, 10, r2=r)
+    cy(r, h, (x, y, 0.07 + h / 2), lr_bands("silo", 2, 0.017, "#d6dadf", "#aeb5bd"), 10)
+    cn(r * 1.05, 0.04, (x, y, 0.07 + h + 0.02), flat("silo_cap", "#e8ebee", 0.4), 10)
+
+
+def lr_tractor(x, y, rz, plough=True):
+    """A red tractor (the crop field's, larger): hood, cab with a white roof, big rear and small front wheels with
+    yellow hubs, an exhaust stack, and a disc plough on the hitch."""
+    red = flat("tractor", "#c23a2b", 0.5)
+    dk = flat("tyre", "#1f1f21", 0.9)
+    hub = flat("hub", "#f2c230", 0.6)
+
+    def b():
+        bx((0.07, 0.04, 0.034), (0.034, 0, 0.046), red, bev=0)
+        bx((0.05, 0.052, 0.034), (-0.022, 0, 0.046), red, bev=0)
+        bx((0.044, 0.046, 0.044), (-0.022, 0, 0.085), flat("cab", "#2c3a48", 0.3), bev=0)
+        bx((0.054, 0.056, 0.006), (-0.022, 0, 0.11), flat("trim_w", "#f7f5ef", 0.6), bev=0)
+        bx((0.012, 0.042, 0.016), (0.07, 0, 0.04), flat("grille", "#2b2d31", 0.6), bev=0)
+        for sy in (-1, 1):
+            cy(0.036, 0.018, (-0.026, sy * 0.037, 0.036), dk, 12, rot=(math.pi / 2, 0, 0))
+            cy(0.016, 0.02, (-0.026, sy * 0.037, 0.036), hub, 8, rot=(math.pi / 2, 0, 0))
+            cy(0.021, 0.014, (0.048, sy * 0.028, 0.021), dk, 10, rot=(math.pi / 2, 0, 0))
+            cy(0.009, 0.016, (0.048, sy * 0.028, 0.021), hub, 6, rot=(math.pi / 2, 0, 0))
+        cy(0.004, 0.044, (0.05, 0.012, 0.084), dk, 5)
+        if plough:
+            beam((-0.05, 0, 0.03), (-0.09, 0, 0.03), 0.01, red)
+            beam((-0.09, -0.05, 0.03), (-0.13, 0.05, 0.03), 0.012, red)
+            for k in range(4):
+                f = (k + 0.5) / 4
+                cy(0.016, 0.004, (-0.09 - 0.04 * f, -0.05 + 0.1 * f, 0.016), flat("disc", "#9aa1a8", 0.4), 8,
+                   rot=(math.pi / 2, 0, 0.5))
+    build_at(b, x, y, rz)
+
+
+def lr_combine(team, x, y, rz):
+    """A combine harvester in the team colour (frame 2's farm machinery): body and grain tank, a cab under a white
+    roof, big drive wheels, the wide header with its reel out front, an unloading auger folded along the side."""
+    body = flat("combine" + team, shade(team, 0.92), 0.5)
+    light = flat("combine_l" + team, shade(team, 1.3), 0.5)
+    dk = flat("tyre", "#1f1f21", 0.9)
+    steel = flat("header", "#3d4148", 0.6)
+
+    def b():
+        bx((0.15, 0.078, 0.064), (-0.01, 0, 0.074), body, bev=0)
+        bx((0.074, 0.072, 0.034), (-0.04, 0, 0.122), light, bev=0)
+        bx((0.05, 0.058, 0.046), (0.045, 0, 0.128), flat("cab", "#2c3a48", 0.3), bev=0)
+        bx((0.058, 0.066, 0.007), (0.045, 0, 0.154), flat("trim_w", "#f7f5ef", 0.6), bev=0)
+        bx((0.05, 0.08, 0.006), (-0.03, 0, 0.042), flat("stripe_w", "#f7f5ef", 0.6), bev=0)
+        for sy in (-1, 1):
+            cy(0.042, 0.02, (0.03, sy * 0.044, 0.042), dk, 12, rot=(math.pi / 2, 0, 0))
+            cy(0.018, 0.022, (0.03, sy * 0.044, 0.042), flat("hub", "#f2c230", 0.6), 8, rot=(math.pi / 2, 0, 0))
+            cy(0.025, 0.014, (-0.07, sy * 0.036, 0.025), dk, 10, rot=(math.pi / 2, 0, 0))
+        beam((0.06, 0, 0.05), (0.1, 0, 0.034), 0.04, body)  # feeder house
+        bx((0.04, 0.22, 0.022), (0.118, 0, 0.022), steel, bev=0)  # the header
+        bx((0.012, 0.226, 0.03), (0.098, 0, 0.034), body, bev=0)
+        cy(0.02, 0.21, (0.124, 0, 0.056), light, 8, rot=(math.pi / 2, 0, 0))  # the reel
+        for sy in (-1, 1):
+            beam((0.09, sy * 0.106, 0.04), (0.124, sy * 0.106, 0.056), 0.008, body)
+        rod((-0.06, 0.04, 0.13), (0.06, 0.05, 0.14), 0.007, light, n=6)  # unloading auger
+        cy(0.004, 0.03, (-0.05, -0.02, 0.15), dk, 5)
+    build_at(b, x, y, rz)
+
+
+def lr_pickup(x, y, rz, color):
+    """A farm pickup: body, cab with dark glass, an open bed, two axles."""
+    def b():
+        bc = flat("car" + color, color, 0.4)
+        bx((0.11, 0.05, 0.022), (0, 0, 0.026), bc, bev=0)
+        bx((0.044, 0.048, 0.026), (0.016, 0, 0.05), bc, bev=0)
+        bx((0.046, 0.05, 0.014), (0.018, 0, 0.05), flat("car_glass", "#1d2a38", 0.2), bev=0)
+        bx((0.046, 0.042, 0.004), (-0.03, 0, 0.038), flat("bed_d", "#2b2d31", 0.8), bev=0)
+        for sy in (-1, 1):
+            bx((0.05, 0.004, 0.01), (-0.03, sy * 0.023, 0.042), bc, bev=0)
+        for sx in (-0.034, 0.034):
+            cy(0.013, 0.054, (sx, 0, 0.013), flat("tyre", "#1f1f21", 0.9), 6, rot=(math.pi / 2, 0, 0))
+    build_at(b, x, y, rz)
+
+
+def lr_irrigation(x0, x1, y, z=0.1, towers=3):
+    """A linear irrigation line across a field: a pale pipe on wheeled A-frame towers, a truss under each span and
+    drop sprinklers (a long readable line over the crop rows)."""
+    pipe = flat("irr_pipe", "#d0d5da", 0.4)
+    leg = flat("irr_leg", "#8d949c", 0.5)
+    dk = flat("tyre", "#1f1f21", 0.9)
+    beam((x0, y, z), (x1, y, z), 0.011, pipe)
+    for i in range(towers + 1):
+        xt = x0 + (x1 - x0) * i / towers
+        for sy in (-1, 1):
+            beam((xt, y + sy * 0.032, 0.016), (xt, y, z), 0.008, leg)
+            cy(0.016, 0.01, (xt, y + sy * 0.034, 0.016), dk, 8, rot=(math.pi / 2, 0, 0))
+        bx((0.02, 0.016, 0.02), (xt, y, z - 0.012), leg, bev=0)
+        if i < towers:
+            xn = x0 + (x1 - x0) * (i + 1) / towers
+            for f0, f1 in ((0.0, 0.5), (0.5, 1.0)):
+                beam((xt + (xn - xt) * f0, y, z - (0.0 if f0 == 0.0 else 0.03)),
+                     (xt + (xn - xt) * f1, y, z - (0.03 if f1 == 0.5 else 0.0)), 0.005, leg)
+            for k in range(1, 4):
+                xs = xt + (xn - xt) * k / 4
+                beam((xs, y, z), (xs, y, z - 0.04), 0.004, leg)
 
 
 def farm_modern(team):
-    """DL6–7 farm: ploughed strips of crops, a tall grain silo with a team band, a barn and a red tractor."""
-    pad(0.7, tex("plaster", "#6b5032", 2.0), 0.01, 12, 0.05, 31)
-    crops = [flat("crop_a", "#d9b84a", 0.8), flat("crop_b", "#6f9a3a", 0.8)]
-    for i in range(5):
-        bx((0.62, 0.09, 0.03), (-0.1, -0.32 + i * 0.12, 0.02), crops[i % 2], 0.0, 0.01)
-    cy(0.09, 0.5, (0.36, 0.3, 0.25), flat("silo", "#c9ced4", 0.4), 16)
-    uvs(0.09, (0.36, 0.3, 0.5), flat("silo", "#c9ced4", 0.4), 12, 6, (1, 1, 0.6))
-    cy(0.093, 0.04, (0.36, 0.3, 0.38), flat("band" + team, slate(team, 1.2), 0.5), 16)
-    build_at(lambda: barn(team), 0.42, -0.02, 1.57, 0.8)
-    trc = flat("tractor", "#c0392b", 0.5)
-    bx((0.09, 0.05, 0.05), (-0.42, 0.3, 0.05), trc, 0.3, 0.01)
-    for (dx, r) in ((-0.035, 0.03), (0.035, 0.02)):
+    """DL6–7 farm (frame 2's fields with machinery, frame 3's patchwork round the farmyard): four fields round a
+    dirt crossroads — ripe wheat half cut by a combine in the team colour with round bales on the stubble, leafy
+    rows under a linear irrigation line, a ploughed field with a red tractor and young rows; a farmyard with a
+    gambrel barn under a team-slate roof, two corrugated silos with team bands joined by a grain leg, a feed bin,
+    a pickup and shade trees."""
+    rnd = random.Random(61)
+    pad(0.7, tex("plaster", "#8c7352", 2.0), 0.008, 16, 0.03, 31)
+    clip = ngon(0.655, 24, 0.13)
+    soil = flat("soil", "#5a3d24", 0.95)
+    R = 0.62  # the crops keep inside this circle (the plates run to 0.655)
+    # A: wheat, front left — the back part standing, the front cut to stubble with bales, the combine eating into
+    # the last two rows
+    lr_field((-0.7, -0.7, -0.035, -0.05), 0.018, soil, clip)
+    yc, xh = -0.4, -0.27  # the cut line, and the combine's header (the rows behind it are cut)
+    stub = lr_bands("stubble", 1, 0.034, "#c99a3f", "#ad8131")
+    lr_field((-0.7, -0.7, -0.035, yc), 0.021, stub, clip)
+    lr_field((-0.7, yc - 0.01, xh, -0.26), 0.021, stub, clip)
+    rows, ears = [], []
+    for j in range(5):
+        y = -0.095 - j * 0.066
+        xa, xb = lr_span(y, -0.655 if j < 3 else xh, -0.07, R)
+        rows.append((xa, y, xb, y))
+        n = max(2, int((xb - xa) / 0.03))
+        for i in range(n):
+            for o in (-0.014, 0.014):
+                ears.append((xa + (i + 0.5 + (0.5 if o > 0 else 0)) * (xb - xa) / (n + 0.5), y + o + rnd.uniform(-0.004, 0.004),
+                             0.06 + rnd.uniform(-0.006, 0.006)))
+    lr_ridges(rows, 0.06, 0.044, 0.042, 0.018, flat("wheat_body", "#c08a26", 0.8), "wheat")
+    lr_ears(ears, [flat("ear_a", "#e9b83c", 0.8), flat("ear_b", "#f6d462", 0.8), flat("ear_c", "#d9a22e", 0.8)], rnd)
+    lr_combine(team, xh - 0.13, -0.33, 0.0)
+    for (x, y, a) in ((-0.34, -0.49, 0.3), (-0.19, -0.53, 1.2), (-0.1, -0.44, -0.4)):
+        if math.hypot(x, y) < R - 0.02:
+            cy(0.034, 0.05, (x, y, 0.055), tex("wood", THATCH, 3.0), 10, rot=(math.pi / 2, 0, a))
+    # B: leafy rows, front right, under the irrigation line
+    lr_field((0.035, -0.7, 0.7, -0.05), 0.018, soil, clip)
+    rows, pts = [], []
+    for i in range(8):
+        x = 0.085 + i * 0.07
+        ya, yb = lr_span(x, -0.655, -0.095, R)
+        if yb - ya < 0.06:
+            continue
+        rows.append((x, ya, x, yb))
+        n = max(2, int((yb - ya) / 0.046))
+        for k in range(n):
+            pts.append((x + rnd.uniform(-0.004, 0.004), ya + (k + 0.5) * (yb - ya) / n, 0.046))
+    lr_ridges(rows, 0.05, 0.03, 0.026, 0.018, flat("ridge_g", "#3d5a22", 0.9), "rows")
+    lr_clumps(pts, [flat("leaf_a", "#3f7f2c", 0.85), flat("leaf_b", "#5f9e36", 0.85), flat("leaf_c", "#78b442", 0.85)], rnd)
+    lr_irrigation(0.07, 0.56, -0.33, 0.105, 3)
+    # C: ploughed, back left, young rows at the back and the tractor at the headland
+    lr_field((-0.7, 0.025, -0.035, 0.7), 0.02, lr_bands("furrow", 0, 0.028, "#5b3d22", "#80583a"), clip)
+    rows = []
+    for j in range(4):
+        y = 0.43 + j * 0.05
+        xa, xb = lr_span(y, -0.6, -0.08, R)
+        rows.append((xa, y, xb, y))
+    lr_ridges(rows, 0.03, 0.02, 0.014, 0.02, flat("young", "#5c9634", 0.85), "young")
+    lr_tractor(-0.36, 0.3, math.pi, True)
+    # the farmyard, back right: gravel, the barn, two silos with the grain leg, a feed bin, a pickup, trees
+    lr_field((0.035, 0.025, 0.7, 0.7), 0.014, tex("plaster", "#a69c88", 2.5), clip)
+    build_at(lambda: lr_gambrel_barn(team), 0.44, 0.2, 0.0)
+    lr_silo(0.15, 0.47, 0.07, 0.44, team, ladder_a=-2.4)
+    lr_silo(0.33, 0.47, 0.065, 0.38, team, ladder_a=-1.2)
+    leg = flat("silo_ring", "#8d949c", 0.5)
+    bx((0.024, 0.024, 0.55), (0.24, 0.56, 0.275), leg, bev=0)
+    bx((0.04, 0.04, 0.03), (0.24, 0.56, 0.56), flat("silo_cap", "#e8ebee", 0.4), bev=0)
+    rod((0.24, 0.56, 0.55), (0.15, 0.47, 0.49), 0.006, leg, n=5)
+    rod((0.24, 0.56, 0.55), (0.33, 0.47, 0.42), 0.006, leg, n=5)
+    lr_bin(0.11, 0.25, 0.04, 0.09)
+    lr_pickup(0.22, 0.09, 0.3, shade(team, 0.85))
+    tree(0.6, 0.05, 0.85)
+    tree(0.0, 0.56, 0.8)
+    hay = tex("wood", THATCH, 3.0)
+    for (x, y, z) in ((0.25, 0.28, 0.034), (0.25, 0.345, 0.034), (0.25, 0.3125, 0.088)):  # a stack of round bales
+        cy(0.034, 0.05, (x, y, z), hay, 10, rot=(0, math.pi / 2, 0))
+
+
+def lr_deck(r, mats, seed=0, n=24, z=0.016):
+    """A round deck of dark steel slabs in three tones (the plazas of frame 5) with a pale kerb, and a light line
+    in the team colour inset round its edge — the outline of a late-era compound at map distance."""
+    st, plate, seam, panel, cap, neon, tip = mats
+    outline = ngon(r, n, 0.13)
+    tones = [_MB(), _MB(), _MB()]
+    rnd = random.Random(90 + seed)
+    t = 0.17
+    for i in range(-5, 5):
+        for j in range(-5, 5):
+            cell = _clip_convex([(i * t, j * t), ((i + 1) * t, j * t), ((i + 1) * t, (j + 1) * t), (i * t, (j + 1) * t)],
+                                outline)
+            if len(cell) >= 3:
+                tones[rnd.choice((0, 0, 1, 2))].face([(x, y, z) for x, y in cell], (0, 0, 1))
+    for mb, c in zip(tones, ("#4d545e", "#565d68", "#454b54")):
+        mb.obj(flat("ground8" + c, c, 0.6), "deck")
+    side, ring = _MB(), _MB()
+    for k in range(n):
+        (x0, y0), (x1, y1) = outline[k], outline[(k + 1) % n]
+        side.face([(x0, y0, -0.01), (x1, y1, -0.01), (x1, y1, z), (x0, y0, z)], (y1 - y0, -(x1 - x0), 0))
+        f = (r - 0.03) / r
+        ring.strip((x0 * f, y0 * f, z), (x1 * f, y1 * f, z), (0, 0, 1), 0.012, 0.0015)
+    side.obj(seam, "kerb")
+    ring.obj(neon, "edge_light")
+    return outline
+
+
+def lr_plot(x0, y0, x1, y1, mats, z=0.016):
+    """A raised crop plot on the deck: a pale steel kerb, dark soil, a team light line along its front edge."""
+    st, plate, seam, panel, cap, neon, tip = mats
+    bx((x1 - x0 + 0.02, y1 - y0 + 0.02, 0.016), ((x0 + x1) / 2, (y0 + y1) / 2, z + 0.008), seam, bev=0)
+    bx((x1 - x0, y1 - y0, 0.004), ((x0 + x1) / 2, (y0 + y1) / 2, z + 0.017), flat("soil8", "#3a2b22", 0.95), bev=0)
+    bx((x1 - x0 - 0.02, 0.008, 0.004), ((x0 + x1) / 2, y0 - 0.006, z + 0.017), neon, bev=0)
+    return z + 0.019
+
+
+def lr_ring(x, y, r, z, h, mt, n=12):
+    """An open band round a drum (a light ring or a coloured band): n side quads, no caps (they would lie inside the
+    drum, unseen)."""
+    mb = _MB()
+    for k in range(n):
+        a0, a1 = math.tau * k / n, math.tau * (k + 1) / n
+        am = (a0 + a1) / 2
+        p0 = (x + r * math.cos(a0), y + r * math.sin(a0))
+        p1 = (x + r * math.cos(a1), y + r * math.sin(a1))
+        mb.face([(p0[0], p0[1], z - h / 2), (p1[0], p1[1], z - h / 2), (p1[0], p1[1], z + h / 2),
+                 (p0[0], p0[1], z + h / 2)], (math.cos(am), math.sin(am), 0))
+    return mb.obj(mt, "ring")
+
+
+def lr_glass_dome(x, y, r, mats, team, glass, drum=0.035):
+    """A greenhouse dome (frame 2's ribbed domes): a steel drum with a team band and a light ring, a door, the
+    glass dome (glowing with the beds inside) under pale ribs, a plate oculus with a lit lantern and a needle."""
+    st, plate, seam, panel, cap, neon, tip = mats
+    n = 12
+    cy(r + 0.02, 0.02, (x, y, 0.026), plate, n)
+    cy(r, drum, (x, y, 0.016 + drum / 2), flat("hab_steel", "#626a74", 0.5), n)
+    lr_ring(x, y, r + 0.004, 0.016 + drum * 0.42, drum * 0.42, flat("hab_team" + team, shade(team, 0.78), 0.5), n)
+    lr_ring(x, y, r + 0.006, 0.016 + drum * 0.75, 0.006, neon, n)
+    z0 = 0.016 + drum
+    cy(r + 0.01, 0.01, (x, y, z0 + 0.005), plate, n)
+    C = r * 0.78
+    hemi(r, (x, y, z0 + 0.008), glass, 16, 4, (1, 1, 0.78))
+    lr_dome_ribs(x, y, z0 + 0.008, r, C, seam, n=8, phis=(0.0, 0.32, 0.64, 0.95, 1.22, 1.42), ring=0.5,
+                 t=max(0.009, r * 0.06))
+    zt = z0 + 0.008 + C
+    cy(r * 0.2, 0.014, (x, y, zt + 0.002), plate, 8)
+    cy(r * 0.14, 0.012, (x, y, zt + 0.012), tip, 8)
+    rod((x, y, zt + 0.016), (x, y, min(zt + 0.06, 0.25)), 0.005, cap, r2=0.0015, n=4)
+    build_at(lambda: d8_portal(0, 0, 0, mats), x, y - r - 0.01, 0.0, s=0.5, z=0.016)
+
+
+def lr_silo8(x, y, r, h, team, mats):
+    """A late-era silo tower: pale steel rings on a plinth, a team band, cold light rings, a dark cone cap with a
+    lit tip."""
+    st, plate, seam, panel, cap, neon, tip = mats
+    cy(r + 0.018, 0.02, (x, y, 0.026), plate, 10)
+    cy(r, h, (x, y, 0.016 + h / 2), lr_bands("silo8", 2, 0.02, "#b9c0c8", "#9aa2ac"), 10)
+    lr_ring(x, y, r + 0.003, 0.016 + h * 0.56, 0.04, flat("hab_team" + team, shade(team, 0.78), 0.5), 10)
+    for zf in (0.3, 0.82):
+        lr_ring(x, y, r + 0.005, 0.016 + h * zf, 0.01, neon, 10)
+    cn(r * 1.08, 0.05, (x, y, 0.016 + h + 0.025), cap, 10)
+    bx((0.012, 0.012, 0.012), (x, y, 0.016 + h + 0.054), tip, bev=0)
+
+
+def lr_harvester(x, y, rz, team, mats):
+    """A robotic harvester (frame 2's farm machinery, late era): a steel body on dark tracks with a team top, a
+    sensor dome, a wide header with a cutter drum and a cold light bar, a grain hopper."""
+    st, plate, seam, panel, cap, neon, tip = mats
+
+    def b():
+        trk = flat("track8", "#22262c", 0.8)
         for sy in (-1, 1):
-            cy(r, 0.015, (-0.42 + dx, 0.3 + sy * 0.032, r), flat("tyre", "#1f1f21", 0.9), 10, rot=(math.pi / 2, 0, 0.3))
+            bx((0.13, 0.024, 0.03), (0, sy * 0.042, 0.03), trk, bev=0)
+        bx((0.12, 0.07, 0.04), (0, 0, 0.06), seam, bev=0)
+        bx((0.1, 0.06, 0.008), (-0.006, 0, 0.083), flat("hullteam" + team, team, 0.5), bev=0)
+        bx((0.05, 0.05, 0.03), (-0.035, 0, 0.1), plate, bev=0)
+        hemi(0.018, (0.03, 0, 0.083), flat("cab8", "#1b2533", 0.3), 8, 2)
+        bx((0.012, 0.004, 0.008), (0.06, 0.0, 0.07), tip, bev=0)
+        beam((0.05, 0, 0.05), (0.09, 0, 0.036), 0.03, plate)
+        bx((0.03, 0.18, 0.02), (0.1, 0, 0.03), plate, bev=0)
+        cy(0.016, 0.17, (0.112, 0, 0.044), seam, 8, rot=(math.pi / 2, 0, 0))
+        bx((0.006, 0.17, 0.006), (0.118, 0, 0.026), neon, bev=0)
+    build_at(b, x, y, rz)
 
 
 def farm_scifi(team):
-    """DL8 farm: hydroponic domes over glowing green beds, a water tank, a harvester drone pad."""
-    pad(0.72, flat("plate", "#4a515c", 0.6), 0.012, 12, 0.0, 32)
-    leaf = glow("hydro", "#5cff8a", 1.2)
-    glass = flat("dome_glass", "#a9d6f0", 0.12)
-    rib = flat("rib", "#d8dee6", 0.4)
-    for (x, y) in ((-0.3, 0.2), (0.0, 0.25), (0.3, 0.2), (-0.15, -0.1), (0.15, -0.1)):
-        def bed():
-            bx((0.22, 0.14, 0.02), (0, 0, 0.02), leaf, 0, 0.004)
-            for k in range(4):  # greenhouse ribs arching over the glowing bed
-                torus(0.075, 0.005, (-0.08 + k * 0.053, 0, 0.02), rib, (0, 0, math.pi / 2), 12, 3)
-            bx((0.2, 0.006, 0.006), (0, 0, 0.095), rib, 0, 0)
-            frame(0.23, 0.15, 0.025, team_neon(team))
-        build_at(bed, x, y)
-    cy(0.07, 0.24, (0.36, -0.3, 0.12), flat("tank", "#c9ced4", 0.35), 16)
-    cy(0.072, 0.02, (0.36, -0.3, 0.2), team_neon(team), 16)
-    cy(0.08, 0.012, (-0.3, -0.32, 0.006), flat("pad", "#2c323b", 0.5), 16)
-    torus(0.07, 0.005, (-0.3, -0.32, 0.014), team_neon(team))
+    """DL8 farm (frame 2: crop plots with machinery, ribbed greenhouse domes, silos): a round steel deck with a team
+    light line round its edge; two greenhouse domes glowing with the beds inside, on team-banded drums; three silo
+    towers with cold light rings piped to a vaulted processing hangar; in front, three plots — leafy rows between
+    cold-lit channels with a crop drone over them, golden grain with a robotic harvester at work, and glowing
+    hydroponic troughs — and water tanks."""
+    mats = d8_mats(team)
+    st, plate, seam, panel, cap, neon, tip = mats
+    rnd = random.Random(71)
+    lr_deck(0.7, mats, 3)
+    glass = glow("hydro_dome", "#79f2b0", 0.8)
+    lr_glass_dome(-0.3, 0.3, 0.19, mats, team, glass)
+    lr_glass_dome(0.06, 0.4, 0.13, mats, team, glass)
+    for (x, y) in ((0.3, 0.47), (0.42, 0.36), (0.52, 0.23)):
+        lr_silo8(x, y, 0.052, 0.17, team, mats)
+    d8_hangar(0.3, 0.08, 0.2, 0.12, 0.075, mats, 0.25)
+    pipe = flat("pipe8", "#6b737e", 0.4)
+    for (x, y) in ((0.3, 0.47), (0.42, 0.36), (0.52, 0.23)):
+        rod((x, y, 0.11), (0.36, 0.14, 0.07), 0.009, pipe, n=6)
+    d8_tank(-0.02, 0.17, 0.045, 0.1, mats)
+    d8_tank(0.07, 0.2, 0.035, 0.08, mats)
+    rod((-0.02, 0.17, 0.06), (-0.14, 0.24, 0.06), 0.008, pipe, n=6)
+    # the three plots in front (inside the deck's circle)
+    zs = lr_plot(-0.5, -0.42, -0.19, -0.06, mats)  # leafy rows between cold-lit channels
+    pts = []
+    for i in range(5):
+        x = -0.47 + i * 0.062
+        if i < 4:
+            bx((0.006, 0.34, 0.003), (x + 0.031, -0.24, zs + 0.001), tip, bev=0)
+        for k in range(7):
+            pts.append((x, -0.395 + k * 0.051, zs + 0.012))
+    lr_clumps(pts, [flat("leaf_a", "#3f7f2c", 0.85), flat("leaf_b", "#5f9e36", 0.85), flat("leaf8", "#2f6a2a", 0.85)], rnd)
+    lr_drone(-0.33, -0.2, 0.19, team, mats, 0.4, 1.2)
+    zs = lr_plot(-0.15, -0.6, 0.15, -0.06, mats)  # golden grain with the harvester
+    rows, ears = [], []
+    for i in range(4):
+        x = -0.11 + i * 0.073
+        yb = -0.09
+        ya = -0.36 if i < 2 else -0.57
+        rows.append((x, ya, x, yb))
+        n = int((yb - ya) / 0.036)
+        for k in range(n):
+            for o in (-0.013, 0.013):
+                ears.append((x + o, ya + (k + 0.5 + (0.5 if o > 0 else 0)) * (yb - ya) / (n + 0.5), zs + 0.04))
+    lr_ridges(rows, 0.056, 0.042, 0.036, zs, flat("wheat_body", "#c08a26", 0.8), "grain")
+    lr_ears(ears, [flat("ear_a", "#e9b83c", 0.8), flat("ear_b", "#f6d462", 0.8), flat("ear_c", "#d9a22e", 0.8)], rnd,
+            r=(0.013, 0.017), top=0.026)
+    lr_harvester(-0.075, -0.44, math.pi / 2, team, mats)
+    zs = lr_plot(0.19, -0.42, 0.5, -0.06, mats)  # hydroponic troughs
+    hydro = glow("hydro", "#5cff8a", 1.2)
+    pts = []
+    for j in range(4):
+        y = -0.37 + j * 0.09
+        bx((0.28, 0.04, 0.03), (0.345, y, zs + 0.015), plate, bev=0)
+        bx((0.26, 0.024, 0.004), (0.345, y, zs + 0.031), hydro, bev=0)
+        for k in range(8):
+            pts.append((0.228 + k * 0.0335, y, zs + 0.036))
+    lr_clumps(pts, [flat("leaf_b", "#5f9e36", 0.85), flat("leaf_c", "#78b442", 0.85)], rnd, r=(0.013, 0.016))
+    for (x, y) in ((-0.17, -0.02), (0.17, -0.02), (-0.6, 0.05), (0.6, -0.02)):
+        d8_mast(x, y, 0.12, mats)
+
+
+def lr_crystals(items, mts):
+    """Raivite crystals: a six-sided prism with a pointed tip for each (x, y, z, r, h, tilt_x, tilt_y), open at the
+    foot (it stands in rock or in another crystal), one mesh per glow material (cycled)."""
+    from mathutils import Euler, Vector
+    mbs = [_MB() for _ in mts]
+    for i, (x, y, z, r, h, tx, ty) in enumerate(items):
+        M = Euler((tx, ty, 0.0)).to_matrix()
+        base = Vector((x, y, z))
+        hp = h * 0.72
+        ring0 = [M @ Vector((r * math.cos(k * math.tau / 6), r * math.sin(k * math.tau / 6), 0.0)) + base for k in range(6)]
+        ring1 = [M @ Vector((r * math.cos(k * math.tau / 6), r * math.sin(k * math.tau / 6), hp)) + base for k in range(6)]
+        apex = M @ Vector((0, 0, h)) + base
+        mb = mbs[i % len(mbs)]
+        for k in range(6):
+            k1 = (k + 1) % 6
+            n = M @ Vector((math.cos((k + 0.5) * math.tau / 6), math.sin((k + 0.5) * math.tau / 6), 0.0))
+            mb.face([ring0[k], ring0[k1], ring1[k1], ring1[k]], tuple(n))
+            mb.face([ring1[k], ring1[k1], apex], tuple(n + M @ Vector((0, 0, 0.6))))
+    for mb, mt in zip(mbs, mts):
+        mb.obj(mt, "crystals")
+
+
+def lr_terraces(x, y, levels, mt_top, mt_wall, floor_mt, n=20):
+    """A pit cut in terraces (reference frame 3's quarry, late era): levels = [(r_outer, z_top), ...] from the rim
+    inwards; each terrace is a flat ring with a wall dropping to the next one; the rim also has its outer wall; the
+    floor is a disc at the last level's height."""
+    top, wall = _MB(), _MB()
+    pts = lambda R, z: [(x + R * math.cos(math.tau * k / n), y + R * math.sin(math.tau * k / n), z) for k in range(n)]  # noqa: E731
+    for i, (R, z) in enumerate(levels[:-1]):
+        r_in, z_in = levels[i + 1]
+        o, ii = pts(R, z), pts(r_in, z)
+        lo = pts(r_in, z_in)
+        for k in range(n):
+            k1 = (k + 1) % n
+            top.face([o[k], o[k1], ii[k1], ii[k]], (0, 0, 1))
+            am = math.tau * (k + 0.5) / n
+            wall.face([ii[k], ii[k1], lo[k1], lo[k]], (-math.cos(am), -math.sin(am), 0))
+        if i == 0:
+            g = pts(R, -0.005)
+            for k in range(n):
+                k1 = (k + 1) % n
+                am = math.tau * (k + 0.5) / n
+                wall.face([g[k], g[k1], o[k1], o[k]], (math.cos(am), math.sin(am), 0))
+    top.obj(mt_top, "terraces")
+    wall.obj(mt_wall, "terrace_walls")
+    R, z = levels[-1]
+    fl = _MB()
+    fl.face(pts(R, z), (0, 0, 1))
+    fl.obj(floor_mt, "pit_floor")
+
+
+def lr_hauler(x, y, rz, team, mats, load):
+    """A mining hauler (frame 2's heavy machinery): a steel chassis on six big wheels, a cab in the team colour with a
+    dark windscreen and a cold lamp bar, a dump bed heaped with glowing raivite, a hazard-striped bumper."""
+    st, plate, seam, panel, cap, neon, tip = mats
+
+    def b():
+        dk = flat("tyre", "#1f1f21", 0.9)
+        bx((0.17, 0.07, 0.024), (0, 0, 0.044), plate, bev=0)
+        for u in (-0.06, -0.02, 0.055):
+            for sy in (-1, 1):
+                cy(0.026, 0.02, (u, sy * 0.042, 0.026), dk, 10, rot=(math.pi / 2, 0, 0))
+                cy(0.011, 0.022, (u, sy * 0.042, 0.026), seam, 6, rot=(math.pi / 2, 0, 0))
+        bx((0.05, 0.072, 0.05), (0.06, 0, 0.081), flat("hullteam" + team, shade(team, 0.85), 0.5), bev=0)
+        bx((0.006, 0.06, 0.022), (0.086, 0, 0.09), flat("cab8", "#1b2533", 0.3), bev=0)
+        bx((0.006, 0.05, 0.006), (0.088, 0, 0.11), tip, bev=0)
+        bx((0.01, 0.08, 0.016), (0.09, 0, 0.044), hazard(0.022), bev=0)
+        taper_box((0.11, 0.08, 0.05), (-0.03, 0, 0.081), seam, top=(1.08, 1.06))
+        bx((0.1, 0.07, 0.004), (-0.03, 0, 0.104), flat("bed_d", "#2b2d31", 0.8), bev=0)
+    build_at(b, x, y, rz)
+    rnd = random.Random(5)
+    c, s_ = math.cos(rz), math.sin(rz)
+    items = []
+    for k in range(6):
+        u, v = -0.065 + (k % 3) * 0.033, -0.017 + (k // 3) * 0.034
+        items.append((x + u * c - v * s_, y + u * s_ + v * c, 0.1, 0.012, rnd.uniform(0.03, 0.045),
+                      rnd.uniform(-0.5, 0.5), rnd.uniform(-0.5, 0.5)))
+    lr_crystals(items, load)
+
+
+def lr_conveyor(p0, p1, w, mats, load, legs=2):
+    """An inclined ore conveyor from p0 up to p1 (x, y, z): a dark belt between steel side rails on A-frame legs,
+    glowing raivite chunks riding on it."""
+    st, plate, seam, panel, cap, neon, tip = mats
+    from mathutils import Vector
+    a, b = Vector(p0), Vector(p1)
+    beam(tuple(a), tuple(b), w, flat("belt", "#24272c", 0.8))
+    d = (b - a)
+    side = Vector((-d.y, d.x, 0)).normalized() * (w / 2 + 0.004)
+    for sg in (-1, 1):
+        beam(tuple(a + side * sg + Vector((0, 0, 0.01))), tuple(b + side * sg + Vector((0, 0, 0.01))), 0.008, seam)
+    for k in range(legs):
+        f = (k + 1) / (legs + 1)
+        q = a.lerp(b, f)
+        for sg in (-1, 1):
+            beam(tuple(q + side * sg * 1.6 + Vector((0, 0, -q.z + 0.016))), tuple(q + side * sg), 0.008, plate)
+    rnd = random.Random(3)
+    items = []
+    for k in range(5):
+        q = a.lerp(b, 0.12 + k * 0.18)
+        items.append((q.x, q.y, q.z + 0.008, 0.012, rnd.uniform(0.024, 0.032), rnd.uniform(-0.6, 0.6),
+                      rnd.uniform(-0.6, 0.6)))
+    lr_crystals(items, load)
 
 
 def mine_scifi(team):
-    """DL8 mine: an open pit of glowing raivite crystals under an extractor gantry, crates of crystals."""
-    pad(0.7, flat("plate", "#4a515c", 0.6), 0.012, 12, 0.0, 33)
-    cy(0.32, 0.03, (0, 0.05, 0.015), flat("pit", "#232830", 0.8), 20)
-    cr = glow("crystal", "#3f9bff", 2.2)
-    cr2 = glow("crystal2", "#7fc0ff", 2.8)
-    rnd = random.Random(7)
-    for k in range(16):
-        a = rnd.uniform(0, math.tau)
-        rr = rnd.uniform(0.0, 0.24)
-        h = rnd.uniform(0.16, 0.34)
-        o = cn(0.055, h, (math.cos(a) * rr, 0.05 + math.sin(a) * rr, 0.03 + h / 2), cr if k % 2 else cr2, 6)
-        o.rotation_euler = (rnd.uniform(-0.3, 0.3), rnd.uniform(-0.3, 0.3), 0)
-    st = flat("gantry", "#5d6470", 0.5)
-    for sx in (-1, 1):
-        for sy in (-1, 1):
-            cy(0.022, 0.46, (sx * 0.3, 0.05 + sy * 0.3, 0.23), st, 8)
-    for sy in (-1, 1):
-        bx((0.64, 0.045, 0.05), (0, 0.05 + sy * 0.3, 0.46), st, 0, 0.004)
-    bx((0.06, 0.64, 0.05), (0.05, 0.05, 0.47), st, 0, 0.004)
-    bx((0.14, 0.14, 0.1), (0.05, 0.05, 0.4), flat("extractor", "#e3e8ee", 0.4), 0, 0.01)
-    cy(0.02, 0.18, (0.05, 0.05, 0.22), team_neon(team), 8)
-    for k in range(2):
-        bx((0.08, 0.08, 0.06), (0.38, -0.3 + k * 0.1, 0.03), flat("crate", "#3e4550", 0.5), 0.2, 0.006)
+    """DL8 mine (frame 2's crystal extraction with glowing parts, frame 3's terraced quarry): on a round steel deck
+    with a team light line, a pit cut in three rock terraces with a ramp down to its floor; clusters of cyan raivite
+    crystals on the floor and the terraces; over them a steel lattice drill derrick with a glowing core column, a
+    drill head with a team band and a crown block with a lit needle; an ore conveyor carrying crystals up to a
+    steel processing plant (team panels, light strips, a hopper, vent stacks); a hauler heaped with crystals; crates
+    of crystals, tanks and light masts."""
+    mats = d8_mats(team)
+    st, plate, seam, panel, cap, neon, tip = mats
+    cr = glow("crystal", "#18b4ff", 1.9)
+    cr2 = glow("crystal2", "#6fe2ff", 2.3)
+    lr_deck(0.7, mats, 5)
+    px, py = -0.1, 0.06
+    lr_terraces(px, py, [(0.36, 0.08), (0.3, 0.056), (0.23, 0.034), (0.15, 0.018)],
+                tex("plaster", "#9a95a0", 2.4), lr_bands("strata", 2, 0.011, "#6a6472", "#544f5c"),
+                flat("pit_floor", "#2c2933", 0.9))
+    rock = tex("plaster", "#79747f", 3.0)
+    rnd = random.Random(17)
+    for k in range(9):  # boulders on the rim and the terraces break the clean rings
+        a = k * math.tau / 9 + 0.3
+        R, z = ((0.33, 0.08), (0.27, 0.056))[k % 2]
+        if abs(a - (math.pi * 1.5)) < 0.35:
+            continue  # (not on the ramp)
+        ico(rnd.uniform(0.016, 0.024), (px + math.cos(a) * R, py + math.sin(a) * R, z + 0.006), rock,
+            (1.2, 1.0, 0.7), sub=1)
+    # the ramp: up the rim from the deck at the front, then down the terraces to the floor
+    ramp = flat("path8", "#2f343b", 0.7)
+    ax, ay = px - 0.03, py - 0.5
+    rx, ry = px - 0.03, py - 0.33
+    fx, fy = px - 0.03, py - 0.12
+    for (p, q) in (((ax, ay, 0.017), (rx, ry, 0.084)), ((rx, ry, 0.084), (fx, fy, 0.022))):
+        beam(p, q, 0.06, ramp)
+        for sg in (-1, 1):
+            beam((p[0] + sg * 0.031, p[1], p[2] + 0.006), (q[0] + sg * 0.031, q[1], q[2] + 0.006), 0.006, neon)
+    # crystals: a big cluster on the floor round the derrick, smaller ones on the terraces
+    rnd = random.Random(11)
+    items = []
+    for k in range(8):  # the big cluster on the floor, leaning out round the core
+        a = k * math.tau / 8 + rnd.uniform(-0.2, 0.2)
+        rr = rnd.uniform(0.05, 0.1)
+        h = rnd.uniform(0.13, 0.24)
+        items.append((px + math.cos(a) * rr, py + math.sin(a) * rr, 0.012, rnd.uniform(0.026, 0.034), h,
+                      math.sin(a) * rnd.uniform(0.25, 0.5), -math.cos(a) * rnd.uniform(0.25, 0.5)))
+    for (a, R, z) in ((0.5, 0.265, 0.052), (2.3, 0.265, 0.052), (3.4, 0.19, 0.03), (5.6, 0.19, 0.03), (3.9, 0.33, 0.077),
+                      (1.4, 0.33, 0.077), (0.0, 0.33, 0.077)):
+        for j in range(3):
+            b = a + (j - 1) * 0.13
+            out = (math.sin(b) * 0.3, -math.cos(b) * 0.3)
+            items.append((px + math.cos(b) * R, py + math.sin(b) * R, z, 0.016 + 0.005 * (j == 1),
+                          0.07 + 0.05 * (j == 1), out[0] + rnd.uniform(-0.2, 0.2), out[1] + rnd.uniform(-0.2, 0.2)))
+    lr_crystals(items, [cr, cr2])
+    # the drill derrick over the pit: four lattice legs from the second terrace to a crown block
+    legs = []
+    for k in range(4):
+        a = math.pi / 4 + k * math.pi / 2
+        legs.append(((px + math.cos(a) * 0.2, py + math.sin(a) * 0.2, 0.034),
+                     (px + math.cos(a) * 0.045, py + math.sin(a) * 0.045, 0.4)))
+    for (p, q) in legs:
+        beam(p, q, 0.024, plate)
+    rim = _MB()  # a light line round the rim of the pit
+    for k in range(24):
+        a0, a1 = math.tau * k / 24, math.tau * (k + 1) / 24
+        rim.strip((px + 0.345 * math.cos(a0), py + 0.345 * math.sin(a0), 0.08),
+                  (px + 0.345 * math.cos(a1), py + 0.345 * math.sin(a1), 0.08), (0, 0, 1), 0.01, 0.0015)
+    rim.obj(neon, "rim_light")
+    for f in (0.42, 0.72):
+        pts = [tuple(p[i] + (q[i] - p[i]) * f for i in range(3)) for p, q in legs]
+        for k in range(4):
+            beam(pts[k], pts[(k + 1) % 4], 0.01, seam)
+    core = glow("core", "#7ff0ff", 3.0)
+    cy(0.028, 0.34, (px, py, 0.19), core, 8)
+    cy(0.042, 0.05, (px, py, 0.3), plate, 10)
+    lr_ring(px, py, 0.045, 0.3, 0.026, flat("hab_team" + team, shade(team, 0.78), 0.5), 10)
+    lr_ring(px, py, 0.046, 0.33, 0.006, neon, 10)
+    bx((0.13, 0.13, 0.056), (px, py, 0.425), st, bev=0)
+    bx((0.142, 0.142, 0.012), (px, py, 0.458), plate, bev=0)
+    for (nx, ny) in ((0, -1), (1, 0), (-1, 0), (0, 1)):
+        bx((0.08 if ny else 0.006, 0.006 if ny else 0.08, 0.036), (px + nx * 0.067, py + ny * 0.067, 0.423),
+           flat("hab_team" + team, shade(team, 0.78), 0.5), bev=0)
+        bx((0.06 if ny else 0.008, 0.008 if ny else 0.06, 0.007), (px + nx * 0.07, py + ny * 0.07, 0.423), neon, bev=0)
+    rod((px, py, 0.46), (px, py, 0.53), 0.006, cap, r2=0.0015, n=4)
+    bx((0.016, 0.016, 0.016), (px, py, 0.5), tip, bev=0)
+    # the processing plant at the back right, fed by the conveyor
+    gx, gy = 0.42, 0.28
+    bx((0.2, 0.15, 0.16), (gx, gy, 0.096), steel_facade(), bev=0)
+    bx((0.214, 0.164, 0.014), (gx, gy, 0.183), plate, bev=0)
+    bx((0.22, 0.17, 0.02), (gx, gy, 0.026), plate, bev=0)
+    pm, sm_ = _MB(), _MB()
+    for (nx, ny, L, off) in ((0, -1, 0.2, 0.075), (-1, 0, 0.15, 0.1)):
+        qx, qy = gx + nx * (off + 0.003), gy + ny * (off + 0.003)
+        tx, ty = -ny * L * 0.22, nx * L * 0.22
+        pm.face([(qx - tx, qy - ty, 0.05), (qx + tx, qy + ty, 0.05), (qx + tx, qy + ty, 0.165), (qx - tx, qy - ty, 0.165)],
+                (nx, ny, 0))
+        qx, qy = gx + nx * (off + 0.005), gy + ny * (off + 0.005)
+        ux, uy = -ny * 0.008, nx * 0.008
+        sm_.face([(qx - ux, qy - uy, 0.06), (qx + ux, qy + uy, 0.06), (qx + ux, qy + uy, 0.155), (qx - ux, qy - uy, 0.155)],
+                 (nx, ny, 0))
+    pm.obj(flat("hab_team" + team, shade(team, 0.78), 0.5), "panels")
+    sm_.obj(neon, "strips")
+    cy(0.05, 0.03, (gx - 0.04, gy - 0.01, 0.205), plate, 10, r2=0.02)  # the hopper on the roof
+    cy(0.052, 0.012, (gx - 0.04, gy - 0.01, 0.222), seam, 10)
+    for (vx, vy) in ((gx + 0.06, gy + 0.04), (gx + 0.06, gy - 0.03)):
+        cy(0.016, 0.08, (vx, vy, 0.23), seam, 8)
+        lr_ring(vx, vy, 0.018, 0.25, 0.008, tip, 8)
+    bx((0.06, 0.006, 0.05), (gx + 0.05, gy - 0.078, 0.045), flat("door8", "#23282f", 0.6), bev=0)
+    bx((0.064, 0.008, 0.008), (gx + 0.05, gy - 0.08, 0.074), neon, bev=0)
+    lr_conveyor((px + 0.2, py - 0.04, 0.09), (gx - 0.06, gy - 0.02, 0.215), 0.04, mats, [cr, cr2])
+    # the hauler on the deck by the ramp, crates of crystals, tanks, light masts
+    lr_hauler(-0.36, -0.42, 0.5, team, mats, [cr, cr2])
+    for (x, y, rz) in ((0.3, -0.12, 0.2), (0.38, -0.06, 0.2), (0.33, -0.08, 0.2)):
+        z0 = 0.016 if (x, y) != (0.33, -0.08) else 0.066
+        bx((0.06, 0.06, 0.05), (x, y, z0 + 0.025), plate, rz, bev=0)
+        bx((0.05, 0.05, 0.004), (x, y, z0 + 0.051), cr, rz, bev=0)
+    d8_tank(-0.47, 0.32, 0.05, 0.13, mats)
+    d8_tank(-0.38, 0.43, 0.04, 0.1, mats)
+    for (x, y) in ((0.1, -0.4), (-0.56, -0.1), (0.58, 0.02), (0.15, 0.52)):
+        d8_mast(x, y, 0.13, mats)
 
 
 # ------------------------------------------------------------------ DL8 DISTRICTS (the built-up land of frame 2)
@@ -4412,6 +5465,9 @@ ATLAS = {"residence_dl4", "residence_dl5", "residence_dl6", "residence_dl7", "re
 # the DL8 districts stand on many hexes at once: the tight atlas at 512 px (as the towers), so their window slits and
 # panels keep their texels without a 1024 sheet per variant
 DISTRICTS = {"district_scifi", "district_scifi_b", "district_scifi_c"}
+# the DL6+ countryside: hundreds of small props (crop heads, pickets, panels) on one hex — the same tight 512 atlas, so
+# the flat colours collapse into palette cells and the textured faces (siding, furrows, corrugation) keep the texels
+LATE_RURAL = {"homestead_modern", "homestead_scifi", "farm_modern", "farm_scifi", "mine_scifi"}
 
 
 def _kept(mt):
@@ -4562,13 +5618,13 @@ def export(name, out):
     bpy.context.view_layer.update()
     lowpoly(objs)
     smokes = [o for o in bpy.context.scene.objects if o.type == "EMPTY" and o.name.startswith(("smoke", "flag"))]
-    if name.rsplit("_", 1)[0] in SETTLED or name.rsplit("_", 1)[0] in DISTRICTS or name.startswith("fort_"):
+    if name.rsplit("_", 1)[0] in SETTLED | DISTRICTS | LATE_RURAL or name.startswith("fort_"):
         _drop_ground_faces(objs)
     # the hero model is seen up close, and the dense towns carry hundreds of thin beams and tile courses that need
     # the texels (at 512 they shrink below a pixel and sample the black gutter)
     if name.rsplit("_", 1)[0] in ATLAS:
         ob = bake_atlas(objs, 1024)
-    elif name.rsplit("_", 1)[0] in DISTRICTS:
+    elif name.rsplit("_", 1)[0] in DISTRICTS | LATE_RURAL:
         ob = bake_atlas(objs, 512)
     else:
         ob = ea.bake_asset(objs, 1024 if name.startswith(("residence", "city_dl1", "city_dl2", "city_dl3", "city_dl4"))
