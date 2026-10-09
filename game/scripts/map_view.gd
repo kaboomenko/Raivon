@@ -1294,12 +1294,11 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 				spawn("tree_pine", holder, p + Vector3(0.3, 0, 0.3), 0.0, 1.0)
 		_:
 			var district := _era_model("district", int(c["owner"]), side)
-			if district != "":  # the built-up land of the sci-fi stage (reference frame 2): a neon district, a tree or two
+			if district != "":  # the built-up land of the sci-fi stage (reference frame 2): a dense steel district
 				var variant: String = ["", "_b", "_c"][int(c["id"]) % 3]  # three layouts so neighbouring hexes don't repeat
 				var dname := district.replace("district_scifi_", "district_scifi%s_" % variant)
 				spawn(dname if has_model(dname) else district, holder, p, rng.randi_range(0, 5) * PI / 3.0, 1.0)
-				for i in rng.randi_range(0, 2):
-					spawn("tree_round", holder, p + Vector3(rng.randf_range(-0.6, 0.6), 0, rng.randf_range(-0.6, 0.6)), rng.randf() * TAU, 0.7)
+				# no loose trees: the districts carry their own lawns with pines, and a random tree would stand in a tower
 				_place_fort(c, holder)
 				if rng.randf() < _banner_chance(int(c["owner"])):
 					spawn("banner_" + side, holder, p + Vector3(rng.randf_range(-0.4, 0.4), 0, rng.randf_range(-0.4, 0.4)), 0.0, 1.0, int(c["owner"]))
@@ -1308,14 +1307,19 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 				_place_fort(c, holder)
 				return
 			var hs := _homestead(int(c["owner"]), side)
-			if hs != "" and rng.randf() < 0.55:
+			var want_hs := hs != "" and rng.randf() < 0.55
+			# a small field on the near edge (reference frame 3: the player's land is patched with fields): a walled
+			# wheat plot up to DL5, a fenced crop field with a tractor from DL6; half the size of a farm hex's
+			# field, so a real farm still reads as one
+			var want_plot := hs != "" and not hs.begins_with("homestead_scifi") and rng.randf() < 0.4
+			var fa := (1.0 + 2.0 * rng.randi_range(0, 2)) * PI / 6.0  # the field's edge midpoint: 30°, 90° or 150°
+			if want_hs:
 				# settled countryside (the reference frames): a farmstead in the owner's colours and era on open land
-				spawn(hs, holder, p + Vector3(rng.randf_range(-0.25, 0.25), 0, rng.randf_range(-0.25, 0.25)), rng.randf() * TAU, 1.25)
-			if hs != "" and not hs.begins_with("homestead_scifi") and rng.randf() < 0.4:
-				# a small field on the near edge (reference frame 3: the player's land is patched with fields): a walled
-				# wheat plot up to DL5, a fenced crop field with a tractor from DL6; half the size of a farm hex's
-				# field, so a real farm still reads as one
-				var fa := (1.0 + 2.0 * rng.randi_range(0, 2)) * PI / 6.0  # an edge midpoint at 30°, 90° or 150°
+				var off := Vector3(rng.randf_range(-0.25, 0.25), 0, rng.randf_range(-0.25, 0.25))
+				if want_plot:  # stand back from the field, so the farmstead's own yard and garden stay clear of it
+					off = -Vector3(cos(fa), 0, sin(fa)) * 0.2 + Vector3(rng.randf_range(-0.08, 0.08), 0, rng.randf_range(-0.08, 0.08))
+				spawn(hs, holder, p + off, rng.randf() * TAU, 1.25)
+			if want_plot:
 				var plot := "crop_field" if hs.begins_with("homestead_modern") and has_model("crop_field") else "wheat_field"
 				spawn(plot, holder, p + Vector3(cos(fa), 0, sin(fa)) * 0.5, -fa + PI / 2.0, 0.5)
 			# a copse crowding the far edge (reference frame 3: woods fill every gap between the farms and towns);
