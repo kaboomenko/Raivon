@@ -6,13 +6,19 @@ shader_type spatial;
 // - fight: a three-beat strike — slow wind-up, quick lunge, recovery — strongest at the head and weapon tip,
 //   with a half step forward on the lunge;
 // - idle: a faint breath so a standing army is never frozen.
+// Lit like every other model (docs/art_direction.md §6.5): the soft wrapped light of soft_light.gdshaderinc,
+// saturation ×1.15, a feet-to-head gradient and a slight mip bias, as in soft_model.gdshader.
+#include "res://shaders/soft_light.gdshaderinc"
+
 uniform sampler2D albedo_tex : source_color, filter_linear_mipmap;
-uniform float roughness_v = 0.8;
+uniform float roughness_v = 0.9;
 uniform bool solid = false;  // one unit (rider, vehicle): a single phase, no per-figure split, no legs
 instance uniform float march = 0.0;
 instance uniform float fight = 0.0;
 
 const float HIP = 0.16;
+
+varying float v_h;  // the undeformed object-space height (troops stand about 0.4 tall)
 
 // the figure a vertex belongs to; parts poking out of the block (front tabards, weapon tips) stay with the
 // outer figures instead of falling into a phantom row or column with another phase
@@ -43,6 +49,7 @@ float strike(float c) {
 
 void vertex() {
 	vec3 v = VERTEX;
+	v_h = v.y;
 	vec2 cell = figure_cell(v);
 	float ph = figure_phase(cell);
 	float h = clamp(v.y / 0.4, 0.0, 1.0);
@@ -77,7 +84,11 @@ void vertex() {
 }
 
 void fragment() {
-	vec4 c = texture(albedo_tex, UV);
-	ALBEDO = c.rgb;
+	vec3 c = texture(albedo_tex, UV, 0.5).rgb;
+	float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
+	c = max(mix(vec3(l), c, 1.15), vec3(0.0));
+	c *= mix(0.86, 1.06, smoothstep(0.0, 0.35, v_h));
+	ALBEDO = c;
 	ROUGHNESS = roughness_v;
+	SPECULAR = 0.2;
 }

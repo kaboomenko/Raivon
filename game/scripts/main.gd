@@ -357,8 +357,17 @@ func _environment() -> void:
 	_sun = sun
 	sun.rotation_degrees = Vector3(-55, -35, 0)  # a higher sun: shorter, softer shadows (§6.4)
 	sun.shadow_enabled = true
-	sun.shadow_blur = 2.5  # soft edges; phones need soft_shadow_filter_quality.mobile = 2 (project.godot) to show them
-	sun.shadow_opacity = 0.7  # the shade keeps its colour: blue-lilac, not black
+	# Soft drop shadows under everything — trees, huts, troops — the toy-diorama look (§6.1 rule 4). Godot multiplies
+	# the depth bias by blur × the filter's quality radius (light_storage.cpp: bias_scale *= soft_shadow_scale), so a
+	# soft blur with the default bias 0.1 pushed the shadows of anything low off the ground (G1 review: none at all).
+	# bias 0.04 at blur 2.0 keeps them on the ground with no acne (0.03 also showed none); blur 1.5 measured the same
+	# shadow depth, 2.0 keeps the softer edge.
+	sun.shadow_blur = 2.0  # phones need soft_shadow_filter_quality.mobile = 2 (project.godot) to show it
+	sun.shadow_bias = 0.04
+	# The shade keeps the blue-lilac sky fill instead of going black. 0.85 gives lit : shade ≈ 2.3 : 1 on flat ground
+	# (§6.4; measured on screen at close; 0.7 works out at ≈ 1.85 : 1 from these light values — too faint from afar).
+	sun.shadow_opacity = 0.85
+	# The default split_1 (0.1) stays: 0.5 sharpened the strategic shadows but cost +40 % primitives.
 	sun.directional_shadow_max_distance = 60
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS  # half the shadow passes of 4 splits
 	add_child(sun)

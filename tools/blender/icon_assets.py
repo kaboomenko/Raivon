@@ -13,6 +13,10 @@ Pipeline, per icon (reproducible, the rim is applied exactly once):
 2. downscale to 128 × 128 (Lanczos);
 3. tools/ui/ink_rim.py bakes the 3 px INK rim into the final file.
 Portraits and card art (tools/blender/card_art.py) get no rim.
+
+Look: the Standard view transform and metallic ≤ METAL_MAX. Under AgX Punchy (and with fully metallic surfaces
+mirroring the dim icon studio) every gold and yellow came out ochre or brown, far from the UI's WARN #FFC531: the
+medal tiers could not be told apart, the lightning bolt was khaki. Standard keeps the hues the UI is built on.
 """
 import math
 import os
@@ -24,12 +28,21 @@ import bpy
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import kit  # noqa: E402
-from kit import box, cone, cyl, mat, sphere  # noqa: E402
+from kit import box, cone, cyl, sphere  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 INK_RIM = os.path.join(HERE, "..", "ui", "ink_rim.py")
 ROOT_ICONS = ("coin", "food", "metal", "raivite", "oil", "builder")  # these sit in assets/ui/, the rest in assets/ui/icons/
 RAW, OUT_PX = 256, 128
+VIEW = "Standard"
+METAL_MAX = 0.55  # a fully metallic surface only mirrors the icon studio's dim grey-blue world and reads brown
+
+
+def mat(name, color, rough=0.6, metal=0.0, emission=None, emit_strength=0.0):
+    """kit.mat with the metallic share capped at METAL_MAX (a capped metal gets roughness ≥ 0.3)."""
+    if metal > METAL_MAX:
+        metal, rough = METAL_MAX, max(rough, 0.3)
+    return kit.mat(name, color, rough, metal, emission, emit_strength)
 
 
 def reset():
@@ -38,12 +51,13 @@ def reset():
 
 
 def gold():
-    return mat("gold", "#e09a1a", 0.3, 1.0)
+    return mat("gold", "#e09a1a", 0.32, 0.35)  # mostly diffuse: flat-lying faces (coin stacks, the cup) stay bright
 
 
 def coin():
     g = gold()
     dark = mat("gold_d", "#b8801c", 0.35, 1.0)
+    emboss = mat("gold_r", "#d0840f", 0.32, 1.0)
     c = cyl("coin", 0.5, 0.12, (0, 0, 0), g, 48, 0.03)
     c.rotation_euler.x = math.radians(72)
     rim = cyl("rim", 0.42, 0.135, (0, 0, 0), dark, 48, 0.01)
@@ -53,7 +67,7 @@ def coin():
     # an embossed «R»: a stem, a bowl and a leg, raised on the face
     for (x, z, w, h, rot) in ((-0.1, 0.0, 0.07, 0.42, 0), (0.03, 0.12, 0.22, 0.07, 0), (0.03, 0.0, 0.2, 0.07, 0),
                               (0.12, 0.06, 0.07, 0.16, 0), (0.07, -0.13, 0.085, 0.28, -0.6)):
-        b = box("R", (w, 0.05, h), (x, -0.085 + 0.33 * z, z), g, 0.01)  # follow the tilted face
+        b = box("R", (w, 0.05, h), (x, -0.085 + 0.33 * z, z), emboss, 0.01)  # follow the tilted face
         b.rotation_euler = (math.radians(-18), rot, 0)
 
 
@@ -106,14 +120,22 @@ def helmet():
 
 
 def hammer():
-    head = steel()
-    handle = mat("handle_i", "#8a5e36", 0.6)
-    h = cyl("handle", 0.06, 0.9, (0.0, 0, -0.08), handle, 12, 0.01)
-    h.rotation_euler.y = 0.55
-    b = box("head", (0.5, 0.2, 0.2), (0.235, 0, 0.31), head, 0.03)  # on the top end of the handle
-    b.rotation_euler.y = 0.55 + math.pi / 2
-    sc = box("scroll", (0.5, 0.06, 0.34), (0.18, 0.15, -0.2), mat("paper", "#e8dcb8", 0.8), 0.02)
-    sc.rotation_euler.y = -0.3
+    """Development / repair: a claw hammer — a big square steel head across a straight wooden handle, a brass
+    collar and a dark grip (the old head lay along the handle over a paper and read as a cleaver)."""
+    wood = mat("handle_h", "#a87443", 0.6)
+    grip = mat("grip_h", "#6a3f22", 0.7)
+    head = mat("steel_hh", "#a9b5c4", 0.32, 0.55)
+    face = mat("steel_hf", "#e1e8f0", 0.28, 0.5)
+    cyl("handle", 0.07, 1.0, (0, 0, -0.14), wood, 14, 0.02)
+    cyl("grip", 0.082, 0.32, (0, 0, -0.5), grip, 14, 0.02)
+    sphere("knob", 0.085, (0, 0, -0.65), grip, (1, 1, 0.6), 2)
+    box("head", (0.5, 0.28, 0.28), (0.1, 0, 0.42), head, 0.04)
+    box("face", (0.06, 0.32, 0.32), (0.37, 0, 0.42), face, 0.03)
+    for sy in (-1, 1):  # the claw: two prongs curving down
+        c = box("claw", (0.3, 0.07, 0.12), (-0.26, sy * 0.06, 0.38), head, 0.025)
+        c.rotation_euler.y = -0.45
+    cyl("collar", 0.09, 0.08, (0, 0, 0.25), brass(), 16, 0.01)
+    _tilt(rx=10, ry=28)
 
 
 def hands():
@@ -572,25 +594,29 @@ def ad():
 
 def medal():
     """War pass: a gold star medal on a blue-and-white ribbon (the season's military pass)."""
-    _medal(gold(), mat("gold_d", "#b8801c", 0.35, 1.0))
+    _medal("#e39a22", "#9c5f10", "#f4bb45")
 
 
 def medal_bronze():
     """Chronicle tier 1: the medal in bronze."""
-    _medal(mat("bronze", "#c98348", 0.32, 1.0), mat("bronze_d", "#8a4f24", 0.38, 1.0))
+    _medal("#c9773a", "#7e4220", "#e09356")
 
 
 def medal_silver():
     """Chronicle tier 2: the medal in silver."""
-    _medal(mat("silver", "#e3e9f1", 0.22, 1.0), mat("silver_d", "#9aa6b6", 0.3, 1.0))
+    _medal("#dde5ee", "#7f8ea6", "#f4f7fb")
 
 
 def medal_gold():
-    """Chronicle tier 3: the medal in bright gold with a gold ribbon edge."""
-    _medal(mat("gold_b", "#f2b531", 0.25, 1.0), mat("gold_d", "#b8801c", 0.35, 1.0))
+    """Chronicle tier 3: the medal in bright gold — a lighter, yellower disc than the pass medal."""
+    _medal("#ffd03e", "#c98a0c", "#ffe68a")
 
 
-def _medal(g, disc_m):
+def _medal(light, dark, star):
+    """The disc in the light tone, the dark tone only on its thin rim and the clasp, a raised star a shade lighter
+    (the tier reads from the disc's hue and lightness at 36 px)."""
+    face = mat("medal_" + light, light, 0.38, 0.55)
+    edge = mat("medal_" + dark, dark, 0.4, 0.55)
     blue = mat("ribbon_b", "#2f62c8", 0.6)
     white = mat("disc_w", "#f3efe6", 0.5)
     for sx in (-1, 1):
@@ -598,23 +624,11 @@ def _medal(g, disc_m):
         r.rotation_euler.y = sx * -0.32
         s_ = box("stripe", (0.05, 0.035, 0.46), (sx * 0.1, 0.035, 0.24), white, 0.0)
         s_.rotation_euler.y = sx * -0.32
-    box("clasp", (0.42, 0.06, 0.08), (0, 0.0, 0.03), g, 0.015)
-    d = cyl("disc", 0.27, 0.06, (0, 0, -0.26), disc_m, 40, 0.02)
-    d.rotation_euler.x = math.pi / 2
-    star = []
-    for k in range(10):
-        a = math.pi / 2 + k * math.pi / 5
-        rr = 0.24 if k % 2 == 0 else 0.1
-        star.append((math.cos(a) * rr, math.sin(a) * rr))
-    me = bpy.data.meshes.new("star")
-    verts = [(x, -0.04, z - 0.26) for (x, z) in star] + [(x, -0.08, z - 0.26) for (x, z) in star]
-    faces = [tuple(range(9, -1, -1)), tuple(range(10, 20))] + [(i, (i + 1) % 10, 10 + (i + 1) % 10, 10 + i) for i in range(10)]
-    me.from_pydata(verts, [], faces)
-    me.update()
-    so = bpy.data.objects.new("star", me)
-    bpy.context.scene.collection.objects.link(so)
-    so.data.materials.append(g)
-    cyl("gem", 0.05, 0.03, (0, -0.095, -0.26), mat("gem", "#c0392b", 0.1), 16, 0.0).rotation_euler.x = math.pi / 2
+    box("clasp", (0.42, 0.06, 0.08), (0, 0.0, 0.03), edge, 0.015)
+    _face_cyl("disc", 0.25, 0.06, (0, 0, -0.26), face, 40, 0.02)
+    _torus("rim", 0.262, 0.036, (0, 0, -0.26), edge, (math.pi / 2, 0, 0), seg=40)
+    _star_mesh("star", 0.2, 0.085, 0.0, -0.26, -0.065, -0.03, mat("medal_" + star, star, 0.32, 0.55))
+    _face_cyl("gem", 0.045, 0.03, (0, -0.07, -0.26), mat("gem", "#c0392b", 0.1), 16, 0.0)
 
 
 # ------------------------------------------------------------------ helpers for the v2 icon set (docs/ui_style.md §3.5)
@@ -846,29 +860,34 @@ def globe():
 
 
 def horn():
-    """Alarm (diplomacy threat): a curved brass war horn with dark bands and a red cord."""
-    band = mat("horn_band", "#8a5a1c", 0.4, 0.9)
-    cx, cz, R = 0.0, 0.08, 0.38
-    a0, a1, n = math.radians(195), math.radians(338), 10
-    pts = []
-    for i in range(n + 1):
-        a = a0 + (a1 - a0) * i / n
-        pts.append((cx + math.cos(a) * R, 0, cz + math.sin(a) * R))
+    """Alarm (diplomacy threat): a chunky curved brass war horn — a fat body widening into a big bell, dark bands,
+    a red cord."""
+    b_ = mat("horn_brass", "#e8ac3c", 0.34, 0.55)
+    band = mat("horn_band", "#8a5a1c", 0.45, 0.5)
+    cx, cz, R = 0.0, 0.1, 0.34
+    a0, a1, n = math.radians(195), math.radians(335), 10
+    pts = [(cx + math.cos(a0 + (a1 - a0) * i / n) * R, 0, cz + math.sin(a0 + (a1 - a0) * i / n) * R) for i in range(n + 1)]
+
+    def rad(t):
+        return 0.06 + 0.11 * t ** 1.3
+
     for i in range(n):
-        t0, t1 = i / n, (i + 1) / n
-        _along("seg", pts[i], pts[i + 1], 0.035 + 0.075 * t0 ** 1.4, 0.035 + 0.075 * t1 ** 1.4, brass(), 18)
-        if i in (3, 7):
-            _along("band", pts[i], (pts[i][0] + (pts[i + 1][0] - pts[i][0]) * 0.3, 0, pts[i][2] + (pts[i + 1][2] - pts[i][2]) * 0.3),
-                   0.045 + 0.08 * t0 ** 1.4, 0.045 + 0.08 * t0 ** 1.4, band, 18)
+        _along("seg", pts[i], pts[i + 1], rad(i / n), rad((i + 1) / n), b_, 20)
+        sphere("joint", rad((i + 1) / n), pts[i + 1], b_, (1, 1, 1), 2)  # round the kinks between segments
+    for i in (3, 7):
+        p, q = pts[i], pts[i + 1]
+        r = rad(i / n) + 0.018
+        _along("band", p, (p[0] + (q[0] - p[0]) * 0.35, 0, p[2] + (q[2] - p[2]) * 0.35), r, r, band, 20)
     end, dirx, dirz = pts[-1], math.cos(a1 + math.pi / 2), math.sin(a1 + math.pi / 2)
-    tip = (end[0] + dirx * 0.16, 0, end[2] + dirz * 0.16)
-    _along("bell", end, tip, 0.11, 0.25, brass(), 28)
-    _along("bell_in", (tip[0] - dirx * 0.01, 0, tip[2] - dirz * 0.01), (tip[0] + dirx * 0.005, 0, tip[2] + dirz * 0.005),
-           0.21, 0.21, mat("horn_in", "#5a3a12", 0.6), 24)
+    tip = (end[0] + dirx * 0.2, 0, end[2] + dirz * 0.2)
+    _along("bell", end, tip, rad(1.0), 0.33, b_, 32)
+    _along("bell_lip", tip, (tip[0] + dirx * 0.03, 0, tip[2] + dirz * 0.03), 0.34, 0.34, band, 32)
+    _along("bell_in", (tip[0] + dirx * 0.025, 0, tip[2] + dirz * 0.025), (tip[0] + dirx * 0.035, 0, tip[2] + dirz * 0.035),
+           0.29, 0.29, mat("horn_in", "#3a2408", 0.7), 32)
     st = pts[0]
     bx, bz = math.sin(a0), -math.cos(a0)  # backwards from the first segment
-    _along("mouth", st, (st[0] + bx * 0.1, 0, st[2] + bz * 0.1), 0.05, 0.035, band, 12)
-    _torus("strap", 0.3, 0.022, (0.0, 0.06, 0.02), mat("strap", "#7a4a2a", 0.7), (math.pi / 2, 0, 0),
+    _along("mouth", st, (st[0] + bx * 0.1, 0, st[2] + bz * 0.1), 0.07, 0.05, band, 14)
+    _torus("strap", 0.3, 0.026, (0.0, 0.08, 0.06), mat("strap", "#c0362c", 0.7), (math.pi / 2, 0, 0),
            keep=lambda co: co.y < 0.0)
     _tilt(rz=-12)
 
@@ -906,11 +925,17 @@ def coins():
     _tilt(rx=36)
 
 
+BOLT = ("#ffa600", "#d8600a")  # front, edge: under the key light the front lands near WARN #FFC531
+
+
 def lightning():
-    """Speed-up: a chunky yellow lightning bolt."""
-    y_ = mat("bolt", "#ffcf3a", 0.35, 0.0, "#ffb000", 0.5)
+    """Speed-up: a chunky yellow lightning bolt — a warm yellow front, a deeper orange edge (no glow: it washed the
+    yellow out to beige)."""
     pts = [(-0.02, 0.62), (0.3, 0.62), (0.08, 0.14), (0.3, 0.14), (-0.22, -0.66), (-0.04, -0.04), (-0.27, -0.04)]
-    _extrude("bolt", pts, 0.16, y_, y=-0.08, bevel=0.035)
+    o = _extrude("bolt", pts, 0.16, mat("bolt", BOLT[0], 0.65), y=-0.08, bevel=0.035)
+    o.data.materials.append(mat("bolt_side", BOLT[1], 0.65))
+    for p in o.data.polygons:  # the face towards the camera keeps the front colour, the sides get the edge colour
+        p.material_index = 0 if p.normal.y < -0.9 else 1
     _tilt(rz=-22)
 
 
@@ -1029,28 +1054,29 @@ def chest_royal():
 
 
 def chest_cards():
-    """Collection case: an open red chest with gold trim and a fan of cards rising from it."""
+    """Collection case: an open red chest with gold trim and four cards fanned out of it like a hand — white borders
+    round blue, green, gold and red faces, a white star on each."""
     body = mat("chest_c", "#c0483a", 0.5)
     g = gold()
-    box("body", (0.8, 0.5, 0.4), (0, 0, -0.26), body, 0.03)
-    box("rim", (0.83, 0.53, 0.06), (0, 0, -0.06), g, 0.012)
+    white = mat("card_white", "#fbf8f0", 0.5)
+    before = set(bpy.context.scene.objects)  # the lid, thrown wide open behind the cards
+    box("lid", (0.8, 0.5, 0.08), (0, -0.25, 0.04), body, 0.02)
+    box("lid_rim", (0.83, 0.06, 0.1), (0, -0.48, 0.04), g, 0.012)
+    _group(before, (0, 0.25, -0.12), (-150, 0, 0))
+    for k, (ang, col) in enumerate(((-36, "#3f86f0"), (-12, "#4cb050"), (12, "#ffc531"), (36, "#ef4b3f"))):
+        before = set(bpy.context.scene.objects)
+        box("card", (0.34, 0.02, 0.5), (0, 0, 0.25), white, 0.02)
+        box("card_face", (0.27, 0.02, 0.43), (0, -0.006, 0.25), mat("cf" + col, col, 0.5), 0.012)
+        _star_mesh("star", 0.08, 0.034, 0.0, 0.3, -0.018, -0.008, white)
+        _group(before, (0.0, 0.05 - k * 0.035, -0.3), (0, ang, 0))  # pivot low inside the chest: a fan
+    box("inside", (0.74, 0.44, 0.02), (0, 0, -0.07), mat("chest_in", "#5e1f18", 0.7), 0.0)
+    box("body", (0.8, 0.5, 0.36), (0, 0, -0.26), body, 0.03)
+    box("rim", (0.83, 0.53, 0.06), (0, 0, -0.08), g, 0.012)
     box("rim_lo", (0.83, 0.53, 0.06), (0, 0, -0.44), g, 0.012)
     for sx in (-1, 1):
-        box("strap", (0.08, 0.52, 0.4), (sx * 0.26, 0, -0.26), g, 0.01)
-    before = set(bpy.context.scene.objects)
-    box("lid", (0.8, 0.5, 0.08), (0, -0.25, 0.1), body, 0.02)  # built round the hinge (the body's back top edge)
-    box("lid_in", (0.72, 0.42, 0.02), (0, -0.25, 0.055), mat("chest_in", "#7a2a22", 0.7), 0.0)
-    _group(before, (0, 0.25, -0.06), (-128, 0, 0))
-    back = mat("card_b", "#2a4fa0", 0.5)
-    face = mat("card_f", "#efe6cf", 0.7)
-    for k, (a, x) in enumerate(((0.5, -0.24), (-0.5, 0.24), (0.0, 0.0))):
-        c = box("card", (0.32, 0.02, 0.5), (x, 0.04 - k * 0.04, 0.14), back if k != 2 else face, 0.015)
-        c.rotation_euler.y = a
-        f = box("frame", (0.345, 0.016, 0.525), (x, 0.05 - k * 0.04, 0.14), g, 0.015)
-        f.rotation_euler.y = a
-    _star_mesh("star", 0.11, 0.045, 0.0, 0.16, -0.06, -0.04, mat("star_b", "#2f62c8", 0.4))
-    box("lock", (0.15, 0.05, 0.16), (0, -0.26, -0.12), g, 0.015)
-    _tilt(rx=14, rz=-22)
+        box("strap", (0.08, 0.52, 0.36), (sx * 0.26, 0, -0.26), g, 0.01)
+    box("lock", (0.15, 0.05, 0.16), (0, -0.26, -0.17), g, 0.015)
+    _tilt(rx=12, rz=-20)
 
 
 def shard():
@@ -1367,7 +1393,7 @@ def _fit_camera(cam, fill):
     cam.data.shift_y = (lo[1] + hi[1]) / 2 / size
 
 
-def render(path, fill=FILL, rim_energy=120, raw_dir=None, samples=64):
+def render(path, fill=FILL, rim_energy=120, raw_dir=None, samples=64, view=VIEW):
     sc = bpy.context.scene
     bpy.ops.object.light_add(type="AREA", location=(-1.5, -2.5, 2.5))
     k = bpy.context.active_object
@@ -1397,8 +1423,8 @@ def render(path, fill=FILL, rim_energy=120, raw_dir=None, samples=64):
     sc.render.film_transparent = True
     sc.render.resolution_x = RAW
     sc.render.resolution_y = RAW
-    sc.view_settings.view_transform = "AgX"
-    sc.view_settings.look = "AgX - Punchy"
+    sc.view_settings.view_transform = view
+    sc.view_settings.look = "AgX - Punchy" if view == "AgX" else "None"
     raw = os.path.join(raw_dir or tempfile.mkdtemp(prefix="raivon_icons_"), os.path.basename(path))
     sc.render.filepath = raw
     bpy.ops.render.render(write_still=True)

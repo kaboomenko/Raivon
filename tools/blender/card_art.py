@@ -42,8 +42,9 @@ def load(name, loc=(0, 0, 0), rz=0.0, s=1.0):
             o.scale = (s, s, s)
 
 
-def sky(top, bottom, ground="#2c3a22", ground2="#4a5a30", band=(0.42, 0.62)):
-    """A big backdrop with a vertical gradient (emissive, so it reads as a painted sky) and a ground plane."""
+def sky(top, bottom, ground="#2c3a22", ground2="#4a5a30", band=(0.42, 0.62), mids=()):
+    """A big backdrop with a vertical gradient (emissive, so it reads as a painted sky) and a ground plane.
+    mids: extra (position, colour) stops between the horizon colour (at band[0]) and the zenith (at band[1])."""
     bpy.ops.mesh.primitive_plane_add(size=40, location=(0, 9, 6), rotation=(math.pi / 2, 0, 0))
     bd = bpy.context.active_object
     m = bpy.data.materials.new("sky")
@@ -61,6 +62,8 @@ def sky(top, bottom, ground="#2c3a22", ground2="#4a5a30", band=(0.42, 0.62)):
     ramp.color_ramp.elements[0].color = (*kit.srgb(bottom), 1)
     ramp.color_ramp.elements[1].position = band[1]
     ramp.color_ramp.elements[1].color = (*kit.srgb(top), 1)
+    for pos, col in mids:
+        ramp.color_ramp.elements.new(pos).color = (*kit.srgb(col), 1)
     nt.links.new(ramp.outputs["Color"], em.inputs["Color"])
     em.inputs["Strength"].default_value = 1.0
     nt.links.new(em.outputs[0], out.inputs[0])
@@ -70,14 +73,19 @@ def sky(top, bottom, ground="#2c3a22", ground2="#4a5a30", band=(0.42, 0.62)):
     g.data.materials.append(kit.noisy_mat("ground", ground, ground2, 3.0))
 
 
-def smoke_mat():
-    m = bpy.data.materials.get("smoke_soft")
+def smoke_mat(name="smoke_soft", color="#f3f0ea", alpha=0.4):
+    """Light, see-through battle smoke (opaque grey or beige puffs read as rocks or potatoes on the bright sky)."""
+    m = bpy.data.materials.get(name)
     if m:
         return m
-    m = mat("smoke_soft", "#a8a19a", 0.95)  # grey-white battle smoke (dark smoke read as rocks on the bright sky)
+    m = mat(name, color, 1.0)
     b = m.node_tree.nodes["Principled BSDF"]
-    b.inputs["Alpha"].default_value = 0.55
+    b.inputs["Alpha"].default_value = alpha
     return m
+
+
+def dust_mat():
+    return smoke_mat("dust_soft", "#efe3cc", 0.4)
 
 
 def fireball(x, y, z, r=0.25):
@@ -142,7 +150,10 @@ def render(path, w=None, h=None, transparent=False, world=None):
 
 # One stage for every battle card (docs/ui_style.md s02): the same warm afternoon sky, meadow and key light, so the
 # eight cards in a hand read as one set on the brighter, sunnier map (docs/art_direction.md §6).
-STAGE_SKY = ("#3f8fe2", "#fde6be")  # zenith, horizon
+STAGE_SKY = ("#3f8fe2", "#fdebc8")  # zenith, horizon
+# Stops between them, so the sky goes blue → pale blue → cream without the grey-mauve band a straight blue-to-cream
+# blend passes through.
+STAGE_MIDS = ((0.352, "#e4f2fc"), (0.385, "#a3d2f5"))
 STAGE_GROUND = ("#6f9f42", "#8abb52")
 STAGE_WORLD = ("#bcd8f0", 0.75)
 BATTLE = ("attack", "breakthrough", "airstrike", "encircle", "defense", "landing", "missile", "corps")
@@ -151,7 +162,7 @@ BATTLE = ("attack", "breakthrough", "airstrike", "encircle", "defense", "landing
 def stage():
     # the backdrop spans z −14…26 at y 9: the band 0.335…0.43 puts the horizon colour at the ground line and the
     # zenith blue at the top of a card's frame
-    sky(STAGE_SKY[0], STAGE_SKY[1], *STAGE_GROUND, band=(0.335, 0.43))
+    sky(STAGE_SKY[0], STAGE_SKY[1], *STAGE_GROUND, band=(0.335, 0.43), mids=STAGE_MIDS)
     lights(5.0, "#9cc4ff")
 
 
@@ -167,8 +178,8 @@ def attack():
 def breakthrough():
     stage()
     load("assault_dl6_blue", (0, 0, 0), math.radians(235), 2.4)
-    for k, (x, y, r) in enumerate(((0.6, 0.7, 0.35), (-0.5, 0.9, 0.3), (0.1, 1.1, 0.45))):
-        sphere("dust", r, (x, y, r * 0.5), mat("dust", "#a08060", 0.95), (1.4, 1, 0.8), 2)
+    for k, (x, y, r) in enumerate(((0.6, 0.7, 0.3), (0.85, 0.85, 0.22), (-0.5, 0.9, 0.26), (0.1, 1.1, 0.34), (0.35, 1.2, 0.25))):
+        sphere("dust", r, (x, y, r * 0.45), dust_mat(), (1.4, 1, 0.75), 3)
     fireball(-1.1, 2.0, 0.4, 0.3)
     camera((1.0, -1.8, 0.7), (0, 0.1, 0.32), 40)
 
@@ -416,10 +427,11 @@ def _window(x, y, z, s=0.07):
     box("win", (s, 0.02, s * 1.2), (x, y, z), mat("win_lit", "#ffd27a", 0.4, 0.0, "#ffb84a", 1.2), 0.004)
 
 
-def _flag(x, y, h, color, w=0.2):
+def _flag(x, y, h, color, w=0.2, side=1):
+    """A mast of height h with a flag of width w flying to +X (side=1) or −X (side=−1)."""
     cyl("pole", 0.014, h, (x, y, h / 2), mat("pole_b", "#e8e0d0", 0.5), 8, 0.0)
     sphere("finial", 0.026, (x, y, h + 0.02), mat("gold_b", "#e6b13e", 0.3, 0.6), (1, 1, 1), 2)
-    f = box("flag", (w, 0.012, w * 0.62), (x + w / 2 + 0.012, y, h - w * 0.33), mat("flag" + color, color, 0.65), 0.004)
+    f = box("flag", (w, 0.012, w * 0.62), (x + side * (w / 2 + 0.012), y, h - w * 0.33), mat("flag" + color, color, 0.65), 0.004)
     return f
 
 
@@ -442,9 +454,17 @@ def _barrel_prop(x, y, s=1.0):
         cyl("hoop", 0.063 * s, 0.015 * s, (x, y, z * s), mat("iron_b", "#5d6470", 0.5, 0.5), 12, 0.0)
 
 
-def _bush(x, y, s=1.0):
-    sphere("bush", 0.08 * s, (x, y, 0.06 * s), mat("bush_c", "#4f9a3a", 0.85), (1.2, 1.1, 0.9), 2)
-    sphere("bush2", 0.06 * s, (x + 0.05 * s, y - 0.03 * s, 0.09 * s), mat("bush_l", "#6bb84a", 0.85), (1, 1, 0.9), 2)
+def _prop(name, x, y, rz=0.0, s=1.0):
+    """A map prop (tree_round, tree_pine, bush, flowers, rock): the same models the map's tiles use."""
+    load(name, (x, y, 0), rz, s)
+
+
+def _path(pts, w=0.09):
+    """Flat stepping stones along pts (a little yard path to the door)."""
+    stone = mat("path_s", "#e3d9c4", 0.85)
+    for k, (x, y) in enumerate(pts):
+        o = box("slab", (w, w * 0.8, 0.014), (x, y, 0.007), stone, 0.006)
+        o.rotation_euler.z = 0.3 * (k % 2) - 0.15
 
 
 def _academy():
@@ -461,8 +481,11 @@ def _academy():
     t.rotation_euler.y = 0.85
     box("sign", (0.2, 0.02, 0.12), (0.1, -0.16, 0.25), mat("sign_b", "#f3efe6", 0.6), 0.006)
     box("sign_book", (0.12, 0.022, 0.07), (0.1, -0.165, 0.25), mat("book_c", "#8a3b2a", 0.6), 0.004)
-    _bush(0.48, -0.2)
-    _bush(-0.5, -0.2, 0.8)
+    _path(((0.1, -0.23), (0.13, -0.32), (0.1, -0.41)))
+    _prop("tree_round", 0.5, 0.3, 0.4, 0.58)
+    _prop("bush", 0.46, -0.2, 0.0, 0.8)
+    _prop("bush", -0.48, -0.18, 1.2, 0.7)
+    _prop("flowers", -0.16, -0.3, 0.0, 0.7)
 
 
 def _warehouse():
@@ -481,25 +504,50 @@ def _warehouse():
         _sack(x, y)
     _barrel_prop(-0.2, -0.38)
     _barrel_prop(-0.08, -0.42, 0.9)
+    _prop("tree_round", -0.52, 0.32, 0.0, 0.55)
+    _prop("bush", 0.5, 0.1, 0.6, 0.75)
+
+
+def _cross(x, y, z, s, color, rz=0.0, depth=0.03):
+    """A plus-shaped emblem facing −Y: two crossing bars."""
+    m = mat("cross" + color, color, 0.55)
+    for (w, h) in ((s, s * 0.34), (s * 0.34, s)):
+        b = box("cross", (w, depth, h), (x, y, z), m, 0.006)
+        b.rotation_euler.z = rz
 
 
 def _infirmary():
-    """A white cottage with a blue roof, a green herb sign and herb beds in front."""
-    _wall_house(0.0, 0.1, 0.56, 0.38, 0.3, PLASTER, ROOF)
-    for x in (-0.16, 0.16):
-        _window(x, -0.1, 0.18)
-    _door(0.0, -0.1, 0.0, 0.1, 0.17)
-    sphere("sign", 0.075, (0.0, -0.11, 0.38), mat("sign_g", "#f3efe6", 0.6), (1, 0.3, 1), 2)
-    leaf = mat("herb", "#3fae5a", 0.6)
-    for a in (-0.6, 0.0, 0.6):
-        lf = sphere("leaf", 0.03, (math.sin(a) * 0.025, -0.135, 0.38 + math.cos(a) * 0.025), leaf, (0.6, 0.3, 1.2), 2)
-        lf.rotation_euler.y = a
-    for (x, y) in ((-0.3, -0.34), (0.3, -0.34)):
-        box("bed", (0.32, 0.16, 0.05), (x, y, 0.025), mat("soil", "#8a6448", 0.9), 0.01)
-        for k in range(4):
-            sphere("herb", 0.04, (x - 0.11 + k * 0.073, y, 0.08), mat("herb_" + str(k % 2), "#4f9a3a" if k % 2 else "#6bb84a", 0.85), (1, 1, 1.1), 2)
-    cyl("pot", 0.05, 0.08, (0.4, 0.0, 0.04), mat("pot", "#c0703e", 0.7), 12, 0.008)
-    sphere("pot_herb", 0.06, (0.4, 0.0, 0.11), leaf, (1, 1, 1), 2)
+    """A field infirmary: a white cottage with a big green-cross sign on its gable, a white ward tent with a
+    green cross beside it, a stretcher and a herb bed. (A green cross, not a red one: the red cross is a protected
+    emblem.)"""
+    green = "#3fae5a"
+    gm = mat("cross" + green, green, 0.55)
+    _wall_house(0.16, 0.1, 0.5, 0.36, 0.3, PLASTER, ROOF)
+    for x in (0.02, 0.3):
+        _window(x, -0.085, 0.18)
+    _door(0.16, -0.085, 0.0, 0.1, 0.17)
+    # the round sign on the gable: a white disc, a green rim and a big green cross
+    disc = cyl("sign", 0.13, 0.03, (0.16, -0.11, 0.4), mat("sign_w", "#fbf8f0", 0.5), 28, 0.008)
+    disc.rotation_euler.x = math.pi / 2
+    rim = cyl("sign_rim", 0.145, 0.02, (0.16, -0.1, 0.4), gm, 28, 0.006)
+    rim.rotation_euler.x = math.pi / 2
+    _cross(0.16, -0.13, 0.4, 0.17, green)
+    # the ward tent: a white ridge tent with its door and a green cross towards the camera
+    kit.prism_roof("tent", 0.44, 0.36, 0.36, (-0.32, -0.02, 0.0), mat("tent_w", "#f6f2e8", 0.8), overhang=0.0,
+                   rot_z=math.pi / 2)
+    box("tent_door", (0.12, 0.02, 0.17), (-0.32, -0.245, 0.085), mat("tent_in", "#8a7a5e", 0.8), 0.004)
+    _cross(-0.32, -0.23, 0.26, 0.12, green, depth=0.02)
+    cyl("tent_pole", 0.012, 0.42, (-0.32, -0.25, 0.21), mat("pole_b", "#e8e0d0", 0.5), 8, 0.0)
+    # a stretcher in front and a herb bed by the cottage
+    for sy in (-1, 1):
+        p = cyl("str_pole", 0.012, 0.36, (-0.04, -0.33 + sy * 0.06, 0.06), mat("cart_w", "#a0713f", 0.7), 8, 0.0)
+        p.rotation_euler.y = math.pi / 2
+    box("str_cloth", (0.28, 0.11, 0.012), (-0.04, -0.33, 0.065), mat("tent_w", "#f6f2e8", 0.8), 0.004)
+    box("bed", (0.28, 0.13, 0.05), (0.36, -0.3, 0.025), mat("soil", "#8a6448", 0.9), 0.01)
+    for k in range(4):
+        sphere("herb", 0.038, (0.27 + k * 0.062, -0.3, 0.075), mat("herb_" + str(k % 2), "#4f9a3a" if k % 2 else "#6bb84a", 0.85), (1, 1, 1.1), 2)
+    _prop("tree_round", 0.48, 0.34, 0.8, 0.52)
+    _prop("flowers", -0.52, -0.2, 0.0, 0.65)
 
 
 def _cart(x, y, rz, load=True):
@@ -547,6 +595,7 @@ def _convoy_yard():
     rail.rotation_euler.z = 0.2
     _sack(0.45, 0.0)
     _crate(0.42, 0.18, 0.0, 0.13, 0.4)
+    _prop("tree_round", -0.52, 0.42, 0.3, 0.5)
 
 
 def _stall(x, y, rz, goods):
@@ -578,10 +627,12 @@ def _market():
     _crate(-0.46, -0.24, 0.0, 0.12, 0.3)
     _barrel_prop(0.42, -0.2)
     _sack(-0.34, -0.36, 0.9)
+    _prop("tree_round", 0.55, 0.45, 0.0, 0.45)
 
 
 def _embassy():
-    """An embassy: a stately white hall with columns under a pediment, two flags of friendly realms in front."""
+    """An embassy: a stately white hall with columns under a pediment, a tall flag on the roof and the big flags
+    of friendly realms on two masts either side of it."""
     w, d, h = 0.6, 0.36, 0.3
     box("hall", (w, d, h), (0, 0.08, h / 2 + 0.05), mat("wall" + PLASTER, PLASTER, 0.85), 0.015)
     box("step", (w + 0.12, d + 0.16, 0.05), (0, 0.02, 0.025), mat("wall" + STONE_C, STONE_C, 0.85), 0.01)
@@ -591,14 +642,15 @@ def _embassy():
         cyl("column", 0.03, h, (-0.22 + k * 0.147, -0.13, h / 2 + 0.05), mat("column", "#f6f1e6", 0.6), 12, 0.006)
     _door(0.0, -0.105, 0.05, 0.1, 0.16)
     box("crest", (0.1, 0.02, 0.07), (0, -0.115, h + 0.15), mat("gold_b", "#e6b13e", 0.3, 0.6), 0.005)
-    _flag(-0.42, -0.25, 0.48, BLUE)
-    _flag(0.36, -0.25, 0.48, "#4cb050")
-    _bush(-0.5, 0.15, 0.8)
-    _bush(0.5, 0.18, 0.8)
+    # the realm's flag over the roof ridge and two tall masts with the flags of friends
+    _flag(0.0, 0.06, h + 0.62, BLUE, 0.26)
+    _flag(-0.47, 0.02, 0.7, "#4cb050", 0.3, side=-1)
+    _flag(0.47, 0.02, 0.7, "#ffc531", 0.3)
+    _path(((0.0, -0.24), (0.02, -0.35), (-0.02, -0.46)), 0.11)
+    _prop("bush", -0.44, -0.22, 0.0, 0.75)
+    _prop("bush", 0.44, -0.2, 1.0, 0.75)
 
 
-# Closer framing where a tall thin flag or a wide yard would leave the building itself small (the flag tip may crop).
-BUILDING_ZOOM = {"barracks": 1.35, "mine": 1.25, "residence": 1.2, "military_base": 1.15, "farm": 1.15, "port": 1.08}
 BUILDING_SCENES = {"academy": _academy, "warehouse": _warehouse, "infirmary": _infirmary,
                    "convoy_yard": _convoy_yard, "market": _market, "embassy": _embassy}
 BUILDINGS = ["residence", "barracks", "academy", "warehouse", "infirmary", "convoy_yard", "market", "embassy",
@@ -607,17 +659,14 @@ BUILDINGS = ["residence", "barracks", "academy", "warehouse", "infirmary", "conv
 
 def building(kind):
     """The card picture of a building: its DL1 map model (or, for the capital's own buildings that have no map
-    model, a small scene in the same kit) on a grass plot, from three-quarters above."""
+    model, a small scene in the same kit, dressed with the map's own trees and bushes) on a grass plot, from
+    three-quarters above. The shadow catcher is added by render_building, once the plot's size is known."""
     def scene():
         if kind in BUILDING_MODELS:
             for name, (x, y), rz, s in BUILDING_MODELS[kind]:
                 load(name, (x, y, 0), rz, s)
         else:
             BUILDING_SCENES[kind]()
-        bpy.ops.mesh.primitive_plane_add(size=8, location=(0, 0, 0))
-        catcher = bpy.context.active_object
-        catcher.name = "shadow_catcher"
-        catcher.is_shadow_catcher = True
         bpy.ops.object.light_add(type="SUN")
         s = bpy.context.active_object
         s.data.energy = 3.6
@@ -640,17 +689,29 @@ def building(kind):
     return scene
 
 
-def _fit_building(cam, w, h, zoom=1.0):
-    """Ortho scale and shift: the model fills ≤ 88 % of the width and ≤ 76 % of the height, centred across, its
-    base 15 % above the card's bottom edge (the tray card shows the art cropped to 180 × 104, about 8 % off the top
-    and the bottom, with the name on a shade over the bottom). Returns the ground radius for the grass disc."""
+# The plot: the ground circle of radius max(PLOT_MIN, footprint × PLOT_PAD), drawn as a PLOT_N-gon (the painted
+# grass and the shadow catcher are the same polygon, so no shadow can fall outside the grass onto the sky).
+PLOT_MIN, PLOT_PAD, PLOT_N = 0.55, 1.08, 72
+# Framing (shares of the card): the plot fills ≤ 96 % of the width; the plot's lip sits 3 % above the bottom edge
+# (LIP_PX of the card's height below the plot); the model's top stays 7 % below the top edge, outside the 180 × 104
+# tray crop (about 6.7 % off the top and the bottom), so no flag or headframe is ever cut.
+FIT_W, FIT_BOTTOM, FIT_TOP, LIP_PX = 0.96, 0.03, 0.07, 7
+
+
+def _plot_points(r):
+    return [(math.cos(k * math.tau / PLOT_N) * r, math.sin(k * math.tau / PLOT_N) * r) for k in range(PLOT_N)]
+
+
+def _fit_building(cam, w, h):
+    """Ortho scale and shift so the model and its plot fill the card by the shares above, centred across.
+    Returns the plot radius."""
     bpy.context.view_layer.update()
     dg = bpy.context.evaluated_depsgraph_get()
     inv = cam.matrix_world.inverted()
-    lo, hi = [1e9, 1e9], [-1e9, -1e9]
+    pts = []
     foot = 0.0
     for o in bpy.context.scene.objects:
-        if o.type != "MESH" or o.name.startswith("shadow_catcher"):
+        if o.type != "MESH":
             continue
         eo = o.evaluated_get(dg)
         me = eo.to_mesh()
@@ -659,17 +720,20 @@ def _fit_building(cam, w, h, zoom=1.0):
             wv = mw @ v.co
             if wv.z < 0.05:
                 foot = max(foot, math.hypot(wv.x, wv.y))
-            p = inv @ wv
-            lo[0], lo[1] = min(lo[0], p.x), min(lo[1], p.y)
-            hi[0], hi[1] = max(hi[0], p.x), max(hi[1], p.y)
+            pts.append(inv @ wv)
         eo.to_mesh_clear()
+    r = max(PLOT_MIN, foot * PLOT_PAD)
+    pts += [inv @ Vector((x, y, 0.0)) for (x, y) in _plot_points(r)]
+    lo = [min(p.x for p in pts), min(p.y for p in pts)]
+    hi = [max(p.x for p in pts), max(p.y for p in pts)]
     aspect = w / h
-    s = max((hi[0] - lo[0]) / 0.88, aspect * (hi[1] - lo[1]) / 0.76) / zoom
+    lip = LIP_PX / h
+    s = max((hi[0] - lo[0]) / FIT_W, aspect * (hi[1] - lo[1]) / (1.0 - FIT_BOTTOM - lip - FIT_TOP))
     frame_h = s / aspect
     cam.data.ortho_scale = s
     cam.data.shift_x = (lo[0] + hi[0]) / 2 / s
-    cam.data.shift_y = (lo[1] + (0.5 - 0.15) * frame_h) / s
-    return foot
+    cam.data.shift_y = (lo[1] + (0.5 - FIT_BOTTOM - lip) * frame_h) / s
+    return r
 
 
 def render_building(path, kind):
@@ -679,7 +743,14 @@ def render_building(path, kind):
     sc = bpy.context.scene
     cam = sc.camera
     ss = 2
-    foot = _fit_building(cam, BW, BH, BUILDING_ZOOM.get(kind, 1.0))
+    r = _fit_building(cam, BW, BH)
+    plot = _plot_points(r)
+    # the shadow catcher is the plot itself: shadows past its edge would land on the painted sky
+    me = bpy.data.meshes.new("shadow_catcher")
+    me.from_pydata([(x, y, 0.0) for (x, y) in plot], [], [tuple(range(PLOT_N))])
+    catcher = bpy.data.objects.new("shadow_catcher", me)
+    sc.collection.objects.link(catcher)
+    catcher.is_shadow_catcher = True
     sc.render.film_transparent = True
     sc.render.engine = "CYCLES"
     sc.cycles.samples = 64
@@ -697,11 +768,9 @@ def render_building(path, kind):
     sc.render.filepath = raw
     bpy.ops.render.render(write_still=True)
     # the grass plot: the ground circle under the model, projected; a darker copy below it is the plot's lip
-    r = max(0.55, foot * 1.12)
     pts = []
-    for k in range(72):
-        a = k * math.tau / 72
-        p = world_to_camera_view(sc, cam, Vector((math.cos(a) * r, math.sin(a) * r, 0.0)))
+    for (x, y) in plot:
+        p = world_to_camera_view(sc, cam, Vector((x, y, 0.0)))
         pts.append((p.x * BW * ss, (1 - p.y) * BH * ss))
     bg = Image.new("RGBA", (BW * ss, BH * ss))
     top, low = kit_rgb(SKY_TOP), kit_rgb(SKY_LOW)
@@ -709,7 +778,7 @@ def render_building(path, kind):
     for yy in range(BH * ss):
         t = yy / (BH * ss - 1)
         d.line([(0, yy), (BW * ss, yy)], fill=tuple(round(top[i] + (low[i] - top[i]) * t) for i in range(3)) + (255,))
-    lip = 7 * ss
+    lip = LIP_PX * ss
     d.polygon([(x, y + lip) for (x, y) in pts], fill=kit_rgb(GRASS_LIP) + (255,))
     d.polygon(pts, fill=kit_rgb(GRASS) + (255,))
     model = Image.open(raw).convert("RGBA")
