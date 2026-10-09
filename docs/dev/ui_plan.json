@@ -1,0 +1,445 @@
+{
+ "font": {
+  "display": "Rubik (variable font, wght 900 for titles/buttons/numbers, 800 for labels/chips) — game/assets/fonts/Rubik-VF.ttf via display_900.tres / display_800.tres; also project-wide gui/theme/custom_font",
+  "body": "Nunito (variable font, wght 800) — game/assets/fonts/Nunito-VF.ttf via body_800.tres; paragraphs, bubbles, secondary lines, legal",
+  "license": "SIL Open Font License 1.1 for both (commercial use and bundling allowed; ship OFL-Rubik.txt and OFL-Nunito.txt next to the fonts). Do not use Supercell-Magic / You Blockhead.",
+  "urls": [
+   "https://raw.githubusercontent.com/google/fonts/main/ofl/rubik/Rubik%5Bwght%5D.ttf",
+   "https://raw.githubusercontent.com/google/fonts/main/ofl/rubik/OFL.txt",
+   "https://raw.githubusercontent.com/google/fonts/main/ofl/nunito/Nunito%5Bwght%5D.ttf",
+   "https://raw.githubusercontent.com/google/fonts/main/ofl/nunito/OFL.txt"
+  ]
+ },
+ "steps": [
+  {
+   "id": "s01_kit",
+   "title": "UI kit: bundled fonts, ui_kit.gd tokens/components, legacy helpers delegate (global restyle)",
+   "owner_files": [
+    "game/assets/fonts/Rubik-VF.ttf",
+    "game/assets/fonts/Nunito-VF.ttf",
+    "game/assets/fonts/OFL-Rubik.txt",
+    "game/assets/fonts/OFL-Nunito.txt",
+    "game/assets/fonts/display_900.tres",
+    "game/assets/fonts/display_800.tres",
+    "game/assets/fonts/body_800.tres",
+    "game/scripts/ui_kit.gd",
+    "game/scripts/game_ui.gd",
+    "game/scripts/hud.gd",
+    "game/project.godot",
+    "game/locale/strings.csv",
+    "tools/ui_lint.py"
+   ],
+   "functions": [
+    "ui_kit.gd (new, all)",
+    "game_ui._ready (font)",
+    "game_ui._style",
+    "game_ui._label",
+    "game_ui._fit",
+    "game_ui._panel",
+    "game_ui._icon_rect",
+    "game_ui._title",
+    "game_ui.INLINE_ICONS/_has_inline/_inline",
+    "game_ui._modal_box",
+    "game_ui.close_modal",
+    "game_ui._button",
+    "game_ui._card_button",
+    "game_ui.fmt_num",
+    "game_ui.fmt_time",
+    "hud._ready (font)",
+    "hud._style",
+    "hud._label",
+    "hud._panel",
+    "hud._fit",
+    "hud.fmt",
+    "hud.Icon._draw"
+   ],
+   "instructions": "Goal: every existing call site picks up the new look through the shared helpers, with no change to any signature, test-visible member, or show_* body. Read docs/ui_style.md (the merged spec) sections 3-4 first. All numbers are in the 941x1672 design space.\n\n0. BASELINE: before editing, take the baseline screenshots listed in verify into $SCRATCHPAD/ui/s01/before/.\n\n1. FONTS\n- mkdir game/assets/fonts.\n- Copy Rubik-VF.ttf, Nunito-VF.ttf, Rubik-OFL.txt and Nunito-OFL.txt from /tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/ui/fonts_dl/ if they exist. Verify sha256:\n  - Rubik-VF.ttf = 1b3a7437ba2af80e465e773ed60c5036d1ba6ace492d89046dbcf18fb31e4e88\n  - Nunito-VF.ttf = bb55a5ca5c2042335b3991af27c4d0705d0ef41cac6164ac737fd8f2a1e85207\n- Otherwise download them with curl:\n  - https://raw.githubusercontent.com/google/fonts/main/ofl/rubik/Rubik%5Bwght%5D.ttf\n  - https://raw.githubusercontent.com/google/fonts/main/ofl/nunito/Nunito%5Bwght%5D.ttf\n  - .../ofl/rubik/OFL.txt and .../ofl/nunito/OFL.txt\n- Name them Rubik-VF.ttf, Nunito-VF.ttf, OFL-Rubik.txt, OFL-Nunito.txt.\n- Write 3 FontVariation resources in exactly this format (it is what Godot 4.5.1 ResourceSaver produces; 2003265652 is the 'wght' tag):\n```\n[gd_resource type=\"FontVariation\" load_steps=2 format=3]\n\n[ext_resource type=\"FontFile\" path=\"res://assets/fonts/Rubik-VF.ttf\" id=\"1\"]\n\n[resource]\nbase_font = ExtResource(\"1\")\nvariation_opentype = {\n2003265652: 900\n}\n```\n  - display_900.tres: Rubik, 900\n  - display_800.tres: Rubik, 800\n  - body_800.tres: Nunito-VF.ttf, 800\n- In game/project.godot add a [gui] section in alphabetical order with: theme/custom_font=\"res://assets/fonts/display_800.tres\". Do not enable MSDF.\n- Import: flock -w 1800 /tmp/raivon_godot.lock /opt/godot/Godot_v4.5.1-stable_linux.x86_64 --headless --path game --import\n\n2. game/scripts/ui_kit.gd\n- `extends RefCounted`, NO class_name.\n- Everyone uses it as `const Kit := preload(\"res://scripts/ui_kit.gd\")`.\n- Static vars are allowed (Godot 4.5).\n\nImplement:\n\na) Tokens\n- Every colour of spec §3.2 as a const: INK, SLATE, SLATE_LIP, SLATE_WELL, SLATE_FILL, SLATE_HI, CREAM, CREAM_LIP, CREAM_WELL, CREAM_ROW, ROW_LIP, CREAM_DEEP, SKY_TOP, SKY_LOW, GRASS, BLUEPRINT, SEA_WELL, FULL, TEXT, SOFT, POS, NEG, WARN, INK_TEXT, SOFT_CREAM, MUTED_CREAM, POS_CREAM, NEG_CREAM, WARN_CREAM, RARITY dict.\n- const ROLE := {go:[#5CC93B,#3A8F22], info:[#3E9BF0,#2266B8], war:[#EF4B3F,#A92A23], gold:[#FFC531,#C98A0C], lock:[#A7AFBC,#6C7482], slate:[#3A5089,#1D2843], energy:[#23C4D8,#13839A], brass:[#E6B13E,#9C6B1C], steel:[#B9C7D6,#6A7C93]}.\n- static gloss(face) = face.lerp(Color.WHITE, 0.38).\n- SCALE := [22,24,26,28,30,32,36,40,44,46,60,64].\n- RADII := [0,8,14,20,24,34].\n\nb) Fonts\n- static func font(kind) -> Font, kind in d900 / d800 / b800.\n- Lazily load the three .tres and cache them.\n\nc) Snapping\n- snap_size(s): the smallest SCALE value >= s, clamped to 22..64.\n- snap_radius(r): <4 -> 0; 4-16 -> 14; 17-22 -> 20; 23-28 -> 24; 29-40 -> 34; >40 -> unchanged (circles).\n\nd) static func label(text, size, color := TEXT, bold := true) -> Label\nUse THEME OVERRIDES, not LabelSettings: call sites recolour labels and _fit uses get_theme_font.\n- Font:\n  - bold and size >= 26 -> d900\n  - bold and size < 26 -> d800\n  - not bold -> b800\n- font_size = snap_size(size).\n- If luminance(color) >= 0.5 (light text):\n  - bold: font_outline_color INK; outline_size clamp(round(sz/7),3,8); font_shadow_color INK; shadow_offset_x 0; shadow_offset_y clamp(round(sz/14),2,5); shadow_outline_size = outline.\n  - not bold: outline 0; shadow INK offset_y 2.\n- Dark text: outline 0, shadow alpha 0.\n- mouse_filter IGNORE.\n\ne) static func style(face, r := 20, out := 4, outline := INK, shadow := 6, lip := 0) -> StyleBoxFlat\n- bg = face; all corners r; border colour INK, width out; corner_detail 10; anti_aliasing true.\n- If shadow > 0: shadow_color = Color(INK, 0.35), shadow_size = 1, shadow_offset = Vector2(0, shadow). (Verified by a Godot 4.5.1 render: size 1 plus an offset gives a hard shadow; size 0 draws nothing.)\n- set_meta(\"kit_lip\", lip) and set_meta(\"kit_face\", face).\n\nf) static func legacy_style(bg, radius, border, bw) -> StyleBoxFlat (backs the old _style)\nFace:\n- alpha < 0.05: keep a transparent face with the given border (the coach ring relies on this).\n- luminance < 0.2 (all the navy PANEL / PANEL_2 / 0.1,0.15,0.25 variants): SLATE, opaque, lip 6.\n- luminance > 0.75 and warm (parchment): CREAM, lip 0.\n- otherwise: the face of role_of(bg), lip = that role's lip, i.e. buttons styled through _style.\nBorder and shadow:\n- Border width: bw == 0 -> 0; bw <= 2 -> 3; else 4. Colour INK.\n- Radius: snap_radius(radius).\n- Shadow: 4 if bw > 0, else 0.\n- Alpha is always forced to 1 (no translucent panels anywhere).\n\ng) static func role_of(c: Color) -> String\nFirst match these legacy literals, tolerance 0.03 per channel:\n- info: (0.13,0.4,0.9), (0.16,0.42,0.95), (0.16,0.35,0.75)\n- go: (0.2,0.55,0.3), (0.2,0.6,0.3), (0.12,0.36,0.2), (0.2,0.4,0.25)\n- war: (0.8,0.22,0.16), (0.75,0.16,0.12), (0.85,0.15,0.13), (0.9,0.2,0.15)\n- gold: (0.75,0.55,0.12), (0.85,0.55,0.1), (0.8,0.6,0.1)\n- info (purples): (0.45,0.3,0.75), (0.55,0.25,0.8), (0.35,0.2,0.55), (0.55,0.3,0.95)\n- info (greys): (0.3,0.33,0.42), (0.3,0.35,0.45), (0.32,0.36,0.46), (0.14,0.18,0.27)\n- info (browns): (0.45,0.35,0.2), (0.35,0.22,0.12)\nOtherwise fall back to HSV:\n- s < 0.2 -> info\n- hue 0.22-0.45 -> go\n- hue 0.47-0.70 -> info\n- hue >= 0.94 or <= 0.03 -> war\n- hue 0.04-0.17 -> gold\n- else -> info\n\nh) class KitDecor extends Control\n- mouse IGNORE; set_anchors_preset(FULL_RECT).\n- _draw: the lip band Rect2(out, h-out-lip, w-2*out, lip) in the lip colour, with bottom corners r-out (draw it via a cached StyleBoxFlat draw on the canvas item).\n- A top highlight line 2 px at y=out+1 from x=r to w-r: SLATE_HI on slate faces, white a0.7 on cream.\n\ni) class KitButton extends Panel\nProperties: role, size_class (L/M/S/XS, auto from height: >=104 L, >=80 M, >=52 S, else XS), caption, icon, price (Array of [icon_name, text, short:bool]), enabled, hold, hold_sec := 1.2, cb, signal denied.\nGeometry by class:\n\n| Class | R | OUT | lip | shadow y | caption | fit floor | icon |\n|---|---|---|---|---|---|---|---|\n| L | 24 | 5 | 10 | 8 | 40 (2 lines 32) | 30 | 72 |\n| M | 20 | 4 | 8 | 6 | 32 | 26 | 56 |\n| S | 20 | 4 | 6 | 6 | 26 | 22 | 44 |\n| XS | 14 | 3 | 5 | 4 | 24 | 22 | 32 |\n\nDrawing:\n- In _draw, from cached StyleBoxFlats: hard shadow (INK a0.35, offset y, hidden while pressed) -> INK body -> face inset OUT with border_width_bottom = lip in the lip colour -> gloss band (inset 8 at the sides, 12 for L; 5 at the top; height 34% of the face above the lip; radius max(4, R-OUT-6); colour gloss(face)).\n- Disabled: lock face and lip, no gloss.\n- Children: Label named 'cap' (Kit.label, white, bold); optional TextureRect 'ic'; optional price plate (INK a0.85 pill, height 0.5 of the face, with an icon and a NUM text per item). Lay them out as one centred row in the face above the lip, side padding 16 (L: 18), gap 10.\n- Caption fitting: step down through the SCALE to the class floor. Only L may wrap to 2 lines (at '\\n', or at the space nearest the middle) at 32.\nInput (gui_input):\n- Press: PRESS_IN tween over 70 ms QUAD/OUT (lip -> 2, face offset lip-2, scale 0.96, pivot at the centre).\n- Release: PRESS_OUT over 140 ms BACK/OUT. If the release is inside, call cb when enabled; when disabled, run Kit.shake(self) and emit denied.\n- Never use modulate.a for the disabled state.\n- Hold mode: a white a0.75 strip grows left->right inside the face over hold_sec, cb runs on completion, and an early release cancels it.\n- Keep the release-fires semantics of the existing _is_tap.\n\nj) Factories\n- button(parent, rect, role, caption, opts := {}) -> KitButton. opts: icon, price, size, cb, enabled, hold, hold_sec, filter.\n- icon_button(parent, rect, icon, role := 'slate', round := false, caption := '', cb := Callable()) -> KitButton\n  - icon: 74% of h for a square, 70% for a round button\n  - optional caption plate: INK pill h 30, MICRO 22 white, overlapping the bottom by 14\n- close_button(panel, cb): Ø76, war, vector X, centre (panel.size.x-40, 4), hit area 104.\n- back_button(panel, cb): Ø76, info, chevron, centre (40, 4).\n- hex_badge(parent, center, R, role, text): pointy-top hexagon; corners rounded via Geometry2D.offset_polygon(pts,-0.22R,JOIN_MITER) then +0.22R JOIN_ROUND; lip 0.14R; gloss; numeral 1.05R d900 white outlined.\n- title_plate(panel, text, role := 'info', icon := '')\n  - KitShape, h 84, ends pointed at 0.36h, corner radius 9 via offset_polygon(-9, MITER) then (+9, ROUND)\n  - layers: shadow +8 -> INK -> face inset 5 with lip 9 -> gloss\n  - width = clamp(text_w + 108 (+64 with an icon), 320, panel.size.x - 200), centred on the panel's top edge (y = -42)\n  - text TITLE 46 white outlined, fit floor 32\n  - icon 92 at the left point\n- dot(parent, n := -1, role := 'war')\n  - Ø40 with a number (MICRO 22, '99+') or Ø26 without\n  - INK ring 3 -> white ring 4 -> role face\n  - centred on the parent's top-right corner, offset (-4, +6)\n- bar(parent, rect, frac, role, label := '', on_paper := false): see spec §4.7.\n- chip(parent, pos, icon, text, kind := 'status'): status / owner / stat / timer, see spec §4.8.\n- price(parent, pos, items, h := 34, on := 'dark').\n- star(parent, center, R, full): a 5-point polygon, INK 4. Full = gold face + gloss; empty = CREAM_DEEP relief.\n- class KitShape extends Control draws polygons plus vector chrome: x, check, chevron_left, chevron_right, plus, minus, arrow_up, arrow_right, swap (two arrows), star, star_empty. The stroke is a white 9 px line over an 18 px INK line, with circles at the ends, scaled to the box.\n\nk) static func icon_tex(name) -> Texture2D\n- Look in res://assets/ui/icons/<name>.png, then res://assets/ui/<name>.png, then ICON_FALLBACK[name].\n- ICON_FALLBACK maps: swords->target, shield->fort, dove->hands, treaty->orders, seal->lock, handshake->hands, globe->scales, horn->target, gift->crate, coins->coin, lightning->hourglass, barrel->oil, calendar->hourglass, charter->book, chest_wood->crate, chest_royal->crown, chest_cards->cards, medal_bronze/medal_silver/medal_gold->medal, shard->frame, blueprint->flask, xp->medal, mason->builder, white_flag->orders, pencil->gear, sound_on/sound_off->gear, dice->cards, eye_off->lock.\n- Return null if none of them exists.\n\nl) const PICTO and static func split_icons(text) -> Array\n- Returns pieces: {t:text}, {i:icon_name} or {v:chrome}.\n- PICTO icon mappings: 💎 raivite, 🔒 lock, 🎬 ad, ⚔ swords, 🕊 dove, 💰 coins, ⚒ hammer, 🎁 gift, 📜 treaty, 🔬 flask, ⏱ hourglass, ⛳ orders, ⇢ orders, ⚡ lightning, ⏩ lightning, 🌍 globe, 🔊 sound_on, 🔇 sound_off, 🐴 cart, 🎲 dice, 🏰 castle_icon, 🎖 medal, 📅 calendar, 🔏 seal, ✎ pencil.\n- PICTO chrome mappings: ⬆ v:arrow_up, ⇄ v:swap, ➕ v:plus, ★ v:star, ⭐ v:star, ☆ v:star_empty, ✓ v:check, ✕ v:x, ↩ v:chevron_left, ‹ v:chevron_left, › v:chevron_right.\n- Any other char in U+1F000-1FAFF, U+2600-27BF, U+2190-21FF, U+2B00-2BFF or U+25A0-25FF, and U+FE0F, is dropped. Trim the spaces left behind.\n\nm) Formatters\n- fmt_num(n), RU (L.lang()=='ru'):\n  - exact below 10 000, grouped with U+00A0 (NOT U+202F: Rubik lacks it)\n  - 10 000-99 999 -> '12,4K'\n  - 100 000-999 999 -> '124K'\n  - >= 1e6 -> '1,2M'\n  - negatives use U+2212\n- fmt_num(n), EN: ',' grouping, '.' decimal.\n- fmt_exact(n): always exact.\n- fmt_dec(x, d := 1): locale decimal separator.\n- fmt_time(sec):\n  - < 3600: 'm:ss'\n  - < 86400: L.t('time.hm') % [h, m]\n  - >= 86400: L.t('time.dh') % [d, h]\n  - < 60: keep 'time.s'\n\nn) Motion\n- press_in, press_out, pop_in(node) (scale 0.86->1 over 240 ms BACK/OUT, pivot at the centre).\n- close_fx(node): 120 ms scale 0.94 + a0, then queue_free. Free immediately when DisplayServer.get_name()=='headless'.\n- shake(node): x ±8, 3 cycles, 240 ms.\n- badge_pop, breathe, count_up(label, from, to, ms := 450).\n- static var reduce_motion := false: all durations become 0 and there is no breathing.\n\no) static func paperize(box: Control) (contrast shim for not-yet-migrated modals)\n- Return if box.has_meta('kit_native').\n- Walk the descendants. For each Label whose nearest Panel ancestor is the box itself, or a Panel with meta 'well', and is not inside a KitButton, recolour by its font_color:\n  - near-white (lum > 0.85) -> INK_TEXT\n  - gold/yellow (r>0.85, g>0.6, b<0.6) -> WARN_CREAM\n  - blue-grey MUTED-like (sat<0.25, 0.55<=lum<=0.85) -> MUTED_CREAM\n  - green -> POS_CREAM\n  - red -> NEG_CREAM\n  - then outline_size 0 and shadow alpha 0\n- For each non-KitButton Panel whose stylebox face luminance < 0.3: replace the stylebox with a well (CREAM_WELL, R 20, no border, no shadow) and set meta 'well'.\n\np) Safe area\n- static func vb(node) -> float: canvas visible bottom minus the safe-area bottom, using get_display_safe_area scaled by visible_rect.size / window size.\n- static func top_inset(node) -> float.\n\nq) static func tooltip(source: Control, title: String, text := '')\n- Cream bubble per spec §4.11, added to the top CanvasLayer's root at z 90.\n- Closes on the next tap anywhere.\n\nr) static func plural(n, forms: Array) -> String\n- RU: 3 forms, using n%10 and n%100.\n- EN: 2 forms.\n\n3. game_ui.gd: delegate the helpers only. Do NOT edit any show_* / set_* body in this step.\n- Add `const Kit := preload(\"res://scripts/ui_kit.gd\")`.\n- _ready: font_bold = Kit.font('d900').\n- _style(): return Kit.legacy_style(bg, radius, border, bw). Keep the declared return type StyleBoxFlat: callers mutate the result (shadow_size, set_corner_radius_all).\n- _label(): return Kit.label(text, size, color, bold).\n- _fit(): same loop, but step down through the SCALE values and stop at a floor of 20 (was 12).\n- _panel(): unchanged, plus: if the style is a StyleBoxFlat with meta kit_lip > 0 and rect.size.y >= 40, add Kit.KitDecor as child 0.\n- _title(): icon side = round(size*1.4) via Kit.icon_tex; leave a 12 px gap between icon and text (fixes the Chronicle, Settings and Inbox icons touching their titles).\n- _has_inline / _inline: build from Kit.split_icons:\n  - icon pieces -> TextureRect of size*1.2\n  - chrome pieces -> KitShape\n  - text pieces -> _label\n  - floor 20\n  - _has_inline returns true when any non-text piece exists\n- _modal_box(rect, parchment := false, title := '', icon := '', role := 'info', closable := false, blocking := false) -> Panel\n  - close_modal()\n  - Create _modal SYNCHRONOUSLY: a full visible-rect Control, MOUSE_FILTER_STOP, added to root.\n  - Dim: ColorRect INK, alpha tweened 0 -> 0.6 over 140 ms (set 0.6 directly when headless).\n  - Frame: _panel(_modal, rect, Kit.style(Kit.CREAM, 34, 5, Kit.INK, 10, 12)). Cream for every modal; the parchment flag is ignored.\n  - Kit.pop_in(frame).\n  - If title != '': Kit.title_plate(frame, title, role, icon).\n  - If closable and not blocking: Kit.close_button(frame, close_modal), and a tap on the dim closes.\n  - frame.set_meta('paper', true); Kit.paperize.call_deferred(frame).\n  - Return the frame Panel (children keep their local coordinates).\n- close_modal(): var m := _modal; _modal = null; if m: Kit.close_fx(m). has_modal() must be false immediately.\n- _button(parent, rect, text, color, cb) -> Panel: return Kit.button(parent, rect, Kit.role_of(color), text, {cb = cb}).\n- _card_button(card, text, color, cb, enabled): Kit.button(card, Rect2(8, 130, 134, 42), role_of(color) if enabled else 'lock', text, {cb = cb, size = 'XS', filter = MOUSE_FILTER_PASS}).\n- fmt_num / fmt_time: keep the static signatures and delegate to Kit.\n\n4. hud.gd\n- Add const Kit.\n- _ready: font_bold = Kit.font('d900').\n- _style -> Kit.legacy_style; _label -> Kit.label.\n- _panel: add the KitDecor as in game_ui.\n- _fit floor 20.\n- fmt(v) -> Kit.fmt_num(v).\n- Icon._draw: draw textures at exactly 1.0x the box (delete the 1.15x overflow). Unlit tab icons: modulate Color(0.86,0.88,0.95) instead of the grey multiply.\n\n5. strings.csv\n- Add time.dh = '%dд %dч' / '%dd %dh'.\n- Change time.hm to '%dч %02dм' / '%dh %02dm' (same placeholders).\n- Strip NO pictographs yet (split_icons hides them).\n\n6. tools/ui_lint.py\n- python3, stdlib only.\n- Implements rules R1-R7 of spec §8.1 over game/scripts/{game_ui,hud,shop_ui,main,map_view}.gd and game/locale/strings.csv. ui_kit.gd is exempt from R1.\n- Output: file:line RULE message, then counts per rule.\n- Exit 0 by default; exit 1 with --strict.\n\nRules: do not move or resize any screen element in this step; do not touch main.gd, shop_ui.gd or map_view.gd; do not run git.",
+   "verify": "1. Syntax: /opt/godot/Godot_v4.5.1-stable_linux.x86_64 --headless --path game --check-only --script res://scripts/<f>.gd for ui_kit.gd, game_ui.gd, hud.gd, shop_ui.gd and main.gd. Expect no errors.\n2. Strings: python3 tools/check_strings.py exits 0.\n3. Tests: the CI loop — for t in test_sim test_economy test_deposits test_march test_camps test_ring test_ring3 test_cases test_orders test_pass test_weekly test_calendar test_patent test_chronicle test_commanders test_flow; do flock -w 1800 /tmp/raivon_godot.lock /opt/godot/Godot_v4.5.1-stable_linux.x86_64 --headless --path game --script res://tests/$t.gd || echo FAILED $t; done. Every suite exits 0 and test_flow prints no FAIL lines.\n4. Lint: python3 tools/ui_lint.py prints a report.\n5. Screenshots: tools/godot_shot.sh $SCRATCHPAD/ui/s01/<n>.png --lang=ru --shot-delay=3 with: (none), --tab=buildings, --select=2,1, --demo=battle:20, --demo=result, --demo=peace, --demo=shop, --demo=settings, --demo=pass, --demo=ceremony:3. Compare each with before/:\n   - Rubik/Nunito Cyrillic everywhere, no tofu boxes.\n   - Opaque slate panels with INK outline, hard drop shadow and bottom lip.\n   - Buttons with lip + gloss in role colours.\n   - All modals cream with dark readable text (no white-on-cream).\n   - No emoji or glyph squares in buttons (✕ shows as a vector X).\n   - No element missing.",
+   "depends_on": [],
+   "impact": "high"
+  },
+  {
+   "id": "s02_icons",
+   "title": "3D icon set: new icons, re-rendered food/metal/oil, ink rim, building card art",
+   "owner_files": [
+    "tools/blender/icon_assets.py",
+    "tools/blender/card_art.py",
+    "tools/ui/ink_rim.py",
+    "game/assets/ui/icons/",
+    "game/assets/ui/coin.png",
+    "game/assets/ui/food.png",
+    "game/assets/ui/metal.png",
+    "game/assets/ui/oil.png",
+    "game/assets/ui/raivite.png",
+    "game/assets/ui/builder.png",
+    "game/assets/ui/cards/bld_*.png"
+   ],
+   "functions": [
+    "icon_assets.py: new builders + render() post-process",
+    "card_art.py: building(kind)",
+    "ink_rim.py (new)"
+   ],
+   "instructions": "Asset-only step. It runs in parallel with s01. Do not touch any .gd file or strings.csv.\n\n1. tools/ui/ink_rim.py\n- Runs with python3 -I and Pillow 12 (already installed).\n- Usage: ink_rim.py IN.png OUT.png [--px N]. N defaults to round(3*W/128).\n- Algorithm:\n  - mask = alpha > 127\n  - dilate the mask by N px (ImageFilter.MaxFilter(2N+1))\n  - fill the dilated mask with INK #1B2140 (alpha 255)\n  - alpha-composite the original over it\n  - keep the canvas size\n- If any opaque pixel lies within N px of the canvas edge, print a WARNING. Re-render that icon with a smaller ortho so the rim fits.\n\n2. tools/blender/icon_assets.py\n- Render raw icons into a temp dir: the scratchpad or /tmp, never the repo.\n- Pass each through ink_rim.py into the final path, so the rim is applied exactly once and the pipeline stays reproducible.\n- Keep the existing camera, key light and the 256 -> 128 output.\n- Add these builders in the same chunky low-poly style:\n  - swords: two crossed chunky swords, steel blades, brass guards\n  - shield: round brass-rimmed blue shield with a plain white star; no eagle and no crest copy\n  - dove: white dove with an olive sprig\n  - treaty: rolled scroll with a red wax seal\n  - seal: red wax disc with a hex emblem\n  - handshake: two chunky mitten hands\n  - globe: blue/green globe on a brass stand\n  - horn: brass war horn\n  - gift: box with a blue ribbon\n  - coins: stack of 3 coins\n  - lightning: yellow bolt\n  - barrel: dark-green oil barrel with brass hoops and a black drip; must read on navy\n  - calendar: paper page with a red top band\n  - charter: scroll with a crown seal\n  - chest_wood, chest_royal (blue+gold), chest_cards (box with a card fan)\n  - medal_bronze, medal_silver, medal_gold: tints of medal\n  - shard: blue crystal fragment with a portrait-frame bevel; must not look like raivite\n  - blueprint: rolled blue paper\n  - xp: gold star medal\n  - mason: worker with helmet and trowel\n  - white_flag, pencil, sound_on, sound_off, dice\n  - eye_off: eye with a slash\n  - hex_tile: grass hex\n- Re-render, keeping the file names:\n  - food -> a grain sack with wheat ears (not a fan)\n  - metal -> lighter steel ingots with a blue rim light\n  - oil.png -> the barrel (the HUD loads res://assets/ui/oil.png)\n- Re-run ALL existing icons through the same pipeline so every UI icon gets the rim: all of assets/ui/icons/*.png plus coin, food, metal, oil, raivite and builder in assets/ui/.\n- Portraits and cards/ get NO rim.\n- Respect docs/art_direction.md §6.15:\n  - no elixir drop\n  - no green gem-purchase look\n  - no crown-as-score\n  - no Supercell shapes\n\n3. tools/blender/card_art.py\n- Add building(kind): a 270x180 render of the building's map model (DL1 era; find the model names via the building types in game/scripts/main.gd / map_view.gd).\n- Background: a sky gradient SKY_TOP #8FCDF2 -> SKY_LOW #E3F4FD with a GRASS #86C45E ground disc.\n- Write game/assets/ui/cards/bld_<type>.png for: residence, barracks, academy, warehouse, market, and any other building type the Buildings tab lists.\n- Optional, if time remains: re-render the 8 battle cards (attack, breakthrough, airstrike, encircle, defense, corps, landing, missile) on one shared backdrop and key light at 270x300, with the same file names.\n\n4. Import: flock -w 1800 /tmp/raivon_godot.lock /opt/godot/Godot_v4.5.1-stable_linux.x86_64 --headless --path game --import",
+   "verify": "1. Build a contact sheet with Pillow: $SCRATCHPAD/ui/s02/icons_sheet.png.\n   - Every icon at 64 and at 36 px.\n   - One half on a SLATE #2E3F66 background, the other on CREAM #FFF4DE.\n   - Every icon must be recognisable at 36 px, with the INK rim visible and nothing clipped.\n   - food must read as grain; oil as a barrel on navy.\n2. Building cards: a second sheet of cards/bld_*.png.\n3. Import: godot --import shows no errors.\n4. Tests: test_flow still passes (flock command as in s01).\n5. Runtime: tools/godot_shot.sh $SCRATCHPAD/ui/s02/default.png --lang=ru --shot-delay=3 shows rimmed icons in the left column.",
+   "depends_on": [],
+   "impact": "high"
+  },
+  {
+   "id": "s03_hud_top",
+   "title": "HUD frame: resource pills on a currency layer, top scrim, ruler portrait, left column, minimap clip, labelled map tools, safe-area anchoring",
+   "owner_files": [
+    "game/scripts/hud.gd",
+    "game/scripts/ui_kit.gd",
+    "game/locale/strings.csv",
+    "tools/godot_shot.sh"
+   ],
+   "functions": [
+    "hud._build (top bar, crest, portrait, left column, store, orders chip, minimap, right buttons sections)",
+    "hud.set_resources",
+    "hud._layout_res",
+    "hud.set_mail",
+    "hud.set_book",
+    "hud.set_orders",
+    "hud.set_level",
+    "hud.set_ruler_era",
+    "hud.retranslate",
+    "hud.Minimap._draw",
+    "hud.Portrait (delete)",
+    "new hud._anchor_groups / tool_rect(name) / button_rect(name)",
+    "Kit.pill"
+   ],
+   "instructions": "Implement spec §5 (top and side rows) and §6 HUD. Coordinates are in design space; the bottom group is offset by Kit.vb(self) - 1672 and the top group by Kit.top_inset(self).\n\n1. ANCHORING\nIn hud.gd create three container Controls (MOUSE_FILTER_IGNORE):\n- _top: position.y = top_inset\n- _bottom: position.y = vb - 1672\n- _pills: inside a NEW child CanvasLayer `_currency` with layer = 3, so the pills draw above game_ui's modal dim (game_ui is layer 2).\nMove existing nodes:\n- crest, portrait, left column, minimap and right tools -> _top\n- tabs, tray, unit cards, hex panel and attack button -> _bottom (unchanged otherwise; s04/s05 restyle them)\nRecompute the offsets on get_viewport().size_changed.\n\n2. TOP SCRIM\nA TextureRect with a vertical GradientTexture2D: INK alpha 0.55 at the top -> 0 at the bottom. Rect (0, 0, 941, 150 + top_inset), first child of the HUD, mouse IGNORE. It replaces the dark slab: delete the _panel(Rect2(108,10,680,66)) and the builders box _panel(Rect2(800,10,130,66)).\n\n3. RESOURCE PILLS (Kit.pill, spec §4.6)\n- y 12, h 70.\n- Layout with 4 resources (x, w): coin (120, 186), food (318, 186), metal (516, 186), raivite (714, 214).\n- With oil (DL5+): coin 120, food 278, metal 436, oil 594 (w 146 each), raivite (752, 177). The value font drops to 28 and the rate fits down to 22.\n- Body: shadow +4 -> INK pill (radius h/2) -> SLATE_WELL face inset 4 -> SLATE_FILL storage fill from the left, width = face_w * clamp(stored/cap).\n- Full storage: FULL #8C5A1F fill and the value turns WARN. Replace the old 'storage full' orange text.\n- Icon 68 at (x-10, y+1), overhanging the left end.\n- Value: NUM 32, Rubik 900, white outlined, at (x+60, y+4).\n- Rate: LABEL 24 POS at (x+60, y+36), via the 'hud.per_hour' format with Kit.fmt_num.\n- Raivite:\n  - no rate line; the value is vertically centred\n  - a go XS button 48x48 at (x+w-56, y+11) with a vector plus\n  - it emits button_pressed('shop'), like the existing store button\n- Every pill is tappable and opens Kit.tooltip(pill, resource name, rate/capacity text from existing data).\n- Values use Kit.fmt_num: exact below 10 000.\n- set_resources(res, per_hour, caps, free_builders, builders): keep the signature. Store free_builders/builders in vars for the Buildings tab badge (drawn in s04). Delete builders_label and the builder icon from the top bar.\n- _layout_res(with_oil): switches between the two layouts.\n\n4. RULER PORTRAIT\n- Rect (14, 134, 90, 96).\n- Face: TRIM brass #E6B13E / lip #9C6B1C for era DL1-4; steel #B9C7D6 / #6A7C93 for DL5-8 (set_ruler_era switches it). OUT 4, lip 6, R 20.\n- Art clipped inside it on a SKY_TOP -> SKY_LOW backdrop (keep the ruler_face texture logic).\n- Level: Kit.hex_badge(R 24, info) centred at (30, 224); level_label shows the number.\n- DELETE the static XP bar (the two _panel calls at 52,212).\n\n5. LEFT COLUMN\nKit.icon_button squares 84x84 (R 24, slate, icon 62) at x 16:\n- trophy y 252, book 348, mail 444, gear 540\n- shop y 636: role gold, icon 'stall', caption plate tr('hud.shop') via the INK pill h 30, MICRO 22, overlapping the bottom by 14\n- orders y 752: slate, icon 'orders'\nOrders chip and badges:\n- `_orders_chip` stays the member the tests read. Make it the orders KitButton (it extends Panel); keep `.visible` semantics.\n- `_orders_lbl` = a Label inside a 76x34 counter pill (INK 3 + SLATE_WELL, LABEL 24) overlapping the bottom by 14. Text stays e.g. '0/3'.\n- `_orders_dot` = Kit.dot(go when ready).\n- mail_badge / book_badge become Kit.dot with numbers (keep the arrays' API so that set_mail/set_book still work).\n- shop_dot (read by main.gd): a Kit.dot without a number on the shop button.\n- Hit areas 96x96.\n\n6. MINIMAP\n- Frame: Rect (733, 96, 196, 196), SLATE R 24 OUT 4, lip 6, shadow 6.\n- Well: a Panel at (741, 104, 180, 174), SEA_WELL #2A6596, R 16, clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW. Put the Minimap Control INSIDE it, so the view rectangle can no longer spill over the right buttons.\n- Minimap._draw: view rect = white 3 px over INK 6 px with R 8. Keep the hex drawing; add a 1 px lighter top edge per hex if cheap.\n\n7. RIGHT MAP TOOLS\n- Kit.icon_button round Ø80 (slate, icon 56), centre x 885, centres y 356 / 468 / 580 / 692, for target, pin, fort, tower.\n- Each gets a caption pill: h 32, INK 3, SLATE_WELL face, LABEL 24 white; top = button bottom - 10; centred but clamped to end at x <= 929.\n- New strings hud.tool.front / hud.tool.capital / hud.tool.fort / hud.tool.tower = Фронт/Front, Столица/Capital, Форт/Fort, Башня/Tower.\n- Use Kit.icon_tex('swords') for target once it exists (the fallback is automatic).\n- Delete the radius-14 panels.\n\n8. CLEANUP\n- Delete class Portrait (SubViewport unit portraits) and the hidden unit_cards block. They are not referenced outside hud.gd: grep to confirm.\n- Keep tab_labels, tab_highlight and select_tab working (restyled in s04).\n\n9. GETTERS (for the coach in s11)\n- tool_rect(name) -> Rect2\n- button_rect(name) -> Rect2\n- Both return global rects.\n\n10. tools/godot_shot.sh\n- Accept --res=WxH (default 941x1672).\n- Remove it from the user args and use it for the --resolution engine argument and for the xvfb screen size if the script sets one.",
+   "verify": "1. Syntax: check-only hud.gd and ui_kit.gd. python3 tools/check_strings.py.\n2. Tests: test_flow passes. It asserts the orders chip visibility and that its text ends with '/3'.\n3. Screenshots ($SCRATCHPAD/ui/s03/): default, --demo=world (orders chip 1/3), --dl=5 (5 pills with the barrel), --demo=battle:20, --demo=shop, --demo=settings, and default with --res=941x2040. Check that:\n   - the pills are separate, show exact numbers and have rates inside\n   - no text sits directly on the map\n   - the shop is the only gold button\n   - the minimap view rect is clipped (also check --demo=dip2 with --shot-delay=12, a zoomed-out view)\n   - the right tools are labelled\n   - the pills stay bright above the dim of the shop and settings modals\n   - at 941x2040 the top group hugs the top and the bottom group hugs the bottom edge",
+   "depends_on": [
+    "s01_kit",
+    "s02_icons"
+   ],
+   "impact": "high"
+  },
+  {
+   "id": "s04_tabs_tray_army",
+   "title": "Bottom folder tabs, card tray, Kit.card component, Army tab cards (army, new army, hand, commanders)",
+   "owner_files": [
+    "game/scripts/hud.gd",
+    "game/scripts/game_ui.gd",
+    "game/scripts/ui_kit.gd",
+    "game/locale/strings.csv"
+   ],
+   "functions": [
+    "hud._build (bottom tabs/tray section)",
+    "hud.select_tab",
+    "hud.retranslate (tabs)",
+    "new hud.set_tab_badge(key, n, role) / tab_rect(key)",
+    "game_ui._ensure_panel",
+    "game_ui._fill_panel",
+    "game_ui.show_armies",
+    "game_ui._army_card",
+    "game_ui._hand_card",
+    "game_ui._commanders_card",
+    "game_ui._card_button",
+    "game_ui.hide_buildings",
+    "Kit.card"
+   ],
+   "instructions": "Implements spec §4.4, §4.5 and §5 (tabs, tray, cards rows), and §6 Army. The bottom geometry lives inside the _bottom containers (offset vb - 1672). In game_ui, add the same kind of _bottom container for _bpanel, _battle, _action and _action2: create it now, and add the size_changed re-offset.\n\n1. TRAY (hud)\nRect (12, 1464, 628, 196): Kit.style(SLATE, 24, 4, INK, 6, 6) + KitDecor. Replaces _panel(Rect2(0, base_y, 640, 276)).\n\n2. FOLDER TABS (hud)\n- 5 tabs, x = 14 + i*124, w 120.\n- Draw order: unselected tabs -> tray -> selected tab.\n- Unselected: Rect (x, 1384, 120, 84).\n  - Face SLATE_WELL, OUT 4, corner radius 20 at the top only (bottom 0), no shadow.\n  - Icon 52 at full colour, centred at y 1390-1442.\n  - Label: LABEL 24 white with modulate alpha 0.85, at y 1440 h 26, centred, fit down to 22.\n- Selected: Rect (x, 1374, 120, 98).\n  - Face SLATE; border on top/left/right only (border_width_bottom 0); bottom corners 0. It overlaps the tray outline by 8, so tab and tray read as one folder.\n  - Icon 60 at y 1380; label white at y 1440.\n  - Top highlight via KitDecor.\n- Icons:\n  - buildings: castle_icon\n  - army: helmet\n  - development: flask (replaces the hammer that reads as a cleaver)\n  - diplomacy: handshake (fallback hands)\n  - world: globe (fallback scales)\n- tab_labels[key] stays a Label whose .text is exactly tr(key). Tests compare it to 'Здания' / 'Buildings'.\n- select_tab(key) rebuilds the selected/unselected styles (no width change) and cross-fades the card row over 120 ms in game_ui.\n- Strings: tab.diplomacy RU 'Соседи', EN 'Realms'. tab.development EN is already 'Research'.\n- set_tab_badge(key, n := -1, role := 'war'): a Kit.dot at the tab's top-right corner.\n  - The Buildings tab shows a go dot with the number of free builders (stored by set_resources in s03) when > 0.\n- tab_rect(key) returns a global rect (for the coach).\n\n3. CARD ROW (game_ui._ensure_panel)\n- _bpanel inside _bottom at (0, 0).\n- ScrollContainer Rect (18, 1474, 618, 178): horizontal scroll, scroll bar never shown.\n- HBox separation 12. Cards start at y 1476, 180x172.\n- A 40 px right-edge fade: a TextureRect gradient SLATE alpha 0 -> 1 at x 596-636, mouse IGNORE. It shows that more cards exist (3 full cards + a 40 px peek).\n- Keep the _fill_panel caching logic and the _finger_down guard as they are.\n\n4. Kit.card(art_tex, title, opts) -> Panel\n- custom_minimum_size 180x172.\n- Style: shadow +5, INK R 20, SLATE face inset 4 R 16, lip 6; clip_children on the face for the rounded art.\n- Art: rect (4, 4, 172, 104), cover-cropped.\n  - Backdrop kind: sky (SKY_TOP -> SKY_LOW gradient + GRASS strip), blueprint (BLUEPRINT + a 10% white 16 px grid), team(colour), cream.\n  - INK divider 3 px at y 108.\n  - Name on an INK gradient scrim (alpha 0 -> 0.9, bottom 48 px of the art): Rubik 900 26 white outlined, fit 22; if still too long, 2 lines at 22.\n- Optional slots:\n  - top-left hex_badge R 22 centred (16, 16)\n  - top-right round chip Ø44 centred (164, 16): portrait texture / plus chrome / icon\n  - corner dot\n- Bottom zone y 112-162:\n  - either opts.cta = {role, caption, icon, price (<= 2 items), cb, enabled} -> a Kit.button XS at (6, 114, 168, 46) with MOUSE_FILTER_PASS\n  - or opts.stat = {icon, text, bar_frac, bar_role} -> icon 36 + NUM_S 26 + an optional S bar (16 high) at y 146\n- States:\n  - opts.locked: art modulate (0.45, 0.47, 0.52) + a lock icon 56 centred on the art; the CTA becomes lock XS with a lock icon and the 'УР3' caption\n  - opts.selected: TRIM brass outline 5 + a -6 lift\n- The card body is MOUSE_FILTER_PASS. A tap on the body (via _is_tap) opens Kit.tooltip(card, title, opts.details).\n\n5. ARMY TAB (_army_card, _hand_card, _commanders_card)\n- Rebuild on Kit.card with the items' existing fields.\n- Army card:\n  - art: the existing unit/army art used today; if none exists, the helmet icon on sky\n  - badge: the army number\n  - top-right chip: commander portrait, or plus -> the existing commander picker callback\n  - a go check badge when readiness is 100%\n  - stat: swords icon + strength, with an S readiness bar (go; WARN under 50%; war under 25%)\n- While refilling: CTA go XS with the ad icon + timer (the existing refill action and signal army_action).\n- New army:\n  - locked: dark art + lock XS 'УР3'\n  - unlocked: go XS 'Собрать' + [food N]\n  - recruiting: info XS with hourglass + time\n- Hand card:\n  - a fan of 3 card arts (cards/<id>.png, 64x76 each, rotated -8/0/+8 deg) + hex badge '5' (slot count)\n  - CTA info XS 'Колода' -> the existing hand-picker callback\n  - delete the CARD_ART glyphs and the purple\n- Commanders card:\n  - a fan of 3 portraits\n  - chip 'owned/total'\n  - go dot when an upgrade is possible (existing data)\n  - CTA info XS 'Открыть'\n- Upkeep ('−8 еды/ч') and '3 отр. · 100%' move to the tooltip details.\n- Strip pictographs from the army.* keys you touch, and pass icons as params instead.\n\n6. LEGACY CARDS\nBuildings, research, diplomacy and world cards still use the old builders until s07. They must still fit the 180x172 row: set their custom_minimum_size to 180x172 and move _card_button to Rect2(6, 120, 168, 46).",
+   "verify": "1. Syntax and strings: check-only hud.gd, game_ui.gd and ui_kit.gd; check_strings.py.\n2. Tests: test_flow passes. It covers: army tab item count, the language switch relabelling the HUD tabs ('Buildings' / 'Здания'), and the commander picker opening from the army card.\n3. Screenshots ($SCRATCHPAD/ui/s04/): --tab=army, --demo=hand:tab, --demo=commanders:tab, --tab=buildings, --tab=diplomacy, --tab=world. Check that:\n   - the selected tab merges into the tray\n   - all 5 labels are readable\n   - the Buildings tab shows the free-builder dot\n   - cards are 180x172 with art, name on the scrim and one bottom line\n   - 3 cards plus a peek are visible\n   - other tabs still render inside the new tray without overlap",
+   "depends_on": [
+    "s03_hud_top"
+   ],
+   "impact": "high"
+  },
+  {
+   "id": "s05_hex_action",
+   "title": "Hex panel (chips, hidden when nothing is selected) and the single big action button + status button",
+   "owner_files": [
+    "game/scripts/hud.gd",
+    "game/scripts/game_ui.gd",
+    "game/scripts/main.gd",
+    "game/scripts/ui_kit.gd",
+    "game/locale/strings.csv"
+   ],
+   "functions": [
+    "hud.show_tile",
+    "new hud.hide_tile",
+    "hud._build (tile info + attack button section)",
+    "game_ui._build_action",
+    "game_ui.set_action",
+    "game_ui.set_primary",
+    "new game_ui.PRIMARY_LOOK",
+    "main._describe",
+    "main._refresh_ui primary/action block (~lines 480-610)",
+    "main deselection paths (selected = -1)"
+   ],
+   "instructions": "Implements spec §5 (hex panel, big button, status button) and §6 HUD: the big-button table and the status button.\n\n1. HEX PANEL (hud)\nRect (652, 1374, 277, 152) inside _bottom: SLATE surface R 24, lip 6. Content:\n- Name: H2 30 Rubik 900 white, fit down to 24, at (16, 10) w 245.\n- Tile art: 84x74 at (10, 56). Keep the tile_pic loading logic; delete the vector Icon('tile') placeholder.\n- Owner chip at (102, 52), h 34, max w 165: fill = info['owner_fill'] (team colour), INK 3, LABEL 24 white outlined, fit 22.\n- Up to 2 stat chips at y 96 from x 102, gap 6: SLATE_WELL pill h 38, icon 32 + NUM_S 26.\n- Extra chips go to the tooltip on tap.\nDelete:\n- the green 'plus' Icon\n- the tile_bonus sentence label\n- the blue hyperlink owner colour\n- the attack_btn visuals (Panel, vector swords Icon, 'Атаковать' label)\nKeep attack_btn as a hidden, zero-size Panel member so nothing external breaks.\nshow_tile(info): reads the NEW optional keys:\n- 'chips': Array of [icon, text, tone], tone = pos | neg | plain\n- 'owner_fill': Color\nIt falls back to the old 'bonus' text only if 'chips' is missing. It makes the panel visible.\nhide_tile(): hides the panel. The panel starts hidden: delete the 'Равнина / Ваша территория / +25%' placeholder and _tile_set.\n\n2. main._describe(id)\nKeep the old keys (title, owner, owner_color, bonus, attackable, tile) and ADD 'chips' and 'owner_fill':\n- owner_fill = map_view.state_color(own); for the player's hexes, the player colour.\n- owner text: 'Вы' (new key tile.owner_you) for the player; the state name otherwise; 'Ничья' for nobody.\n- chips:\n  - player-controlled hex: one [coin|food|metal|oil, '+N'] chip per positive hex_income, at most 2 (gold first), plus [hammer, 'Ремонт'] if damaged\n  - enemy/neutral hex: [crown, value]; [fort, '+N%'] for a forest/hills/fort defence bonus\n  - capital: [crown]\n  - oil hex below DL5: [barrel, 'УР5'] with tone neg\n  - camp: [coins, rewards left]\n  - deposit: [res icon, amount] and [hourglass, time]\n- Call hud.hide_tile() wherever selection is cleared (grep 'selected = -1' in main.gd) and while the battle hand / timer uses the slot.\n\n3. BIG BUTTON (game_ui._action2)\n- One Kit.button L at Rect (652, 1536, 277, 124), parent _bottom. It is the ONLY primary renderer.\n- set_primary(kind: String, title: String, color: Variant = 'info', enabled := true, icon := '', price: Array = [])\n  - role = color if color is String, else Kit.role_of(color)\n  - then PRIMARY_LOOK[kind] overrides role and icon\n  - keep `_action2_kind = kind if enabled else ''` and `_action2.visible = kind != ''` exactly\n- PRIMARY_LOOK:\n\n| kind | role | icon |\n|---|---|---|\n| pick_target | war | target |\n| declare | war | swords |\n| offensive | war | swords |\n| camp | war | swords |\n| upgrade | go | v:arrow_up |\n| colonize | go | orders |\n| colonize_now | gold, or go when free | lightning |\n| convoy | go | cart |\n| repair | go | hammer |\n| march | info | orders |\n| march_cancel | info | v:x |\n| march_stop | info | hourglass |\n| retreat | info, size M | white_flag |\n| truce, core, camp_far, camp_wait, wait, repairing, convoy_status | lock (enabled=false) | lock or hourglass |\n\n- retreat uses Rect (652, 1564, 277, 96).\n- Disabled: a tap shows Kit.tooltip with the long reason string. Pass it as the new optional `reason` param, or reuse the old long title when given.\n- Captions are short (spec table). Update strings ru/en and keep placeholders identical in both:\n  - ui.declare_war = 'Война!'\n  - ui.offensive = 'В атаку!'\n  - ui.upgrade = 'Улучшить'\n  - ui.colonize = 'Занять' (cost goes to price=[['coin', cost]]; the time goes to a timer chip in the hex panel)\n  - ui.speedup = 'Ускорить' + price raivite\n  - ui.retreat = 'Отступить'\n  - ui.march = 'Марш'\n  - ui.pick_target = 'Выбрать\\nцель'\n  - ui.attack_camp = 'Разбить\\nлагерь'\n  - disabled captions per the spec table\n- In main.gd replace the formatted captions with the short key + price/icon args. Drop '\\n' + ui.offensive_on (the enemy is shown in the war bar).\n- Keep every kind string and every enabled condition exactly as now; tests assert declare / convoy / repair / offensive / camp / ''.\n\n4. STATUS BUTTON (game_ui._action)\nset_action(kind, title, sub := '', bg: Variant = 'go')\n- kind 'timer': a SLATE plate Rect (652, 1374, 277, 162).\n  - hourglass icon 64 at (16, 22)\n  - title in TIMER 60 at (88, 14)\n  - sub in LABEL 24 SOFT, centred, at y 104\n  - rush: the number turns NEG and pulses every 1 s\n- Any other kind: a Kit.button M at Rect (652, 1438, 277, 88), parent _bottom.\n  - peace: go, icon dove, sub shown as an INK chip inside the button\n  - repair_ad: go, icon ad\n  - ruin_halve: go, icon ad + timer chip\n  - hud.hide_tile() while it is visible\n- Keep `_action_kind = kind` and visibility semantics exactly.\n- Strip pictographs from ui.peace_btn, ui.repair_ad, etc. and pass icons instead.",
+   "verify": "1. Syntax and strings: check-only hud.gd, game_ui.gd and main.gd; check_strings.py.\n2. Tests: test_flow passes. It covers: declare disabled during the truce, deposit → convoy, damaged hex → repair + repair_ad, ruin_halve, camp, offensive waits / becomes available, FTUE preselects declare.\n3. Screenshots ($SCRATCHPAD/ui/s05/), checking that the big red/green button is the loudest element:\n   - default: no hex panel, no big button\n   - --select=2,1: enemy chip + [crown] [fort] chips + war 'Война!' with swords\n   - --select=0,3: own hex, income chips + go 'Улучшить' + price\n   - --demo=oil --shot-delay=12: lock 'Ядро' + barrel chip\n   - --demo=battle:20: timer plate + info M 'Отступить'\n   - --demo=war\n   - --demo=convoy\n   - --demo=march\n   - --demo=ruin",
+   "depends_on": [
+    "s04_tabs_tray_army"
+   ],
+   "impact": "high"
+  },
+  {
+   "id": "s06_war_screens",
+   "title": "War HUD: control bar, battle hand (aqua hex energy), drag ghost, result, peace treaty, ultimatum, ceremony",
+   "owner_files": [
+    "game/scripts/game_ui.gd",
+    "game/scripts/main.gd",
+    "game/scripts/ui_kit.gd",
+    "game/locale/strings.csv"
+   ],
+   "functions": [
+    "game_ui._build_control_bar",
+    "game_ui.set_control",
+    "game_ui._build_battle",
+    "game_ui._build_cards",
+    "game_ui.set_hand",
+    "game_ui.set_locked",
+    "game_ui.set_corps",
+    "game_ui.retranslate",
+    "game_ui.set_battle",
+    "game_ui._on_card_input",
+    "game_ui._input (ghost + drop threshold)",
+    "game_ui.show_result",
+    "game_ui.show_peace",
+    "game_ui.show_ultimatum",
+    "game_ui._leader_seal",
+    "game_ui.show_ceremony_counters",
+    "game_ui._process (seal)",
+    "main.gd drop threshold (~2795)",
+    "main.gd ceremony lines builder (~3000-3060)",
+    "Kit.segmented",
+    "Kit.tile",
+    "Kit.star"
+   ],
+   "instructions": "Implements spec §5 (war bar, battle tray) and §6 Режимы. The battle UI sits in game_ui._bottom (offset vb - 1672); the control bar sits in a top container offset by Kit.top_inset.\n\n1. CONTROL BAR (spec §5)\n- Group at (120, 96, 604, 64).\n- Flag chips: round SLATE Ø64 centred at (152, 128) and (692, 128), each with the existing FlagView 36x46 inside (keep _war_flags).\n- Bar: Rect (176, 106, 492, 44), INK R 22.\n  - Inner track: 484x36, enemy colour.\n  - _control_fill = the player-colour Panel.\n  - set_control: _control_fill.size.x = 484 * clamp(control/100); _war_swords becomes a TextureRect 56 (Kit.icon_tex('swords')) centred at x 180 + fill.\n- Percent labels: NUM_S 26 inside both ends.\n- Score chip: INK a0.85, h 30, centred under the junction at y 150. Text is the signed score only, e.g. '+10,7' (Kit.fmt_dec), POS or NEG coloured. Replace the 'Война: … · счёт' sentence: ui.war_status becomes a short format, or the score is formatted directly.\n- _laststand: a war chip h 30, right-aligned to x 668, at y 152.\n\n2. BATTLE TRAY (_build_battle, spec §5)\n- Tray: SLATE (12, 1374, 628, 286).\n- Energy:\n  - counter: Kit.hex_badge R 32 role energy, centred (56, 1416); _energy_lbl = its numeral\n  - 10 hex pips R 20, centres x = 116 + i*50, y 1416\n  - each pip: SLATE_WELL with INK 3 when empty; ENERGY face + top highlight when full\n  - _energy_segs[i] = the fill Control inside each pip. set_battle keeps setting a fraction: size it vertically from the bottom, or scale its alpha for the partial pip.\n- Cards (_build_cards):\n  - n cards; w = (612 - 8*(n-1))/n; x = 20 + i*(w+8); y 1452; h 196\n  - Panel SLATE R 18 OUT 4 lip 6 with clip_children\n  - art cover at (4, 4, w-8, 182) R 14\n  - name: MICRO 22 white (fit 20) on an INK gradient scrim at the art bottom; keep _card_names\n  - cost: hex_badge R 22 energy at (16, 16)\n  - child Label named 'cd' (keep the name) = NUM_L 44 centred, over an INK a0.6 overlay that shows only during cooldown\n  - delete CARD_ART glyph usage everywhere\n  - set_battle states, replacing modulate.a: unaffordable -> art modulate (0.55, 0.57, 0.62) and cost hex role lock; locked -> dark art + lock icon 56 + lock hex with the DL number, and set_locked keeps writing dl.short into the name\n- Corps card: (524, 1206, 116, 160), same style, 2-line name.\n- _input ghost:\n  - replace the 64 px glyph Label with a TextureRect of the card art at 0.9x (104x176) plus shadow and a name label\n  - keep _drag_card and the signals\n  - drop threshold: pos.y < 1374 + (Kit.vb(self) - 1672). Expose it as `func drop_y() -> float` and use it in main.gd (~2795) instead of GameUI.VH - 280.\n- RU card.encircle: 'Котёл'. Check every RU card name is <= 9 chars.\n\n3. RESULT (show_result)\n- Modal M 781, blocking.\n- Title plate: gold 'Успех!' if stars >= 1 and captured > 0; info 'Ничья' for 0 stars; war 'Поражение' if lost > captured. Add the 3 keys.\n- Stars: 3 Kit.star of R 70 / 85 / 70, the middle one 28 px higher; full = stars earned.\n- Reason chip: hourglass + the reason text.\n- CREAM_WELL well with 3 tiles: [hex_tile '+captured' 'Захвачено'] [flag 'control%' 'Фронт'] [treaty score 'Очки мира']. Add 'Потеряно' in NEG_CREAM only when lost > 0.\n- One BODY 28 line: result.note shortened to 'Граница сдвинется после мира.'\n- Footer: info L 'Ещё бой' (swords) on the left -> on_continue; go L 'К миру' (treaty) on the right -> on_peace.\n- box.set_meta('kit_native', true).\n\n4. PEACE (show_peace)\n- Modal L, title plate go 'Мирный договор', height hugs the content (no empty band).\n- Leader: _leader_seal → portrait 156x170 R 20 on the team colour with a TRIM ring, mood 'cunning'. Next to it a speech bubble: 'Подпишу, если не больше %s'.\n- Budget: Kit.bar L '50,5 / 54,6' with the treaty icon. Over budget: role war, and the sign button turns lock.\n- 'Требования' section header, then a 3-column grid of 260x200 Kit.tile:\n  - content: hex render or icon + name + cost pill\n  - selected = go rim + check badge\n  - repeated ids collapse into one tile with a '×N' hex\n  - demand_toggled(id) is emitted unchanged\n  - hide demands the AI can never accept (enemy core) instead of showing a rules line\n- 'Грабёж': Kit.segmented ['Нет', '30%', '45%', '60%'] -> plunder_selected(level).\n- Hint 'Удерживайте, чтобы подписать' (BODY_S, MUTED_CREAM): only the first 3 times. Use a static counter in game_ui; persistence is not required.\n- Footer:\n  - info S 'К войне' on the left (the existing back callback)\n  - go L hold button 'Подписать мир' (hold_sec 0.8) on the right; on completion emit seal_done — the same signal as today, keep it\n  - delete _seal_prog / _seal_t only if seal_done still fires exactly once\n- Remove the parchment look, olive rows, ○⬢ glyphs and 'ценн.'/'гекс.'.\n\n5. ULTIMATUM (show_ultimatum)\n- Modal L, title plate war 'Ультиматум', closable (✕ = later = close_modal).\n- Angry leader + one-sentence bubble + war timer chip with the time left.\n- 3 option cards 255x300 in a CREAM_WELL:\n  - [tile + chip 'мир 24ч'] -> go S 'Отдать' -> on_accept\n  - [coins 'tribute'] -> go S 'Откупиться' -> on_pay; lock if not can_pay, a tap shows the reason\n  - [swords] -> war S 'Война' -> on_refuse\n- Short strings, no parentheses.\n\n6. CEREMONY (show_ceremony_counters)\n- Add an optional trailing param `items: Array = []`. Each item is {icon, text, kind: 'hero'|'tile'|'bar', from, to, frac}.\n- main.gd's ceremony builder (~3000-3060) fills items alongside the existing lines; the lines stay as the fallback.\n- Layout:\n  - layer dim INK a0.75 over everything except the currency layer\n  - title plate gold 'Победа!' (HERO 64)\n  - hero counter: crown icon + HERO 64 counting from -> to (Kit.count_up) + POS chip '+14'\n  - chapter bar L\n  - grid of M reward tiles, 3 columns, staggered pop at 80 ms\n  - at most 6 tiles, then a '+N' tile\n- Footer: go L 'Забрать' on the right (on_done, active after active_after seconds, lock before); info M '×2' + ad icon on the left (on_double) if valid.\n- Remove the emoji, the 8 sentences and the see-through panel.\n- Keep _modal set synchronously.\n\n7. STRINGS\nStrip pictographs from result.*, peace.*, ult.*, ceremony.*, card.*, ui.war_status and ui.last_stand. Keep ru/en placeholders identical.",
+   "verify": "1. Syntax and strings: check-only game_ui.gd and main.gd; check_strings.py.\n2. Tests: test_flow passes. It covers: peace flows incl. non-positive score → white/defeat offer, airstrike locked below DL6 (_locked), flag wizard after the first peace, the Wolf offering peace, separate peace.\n3. Screenshots ($SCRATCHPAD/ui/s06/): --demo=battle:20, --demo=result, --demo=peace, --demo=ceremony:3, --demo=ultimatum, --demo=war, --demo=missile, --demo=air. Check that:\n   - aqua hex pips are readable\n   - card names are not clipped\n   - the junction swords sit on the fill edge\n   - result shows 3 vector stars and 3 tiles\n   - peace hugs its content with no gap above the sign button\n   - ceremony tiles are readable and the pills are visible above the dim\n4. Tall screen: --demo=peace and --demo=battle:20 with --res=941x2040.",
+   "depends_on": [
+    "s05_hex_action"
+   ],
+   "impact": "high"
+  },
+  {
+   "id": "s07_tab_cards",
+   "title": "Buildings, Development, Diplomacy (Соседи) and World tab cards; leader dialog; alarm and market cards",
+   "owner_files": [
+    "game/scripts/game_ui.gd",
+    "game/scripts/ui_kit.gd",
+    "game/locale/strings.csv"
+   ],
+   "functions": [
+    "game_ui.show_buildings",
+    "game_ui._building_card (buildings + research)",
+    "game_ui._market_card",
+    "game_ui.show_diplomacy",
+    "game_ui._diplomacy_card",
+    "game_ui._alarm_card",
+    "new game_ui._leader_dialog",
+    "game_ui.show_world",
+    "game_ui._chapter_card",
+    "game_ui._star_card",
+    "BUILDING_ICONS"
+   ],
+   "instructions": "Rebuild every remaining tray card on Kit.card (180x172; spec §4.4 and §6 Вкладки). Keep all emitted signals and their arguments unchanged: building_upgrade, building_speedup, research_start, research_speedup, diplomacy_action, world_action, market_open.\n\n1. BUILDINGS (_building_card, non-research items)\n- Art: res://assets/ui/cards/bld_<type>.png if it exists; else the BUILDING_ICONS icon at 72 centred on the sky backdrop. Building art never reuses a tab icon.\n- Level hex badge = it.level.\n- CTA:\n  - idle: go XS with at most 2 price items from it.cost; pick the 2 scarcest relative to the player's stock; with more costs, add a '+1' chip.\n  - unaffordable: the short price turns NEG and a tap shakes + shows a tooltip 'Не хватает …'.\n  - busy: info XS with hourglass + time; a tap → building_speedup(id).\n  - blocked by it.reason: lock XS with a lock icon + short 'УР2'; the tap tooltip shows L.t(reason).\n- Time and the full cost list go to the tooltip details.\n- Delete '⬆ Улучшить', ⏱, the cost rows under the card and the mixed alignment.\n\n2. DEVELOPMENT (research items, same function)\n- Blueprint backdrop.\n- Art = an effect icon per line: taxes ledger -> 'book', farming -> 'food', mining -> 'metal', military -> 'swords', others -> 'flask'. Never the cost icon.\n- Level pips (Kit chips) are not needed: use the hex badge level/max.\n- CTA go XS 'Изучить' + at most 2 prices (this kills the overlapping 20 px cost rows); busy -> info timer -> research_speedup.\n\n3. MARKET CARD\nArt: stall icon on cream. CTA info XS 'Рынок' -> market_open.\n\n4. DIPLOMACY (_diplomacy_card)\n- Art: the leader portrait via CmdPortrait/the existing portrait path, on the team colour.\n  - Mood by opinion: >= +30 smile, <= -30 angry, else base (the ldr_* variants exist).\n- Title: the state name (2 lines at 22 if needed).\n- Top-left chip: dove (peace), swords (war) or handshake (pact/alliance).\n- Top-right chip: opinion '−10' with a go/war fill.\n- Exactly ONE contextual CTA:\n  - at war -> go 'Мир'\n  - opinion < 0 and gift possible -> go 'Подарок' + [coin N]\n  - else -> info 'Пакт' (lock + reason if on cooldown)\n- Card body tap -> _leader_dialog(it): modal M, title plate info with the state name.\n  - portrait 156x170 + speech bubble (existing mood line)\n  - 2x2 grid of M buttons: Пакт / Союз / Обмен / Подарок, each emitting diplomacy_action(state, kind) with the existing kinds\n  - impossible-by-relation actions are HIDDEN (no 'Союз' for a hostile state or a coalition member)\n  - temporarily blocked actions are lock + reason\n  - separate war L 'Объявить войну' at the bottom\n- Remove the 5-button soup, the ⇄/🎁/⚔ glyphs, the state-coloured text and borders, and the square portrait plate.\n\n5. ALARM (_alarm_card)\n- First card. Horn icon art on cream.\n- Stat: the percentage in NUM_S + an S threat bar (role war).\n- Round info 'i' in the top-right chip opens Kit.tooltip with the rules text (the old 13 px paragraph moves there).\n\n6. WORLD (_chapter_card, _star_card, show_world)\n- Chapter: island/hex_tile art, title 'Глава I', stat bar '7/20'.\n- Pass: medal + level hex. Calendar: calendar icon + 'День N' + dot. Orders: orders icon + '2/3' + go check when done.\n- go XS 'Забрать' only when claimable; otherwise the whole card emits the existing open action (the CTA becomes info XS 'Открыть' only if the card needs an explicit button).\n- Delete the purple buttons and the 🎖📅 emoji.\n\n7. STRINGS\nStrip pictographs from bld.*, research.*, dipl.*, world.*, alarm.* and market.open; add the short captions.",
+   "verify": "1. Syntax and strings: check-only game_ui.gd; check_strings.py.\n2. Tests: test_flow passes. It covers: development tab lists 10 research lines, research start, Taxes, language switch (buildings tab in English), market opens, ally asks, separate peace.\n3. Screenshots ($SCRATCHPAD/ui/s07/):\n   - --tab=buildings, --tab=development, --demo=blueprint\n   - --tab=diplomacy, --demo=dip2 --shot-delay=12, --demo=separate --shot-delay=22\n   - --tab=world, --demo=world\n   - --demo=market\n4. Check that:\n   - each card has one bottom line and at most 2 prices\n   - no overlapping cost icons\n   - each diplomacy card has one button\n   - the leader dialog opens (add a demo variant dip2:leader if needed, in main.gd? NO — main.gd is not owned here; verify via the test or by a temporary local call and revert)\n   - no purple anywhere except epic",
+   "depends_on": [
+    "s06_war_screens"
+   ],
+   "impact": "medium"
+  },
+  {
+   "id": "s08_meta_shop_pass",
+   "title": "Shop, War Pass, Chronicle, Patent, Settings on the paper modal language",
+   "owner_files": [
+    "game/scripts/shop_ui.gd",
+    "game/scripts/game_ui.gd",
+    "game/scripts/ui_kit.gd",
+    "game/locale/strings.csv"
+   ],
+   "functions": [
+    "shop_ui._render",
+    "shop_ui._card",
+    "shop_ui._cases_tab",
+    "shop_ui._info_button",
+    "shop_ui._show_odds",
+    "shop_ui.show_reveal",
+    "shop_ui._raivite_tab",
+    "shop_ui._packs_tab",
+    "shop_ui._atelier_tab",
+    "game_ui.show_pass",
+    "game_ui.show_patent",
+    "game_ui.show_chronicle",
+    "game_ui.show_settings",
+    "Kit.row",
+    "Kit.toggle"
+   ],
+   "instructions": "Follow spec §4.3 (modal), §4.9 (rows and tiles) and §6 Окна. Every rebuilt modal calls box.set_meta('kit_native', true), so paperize skips it.\n\n1. SHOP (shop_ui.gd)\nKeep setup / refresh / show_reveal / signals and the 'closed' emit.\n- Frame: replace the slate sheet with a cream L frame at (24, 150, 893, VB-174) built via ui._panel + Kit.style(CREAM, 34, 5, INK, 10, 12).\n  - dim INK a0.6\n  - Kit.title_plate gold 'Лавка' with the stall icon\n  - Kit.close_button -> closed.emit()\n- Delete the header raivite balance (the pills are visible on layer 3).\n- Tabs: Kit.segmented on cream [Кейсы, Райвиты, Наборы, Ателье] at y 72.\n- Offer cards: CREAM_WELL R 24, full width minus 64.\n  - left art block 220 on a rarity-tinted plate: chest_wood / chest_royal / chest_cards via Kit.icon_tex at 180\n  - title H1 36, at most 1 note line LABEL 24 MUTED_CREAM\n  - round info 'i' Ø52 at the top-right -> _show_odds\n- Free crate:\n  - if available: go L 'Открыть' + a hex '2' count\n  - else: timer chip M '6ч 00м' + go S '+1' with the ad icon\n- Royal case:\n  - pity line as a Kit.bar L 'Эпик через 4' (role info, epic gem)\n  - two gold buttons [raivite 160] and [raivite 1 440], the second with a war ribbon 'Эпик гарантирован'\n- Odds: modal M with rarity-gem rows.\n- Reveal: dim 0.75 + a 300 px item tile + go 'Забрать'; ×10 shows a grid of 10 tiles.\n- Fix RU pity.cosmetic = 'Косметика — не позже чем через %d открытий' (placeholder unchanged).\n- Remove the 'Открыть · 160' strings (the price goes on the button) and the slate 'i' squares.\n- If the cards don't fill 70% of the sheet, shrink the frame height to the content.\n\n2. PASS (show_pass)\n- Modal L, plate gold.\n- Header: season timer chip, hex level R 40, Kit.bar L 'xp/next' with the xp icon (no 'ОП').\n- Purchase: gold L 'Премиум' with a price plate; 'Элитный' as gold M with ribbon '+15 уровней'.\n- Track in a ScrollContainer:\n  - a central vertical line of hex level nodes (filled info up to the current level)\n  - free reward tiles 150 on the left\n  - premium tiles on the right on a #FFE7A6 well, with a lock in the column header and small lock badges\n  - claimable tile = gold outline + bounce; tap = on_claim(level, track) as today\n  - claimed = go check + 60% opacity\n  - auto-scroll to the first claimable or current level\n- No 'Закрыть' bar: closable ✕.\n\n3. CHRONICLE (show_chronicle)\n- Plate info with the book icon + a '2/40' chip.\n- Chapter section headers.\n- Rows (Kit.row): medal tier icon (medal_bronze/silver/gold by difficulty), title H 30, M bar '7/25', reward tile on the right.\n  - claimable: go XS 'Забрать' + [raivite 25] inside, rows pinned to the top\n  - done: check + 70% opacity\n- Stars: Kit.star instead of ★★★ in strings.\n- Drop tautological descriptions.\n\n4. PATENT (show_patent)\n- Modal M, plate gold, charter art 260.\n- Perks: 2x3 tiles (icon 80 + 2-line LABEL 24).\n- Primary: gold L, 2-line caption '7 дней' with a price plate '1,99 $', ribbon 'Пробный'.\n- Secondary: info M '7,99 $/мес'. Each price appears exactly once.\n- Links: 'Условия · Конфиденциальность · Восстановить' as #2266B8 text buttons in one row, all at the same size, no _fit mismatch.\n- Legal: LEGAL 22 MUTED_CREAM.\n\n5. SETTINGS (show_settings)\n- Modal M, plate info, closable.\n- Well 1: 'Звук' with Kit.toggle -> on_sound; 'Язык' with Kit.segmented ['Русский', 'English'] -> on_lang.\n- Well 2: subscription/restore rows with a chevron -> on_manage / on_restore.\n- Well 3 (danger zone): 'Новая игра' as war S hold (1.2 s) -> on_new_game.\n- Version line LEGAL centred.\n- Remove 🔊🌐 from strings, the state-in-caption buttons and the 'Закрыть' bar.\n- The language switch must still re-open Settings (the test relies on the caller).",
+   "verify": "1. Syntax and strings: check-only shop_ui.gd and game_ui.gd; check_strings.py.\n2. Tests: test_flow and test_cases/test_pass/test_patent/test_chronicle pass. test_flow covers: the store opens (g._open_shop / g.shop), free crate, Royal case, the subscription screen opens, the Chronicle opens from the book, and the language switch keeps a modal open.\n3. Screenshots ($SCRATCHPAD/ui/s08/): --demo=shop, --demo=royal, --demo=pass, --demo=chronicle, --demo=patent, --demo=patent:on, --demo=settings. Check:\n   - one gold primary per screen\n   - no full-width Закрыть\n   - no dead bottom area in the shop\n   - pity text complete",
+   "depends_on": [
+    "s07_tab_cards"
+   ],
+   "impact": "medium"
+  },
+  {
+   "id": "s09_meta_collections",
+   "title": "Commanders, commander card, commander picker, hand picker, calendar, profile, inbox, flag/name editors; plural helper",
+   "owner_files": [
+    "game/scripts/game_ui.gd",
+    "game/scripts/cmd_portrait.gd",
+    "game/scripts/l10n.gd",
+    "game/scripts/main.gd",
+    "game/scripts/ui_kit.gd",
+    "game/locale/strings.csv"
+   ],
+   "functions": [
+    "game_ui.show_commanders",
+    "game_ui._commander_tile",
+    "game_ui.show_commander",
+    "game_ui.show_cmd_picker",
+    "game_ui.show_hand_picker",
+    "game_ui.show_calendar",
+    "game_ui.show_profile",
+    "game_ui.set_portrait_era",
+    "game_ui.show_inbox",
+    "game_ui.show_flag_editor",
+    "game_ui.show_name_editor",
+    "game_ui.show_flag_wizard",
+    "game_ui._flag_tile",
+    "cmd_portrait._draw frame/plate",
+    "l10n.plural",
+    "main._demo: add 'inbox'"
+   ],
+   "instructions": "Spec §6 Окна. Every rebuilt modal sets meta kit_native.\n\n1. l10n.gd\nAdd `static func plural(n: int, key: String) -> String`, reading keys '<key>.one/.few/.many' (RU) and '<key>.one/.other' (EN), or delegate to Kit.plural. Use it for the shard counts ('4 осколка').\n\n2. COMMANDERS (show_commanders / _commander_tile)\n- Modal L, plate info with the frame icon + chip 'owned/total'.\n- Album section headers with chip '3/4'.\n- Tiles 260x330, 3 per row (a partial last row is centred):\n  - portrait full-bleed on a rarity gradient\n  - rarity hex gem top-left, level hex top-right\n  - name on the scrim\n  - M shard bar: when upgradeable, full 'n/n' in role go + a go ribbon 'Повысить!' (never '29/4')\n  - locked: silhouette alpha 0.3 + lock + source icon chips (chest_wood, swords for the arena)\n- cmd_portrait.gd: replace its rectangular rarity frame with a rarity-coloured R 20 OUT 4 frame. Keep the API and statics.\n\n3. COMMANDER CARD (show_commander)\n- A sub-page with Kit.back_button -> on_back.\n- Portrait 320x360 on the left.\n- Right column: rarity chip, level hex R 40, L shard bar, skill chip [icon] 'Клин +5,8%'.\n- An 8-node level track (tap shows the value).\n- 'Где взять': source chips.\n- Footer: go L 'Повысить' + price [shard 4][coin 900] -> on_upgrade; lock + reason if not possible.\n- Remove ‹ ✕ ▲, 'п.п.', 'Пассивка', 'УР8' and the table.\n\n4. CMD PICKER (show_cmd_picker)\nModal M with Kit.row rows (portrait 72, name, skill chip, go XS 'Назначить'), and 'Снять' as info S.\n\n5. HAND PICKER (show_hand_picker)\n- Modal L, plate info 'Рука' + chip 'chosen/slots'.\n- 5 sockets 116x150 (CREAM_DEEP wells, hex numbers).\n- 'Атака' pinned with a lock badge at full opacity.\n- Grid of hand cards 180x230, 4 per row, with energy cost hexes; chosen cards show a go check.\n- A tap calls on_toggle(card) (animate 160 ms).\n- Footer: go 'Готово' = close.\n- No rules paragraph, no 'Закрыть' bar.\n\n6. CALENDAR (show_calendar)\n- Modal L, plate gold.\n- 7x4 tiles 112x132: day hex, icon 64, amount pill.\n- Days 7/14/21/28: gold-backed tiles + ribbon.\n- Today: gold outline + breathe; claimed: check + 55% opacity.\n- 'i' tooltip holds the rules.\n- Footer: go 'Забрать' + info '×2' with ad (if available), as today's callbacks.\n- The calendar:pick choice uses option cards.\n\n7. PROFILE (show_profile)\n- Modal L, plate info 'Держава'.\n- Header: flag 120 + ruler portrait 120, each with a round info pencil button (existing callbacks); realm name H1 36.\n- 3x2 stat tiles; tappable ones get a chevron.\n- The last 3 medals.\n- HIDE 'Лига Арены', Таймлапс, Сравнить and Друзья (do not build them), and the duplicate Settings button.\n\n8. INBOX (show_inbox)\n- Modal L, plate info with the mail icon.\n- Kit.row: sender flag/portrait/category icon 72, title, time chip (time.min_ago etc.), 1-line muted preview.\n- Unread: CREAM_ROW + red dot; read: CREAM_WELL.\n- Tap expands the body (BODY 28).\n- Padding 20/16 (fixes the zero-margin bug).\n- main.gd _demo: add `what == \"inbox\"` that posts 3 sample reports via the existing _post and opens the inbox, following the pattern of the other demos.\n\n9. FLAG EDITOR / NAME EDITOR / FLAG WIZARD\n- Paper modal.\n- Kit.segmented tabs.\n- 120 px option tiles with a go check (via _flag_tile).\n- LineEdit styled as a well: OUT 3, R 20, Nunito 800 30.\n- go 'Готово'.",
+   "verify": "1. Syntax and strings: check-only game_ui.gd, cmd_portrait.gd, l10n.gd and main.gd; check_strings.py.\n2. Tests: test_flow and test_commanders / test_calendar pass. test_flow covers: profile opens, flag constructor opens, flag wizard and name after the first peace, collection and a locked commander card open, picker from the army card, hand picker opens, calendar opens, day 26 shard choice.\n3. Screenshots ($SCRATCHPAD/ui/s09/): --demo=commanders, --demo=commanders:card, --demo=hand, --demo=calendar, --demo=calendar:pick, --demo=profile, --demo=inbox, --demo=flag, --demo=flag_wizard, --demo=realm_name. Check:\n   - correct plurals ('4 осколка')\n   - no jargon\n   - no 'Закрыть' bars\n   - unreleased features are hidden",
+   "depends_on": [
+    "s08_meta_shop_pass"
+   ],
+   "impact": "medium"
+  },
+  {
+   "id": "s10_dialogs",
+   "title": "Generic info/choice dialogs, market, territory swap (player and AI), ally ask, separate peace",
+   "owner_files": [
+    "game/scripts/game_ui.gd",
+    "game/scripts/main.gd",
+    "game/scripts/ui_kit.gd",
+    "game/locale/strings.csv"
+   ],
+   "functions": [
+    "game_ui.show_info",
+    "game_ui.show_choice",
+    "game_ui._line_h",
+    "game_ui.show_market",
+    "game_ui._rate_txt",
+    "main._swap_offer/_swap_lines (~1600-1625)",
+    "main AI swap offer (~1740-1760)",
+    "main ally ask (~900)",
+    "main separate peace (~1352)",
+    "main calendar pick (~4382)"
+   ],
+   "instructions": "1. show_info(title, lines, button, on_button, role := 'info', icon := '', portrait := '')\n- Modal M; height = content; title via the plate.\n- Body: at most 3 lines BODY 28 SOFT_CREAM.\n- One centred go/info L button, width 480.\n- Optional portrait + bubble at the top.\n\n2. show_choice(title, lines, buttons, role := 'info', icon := '', portrait := '', blocking := true)\n- Each button entry [text, color_or_role, cb] accepts a role string or a Color (Kit.role_of).\n- 1-2 buttons: footer pair (secondary on the left, primary on the right; the primary is the entry whose role is go/war/gold).\n- 3+ buttons: a stack of M buttons, full content width, gap 12.\n- Blocking means no ✕ unless one entry is a cancel/later entry. Mark those with role 'info' and the caption key *.later / *.cancel; a ✕ maps to that callback.\n\n3. show_market\n- Round resource toggles Ø88 (selected = raised info).\n- Kit.segmented ['10%', '25%', '50%', '100%'].\n- Rate row '100 [food] → 62 [coin]' with the arrow as Kit chrome (Rubik has no arrow glyph).\n- go L 'Обменять'.\n- Strip ⇄ from market.* strings.\n\n4. SWAP (main.gd)\n- Player offer and AI offer use show_choice with a new optional param `dock_bottom := true`: an L modal whose bottom sits at VB-24, so the hexes stay visible.\n- Content (built in game_ui via a new optional `content: Dictionary` param, or a new show_swap(info, buttons) — your choice, keep main.gd changes minimal):\n  - give tile 120 + name + value hex, a Kit chrome double arrow, get tile\n  - chip 'Граница 4 → 7' (arrow chrome)\n  - payment row [coin 272] + 'Вы доплачиваете' / 'Вам доплачивают'\n  - leader mood face as the acceptance meter\n- AI offer: portrait + bubble + timer chip '24ч'; footer info 'Отказать' + go 'Принять'.\n- Player offer: footer info S 'Изменить' + go L 'Предложить'.\n- Remove 'рёбер', raw floats and the 5 text lines.\n- Fix 'с «Кремнёвые Бароны»' by putting the state name in a chip ('Граница: [name]').\n\n5. ALLY ASK / SEPARATE PEACE / CALENDAR PICK\nPass roles (go for accept/peace, war for refuse/war, info for later) instead of Color literals; strip glyphs from their strings.",
+   "verify": "1. Syntax and strings: check-only game_ui.gd and main.gd; check_strings.py.\n2. Tests: test_flow passes. It covers: both sides picked → offer panel (has_modal), the AI offer opens, the ally asks for help, separate peace terms, member separate peace, market opens.\n3. Screenshots ($SCRATCHPAD/ui/s10/): --demo=swap --shot-delay=12, --demo=swap_ai --shot-delay=12, --demo=market, --demo=separate --shot-delay=22, --demo=oil --shot-delay=12. Check:\n   - the swapped hexes stay visible above the docked dialog\n   - no arrow tofu",
+   "depends_on": [
+    "s09_meta_collections"
+   ],
+   "impact": "medium"
+  },
+  {
+   "id": "s11_ftue_coach",
+   "title": "FTUE coach: spotlight with hole, ring, vector pointer, advisor bubble, node-rect targets",
+   "owner_files": [
+    "game/scripts/game_ui.gd",
+    "game/scripts/hud.gd",
+    "game/scripts/main.gd",
+    "game/scripts/ui_kit.gd",
+    "game/locale/strings.csv"
+   ],
+   "functions": [
+    "game_ui._build_coach",
+    "game_ui.coach",
+    "game_ui.coach_target",
+    "new game_ui.coach_rect",
+    "game_ui.coach_ghost",
+    "game_ui.coach_hide",
+    "game_ui._process_coach",
+    "game_ui.COACH_FRAMES (delete)",
+    "new rect getters: game_ui.action_rect(), status_rect(), card_rect(card), first_card_cta_rect(), modal_button_rect(i), seal_rect()",
+    "hud.tab_rect / tool_rect (from s03/s04)",
+    "main._ftue_tick (~6117-6180)"
+   ],
+   "instructions": "Spec §4.12.\n\n1. Spotlight\n- A ColorRect over the full visible rect with a small canvas_item shader (sdRoundBox hole): uniforms hole_rect (vec4), radius 24, dim INK a0.6.\n- hole = target rect grown by 12.\n- mouse_filter STOP outside the hole on mandatory steps: implement via _gui_input that consumes events outside the hole; pass inside.\n\n2. Ring\n- KitShape stroke: gold #FFC531 6 px between INK 3 px strokes, hugging the hole (R = hole R).\n- Pulse scale 1.0→1.05 every 800 ms.\n\n3. Pointer\n- Vector arrow 64 (gold face, INK 4, lip 6) placed on the side of the target with the most free space, in the dimmed area.\n- Bobs 12 px toward the target.\n- It must never overlap the hole or the bubble.\n- Delete the '▼' Label.\n\n4. Advisor\n- Bust 160x184: portraits/cmd_bram_smile.png, cover-cropped, R 20 frame.\n- Cream bubble: OUT 5, R 30, tail toward the bust; max 600x150; BODY 28, at most 2 lines; height hugs the text (autowrap with a fixed width; measure with font.get_multiline_string_size).\n- Name plate: info S 'Сержант Брам' (new key ftue.advisor).\n- Placement: in the half opposite the target — the band y 1060-1300 for targets in the lower half, y 180-420 for targets in the upper half. Mirror left/right so the bust sits at the screen edge.\n\n5. API\n- Keep coach(text, target := Vector2(-1,-1)), coach_target(Vector2), coach_ghost, coach_hide and _ghost_from (the test asserts _ghost_from.x >= 0).\n- Add coach_rect(rect: Rect2): a point target becomes a 120x120 rect around it.\n\n6. main._ftue_tick\nReplace every literal coordinate with node rects:\n- big button -> ui.action_rect()\n- status box -> ui.status_rect()\n- result-modal buttons -> ui.modal_button_rect(0/1); store the buttons when show_result builds them\n- peace sign -> ui.seal_rect()\n- hand cards -> ui.card_rect('attack'), ui.card_rect(...)\n- Buildings tab -> hud.tab_rect('buildings')\n- first card CTA -> ui.first_card_cta_rect()\n- fort button -> hud.tool_rect('fort')\nKeep the same step logic and texts.\n\n7. Strings\nShorten the ftue.* bubble texts to at most 2 lines at BODY 28 in 560 px. Keep placeholders.\n\n8. FTUE step 2\nHide the 'Мир' status button (set_action('')) while the offensive coach step is shown, so only one action is lit — only if this does not change any _action_kind assertion in test_flow; check the FTUE section of the test first.",
+   "verify": "1. Syntax and strings: check-only game_ui.gd, hud.gd and main.gd; check_strings.py.\n2. Tests: test_flow passes. It covers: FTUE preselects a war goal (declare), FTUE ghost finger shown, the flag wizard after the first peace.\n3. Screenshots ($SCRATCHPAD/ui/s11/): --demo=ftue:1, --demo=ftue:2, plus every other ftue:N step that exists (read the ftue demo branch in main.gd). Check:\n   - the hole frames exactly the target\n   - the arrow never covers text\n   - the bubble has no empty half\n   - only one bright action is visible\n4. Tall screen: --demo=ftue:1 with --res=941x2040 (the targets follow the bottom group).",
+   "depends_on": [
+    "s10_dialogs"
+   ],
+   "impact": "medium"
+  },
+  {
+   "id": "s12_toasts",
+   "title": "Toasts: slate pill with icon, queue and merge, correct position; toast strings without emoji",
+   "owner_files": [
+    "game/scripts/game_ui.gd",
+    "game/scripts/main.gd",
+    "game/locale/strings.csv"
+   ],
+   "functions": [
+    "game_ui.toast",
+    "game_ui._toast_nodes",
+    "new game_ui._toast_queue/_show_next_toast",
+    "main.gd ui.toast call sites whose strings carry pictographs",
+    "main._demo: add 'toast'"
+   ],
+   "instructions": "Spec §4.10.\n\n1. toast(text: String, icon := '')\n- If icon is empty and the text starts with a PICTO char, take the icon from Kit.split_icons and strip the char.\n- Box:\n  - SLATE pill, OUT 4, lip 6, shadow 6\n  - h 72, or 104 for 2 lines; width = clamp(text_w + 110, 360, 590)\n  - centred at x 425 (the free column between the left column and the minimap)\n  - y = 108 + top_inset, or 196 + top_inset while the control bar or a coalition banner is visible\n- Content:\n  - icon 60 overhanging the left end by 8\n  - text Rubik 800 26 white outlined, autowrap, at most 2 lines\n  - error toasts (new optional param kind := 'info'|'error'): war face\n- Motion: TOAST (in −24 px + fade 160 ms, hold 2.2 s + 0.6 s per extra line, out 300 ms).\n- Queue: one toast at a time; an identical text while showing → '×2' suffix chip instead of a new toast. z_index 60 above modals.\n\n2. main.gd\n- For every toast string key in strings.csv that starts with a pictograph (grep the keys used by ui.toast), strip the pictograph from ru and en.\n- Pass the matching icon as the 2nd argument at the call sites (about 20 sites; leave the other ~145 calls untouched).\n- Add a `what == \"toast\"` demo that shows a toast with an icon and then a second queued one.",
+   "verify": "1. Syntax and strings: check-only game_ui.gd and main.gd; check_strings.py.\n2. Tests: test_flow passes (toasts must not block anything; the test calls many actions that toast).\n3. Screenshots: --demo=toast --shot-delay=1 and --demo=battle:20 (a toast under the war bar if one fires). Check:\n   - icon + text inside the pill\n   - no emoji\n   - it does not cover the minimap or the left column",
+   "depends_on": [
+    "s11_ftue_coach"
+   ],
+   "impact": "medium"
+  },
+  {
+   "id": "s13_world_labels",
+   "title": "In-world labels: army hex plates with health bar and stacking, hex labels with icons, floaters",
+   "owner_files": [
+    "game/scripts/map_view.gd"
+   ],
+   "functions": [
+    "map_view army label creation (_make_army and its strength/bar labels)",
+    "map_view.hex_label (add optional icon param)",
+    "map_view floater (+N) creation"
+   ],
+   "instructions": "Spec §4.14. Only map_view.gd. Do not touch main.gd: s14 switches its call sites. The step runs in parallel with the game_ui chain once s01 has landed (it needs the fonts and Kit).\n\n1. Army plates\n- Replace the raw outlined number with a billboard assembly: a team-colour hex sprite plus the number in Label3D, Rubik 900 (Kit.font('d900')), white, outline_size about 10 in INK, plus a 64x12 health bar below (INK outline, team fill, round ends).\n- Hex sprite: a Sprite3D with a runtime ImageTexture of a pointy-top rounded hex (INK 4 ring, team face, lip). Generate it once per colour and cache it.\n- Fixed pixel size: the existing fixed_size settings, or no_depth_test, as the current labels use.\n- Stacking: each frame (or on camera change), project plate positions to the screen; plates closer than 48 px get offset vertically by 40 px steps. This fixes the '152208' overlap.\n\n2. hex_label(hex, text, color := ..., icon := '')\n- A pill background (Sprite3D INK alpha 0.85, rounded) + an icon Sprite3D (Kit.icon_tex) + Label3D LABEL 24.\n- If icon is empty and the text starts with a PICTO char (⇢ ⛳ ⇄ ⚔), derive the icon via Kit.split_icons and strip the char. Old call sites look right immediately.\n- Fogged unknown army: a grey plate with the eye_off icon instead of '?'.\n\n3. Floaters '+86'\nIcon + NUM 32 Rubik 900, rising 40 px over 900 ms, clamped 24 px inside the screen.\n\nKeep every public function signature (only add trailing optional params). Don't change territory border shaders: that is an art-direction task outside this plan.",
+   "verify": "1. Syntax: check-only map_view.gd.\n2. Tests: test_flow and test_march pass.\n3. Screenshots ($SCRATCHPAD/ui/s13/): default, --demo=battle:20, --demo=march, --demo=swap --shot-delay=12, --demo=dip2 --shot-delay=12. Check:\n   - army numbers sit on team hexes with bars\n   - no overlapping digits\n   - march/swap hex labels show icons, not ⇢/⇄ glyphs",
+   "depends_on": [
+    "s01_kit"
+   ],
+   "impact": "low"
+  },
+  {
+   "id": "s14_final_sweep",
+   "title": "Final sweep: no pictographs or Color literals left, strict lint in CI, docs, full screenshot set incl. 941x2040",
+   "owner_files": [
+    "game/locale/strings.csv",
+    "game/scripts/main.gd",
+    "game/scripts/game_ui.gd",
+    "game/scripts/hud.gd",
+    "game/scripts/shop_ui.gd",
+    "game/scripts/ui_kit.gd",
+    "tools/ui_lint.py",
+    ".github/workflows/tests.yml",
+    "docs/art_direction.md",
+    "docs/dev/how_to_run.md"
+   ],
+   "functions": [
+    "all remaining R1-R7 lint hits",
+    "main.gd hex_label call sites (pass icon param)",
+    "main.gd set_primary/set_action/show_choice colour args → role strings",
+    "Kit.paperize (keep only if a screen still needs it)"
+   ],
+   "instructions": "1. Run python3 tools/ui_lint.py and fix every hit.\n- R4: strip all remaining pictographs from strings.csv (ru and en). Pass icons explicitly at the call sites (Kit.button opts.icon, toast icon, hex_label icon). Re-check that ru/en placeholders stay identical.\n- R1: replace the Color literals in UI calls with role strings or Kit tokens:\n  - main.gd arguments to set_primary / set_action / show_choice / hex_label\n  - game_ui.gd, hud.gd and shop_ui.gd\n  Keep non-UI colours in main.gd/map_view.gd (lighting, map) out of scope: the lint only scans UI call args in main.gd.\n- R2, R3, R5, R6, R7: snap sizes and radii, raise the floors, remove shadow_size > 2 and modulate.a disabling.\n- If no modal relies on Kit.paperize any more, keep it but make it a no-op unless the box lacks kit_native, and log the count once.\n\n2. .github/workflows/tests.yml: add a step 'UI lint' running `python3 tools/ui_lint.py --strict` next to the strings check.\n\n3. Docs\n- docs/art_direction.md §6.9 and the UI rows of §6.3: replace the content with one line pointing to docs/ui_style.md (fonts Rubik + Nunito; the palette lives there).\n- docs/dev/how_to_run.md: add the fonts folder, `python3 tools/ui_lint.py [--strict]`, and the `godot_shot.sh --res=WxH` option.\n\n4. Full screenshot set (spec §8.2) into $SCRATCHPAD/ui/s14/ — every listed demo/tab/select, plus default, battle:20 and peace at --res=941x2040. Review every frame against the §8.2 checklist:\n- the brightest large element is the primary action\n- no tofu or emoji\n- no text < 22 px\n- no overlaps\n- pills above dims\n- no full-width Закрыть\n- grey only on disabled\n- gold only on premium spend\nFix the defects in the owning code.",
+   "verify": "1. Lint: python3 tools/ui_lint.py --strict exits 0.\n2. Strings: python3 tools/check_strings.py exits 0.\n3. Syntax: check-only for all scripts in game/scripts.\n4. Tests: all 16 CI suites pass with the flock loop from s01 (test_net needs the server and is skipped locally).\n5. Screenshots: the full set is reviewed, with a short findings list written into the step report (not a file).",
+   "depends_on": [
+    "s12_toasts",
+    "s13_world_labels"
+   ],
+   "impact": "medium"
+  }
+ ],
+ "notes": "The two proposals are merged into one system. The spec goes to docs/ui_style.md (in Russian) and the plan has 14 steps.\n\n**Step order:**\n- s01 (kit) and s02 (icons) run in parallel.\n- s03 → s12 then form one strict chain, because they all share game_ui.gd, hud.gd, main.gd, strings.csv and ui_kit.gd.\n- s13 (map_view.gd only) can run in parallel once s01 has landed.\n- s14 is the final sweep.\n\n**Main conflicts resolved:**\n- Ink colour is #1B2140.\n- HUD surfaces are slate #2E3F66 with a 6 px lip and no gloss; gloss is reserved for buttons.\n- Window titles use A's hex title plate; B's swallowtail ribbon reads as a genre cliché.\n- Close is a round red Ø76 button with a vector X.\n- Modals come in L/M/S widths, size to their content, and are cream for every screen.\n- B's currency CanvasLayer keeps the resource pills above every dim.\n- Resource pills follow B: 70 px tall, rate inside, storage fill; builders move to a badge on the Buildings tab.\n- Tabs use A's folder style but every tab keeps its label. RU «Дипломатия» becomes «Соседи» and EN becomes «Realms»; the tests only check the Buildings label.\n- Tray cards follow B's slate card. The action fires only from the card's button, and a tap on the card body shows a tooltip.\n- Battle energy is aqua (#23C4D8) shown as hex pips; purple now means only EPIC.\n- Hand-card names stay visible; «Окружение» is renamed «Котёл».\n- «Забрать» buttons are green. Gold buttons mean spending raivite or real money, nothing else.\n- Ad ×2 is a secondary button.\n- Result screen follows B (3 tiles), peace follows B (hold-to-sign button), ultimatum follows B (3 option cards).\n- Diplomacy shows one contextual button per card; tapping the card opens a leader dialog.\n\n**Verified by actual runs here:**\n1. Hard shadows work from a single StyleBoxFlat. `shadow_size = 1` plus `shadow_offset` renders a hard shadow in Godot 4.5.1; `shadow_size = 0` draws nothing. So `_style()` can keep returning one StyleBoxFlat.\n2. FontVariation .tres format. Godot's ResourceSaver writes `variation_opentype = {2003265652: 900}`; the exact text is in s01.\n3. Rubik and Nunito both lack U+202F (narrow no-break space) and arrows. Both proposals had planned on U+202F. Thousands are therefore separated with U+00A0, and every arrow is drawn as vector chrome.\n4. All four font and licence URLs return HTTP 200. The sha256 hashes are recorded in the spec and in s01.\n\n**Test-safety decisions:**\n- `const Kit := preload(...)` instead of `class_name`, matching the rest of the project.\n- `_label()` keeps theme overrides rather than LabelSettings, so `_fit`, `get_theme_font` and recolour call sites keep working.\n- `KitButton` extends `Panel`, so `_button()` still returns a Panel.\n- `_modal_box()` sets `_modal` synchronously and only appends optional parameters; `close_modal()` nulls `_modal` immediately and frees the node at once when headless.\n- `set_primary` / `set_action` take a Variant colour-or-role argument, and a `PRIMARY_LOOK` table keyed by kind sets role and icon. All kind strings and enabled conditions stay unchanged.\n- Preserved members: `tab_labels` text, `_orders_chip` / `_orders_lbl`, `shop_dot`, `_cards[*]/cd`, `_energy_segs`, `_control_fill`, `_ghost_from`, `_locked`, and the ShopUI API.\n\n**Step 1 shim.** `_modal_box` makes every modal cream. A deferred `Kit.paperize(box)` recolours legacy white/blue-grey labels and dark inner panels so nothing becomes white-on-cream before each screen is rebuilt. Rebuilt screens set the meta flag `kit_native`, which makes paperize skip them.\n\n**Other findings:**\n- `hud.Portrait` / `unit_cards` and `attack_btn` are referenced only inside hud.gd.\n- `show_ceremony_counters` gets an optional structured `items` parameter, because main.gd currently passes only text lines.\n- The hex panel needs new `chips` / `owner_fill` keys from `main._describe`.\n- `godot_shot.sh` needs a `--res=WxH` option (added in s03) to test 941×2040.\n- docs/art_direction.md §6.9 and the §6.3 UI rows (royal-blue enamel, purple cards, Nunito-only) are superseded; s14 points them to docs/ui_style.md.\n- Out of scope: softening the territory border shaders (the neon tubes and hatch). That is a separate art-direction task.\n\n**Scratch files:**\n- /tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/ui/merge/proj/ (the shadow and font test, shot.png)\n- Proposal mocks in scratchpad/ui/sys/ (A) and scratchpad/ui/mock*/ (B)\n- Fonts in scratchpad/ui/fonts_dl/\n\nNo project files were edited and git was not run."
+}
