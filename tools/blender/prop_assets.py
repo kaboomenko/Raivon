@@ -77,10 +77,12 @@ def tube(p0, p1, r, mt, r2=None, n=6, cap=False):
     return o
 
 
-def planks(color, row=0.014, length=0.12, deck=False):
+def planks(color, row=0.014, length=0.12, deck=False, across=None):
     """Boards in rows with dark seams and staggered butts (object space): rows follow Z on hull sides and walls,
-    run along X on a deck (deck=True). Every board a slightly different tone."""
-    key = ("planks", color, row, length, deck)
+    run along X on a deck (deck=True). Every board a slightly different tone. across=(oy, ox): deck boards laid
+    across X instead, one row per board — the seams fall at x = k * row - ox, the butts shift by oy along Y.
+    (The export joins every part into one object, so "object space" is the model's own space.)"""
+    key = ("planks", color, row, length, deck, across)
     if key in kit._MATS:
         return kit._MATS[key]
     m = bpy.data.materials.new("planks")
@@ -92,8 +94,16 @@ def planks(color, row=0.014, length=0.12, deck=False):
     sp = nt.nodes.new("ShaderNodeSeparateXYZ")
     L.new(tc.outputs["Object"], sp.inputs[0])
     co = nt.nodes.new("ShaderNodeCombineXYZ")
-    L.new(sp.outputs[0], co.inputs[0])
-    L.new(sp.outputs[1 if deck else 2], co.inputs[1])
+    if across:
+        for src, dst, off in ((1, 0, across[0]), (0, 1, across[1])):
+            add = nt.nodes.new("ShaderNodeMath")
+            add.operation = "ADD"
+            add.inputs[1].default_value = off
+            L.new(sp.outputs[src], add.inputs[0])
+            L.new(add.outputs[0], co.inputs[dst])
+    else:
+        L.new(sp.outputs[0], co.inputs[0])
+        L.new(sp.outputs[1 if deck else 2], co.inputs[1])
     br = nt.nodes.new("ShaderNodeTexBrick")
     L.new(co.outputs[0], br.inputs["Vector"])
     br.offset = 0.37
@@ -752,8 +762,9 @@ def crane():
 
 
 def _cove(quay, water_c=WATER, shallow_c="#79c1df", joints=False):
-    """The port's water cove opening at the +X edge with a lighter rim and a quay along the land side; `joints`
-    caps the joints between the quay stones (no dark notches where two runs meet at an angle)."""
+    """The port's water cove opening at the +X edge with a lighter rim and a quay along the land side. `joints`:
+    the quay and the rim are continuous mitred strips (no stone ends overlapping in one plane where two runs meet at
+    an angle — the dark notches and flicker of separate beams); otherwise one beam per stretch."""
     # ---- water cove (an inlet so the port reads on any tile, whatever the neighbours are)
     cx = 0.5
     pts = []
@@ -768,13 +779,32 @@ def _cove(quay, water_c=WATER, shallow_c="#79c1df", joints=False):
     ground_poly(pts, water, 0.012)
     # shallow lighter rim and the stone quay along the land side of the cove
     shallow = tex("plaster", shallow_c, 1.5)
-    runs = {}  # k -> (quay p0, p1, shallow q0, q1) of the stretches that are built
-    for k in range(len(pts)):
-        p0, p1 = pts[k], pts[(k + 1) % len(pts)]
+    n = len(pts)
+    built = []
+    for k in range(n):
+        p0, p1 = pts[k], pts[(k + 1) % n]
         _, c0 = clamp_hex((p0[0] * 1.03, p0[1] * 1.03), HEX_R)
         _, c1 = clamp_hex((p1[0] * 1.03, p1[1] * 1.03), HEX_R)
-        if c0 and c1:
-            continue  # this stretch runs along the hex edge: open sea
+        built.append(not (c0 and c1))  # a stretch along the hex edge is open sea
+    if joints:
+        start = built.index(False)
+        chains, cur = [], []
+        for i in range(1, n + 1):
+            k = (start + i) % n
+            if built[k]:
+                cur = cur or [pts[k]]
+                cur.append(pts[(k + 1) % n])
+            elif cur:
+                chains.append(cur)
+                cur = []
+        for ch in chains:  # the cove runs counter-clockwise: the water lies to the left of each chain
+            _strip(ch, 0.05, -0.005, 0.045, quay)
+            _strip(_offset(ch, 0.04), 0.025, 0.0015, 0.0265, shallow)
+        return cx
+    for k in range(n):
+        if not built[k]:
+            continue
+        p0, p1 = pts[k], pts[(k + 1) % n]
         beam((p0[0], p0[1], 0.02), (p1[0], p1[1], 0.02), 0.05, quay)
         mx, my = (p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2
         dx, dy = mx - cx, my
@@ -782,40 +812,54 @@ def _cove(quay, water_c=WATER, shallow_c="#79c1df", joints=False):
         q0 = (p0[0] - dx / dl * 0.04, p0[1] - dy / dl * 0.04, 0.014)
         q1 = (p1[0] - dx / dl * 0.04, p1[1] - dy / dl * 0.04, 0.014)
         beam(q0, q1, 0.025, shallow)
-        runs[k] = (p0, p1, q0[:2], q1[:2])
-    if joints:  # where two runs meet at an angle, one cap over both stone ends, 0.003 above their tops
-        for k, a in runs.items():
-            b = runs.get((k + 1) % len(pts))
-            if b is None:
-                continue
-            flat_poly(_joint_cap(a[0], a[1], b[0], b[1], 0.05, 0.02), 0.048, quay)
-            flat_poly(_joint_cap(a[2], a[3], b[2], b[3], 0.025, 0.012), 0.0295, shallow)
     return cx
 
 
-def _joint_cap(a0, a1, b0, b1, w, e):
-    """Outline (convex hull) covering the last `e` of a beam of width w from a0 to a1 and the first `e` of the next
-    one from b0 to b1, with the wedge between their ends: a cap the width of the beams, lying along both runs."""
-    pts = []
-    for (p, q, back) in ((a0, a1, True), (b0, b1, False)):
-        dx, dy = q[0] - p[0], q[1] - p[1]
+def _miters(ch):
+    """Per point of an open 2D polyline: the left miter direction scaled so that offsetting by it times d keeps both
+    neighbouring segments at distance d."""
+    segs = []
+    for (a, b) in zip(ch, ch[1:]):
+        dx, dy = b[0] - a[0], b[1] - a[1]
         ln = math.hypot(dx, dy)
-        dx, dy = dx / ln, dy / ln
-        end = q if back else p
-        for s_ in (0.0, -e if back else e):
-            for sn in (-1, 1):
-                pts.append((end[0] + dx * s_ - dy * sn * w / 2, end[1] + dy * s_ + dx * sn * w / 2))
-    pts = sorted(set(pts))
-    def half(seq):
-        h = []
-        for p in seq:
-            while len(h) >= 2 and ((h[-1][0] - h[-2][0]) * (p[1] - h[-2][1]) -
-                                   (h[-1][1] - h[-2][1]) * (p[0] - h[-2][0])) <= 0:
-                h.pop()
-            h.append(p)
-        return h
-    lo, hi = half(pts), half(reversed(pts))
-    return lo[:-1] + hi[:-1]
+        segs.append((-dy / ln, dx / ln))
+    out = []
+    for i in range(len(ch)):
+        ns = [segs[j] for j in (i - 1, i) if 0 <= j < len(segs)]
+        mx, my = sum(v[0] for v in ns), sum(v[1] for v in ns)
+        ml = math.hypot(mx, my)
+        mx, my = mx / ml, my / ml
+        k = 1.0 / max(0.5, mx * ns[0][0] + my * ns[0][1])
+        out.append((mx * k, my * k))
+    return out
+
+
+def _offset(ch, d):
+    """The polyline moved d to its left (mitred)."""
+    return [(p[0] + m[0] * d, p[1] + m[1] * d) for p, m in zip(ch, _miters(ch))]
+
+
+def _strip(ch, w, z0, z1, mt):
+    """A kerb of width w from z0 to z1 along an open polyline: mitred top and sides, square ends, no bottom."""
+    ms = _miters(ch)
+    vs = []
+    for p, m in zip(ch, ms):
+        for sd in (1, -1):
+            for z in (z0, z1):
+                vs.append((p[0] + m[0] * sd * w / 2, p[1] + m[1] * sd * w / 2, z))
+    # per point i: 4i = left bottom, 4i+1 left top, 4i+2 right bottom, 4i+3 right top
+    fs = []
+    for i in range(len(ch) - 1):
+        a, b = 4 * i, 4 * (i + 1)
+        fs += [(a + 1, a + 3, b + 3, b + 1), (a, a + 1, b + 1, b), (a + 2, b + 2, b + 3, a + 3)]
+    e = 4 * (len(ch) - 1)
+    fs += [(0, 2, 3, 1), (e, e + 1, e + 3, e + 2)]
+    o = mesh_obj(vs, fs, mt)
+    top = o.data.polygons[0]
+    if top.normal.z < 0:  # an open shell: make sure the faces point out (the top up)
+        for p_ in o.data.polygons:
+            p_.flip()
+    return o
 
 
 def harbour_tower():
@@ -920,13 +964,14 @@ def port():
     # cobbled quay yard on the land side
     ev.pad(0.36, stone("#a89c86", 2.2), 0.008, 12, 0.08, 6, 1.0, 1.25)
     # ---- pier from the quay to the +X edge
-    deck = planks("#a8814f", 0.02, 0.15, True)
     post = tex("wood", "#5a3e27", 2.0)
     py, pw, z = -0.03, 0.15, 0.075
     x0, x1 = 0.02, 0.79
+    n = 17
+    # boards across the pier: one plank row per board (its own tone and grain along it), the seams in the gaps
+    deck = planks("#a8814f", (x1 - x0) / n, 2.0, True, (1.0, -x0))
     for sy in (-1, 1):
         beam((x0, py + sy * 0.05, z - 0.02), (x1, py + sy * 0.05, z - 0.02), 0.02, post)
-    n = 17
     for i in range(n):
         x = x0 + (i + 0.5) / n * (x1 - x0)
         bx((((x1 - x0) / n) - 0.006, pw + (0.012 if i % 3 == 0 else 0.0), 0.014), (x, py, z), deck, bev=0)
@@ -1135,7 +1180,8 @@ def military_base():
         a = math.radians(45)
         cxl, cyl = hx - sx * math.cos(a) * gate * 0.48, -S + 0.03 + math.sin(a) * gate * 0.48
         bx((gate * 0.96, 0.014, 0.17), (cxl, cyl, 0.085), door, -sx * a, bev=0)
-        bx((gate * 0.97, 0.018, 0.012), (cxl, cyl, 0.13), band, -sx * a, bev=0)
+        for zb in (0.035, 0.1):  # two iron bands low enough to show under the arch
+            bx((gate * 0.97, 0.018, 0.012), (cxl, cyl, zb), band, -sx * a, bev=0)
     cloth = flat("banner_white", "#ecebe6", 0.7)
     em = flat("banner_grey", "#7d838c", 0.6)
     rod_m = flat("banner_rod", GOLD, 0.4)
