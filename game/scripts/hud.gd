@@ -237,10 +237,12 @@ func _build() -> void:
 	# ---- daily orders chip (below the store)
 	_orders_chip = _panel(Rect2(16, 612, 64, 74), _style(PANEL, 14, Color(0.85, 0.7, 0.35, 0.9), 2))
 	_orders_chip.gui_input.connect(_on_button_input.bind("orders"))
-	var og := _label("⚑", 28, Color(1.0, 0.82, 0.3))
-	og.position = Vector2(0, 2)
-	og.size = Vector2(64, 38)
-	og.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var og := TextureRect.new()  # a blue war flag (tools/blender/icon_assets.py «orders»)
+	og.texture = load("res://assets/ui/icons/orders.png")
+	og.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	og.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	og.position = Vector2(10, 0)
+	og.size = Vector2(44, 44)
 	og.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_orders_chip.add_child(og)
 	_orders_lbl = _label("0/3", 18)

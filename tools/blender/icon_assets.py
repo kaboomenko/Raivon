@@ -168,15 +168,34 @@ def trophy():
 
 
 def book():
+    """Chronicle / Academy: an open leather-bound tome seen from the front — two cream page spreads with ink lines,
+    a red cover showing round the pages, a gold-cornered spine and a blue ribbon bookmark."""
     cover = mat("cover", "#8a3b2a", 0.6)
     pages = mat("pages", "#efe4c6", 0.8)
-    box("pages", (0.62, 0.42, 0.14), (0, 0, 0), pages, 0.02)
-    box("cover_t", (0.66, 0.46, 0.04), (0, 0, 0.09), cover, 0.02)
-    box("cover_b", (0.66, 0.46, 0.04), (0, 0, -0.09), cover, 0.02)
-    box("spine", (0.06, 0.46, 0.22), (-0.33, 0, 0), cover, 0.02)
-    box("clasp", (0.16, 0.1, 0.05), (0.0, -0.24, 0.1), gold(), 0.01)
+    edge = mat("pages_e", "#d9caa0", 0.85)
+    ink = mat("ink", "#6b5a44", 0.9)
+    for sx in (-1, 1):
+        c = box("cover", (0.5, 0.54, 0.04), (sx * 0.245, 0, -0.02), cover, 0.015)
+        c.rotation_euler.y = sx * -0.16
+        p = box("leaf", (0.44, 0.46, 0.07), (sx * 0.22, 0, 0.03), edge, 0.01)
+        p.rotation_euler.y = sx * -0.16
+        top = box("page", (0.43, 0.45, 0.012), (sx * 0.22, 0, 0.068), pages, 0.004)
+        top.rotation_euler.y = sx * -0.16
+        for k in range(5):  # ink lines on the page, following its tilt
+            ln = box("line", (0.3 - (0.08 if k == 4 else 0.0), 0.02, 0.004), (sx * 0.22, -0.14 + k * 0.065, 0.077), ink, 0.0)
+            ln.rotation_euler.y = sx * -0.16
+        for (y, z0) in ((-0.25, 0), (0.25, 0)):
+            g = box("corner", (0.07, 0.04, 0.045), (sx * 0.45, y * 0.98, -0.02 + 0.215 * math.sin(0.16)), gold(), 0.008)
+            g.rotation_euler.y = sx * -0.16
+    box("spine", (0.06, 0.52, 0.05), (0, 0, -0.035), mat("cover_d", "#6e2c1f", 0.6), 0.015)
+    box("ribbon", (0.035, 0.5, 0.006), (0.02, -0.02, 0.066), mat("ribbon_b", "#2f62c8", 0.6), 0.0)
+    rt = box("ribbon_tail", (0.035, 0.012, 0.15), (0.03, -0.27, 0.0), mat("ribbon_b", "#2f62c8", 0.6), 0.0)
+    rt.rotation_euler.y = 0.2
+    tilt = bpy.data.objects.new("tilt", None)  # tip the whole open book towards the camera about one pivot
+    bpy.context.scene.collection.objects.link(tilt)
     for o in [o for o in bpy.context.scene.objects if o.type == "MESH"]:
-        o.rotation_euler.x += math.radians(60)
+        o.parent = tilt
+    tilt.rotation_euler.x = math.radians(52)
 
 
 def mail():
@@ -348,6 +367,23 @@ def houses():
             box("win", (0.07, 0.03, 0.09), (x, -0.155, -0.33 + k * 0.2), lit, 0.0)
 
 
+def orders():
+    """Daily orders: a blue war flag with a white star on a gilt-tipped pole."""
+    pole = mat("pole_i", "#8a5e36", 0.6)
+    cyl("pole", 0.025, 1.0, (-0.28, 0, 0.0), pole, 10, 0.0)
+    sphere("finial", 0.05, (-0.28, 0, 0.52), gold(), (1, 1, 1), 2)
+    cloth = mat("flag_b", "#2f62c8", 0.6)
+    # a waving cloth: three panels, each tilted a little, from the pole outwards
+    for k, (x, ry, rz) in enumerate(((-0.14, 0.0, 0.12), (0.06, 0.0, -0.18), (0.24, 0.0, 0.14))):
+        f = box("cloth", (0.21, 0.025, 0.46), (x, 0.0 + (0.02 if k == 1 else 0.0), 0.22), cloth, 0.01)
+        f.rotation_euler.z = rz
+    _star_mesh("star", 0.1, 0.042, 0.04, 0.22, -0.035, -0.05, mat("star_w", "#f6f3ea", 0.4))
+    box("hem", (0.62, 0.03, 0.04), (0.05, 0, -0.02), gold(), 0.005)
+    box("hem_t", (0.62, 0.03, 0.04), (0.05, 0, 0.46), gold(), 0.005)
+    for z in (0.0, 0.44):  # gilt rings holding the cloth to the pole
+        cyl("ring", 0.038, 0.03, (-0.28, 0, z), gold(), 12, 0.0)
+
+
 def crown():
     """Royal case: a gold crown with five pearl-tipped points, gems on the band, a blue velvet cap."""
     g = gold()
@@ -516,10 +552,10 @@ ICONS = {"coin": coin, "food": food, "metal": metal, "raivite": raivite, "oil": 
          "trophy": trophy, "book": book, "mail": mail, "gear": gear,
          "target": target, "pin": pin, "fort": fort, "tower": tower,
          "crate": crate, "flask": flask, "cart": cart, "stall": stall, "anchor": anchor, "houses": houses,
-         "crown": crown, "cards": cards, "lock": lock, "ad": ad, "medal": medal}
+         "crown": crown, "cards": cards, "lock": lock, "ad": ad, "medal": medal, "orders": orders}
 
 
-ORTHO = {"crown": 1.15, "cards": 1.2, "lock": 1.2, "ad": 1.2, "medal": 1.25, "crate": 1.4, "cart": 1.6, "stall": 1.5, "anchor": 1.5, "houses": 1.45, "target": 1.5, "pin": 1.45, "fort": 1.5, "tower": 1.7, "castle_icon": 1.75, "hammer": 1.6, "scales": 1.5, "trophy": 1.45, "gear": 1.4, "hands": 1.45}
+ORTHO = {"book": 1.0, "orders": 1.2, "crown": 1.15, "cards": 1.2, "lock": 1.2, "ad": 1.2, "medal": 1.25, "crate": 1.4, "cart": 1.6, "stall": 1.5, "anchor": 1.5, "houses": 1.45, "target": 1.5, "pin": 1.45, "fort": 1.5, "tower": 1.7, "castle_icon": 1.75, "hammer": 1.6, "scales": 1.5, "trophy": 1.45, "gear": 1.4, "hands": 1.45}
 
 
 def render(path, ortho=1.35):
