@@ -8,6 +8,9 @@ Builds and exports to OUT (default game/assets/models):
   military_base.glb   early-era garrison: stone walls, gatehouse with an arch and banners, slate-roofed towers,
                       stone barracks (маркер smoke_barracks), tents, training yard, smithy, white banner
   warship_<team>.glb  war cog: planked hull, castles with team parapets, lit stern, team sails with the white eagle
+  destroyer_<team>.glb / cruiser_scifi_<team>.glb   steel warships of DL6–7 / DL8+ (lofted hulls, turrets, team
+                      stripes / neon), port_modern_<team> / port_scifi_<team> (container terminal / steel-kit hover dock)
+                      and military_base_modern_<team> / military_base_scifi_<team> (concrete / steel-kit compound)
 
 Run:   python3 tools/blender/prop_assets.py game/assets/models [name ...]
 Sheet: python3 tools/blender/prop_assets.py game/assets/models --sheet OUT.png [--cols 1,2,3] [--tile 1.0]
@@ -1510,7 +1513,7 @@ def _sta_at(L, stations, x):
 
 
 def _flare_y(w, z, flare):
-    """Half-width of a flared hull side at height z (flare = (fraction of the beam at the waterline, z of full beam))."""
+    """Half-width of a flared hull side at height z (flare = (beam fraction at the waterline, z of the full beam))."""
     return w * (flare[0] + (1.0 - flare[0]) * min(1.0, z / flare[1]))
 
 
@@ -1528,7 +1531,6 @@ def steel_hull(L, stations, levels, mats, deck_mt, transom_mt, flare=(0.72, 0.03
     their feet at `levels` (mats[k] from levels[k] up to the next level, the last one up to the sheer), sides flaring
     from flare[0] of the beam at the waterline to the full beam at flare[1], a stem raked forward by `rake`, a flat
     transom and a deck following the sheer (a raised forecastle where the sheer steps up)."""
-    zs_band = list(levels)
     verts, idx = [], {}
 
     def vid(p):
@@ -1541,7 +1543,7 @@ def steel_hull(L, stations, levels, mats, deck_mt, transom_mt, flare=(0.72, 0.03
     rows = []
     n = len(stations)
     for i, (t, w, sh) in enumerate(stations):
-        zp = sorted(set([z for z in zs_band if z < sh - 1e-4] + ([flare[1]] if flare[1] < sh else []))) + [sh]
+        zp = sorted(set([z for z in levels if z < sh - 1e-4] + ([flare[1]] if flare[1] < sh else []))) + [sh]
         row = []
         for z in zp:
             x = -L / 2 + t * L + (rake * z / sh if i == n - 1 else 0.0)
@@ -1551,10 +1553,11 @@ def steel_hull(L, stations, levels, mats, deck_mt, transom_mt, flare=(0.72, 0.03
 
     def band_of(z):
         k = 0
-        for j, lv in enumerate(zs_band):
+        for j, lv in enumerate(levels):
             if z >= lv - 1e-6:
                 k = j
         return k
+
     def pt(j, z, sy):
         t_, w_, sh_ = stations[j]
         z = min(z, sh_)
@@ -1652,8 +1655,8 @@ def destroyer(team):
     """A steel destroyer of the industrial and modern eras (DL6–7) along X (bow at +X): a lofted hull with a rising
     sheer and a raised forecastle, red bottom, black boot topping and the state's stripe, the hull number on both
     bows; a stepped bridge with a wrap-round window band and wings, a tripod mast with yards, radar and a lamp, two
-    raked funnels with the state's band, a superfiring pair of twin turrets forward and one aft, missile cells, lifeboats
-    on davits, a helideck with its H at the stern, the ensign and a jack."""
+    raked funnels with the state's band, a superfiring pair of twin turrets forward and one aft, missile cells,
+    lifeboats on davits, a helideck with its H at the stern, the ensign and a jack."""
     grey = flat("ship_grey", "#7d848c", 0.55)
     light = ev.facade("#a5acb4", "#1c2a38", 0.026, 0.03, 0.42, 0.42, lit="#ffd27a", lit_p=0.18, z0=0.004)
     plain = flat("ship_light", "#a5acb4", 0.5)
@@ -1744,7 +1747,8 @@ def cruiser_scifi(team):
     plate = ev.facade("#4a515c", "#9aa2ac", 0.09, 0.024, 0.95, 0.8, lit="#9aa2ac", lit_p=0.0)
     plain = flat("sf_plate", "#8c939c", 0.4)
     trim = flat("sf_trim", "#454e5e", 0.4)
-    deck = ev.facade("#3a414b", "#3a414b", wf=0.0, brick=True, brick_scale=12.0, mortar_k=1.16)  # armour plates, pale seams
+    # armour plates with pale seams
+    deck = ev.facade("#3a414b", "#3a414b", wf=0.0, brick=True, brick_scale=12.0, mortar_k=1.16)
     st = ev.steel_facade()
     cap = flat("spire8", "#4c535d", 0.35)
     panel = flat("panel8" + team, ev.shade(team, 0.42), 0.4)
@@ -1996,7 +2000,8 @@ def warehouse_modern(team, w=0.42, d=0.24, h=0.16):
     ow = 0.12
     office = ev.facade("#e6e2d8", "#25313d", 0.03, 0.05, 0.55, 0.5, lit="#ffd27a", lit_p=0.4, z0=0.01)
     bx((ow, d + 0.03, h + 0.04), (w / 2 + ow / 2 - 0.005, 0.0, (h + 0.04) / 2), office, bev=0)
-    bx((ow + 0.008, d + 0.038, 0.012), (w / 2 + ow / 2 - 0.005, 0.0, h + 0.046), flat("office_cap", "#8a9097", 0.6), bev=0)
+    bx((ow + 0.008, d + 0.038, 0.012), (w / 2 + ow / 2 - 0.005, 0.0, h + 0.046), flat("office_cap", "#8a9097", 0.6),
+       bev=0)
     for (x, y) in ((w / 2 + 0.03, 0.04), (w / 2 + 0.08, -0.03)):
         bx((0.03, 0.03, 0.02), (x, y, h + 0.062), flat("ac", "#aeb4bb", 0.5), bev=0)
     bx((0.08, 0.006, 0.026), (w / 2 + ow / 2 - 0.005, -d / 2 - 0.018, h + 0.01), flat("sign" + team, team, 0.5), bev=0)
@@ -2024,6 +2029,12 @@ def box_truck(team, cont_c):
             cy(0.013, 0.01, (dx, sy * 0.024, 0.013), flat("tyre", "#1f1f21", 0.9), 8, rot=(math.pi / 2, 0, 0))
 
 
+def _apron_pts():
+    """The land side of a port hex (left of the cove): the terminal apron of the late-era ports."""
+    return [clamp_hex(p_, 0.8)[0] for p_ in ((0.22, -0.7), (-0.3, -0.7), (-0.66, -0.36), (-0.74, 0.0), (-0.62, 0.42),
+                                              (-0.3, 0.68), (0.22, 0.68), (0.1, 0.0))]
+
+
 def port_modern(team):
     """The industrial port (DL6–7) after the late-era harbours of reference frame 2: a concrete terminal round the
     cove with a yellow-lined quay edge, two ship-to-shore gantry cranes in the state's colour on the pier (rails,
@@ -2034,9 +2045,7 @@ def port_modern(team):
     yel = flat("paint_y", "#e8c12e", 0.6)
     _cove(conc, "#3a7fae", "#6aaecc", joints=True, edge=yel)
     apron = ev.facade("#868a90", "#868a90", wf=0.0, brick=True, brick_scale=9.0, mortar_k=0.88)
-    # the terminal apron covers the land side of the hex (the late-era harbours are built up to the edge)
-    ground_poly([clamp_hex(p_, 0.8)[0] for p_ in ((0.22, -0.7), (-0.3, -0.7), (-0.66, -0.36), (-0.74, 0.0),
-                                                   (-0.62, 0.42), (-0.3, 0.68), (0.22, 0.68), (0.1, 0.0))], apron, 0.008)
+    ground_poly(_apron_pts(), apron, 0.008)  # the late-era harbours are built up to the hex edge
     py = -0.03
     pier = ev.facade("#959a9f", "#959a9f", wf=0.0, brick=True, brick_scale=6.0, mortar_k=0.84)
     bx((0.78, 0.16, 0.05), (0.41, py, 0.05), pier, bev=0)  # concrete pier to the edge
@@ -2165,7 +2174,8 @@ def energy_crane(k, team, reach=0.3, back=0.12, pod=True):
     cy(0.026, 0.006, (0, yt, zb - 0.014), k["cyan"], 10)
     if pod:
         zc = 0.13
-        bx((0.026, 0.026, zb - 0.02 - (zc + 0.05)), (0, yt, (zb - 0.02 + zc + 0.05) / 2), glow("tractor", "#7fdcff", 0.7), bev=0)
+        beam_h = zb - 0.02 - (zc + 0.05)
+        bx((0.026, 0.026, beam_h), (0, yt, zc + 0.05 + beam_h / 2), glow("tractor", "#7fdcff", 0.7), bev=0)
         bx((0.1, 0.06, 0.05), (0, yt, zc + 0.025), k["white"], math.pi / 2, bev=0.012)
         bx((0.102, 0.008, 0.008), (0.031, yt, zc + 0.03), k["neon"], math.pi / 2, bev=0)
 
@@ -2207,8 +2217,7 @@ def port_scifi(team):
     kk = steel_kit(team)
     _cove(kk["comp"], "#2f6e9c", "#5aa0c4", joints=True, edge=kk["cyan"])
     apron = ev.stone("#454a52", 0.8)  # the dark steel plaza slabs of the late capital
-    ground_poly([clamp_hex(p_, 0.8)[0] for p_ in ((0.22, -0.7), (-0.3, -0.7), (-0.66, -0.36), (-0.74, 0.0),
-                                                   (-0.62, 0.42), (-0.3, 0.68), (0.22, 0.68), (0.1, 0.0))], apron, 0.008)
+    ground_poly(_apron_pts(), apron, 0.008)
     for (p0, p1) in (((-0.62, -0.2), (0.06, -0.2)), ((-0.06, -0.62), (-0.06, 0.6))):  # light strips across the apron
         beam((p0[0], p0[1], 0.009), (p1[0], p1[1], 0.009), 0.01, kk["neon"])
     py = -0.03
@@ -2312,13 +2321,14 @@ def quonset(team, L=0.36, R=0.15):
 
 
 def barracks_block(team, w=0.3, d=0.13, floors=2):
-    """A barracks block: two storeys of windows (some lit warm), a pitched roof in the state's slate with a dark
+    """A barracks block: two storeys of windows (some lit warm), a low pitched roof in the state's slate with a dark
     ridge, an entrance canopy, air conditioners."""
     fh = 0.07
     wall = ev.facade("#cbc6b8", "#25313d", 0.04, fh, 0.45, 0.5, lit="#ffd27a", lit_p=0.35, z0=0.0)
     bx((w, d, fh * floors), (0, 0, fh * floors / 2), wall, bev=0)
     bx((w + 0.006, d + 0.006, 0.01), (0, 0, fh * floors), flat("cornice", "#8a9097", 0.6), bev=0)
-    ev.gable_roof(w + 0.01, d + 0.01, 0.07, (0, 0, fh * floors), ev.slate(team, 1.05), wall, n=4, eave_z=0.0)
+    ev.gable_roof(w + 0.01, d + 0.01, 0.05, (0, 0, fh * floors), ev.slate(team, 1.05), wall, oh=0.02, ohx=0.012,
+                  n=3, eave_z=0.0, barge=None, ridge="#3e434a", ridge_t=0.016, gable_timber=None)  # low, no timbers
     bx((0.06, 0.03, 0.008), (0, -d / 2 - 0.015, 0.06), flat("canopy", "#5d636a", 0.6), bev=0)
     bx((0.04, 0.006, 0.05), (0, -d / 2 - 0.002, 0.025), flat("door", "#3a3e44", 0.6), bev=0)
     for x in (-0.1, 0.09):
@@ -2421,11 +2431,13 @@ def military_base_modern(team):
     rx, ry = 0.36, 0.32
     for sx in (-1, 1):
         for sy in (-1, 1):
-            beam((rx + sx * 0.04, ry + sy * 0.04, 0.0), (rx + sx * 0.012, ry + sy * 0.012, 0.3), 0.007, flat("steel_dk", "#3a3e44", 0.5))
+            beam((rx + sx * 0.04, ry + sy * 0.04, 0.0), (rx + sx * 0.012, ry + sy * 0.012, 0.3), 0.007,
+                 flat("steel_dk", "#3a3e44", 0.5))
     for z in (0.1, 0.2):
         bx((0.08 - z * 0.18, 0.08 - z * 0.18, 0.006), (rx, ry, z), flat("steel_dk", "#3a3e44", 0.5), bev=0)
     bx((0.04, 0.04, 0.012), (rx, ry, 0.306), flat("steel_dk", "#3a3e44", 0.5), bev=0)
-    ev.hemi(0.06, (rx, ry - 0.005, 0.36), flat("dish", "#e4e6e8", 0.4), 10, 3, (1, 1, 0.45)).rotation_euler = (math.pi / 2 + 0.5, 0, 0.3)
+    dish = ev.hemi(0.06, (rx, ry - 0.005, 0.36), flat("dish", "#e4e6e8", 0.4), 10, 3, (1, 1, 0.45))
+    dish.rotation_euler = (math.pi / 2 + 0.5, 0, 0.3)
     rod((rx, ry, 0.312), (rx, ry - 0.02, 0.35), 0.006, flat("steel_dk", "#3a3e44", 0.5), n=4)
     ico(0.008, (rx + 0.02, ry + 0.02, 0.31), glow("beacon_red", "#ff4a3a", 3.0))
     ev.flagpole(0.06, 0.04, 0.42, team, 0.12)
@@ -2481,12 +2493,12 @@ def mech_bay(k, team, w=0.3, d=0.2, h=0.2):
 def defence_turret(k, team):
     """A corner defence turret: a steel drum with a cold light band, a domed turret with twin barrels pointing out of
     the corner, a sensor fin."""
-    cy(0.075, 0.12, (0, 0, 0.06), k["comp"], 8)
-    cy(0.078, 0.012, (0, 0, 0.09), k["cyan"], 8)
-    cy(0.082, 0.014, (0, 0, 0.127), k["dark"], 8)
+    cy(0.07, 0.12, (0, 0, 0.06), k["comp"], 8)
+    cy(0.073, 0.012, (0, 0, 0.09), k["cyan"], 8)
+    cy(0.076, 0.014, (0, 0, 0.127), k["dark"], 8)
     ev.hemi(0.05, (0, 0, 0.134), k["seam"], 8, 3, (1, 1, 0.75))
     for sy in (-0.012, 0.012):
-        rod((0.03, sy, 0.15), (0.09, sy, 0.152), 0.0055, k["dark"], n=5)
+        rod((0.03, sy, 0.15), (0.085, sy, 0.152), 0.0055, k["dark"], n=5)
     bx((0.016, 0.004, 0.012), (0.044, 0, 0.166), k["neon"], bev=0)
     bx((0.012, 0.004, 0.04), (-0.03, 0, 0.18), k["dark"], bev=0)
 
@@ -2587,9 +2599,9 @@ for _t, _c in ev.TEAMS.items():
 # get UV islands under a texel wide that no texel centre falls into, so they bake black — they get a 1024 px atlas
 # (like the residences); one of each per map, so the extra texture memory stays small
 BAKE_1024 = {"raider_camp", "port", "military_base"}
-# the late-era ports, bases and steel ships: hundreds of thin rails, struts, seams and light strips — the tight atlas of
-# the residences (flat colours and thin faces on a palette strip, only textured faces unwrapped) keeps them out of the
-# black gutter; the ships stay at 512 (small on the screen, several on the map)
+# the late-era ports, bases and steel ships: hundreds of thin rails, struts, seams and light strips — the tight
+# atlas of the residences (flat colours and thin faces on a palette strip, only textured faces unwrapped) keeps them
+# out of the black gutter; the ships stay at 512 (small on the screen, several on the map)
 SHIPS = ("destroyer_", "cruiser_scifi_")
 ATLAS_PROPS = ("port_modern_", "port_scifi_", "military_base_modern_", "military_base_scifi_") + SHIPS
 
