@@ -1,6 +1,7 @@
 shader_type spatial;
-// A banner's cloth fluttering in the wind: pinned at the pole edge, rippling more toward the free edge; both faces
-// of the cloth (side = +1 front, −1 back, a quad turned by 180°) move together in world space.
+// A banner's cloth fluttering in the wind: pinned at the pole edge, rippling more toward the free edge. The painted
+// faces (side = +1 front, −1 back, a quad turned by 180°) hang just off the model's own static cloth, so each ripples
+// outward only: dipping inward would sink it into that cloth and show the model's baked emblem instead of the flag.
 render_mode cull_back;
 
 uniform sampler2D tex : source_color, filter_linear_mipmap;
@@ -10,7 +11,8 @@ void vertex() {
 	float free_ = side > 0.0 ? UV.x : 1.0 - UV.x;  // 0 at the pole, 1 at the fly end
 	float ph = MODEL_MATRIX[3].x * 1.7 + MODEL_MATRIX[3].z * 1.1;  // neighbouring banners out of step
 	float w = sin(TIME * 3.4 - free_ * 5.5 + ph) * 0.04 + sin(TIME * 5.3 - free_ * 9.0 + ph * 1.3) * 0.01;
-	VERTEX.z += side * w * free_;
+	w = w * 0.5 + 0.025;  // −0.05..0.05 → 0..0.05: never behind the static cloth
+	VERTEX.z += w * free_;  // each face's own +Z points away from the cloth (the back quad is turned by 180°)
 	VERTEX.y += sin(TIME * 2.2 - free_ * 4.0 + ph) * 0.006 * free_;
 }
 

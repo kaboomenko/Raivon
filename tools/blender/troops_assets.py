@@ -45,7 +45,7 @@ WOODC = "#7a5232"
 OLIVE = "#5d6b3c"
 KHAKI = "#b3a477"
 DL3_MAIL = "#59606a"   # DL3 men-at-arms: dark mail and steel (the far view of reference frames 1 and 3)
-DL3_STEEL = "#7c8592"
+DL3_STEEL = "#5a626e"  # the game sun lifts steel a lot: helmets and pauldrons are what the far camera sees
 
 
 def mixc(a, b, t):
@@ -609,7 +609,7 @@ def figure(dl, team, v=0, seated=False):
         bx((0.008, 0.01, 0.03), (0, -0.035, Z + 0.355), helm, bev=0)
         _arm(Z, 1, (0.08, -0.05, 0.37), mail)
         _arm(Z, -1, (-0.062, -0.04, 0.22), mail)
-        beam((0.082, -0.055, Z + 0.39), (0.092, -0.06, Z + 0.56), 0.011, F("#aab1ba", 0.3))
+        beam((0.082, -0.055, Z + 0.39), (0.092, -0.06, Z + 0.56), 0.011, F("#8c939c", 0.3))
         bx((0.045, 0.012, 0.01), (0.081, -0.055, Z + 0.385), F(GOLD, 0.4), bev=0)
         _heater_shield(Z, team, rim="#6b7480", field=shade(team, 0.82))
     elif dl == 4:  # musketeers: long coat, white cross belts, tricorn; shouldered musket with bayonet
