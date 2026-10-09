@@ -7,6 +7,7 @@ const Types := preload("res://scripts/sim/types.gd")
 const MapGen := preload("res://scripts/sim/map_gen.gd")
 const HexGrid := preload("res://scripts/sim/hexgrid.gd")
 const FlagView := preload("res://scripts/flag_view.gd")
+const SoftLook := preload("res://scripts/soft_look.gd")
 
 const SQ3 := 1.7320508
 const DIRS := [Vector2i(1, 0), Vector2i(1, -1), Vector2i(0, -1), Vector2i(-1, 0), Vector2i(-1, 1), Vector2i(0, 1)]
@@ -78,6 +79,7 @@ func set_world(w) -> void:
 	_flush_decor()
 	_build_bay()
 	_dirty = true
+	SoftLook.report()
 
 
 var _river_mi: MeshInstance3D
@@ -285,6 +287,7 @@ func spawn(name: String, parent: Node, pos: Vector3, rot := 0.0, s := 1.0, owner
 		if not ResourceLoader.exists("res://assets/models/%s.glb" % name):
 			return null
 		models[name] = load("res://assets/models/%s.glb" % name)
+		SoftLook.soften(models[name])  # the soft toon material (§6.5), on the shared meshes: DECOR batches get it too
 	if DECOR.has(name):  # batched: one MultiMesh per model and parent (see _flush_decor), no node of its own
 		var per: Dictionary = _pending_decor.get(parent, {})
 		_pending_decor[parent] = per
@@ -975,7 +978,7 @@ func _place_camp(hex: int, holder: Node3D) -> void:
 		cm.height = 0.26
 		var m := StandardMaterial3D.new()
 		m.albedo_color = Color(0.42, 0.3, 0.2)
-		cm.material = m
+		cm.material = SoftLook.matte(m)
 		post.mesh = cm
 		post.position = Vector3(cos(a) * 0.62, 0.13, sin(a) * 0.62)
 		post.rotation.z = 0.15 * sin(a * 3.0)
@@ -987,6 +990,7 @@ func _place_camp(hex: int, holder: Node3D) -> void:
 func _place_vein(holder: Node3D) -> void:
 	var rock := StandardMaterial3D.new()
 	rock.albedo_color = Color(0.45, 0.43, 0.4)
+	SoftLook.matte(rock)
 	var glow := StandardMaterial3D.new()
 	glow.albedo_color = Color(0.12, 0.42, 1.0)
 	glow.metallic = 0.3
@@ -1050,6 +1054,7 @@ func _place_dark_lake(holder: Node3D) -> void:
 func _place_derrick(holder: Node3D) -> void:
 	var wood := StandardMaterial3D.new()
 	wood.albedo_color = Color(0.42, 0.28, 0.16)
+	SoftLook.matte(wood)
 	var top := Vector3(0.0, 1.05, 0.0)
 	for k in 4:
 		var a := TAU * k / 4.0 + PI / 4.0
@@ -1161,7 +1166,7 @@ func _tint(n: Node, col: Color) -> void:
 		var mi: MeshInstance3D = n
 		var m := StandardMaterial3D.new()
 		m.albedo_color = col
-		mi.material_override = m
+		mi.material_override = SoftLook.matte(m)
 	for ch in n.get_children():
 		_tint(ch, col)
 
@@ -2467,6 +2472,8 @@ var _troop_mats := {}  # [texture id, solid] -> ShaderMaterial
 
 ## Swaps a troop model's baked material for the animated troop shader (march bob, fight thrust); glowing
 ## parts keep their own material. The mesh instances go into `out` so sync_armies can drive them.
+## The baked material sits behind the soft_model swap (SoftLook keeps it in meta "src"): without reading it
+## through, no surface would qualify and the troops would silently stop animating.
 func _animate_troops(n: Node, solid: bool, out: Array) -> void:
 	if _troop_shader == null:
 		_troop_shader = load("res://shaders/troops.gdshader")
@@ -2474,7 +2481,7 @@ func _animate_troops(n: Node, solid: bool, out: Array) -> void:
 		var mi: MeshInstance3D = n
 		var used := false
 		for i in mi.mesh.get_surface_count():
-			var m: Material = mi.get_active_material(i)
+			var m: Material = SoftLook.source(mi.get_active_material(i))
 			if not (m is StandardMaterial3D):
 				continue
 			var sm: StandardMaterial3D = m
@@ -2485,7 +2492,7 @@ func _animate_troops(n: Node, solid: bool, out: Array) -> void:
 				var shm := ShaderMaterial.new()
 				shm.shader = _troop_shader
 				shm.set_shader_parameter("albedo_tex", sm.albedo_texture)
-				shm.set_shader_parameter("roughness_v", sm.roughness)
+				shm.set_shader_parameter("roughness_v", maxf(sm.roughness, 0.9))  # matte toys (§6.5)
 				shm.set_shader_parameter("solid", solid)
 				_troop_mats[key] = shm
 			mi.set_surface_override_material(i, _troop_mats[key])
@@ -2890,6 +2897,7 @@ func _make_cart() -> Node3D:
 	cart.add_child(body)
 	var wood := StandardMaterial3D.new()
 	wood.albedo_color = Color(0.55, 0.36, 0.2)
+	SoftLook.matte(wood)
 	var box := MeshInstance3D.new()
 	var bm := BoxMesh.new()
 	bm.size = Vector3(0.22, 0.12, 0.34)
@@ -2904,7 +2912,7 @@ func _make_cart() -> Node3D:
 	sack.mesh = sm
 	var sackm := StandardMaterial3D.new()
 	sackm.albedo_color = Color(0.9, 0.78, 0.45)
-	sack.material_override = sackm
+	sack.material_override = SoftLook.matte(sackm)
 	sack.position = Vector3(0, 0.25, 0)
 	body.add_child(sack)
 	for x in [-0.13, 0.13]:
@@ -3280,6 +3288,7 @@ func _flat_mat(c: Color) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_color = c
 	m.roughness = 0.6
+	SoftLook.matte(m)  # soft wrapped light, no highlight (§6.5)
 	return m
 
 
