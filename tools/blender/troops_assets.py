@@ -758,8 +758,9 @@ def figure(dl, team, v=0, seated=False):
         bx((0.03, 0.012, 0.012), (0.02, -0.08, Z + 0.287), F("#141516"), bev=0, rot=(0, -0.7, 0))
     else:  # dl 8 power armour (reference frames 2 and 5): a navy shell tapering from broad shoulders, a team chest
         # plate framed in bronze with a glowing core, segmented abdomen plates with the dark undersuit showing in the
-        # seams, a bronze belt, thigh plates and forearm guards; big rounded team pauldrons over navy lames with the
-        # white eagle; a round navy helmet with a gunmetal face plate and a glowing T-visor; heavy energy rifle
+        # seams, a bronze belt, greaves and forearm guards; rounded team pauldrons over navy lames with the
+        # white eagle; a round navy helmet set in a high collar, a gunmetal face plate and a glowing T-visor; heavy
+        # energy rifle
         plate = F("#5b636e", 0.4)
         joint = F("#23272d", 0.6)
         navy = F(shade(team, 0.5), 0.45)
@@ -921,12 +922,12 @@ def assault_dl2(team):
 
 
 def assault_dl3(team):
-    """Knight: grey destrier in a dagged team caparison to the knees with the white eagle on both flanks and the
+    """Knight: iron-grey destrier in a dagged team caparison to the knees with the white eagle on both flanks and the
     chest, steel chanfron and team plume; the rider in a surcoat with steel pauldrons, great helm and crest,
     heater shield, lance with a swallow-tailed pennant."""
     # toned like the DL3 men-at-arms beside him (reference frame 3: the rider reads as dark steel and deep team blue
-    # like the infantry): a darker grey destrier, the deeper surcoat and caparison, dark mail, blued steel
-    horse("#9e9a92", "#55524e", "#34302e", reins=True, covered=True)
+    # like the infantry): an iron-grey destrier, the deeper surcoat and caparison, dark mail, blued steel
+    horse("#77736c", "#46423e", "#2e2a28", reins=True, covered=True)
     tc = F(shade(team, 0.64), 0.7)
     helm = F(mixc(DL3_STEEL, team if team == TEAMS["blue"] else "#4a5872", 0.18), 0.35)  # the squad's helmets
     n = 20

@@ -1799,11 +1799,13 @@ def residence_dl3(team):
     tree(-0.6, -0.3, 0.8)
 
 
-def coursed_cone(x, y, z0, r, h, roof_c, rings=3, sides=12, lip=0.007, band=0.78):
-    """A tower's cone roof laid in rings of slates (the steep tower roofs of reference frame 4): the lower edge of
-    each ring stands a lip proud of the ring below, the rings alternate two tones and the top of each ring darkens
-    just under the next ring's edge (the shadow line the high game camera reads, as course_rows does on the flat
-    roofs). Open at the bottom: the tower top closes it."""
+def coursed_cone(x, y, z0, r, h, roof_c, rings=5, sides=12, lip=0.003, band=0.78, butt_k=0.75, eave=0.007):
+    """A tower's cone roof laid in courses of slates (the steep tower roofs of reference frame 4): the lower edge of
+    each course stands a small lip proud of the one below, the courses alternate two tones and the top of each
+    darkens a little just under the next course's edge (the shadow line the high game camera reads, as course_rows
+    does on the flat roofs). Many thin courses with a soft shadow keep the cone one smooth steep shape that reads as
+    shingled, not as stacked tiers. The eave course flares out by `eave` (it also covers the merlon tops).
+    Open at the bottom: the tower top closes it."""
     mbs, butt = [_MB(), _MB()], _MB()
 
     def P(rr, z, a):
@@ -1812,7 +1814,7 @@ def coursed_cone(x, y, z0, r, h, roof_c, rings=3, sides=12, lip=0.007, band=0.78
         last = k == rings - 1
         fa, fb = k / rings, (1.0 if last else (k + 1.18) / rings)
         za, zb = z0 + h * fa, z0 + h * fb
-        ra, rb = r * (1 - fa) + lip, r * (1 - fb)
+        ra, rb = r * (1 - fa) + (eave if k == 0 else lip), r * (1 - fb)
         fm = (k + band) / rings
         lam = (fm - fa) / (fb - fa)
         zm, rm = za + (zb - za) * lam, ra + (rb - ra) * lam
@@ -1827,11 +1829,11 @@ def coursed_cone(x, y, z0, r, h, roof_c, rings=3, sides=12, lip=0.007, band=0.78
                 butt.face([P(rm, zm, a0), P(rm, zm, a1), P(rb, zb, a1), P(rb, zb, a0)], n)
     for mb, mt in zip(mbs, _roof_mats(roof_c, 0.86)):
         mb.obj(mt, "cone_courses")
-    butt.obj(tex("roof", shade(roof_c, 0.62), 1.6), "cone_butts")
+    butt.obj(tex("roof", shade(roof_c, butt_k), 1.6), "cone_butts")
     return z0 + h
 
 
-def castle_tower(x, y, r, h, roof, team, flag=True, roof_c=None, rings=3):
+def castle_tower(x, y, r, h, roof, team, flag=True, roof_c=None, rings=5):
     """A round castle tower as in the concept art: plinth, body, a string course, merlons, a tall cone roof
     with a gilt finial and a pennant in the team colour. roof_c: lay the cone in slate rings of that colour."""
     st = stone(WSTONE, 0.6)
@@ -2012,8 +2014,8 @@ def smithy(team):
     wd = tex("wood", WOOD, 2.5)
     st = stone(WSTONE_D, 0.9)
     for sx in (-1, 1):
-        bx((0.014, 0.014, 0.16), (sx * 0.1, -0.06, 0.08), wd, bev=0)
-    bx((0.22, 0.014, 0.016), (0, -0.06, 0.158), wd, bev=0)
+        bx((0.02, 0.02, 0.16), (sx * 0.1, -0.06, 0.08), wd, bev=0)
+    bx((0.22, 0.02, 0.02), (0, -0.06, 0.155), wd, bev=0)
     lean_to((-0.125, -0.085, 0.152), (0.125, -0.085, 0.152), (0.125, 0.075, 0.22), (-0.125, 0.075, 0.22),
             slate(team, 0.94), n=3)
     bx((0.09, 0.07, 0.065), (-0.05, 0.035, 0.0325), st, bev=0)
@@ -2028,10 +2030,11 @@ def smithy(team):
 
 def residence_dl4(team):
     pad(0.84, stone("#a48c6c", 1.2), 0.014, 14, 0.03, 14)  # warm paved court
-    # the big pale flagstones of reference frame 4's castle yard, and a flagged road out of the gate
+    # the big pale flagstones of reference frame 4's castle yard (it shows round the keep from the game camera), and
+    # a flagged road out of the gate that widens towards the edge and lies almost flush, in a tone between the two
     flags = stone("#c9b38e", 0.9)
     bx((0.9, 0.9, 0.006), (0, 0, 0.017), flags, bev=0)
-    bx((0.2, 0.19, 0.006), (0, -0.695, 0.017), flags, bev=0)
+    extrude([(-0.1, -0.6), (0.1, -0.6), (0.152, -0.795), (-0.152, -0.795)], 0.012, 0.0155, stone("#b9a17d", 0.9))
     st = stone(WSTONE, 0.6)  # larger blocks that survive the bake (reference frame 4 shows every stone)
     roof_c = slate(team, 0.94)
     roof = tex("roof", roof_c)
@@ -2072,7 +2075,7 @@ def residence_dl4(team):
     for (x, y) in ((-H, 0.0), (H, 0.0), (0.0, H)):
         square_tower(x, y, 0.14, 0.4, roof, team, flag=False, roofed=False)
     for sx in (-1, 1):
-        castle_tower(sx * 0.17, -H - 0.02, 0.06, 0.5, roof, team, flag=False, roof_c=roof_c, rings=2)
+        castle_tower(sx * 0.17, -H - 0.02, 0.06, 0.5, roof, team, flag=False, roof_c=roof_c, rings=3)
     # gatehouse: an arched gate with a lit passage and steps up to it
     bx((0.26, 0.16, 0.4), (0, -H, 0.2), st, bev=0.01)
     sur = flat("arch_sur", "#6e6152", 0.85)
@@ -2107,7 +2110,7 @@ def residence_dl4(team):
         window(-0.11 + i * 0.1, -0.044, 0.28, 0, 0.026, 0.05)
     for (x, y, h) in ((-0.16, -0.04, 0.86), (0.24, -0.04, 0.78)):
         castle_tower(x, y, 0.08, h, roof, team, flag=False, roof_c=roof_c)
-    castle_tower(0.04, 0.24, 0.085, 1.08, roof, team, roof_c=roof_c, rings=4)  # the tall central tower
+    castle_tower(0.04, 0.24, 0.085, 1.08, roof, team, roof_c=roof_c, rings=6)  # the tall central tower
     # the great hall behind the keep: warm stone under a coursed slate roof, lit windows
     def hall():
         w, d, h = 0.3, 0.22, 0.28
@@ -2241,7 +2244,9 @@ def residence_dl5(team):
     # central clock tower with a team dome and a gilt lantern
     bx((0.17, 0.17, 0.36), (0, 0.14, 0.62), stone("#efe6d2", 1.5), bev=0.01)
     bx((0.2, 0.2, 0.025), (0, 0.14, 0.8), wh, bev=0.006)
-    for a in (0.0, math.pi):  # the dials face the square and the park behind (the side dials never showed)
+    # dials towards the square, the park behind and the west (the player's capital stands turned +0.3 rad, which
+    # brings the west face round towards the camera)
+    for a in (0.0, math.pi, -math.pi / 2):
         clock_face(math.sin(a) * 0.087, 0.14 - math.cos(a) * 0.087, 0.7, a, 0.045)
     cy(0.075, 0.08, (0, 0.14, 0.85), stone("#efe6d2"), 12)
     uvs(0.095, (0, 0.14, 0.89), flat("dome" + team, team, 0.45), 12, 6, (1, 1, 0.9))
@@ -2446,8 +2451,8 @@ def steel_facade():
 
 def citadel_tower(x, y, w, d, h, st, plate, neon, cap, seam=None, panel=None, tip=None, needle=True):
     """A tall rectangular tower of the citadel (reference frame 5): a body with a setback crown and a four-sided
-    spire with a needle and a lit tip, pale plate seams banding it, and on the front and side faces a recessed
-    dark-blue panel with a cold light strip down its middle (the citadel's signature)."""
+    spire with a needle and a lit tip, pale plate seams banding it, and on every face an inset panel in a deep team
+    tone with a cold light strip down its middle (the citadel's signature)."""
     bx((w, d, h), (x, y, h / 2), st, bev=0.006)
     for zf in (0.35, 0.6, 0.83):  # plate seams round the body (the string course of the old tower, and two more)
         bx((w + 0.012, d + 0.012, 0.02 if zf != 0.35 else 0.03), (x, y, h * zf), seam or plate, bev=0)
@@ -2458,14 +2463,19 @@ def citadel_tower(x, y, w, d, h, st, plate, neon, cap, seam=None, panel=None, ti
     if needle:
         rod((x, y, top - 0.01), (x, y, top + 0.08), 0.006, cap, r2=0.0015, n=4)
         bx((0.012, 0.012, 0.012), (x, y, top + 0.05), tip or neon, bev=0)
-    pm = panel or plate
-    for (nx, ny) in ((0, -1), (1, 0), (-1, 0)):
+    # the panels lie flush on all four faces (the enemy capitals stand turned half round, showing the back), below
+    # the plate seams, which run proud across them so they read as insets; the light strip stands proud of both
+    mb = _MB()
+    for (nx, ny) in ((0, -1), (1, 0), (-1, 0), (0, 1)):
         L = (w if ny else d)
         off = (d if ny else w) / 2
-        px, py = x + nx * (off + 0.004), y + ny * (off + 0.004)
+        px, py = x + nx * (off + 0.002), y + ny * (off + 0.002)
+        tx, ty = -ny * L * 0.2, nx * L * 0.2
+        mb.face([(px - tx, py - ty, h * 0.15), (px + tx, py + ty, h * 0.15), (px + tx, py + ty, h * 0.85),
+                 (px - tx, py - ty, h * 0.85)], (nx, ny, 0))
         rz = 0.0 if ny else math.pi / 2
-        bx((L * 0.4, 0.008, h * 0.7), (px, py, h * 0.5), pm, rz, bev=0)
-        bx((0.014, 0.01, h * 0.62), (px + nx * 0.002, py + ny * 0.002, h * 0.5), neon, rz, bev=0)
+        bx((0.014, 0.008, h * 0.62), (px + nx * 0.0035, py + ny * 0.0035, h * 0.5), neon, rz, bev=0)
+    mb.obj(panel or plate, "panels")
 
 
 def residence_dl8(team):
@@ -2540,6 +2550,9 @@ def residence_dl8(team):
     cy(0.007, 0.36, (hx, hy, 0.24), flat("mast", "#d0d4da", 0.5), 6)
     bx((0.12, 0.004, 0.17), (hx + 0.066, hy, 0.31), glow("holo" + team, team, 1.0), bev=0)
     bx((0.13, 0.008, 0.008), (hx + 0.066, hy, 0.4), cyan, bev=0)
+    # the state's crest projected on it, white and lit (both faces), so the panel reads as a banner, not a sign
+    crest = [(0.0, -0.036), (0.026, -0.016), (0.026, 0.026), (0.0, 0.016), (-0.026, 0.026), (-0.026, -0.016)]
+    extrude(crest, -0.004, 0.004, glow("holo_crest", "#eef8ff", 1.6), (hx + 0.066, hy, 0.325), (math.pi / 2, 0, 0))
     for sx in (-1, 1):  # the two great banners of reference frame 5, down the flanking towers
         facade_banner(sx * 0.21, -0.091, 0.92, 0.1, 0.42, team, 0.0, gold)
     facade_banner(0, -0.016, 1.3, 0.12, 0.5, team, 0.0, gold)
@@ -3169,6 +3182,152 @@ def _drop_ground_faces(objs):
         bm.free()
 
 
+ATLAS = {"residence_dl4", "residence_dl5", "residence_dl6", "residence_dl7", "residence_dl8"}
+
+
+def _kept(mt):
+    """A material that keeps its own shader in the game (a lamp, a lit window, metal): it never samples the bake."""
+    b = mt.node_tree.nodes["Principled BSDF"]
+    return b.inputs["Emission Strength"].default_value > 0 or b.inputs["Metallic"].default_value > 0.3
+
+
+def _uniform(mt):
+    """A material of one flat colour: nothing feeds its base colour."""
+    b = mt.node_tree.nodes.get("Principled BSDF")
+    return b is not None and not b.inputs["Base Color"].is_linked
+
+
+def _fill_gutter(img):
+    """Fill the unbaked (pure black) texels with the colours of the islands around them (push-pull: average the
+    baked texels down a pyramid, then pull the coarse averages back up into the holes), so the small mip levels the
+    game samples at map distance blend an island with its neighbours instead of with black."""
+    import numpy as np
+    n = img.size[0]
+    px = np.empty(n * n * 4, dtype=np.float32)
+    img.pixels.foreach_get(px)
+    px = px.reshape(n, n, 4)
+    rgb = px[:, :, :3].copy()
+    w = (rgb.max(axis=2) > 0).astype(np.float32)
+    levels = [(rgb * w[:, :, None], w)]
+    while levels[-1][1].shape[0] > 1:
+        c, m = levels[-1]
+        levels.append((c[0::2, 0::2] + c[1::2, 0::2] + c[0::2, 1::2] + c[1::2, 1::2],
+                       m[0::2, 0::2] + m[1::2, 0::2] + m[0::2, 1::2] + m[1::2, 1::2]))
+    fill = levels[-1][0] / np.maximum(levels[-1][1], 1e-6)[:, :, None]
+    for c, m in reversed(levels[:-1]):
+        up = np.repeat(np.repeat(fill, 2, axis=0), 2, axis=1)
+        avg = c / np.maximum(m, 1e-6)[:, :, None]
+        fill = np.where((m > 0)[:, :, None], avg, up)
+    px[:, :, :3] = np.where((w > 0)[:, :, None], rgb, fill)
+    px[:, :, 3] = 1.0
+    img.pixels.foreach_set(px.ravel())
+    img.update()
+
+
+def bake_atlas(objs, size=1024, thin=0.018, cell=12, margin=0.003):
+    """export_assets.bake_asset with a tighter atlas, for the hero residences.
+
+    smart_project spends its island margin on every island, and a castle of boxes, slits and tile courses is
+    thousands of small islands: the stone and roof textures shrank to a fraction of the sheet and the thinnest parts
+    sampled the black gutter. Here only the faces that carry texture detail are unwrapped (then packed by the
+    concave packer with one fixed margin); faces of one flat colour, faces whose material keeps its own shader, and
+    faces thinner than `thin` (posts, rails, course lips: a texel or two wide, no room for detail) all collapse onto
+    one small palette cell per material in a strip along the top of the sheet."""
+    bpy.ops.object.select_all(action="DESELECT")
+    for o in objs:
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = objs[0]
+    bpy.ops.object.convert(target="MESH")  # apply modifiers
+    bpy.ops.object.join()
+    ob = bpy.context.active_object
+    me = ob.data
+    mw = ob.matrix_world
+    plain = [_uniform(s.material) or _kept(s.material) for s in ob.material_slots]
+    pal = []
+    for p in me.polygons:
+        vs = [mw @ me.vertices[i].co for i in p.vertices]
+        area = sum(((vs[i] - vs[0]).cross(vs[i + 1] - vs[0])).length for i in range(1, len(vs) - 1)) / 2
+        lmax = max((vs[i] - vs[i - 1]).length for i in range(len(vs))) or 1e-9
+        width = min(area / lmax * (2 if len(vs) == 3 else 1), math.sqrt(area))
+        pal.append(plain[p.material_index] or width < thin)
+    bpy.ops.object.mode_set(mode="EDIT")
+    bm = bmesh.from_edit_mesh(me)
+    bm.faces.ensure_lookup_table()
+    for f in bm.faces:
+        f.select_set(False)
+    for f in bm.faces:
+        if pal[f.index]:
+            f.hide_set(True)
+    bmesh.update_edit_mesh(me)
+    bpy.ops.mesh.select_all(action="SELECT")
+    bpy.ops.uv.smart_project(angle_limit=math.radians(66), island_margin=0.0)
+    bpy.ops.uv.pack_islands(rotate=True, rotate_method="CARDINAL", margin_method="FRACTION", margin=margin,
+                            shape_method="CONCAVE")
+    bpy.ops.mesh.reveal(select=False)
+    bpy.ops.object.mode_set(mode="OBJECT")
+    # the palette strip: one cell per material along the top of the sheet; the packed islands shrink to make room
+    cells = sorted({p.material_index for p in me.polygons if pal[p.index]})
+    per_row = size // cell
+    rows = max(1, -(-len(cells) // per_row))
+    s = 1.0 - rows * cell / size
+    slot_cell = {mi: k for k, mi in enumerate(cells)}
+    uvl = me.uv_layers.active.data
+    hw = cell * 0.3 / size
+    for p in me.polygons:
+        lo = list(p.loop_indices)
+        if not pal[p.index]:
+            for li in lo:
+                u, v = uvl[li].uv
+                uvl[li].uv = (u * s, v * s)
+            continue
+        k = slot_cell[p.material_index]
+        cu = (k % per_row + 0.5) * cell / size
+        cv = s + (k // per_row + 0.5) * cell / size
+        if len(lo) == 4:
+            ring = [(-1, -1), (1, -1), (1, 1), (-1, 1)]
+        elif len(lo) == 3:
+            ring = [(-1, -1), (1, -1), (1, 1)]
+        else:
+            ring = [(math.cos(math.tau * i / len(lo)) * 1.2, math.sin(math.tau * i / len(lo)) * 1.2)
+                    for i in range(len(lo))]
+        for li, (a, b) in zip(lo, ring):
+            uvl[li].uv = (cu + a * hw, cv + b * hw)
+    img = bpy.data.images.new("bake", size, size)
+    for slot in ob.material_slots:
+        nt = slot.material.node_tree
+        node = nt.nodes.new("ShaderNodeTexImage")
+        node.image = img
+        nt.nodes.active = node
+    sc = bpy.context.scene
+    sc.render.engine = "CYCLES"
+    sc.cycles.device = "CPU"
+    sc.cycles.samples = 1
+    sc.render.bake.use_pass_direct = False
+    sc.render.bake.use_pass_indirect = False
+    sc.render.bake.margin = 4
+    sc.render.bake.margin_type = "EXTEND"  # a palette cell spreads its own colour, not a neighbour's across a seam
+    bpy.ops.object.bake(type="DIFFUSE", pass_filter={"COLOR"})
+    _fill_gutter(img)
+    # one material: the baked colour; lamps, glass and metal keep their own (as bake_asset does)
+    baked = bpy.data.materials.new("baked")
+    baked.use_nodes = True
+    bnt = baked.node_tree
+    tx = bnt.nodes.new("ShaderNodeTexImage")
+    tx.image = img
+    bnt.links.new(tx.outputs["Color"], bnt.nodes["Principled BSDF"].inputs["Base Color"])
+    bnt.nodes["Principled BSDF"].inputs["Roughness"].default_value = 0.8
+    keep = {i: (s_.material if _kept(s_.material) else baked) for i, s_ in enumerate(ob.material_slots)}
+    mats = list(dict.fromkeys(keep.values()))
+    old_idx = [p.material_index for p in me.polygons]
+    me.materials.clear()
+    for mm in mats:
+        me.materials.append(mm)
+    for p, oi in zip(me.polygons, old_idx):
+        p.material_index = mats.index(keep[oi])
+    img.pack()
+    return ob
+
+
 def export(name, out):
     objs = [o for o in bpy.context.scene.objects if o.type == "MESH"]
     bpy.context.view_layer.update()
@@ -3178,8 +3337,11 @@ def export(name, out):
         _drop_ground_faces(objs)
     # the hero model is seen up close, and the dense towns carry hundreds of thin beams and tile courses that need
     # the texels (at 512 they shrink below a pixel and sample the black gutter)
-    ob = ea.bake_asset(objs, 1024 if name.startswith(("residence", "city_dl1", "city_dl2", "city_dl3", "city_dl4"))
-                       else 512)
+    if name.rsplit("_", 1)[0] in ATLAS:
+        ob = bake_atlas(objs, 1024)
+    else:
+        ob = ea.bake_asset(objs, 1024 if name.startswith(("residence", "city_dl1", "city_dl2", "city_dl3", "city_dl4"))
+                           else 512)
     ob.name = name
     ob.data.calc_loop_triangles()
     tris = len(ob.data.loop_triangles)
