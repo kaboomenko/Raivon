@@ -938,54 +938,274 @@ def howitzer():
         _cy("net_strap", 0.03, 0.01, (-0.16, y, 0.1), mat("strap", "#3b2f22", 0.9), 10, rot=YROT)
 
 
+# ------------------------------------------------------------------ helpers for the aircraft and the late-era launcher:
+# lofted bodies (fuselages, hulls, drop tanks), flat discs (roundels, glowing fan faces), slabs (wings), armour plate
+# with panel seams and aircraft paint (camouflage over a pale belly with panel lines).
+
+
+def _ell(ry, rz, cz=0.0, n=10, cy=0.0):
+    """Elliptic cross-section ring of n points (y, z) for _loft."""
+    return [(cy + ry * math.cos(math.tau * k / n + math.pi / n), cz + rz * math.sin(math.tau * k / n + math.pi / n))
+            for k in range(n)]
+
+
+def _chamf(ry, zt, zb, c):
+    """Chamfered-rectangle cross-section (8 points) for _loft: the faceted armour of the late-era machines."""
+    return [(ry, zt - c), (ry - c, zt), (-ry + c, zt), (-ry, zt - c), (-ry, zb + c), (-ry + c, zb), (ry - c, zb),
+            (ry, zb + c)]
+
+
+def _loft(name, secs, mt, smooth=True):
+    """A body along X through cross-sections secs = [(x, ring)], every ring the same number of (y, z) points, or a
+    single point that closes the body to a tip. Open ends get flat caps; the sides shade smooth (a fuselage) or
+    flat (faceted armour)."""
+    verts, faces, want, sm = [], [], [], []
+    rings = []
+    for x, pts in secs:
+        rings.append((len(verts), len(pts), (sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts))))
+        verts += [(x, y, z) for (y, z) in pts]
+    n = max(r[1] for r in rings)
+    for (b0, n0, c0), (b1, n1, c1) in zip(rings, rings[1:]):
+        cy, cz = (c0[0] + c1[0]) / 2, (c0[1] + c1[1]) / 2
+        for k in range(n):
+            if n0 == 1:
+                f = (b0, b1 + k, b1 + (k + 1) % n)
+            elif n1 == 1:
+                f = (b0 + k, b0 + (k + 1) % n, b1)
+            else:
+                f = (b0 + k, b0 + (k + 1) % n, b1 + (k + 1) % n, b1 + k)
+            fy = sum(verts[i][1] for i in f) / len(f)
+            fz = sum(verts[i][2] for i in f) / len(f)
+            faces.append(f)
+            want.append((0.0, fy - cy, fz - cz))
+            sm.append(smooth)
+    for (b, nn, _), sx in ((rings[0], -1.0), (rings[-1], 1.0)):
+        if nn > 1:
+            faces.append(tuple(range(b, b + nn)))
+            want.append((sx, 0.0, 0.0))
+            sm.append(False)
+    return _mesh(name, verts, faces, mt, lambda i, c: want[i], sm)
+
+
+def _disc(name, r, loc, mt, n=12, rot=None):
+    """A flat n-gon facing +Z (before rot): roundels, glowing fan faces, hatch openings."""
+    o = _mesh(name, [(r * math.cos(math.tau * k / n), r * math.sin(math.tau * k / n), 0.0) for k in range(n)],
+              [tuple(range(n))], mt, lambda i, c: (0, 0, 1))
+    o.location = loc
+    if rot:
+        o.rotation_euler = rot
+    return o
+
+
+def _slab(name, top, bot, mt):
+    """A plate between two matching outlines of 3D points (a wing, a tailplane): flat top, bottom and edges."""
+    n = len(top)
+    cx = sum(p[0] for p in top) / n
+    cy = sum(p[1] for p in top) / n
+    faces = [tuple(range(n)), tuple(range(n, 2 * n))] + [(k, (k + 1) % n, n + (k + 1) % n, n + k) for k in range(n)]
+
+    def outward(i, c):
+        if i < 2:
+            return (0, 0, 1 if i == 0 else -1)
+        return (c[0] - cx, c[1] - cy, 0)
+    return _mesh(name, list(top) + list(bot), faces, mt, outward)
+
+
+def _panelled(key, base_rgb_fn, seams, scale, width, row, mortar, grime, offset=0.5):
+    """Shared node set-up of _plated and _warpaint: a brick pattern laid in plan on tops and wrapped along X+Y / Z on
+    walls (as _masonry does) multiplied over a base colour as thin dark seams, and a little grime."""
+    mt = bpy.data.materials.new(key)
+    mt.use_nodes = True
+    nt = mt.node_tree
+    bsdf = nt.nodes["Principled BSDF"]
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    geo = nt.nodes.new("ShaderNodeNewGeometry")
+    sp = nt.nodes.new("ShaderNodeSeparateXYZ")
+    nt.links.new(tc.outputs["Object"], sp.inputs["Vector"])
+    sn = nt.nodes.new("ShaderNodeSeparateXYZ")
+    nt.links.new(geo.outputs["Normal"], sn.inputs["Vector"])
+    ab = nt.nodes.new("ShaderNodeMath")
+    ab.operation = "ABSOLUTE"
+    nt.links.new(sn.outputs["Z"], ab.inputs[0])
+    gt = nt.nodes.new("ShaderNodeMath")
+    gt.operation = "GREATER_THAN"
+    gt.inputs[1].default_value = 0.7
+    nt.links.new(ab.outputs[0], gt.inputs[0])
+    add = nt.nodes.new("ShaderNodeMath")
+    add.operation = "ADD"
+    nt.links.new(sp.outputs["X"], add.inputs[0])
+    nt.links.new(sp.outputs["Y"], add.inputs[1])
+    side = nt.nodes.new("ShaderNodeCombineXYZ")
+    nt.links.new(add.outputs[0], side.inputs["X"])
+    nt.links.new(sp.outputs["Z"], side.inputs["Y"])
+    mix = nt.nodes.new("ShaderNodeMix")
+    mix.data_type = "VECTOR"
+    nt.links.new(gt.outputs[0], mix.inputs["Factor"])
+    nt.links.new(side.outputs["Vector"], mix.inputs[4])
+    nt.links.new(tc.outputs["Object"], mix.inputs[5])
+    br = nt.nodes.new("ShaderNodeTexBrick")
+    nt.links.new(mix.outputs[1], br.inputs["Vector"])
+    br.inputs["Color1"].default_value = (1, 1, 1, 1)
+    br.inputs["Color2"].default_value = (*(seams[0],) * 3, 1)
+    br.inputs["Mortar"].default_value = (*(seams[1],) * 3, 1)
+    br.inputs["Scale"].default_value = scale
+    br.inputs["Mortar Size"].default_value = mortar
+    br.inputs["Brick Width"].default_value = width
+    br.inputs["Row Height"].default_value = row
+    br.offset = offset
+    base = base_rgb_fn(nt, tc, sn)
+    mul = nt.nodes.new("ShaderNodeMix")
+    mul.data_type = "RGBA"
+    mul.blend_type = "MULTIPLY"
+    mul.inputs["Factor"].default_value = 1.0
+    nt.links.new(base, mul.inputs["A"])
+    nt.links.new(br.outputs["Color"], mul.inputs["B"])
+    noise = nt.nodes.new("ShaderNodeTexNoise")
+    noise.inputs["Scale"].default_value = 40.0
+    nt.links.new(tc.outputs["Object"], noise.inputs["Vector"])
+    dirt = nt.nodes.new("ShaderNodeMix")
+    dirt.data_type = "RGBA"
+    dirt.blend_type = "MULTIPLY"
+    dirt.inputs["Factor"].default_value = grime
+    nt.links.new(mul.outputs["Result"], dirt.inputs["A"])
+    nt.links.new(noise.outputs["Color"], dirt.inputs["B"])
+    nt.links.new(dirt.outputs["Result"], bsdf.inputs["Base Color"])
+    bsdf.inputs["Roughness"].default_value = 0.5
+    return mt
+
+
+def _plated(color, scale=9.0, width=0.9, row=0.5, mortar=0.03, offset=0.5):
+    """Armour plate of the late-era machines (reference frame 5): panels a shade apart with dark seams."""
+    key = ("plated", color, scale, width, row, mortar, offset)
+    if key not in kit._MATS:
+        def base(nt, tc, sn):
+            rgb = nt.nodes.new("ShaderNodeRGB")
+            rgb.outputs[0].default_value = (*kit.srgb(color), 1)
+            return rgb.outputs[0]
+        kit._MATS[key] = _panelled(f"plated_{color}", base, (0.92, 0.52), scale, width, row, mortar, 0.14, offset)
+    return kit._MATS[key]
+
+
+def _warpaint(colors, belly, scale=14.0, panels=8.0):
+    """Aircraft paint of the trench era: hard-edged camouflage blotches on every surface facing up or sideways, a
+    pale belly underneath, fine panel lines over both."""
+    key = ("warpaint", tuple(colors), belly, scale, panels)
+    if key not in kit._MATS:
+        def base(nt, tc, sn):
+            noise = nt.nodes.new("ShaderNodeTexNoise")
+            noise.inputs["Scale"].default_value = scale
+            noise.inputs["Detail"].default_value = 1.5
+            noise.inputs["Roughness"].default_value = 0.4
+            nt.links.new(tc.outputs["Object"], noise.inputs["Vector"])
+            ramp = nt.nodes.new("ShaderNodeValToRGB")
+            ramp.color_ramp.interpolation = "CONSTANT"
+            els = ramp.color_ramp.elements
+            stops = [0.0, 0.45, 0.56][:len(colors)]
+            els[0].position, els[0].color = stops[0], (*kit.srgb(colors[0]), 1)
+            els[1].position, els[1].color = stops[1], (*kit.srgb(colors[1]), 1)
+            for s, ccol in zip(stops[2:], colors[2:]):
+                els.new(s).color = (*kit.srgb(ccol), 1)
+            nt.links.new(noise.outputs["Fac"], ramp.inputs["Fac"])
+            under = nt.nodes.new("ShaderNodeMath")
+            under.operation = "LESS_THAN"
+            under.inputs[1].default_value = -0.35
+            nt.links.new(sn.outputs["Z"], under.inputs[0])
+            pick = nt.nodes.new("ShaderNodeMix")
+            pick.data_type = "RGBA"
+            nt.links.new(under.outputs[0], pick.inputs["Factor"])
+            nt.links.new(ramp.outputs["Color"], pick.inputs["A"])
+            pick.inputs["B"].default_value = (*kit.srgb(belly), 1)
+            return pick.outputs["Result"]
+        kit._MATS[key] = _panelled("warpaint", base, (1.0, 0.66), panels, 0.9, 0.5, 0.025, 0.1, offset=0.0)
+    return kit._MATS[key]
+
+
 def rocket_launcher():
-    """Late-era launcher: a six-wheeled composite chassis with a cab, a raised pod of rocket tubes with glowing
-    mouths, a radar mast and side lights, in the gunmetal-and-graphite look of the DL8 troops."""
-    comp = mat("gunmetal", "#68707b", 0.4)  # gunmetal like frame 5's machines
-    trim = mat("comptrim", "#3e4550", 0.5)
+    """Late-era launcher (DL8 armies and sieges) facing +X: a six-wheeled armoured carrier in plated gunmetal with
+    dark seams like frame 5's machines — armoured skirts over chunky wheels with cyan light strips, a faceted cab with
+    a dark visor over a cyan light line, cyan headlights, a roof hatch with a pintle gun and a radar dish — carrying a
+    ribbed launch box raised on a turntable, its front a dark grid of nine pale rocket noses; stowage on the deck: a
+    rolled tarp, strapped tan cases, a whip aerial with a cyan tip."""
+    comp = _plated("#68707b")
+    dk = mat("comptrim", "#2c3139", 0.55)
     tyre = mat("tyre", "#1f1f21", 0.9)
     cyan = mat("cyan", "#14d2ff", 0.4, 0.0, "#14d2ff", 3.0)
     glass = mat("glass", "#1b2533", 0.2)
-    # chassis and wheels
-    box("hull", (0.42, 0.17, 0.07), (0, 0, 0.1), comp, 0.012)
-    box("skirt", (0.43, 0.175, 0.025), (0, 0, 0.065), trim, 0.006)
+    ivory = mat("warhead", "#ece6d6", 0.45)
+    tan = mat("case_tan", "#a08a5c", 0.7)
+    tarp = mat("tarp", "#6f6a4f", 0.85)
+    bronze = mat("bronze_trim", "#a8743e", 0.4)
+    # running gear: six chunky wheels under armoured skirts, a dark belly between them (the hull comes first: the
+    # joined mesh takes the first object's frame, and the plate seams are laid out in it)
+    _bx("hull", (0.36, 0.19, 0.07), (-0.03, 0, 0.1), comp, 0.006)
+    _bx("belly", (0.38, 0.14, 0.04), (0.0, 0, 0.07), dk)
     for x in (-0.14, 0.0, 0.14):
         for sy in (-1, 1):
-            w = cyl("wheel", 0.045, 0.035, (x, sy * 0.09, 0.045), tyre, 14, 0.006)
-            w.rotation_euler.x = math.pi / 2
-            h = cyl("rim", 0.024, 0.038, (x, sy * 0.09, 0.045), trim, 10, 0.0)
-            h.rotation_euler.x = math.pi / 2
+            _cy("tyre", 0.046, 0.034, (x, sy * 0.089, 0.046), tyre, 10, rot=YROT)
+            _cy("hub", 0.022, 0.04, (x, sy * 0.089, 0.046), dk, 6, rot=YROT)
     for sy in (-1, 1):
-        box("light_strip", (0.36, 0.006, 0.01), (0, sy * 0.088, 0.11), cyan, 0.0)
-    # cab at the front with a dark visor
-    box("cab", (0.11, 0.16, 0.09), (0.15, 0, 0.18), comp, 0.016)
-    box("visor", (0.02, 0.13, 0.04), (0.205, 0, 0.19), glass, 0.004)
-    box("cab_roof", (0.08, 0.12, 0.012), (0.145, 0, 0.23), trim, 0.003)
-    # launcher pod: a turntable, two arms and a 3×3 block of tubes tilted up toward the front
-    cyl("turntable", 0.06, 0.03, (-0.07, 0, 0.15), trim, 16, 0.004)
-    el = 0.5
+        _bx("skirt", (0.39, 0.012, 0.052), (-0.01, sy * 0.103, 0.099), comp)
+        _bx("skirt_strip", (0.32, 0.004, 0.007), (-0.02, sy * 0.1095, 0.113), cyan)
+        _bx("skirt_trim", (0.39, 0.016, 0.006), (-0.01, sy * 0.103, 0.128), dk)
+    # cab: hood, sloped windscreen, roof; a dark visor over a cyan light line, side windows, headlights, bumper
+    cab = [(0.1, 0.065), (0.208, 0.065), (0.218, 0.095), (0.212, 0.125), (0.185, 0.14), (0.16, 0.2), (0.1, 0.205)]
+    _extrude_xz("cab", cab, -0.088, 0.088, comp)
+    th = math.atan2(0.025, 0.06)
+    nx, nz = math.cos(th), math.sin(th)
+    _bx("visor", (0.004, 0.15, 0.056), (0.1725 + nx * 0.002, 0, 0.17 + nz * 0.002), glass, rot=(0, -th, 0))
+    _bx("visor_light", (0.004, 0.13, 0.005), (0.183 + nx * 0.0025, 0, 0.142 + nz * 0.0025), cyan, rot=(0, -th, 0))
     for sy in (-1, 1):
-        a = box("arm", (0.03, 0.015, 0.1), (-0.07, sy * 0.06, 0.2), trim, 0.003)
-        a.rotation_euler.y = -0.2
-    pod = box("pod", (0.2, 0.12, 0.11), (-0.06, 0, 0.27), comp, 0.01)
-    pod.rotation_euler.y = -el
-    cx, cz = -0.06 + math.cos(el) * 0.1, 0.27 + math.sin(el) * 0.1
-    for i in range(3):
-        for j in range(3):
-            off_y = (i - 1) * 0.034
-            off_n = (j - 1) * 0.032
-            px = cx - math.sin(el) * off_n
-            pz = cz + math.cos(el) * off_n
-            t = cyl("tube", 0.013, 0.012, (px, off_y, pz), trim, 10, 0.0)
-            t.rotation_euler.y = math.pi / 2 - el
-            g = cyl("tube_glow", 0.009, 0.014, (px + 0.002, off_y, pz + 0.001), cyan, 8, 0.0)
-            g.rotation_euler.y = math.pi / 2 - el
-    box("pod_stripe", (0.2, 0.124, 0.014), (-0.06, 0, 0.27), trim, 0.0).rotation_euler.y = -el
-    # radar mast behind the cab
-    cyl("mast", 0.006, 0.1, (0.07, 0.05, 0.2), trim, 6, 0.0)
-    d = cyl("dish", 0.03, 0.008, (0.07, 0.05, 0.255), comp, 12, 0.002)
-    d.rotation_euler = (0.9, 0, 0.5)
-    sphere("beacon", 0.008, (0.07, 0.05, 0.262), cyan, (1, 1, 1), 1)
+        _bx("side_window", (0.042, 0.004, 0.03), (0.135, sy * 0.0885, 0.178), glass)
+        _bx("headlight", (0.006, 0.026, 0.01), (0.2155, sy * 0.06, 0.11), cyan)
+    _bx("bumper", (0.014, 0.196, 0.022), (0.213, 0, 0.074), dk)
+    _bx("grille", (0.004, 0.07, 0.022), (0.2165, 0, 0.098), dk)
+    # roof hatch (open, lid thrown back) with a pintle gun; radar dish with a beacon on the other roof corner
+    _cy("hatch_ring", 0.02, 0.012, (0.135, 0.032, 0.209), dk, 8)
+    _disc("hatch_hole", 0.014, (0.135, 0.032, 0.216), mat("hole", "#121519", 0.9), 8)
+    _bx("hatch_lid", (0.036, 0.036, 0.006), (0.108, 0.032, 0.226), comp, rot=(0, 1.15, 0))
+    _bx("pintle", (0.006, 0.006, 0.024), (0.148, 0.032, 0.225), dk)
+    _bx("mg", (0.06, 0.006, 0.008), (0.165, 0.032, 0.238), dk)
+    _bx("mg_box", (0.016, 0.014, 0.012), (0.145, 0.032, 0.238), dk)
+    _bx("radar_mast", (0.006, 0.006, 0.05), (0.118, -0.062, 0.228), dk)
+    _cy("radar_dish", 0.026, 0.006, (0.118, -0.062, 0.256), comp, 10, rot=(0.9, 0, 0.5))
+    _bx("beacon", (0.008, 0.008, 0.008), (0.118, -0.062, 0.262), cyan)
+    # deck stowage: a rolled tarp behind the cab, strapped tan cases at the tail, an exhaust stack, a whip aerial
+    _cy("tarp", 0.017, 0.15, (0.072, 0, 0.152), tarp, 8, rot=YROT)
+    for y in (-0.045, 0.045):
+        _bx("tarp_strap", (0.036, 0.006, 0.036), (0.072, y, 0.152), dk)
+    for y in (-0.055, 0.055):
+        _bx("case", (0.042, 0.05, 0.034), (-0.185, y, 0.152), tan)
+        _bx("case_strap", (0.008, 0.054, 0.037), (-0.185, y, 0.152), dk)
+    _cy("exhaust", 0.008, 0.07, (0.09, 0.08, 0.17), dk, 6)
+    _bx("aerial", (0.003, 0.003, 0.1), (-0.2, -0.082, 0.185), dk)
+    _bx("aerial_tip", (0.006, 0.006, 0.008), (-0.2, -0.082, 0.236), cyan)
+    # launcher: turntable, lift arms, a ribbed launch box raised toward the front with a dark face of rocket noses
+    _cy("turntable", 0.066, 0.026, (-0.07, 0, 0.148), dk, 10)
+    for sy in (-1, 1):
+        _bx("lift_arm", (0.03, 0.012, 0.1), (-0.07, sy * 0.06, 0.2), dk, rot=(0, -0.2, 0))
+    el = 0.45
+    ax = (math.cos(el), math.sin(el))   # the box's axis in XZ
+    up = (-math.sin(el), math.cos(el))  # its up
+    pc = (-0.06, 0.255)
+    L, W, H = 0.22, 0.15, 0.1
+
+    def at(a, u=0.0):
+        return (pc[0] + ax[0] * a + up[0] * u, pc[1] + ax[1] * a + up[1] * u)
+    rot = (0, -el, 0)
+    x, z = at(0)
+    _bx("pod", (L, W, H), (x, 0, z), comp, 0.006, rot=rot)
+    for a in (-L / 2 + 0.01, -0.02, 0.05, L / 2 - 0.008):
+        x, z = at(a)
+        _bx("pod_rib", (0.014, W + 0.008, H + 0.008), (x, 0, z), dk, rot=rot)
+    x, z = at(L / 2 + 0.001)
+    _bx("pod_face", (0.004, W - 0.006, H - 0.006), (x, 0, z), mat("hole", "#121519", 0.9), rot=rot)
+    for sy in (-1, 1):
+        x, z = at(-0.055, 0.015)
+        _bx("pod_strip", (0.06, 0.004, 0.008), (x, sy * (W / 2 + 0.002), z), cyan, rot=rot)
+    for i in (-1, 0, 1):
+        for j in (-1, 0, 1):
+            x, z = at(L / 2 + 0.003 + 0.012, j * 0.03)
+            cone("warhead", 0.012, 0.024, (x, i * 0.045, z), ivory, 6, 0.0).rotation_euler = (0, math.pi / 2 - el, 0)
 
 
 def bridge():
@@ -1108,40 +1328,169 @@ def war_banner(color):
 
 
 def gunship():
-    """DL8 hover gunship flying over the army (reference frame 2: aircraft over the front): a wedge composite body,
-    swept wings with glowing ducted fans, a dark canopy and a nose gun."""
-    comp = mat("gunmetal", "#68707b", 0.4)  # gunmetal like frame 5's machines
-    trim = mat("comptrim", "#3e4550", 0.5)
+    """DL8 hover gunship circling over the army (nose +X), after reference frame 2's aircraft and frame 5's
+    machines: a faceted hull in plated gunmetal with dark seams, a dark faceted canopy edged by cyan light strips
+    along the spine, a bronze trim line, stub wings carrying twin rotary cannon (the two forward rods of frame 2) and
+    missile pods with glowing tubes, wingtip ducted fans glowing cyan through dark vanes inside banded nacelles, canted
+    twin fins tipped with light, rear thrusters glowing cyan."""
+    comp = _plated("#68707b", 8.0, row=0.45, offset=0.0)
+    dk = mat("comptrim", "#2c3139", 0.55)
     cyan = mat("cyan", "#14d2ff", 0.4, 0.0, "#14d2ff", 3.0)
     glass = mat("glass", "#1b2533", 0.2)
-    b = box("body", (0.34, 0.1, 0.06), (0, 0, 0), comp, 0.02)
-    cone("nose", 0.05, 0.12, (0.22, 0, 0), comp, 8, 0.0).rotation_euler.y = math.pi / 2
-    sphere("canopy", 0.045, (0.08, 0, 0.035), glass, (1.6, 0.8, 0.6), 2)
-    box("tail", (0.08, 0.012, 0.07), (-0.16, 0, 0.04), trim, 0.006)
+    steel = mat("barrel", "#aab2bc", 0.35)
+    bronze = mat("bronze_trim", "#a8743e", 0.4)
+    pale = mat("pale_band", "#d9dde2", 0.45)
+    hull = [(0.282, _chamf(0.012, 0.004, -0.014, 0.004)), (0.22, _chamf(0.032, 0.02, -0.028, 0.01)),
+            (0.13, _chamf(0.048, 0.032, -0.04, 0.016)), (0.0, _chamf(0.06, 0.038, -0.044, 0.02)),
+            (-0.12, _chamf(0.054, 0.034, -0.036, 0.018)), (-0.2, _chamf(0.036, 0.026, -0.022, 0.012))]
+    _loft("hull", hull, comp, smooth=False)
+    _loft("canopy", [(0.205, _chamf(0.006, 0.022, 0.012, 0.002)), (0.165, _chamf(0.026, 0.048, 0.015, 0.008)),
+                     (0.1, _chamf(0.032, 0.06, 0.02, 0.012)), (0.04, _chamf(0.026, 0.056, 0.025, 0.01)),
+                     (0.0, _chamf(0.012, 0.045, 0.03, 0.005))], glass, smooth=False)
+    _loft("canopy_frame", [(0.128, _chamf(0.033, 0.0605, 0.02, 0.012)), (0.12, _chamf(0.033, 0.0605, 0.02, 0.012))],
+          dk, smooth=False)
+    # cyan light strips along the spine's edges (the light lines of frame 2's aircraft), a bronze trim line between
+    tops = [(0.22, 0.022, 0.02), (0.13, 0.032, 0.032), (0.0, 0.04, 0.038), (-0.12, 0.036, 0.034), (-0.18, 0.029, 0.028)]
     for sy in (-1, 1):
-        w = box("wing", (0.14, 0.2, 0.014), (-0.04, sy * 0.13, -0.005), comp, 0.006)
-        w.rotation_euler.z = sy * 0.35
-        cyl("fan", 0.045, 0.03, (-0.06, sy * 0.21, 0.0), trim, 16, 0.004)
-        cyl("fan_glow", 0.036, 0.034, (-0.06, sy * 0.21, 0.0), cyan, 16, 0.0)
-    box("stripe", (0.3, 0.104, 0.008), (0, 0, 0.005), cyan, 0.0)
-    cyl("gun", 0.008, 0.1, (0.2, 0, -0.03), trim, 6, 0.0).rotation_euler.y = math.pi / 2
+        for (x0, y0, z0), (x1, y1, z1) in zip(tops, tops[1:]):
+            _rbeam("spine_light", (x0, sy * (y0 - 0.002), z0 + 0.0015), (x1, sy * (y1 - 0.002), z1 + 0.0015), 0.005,
+                   cyan, h=0.003)
+    _rbeam("spine", (-0.005, 0, 0.0385), (-0.17, 0, 0.031), 0.014, dk, h=0.006)
+    for sy in (-1, 1):
+        _bx("intake", (0.07, 0.012, 0.022), (-0.03, sy * 0.058, 0.008), dk)
+        _bx("intake_glow", (0.05, 0.004, 0.006), (-0.03, sy * 0.0645, 0.008), cyan)
+    for sy in (-1, 1):  # intake grilles with glowing slits on the back (the rear deck of the DL8 hover tank)
+        _bx("grille", (0.05, 0.018, 0.004), (-0.09, sy * 0.02, 0.0355), dk, rot=(0, -0.033, 0))
+        for x in (-0.075, -0.105):
+            _bx("grille_glow", (0.006, 0.013, 0.003), (x, sy * 0.02, 0.0373 + (x + 0.09) * 0.033), cyan,
+                rot=(0, -0.033, 0))
+    _bx("keel", (0.18, 0.04, 0.012), (-0.01, 0, -0.046), dk)
+    _bx("keel_glow", (0.14, 0.02, 0.004), (-0.01, 0, -0.053), cyan)
+    _bx("nose_eye", (0.006, 0.016, 0.006), (0.281, 0, -0.004), cyan)
+    for sy in (-1, 1):
+        # stub wing into the nacelle
+        out = [(0.07, 0.04), (-0.01, 0.175), (-0.09, 0.175), (-0.12, 0.04)]
+        _slab("wing", [(x, sy * s, 0.002) for x, s in out], [(x, sy * s, -0.014) for x, s in out], comp)
+
+        def edge(s):  # leading and trailing edge x at span s
+            f = (s - 0.04) / 0.135
+            return 0.07 - 0.08 * f + 0.0015, -0.12 + 0.03 * f - 0.0015
+        band = [(edge(0.082)[0], 0.082), (edge(0.097)[0], 0.097), (edge(0.097)[1], 0.097), (edge(0.082)[1], 0.082)]
+        _slab("wing_band", [(x, sy * s, 0.0032) for x, s in band], [(x, sy * s, 0.001) for x, s in band], pale)
+        # wingtip ducted fan: banded nacelle, a glowing cyan face crossed by dark vanes, the same underneath
+        c = (-0.05, sy * 0.205)
+        _cy("nacelle", 0.05, 0.036, (c[0], c[1], -0.004), comp, 12)
+        o = _ring("nacelle_band", 0.0508, 0.049, 0.006, (c[0], c[1], -0.004), cyan, 12, surfaces=(0,))
+        o.rotation_euler = (math.pi / 2, 0, 0)
+        o = _ring("nacelle_lip", 0.052, 0.04, 0.006, (c[0], c[1], 0.014), dk, 12, surfaces=(0, 1, 2))
+        o.rotation_euler = (math.pi / 2, 0, 0)
+        _disc("fan_glow", 0.04, (c[0], c[1], 0.015), cyan, 12)
+        _disc("fan_glow_under", 0.04, (c[0], c[1], -0.023), cyan, 12, rot=(math.pi, 0, 0))
+        for a in (0.4, 0.4 + math.pi / 2):
+            _bx("fan_vane", (0.078, 0.007, 0.004), (c[0], c[1], 0.0155), dk, rot=(0, 0, a))
+        _cy("fan_hub", 0.012, 0.006, (c[0], c[1], 0.016), dk, 8)
+        # rotary cannon under the wing root: housing, three steel barrels, muzzle ring, pylon
+        y = sy * 0.095
+        _bx("gun_pylon", (0.04, 0.01, 0.014), (0.02, y, -0.02), dk)
+        _cy("gun_housing", 0.015, 0.07, (0.03, y, -0.032), dk, 6, rot=XROT)
+        for k in range(3):
+            a = math.tau * k / 3 + math.pi / 2
+            _bx("gun_barrel", (0.085, 0.005, 0.005), (0.105, y + 0.007 * math.cos(a), -0.032 + 0.007 * math.sin(a)),
+                steel)
+        _cy("gun_muzzle", 0.0125, 0.008, (0.14, y, -0.032), bronze, 6, rot=XROT)
+        # missile pod on the wing with glowing tube ends
+        _bx("pod", (0.07, 0.032, 0.023), (-0.03, sy * 0.13, 0.0125), dk)
+        for dy in (-0.008, 0.008):
+            _bx("pod_tube", (0.003, 0.009, 0.009), (0.0055, sy * 0.13 + dy, 0.013), cyan)
+        # canted fin with a light tip, a rear thruster with a glowing face
+        fin = [(-0.125, 0.0), (-0.172, 0.052), (-0.2, 0.052), (-0.203, 0.0)]
+        o = _extrude_xz("fin", fin, -0.0035, 0.0035, comp)
+        o.location = (0, sy * 0.03, 0.018)
+        o.rotation_euler = (-sy * 0.38, 0, 0)
+        o = _extrude_xz("fin_light", [(-0.1684, 0.048), (-0.1716, 0.0525), (-0.2005, 0.0525), (-0.2005, 0.048)],
+                        -0.0042, 0.0042, cyan)
+        o.location = (0, sy * 0.03, 0.018)
+        o.rotation_euler = (-sy * 0.38, 0, 0)
+        _bx("thruster", (0.02, 0.026, 0.022), (-0.2, sy * 0.02, 0.0), dk)
+        _bx("thruster_glow", (0.004, 0.02, 0.016), (-0.211, sy * 0.02, 0.0), cyan)
 
 
 def fighter():
-    """DL6–7 propeller fighter flying over the army: olive fuselage, straight wings with roundels, a spinning-disc
-    propeller and a bubble canopy."""
-    od = mat("olive", "#5b6436", 0.6)
-    white = mat("white", "#f3efe6", 0.5)
-    f = cyl("fuselage", 0.035, 0.34, (0, 0, 0), od, 12, 0.01, r2=0.02)
-    f.rotation_euler.y = math.pi / 2
-    sphere("nose", 0.036, (0.17, 0, 0), od, (0.7, 1, 1), 2)
-    cyl("prop", 0.06, 0.003, (0.2, 0, 0), mat("prop", "#4a4f55", 0.5), 16, 0.0).rotation_euler.y = math.pi / 2
-    box("wing", (0.08, 0.42, 0.01), (0.03, 0, -0.01), od, 0.004)
-    box("tailplane", (0.04, 0.14, 0.008), (-0.15, 0, 0.0), od, 0.003)
-    box("fin", (0.05, 0.008, 0.06), (-0.15, 0, 0.03), od, 0.003)
-    sphere("canopy", 0.025, (0.04, 0, 0.03), mat("canopy", "#9fd4ff", 0.15), (1.6, 0.8, 0.8), 2)
+    """DL6–7 piston fighter circling over the army (nose +X): a lofted fuselage in olive-and-earth camouflage over a
+    pale belly with panel lines (the trench-era paint of the howitzer), a cream identification band and spinner, a
+    dark cowling with exhaust stubs, a three-blade propeller with yellow tips, tapered wings with pale roundels, wing
+    guns and drop tanks, a framed bubble canopy, a tail fin with a cream tip."""
+    paint = _warpaint(("#66703d", "#86704a", "#46522f"), "#b4bcb6", 14.0)
+    cream = mat("cream", "#efe6cf", 0.55)
+    dark = mat("cowl", "#2b2f25", 0.6)
+    slate = mat("roundel", "#3b4250", 0.6)
+    glass = mat("canopy", "#8fc0dc", 0.15)
+    prop = mat("prop", "#26282a", 0.5)
+    yellow = mat("prop_tip", "#e8cf6a", 0.5)
+    fus = [(0.186, 0.026, 0.026, 0.002), (0.17, 0.032, 0.032, 0.003), (0.13, 0.036, 0.037, 0.004),
+           (0.07, 0.035, 0.040, 0.006), (0.0, 0.031, 0.038, 0.006), (-0.06, 0.024, 0.031, 0.008),
+           (-0.12, 0.014, 0.022, 0.012), (-0.168, 0.006, 0.012, 0.016)]
+
+    def sec(x):  # the fuselage section (ry, rz, cz) at x
+        for a, b in zip(fus, fus[1:]):
+            if b[0] <= x <= a[0]:
+                t = (a[0] - x) / (a[0] - b[0])
+                return tuple(a[i] + (b[i] - a[i]) * t for i in (1, 2, 3))
+        return fus[-1][1:]
+    _loft("fuselage", [(0.153, _ell(*sec(0.153)))] + [(x, _ell(ry, rz, cz)) for x, ry, rz, cz in fus if x < 0.153],
+          paint)
+    # dark cowling ring, cream spinner, three-blade propeller with yellow tips, exhaust stubs
+    _loft("cowl", [(x, _ell(sec(x)[0] * 1.04, sec(x)[1] * 1.04, sec(x)[2])) for x in (0.152, 0.17, 0.186)], dark)
+    cone("spinner", 0.021, 0.03, (0.201, 0, 0.002), cream, 10, 0.0).rotation_euler = (0, math.pi / 2, 0)
+    for k in range(3):
+        a = math.radians(90 + 120 * k)
+        ca, sa = math.cos(a), math.sin(a)
+        _bx("blade", (0.005, 0.012, 0.048), (0.193, 0.032 * ca, 0.002 + 0.032 * sa), prop, rot=(a - math.pi / 2, 0, 0))
+        _bx("blade_tip", (0.0055, 0.0125, 0.008), (0.193, 0.054 * ca, 0.002 + 0.054 * sa), yellow,
+            rot=(a - math.pi / 2, 0, 0))
     for sy in (-1, 1):
-        cyl("roundel", 0.03, 0.012, (0.03, sy * 0.15, -0.004), white, 12, 0.0)
+        ry, rz, cz = sec(0.115)
+        _bx("exhaust", (0.045, 0.007, 0.008), (0.115, sy * (ry * 0.95), cz + 0.012), dark)
+    # cream identification band round the rear fuselage
+    _loft("band", [(x, _ell(sec(x)[0] * 1.07, sec(x)[1] * 1.07, sec(x)[2])) for x in (-0.074, -0.096)], cream)
+    # bubble canopy with two dark frames
+    can = [(0.085, 0.004, 0.003, 0.040), (0.07, 0.014, 0.012, 0.040), (0.05, 0.019, 0.02, 0.040),
+           (0.025, 0.019, 0.021, 0.039), (0.0, 0.015, 0.016, 0.038), (-0.025, 0.006, 0.006, 0.036)]
+    _loft("canopy", [(x, _ell(ry, rz, cz)) for x, ry, rz, cz in can], glass)
+    for x0, x1, s in ((0.064, 0.058, 1.12), (0.03, 0.025, 1.08)):
+        def cs(x):
+            for a, b in zip(can, can[1:]):
+                if b[0] <= x <= a[0]:
+                    t = (a[0] - x) / (a[0] - b[0])
+                    return tuple(a[i] + (b[i] - a[i]) * t for i in (1, 2, 3))
+        _loft("canopy_frame", [(x, _ell(cs(x)[0] * s, cs(x)[1] * s, cs(x)[2])) for x in (x0, x1)], dark)
+    # tapered wings with dihedral: pale roundels on top, two guns in each leading edge, a drop tank underneath
+    d, zw, t = 0.09, -0.016, 0.01
+    plan = [(0.08, 0.025), (0.066, 0.12), (0.052, 0.185), (0.036, 0.208), (0.018, 0.213), (0.004, 0.205),
+            (-0.004, 0.185), (-0.03, 0.025)]
+    for sy in (-1, 1):
+        def wp(x, s, h):
+            return (x, sy * (s * math.cos(d) - h * math.sin(d)), zw + s * math.sin(d) + h * math.cos(d))
+        _slab("wing", [wp(x, s, t / 2) for x, s in plan], [wp(x, s, -t / 2) for x, s in plan], paint)
+        for r, mt, k in ((0.029, cream, 1), (0.019, slate, 2), (0.008, cream, 3)):
+            _disc("roundel", r, wp(0.026, 0.15, t / 2 + 0.001 * k), mt, 12, rot=(sy * d, 0, 0))
+        for s in (0.1, 0.116):
+            le = 0.08 + (0.066 - 0.08) * (s - 0.025) / 0.095
+            _bx("gun", (0.03, 0.0035, 0.0035), wp(le + 0.008, s, 0.0), dark, rot=(sy * d, 0, 0))
+        tz = wp(0.02, 0.085, -t / 2)[2] - 0.016
+        ty = wp(0.02, 0.085, 0.0)[1]
+        _bx("pylon", (0.03, 0.004, 0.016), (0.02, ty, tz + 0.0095), dark)
+        _loft("drop_tank", [(0.075, [(ty, tz)]), (0.062, _ell(0.007, 0.007, tz, 8, ty)),
+                            (0.04, _ell(0.0105, 0.0105, tz, 8, ty)), (0.0, _ell(0.0105, 0.0105, tz, 8, ty)),
+                            (-0.03, _ell(0.006, 0.006, tz, 8, ty)), (-0.04, [(ty, tz)])], paint)
+    # tailplane and fin with a cream tip
+    tp = [(-0.12, 0.012), (-0.133, 0.068), (-0.145, 0.078), (-0.16, 0.076), (-0.168, 0.06), (-0.17, 0.012)]
+    tp = tp + [(x, -y) for x, y in reversed(tp)]
+    _slab("tailplane", [(x, y, 0.0155) for x, y in tp], [(x, y, 0.0085) for x, y in tp], paint)
+    fin = [(-0.115, 0.02), (-0.14, 0.05), (-0.155, 0.066), (-0.168, 0.07), (-0.178, 0.06), (-0.178, 0.015)]
+    _extrude_xz("fin", fin, -0.004, 0.004, paint)
+    _extrude_xz("fin_tip", [(-0.1462, 0.0565), (-0.1546, 0.0668), (-0.168, 0.0708), (-0.1787, 0.0604),
+                            (-0.1787, 0.0565)], -0.0046, 0.0046, cream)
 
 
 def mounted_knight(color):
