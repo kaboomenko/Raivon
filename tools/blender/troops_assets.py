@@ -660,10 +660,12 @@ def figure(dl, team, v=0, seated=False):
             bx((0.02, 0.012, 0.022), (s * 0.026, fy(0.026, 0.048) - 0.005, Z + 0.186), F("#2c2119", 0.7), bev=0,
                rz=s * math.pi / 8)
         _roll(Z, F("#9a958a", 0.9), side=-1)
-        if not seated:  # hide knapsack, its flap and a mess tin strapped on top
-            bx((0.07, 0.034, 0.074), (0, 0.062, Z + 0.245), F("#5b3f27", 0.8), bev=0)
-            bx((0.072, 0.036, 0.026), (0, 0.062, Z + 0.272), F("#6e4e32", 0.8), bev=0)
-            cy(0.014, 0.046, (0.006, 0.064, Z + 0.293), F("#9aa0a6", 0.45), 6, rot=(0, math.pi / 2, 0))
+        if not seated:  # hide knapsack hanging on its shoulder straps behind the roll, its flap, a mess tin on top
+            bx((0.07, 0.034, 0.074), (0, 0.09, Z + 0.255), F("#5b3f27", 0.8), bev=0)
+            bx((0.072, 0.036, 0.026), (0, 0.09, Z + 0.282), F("#6e4e32", 0.8), bev=0)
+            cy(0.014, 0.046, (0.006, 0.092, Z + 0.303), F("#9aa0a6", 0.45), 6, rot=(0, math.pi / 2, 0))
+            for s in (-1, 1):
+                beam((s * 0.025, 0.074, Z + 0.293), (s * 0.027, 0.012, Z + 0.318), 0.008, F("#3a2819", 0.7))
         _head(Z)
         cap = F(shade(team, 0.5), 0.7)  # shako: a flaring team body, black top, band and peak
         cy(0.032, 0.046, (0, 0.004, Z + 0.394), cap, 8, r2=0.036)
@@ -704,9 +706,12 @@ def figure(dl, team, v=0, seated=False):
         hel = netted(OLIVE, "#3a4226")
         uvs(0.041, (0, 0.002, Z + 0.37), hel, 8, 4, (1, 1.05, 0.62))
         cy(0.047, 0.006, (0, 0.002, Z + 0.37), hel, 8)
-        for k, (ax, ay) in enumerate(((-0.022, -0.012), (0.02, 0.016), (0.002, 0.026))):  # foliage in the net
-            cn(0.009, 0.032, (ax, ay, Z + 0.394), F(("#58712f", "#6f7d3a", "#4c6329")[k], 0.9), 4,
-               rot=(-ay * 14, ax * 14, 0))
+        for k, (ax, ay) in enumerate(((-0.022, -0.012), (0.02, 0.016), (0.002, 0.026))):  # foliage in the net:
+            # flat clumps lying on the dome (seated on its surface, tilted with its slope)
+            zs = 0.37 + 0.0254 * math.sqrt(max(0.0, 1 - (ax / 0.041) ** 2 - ((ay - 0.002) / 0.043) ** 2))
+            o = uvs(0.0115 - 0.0015 * (k == 2), (ax, ay, Z + zs + 0.001), F(("#587a2c", "#6d8238", "#4d6a2a")[k], 0.9),
+                    5, 3, (1.35, 1.1, 0.6))
+            o.rotation_euler = (-(ay - 0.002) * 12, ax * 12, k * 1.1)
         _arm(Z, 1, (0.045, -0.07, 0.2), jac)
         _arm(Z, -1, (-0.035, -0.075, 0.3), jac)
         beam((0.06, -0.075, Z + 0.15), (-0.03, -0.08, Z + 0.33), 0.013, F("#6b4226", 0.8))
@@ -764,35 +769,38 @@ def figure(dl, team, v=0, seated=False):
         if seated:
             _legs(Z, True, "#23272d", "#5b636e", 0.022, 0.04)
         else:
-            for sx in (-1, 1):  # bronze greaves under navy knee guards (reference frame 5: bronze legs)
-                rod((sx * 0.026, 0, 0.18), (sx * 0.03, 0, 0.1), 0.023, joint, n=6)
-                bx((0.04, 0.045, 0.06), (sx * 0.03, -0.005, 0.075), bronze, bev=0)
+            for sx in (-1, 1):  # bronze greaves down to the boots, under navy knee guards (reference frame 5)
+                rod((sx * 0.026, 0, 0.18), (sx * 0.03, 0, 0.1), 0.023, joint, n=5)
+                bx((0.04, 0.045, 0.075), (sx * 0.03, -0.005, 0.0675), bronze, bev=0)
                 bx((0.034, 0.014, 0.028), (sx * 0.03, -0.031, 0.118), navy, bev=0)  # knee guard
                 bx((0.042, 0.06, 0.03), (sx * 0.03, -0.01, 0.015), joint, bev=0)
         bx((0.1, 0.075, 0.07), (0, 0, Z + 0.17), joint, bev=0)
         bx((0.104, 0.079, 0.016), (0, 0, Z + 0.156), bronze, bev=0)  # belt
         for k, z in enumerate((0.18, 0.199)):  # abdomen plates, the undersuit dark in the seams between them
             bx((0.074 - 0.008 * k, 0.012, 0.015), (0, -0.039, Z + z), navy, bev=0)
-        taper_box((0.104, 0.084, 0.115), (0, 0, Z + 0.212), navy, top=(1.2, 1.1))  # shell
-        taper_box((0.072, 0.012, 0.074), (0, -0.0425, Z + 0.238), bronze, top=(1.3, 1.0))  # chest frame
-        taper_box((0.06, 0.012, 0.064), (0, -0.0475, Z + 0.243), tm, top=(1.32, 1.0))  # chest plate
-        bx((0.02, 0.012, 0.02), (0, -0.0545, Z + 0.272), gl, bev=0, rot=(0, math.pi / 4, 0))  # core
+        # the shell runs up to the shoulders and a sloped gorget carries the helmet: no neck gap under it
+        taper_box((0.104, 0.084, 0.15), (0, 0, Z + 0.23), navy, top=(1.2, 1.1))  # shell
+        cy(0.046, 0.04, (0, 0.004, Z + 0.322), navy, 8, r2=0.036)  # high collar the helmet sits in
+        taper_box((0.072, 0.012, 0.074), (0, -0.0425, Z + 0.256), bronze, top=(1.3, 1.0))  # chest frame
+        taper_box((0.06, 0.012, 0.064), (0, -0.0475, Z + 0.261), tm, top=(1.32, 1.0))  # chest plate
+        bx((0.02, 0.012, 0.02), (0, -0.0545, Z + 0.282), gl, bev=0, rot=(0, math.pi / 4, 0))  # core
         bx((0.07, 0.03, 0.08), (0, 0.06, Z + 0.27), joint, bev=0)  # power pack
         for sx in (-1, 1):
-            cy(0.012, 0.012, (sx * 0.02, 0.078, Z + 0.25), gl, 6, rot=(math.pi / 2, 0, 0))
-            # rounded team pauldron over a navy lame: the team colour stays the brightest note from above
-            pd = uvs(0.032, (sx * 0.077, 0, Z + 0.314), F(team, 0.5), 6, 4, (1.25, 1.3, 0.62))
-            uvs(0.032, (sx * 0.082, 0, Z + 0.294), navy, 6, 3, (1.3, 1.35, 0.38))
-            badge_on(pd, 0.03, 0.03, (sx * 0.077, -0.004, 0), F(WHITE, 0.6), "z", pts=EAGLE_S, off=0.0015)
-        uvs(0.036, (0, 0.003, Z + 0.374), navy, 8, 4, (1, 1.08, 1.02))  # helmet
-        bx((0.052, 0.016, 0.034), (0, -0.031, Z + 0.364), plate, bev=0)  # face plate
-        bx((0.046, 0.006, 0.01), (0, -0.0405, Z + 0.374), gl, bev=0)  # T-visor
-        bx((0.01, 0.006, 0.018), (0, -0.0405, Z + 0.362), gl, bev=0)
-        bx((0.01, 0.05, 0.016), (0, 0.004, Z + 0.408), bronze, bev=0)  # crest
+            bx((0.018, 0.006, 0.018), (sx * 0.02, 0.077, Z + 0.25), gl, bev=0)
+            # rounded team pauldron over a navy lame, oval and kept within the figure's own width so neighbours in
+            # the squad stand apart: the team colour stays the brightest note from above
+            pd = uvs(0.029, (sx * 0.066, 0, Z + 0.314), F(team, 0.5), 8, 4, (0.92, 1.1, 0.62))
+            ring(0.027, 0.016, (sx * 0.067, 0, Z + 0.296), navy, 8, r2=0.025, a0=math.pi / 8)  # lame
+            badge_on(pd, 0.025, 0.025, (sx * 0.066, -0.003, 0), F(WHITE, 0.6), "z", pts=EAGLE_S, off=0.0015)
+        uvs(0.036, (0, 0.003, Z + 0.366), navy, 8, 4, (1, 1.08, 1.02))  # helmet, set down in the collar
+        bx((0.052, 0.016, 0.034), (0, -0.031, Z + 0.356), plate, bev=0)  # face plate
+        bx((0.046, 0.006, 0.01), (0, -0.0405, Z + 0.366), gl, bev=0)  # T-visor
+        bx((0.01, 0.006, 0.018), (0, -0.0405, Z + 0.354), gl, bev=0)
+        bx((0.01, 0.05, 0.016), (0, 0.004, Z + 0.4), bronze, bev=0)  # crest
         for sx in (-1, 1):  # arms in the undersuit, bronze forearm guards
             hand = (0.06, -0.07, Z + 0.21) if sx > 0 else (-0.03, -0.085, Z + 0.25)
-            sh = (sx * (SH + 0.02), 0, Z + 0.3)
-            rod(sh, hand, 0.02, joint, n=6)
+            sh = (sx * (SH + 0.012), 0, Z + 0.3)
+            rod(sh, hand, 0.019, joint, n=6)
             p0 = tuple(sh[i] + (hand[i] - sh[i]) * 0.5 for i in range(3))
             p1 = tuple(sh[i] + (hand[i] - sh[i]) * 0.92 for i in range(3))
             rod(p0, p1, 0.024, bronze, r2=0.022, n=5)
@@ -814,7 +822,7 @@ def squad(dl, team):
     in the back row."""
     rnd = random.Random(dl * 7)
     for k, (x, y) in enumerate(LOOSE):
-        jit = {1: 0.04, 7: 0.03}.get(dl, 0.02)
+        jit = {1: 0.04, 7: 0.03, 8: 0.01}.get(dl, 0.02)  # DL8: broad armour, kept a pauldron's width apart
         yaw = {1: 0.5, 6: 0.25, 7: 0.35}.get(dl, 0.15)
         dx, dy = rnd.uniform(-jit, jit), rnd.uniform(-jit, jit)
         rz = rnd.uniform(-yaw, yaw)
@@ -826,7 +834,8 @@ def squad(dl, team):
 def sentry(dl, team):
     """Two sentries of the era standing a pace apart, turned a little toward each other (reference frames 3–4:
     single soldiers guard the farms, the quarry and the gates)."""
-    for k, (x, y, rz) in enumerate(((-0.06, 0.0, 0.35), (0.07, 0.03, -0.25))):
+    pair = ((-0.09, 0.0, 0.3), (0.095, 0.03, -0.22)) if dl == 8 else ((-0.06, 0.0, 0.35), (0.07, 0.03, -0.25))
+    for k, (x, y, rz) in enumerate(pair):  # DL8: the broad power armour stands a little further apart
         build_at(lambda d=dl, vv=k + 3: figure(d, team, vv), x, y, rz, 0.95 * (1.06 if dl == 8 else 1.0))
 
 
@@ -915,8 +924,11 @@ def assault_dl3(team):
     """Knight: grey destrier in a dagged team caparison to the knees with the white eagle on both flanks and the
     chest, steel chanfron and team plume; the rider in a surcoat with steel pauldrons, great helm and crest,
     heater shield, lance with a swallow-tailed pennant."""
-    horse("#d4d0c8", "#6d6a66", "#3a3634", reins=True, covered=True)
-    tc = F(shade(team, 0.86), 0.7)
+    # toned like the DL3 men-at-arms beside him (reference frame 3: the rider reads as dark steel and deep team blue
+    # like the infantry): a darker grey destrier, the deeper surcoat and caparison, dark mail, blued steel
+    horse("#9e9a92", "#55524e", "#34302e", reins=True, covered=True)
+    tc = F(shade(team, 0.64), 0.7)
+    helm = F(mixc(DL3_STEEL, team if team == TEAMS["blue"] else "#4a5872", 0.18), 0.35)  # the squad's helmets
     n = 20
     hem = lambda k: 0.155 if k % 2 == 0 else 0.192  # noqa: E731  dagged hem
     arch = lambda z, a: (lambda k: z + a * abs(math.sin(math.tau * k / n)))  # noqa: E731  withers and croup up
@@ -930,20 +942,20 @@ def assault_dl3(team):
     for sx in (-1, 1):  # the eagle on each flank, on the panel between the border and the back (clear of the boot)
         badge_on(cap, 0.054, 0.056, (0, 0.03, 0.259), wh, "x", sx)
     badge_on(cap, 0.046, 0.054, (0, 0, 0.259), wh, "y", -1)  # and on the chest
-    beam((0, -0.19, 0.452), (0, -0.305, 0.392), 0.068, F(STEEL, 0.35))  # chanfron
+    beam((0, -0.19, 0.452), (0, -0.305, 0.392), 0.068, helm)  # chanfron
     cn(0.014, 0.06, (0, -0.205, 0.5), tc, 5, rot=(-0.4, 0, 0))  # plume on the chanfron
     Z = SEAT
-    _legs(Z, True, "#a2a8b0", "#8d939a", gaiter="#a2a8b0")
-    _torso(Z, "#b3b9c1", 0.046, 0.054)
-    _surcoat(Z, team, hem=0.13)
-    _pauldrons(Z, F(STEEL, 0.35), 0.032)
-    cy(0.037, 0.07, (0, 0, Z + 0.36), F(STEEL, 0.35), 8)  # great helm
+    _legs(Z, True, DL3_MAIL, "#4a4f57", gaiter=DL3_MAIL)
+    _torso(Z, DL3_MAIL, 0.046, 0.054)
+    _surcoat(Z, team, hem=0.13, k=0.64)
+    _pauldrons(Z, F(DL3_STEEL, 0.35), 0.032)
+    cy(0.037, 0.07, (0, 0, Z + 0.36), helm, 8)  # great helm
     bx((0.05, 0.008, 0.008), (0, -0.037, Z + 0.365), F("#1d1b1a"), bev=0)
     cn(0.03, 0.06, (0, 0.0, Z + 0.425), tc, 6)  # crest
     uvs(0.012, (0, 0, Z + 0.458), F(WHITE, 0.6), 6, 4)
-    _arm(Z, 1, (0.07, -0.06, 0.22), "#b3b9c1")
-    _arm(Z, -1, (-0.06, -0.04, 0.24), "#b3b9c1")
-    _heater_shield(Z, team, -0.08, -0.05, 0.225)
+    _arm(Z, 1, (0.07, -0.06, 0.22), DL3_MAIL)
+    _arm(Z, -1, (-0.06, -0.04, 0.24), DL3_MAIL)
+    _heater_shield(Z, team, -0.08, -0.05, 0.225, rim="#6b7480", field=shade(team, 0.82))
     lance = F("#d9d2c3", 0.6)
     rod((0.072, 0.06, Z + 0.06), (0.072, -0.08, Z + 0.62), 0.008, lance, n=5)
     cn(0.014, 0.06, (0.072, -0.085, Z + 0.66), F(STEEL, 0.3), 5).rotation_euler.x = 0.24
@@ -1170,7 +1182,7 @@ def assault_dl7(team):
     for sx in (-1, 1):
         bx((0.024, 0.15, 0.022), (sx * 0.131, 0.06, 0.163), F("#4a4d42", 0.8), bev=0)
         cy(0.01, 0.012, (sx * 0.112, -0.252, 0.088), F("#d8d2b8", 0.3), 6, rot=(math.pi / 2, 0, 0))
-    bx((0.14, 0.03, 0.004), (0, 0.235, 0.152), links("#3a3c38", "#151617", 40.0), bev=0)  # engine grille
+    bx((0.14, 0.026, 0.006), (0, 0.222, 0.157), links("#3a3c38", "#151617", 40.0), bev=0)  # engine grille, on the deck
     rod((0, -0.12, 0.21), (0, -0.44, 0.21), 0.0115, F("#3c3f37", 0.6), n=8)
     cy(0.017, 0.07, (0, -0.21, 0.21), F("#3c3f37", 0.6), 8, rot=(math.pi / 2, 0, 0))  # sleeve
     cy(0.018, 0.04, (0, -0.33, 0.21), F("#30332c"), 8, rot=(math.pi / 2, 0, 0))  # fume extractor
