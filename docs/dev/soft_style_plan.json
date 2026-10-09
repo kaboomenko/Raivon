@@ -1,0 +1,452 @@
+{
+ "steps": [
+  {
+   "id": "T0",
+   "title": "Tooling: visible shader errors, look metrics, standard shot set, baseline",
+   "owner_files": [
+    "tools/godot_shot.sh",
+    "tools/look_metrics.py",
+    "tools/soft_shots.sh",
+    "docs/art_direction.md"
+   ],
+   "depends_on": [],
+   "impact": "low",
+   "instructions": "Common for every step: V13=/tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/cartoon/v13 (step outputs go to $V13/<step id>/), G=/opt/godot/Godot_v4.5.1-stable_linux.x86_64, run from /home/user/Raivon. v12 research shots exist in /tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/cartoon/cur_{strategic,z03_dl3,close_0_3,z045_dl8}.png.\n1. tools/godot_shot.sh:\n   a. Extend the final grep -E to 'shot saved|perf |SCRIPT ERROR|SHADER ERROR|Parse Error|ERROR: .*([Ss]hader|uniform)'. Today a shader that fails to compile renders invisible and nothing is printed.\n   b. Wrap the godot invocation in `flock -w 1800 /tmp/raivon_godot.lock`. Several agents run in parallel; this serialises godot runs and avoids clashing with `godot --import`.\n   c. Keep `|| true` and the argument handling unchanged.\n2. New tools/look_metrics.py (run as python3 -I; numpy + PIL). Merge the logic of the two research scripts: …/cartoon/mapfirst/soft_metrics.py and …/cartoon/ad/measure_look.py.\n   a. Crop the map area x 110–720, y 300–1380 for 941×1672 images, the whole image otherwise. `--crop x0,y0,x1,y1` overrides.\n   b. Print one line per image: V p10/p50/p90; mean S; near-black % (V<0.25); white-hot % (V>0.92 and S<0.18); grit (mean |gradient of luminance|); hard edges % (|grad|>0.25); CIE L* p10/p50/p90; L*<15 %; grass median (#hex, L*, S %, hue°), where grass = hue 60–150° and S>0.2.\n   c. `--sample x0,y0,x1,y1`: print the mean sRGB hex and CIE L*a*b* of that rectangle. Used for ribbon ΔL* and shadow-side hue.\n   d. `--gray OUT.png`: write a greyscale copy.\n   e. `--deutan OUT.png`: deuteranopia simulation on linear RGB with the Machado 2009 severity-1 matrix [[0.367322,0.860646,-0.227968],[0.280085,0.672501,0.047413],[-0.011820,0.042940,0.968881]].\n3. New tools/soft_shots.sh OUTDIR [set ...] (bash, set -euo pipefail).\n   a. Sets:\n      - strat = no extra args\n      - z03 = --zoom=0.3 --dl=3\n      - close = --focus=0,3,0.06\n      - dl8 = --zoom=0.45 --dl=8 --ai-dl=8\n      - cer = --demo=ceremony:1.5\n      - sel = --focus=0,3,0.06 --select=0,3\n      - battle = --demo=battle:40\n   b. Default = strat z03 close dl8 cer.\n   c. Each set runs `tools/godot_shot.sh OUTDIR/<set>.png <args> --lang=ru --shot-delay=3` sequentially and echoes '<set>: <perf line>'.\n   d. At the end, run look_metrics.py on all produced PNGs and tee the output to OUTDIR/metrics.txt.\n4. Baseline: `tools/soft_shots.sh $V13/base strat z03 close dl8 cer sel battle` (about 20 min). Every later step compares against these.\n5. docs/art_direction.md:\n   a. The orchestrator stores the plan's style spec as §6 «Мультяшный стиль». If it is not there yet, leave it to the orchestrator; do not invent it.\n   b. In the header quote, replace «— §6 (появится после исследования и проектирования)» with «— §6».\n   c. Do not touch §2/§5 (F1 does).",
+   "verify": "V13=/tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/cartoon/v13.\n1. Check the shell scripts: `bash -n tools/soft_shots.sh tools/godot_shot.sh`.\n2. Check the grep pattern: `printf 'SHADER ERROR: x\\nERROR: shader compile\\nfoo\\n' | grep -E '<the new pattern>'` prints the first two lines only.\n3. $V13/base has 7 PNGs and metrics.txt, and every set printed a perf line.\n4. look_metrics numbers for base/strat.png match the research baseline within tolerance: near-black ≈ 10.8 %, white-hot ≈ 2.6 %, hard ≈ 5.4 %, L* p50 ≈ 33 (±15 % relative; the crop differs slightly).\n5. `python3 -I tools/look_metrics.py $V13/base/strat.png --sample 300,700,320,720 --gray $V13/base/strat_gray.png --deutan $V13/base/strat_deutan.png` works."
+  },
+  {
+   "id": "G1",
+   "title": "Sunny grade and soft light (runs early: the palette must be tuned under the final light)",
+   "owner_files": [
+    "game/scripts/main.gd",
+    "game/shaders/tilt_shift.gdshader",
+    "game/shaders/cloud_shadows.gdshader",
+    "game/project.godot"
+   ],
+   "depends_on": [
+    "T0"
+   ],
+   "impact": "high",
+   "instructions": "Edit only _environment() (main.gd ~311) and _apply_era_light() (~361), plus the files listed.\n0. Put the era values in two constant dictionaries next to these functions: ERA_LIGHT_0 and ERA_LIGHT_1, with keys sun_color, sun_energy, ambient, ambient_energy, fog, bg, glow. _environment() uses era 0 and _apply_era_light() applies either, so the era-0 values exist once (today they are duplicated).\n1. _environment():\n   a. background_color = Color('#8DB4DE').\n   b. Ambient: AMBIENT_SOURCE_COLOR, colour Color('#A9C1E8'), energy 0.8.\n   c. Delete ssao_enabled, ssao_radius and ssao_intensity. They are Forward+ only and do nothing on phones.\n   d. Tonemap: TONE_MAPPER_FILMIC, exposure 1.0.\n   e. Glow: enabled, intensity 0.6, strength 1.0, bloom 0, hdr_threshold 1.1.\n   f. Fog: fog_light_color Color(0.76, 0.83, 0.92), density 0.006.\n   g. Adjustments: brightness 1.03, contrast 1.04, saturation 1.12.\n   h. Rewrite the comments that justify the old dark/contrasty grade so they cite docs/art_direction.md §6.4.\n2. Sun:\n   a. rotation_degrees Vector3(-55, -35, 0).\n   b. light_color Color('#FFF1DA'), light_energy 1.1.\n   c. shadow_blur 2.5, shadow_opacity 0.7.\n   d. Keep 2 splits and max distance 60.\n3. _apply_era_light:\n   a. Era 1 (DL8): sun Color('#EAF2FF') 1.05, ambient Color('#9FB0D6') 0.7, fog Color('#8FA9CF'), background Color('#5E7FA8'), glow 0.5.\n   b. Era 0 = the values of 1–2 (fixes the old glow 1.0 reset).\n4. tilt_shift.gdshader: uniform vignette 0.32 → 0.12, tinted instead of darkening. Replace the multiply line with:\n   `float m = smoothstep(0.32, 0.78, length(d)); c *= mix(vec3(1.0), vec3(1.0 - vignette * 1.15, 1.0 - vignette * 0.8, 1.0), m);`\n   The blur is unchanged.\n5. cloud_shadows.gdshader: strength 0.65 → 0.3, shade (0.75, 0.78, 0.92), smoothstep(0.58, 0.7) → smoothstep(0.5, 0.75). Keep mul_k.\n6. project.godot [rendering]: add `lights_and_shadows/directional_shadow/soft_shadow_filter_quality.mobile=2`. Phones otherwise get Hard shadows that the screenshots never show.\n7. Optional; keep only if the metrics improve and greens do not turn cyan:\n   a. AMBIENT_SOURCE_SKY with a Sky + ProceduralSkyMaterial: sky_top_color #6E9FE8, sky_horizon_color #DCE3EC, ground_horizon_color #9FB27E, ground_bottom_color #5C7A3E.\n   b. Ambient energy 0.75, radiance_size 32.\n   c. Background stays BG_COLOR.\n8. Exposure tuning: if strat V p50 > 0.62, or white-hot rises above the baseline, lower exposure in 0.05 steps (minimum 0.9). Never raise the glow threshold. If the frame hazes, compare one shot with glow off.",
+   "verify": "V13=/tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/cartoon/v13; G=/opt/godot/Godot_v4.5.1-stable_linux.x86_64.\n1. `$G --headless --path game --check-only --script res://scripts/main.gd`.\n2. `$G --headless --path game --script res://tests/test_flow.gd` passes.\n3. `tools/soft_shots.sh $V13/G1 strat z03 close dl8`.\n4. look_metrics against $V13/base on all four shots:\n   - near-black ≤ 4 % (base 11–26 %)\n   - V p10 ≥ 0.30\n   - L* p50 ≥ 48\n   - white-hot not above base\n5. `--gray` of strat: armies, buildings and the front still separate by value.\n6. dl8.png is cool and light: background and fog light steel-blue, not navy.\n7. Draw calls within ±2 % of base (lighting must not add draws).\n8. No SHADER ERROR printed."
+  },
+  {
+   "id": "P1",
+   "title": "Rounded candy ribbons replace the neon borders, white cores and the inner hex grid",
+   "owner_files": [
+    "game/scripts/map_view.gd",
+    "game/scripts/soft_palette.gd",
+    "game/shaders/border_ribbon.gdshader"
+   ],
+   "depends_on": [
+    "T0"
+   ],
+   "impact": "high",
+   "instructions": "Context: _rebuild_overlay() (map_view.gd ~1700) draws every edge of every owned hex twice: inner edges as 0.04 glowing lines, border edges as a 0.2 halo plus a 0.045 white core. _glow_mat has black albedo plus emission 1.3–3.2, so each strip darkens the ground first and then glows. Square strip ends overshoot at every 120° corner. This is the owner's main complaint.\nIn the code below, indent with tabs in the real file.\n\n1. New game/scripts/soft_palette.gd (extends RefCounted, consts + static funcs):\n   a. const SOFT_R := 0.3\n   b. const PLAYER := {'body': Color('#4FA8FF'), 'hi': Color('#B8E0FF'), 'rim': Color('#1D4DB3'), 'fill': Color('#3D8BFF')}\n   c. const ENEMY := {'body': Color('#DD3A30'), 'hi': Color('#FFB3A3'), 'rim': Color('#8E1D17'), 'fill': Color('#FF6A5A')}\n   d. static func soft_team(c: Color) -> Dictionary returns {body, hi, rim, fill}:\n      - body = Color.from_hsv(c.h, clampf(c.s, 0.62, 0.8), clampf(c.v, 0.82, 1.0))\n      - rim = Color.from_hsv(fposmod(c.h - 0.02, 1.0), minf(body.s * 1.1, 1.0), body.v * 0.55)\n      - hi = body.lerp(Color.WHITE, 0.6)\n      - fill = body.lerp(Color.WHITE, 0.15)\n   e. In map_view, add `const SoftPalette := preload('res://scripts/soft_palette.gd')` and `func team_look(o: int) -> Dictionary`:\n      - PLAYER → SoftPalette.PLAYER\n      - at_war_with or MapGen.BARONS → SoftPalette.ENEMY\n      - otherwise SoftPalette.soft_team(state_color(o))\n2. Delete the inner grid: the `lines` dict and its _strip calls, _line_mats, _line_k and their block in set_zoom. Delete `cores`. Delete _edge_pts if it becomes unused. Keep _strip: the deposit ring still uses it until P8.\n3. Rewrite _glow_mat(c, energy, alpha) as a plain coloured material:\n   - SHADING_MODE_UNSHADED\n   - albedo = Color(c.r, c.g, c.b, alpha), TRANSPARENCY_ALPHA when alpha < 1\n   - no emission, CULL_DISABLED\n   - `energy` is ignored. It is kept for the deposit ring and strike arrow until P8.\n4. Loop extraction. This is validated in numpy (…/cartoon/mapfirst/ribbon_check.py) with the same corner tables. Add:\n```\nconst EDGE_A := [0, 5, 4, 3, 2, 1]  # the edge toward DIRS[d] runs corner EDGE_A[d] -> EDGE_B[d] (corner k at 60°·k, as _hex_pts):\nconst EDGE_B := [1, 0, 5, 4, 3, 2]  # counter-clockwise in (x, z), so the region lies on the LEFT; holes come out clockwise\n\nfunc _loops(inside: Callable) -> Array:  # [{'pts': corners, 'hex': inside hex per edge, 'nb': neighbour per edge (-1 off-map)}]; edge i = pts[i] -> pts[i+1]\n    var nxt := {}\n    for c in sim.cells:\n        if not inside.call(c):\n            continue\n        var w := cell_world(c['id'])\n        var ctr := Vector2(w.x, w.z)\n        for d in 6:\n            var nb: int = sim.neighbors[c['id']][d]\n            if nb >= 0 and inside.call(sim.cells[nb]):\n                continue\n            var a := ctr + Vector2.from_angle(PI / 3.0 * EDGE_A[d])\n            var b := ctr + Vector2.from_angle(PI / 3.0 * EDGE_B[d])\n            nxt[Vector2i((a * 1000.0).round())] = [a, b, int(c['id']), nb]\n    var loops := []\n    while not nxt.is_empty():\n        var k: Vector2i = nxt.keys()[0]\n        var pts := PackedVector2Array(); var hx := PackedInt32Array(); var nbs := PackedInt32Array()\n        while nxt.has(k):\n            var e: Array = nxt[k]\n            nxt.erase(k)\n            pts.append(e[0]); hx.append(e[2]); nbs.append(e[3])\n            k = Vector2i((e[1] * 1000.0).round())\n        loops.append({'pts': pts, 'hex': hx, 'nb': nbs})\n    return loops\n```\n   a. Ownership predicate: inside = func(c): return Types.is_passable(c) and owner_of(c) == o. Use owner_of, so the ceremony works.\n   b. There is at most one outgoing boundary edge per vertex per region, so chaining never branches.\n   c. Edge kind:\n      - 0 = wild: nb < 0, impassable, owner NOBODY, or water\n      - 2 = war front: (o == PLAYER and nbo == at_war_with) or (o == at_war_with and nbo == PLAYER)\n      - 1 = any other owner\n5. Fillet. Every hex loop turns ±60° at every corner, never straight:\n```\nfunc _fillet(pts: PackedVector2Array, rho := SoftPalette.SOFT_R, seg := 4) -> Dictionary:\n    var out := PackedVector2Array(); var edge := PackedInt32Array(); var u := PackedFloat32Array()\n    var n := pts.size()\n    for i in n:\n        var p := pts[(i - 1 + n) % n]; var v := pts[i]; var q := pts[(i + 1) % n]\n        var u1 := (v - p).normalized(); var u2 := (q - v).normalized()\n        var cr := u1.cross(u2)\n        var turn := acos(clampf(u1.dot(u2), -1.0, 1.0))\n        var side := signf(cr)\n        var t1 := v - u1 * (rho * tan(turn / 2.0))\n        var cc := t1 + Vector2(-u1.y, u1.x) * side * rho\n        var a0 := (t1 - cc).angle()\n        for j in seg + 1:\n            out.append(cc + Vector2.from_angle(a0 + side * turn * j / seg) * rho)\n            edge.append((i - 1 + n) % n if j * 2 < seg else i)\n            u.append(float(j) / seg)\n    return {'pts': out, 'edge': edge, 'u': u}\n```\n   a. Corner i's arc points are out[i*(seg+1) .. i*(seg+1)+seg].\n   b. A left turn (cr > 0) is a convex corner of the region.\n6. Factor a reusable emitter `_emit_ribbon(st, pts, kind, wild, t, born, inner_w, skirt_w, y)` that takes per-point arrays (P8 reuses it), and `_ribbon_mesh(loops, o) -> ArrayMesh` on top of it.\n   a. SurfaceTool PRIMITIVE_TRIANGLES with non-indexed quads per segment, so per-segment values stay crisp.\n   b. Per point, the miter left normal is nl = (left(t_prev) + left(t_next)).normalized() / maxf(cos(half_turn), 0.5), where left(t) = Vector2(-t.y, t.x). Check on one loop that nl points into the territory.\n   c. Rows at signed offsets: -SKIRT (0.10, outward), 0 (the border line), +RIB_W (0.235 inward).\n      - 0.235 = maximum visible width 0.16 × 1.45 for the inner soft shadow.\n      - It must stay < SOFT_R, or convex inner corners fold.\n   d. All vertices at y = 0.046. Normal UP.\n   e. UV = (arc length along the loop in world units, signed offset in world units).\n   f. COLOR = (kind / 2.0, wild, t_along, 1).\n      - wild = 1 on kind-0 edges and 0 otherwise. On a corner arc whose two edges differ, wild = lerp(wild_prev, wild_next, u).\n      - Each segment belongs to the edge of its end point. t_along runs 0 → 1 from that edge's first output point to the first point of the next edge; clamp at 0.\n   g. UV2 = (born, 0). born = flip_at[hex] if ceremony_t >= 0.0 and flip_at.has(hex), else -1000.0.\n7. New game/shaders/border_ribbon.gdshader:\n```\nshader_type spatial;\nrender_mode unshaded, blend_mix, cull_disabled, depth_draw_never, shadows_disabled;\nuniform vec3 body : source_color; uniform vec3 rim : source_color; uniform vec3 hi : source_color;\nuniform float w = 0.16; uniform float skirt = 0.10; uniform float skirt_a = 0.3; uniform float now = 1000000.0;\nuniform float glow_k = 0.0; uniform float pulse = 0.0; uniform float dash = 0.0;\nvoid fragment() {\n    float prog = clamp((now - UV2.x) / 0.3, 0.0, 1.0);\n    if (COLOR.b > prog + 0.0001) { discard; }        // capture: drawn along the edge in 0.3 s\n    float y = UV.y; vec3 c; float a;\n    if (y < 0.0) {                                      // soft outer glow, wild and water edges only\n        float s = clamp(1.0 + y / skirt, 0.0, 1.0);\n        c = mix(body, hi, 0.35); a = skirt_a * COLOR.g * s * s;\n    } else {\n        float v = y / w; if (v > 1.45) { discard; }\n        float aa = fwidth(v) * 0.75;\n        c = mix(rim, body, smoothstep(0.17 - aa, 0.17 + aa, v));\n        float band = smoothstep(0.30 - aa, 0.30 + aa, v) * (1.0 - smoothstep(0.52 - aa, 0.52 + aa, v));\n        float front = step(0.75, COLOR.r);\n        float breathe = front * (0.5 + 0.5 * sin(TIME * 3.14159));          // 0.5 Hz\n        float tick = front * band * smoothstep(0.45, 0.55, fract(UV.x / 0.6 - TIME * 0.5));\n        c = mix(c, hi, band * mix(0.85, 1.0, breathe));\n        c = mix(c, vec3(1.0), tick * 0.35);\n        c += hi * band * glow_k;                         // unshaded ignores EMISSION: DL8 glow goes into HDR albedo (keep <= 1.6)\n        a = (1.0 - smoothstep(1.0 - aa, 1.0 + aa, v)) * smoothstep(0.0, 2.0 * aa, v);\n        if (v > 1.0) { c = rim * 0.35; a = 0.28 * pow(1.0 - (v - 1.0) / 0.45, 2.0); }\n    }\n    if (dash > 0.0) { a *= step(fract(UV.x / dash), 0.6); }\n    a *= mix(1.0, 0.75 + 0.25 * (0.5 + 0.5 * sin(TIME * 5.236)), pulse);\n    ALBEDO = c; ALPHA = a;\n}\n```\n8. In _rebuild_overlay, for every owner o != NOBODY that has land:\n   - _ribbon_mesh(_loops(inside_o), o) in one MeshInstance3D;\n   - ShaderMaterial(border_ribbon) with body/rim/hi from team_look(o);\n   - glow_k 0.6 if that state's dev_level >= 8, else 0;\n   - render_priority = 2: after the fills (0) and the cloud-shadow plane (1), so ribbons stay crisp and unshadowed;\n   - cast_shadow off;\n   - collect the materials in _ribbon_mats.\n   Keep the tints/washes/scorch/hatch code as it is (P2 replaces it).\n9. set_zoom:\n   a. Store `_zoom`.\n   b. Ribbon w = lerpf(0.08, 0.16, smoothstep(0.05, 0.8, zoom)); skirt_a = lerpf(0.2, 0.32, smoothstep(0.1, 0.6, zoom)).\n   c. Replace the early-out with |zoom - last applied| < 0.002 and apply to _ribbon_mats.\n   d. _rebuild_overlay must apply the current values to new materials too.\n10. Ceremony:\n   a. In _process, remove `or ceremony_t >= 0.0` from the rebuild condition. The snapshot already changes at each flip and at start/end, so the overlay now rebuilds per flip instead of every frame.\n   b. Every frame, set `now` on every ribbon material: ceremony_t if ceremony_t >= 0.0, else 1000000.0.",
+   "verify": "V13=/tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/cartoon/v13; G=/opt/godot/Godot_v4.5.1-stable_linux.x86_64.\n1. `$G --headless --path game --check-only --script res://scripts/map_view.gd`.\n2. test_flow passes.\n3. `$G --headless --path game --import` once, so the new shader gets its .uid.\n4. `tools/soft_shots.sh $V13/P1 strat close cer` prints no SHADER ERROR.\n5. look_metrics on strat:\n   - white-hot ≤ 1.2 % (base ≈ 2.6 %)\n   - hard edges ≤ 4 % (base ≈ 5.4 %)\n6. PIL 2× crops of the blue|red front and of a three-way junction in close.png:\n   - no corner sharper than the arc, no square stubs, no white core, no inner hex grid;\n   - a shared front shows two parallel ribbon bodies with one dark seam.\n7. `--sample` on a blue and a red ribbon body in strat.png: L*(blue) − L*(red) ≥ 12.\n8. cer.png shows partially drawn edges (draw-on works).\n9. Draw calls ≤ base + 5."
+  },
+  {
+   "id": "P2",
+   "title": "Rounded inward territory fill, soft scorch and soft occupation hatch (distance field)",
+   "owner_files": [
+    "game/scripts/map_view.gd",
+    "game/shaders/hex_sdf.gdshaderinc",
+    "game/shaders/territory_fill.gdshader",
+    "game/shaders/territory_scorch.gdshader",
+    "game/shaders/occupation_hatch.gdshader"
+   ],
+   "depends_on": [
+    "P1"
+   ],
+   "impact": "high",
+   "instructions": "Context: today's fill is a 6-triangle fan per hex, alpha 0.14 at the centre and 0.5 at rim corners. That draws star-shaped creases and hexagonal bands, and small territories read as heavy navy/maroon sheets. Replace it with an exact per-pixel distance to foreign land (validated in …/cartoon/mapfirst/sdf_fill_check.py).\n1. New game/shaders/hex_sdf.gdshaderinc (shared by the fill, scorch, hatch, terrain and water). Map (x, z) goes straight to SDF (x, y). Corner k is at 60°·k and the flat edges are at z = ±0.866.\n```\nconst float SOFT_R = 0.3;\nconst float HEX_IN = 0.866025;\nfloat sd_hex(vec2 p, float r) { const vec3 k = vec3(-0.866025404, 0.5, 0.577350269); p = abs(p);\n    p -= 2.0 * min(dot(k.xy, p), 0.0) * k.xy; p -= vec2(clamp(p.x, -k.z * r, k.z * r), r); return length(p) * sign(p.y); }\nfloat sd_round_hex(vec2 p, float r, float rho) { return sd_hex(p, r - rho) - rho; }\nfloat smin(float a, float b, float k) { float h = max(k - abs(a - b), 0.0) / k; return min(a, b) - h * h * k * 0.25; }\nvec2 nb_off(int k) {  // map_view DIRS order\n    if (k == 0) { return vec2(1.5, 0.866025); } if (k == 1) { return vec2(1.5, -0.866025); } if (k == 2) { return vec2(0.0, -1.732051); }\n    if (k == 3) { return vec2(-1.5, -0.866025); } if (k == 4) { return vec2(-1.5, 0.866025); } return vec2(0.0, 1.732051); }\nvec2 hex_local(vec2 w) {  // identical to map_view.id_at_world\n    float q = w.x / 1.5; float r = w.y / 1.7320508 - q * 0.5; float s = -q - r;\n    float rq = round(q); float rr = round(r); float rs = round(s);\n    float dq = abs(rq - q); float dr = abs(rr - r); float ds = abs(rs - s);\n    if (dq > dr && dq > ds) { rq = -rr - rs; } else if (dr > ds) { rr = -rq - rs; }\n    return w - vec2(1.5 * rq, 1.7320508 * (rr + rq * 0.5)); }\nfloat mask_dist(vec2 p, int mask, float k) { float d = 9.0;\n    for (int i = 0; i < 6; i++) { if (((mask >> i) & 1) == 1) { d = smin(d, sd_hex(p - nb_off(i), HEX_IN), k); } } return d; }\n```\n2. territory_fill.gdshader:\n   a. render_mode unshaded, blend_mix, cull_disabled, depth_draw_never, shadows_disabled; #include \"res://shaders/hex_sdf.gdshaderinc\".\n   b. Uniforms: team (source_color), a_rim 0.42, a_in 0.10, fade 0.9, start 0.07, now 1000000.0.\n   c. Varyings: `varying vec2 v_p; varying flat float v_mask; varying flat float v_born;`. vertex(): v_p = UV; v_mask = UV2.x; v_born = UV2.y.\n   d. fragment():\n      - d = mask_dist(v_p, int(v_mask + 0.5), 0.22)\n      - t = smoothstep(0.0, fade, d - start)\n      - a = (a_in + (a_rim - a_in) * pow(1.0 - t, 1.5)) * smoothstep(start - 0.02, start, d)\n      - ALBEDO = team; ALPHA = a * smoothstep(v_born, v_born + 0.35, now)\n3. territory_scorch.gdshader:\n   a. render_mode blend_mul, unshaded, cull_disabled, depth_draw_never, shadows_disabled; same varyings.\n   b. ALBEDO = mix(vec3(1.0), tint, smoothstep(0.07, 0.57, d)) * mul_k.\n4. In _rebuild_overlay, replace `tints`, `washes` and the old scorch with per-owner fill and scorch meshes:\n   a. For each owned passable hex, emit a 6-triangle fan of radius 1.0 (fans abut, no seam). y = 0.03 for the fill, 0.024 for the scorch.\n   b. Per vertex: UV = vertex − hex centre in (x, z); UV2 = (mask, born).\n   c. Mask bit k is set when neighbour sim.neighbors[id][k] is off-map, impassable or owner_of() != own. This is the same predicate as the P1 loops. born is as in P1.\n   d. Fill material:\n      - team = team_look(o).fill, render_priority 0;\n      - states with dev_level >= 8: a_rim ×0.75 and a_in ×0.6 (the built-up city must show through, as today);\n      - the player: a_in ×0.7 (a lighter interior, as today);\n      - keep these multipliers in material meta for set_zoom.\n   e. Scorch tint:\n      - war enemy (0.90, 0.82, 0.78);\n      - other AI (0.96, 0.93, 0.90);\n      - AI with dev_level >= 8: (0.94, 0.96, 1.0);\n      - player: no scorch mesh at all.\n      mul_k = MUL_K is mandatory: Mobile halves multiply layers.\n5. Zoom. Apply in set_zoom and at creation:\n   - zk = smoothstep(0.1, 0.6, zoom)\n   - a_rim = lerpf(0.30, 0.42, zk)\n   - a_in = lerpf(0.0, 0.10, zk)\n   - fade = lerpf(0.35, 0.9, zk)\n   Keep fade ≤ 0.9: the per-hex field only sees the 6 neighbours, and the nearest second-ring foreign land is ≥ 1.0 away.\n6. Occupation hatch: move the inline shader of _hatch_mat to game/shaders/occupation_hatch.gdshader.\n   a. The hatch fans get UV = local offset, radius 1.0, y 0.04.\n   b. Fragment:\n      - s = (wp.x + wp.z) * 1.6 (period 0.625, ×1.6 wider than today)\n      - f = abs(fract(s) - 0.5) * 2.0; aa = fwidth(s) * 2.0\n      - stripe = smoothstep(0.45 - aa, 0.45 + aa, f)\n      - mask = smoothstep(0.0, 0.12, -sd_round_hex(UV, HEX_IN * 0.94, SOFT_R))\n      - ALBEDO = col.rgb (no ×1.6); ALPHA = 0.45 * stripe * mask\n   c. col = team_look(controller).body; render_priority 1.\n7. In _process, update `now` on the fill materials like the ribbons.\n8. Delete _tint_mat, _tint_mats, _wash_mats, _tint_k, _wash_w and their set_zoom code.",
+   "verify": "V13=/tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/cartoon/v13; G=/opt/godot/Godot_v4.5.1-stable_linux.x86_64.\n1. check-only map_view.gd; test_flow; `$G --headless --path game --import`.\n2. `tools/soft_shots.sh $V13/P2 strat close cer battle` prints no SHADER ERROR.\n3. Crops:\n   - a 1–2-hex territory in strat: rounded gradient contours, no star creases from hex centres, no hexagonal bands;\n   - a single foreign enclave reads as a rounded blob inside a ring (compare …/cartoon/mapfirst/sdf_fill_check.png);\n   - occupied hexes in battle.png: stripes have no staircase in a 2× crop, and the mask is rounded.\n4. look_metrics strat:\n   - hard edges ≤ 3.5 %\n   - V p10 not below P1's (the multiply is correct on Mobile)\n5. Draw calls ≤ P1's (two fill layers per owner become one; the player loses its scorch)."
+  },
+  {
+   "id": "P3",
+   "title": "Continuous sunny ground: blended corners, no inner walls, calm shader, soft rounded hex seams",
+   "owner_files": [
+    "game/scripts/map_view.gd",
+    "game/shaders/terrain.gdshader"
+   ],
+   "depends_on": [
+    "P2",
+    "G1"
+   ],
+   "impact": "high",
+   "instructions": "1. Palette (sRGB vertex colours; the shader linearises them as today).\n   a. _build_terrain defaults (meadow): plain #74A645, forest #5A8A40, hills #9BAA55, mountain ground #A39A86.\n   b. BIOME_GROUND:\n      - taiga {plain #5F9A57, forest #4A7E4A, hills #7E9470, mountain #9A9AA0}\n      - steppe {plain #C8BC66, forest #93A64E, hills #CBA56A}\n      - badlands {plain #D28F5A, forest #B08D52, hills #C97A4E, mountain #A46E55}\n   c. The water bed colour is unchanged.\n2. Delete `col = col * (0.94 + rng.randf() * 0.12)` (the per-hex mosaic), but keep one `rng.randf()` call per cell with a comment. Removing it would shift the shared RNG sequence and move every prop on the map.\n3. Draw tops at radius 1.0 (was 0.995; the hairline showed the dark walls).\n4. Blended corners (Catlike Coding hex-map technique):\n   a. Before emitting, build corner_col: key Vector2i((corner.xz*1000).round()) → average colour of the ≤ 3 land hexes sharing that corner; water hexes excluded.\n   b. Build edge_col: edge-midpoint key → average of the ≤ 2 land hexes.\n   c. Emit each land hex top as:\n      - centre plus an inner ring of 6 points at 0.6 R, in the hex's own colour;\n      - an outer ring of 12 points: 6 corners in corner_col, 6 edge midpoints in edge_col.\n   d. Triangles: an inner fan of 6, plus per sector k: (inner_k, corner_k, mid_k), (inner_k, mid_k, inner_k+1), (inner_k+1, mid_k, corner_k+1). 24 triangles in total, normals UP.\n   e. Water hex tops stay one flat colour.\n5. Side walls only where they can be seen:\n   a. For each land hex edge whose neighbour is water: a wall down to −0.4. Whose neighbour is off-map: down to −1.4. No walls between land hexes (all land is at y = 0).\n   b. Wall vertex colours replace col.darkened(0.45): top #B58A5E, −0.4 #7E5A45. Deep walls get a second quad −0.4 → −1.4 ending in #6B6178.\n   c. Water hexes: walls only toward off-map, −0.2 → −1.4 in #6B6178.\n   d. P4 later replaces these straight walls with walls along the rounded coastline.\n6. Rewrite terrain.gdshader (keep the wpos/wnormal varyings):\n   a. render_mode cull_back, diffuse_lambert_wrap; #include \"res://shaders/hex_sdf.gdshaderinc\".\n   b. Uniforms: noise_big, noise_fine, dirt_color : source_color = #B98A55, dirt_amount = 0.08, fine_k = 1.0, seam_k = 1.0.\n   c. base = pow(COLOR.rgb, vec3(2.2)); big/mid/fine sampled as today; top = smoothstep(0.3, 0.9, wnormal.y).\n   d. Patches and tint:\n      - c = base * mix(0.93, 1.07, big)\n      - c = mix(c, c * vec3(1.06, 1.05, 0.90), smoothstep(0.55, 0.8, mid) * 0.5)\n      - c = mix(c, c * vec3(0.92, 0.98, 1.06), (1.0 - smoothstep(0.2, 0.45, mid)) * 0.4)\n   e. Dirt: dirt = smoothstep(0.66, 0.82, mid * 0.6 + big * 0.5) * dirt_amount * top; c = mix(c, dirt_color, dirt).\n   f. Fine speckle: c *= mix(1.0, mix(0.96, 1.04, fine), fine_k).\n   g. Seams on land tops only:\n      - vec2 l = hex_local(wpos.xz); float dh = sd_round_hex(l, HEX_IN, SOFT_R);\n      - float land = top * step(-0.05, wpos.y);\n      - c *= 1.0 - land * seam_k * (0.09 * smoothstep(-0.07, -0.01, dh) + 0.035 * smoothstep(-0.45, -0.07, dh));\n      This gives a soft groove plus a slight cushion and is never emissive.\n   h. Sides: c = mix(base * (0.95 + 0.1 * fine), c, top). Delete the sin() strata and the grey rock.\n   i. ROUGHNESS 0.95, SPECULAR 0.15.\n7. set_zoom: keep `_terrain_mat`; fine_k = 1.0 − smoothstep(0.1, 0.5, zoom); seam_k = lerpf(1.0, 0.45, smoothstep(0.15, 0.5, zoom)).\n8. If the grass target is missed, scale all ground colours together by one factor (0.9–1.1) and keep the hues.",
+   "verify": "V13=/tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/cartoon/v13; G=/opt/godot/Godot_v4.5.1-stable_linux.x86_64.\n1. check-only map_view.gd; test_flow.\n2. `tools/soft_shots.sh $V13/P3 strat z03 close` prints no SHADER ERROR.\n3. look_metrics strat:\n   - grit ≤ 0.040\n   - grass median L* 59–75, S 45–62 %, hue 80–95° (≈ #7FB347)\n   - near-black ≤ 3 %\n   - hard edges ≤ 3 %\n4. Forest-edge crop in z03: no hex-shaped colour step, and forest hexes are no longer dark tiles.\n5. Seams: soft grooves about 6–10 % darker in close, faint in strat, never a hard line.\n6. No vertical walls between land hexes in close.png.\n7. Primitives ≤ base + 5 % (24 top triangles vs 6 top + 12 wall triangles per hex before)."
+  },
+  {
+   "id": "P4",
+   "title": "Rounded coastline geometry (same SOFT_R as the ribbons)",
+   "owner_files": [
+    "game/scripts/map_view.gd"
+   ],
+   "depends_on": [
+    "P3"
+   ],
+   "impact": "medium",
+   "instructions": "1. Land loops: `_loops(func(c): return c['terrain'] != 'water')` from P1.\n   a. Off-map counts as not land, so the world edge is rounded too.\n   b. Run `_fillet(pts, SoftPalette.SOFT_R, 4)`. This is the same radius as the territory ribbons, so a ribbon on a coast edge lies exactly on the shoreline.\n2. Classify every loop corner i by cross(u1, u2):\n   a. Left turn (> 0) = convex: one land hex at that corner.\n   b. Right turn = concave bay: two land hexes.\n   c. Store dict[corner key Vector2i((pos*1000).round())] = {type, arc: out[i*5 .. i*5+4] (tangent point T1 → T2)}.\n3. Convex corners, in _build_terrain's 24-triangle top (P3): replace the outer-ring corner vertex k of that hex with its arc.\n   a. Sector k−1's last triangle becomes (inner_k, mid_k−1, arc[0]).\n   b. Sector k's first becomes (inner_k, arc[4], mid_k).\n   c. Add the fan (inner_k, arc[j], arc[j+1]) for j = 0..3.\n   d. Arc vertex colour = the hex's own colour. The hex stays convex.\n4. Concave corners: emit a patch, fan from V over (V, arc[0..4]), at y = 0, normal UP, colour = corner_col[V].\n   - It covers the bay corner of the water hex; the water surface is lower, at −0.07.\n5. Walls:\n   a. Delete P3's per-edge coast and world-edge walls.\n   b. Extrude walls along every segment of the filleted land loops: from y = 0 down to −0.4 where the outside is water, −1.4 where it is off-map.\n   c. Outward normal = the right side of the travel direction. Colours as in P3.\n   d. Water hexes keep only their off-map walls.\n6. Picking (id_at_world) stays on the regular grid; the shoreline moves at most ≈ 0.13 at a corner.\n7. Check the props near coast corners. None may float over water or sink:\n   - ships (_place_ship, _build_bay);\n   - bridges (bridge_spots, used by main.gd and the tests);\n   - ports (_water_side).",
+   "verify": "V13=/tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/cartoon/v13; G=/opt/godot/Godot_v4.5.1-stable_linux.x86_64.\n1. check-only map_view.gd; test_flow (bridge_spots).\n2. `tools/soft_shots.sh $V13/P4 strat z03`.\n3. 4× PIL crop of a coast in z03.png (compare …/cartoon/crop_z03_coast.png):\n   - no 120° coast corners;\n   - no slivers of background or wall between patches and hex tops;\n   - walls continuous along the arcs.\n4. Strat crop where a ribbon follows the coast: the ribbon arc and the shoreline arc coincide.\n5. Primitives ≤ P3 + 3 %."
+  },
+  {
+   "id": "P5",
+   "title": "Beach rim, cartoon water with SDF foam, softer rivers and roads",
+   "owner_files": [
+    "game/scripts/map_view.gd",
+    "game/shaders/water.gdshader",
+    "game/shaders/river.gdshader"
+   ],
+   "depends_on": [
+    "P4"
+   ],
+   "impact": "medium",
+   "instructions": "1. Rim along every filleted land loop, the world edge included. It replaces the top of the P4 walls.\n   a. 4 rings at φ = 0°, 30°, 60°, 90°:\n      - pos = p + n·0.08·sin φ\n      - y = −0.08·(1 − cos φ)\n      - NORMAL = normalize(n.x·sin φ, cos φ, n.z·sin φ), shared between segments (smooth)\n      Here n is the outward loop normal.\n   b. Then the wall continues from −0.08 down to −0.4 or −1.4.\n   c. The rim sticks 0.08 out over the water hex, with its foot just under the water surface (−0.07).\n   d. It lies outside the territory ribbon line, so the ribbon does not float.\n   e. Colours:\n      - φ 0° = plain colour ×1.08 (turf lip);\n      - 30° and 60° = sand #E8D39A;\n      - 90° = wet sand #C9B27A;\n      - below = the earth gradient.\n   f. World-edge rims: sand only where n.z > 0.3 (facing the camera and the bay); otherwise turf → earth #B58A5E.\n2. _build_water:\n   a. Per water hex: UV = vertex − hex centre (x, z); UV2.x = land mask (bit k when neighbour DIRS[k] exists and is not water).\n   b. Drop the vertex-colour shore corners.\n3. Rewrite water.gdshader (#include \"res://shaders/hex_sdf.gdshaderinc\"):\n   a. Uniforms: shallow #5FD0DA, mid #36A3D8, deep #2A7BBF, foam #F2FAFF (all source_color), noise_tex, open_sea = false.\n   b. Distance to land: d = open_sea ? 9.0 : the smin (k = 0.28) over set bits of sd_round_hex(UV − nb_off(k), HEX_IN, SOFT_R).\n   c. Colour ramp:\n      - c = mix(shallow, mid, smoothstep(0.08, 0.45, d))\n      - c = mix(c, deep, smoothstep(0.45, 1.2, d))\n   d. Ripple noise n as today: c *= 0.97 + 0.06 * n. Glint: c += vec3(0.25) * smoothstep(0.74, 0.78, n).\n   e. Lip: 1.0 − smoothstep(0.10, 0.15, d). It starts under the rim and hides small mismatches.\n   f. Ring: ph = fract(TIME * 0.12); rr = 0.16 + ph * 0.5; ring = (1.0 − smoothstep(0.02, 0.045, abs(d − rr))) * 0.7 * (1.0 − ph).\n   g. c = mix(c, foam, max(lip, ring)); ROUGHNESS 0.35; SPECULAR 0.3.\n   h. Keep the vertex wobble.\n   i. The open-sea plane in _build_terrain sets open_sea = true (replaces shore_k = 0).\n4. Rivers:\n   a. Half-width 0.11 → 0.13.\n   b. river.gdshader: bed #36A3D8, shallow #5FD0DA.\n   c. Foam becomes a solid bank: foam = smoothstep(0.82, 0.95, bank + (n − 0.5) * 0.15) * 0.65.\n   d. Keep the round joints; they already round the bends.\n5. Roads:\n   a. ROAD_W 0.1 → 0.12.\n   b. Dirt roads colour #D9B07A; the DL6–7 asphalt #8C93A3 keeps its dashed line.\n   c. The road material is in _build_roads.",
+   "verify": "V13=/tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/cartoon/v13; G=/opt/godot/Godot_v4.5.1-stable_linux.x86_64.\n1. check-only map_view.gd; test_flow.\n2. `tools/soft_shots.sh $V13/P5 strat z03 close` prints no SHADER ERROR.\n3. look_metrics:\n   - white-hot ≤ 1.0 % on strat (foam and clouds only)\n   - near-black ≤ 3 %\n   - `--sample` on open water: L* ≥ 45\n4. z03 coast crop: turf lip → sand → white foam, no grey band, and the foam is continuous along the curves.\n5. Primitives ≤ P4 + 5 %."
+  },
+  {
+   "id": "P6",
+   "title": "Calm grass: fewer rounded tufts, flowers, clean lawn from afar",
+   "owner_files": [
+    "game/scripts/map_view.gd",
+    "game/shaders/grass.gdshader"
+   ],
+   "depends_on": [
+    "P5"
+   ],
+   "impact": "medium",
+   "instructions": "1. _build_grass:\n   a. Tufts per hex: empty plain 100 → 40; other land 28 → 12; hills 32 → 14; badlands halved as now.\n   b. Scale ×1.6: sc range 1.2–2.1.\n   c. Colour jitter 0.82–1.18 → 0.92–1.08. Sunlit tips lerp to #B8D86A by 0.3.\n   d. GRASS_TINT: meadow #8FC255, taiga #78B068, steppe #D8CC78, badlands #DDA56E.\n   e. Keep the fixed RNG seed 4242.\n2. _tuft_mesh: 5 rounded blades fanned around the centre.\n   a. Each blade is one leaf of 3 triangles: a root pair 0.03 apart, a shoulder pair at 75 % height and 0.045 wide, then the tip.\n   b. Heights alternate 0.13 / 0.11.\n   c. Root colour (0.78, 0.8, 0.72), tip (1, 1, 0.92).\n3. grass.gdshader:\n   a. ALBEDO = COLOR.rgb * 0.9 (was ×0.52, which made tufts read as dark hair).\n   b. `uniform float fade = 1.0;` and in vertex(), VERTEX *= fade, so tufts sink into the lawn instead of popping.\n4. Flowers: a second MultiMesh of tiny flat discs.\n   a. 6-vertex fan, r 0.025, y 0.012.\n   b. 6 per empty plain, colours #FFFFFF, #FFD84A, #FF8FB0.\n   c. Same grass shader, so they fade too.\n5. Pebbles: delete _pebble_mi and its build. Faceted 6-segment spheres read as grit.\n6. set_zoom: fade = 1 − smoothstep(0.35, 0.45, zoom) on both materials; visible = fade > 0.001.",
+   "verify": "V13=/tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/cartoon/v13.\n1. check-only map_view.gd; test_flow.\n2. `tools/soft_shots.sh $V13/P6 strat z03 close`.\n3. strat.png shows a clean lawn with no tufts. close.png shows chunky soft tufts and dots of flowers.\n4. look_metrics: grit ≤ 0.035 on strat, ≤ 0.040 on close.\n5. Primitives at strat ≤ P5 − 5 % (tufts hidden)."
+  },
+  {
+   "id": "M1",
+   "title": "Soft toon shading for every model, no re-export (wrap light, warm terminator, rim, blue shade)",
+   "owner_files": [
+    "game/scripts/soft_look.gd",
+    "game/shaders/soft_light.gdshaderinc",
+    "game/shaders/soft_model.gdshader",
+    "game/shaders/troops.gdshader",
+    "game/scripts/map_view.gd"
+   ],
+   "depends_on": [
+    "P6",
+    "G1"
+   ],
+   "impact": "high",
+   "instructions": "Context: all 245 GLBs ship exactly one albedo-baked StandardMaterial3D, plus emissive and metal slots. All lighting happens in Godot, so one shader restyles every model.\n1. game/shaders/soft_light.gdshaderinc:\n```\nvoid light() {\n    float ndl = dot(NORMAL, LIGHT);\n    float w = smoothstep(-0.3, 0.8, ndl);                                     // wrapped soft band, no hard terminator\n    vec3 warm = mix(vec3(1.0, 0.82, 0.72), vec3(1.0), smoothstep(0.3, 0.9, w)); // warm terminator\n    DIFFUSE_LIGHT += LIGHT_COLOR / PI * ATTENUATION * w * warm;                // LIGHT_COLOR carries x PI in Godot 4\n    float fres = pow(1.0 - clamp(dot(NORMAL, VIEW), 0.0, 1.0), 3.0);\n    SPECULAR_LIGHT += LIGHT_COLOR / PI * ATTENUATION * fres * 0.2 * step(0.0, ndl); // faint rim on the lit side\n}\n```\n   Shade sides get only the blue ambient #A9C1E8 from G1, so they turn blue-lilac instead of black.\n2. game/shaders/soft_model.gdshader:\n   a. shader_type spatial; #include the light; uniform sampler2D albedo_tex : source_color, filter_linear_mipmap; uniform float roughness_v = 0.9.\n   b. varying float v_y = world y via MODEL_MATRIX. This includes MultiMesh instance transforms, and all land is at y = 0.\n   c. fragment:\n      - vec3 c = texture(albedo_tex, UV, 0.5).rgb. A mip bias of 0.5 softens 1–2 px mortar lines; ≥ 1 bleeds the black bake gutters.\n      - float l = dot(c, vec3(0.2126, 0.7152, 0.0722)); c = mix(vec3(l), c, 1.15)\n      - c *= mix(0.86, 1.06, smoothstep(0.0, 0.6, v_y))\n      - ALBEDO = c; ROUGHNESS = roughness_v; SPECULAR = 0.2\n3. game/scripts/soft_look.gd (extends RefCounted, static, with a cache): `static func soften(scene: PackedScene) -> void`.\n   a. Once per scene: instantiate it and walk the MeshInstance3D descendants.\n   b. For each surface material of the shared Mesh (mesh.surface_get_material(i)):\n      - StandardMaterial3D with albedo_texture, no emission and metallic < 0.5 → mesh.surface_set_material(i, toon). toon is a ShaderMaterial cached per albedo texture, with set_meta('src', original).\n      - Emissive → diffuse_mode DIFFUSE_LAMBERT_WRAP, specular_mode SPECULAR_DISABLED (emission kept).\n      - Metal → metallic = minf(m, 0.25), roughness = maxf(r, 0.55), LAMBERT_WRAP.\n   c. Free the instance.\n   d. Meshes are shared sub-resources of the PackedScene, so all instances, the DECOR MultiMeshes (_decor_parts reads the same meshes) and later the HUD portrait inherit the swap.\n   e. Print once: the swapped / emissive / metal counts. Confirm the materials live on mesh surfaces, not node overrides; if any GLB uses overrides, handle those too.\n4. map_view.spawn(): call SoftLook.soften(models[name]) right after `models[name] = load(...)`, before the DECOR branch. Preload the script as a const.\n5. _animate_troops: when get_active_material(i) is a ShaderMaterial with meta 'src', use that src StandardMaterial3D. Otherwise troops silently stop animating.\n6. troops.gdshader:\n   a. #include the same light().\n   b. texture(albedo_tex, UV, 0.5), saturation ×1.15.\n   c. Height gradient mix(0.86, 1.06, smoothstep(0.0, 0.35, y)) on the undeformed object-space VERTEX.y, passed from vertex() as a varying. Troops are about 0.4 tall.\n7. _flat_mat() and the other procedural StandardMaterial3Ds (aircraft, carts, FX solids): diffuse_mode = DIFFUSE_LAMBERT_WRAP.",
+   "verify": "V13=/tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/cartoon/v13; G=/opt/godot/Godot_v4.5.1-stable_linux.x86_64.\n1. check-only map_view.gd and soft_look.gd; test_flow; `$G --headless --path game --import`.\n2. `tools/soft_shots.sh $V13/M1 strat z03 close battle` prints no SHADER ERROR.\n3. `--sample` on a shaded building wall in close.png: L* ≥ 35 and b* < 0 (bluish), vs base.\n4. No pure-white specular pixels on roofs (white-hot ≤ P6's).\n5. No mortar grid visible at strat.\n6. Troops still animate:\n   a. Run tools/godot_shot.sh $V13/M1/b1.png --demo=battle:40 --lang=ru --shot-delay=3 and b2.png with --shot-delay=3.5.\n   b. The army crop differs: mean abs diff > 2/255.\n7. Draw calls within ±2 of P6 (one toon material per albedo texture replaces one StandardMaterial3D)."
+  },
+  {
+   "id": "P7",
+   "title": "Soft world edge: rounded fog cookies over a slate underlay, puffy two-tone clouds",
+   "owner_files": [
+    "game/scripts/map_view.gd"
+   ],
+   "depends_on": [
+    "M1"
+   ],
+   "impact": "medium",
+   "instructions": "1. `_rounded_hex_prism(r, rho, bevel, depth, top_col, side_col) -> ArrayMesh`:\n   a. Top = a fan over _fillet(6 hex corners at radius r, rho).\n   b. A 2-ring bevel 0.05 wide with rounded normals, then a side wall down to −depth.\n   c. Vertex colours. Corners in map orientation (corner k at 60°·k), so no PI/6 rotation is needed.\n2. _build_horizon:\n   a. Fog tiles: replace the 6-segment CylinderMesh (r 0.985, rotation PI/6) with _rounded_hex_prism(0.94, 0.24, 0.05, 1.0, #7D89A6, #5D6883). The transform y is now the top height (−0.2 − jitter), since the mesh top is at y = 0.\n   b. Underlay, so the rounded gaps read as slate and not as sea: a second MultiMesh of plain hexes (r 1.0, top at −0.26, colour #4A5468) at the same tiles.\n   c. Forest bases: the same rounded prism at scale 1.16 (keeps the overlap) in #4F7F45, instead of the near-black (0.13, 0.2, 0.12).\n   d. Material: StandardMaterial3D with vertex_color_use_as_albedo and vertex_color_is_srgb, roughness 0.95, DIFFUSE_LAMBERT_WRAP. _fog_hex_mat colour → #7D89A6.\n3. Clouds: generate a puff texture once (Image 256×160 RGBA):\n   a. Union of 5 soft circles, UV centre and radius: (0.30, 0.58, 0.22), (0.50, 0.45, 0.28), (0.70, 0.58, 0.22), (0.42, 0.66, 0.20), (0.60, 0.68, 0.20).\n   b. Alpha = smoothstep over 3 px at the union edge.\n   c. Colour = mix(#C9CFF0, #FFFFFF, smoothstep(0.75, 0.35, v)): white top, lilac-blue underside.\n   d. Use it as _cloud_mat.albedo_texture with albedo_color (1, 1, 1, 0.95).\n   e. Keep billboarding and the distance fade.\n   f. The veil clouds (veil_hexes / part_clouds) use it too; their alpha tween stays.",
+   "verify": "V13=/tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/cartoon/v13.\n1. check-only map_view.gd; test_flow.\n2. `tools/soft_shots.sh $V13/P7 strat z03`.\n3. The strat top band shows soft slate cookies with rounded corners, slate gaps (not blue, not black) and puffy two-tone clouds.\n4. look_metrics: hard edges not above P6's; near-black ≤ 3 %.\n5. Draw calls ≤ P6 + 2."
+  },
+  {
+   "id": "P8",
+   "title": "Soft markers, FX and juice: selection, deposits, health pills, burst, strike arrow, capture pop",
+   "owner_files": [
+    "game/scripts/map_view.gd",
+    "game/scripts/main.gd",
+    "game/shaders/border_ribbon.gdshader",
+    "game/shaders/pill.gdshader"
+   ],
+   "depends_on": [
+    "P7",
+    "G1"
+   ],
+   "impact": "medium",
+   "instructions": "1. map_view: public `func rounded_hex_ribbon(radius: float, width: float, rho := SoftPalette.SOFT_R) -> ArrayMesh`.\n   - Use _fillet on the 6 corners and the P1 _emit_ribbon with constant arrays: kind 0, wild 0, t 0, born −1000, inner width = width × 1.45, no skirt.\n2. Selection. Change main._make_selection (~380) and its users (~2024–2028, ~2794–2825, ~6203–6205). selection becomes a Node3D with two children:\n   a. Ribbon MeshInstance3D: rounded_hex_ribbon(0.94, 0.09) with a border_ribbon material: body #FFF1B8, rim #D29A2E, hi #FFFFFF, w 0.09, pulse 1.0, render_priority 3.\n   b. Inner glow: a hex fan r 0.94 with the territory_fill shader: mask 63 (every side counts as foreign), team #FFE27A, a_rim 0.25, a_in 0.0, fade 0.45.\n   c. Replace the `selection.material_override as StandardMaterial3D` colour writes with set_shader_parameter('body'/'rim', …).\n   d. Scale pulse at ~6203 becomes Vector3(k, 1, k): no y squash any more.\n   e. On each newly selected hex: tween scale 0.92 → 1.05 → 1.0 over 0.3 s (TRANS_BACK, EASE_OUT).\n   f. border_ribbon already has pulse and dash (P1). Add them only if missing.\n3. Deposit (_make_deposit). Replace the yellow hex strip with:\n   a. A soft gold disc: flat QuadMesh 1.2 × 1.2 at y +0.035, unshaded, radial GradientTexture2D #FFD24A, alpha 0.45 → 0.\n   b. A dashed round ribbon: _emit_ribbon over a 32-point circle of r 0.62, width 0.06; body #FFD24A, rim #A87A12, hi #FFF3B0, dash 0.25.\n4. Health bars (_make_army ~2575, sync_armies ~2281–2287): new game/shaders/pill.gdshader.\n   a. Unshaded, transparent, no depth test.\n   b. Rounded-rect SDF on the quad UV with radius = half the height.\n   c. A 1 px navy (0.05, 0.1, 0.2) outline on the background bar; a 1 px lighter top highlight on the fill.\n   d. Fill amount via `instance uniform float k = 1.0`, with discard for uv.x > k. The quad keeps full size and round ends.\n   e. Replace the fill.scale.x / position.x writes with set_instance_shader_parameter('k', ready).\n   f. Fill colours: player body, enemy body, green #6BD13C.\n5. burst_at:\n   a. TorusMesh ring_segments 6 → 24 (round).\n   b. Unshaded albedo = team body instead of emission 6.0 (Mobile clips at ≈ 2 anyway).\n   c. Update the _process fade, which writes emission_energy_multiplier today.\n6. strike_arrow:\n   a. Outline polygon: a shaft with a semicircular tail cap (8 segments) and a head triangle with corners filleted by _fillet(…, 0.08).\n   b. Fill enemy body #DD3A30, plus a copy 0.03 wider underneath in rim #8E1D17 (render_priority 3, under 4).\n   c. Unshaded and no depth test, as now.\n7. Capture juice, pop_hex: squash and stretch.\n   a. Scale (1.2, 0.6, 1.2) → (0.95, 1.15, 0.95) → (1, 1, 1) over 0.35 s (TRANS_BACK).\n   b. Plus a small soft dust ring: burst_at in #E8DCC8.",
+   "verify": "V13=/tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/cartoon/v13; G=/opt/godot/Godot_v4.5.1-stable_linux.x86_64.\n1. check-only map_view.gd and main.gd; test_flow (it uses _bubbles); `$G --headless --path game --import`.\n2. `tools/soft_shots.sh $V13/P8 sel close battle strat`.\n3. Crops:\n   - the selection is a rounded cream ribbon with an inner glow;\n   - deposits show a soft gold disc and a dashed ring;\n   - health bars are pill-shaped;\n   - the strike arrow (battle) is rounded.\n4. No hard hexagon remains anywhere on the map: look_metrics hard edges ≤ 2.5 % on strat, ≤ 3 % on close.\n5. Draw calls ≤ P7 + 3."
+  },
+  {
+   "id": "B0",
+   "title": "Blender: painted AO in the bake, softer procedural textures, lighter palette",
+   "owner_files": [
+    "tools/blender/export_assets.py",
+    "tools/blender/kit.py",
+    "tools/blender/evolution_assets.py",
+    "game/assets/models/residence_dl4_blue.glb",
+    "game/assets/models/city_dl3_blue.glb",
+    "game/assets/models/homestead_blue.glb"
+   ],
+   "depends_on": [
+    "M1"
+   ],
+   "impact": "medium",
+   "instructions": "Why after M1: the runtime soft_model already adds the vertical gradient and the warm/cool tint. The bake adds only AO, so nothing is applied twice, and the AO strength is judged under the final shader.\n0. Before editing, render the before sheet: `python3 tools/blender/evolution_assets.py game/assets/models --sheet $V13/B0/before.png --rows city,residence --cols 1,2,3,4`.\n1. export_assets.py: new `paint_ao(ob, img, k=0.45, dist=0.25, samples=32, keep_rows_from=None)`.\n   a. reset() leaves no world: create bpy.data.worlds.new('w') and assign it if missing. world.light_settings.distance = dist.\n   b. Create a second image `ao` of the same size and set it as the active image node in every material slot.\n   c. scene.cycles.samples = samples; bake(type='AO', margin=8).\n   d. numpy: col = img pixels; a = ao red channel; col[..., :3] *= (1 − k) + k·a; write back; img.update().\n   e. If keep_rows_from is given, leave the texel rows ≥ that index untouched (AO = 1 there).\n   f. Remove the temporary nodes and image.\n   g. Call it in bake_asset after the DIFFUSE bake and before the material rebuild.\n   h. Then fill the gutter: move or copy _fill_gutter from evolution_assets, so black gutters never bleed into mipmaps.\n2. evolution_assets.bake_atlas: call ea.paint_ao on the atlas image after its colour bake, with keep_rows_from = int(s * size).\n   - The palette strip along the top of the sheet (v ≥ s) holds many faces collapsed onto one cell, so AO there would be garbage.\n3. kit.textured:\n   a. stone/roof brick:\n      - mortar colour = base × 0.82 (was 0.55);\n      - Scale ×0.5: stone 9 → 4.5, roof 14 → 7 (blocks twice as big);\n      - stone Mortar Size 0.025 → 0.02;\n      - noise multiply Factor 0.35 → 0.15.\n   b. wood: wave Distortion 6 → 3; dark ramp colour base × 0.8.\n   c. plaster ramp low 0.82 → 0.9.\n4. evolution_assets palette:\n   a. TIMBER #47301f → #6B4A30.\n   b. ROOF_TRIM #3e2f25: where the roof colour is known (gable_roof, coursed_hip, coursed_cone, prism_roof via _trim_lines), use shade(roof_c, 0.62); elsewhere #6B4A30.\n   c. STONE #bdbab2 → #D3C8B4; STONE_D #86837c → #A39A8C.\n   d. TEAMS: blue #2673ff → #3F86F0, red #e6261a → #DD3A30, green #40a64d → #4CB050. Troops and props import TEAMS, so all later re-exports pick it up.\n   e. facade() brick scale 30 → 15.\n5. Export the test set:\n   a. `python3 tools/blender/evolution_assets.py game/assets/models residence_dl4_blue city_dl3_blue homestead_blue`.\n   b. Run `flock /tmp/raivon_godot.lock $G --headless --path game --import`.\n   c. Render after.png with the same sheet command.",
+   "verify": "V13=/tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/cartoon/v13; G=/opt/godot/Godot_v4.5.1-stable_linux.x86_64.\n1. EXPORTED lines: triangles unchanged (±1 %).\n2. Bake time per model ≤ 2× the old one; note it in the log.\n3. after.png vs before.png:\n   - crevices, eaves and contacts softly darker;\n   - no near-black trim lines;\n   - mortar faint, blocks bigger.\n4. 3× roof crop: no black gutter seams.\n5. In game, `tools/soft_shots.sh $V13/B0 close strat`:\n   - `--sample` on a shaded capital wall: L* ≥ 35;\n   - no mortar grid at strat."
+  },
+  {
+   "id": "B1",
+   "title": "Blender: shared building helpers — fat 3-course roofs, round ridges and finials, bigger windows, soft masses",
+   "owner_files": [
+    "tools/blender/evolution_assets.py",
+    "game/assets/models/city_dl1_blue.glb",
+    "game/assets/models/city_dl2_blue.glb",
+    "game/assets/models/city_dl3_blue.glb",
+    "game/assets/models/city_dl4_blue.glb",
+    "game/assets/models/residence_dl1_blue.glb",
+    "game/assets/models/residence_dl2_blue.glb",
+    "game/assets/models/residence_dl3_blue.glb",
+    "game/assets/models/residence_dl4_blue.glb",
+    "game/assets/models/homestead_blue.glb"
+   ],
+   "depends_on": [
+    "B0"
+   ],
+   "impact": "medium",
+   "instructions": "1. Roof helpers (course_rows, gable_roof ~717, coursed_hip ~805, roof_surface, coursed_cone ~2187, lean_to, mansard):\n   a. Default courses n 5 → 3.\n   b. Butt contrast (butt_k 0.68 / 0.75) → 0.82.\n   c. Slab thickness tk/ct 0.012 → 0.018 (≥ 6 % of the roof width).\n   d. Overhang oh 0.035 → 0.05, ohx 0.03 → 0.045.\n   e. Ridge: a smooth cylinder r 0.018 (12 segments) along the ridge in shade(roof_c, 0.75), instead of the dark ridge-cap boxes.\n   f. Eave boards in shade(roof_c, 0.7), or drop them when thinner than 0.02.\n2. coursed_cone: rings 5 → 3, sides 12 → 16, and a ball finial r = 0.12·r (ico, sub 2) at the tip instead of a needle.\n3. Windows and doors:\n   a. window, front_windows, shutter_window, lr_window: w and h ×1.3; frames lighter (shade(wall, 0.8)); ≤ 3 per face.\n   b. doorway: w ×1.15, with a round arch top (half-cylinder, 8 segments).\n4. chimney: a round cap (cy, 10 segments, small bevel) instead of the square cap.\n5. Soft masses:\n   a. bx(..., soft=False) and cy(..., soft=False): soft=True adds a BEVEL modifier with width = min(0.015, 0.08·min(size)), segments 3, profile 0.5, and tags o['soft'] = True.\n   b. lowpoly() (~5501): tagged objects with min dimension ≥ 0.08 keep segments = 3. The 1-segment rule stays for everything else. Add WEIGHTED_NORMAL (keep sharp) after the bevel.\n   c. Pass soft=True only on the 2–6 largest masses per model: main walls and bodies in cottage, town_house, stone_house, log_house, hut, terem_block, mansion, and the castle_tower / square_tower bodies.\n6. Test export:\n   a. `python3 tools/blender/evolution_assets.py game/assets/models city_dl1_blue city_dl2_blue city_dl3_blue city_dl4_blue residence_dl1_blue residence_dl2_blue residence_dl3_blue residence_dl4_blue homestead_blue`.\n   b. `flock /tmp/raivon_godot.lock $G --headless --path game --import`.\n   c. Sheet: `--sheet $V13/B1/sheet.png --rows city,residence --cols 1,2,3,4`.",
+   "verify": "1. Triangles per model ≤ +15 % vs the B0 numbers (EXPORTED lines).\n2. The sheet vs $V13/B0/after.png:\n   - roofs read as 3 fat rounded courses with round ridges;\n   - towers end in balls;\n   - windows bigger;\n   - no knife edges on the main masses.\n3. `python3 tools/blender/evolution_assets.py` still builds every asset: run a dry export of fort_l1 and residence_dl8_blue to a scratch dir and check for no Traceback."
+  },
+  {
+   "id": "B2",
+   "title": "Blender: capital/residence DL1–4 — chunky, friendly silhouettes",
+   "owner_files": [
+    "tools/blender/evolution_assets.py",
+    "game/assets/models/residence_dl1_blue.glb",
+    "game/assets/models/residence_dl1_red.glb",
+    "game/assets/models/residence_dl1_green.glb",
+    "game/assets/models/residence_dl2_blue.glb",
+    "game/assets/models/residence_dl2_red.glb",
+    "game/assets/models/residence_dl2_green.glb",
+    "game/assets/models/residence_dl3_blue.glb",
+    "game/assets/models/residence_dl3_red.glb",
+    "game/assets/models/residence_dl3_green.glb",
+    "game/assets/models/residence_dl4_blue.glb",
+    "game/assets/models/residence_dl4_red.glb",
+    "game/assets/models/residence_dl4_green.glb"
+   ],
+   "depends_on": [
+    "B1"
+   ],
+   "impact": "high",
+   "instructions": "Rework residence_dl1..dl4 (evolution_assets.py ~2010–2536). Keep the reference-frame-4 castle layout: square towers, gate arch, warm sandstone, eagle banners.\n1. Proportions:\n   a. Roof = 45–60 % of each building's height.\n   b. Tower radius ×1.25, with coursed_cone roofs and the ball finials from B1.\n   c. Walls ×1.1 thicker, built with soft=True.\n2. Crenellations: 3–5 merlons per wall side, each ×1.6 bigger, round-topped (soft box + top bevel 0.4 of its width, or a half-cylinder cap).\n3. Openings and banners:\n   a. Windows ≤ 3 per face; doors ≈ 50 % of the wall height.\n   b. Banners ×1.3.\n4. Small parts: delete, or merge into paint, every part smaller than 0.02 (rails, thin trims, tiny props). Nothing thinner than 0.012 stays.\n5. Footprint stays inside the hex pad (radius ≤ 0.86); heights within +10 %.\n6. Export:\n   a. All 12 models (DL1–4 × blue/red/green), then the godot import under flock.\n   b. Render the sheet: `--rows residence --cols 1,2,3,4,5,6,7,8`. DL5–8 only pick up the B1 helpers here; B4/B8 export them.",
+   "verify": "V13=/tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/cartoon/v13.\n1. Triangles ≤ +15 % per model vs before.\n2. Sheet: silhouettes separate in greyscale (towers, roof masses), and no knife-thin parts.\n3. In game: `tools/soft_shots.sh $V13/B2 close strat`.\n   - The player capital must be on screen. If hex 0,3 does not show it, use --focus=<capital q,r>,0.06 (main._focus_front reads capital_id).\n   - The capital reads as a chunky toy castle; look_metrics close hard edges ≤ 3 %."
+  },
+  {
+   "id": "B3",
+   "title": "Blender: towns DL1–4 and homesteads — fewer, bigger, rounder houses",
+   "owner_files": [
+    "tools/blender/evolution_assets.py",
+    "game/assets/models/city_dl1_blue.glb",
+    "game/assets/models/city_dl1_red.glb",
+    "game/assets/models/city_dl1_green.glb",
+    "game/assets/models/city_dl2_blue.glb",
+    "game/assets/models/city_dl2_red.glb",
+    "game/assets/models/city_dl2_green.glb",
+    "game/assets/models/city_dl3_blue.glb",
+    "game/assets/models/city_dl3_red.glb",
+    "game/assets/models/city_dl3_green.glb",
+    "game/assets/models/city_dl4_blue.glb",
+    "game/assets/models/city_dl4_red.glb",
+    "game/assets/models/city_dl4_green.glb",
+    "game/assets/models/homestead_blue.glb",
+    "game/assets/models/homestead_red.glb",
+    "game/assets/models/homestead_green.glb"
+   ],
+   "depends_on": [
+    "B2"
+   ],
+   "impact": "medium",
+   "instructions": "1. House builders (cottage, town_house, hut, log_house, stone_house, terem_block):\n   a. Roof 45–60 % of the height; gable pitch 1.15 → 1.3.\n   b. Main walls soft=True; round chimneys.\n2. Town layouts (city_dl1..4):\n   a. House count −25 %; the remaining houses ×1.2.\n   b. Gaps ≥ 0.05, so silhouettes read.\n   c. Merge tiny props (barrels and crates < 0.03) into fewer, bigger ones (×1.4).\n3. homestead():\n   a. Cottage ×1.15.\n   b. Garden rows 4 → 3, plants ×1.4.\n   c. plank_fence posts w 0.022 → 0.03 with round tops.\n   d. Haystack rounder (ico, sub 2).\n4. Export:\n   a. The 15 models, then the godot import under flock.\n   b. Sheet: `--rows city --cols 1,2,3,4`.\n   c. Homesteads are not on the sheet: render them with a short bpy script following the contact_sheet() pattern.",
+   "verify": "V13=/tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/cartoon/v13.\n1. Triangles ≤ +15 %.\n2. In game, `tools/soft_shots.sh $V13/B3 z03 strat`:\n   - towns read as a few chunky houses with fat roofs;\n   - look_metrics z03: grit ≤ 0.040, hard edges ≤ 3 %."
+  },
+  {
+   "id": "B4",
+   "title": "Blender: DL8 districts and capital/city DL8 without the tile look",
+   "owner_files": [
+    "tools/blender/evolution_assets.py",
+    "game/assets/models/district_scifi_blue.glb",
+    "game/assets/models/district_scifi_red.glb",
+    "game/assets/models/district_scifi_green.glb",
+    "game/assets/models/district_scifi_b_blue.glb",
+    "game/assets/models/district_scifi_b_red.glb",
+    "game/assets/models/district_scifi_b_green.glb",
+    "game/assets/models/district_scifi_c_blue.glb",
+    "game/assets/models/district_scifi_c_red.glb",
+    "game/assets/models/district_scifi_c_green.glb",
+    "game/assets/models/city_dl8_blue.glb",
+    "game/assets/models/city_dl8_red.glb",
+    "game/assets/models/city_dl8_green.glb",
+    "game/assets/models/residence_dl8_blue.glb",
+    "game/assets/models/residence_dl8_red.glb",
+    "game/assets/models/residence_dl8_green.glb"
+   ],
+   "depends_on": [
+    "B3"
+   ],
+   "impact": "medium",
+   "instructions": "Today the DL8 district models are hexagonal plates with gutters and neon trims, so they keep a tile look whatever the overlay does.\n1. d8_plate_pts (~4914): replace the corner cuts with fillets of 0.25·r (6 points per corner). No gutter; plate bevel 0.01, soft.\n2. Neon edge trims (lr_lit_path, neon_box strips, team_neon edges): replace the continuous thin neon edge lines with:\n   - inset soft strips 1.5× wider with emission ≤ 1.6, or\n   - rows of light dots (r 0.008, spacing 0.04).\n3. d8_tower:\n   a. Needles → rounded caps (ball r = 0.6 × the needle base).\n   b. Buttresses soft=True.\n4. Ground plates lighter: #9AA6BC.\n5. Export and render:\n   a. Export the 15 models, then the godot import under flock.\n   b. Render a sheet of district_scifi*, city_dl8 and residence_dl8 (blue).",
+   "verify": "V13=/tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/cartoon/v13.\n1. `tools/soft_shots.sh $V13/B4 dl8`:\n   - no hex-tile grid between districts;\n   - look_metrics dl8: hard edges ≤ 6 % (base ≈ 10 %), white-hot ≤ 2.5 % (base ≈ 5 %).\n2. Triangles ≤ +10 %."
+  },
+  {
+   "id": "B5",
+   "title": "Blender: rounded trees and bushes (scalloped pine tiers, cushion crowns)",
+   "owner_files": [
+    "tools/blender/env_assets.py",
+    "game/assets/models/tree_pine.glb",
+    "game/assets/models/tree_round.glb",
+    "game/assets/models/bush.glb",
+    "game/assets/models/flowers.glb"
+   ],
+   "depends_on": [
+    "B0"
+   ],
+   "impact": "high",
+   "instructions": "Render the before sheet first: `python3 tools/blender/env_assets.py game/assets/models --sheet $V13/B5/before.png`.\n1. Pines:\n   a. New soft_tier(cx, cy, z0, z1, r, mt, seed):\n      - a scalloped round skirt r(θ) = r·(1 + 0.1·cos 6θ), 24 segments;\n      - a rolled lip: one extra ring 0.02 under the edge, droop 0.02;\n      - an apex ring instead of a point;\n      - custom normals from a cone proxy (DATA_TRANSFER custom normals, or split normals = normalize(radial + up·0.6)), so each tier shades as one soft volume.\n   b. Keep writing the 'tip' attribute for pine_paint.\n   c. tall_pine:\n      - 3 tiers, radii 0.24 / 0.19 / 0.13;\n      - height ≈ 2.3× width (was 3.2×);\n      - a ball cap r 0.03 at the apex;\n      - trunk r 0.05, visible at the foot.\n   d. pine_paint: dark #2E6B3E, mid #3F8A47, light tips #8CC152, deep #24563A.\n2. Broadleaf (lush_tree) and bush:\n   a. Crown = 3–5 icospheres (sub 2), joined.\n   b. Normals transferred from one proxy sphere enclosing the crown (DATA_TRANSFER, custom normals), so the crown reads as one cushion.\n   c. Trunk 20–25 % of the crown width.\n   d. crown_paint: dark #3B7A46, mid #5DA040, lit #A4D05C, deep #2F6B3A.\n   e. Scale ×1.15.\n   f. Bush berries 6 → 4, at r 0.02.\n3. flowers: 5 bigger heads (×1.4), petals as flat discs.\n4. Budget: ≤ 300 triangles per tree, ≤ 200 per bush. These are DECOR MultiMeshes drawn hundreds of times.\n5. Keep the part and mesh names, so map_view._flush_decor keeps batching.\n6. Export:\n   a. `python3 tools/blender/env_assets.py game/assets/models tree_pine tree_round bush flowers`.\n   b. godot import under flock.\n   c. Render after.png.",
+   "verify": "V13=/tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/cartoon/v13.\n1. EXPORTED triangles within budget.\n2. after.png: no saw-tooth silhouettes, and forests still read as forests.\n3. In game, `tools/soft_shots.sh $V13/B5 strat z03`:\n   - rounded clumps;\n   - look_metrics grit not above the previous step;\n   - draw calls unchanged, primitives ≤ +5 %."
+  },
+  {
+   "id": "B6",
+   "title": "Blender: soft rocks, crags and friendly mountains",
+   "owner_files": [
+    "tools/blender/env_assets.py",
+    "game/assets/models/rock.glb",
+    "game/assets/models/crag.glb",
+    "game/assets/models/mountain.glb"
+   ],
+   "depends_on": [
+    "B5"
+   ],
+   "impact": "medium",
+   "instructions": "1. New soft_block(cx, cy, w, d, h, mt, seed):\n   a. An icosphere (sub 2) scaled to (w, d, h), cut by 6–10 random planes (bisect with fill).\n   b. Bevel 10 % of the smallest size, 2 segments; WEIGHTED_NORMAL.\n   c. It replaces tor():\n      - rock(): 3 blocks + 2 boulders;\n      - crag(): main ridge 5 blocks, 2 ledges, scree 12 → 4.\n2. granite_paint and rock_paint: base #BDB3A3, tops #D8CFBF, moss #8DBA4E, shade #8C86A0 (lilac); cracks 0.4 → 0.1.\n3. mountain():\n   a. Peaks 4 → 3 broad masses.\n   b. Profile t^1.3 → smoothstep(0, 1, t) shoulders.\n   c. Ridged noise 0.1 → 0.03, fine noise 0.045 → 0.015.\n   d. Snow line softer (smoothstep width ×2), as soft caps.\n   e. Slope pines use the B5 pine; boulders use soft_block.\n4. Budget: mountain ≤ current triangles, rock ≤ 500, crag ≤ 1500.\n5. Export rock, crag and mountain; godot import under flock; env sheet.",
+   "verify": "V13=/tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/cartoon/v13.\n1. Env sheet vs B5 after.png.\n2. In game, `tools/soft_shots.sh $V13/B6 strat`:\n   - mountains at the top of the frame read as rounded, friendly massifs;\n   - `--sample` on a shaded rock face: L* ≥ 40.\n3. Triangles within budget."
+  },
+  {
+   "id": "B7",
+   "title": "Blender: chunky troops DL1–4 (big heads, big hands and weapons) without breaking the troop animation",
+   "owner_files": [
+    "tools/blender/troops_assets.py",
+    "game/assets/models/squad_dl1_blue.glb",
+    "game/assets/models/squad_dl2_blue.glb",
+    "game/assets/models/squad_dl3_blue.glb",
+    "game/assets/models/squad_dl4_blue.glb",
+    "game/assets/models/sentry_dl1_blue.glb",
+    "game/assets/models/assault_dl2_blue.glb"
+   ],
+   "depends_on": [
+    "B0"
+   ],
+   "impact": "medium",
+   "instructions": "Before editing, render: `python3 tools/blender/troops_assets.py game/assets/models --sheet $V13/B7/before.png`.\n1. figure() (~533), for DL1–4:\n   a. Head ×1.4. Raise the head centre so the neck stays; hips stay at 0.16 (troops.gdshader HIP).\n   b. Hands ×1.5.\n   c. Weapons ×1.3 longer and ×1.5 thicker.\n   d. Shields ×1.2, in the team colour with the eagle badge.\n   e. Torso ×1.1 wider.\n   f. Rounded helmets (sphere caps) instead of boxy ones.\n   g. No part thinner than 0.012.\n2. Keep what troops.gdshader figure_cell depends on:\n   a. The 4×3 block layout and the 0.13 spacing.\n   b. Every part within ±0.06 of its figure's x centre, so no part gets another figure's animation phase.\n3. Riders and assault DL2–4: heads and weapons as above; the horse is unchanged.\n4. Export:\n   a. squad_dl1..4, sentry_dl1..4 and assault_dl2..4 for blue, red and green (33 models).\n   b. godot import under flock.\n   c. Render after.png.",
+   "verify": "V13=/tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/cartoon/v13.\n1. after.png: figures 2.5–3.5 heads tall, readable silhouettes.\n2. Triangles ≤ +15 %.\n3. In game, animation is intact:\n   a. Run tools/godot_shot.sh $V13/B7/b1.png --demo=battle:40 --lang=ru --shot-delay=3, and b2.png with --shot-delay=3.5.\n   b. The army crops differ.\n   c. A 3× crop shows no figure split into two moving halves."
+  },
+  {
+   "id": "H1",
+   "title": "HUD: rounded bold Cyrillic font, soft outlined labels, blue enamel panels",
+   "owner_files": [
+    "game/scripts/ui_font.gd",
+    "game/assets/fonts/",
+    "game/scripts/hud.gd",
+    "game/scripts/game_ui.gd",
+    "game/scripts/shop_ui.gd"
+   ],
+   "depends_on": [
+    "M1"
+   ],
+   "impact": "high",
+   "instructions": "The layout (art_direction §3) stays pixel-identical; only the skin changes.\n1. Font (SIL OFL 1.1). The download is untrusted:\n   a. In a new empty dir: `npm pack @fontsource/nunito@5.3.0 && tar xzf fontsource-nunito-5.3.0.tgz`.\n   b. Copy package/files/nunito-{latin,latin-ext,cyrillic,cyrillic-ext}-{800,900}-normal.woff (those that exist) to game/assets/fonts/.\n   c. Copy the package LICENSE as game/assets/fonts/OFL-Nunito.txt.\n   d. `flock /tmp/raivon_godot.lock $G --headless --path game --import`.\n   e. Fallback only if Cyrillic 900 is missing: Rubik 900 (@fontsource/rubik).\n2. game/scripts/ui_font.gd (static cache):\n   a. `static func bold() -> Font` (900) and `static func body() -> Font` (800).\n   b. Load the latin .woff as FontFile and set its fallbacks to the cyrillic (and -ext) faces.\n   c. If the files are missing (headless CI), return a SystemFont as today.\n3. hud.gd and game_ui.gd _ready():\n   a. font_bold = UiFont.bold().\n   b. Give the root controls a Theme with default_font = UiFont.body(), so non-bold labels change too.\n4. _label (both files):\n   a. Outline colour navy (0.055, 0.105, 0.21, 0.95).\n   b. outline_size = max(3, round(size × 0.14)) for bold, max(2, round(size × 0.08)) for regular (regular labels have no outline today).\n   c. Shadow: font_shadow_color (0, 0, 0, 0.4), shadow_offset_x 0, shadow_offset_y 3.\n5. _style (both files; shop_ui goes through ui._style):\n   a. Constants: PANEL → #24497C α 0.96; hud PANEL_2 → #2C5A94; EDGE → #0E1B36.\n   b. Inside _style:\n      - radius = clampi(int(radius × 1.7), 16, 28);\n      - border = max(bw, 3); border_width_bottom = border + 4 (a darker lip);\n      - shadow (0, 0, 0, 0.35), size 2, offset (0, 4).\n   c. Remap caller colours here, so the ~110 call sites need no edits:\n      - bg luminance < 0.12 → PANEL's rgb with the caller's alpha;\n      - pale translucent borders (luminance > 0.3 and alpha < 0.9) → EDGE.\n6. Parchment modals (_modal_box parchment) keep their colours; only the radius and lip change.\n7. shop_ui.gd: edit only if a hard-coded colour bypasses _style.",
+   "verify": "V13=/tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/cartoon/v13; G=/opt/godot/Godot_v4.5.1-stable_linux.x86_64.\n1. check-only hud.gd, game_ui.gd, shop_ui.gd and ui_font.gd; test_flow.\n2. Shots: `tools/soft_shots.sh $V13/H1 strat`, plus tools/godot_shot.sh with --lang=en, --demo=result and --demo=peace.\n3. HUD crops in ru and en:\n   - no overflowing or clipped labels (_fit);\n   - panels are blue enamel, not near-black;\n   - Cyrillic renders in Nunito, with no tofu boxes;\n   - text is legible over the busiest map area."
+  },
+  {
+   "id": "H2",
+   "title": "HUD: candy buttons with a dark lip, press squash and counter bounce",
+   "owner_files": [
+    "tools/ui/soft_skin.py",
+    "game/assets/ui/skin/",
+    "game/scripts/game_ui.gd",
+    "game/scripts/hud.gd"
+   ],
+   "depends_on": [
+    "H1"
+   ],
+   "impact": "medium",
+   "instructions": "1. New tools/ui/soft_skin.py (PIL + numpy; render at 4× and downsample). It writes greyscale 9-slice PNGs to game/assets/ui/skin/:\n   - button.png 128×128: radius 24; outline 4 px at value 0.22; lip 10 px at 0.55; face gradient 1.0 → 0.80 top to bottom; 2 px white highlight, α 0.35, inset 6 px;\n   - button_down.png: lip 3 px, face moved down 7 px;\n   - panel.png: radius 26, outline 4, gradient 1.0 → 0.82, highlight α 0.25;\n   - card.png: radius 18.\n   Print the texture margins used.\n2. game_ui._button (~572), _card_button (~2447), set_primary (~522) and the hud attack button (hud.gd ~363):\n   a. StyleBoxTexture(button.png), margins 28 plus the lip at the bottom, modulate_color = _candy(color).\n   b. _candy(c) = Color.from_hsv(c.h, clampf(c.s × 1.05, 0, 0.85), clampf(c.v × 1.35, 0.55, 1.0)).\n   c. Label outline = _candy(c).darkened(0.6).\n3. Press feedback:\n   a. On press: swap to button_down.png, move the content +7 px, tween scale to 0.94 in 0.06 s.\n   b. On release: scale 1.06 → 1.0 over 0.15 s (TRANS_BACK), with pivot_offset = size / 2.\n   c. Keep the _is_tap callback logic.\n4. Resource counters in the hud.gd top bar: when a value increases, tween its label scale 1 → 1.2 → 1 over 0.2 s (pivot at the centre).\n5. Optional, if time allows: panels via panel.png, modulated with the PANEL colour.",
+   "verify": "V13=/tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/cartoon/v13.\n1. check-only game_ui.gd and hud.gd; test_flow.\n2. Shots: strat (ru and en) and --demo=result.\n3. Crops of every button role:\n   - candy gradient, lip and outline visible;\n   - text contrast ≥ 4.5 : 1 against the face (look_metrics --sample on text vs face).\n4. The button rects are unchanged (layout identical)."
+  },
+  {
+   "id": "H3",
+   "title": "HUD: rounded minimap cells and hex chip, soft unit portrait",
+   "owner_files": [
+    "game/scripts/hud.gd"
+   ],
+   "depends_on": [
+    "H2",
+    "M1"
+   ],
+   "impact": "low",
+   "instructions": "1. Rounded hex helper: `_rhex(c, r, rho := 0.25) -> PackedVector2Array`, 24 points (a 4-point arc per corner).\n2. Minimap._draw (~720–750):\n   a. Cells via _rhex with r = sc × 0.9 (≈ 1.5 px gaps).\n   b. Colours:\n      - water #2EA2D6;\n      - mountain or unowned #8C96AA;\n      - owners from SoftPalette: player body, war enemy body, others soft_team(c).body.\n   c. Occupation marker: a circle in the controller's body colour with a 1.5 px navy outline.\n   d. A lighter top-left rim: a polyline over the upper half of each cell, colour.lightened(0.25), 1.5 px.\n   e. View rect: a 2 px white rounded-rectangle polyline.\n3. Icon._hexagon (~665) and its users (tile chip ~588/649): rounded via _rhex.\n4. Portrait (~700):\n   a. Call SoftLook.soften(load(path)) before instantiate.\n   b. Its WorldEnvironment: Filmic, exposure 1.0, ambient #A9C1E8 0.8; light colour #FFF1DA.",
+   "verify": "V13=/tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/cartoon/v13.\n1. check-only hud.gd; test_flow.\n2. `tools/soft_shots.sh $V13/H3 strat`.\n3. Minimap crop (top right): rounded cells, no spiky hex corners.\n4. The tile chip is rounded, and the unit card portrait is softly shaded."
+  },
+  {
+   "id": "B8",
+   "title": "Re-export every model with the soft bake, palette and helpers",
+   "owner_files": [
+    "game/assets/models/"
+   ],
+   "depends_on": [
+    "B4",
+    "B6",
+    "B7"
+   ],
+   "impact": "medium",
+   "instructions": "1. Export order:\n   a. First `python3 tools/blender/export_assets.py game/assets/models`.\n   b. Then, as 4 parallel processes, each logging to $V13/B8/<script>.log:\n      - evolution_assets.py;\n      - prop_assets.py, then tower_assets.py;\n      - industry_assets.py;\n      - env_assets.py, then troops_assets.py.\n   Same CLI: `python3 tools/blender/<script>.py game/assets/models`.\n   c. Re-export everything, including the families from B2–B7, so all models share one bake.\n   d. Expect about 25–40 min wall.\n2. Then `flock /tmp/raivon_godot.lock $G --headless --path game --import`.\n3. Check the logs:\n   - grep for Traceback / Error;\n   - the number of EXPORTED lines equals the number of .glb files (≈ 245);\n   - every .glb mtime is newer than the start time.",
+   "verify": "V13=/tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/cartoon/v13.\n1. No export errors; every model was updated.\n2. `tools/soft_shots.sh $V13/B8 strat z03 close dl8 cer sel battle`.\n3. Draw calls and primitives ≤ base + 10 %.\n4. Report the look_metrics vs the §6.12 targets; F1 calibrates the gaps."
+  },
+  {
+   "id": "B9",
+   "title": "Re-render UI art (cards, icons, portraits) under the soft light",
+   "owner_files": [
+    "tools/blender/card_art.py",
+    "tools/blender/icon_assets.py",
+    "tools/blender/portrait_assets.py",
+    "game/assets/ui/cards/",
+    "game/assets/ui/icons/",
+    "game/assets/ui/portraits/",
+    "game/assets/ui/coin.png",
+    "game/assets/ui/food.png",
+    "game/assets/ui/metal.png",
+    "game/assets/ui/oil.png",
+    "game/assets/ui/raivite.png",
+    "game/assets/ui/builder.png"
+   ],
+   "depends_on": [
+    "B8"
+   ],
+   "impact": "low",
+   "instructions": "1. Soften the light rigs in card_art.py, icon_assets.py and portrait_assets.py:\n   a. Sun angle → about 25° (soft shadows).\n   b. Key light #FFF1DA; world/ambient #A9C1E8 at about 0.8 of the key.\n   c. If AgX looks are set, use the base contrast.\n   d. Keep framing, sizes and file names identical; the layout depends on them.\n2. Re-render with each script's documented CLI, then run the godot import under flock.\n3. Do not touch game/assets/ui/skin/ (H2).",
+   "verify": "V13=/tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/cartoon/v13.\n1. A before/after montage of 6 cards and 4 icons: soft blue shade, no black shadows.\n2. PNG sizes are identical before and after (PIL).\n3. Shots: strat and --demo=result, and the cards look consistent with the map."
+  },
+  {
+   "id": "F1",
+   "title": "Calibrate against the §6 targets, unify 3D text, document and publish screenshots",
+   "owner_files": [
+    "game/scripts/soft_palette.gd",
+    "game/scripts/map_view.gd",
+    "game/scripts/main.gd",
+    "game/shaders/",
+    "docs/art_direction.md",
+    "docs/dev/dev_log.md",
+    "docs/screens/"
+   ],
+   "depends_on": [
+    "P8",
+    "H3",
+    "B9"
+   ],
+   "impact": "medium",
+   "instructions": "1. Shots:\n   a. `tools/soft_shots.sh $V13/F1 strat z03 close dl8 cer sel battle`.\n   b. Plus --demo=result and --demo=peace.\n2. Compare with the §6.12 target table and tune constants only:\n   a. exposure (0.9–1.1) in main.gd;\n   b. ribbon and fill colours in soft_palette.gd. Unshaded colours go through Filmic: if bodies read darker or duller on screen than #4FA8FF / #DD3A30, raise V within the palette;\n   c. fill alphas, the terrain colour factor, the water ramp.\n3. Keep the readability checks passing:\n   - ΔL* blue vs red ribbon bodies ≥ 12 (`--sample`);\n   - the strategic front still separates in `--gray` and `--deutan`.\n4. 3D text:\n   a. Label3D in map_view (hex_label, the strike-arrow label, army power labels, floater) and main.gd (_drag_lbl).\n   b. font = UiFont.bold(); outline navy (0.06, 0.1, 0.22); outline_size ≈ 0.22 × font_size.\n5. Docs:\n   a. art_direction.md §2: add «(заменено §6: мягкая лента и швы)» to the neon-border and inner-lines bullets.\n   b. art_direction.md §5: rows Граница, Внутренняя сетка, Цвет, Вода, Неизведанное get the status «⟶ §6 (2026-10-09)».\n   c. art_direction.md §6.12: add the measured v13 column.\n   d. dev_log.md: entry «Мультяшный стиль (v13)» with the changes and the numbers.\n   e. Screens:\n      - docs/screens/godot_v13_soft_strategic.png, godot_v13_soft_close.png, godot_v13_soft_dl8.png;\n      - godot_v13_vs_v12_ref1.png: v12 | v13 | ref1 side by side (PIL; v12 = …/cartoon/cur_strategic.png, ref1 from docs/reference/).\n6. Suggested owner gate: show godot_v13_vs_v12_ref1.png and the close shot before any further polish.",
+   "verify": "V13=/tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/cartoon/v13; G=/opt/godot/Godot_v4.5.1-stable_linux.x86_64.\n1. Every §6.12 target is met, or listed in dev_log with the reason.\n2. check-only passes on all changed scripts.\n3. All tests pass: `for t in game/tests/test_*.gd; do $G --headless --path game --script res://tests/$(basename $t) || echo FAIL $t; done`.\n4. Draw calls and primitives ≤ base + 10 %.\n5. No SHADER ERROR in any shot."
+  }
+ ],
+ "notes": "I merged the two proposals into one plan. Where they conflicted, I chose one option and give the reason below. I did not edit any project file or run git.\n\n**How the conflicts were resolved**\n1. **Corner radius.** I took B's single `SOFT_R = 0.3` instead of A's per-element radii (0.32 / 0.45 / 0.25 / 0.22).\n   - The coast uses 0.3 as well, so the rounded shoreline and a border ribbon on that coast use the same arc.\n   - Two elements keep their own value: fog cookies 0.24 (they are inset) and the minimap at 0.25 of a cell.\n2. **Border ribbon.**\n   - From A: the inward profile and shader core (dark rim, body, light band, anti-aliased edge, soft inner shadow), with width by zoom 0.08–0.16 and built width 0.235, which stays under SOFT_R.\n   - From B: the war-front dashes, and the soft outer \"skirt\" only on edges facing wild land or water; it fades across corner arcs.\n   - From B: the two ribbons on a shared front meet with no gap, so their dark rims form one crisp seam. A had a 0.025 gap.\n   - Ribbons sit at y 0.046 with render_priority 2. A's \"ribbon under the fills\" would have tinted the ribbon with the fill colour.\n3. **Capture ceremony.** From A: the overlay rebuilds only when a hex flips, not every frame, and a `now` uniform drives the animation. From B: the edge draws on along its length, which is closest to the current look.\n4. **Territory fill.** I took A's per-hex analytic sdHexagon fill with smin. It is simpler than B's edge/spoke version, and A checked it in numpy (sdf_fill_check).\n   - Fill colours come from B: a coral enemy fill instead of maroon, because red over green turns brown.\n   - The fade is capped at 0.9: the shader only knows the six neighbouring hexes, so it cannot see foreign land further away.\n5. **Hex seams.** A's groove-plus-cushion seam, using B's zoom range and SOFT_R. Seams are never emissive.\n6. **Grading.** The two proposals were nearly identical. I took A's numbers (saturation 1.12, contrast 1.04, glow 0.6) and B's cool-tinted vignette, and left tonemap_white at its default.\n7. **Team colours.** B's player and enemy colours, which B checked: ΔL* 17 in greyscale and under deuteranopia simulation. Other states go through B's `soft_team()`.\n8. **Grass.** A's 5-blade rounded tufts instead of B's clover hemispheres, which would cost about 6× the triangles. Both proposals hide tufts at strategic zoom; I do it by sinking them into the ground, so they do not pop.\n9. **Coast.** A's analytic fillet geometry, needing no Clipper, with B's single radius. The rim is A's: 0.08 wide and outside the ribbon line, which removes B's worry that ribbons would float above a bevel.\n10. **Baked lighting.** Only AO goes into the texture bake. The height gradient and warm/cool tint live only in the runtime shader. This settles A's \"full painted-light bake\" against B's \"switch off the runtime gradient\", so nothing is applied twice.\n    - `bake_atlas` skips its palette strip: many faces share one texel cell there, so AO would be garbage.\n11. **Rivers.** Recoloured and widened only. Their round joints already soften the bends, so A's filleted river chains were skipped.\n12. **Step order.** The requested order is kept, with one exception: G1 (grading) has no project dependencies, so it can run early, in parallel with the overlay steps. Both proposals say the palette must be tuned under the final light.\n    - P3 depends on G1 for the palette, and M1 depends on G1 for the light.\n    - The Blender steps (B0 onward) and the HUD steps (H1 onward) wait for M1, so models and UI are judged under the final shader and light.\n\n**Execution notes**\n- **File ownership.** Steps that touch the same file are chained.\n  - map_view.gd: P1 → P2 → P3 → P4 → P5 → P6 → M1 → P7 → P8 → F1.\n  - evolution_assets.py: B0 → B1 → B2 → B3 → B4.\n  - env_assets.py: B5 → B6.\n  - hud.gd and game_ui.gd: H1 → H2 → H3.\n  - main.gd: G1 → P8 → F1.\n  - B8 depends on every Blender export step.\n- **Shared files.** P1 creates soft_palette.gd and only F1 edits it later. P2 creates hex_sdf.gdshaderinc; P3 and P5 only include it. M1 creates soft_look.gd; H3 only calls it.\n- **Tooling (T0).**\n  - `godot_shot.sh` now prints SHADER ERROR lines; today it hides them, so a broken shader renders invisible.\n  - It also takes a lock file (`flock /tmp/raivon_godot.lock`). Parallel shots and Blender `--import` runs must use the same lock.\n  - The scratch directory for screenshots is `$V13 = …/scratchpad/cartoon/v13`.\n- **Known code hazards.**\n  - Removing the per-hex `rng.randf()` would move every prop on the map; P3 keeps the call.\n  - `_animate_troops` must read the original material through meta `\"src\"`, or troops silently stop animating.\n  - Every multiply layer needs ×MUL_K, or phones go dark.\n  - Unshaded shaders ignore EMISSION, so the DL8 glow is added to albedo instead.\n- **Left out on purpose (follow-ups).**\n  - Rounding forts and palisades.\n  - Replacing the CARD_ART Unicode glyphs with icons.\n  - Six larger trees per forest hex in `_place_biome_props`.\n  - The sky-based ambient, which is optional inside G1.\n- **Owner gate.** Before engine work, show the owner the style tile (`…/cartoon/ad/style_frame_vs_current.png`). After P1–P3, show one strategic shot and one close shot. Start the Blender work only after that.\n- **Risk.** §6 replaces the \"glowing neon\" and \"contrasty, olive\" rows that §2 and §5 took from the reference frames. The owner's new brief takes precedence; F1 records the change in the docs."
+}
