@@ -923,9 +923,7 @@ func show_calendar(info: Dictionary, on_claim: Callable) -> void:
 func show_patent(info: Dictionary, on_buy: Callable, on_restore: Callable) -> void:
 	var box := _modal_box(Rect2(30, 230, 881, 1060))
 	_button(box, Rect2(881 - 86, 18, 64, 56), "✕", Color(0.3, 0.33, 0.42), close_modal)
-	var t := _label(tr("patent.title"), 30, Color(1.0, 0.85, 0.4))
-	_fit(t, 30, 730)
-	_at(t, box, Vector2(30, 26))
+	_title(box, tr("patent.title"), 30, Color(1.0, 0.85, 0.4), Vector2(30, 26), "crown", true, 740.0)
 	var price := _label(tr("patent.price") % String(info["price"]), 46)
 	_at(price, box, Vector2(30, 76))
 	var y := 150.0
@@ -934,13 +932,14 @@ func show_patent(info: Dictionary, on_buy: Callable, on_restore: Callable) -> vo
 		y += 40.0
 	var perks := ["patent.p_ads", "patent.p_builder", "patent.p_convoy", "patent.p_collect", "patent.p_timers",
 		"patent.p_raivite", "patent.p_key", "patent.p_frame"]
-	var icons := ["▶", "🔨", "🐎", "🧺", "⏱", "💎", "🔑", "🖼"]
+	var icons := ["icons/ad", "builder", "icons/cart", "coin", "icons/hourglass", "raivite", "icons/key", "icons/frame"]
 	for i in perks.size():
-		var row := _label("%s  %s" % [icons[i], tr(perks[i])], 21, TEXT, false)
+		_at(_icon_rect("res://assets/ui/%s.png" % icons[i], 40.0), box, Vector2(26, y - 6))
+		var row := _label(tr(perks[i]), 21, TEXT, false)
 		row.autowrap_mode = TextServer.AUTOWRAP_WORD
-		row.custom_minimum_size = Vector2(821, 0)
-		_at(row, box, Vector2(30, y))
-		y += _line_h(tr(perks[i])) + 6.0
+		row.custom_minimum_size = Vector2(771, 0)
+		_at(row, box, Vector2(80, y))
+		y += maxf(_line_h(tr(perks[i])), 34.0) + 8.0
 	y += 10.0
 	if info["can_buy"]:
 		_button(box, Rect2(30, y, 821, 80), tr("patent.buy") % String(info["price"]), Color(0.75, 0.55, 0.12), func(): on_buy.call("iap_sub_patent"))

@@ -384,6 +384,66 @@ def orders():
         cyl("ring", 0.038, 0.03, (-0.28, 0, z), gold(), 12, 0.0)
 
 
+def _tilt(rx=0.0, ry=0.0, rz=0.0):
+    """Turn the whole icon about the origin (one pivot for every part, so the parts stay put relative to each other)."""
+    e = bpy.data.objects.new("tilt", None)
+    bpy.context.scene.collection.objects.link(e)
+    for o in [o for o in bpy.context.scene.objects if o.type == "MESH" and o.parent is None]:
+        o.parent = e
+    e.rotation_euler = (math.radians(rx), math.radians(ry), math.radians(rz))
+
+
+def hourglass():
+    """Free timers: a brass-capped hourglass with golden sand running down."""
+    wood = mat("hg_wood", "#7a4e2c", 0.6)
+    glass = mat("hg_glass", "#cfe8f2", 0.05, 0.0, "#9fd0e8", 0.15)
+    sand = mat("sand", "#f0b84a", 0.6)
+    for z in (-0.42, 0.42):
+        cyl("cap", 0.3, 0.07, (0, 0, z), wood, 24, 0.02)
+        cyl("cap_rim", 0.27, 0.03, (0, 0, z - 0.05 if z > 0 else z + 0.05), gold(), 24, 0.0)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            cyl("post", 0.025, 0.78, (sx * 0.22, sy * 0.06, 0), wood, 8, 0.0)
+    cyl("bulb_top", 0.2, 0.36, (0, 0, 0.2), glass, 24, 0.0, r2=0.03)
+    cyl("bulb_bot", 0.03, 0.36, (0, 0, -0.2), glass, 24, 0.0, r2=0.2)
+    cyl("sand_top", 0.12, 0.12, (0, 0, 0.14), sand, 20, 0.0, r2=0.03)
+    cone("sand_pile", 0.18, 0.14, (0, 0, -0.31), sand, 20, 0.0)
+    cyl("stream", 0.008, 0.24, (0, 0, -0.08), sand, 6, 0.0)
+    _tilt(ry=-12)
+
+
+def key():
+    """Royal case key: an ornate gold key with a ring bow and a toothed bit."""
+    g = gold()
+    bpy.ops.mesh.primitive_torus_add(major_radius=0.17, minor_radius=0.05, location=(-0.3, 0, 0.0),
+                                     major_segments=32, minor_segments=10)
+    bow = bpy.context.active_object
+    bow.rotation_euler.x = math.pi / 2
+    bow.data.materials.append(g)
+    sphere("gem", 0.06, (-0.3, -0.02, 0.0), mat("gem", "#c0392b", 0.1), (1, 0.6, 1), 2)
+    shaft = cyl("shaft", 0.04, 0.62, (0.15, 0, 0), g, 12, 0.0)
+    shaft.rotation_euler.y = math.pi / 2
+    cyl("collar", 0.06, 0.05, (-0.1, 0, 0), g, 12, 0.0).rotation_euler.y = math.pi / 2
+    for (x, h) in ((0.33, 0.16), (0.4, 0.11), (0.25, 0.08)):
+        box("bit", (0.05, 0.05, h), (x, 0, -h / 2 - 0.02), g, 0.005)
+    _tilt(ry=30)
+
+
+def frame():
+    """Profile frame cosmetic: an ornate gold frame round a blue field with a white star."""
+    g = gold()
+    dark = mat("gold_d", "#b8801c", 0.35, 1.0)
+    box("field", (0.6, 0.04, 0.72), (0, 0.02, 0), mat("card_b", "#2a4fa0", 0.5), 0.0)
+    for (w, h, x, z) in ((0.8, 0.11, 0, 0.41), (0.8, 0.11, 0, -0.41), (0.11, 0.92, 0.355, 0), (0.11, 0.92, -0.355, 0)):
+        box("rail", (w, 0.1, h), (x, 0, z), g, 0.03)
+        box("bead", (w * 0.94 if w > h else 0.03, 0.11, h * 0.94 if h > w else 0.03), (x, -0.005, z), dark, 0.0)
+    for sx in (-1, 1):
+        for sz in (-1, 1):
+            sphere("boss", 0.075, (sx * 0.355, -0.04, sz * 0.41), g, (1, 0.7, 1), 2)
+    _star_mesh("star", 0.17, 0.07, 0.0, 0.0, -0.005, -0.03, mat("star_w", "#f6f3ea", 0.4))
+    _tilt(rz=-12)
+
+
 def crown():
     """Royal case: a gold crown with five pearl-tipped points, gems on the band, a blue velvet cap."""
     g = gold()
@@ -552,10 +612,11 @@ ICONS = {"coin": coin, "food": food, "metal": metal, "raivite": raivite, "oil": 
          "trophy": trophy, "book": book, "mail": mail, "gear": gear,
          "target": target, "pin": pin, "fort": fort, "tower": tower,
          "crate": crate, "flask": flask, "cart": cart, "stall": stall, "anchor": anchor, "houses": houses,
-         "crown": crown, "cards": cards, "lock": lock, "ad": ad, "medal": medal, "orders": orders}
+         "crown": crown, "cards": cards, "lock": lock, "ad": ad, "medal": medal, "orders": orders,
+         "hourglass": hourglass, "key": key, "frame": frame}
 
 
-ORTHO = {"book": 1.0, "orders": 1.2, "crown": 1.15, "cards": 1.2, "lock": 1.2, "ad": 1.2, "medal": 1.25, "crate": 1.4, "cart": 1.6, "stall": 1.5, "anchor": 1.5, "houses": 1.45, "target": 1.5, "pin": 1.45, "fort": 1.5, "tower": 1.7, "castle_icon": 1.75, "hammer": 1.6, "scales": 1.5, "trophy": 1.45, "gear": 1.4, "hands": 1.45}
+ORTHO = {"hourglass": 1.2, "key": 1.15, "frame": 1.25, "book": 1.0, "orders": 1.2, "crown": 1.15, "cards": 1.2, "lock": 1.2, "ad": 1.2, "medal": 1.25, "crate": 1.4, "cart": 1.6, "stall": 1.5, "anchor": 1.5, "houses": 1.45, "target": 1.5, "pin": 1.45, "fort": 1.5, "tower": 1.7, "castle_icon": 1.75, "hammer": 1.6, "scales": 1.5, "trophy": 1.45, "gear": 1.4, "hands": 1.45}
 
 
 def render(path, ortho=1.35):
