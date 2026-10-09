@@ -462,17 +462,18 @@ def _radial(c):
 
 
 def soft_tier(cx, cy_, z0, z1, r, mt, seed, n=24, waves=6, wave=0.1, droop=0.02, lip=0.02, apex=0.2, cap=False,
-              up=0.6):
+              up=0.6, na=12):
     """One pine tier of «Raivon Soft» (§6.8): a round skirt scalloped r(θ) = r·(1 + wave·cos 6θ) in n segments, its
     crests hanging `droop` lower like heavy branch ends; a rolled lip (one more ring `lip` in from the rim and `lip`
-    under it), so the edge reads as a soft rounded rim instead of a blade; and a small apex ring (apex·r) instead of
-    a point, closed only on the top tier (`cap`) — lower apexes sit inside the tier above. Normals come from a cone
-    proxy, normalize(radial + up·0.6) (the lip rolls under: radial − up·0.25), so each tier shades as one soft
-    volume. Writes the tip attributes for pine_paint (tip_attrs: apex 0.15 → rim 1, linear in height). Open
-    underneath: the camera (pitch ≥ 40°) never looks up into it. 6 + 24 + 24 vertices, 78 triangles (82 capped)."""
+    under it), so the edge reads as a soft rounded rim instead of a blade; and a small apex ring of na vertices
+    (apex·r) instead of a point, closed only when `cap` — lower apexes sit inside the tier above, and the ball on the
+    top tier covers its hole. Twelve apex vertices, not six: from a six-vertex ring every vertex fanned four rim
+    vertices, and at close zoom each tier read as a hexagonal pyramid (six straight ridges apex → rim). Normals come
+    from a cone proxy, normalize(radial + up·0.6) (the lip rolls under: radial − up·0.25), so each tier shades as one
+    soft volume. Writes the tip attributes for pine_paint (tip_attrs: apex 0.15 → rim 1, linear in height). Open
+    underneath: the camera (pitch ≥ 40°) never looks up into it. 12 + 24 + 24 vertices, 84 triangles (94 capped)."""
     rnd = random.Random(seed)
     rot = rnd.uniform(0.0, math.tau)
-    na = 6
     verts, tip = [], []
     for k in range(na):
         a = rot + k / na * math.tau
@@ -529,19 +530,28 @@ def soft_trunk(x, y, rings, mt, n=6):
 
 def tall_pine(x=0.0, y=0.0, s=1.0, seed=0, mt=None, bark=None):
     """«Raivon Soft» conifer (§6.8): three fat scalloped tiers (radii 0.24 / 0.19 / 0.13) with rolled rims, a ball
-    on top and the trunk showing at the foot — stout, height ≈ 2.3× the bottom radius (was 3.2×), ~0.56·s tall.
-    270 triangles, one material besides the bark."""
+    on top and the trunk showing at the foot — stout, height ≈ 2.3× the bottom radius (was 3.2×), ~0.565·s tall.
+    The bottom tier starts high (rim 0.225) and the tiers are packed tight above it, so a stub of brown trunk shows
+    under the skirt down to the close-zoom pitch of 40° (camera_rig.gd): the front rim has to clear
+    (0.24 − 0.05)·tan 40° ≈ 0.16, and the lowest crest of the rolled lip hangs at ≈ 0.19. Droop and lip shrink with the
+    tier radius, so every upper rim still hangs clear of the tier below (a deep-green band under each). 284
+    triangles (three 84-triangle tiers, the 20-triangle ball that plugs the top apex ring, a 12-triangle trunk), one
+    material besides the bark."""
     rnd = random.Random(seed)
     mt = mt or pine_paint()
     bark = bark or tex("wood", BARK_SOFT)
-    soft_trunk(x, y, [(-0.02 * s, 0.05 * s), (0.26 * s, 0.036 * s)], bark)
-    tiers = [(0.24, 0.125, 0.33), (0.19, 0.24, 0.435), (0.13, 0.345, 0.515)]
-    for i, (r, z0, z1) in enumerate(tiers):
+    soft_trunk(x, y, [(-0.02 * s, 0.055 * s), (0.34 * s, 0.036 * s)], bark)
+    # (radius, rim z0, apex z1, droop, lip); the apex of a lower tier sits inside the tier above
+    tiers = [(0.24, 0.25, 0.40, 0.01, 0.015), (0.19, 0.325, 0.475, 0.016, 0.016), (0.13, 0.41, 0.525, 0.011, 0.011)]
+    for i, (r, z0, z1, droop, lip) in enumerate(tiers):
         ox, oy = rnd.uniform(-0.008, 0.008) * s, rnd.uniform(-0.008, 0.008) * s
         top = i == len(tiers) - 1
-        soft_tier(x + ox, y + oy, z0 * s, z1 * s, r * s, mt, seed * 10 + i, droop=0.02 * s, lip=0.02 * s, cap=top)
-    # the ball on the apex (tip 0.9: it catches the light like the rims)
-    c = Vector((x + ox, y + oy, (tiers[-1][2] + 0.012) * s))
+        # the top tier's apex ring is smaller (0.15·r ≈ 0.02) so the ball below covers it: no cap needed
+        soft_tier(x + ox, y + oy, z0 * s, z1 * s, r * s, mt, seed * 10 + i, droop=droop * s, lip=lip * s,
+                  apex=0.15 if top else 0.2)
+    # the ball on the apex (tip 0.9: it catches the light like the rims); 0.01 above the apex ring, its section there
+    # (≥ 0.021 even between the icosahedron's vertices) is wider than the ring (0.0195)
+    c = Vector((x + ox, y + oy, (tiers[-1][2] + 0.01) * s))
     ball = soft_ball(0.03 * s, c, mt, sub=1)
     tip_attrs(ball, [0.9] * len(ball.data.vertices), 0.9, 0.0)
 
@@ -602,7 +612,8 @@ def crown_paint(dark, mid, light, deep, centre, radius):
         vm.inputs[1].default_value = centre
         occ = p.step(p.math("DIVIDE", vm.outputs["Value"], radius), 0.65, 1.0)
         col = p.mix(p.math("MULTIPLY", p.step(p.noise(5.0, 2.0), 0.45, 0.75), 0.45), dark, mid)
-        top = p.math("MULTIPLY", p.step(p.nz, 0.65, 0.95), p.step(p.noise(4.0, 2.0), 0.3, 0.6))
+        # the cap starts at nz 0.7 (was 0.65): cushion() tilts the normals up by 0.35, which would widen the lit cap
+        top = p.math("MULTIPLY", p.step(p.nz, 0.7, 0.97), p.step(p.noise(4.0, 2.0), 0.3, 0.6))
         col = p.mix(p.math("MULTIPLY", top, p.math("MULTIPLY", occ, 0.45)), col, light)
         col = p.mix(p.math("MULTIPLY", p.math("SUBTRACT", 1.0, occ), 0.9), col, deep)
         col = p.mix(p.math("MULTIPLY", p.step(p.nz, -0.2, -0.8), 0.5), col, deep)
@@ -635,11 +646,16 @@ class Lump:
         return d < 1e-9 or d < margin * self.k(q / d)
 
 
-def cushion(lumps, mt, proxy, sub=2, ground=-0.004):
+def cushion(lumps, mt, proxy, sub=2, ground=-0.004, w_proxy=0.5, w_lump=0.5, w_up=0.35):
     """A crown of «Raivon Soft» (§6.8): the lumps' icospheres joined into one mesh with every face hidden inside
-    another lump or under the ground dropped (no overdraw, no wasted triangles), and all normals transferred from
-    one proxy ellipsoid (centre, (a, a, b)) enclosing the crown, so the crown shades as one cushion while its
-    silhouette keeps the lumps."""
+    another lump or under the ground dropped (no overdraw, no wasted triangles). Normals: mostly those of one proxy
+    ellipsoid (centre, (a, a, b)) enclosing the crown, so the crown shades as one cushion while its silhouette keeps
+    the lumps — blended half and half with each lump's own normal and tilted up: normalize(0.5·proxy + 0.5·lump +
+    0.35·up). With the proxy normal alone, a side lump that faces the camera reported a near-horizontal silhouette
+    normal (N·V ≈ 0) and took the full fresnel rim of soft_light (0.2 × sun, white) plus wrap light over its whole
+    face: it rendered as a pale, milky "ghost" lump (C* 27–30 next to 67–70). Blended, 3 % of the camera-facing
+    vertices keep a rim term above 0.06 at pitch 40° (15 % before; 0.4 % at 56°), and each lump still shades softly
+    into the next."""
     pc, pa = Vector(proxy[0]), Vector(proxy[1])
     us, fs = _ico(sub)
     verts, faces, normals = [], [], []
@@ -652,9 +668,14 @@ def cushion(lumps, mt, proxy, sub=2, ground=-0.004):
         remap = {i: len(verts) + n for n, i in enumerate(used)}
         verts.extend(pts[i] for i in used)
         faces.extend(tuple(remap[i] for i in f) for f in keep)
-    for p in verts:
+        for i in used:  # the lump's own (squashed-sphere) normal
+            u = us[i]
+            normals.append(Vector((u.x / lump.s.x, u.y / lump.s.y, u.z / lump.s.z)).normalized())
+    up = Vector((0.0, 0.0, 1.0))
+    for k, p in enumerate(verts):
         d = p - pc
-        normals.append(Vector((d.x / pa.x ** 2, d.y / pa.y ** 2, d.z / pa.z ** 2)))
+        n_p = Vector((d.x / pa.x ** 2, d.y / pa.y ** 2, d.z / pa.z ** 2)).normalized()
+        normals[k] = n_p * w_proxy + normals[k] * w_lump + up * w_up
     o = poly(verts, faces, [mt], flat_shade=False, name="crown")
     return soft_normals(o, normals)
 
@@ -684,20 +705,21 @@ def dome(c, r, n, mt, k=6):
 def lush_tree(x=0.0, y=0.0, s=1.15, seed=0):
     """«Raivon Soft» broadleaf (§6.8): a cushion crown of four merged clumps — three round the trunk and one on top —
     with the normals of one volume, on a stout trunk (≈ 23 % of the crown width) with a root flare. s = 1.15: the old
-    tree ×1.15 (crown ≈ 0.47 wide, 0.6 tall). ≤ 300 triangles."""
+    tree ×1.15 — crown ≈ 0.40 wide (old 0.33–0.35) and ≈ 0.59 tall. The side clumps sit closer in and are a little
+    smaller than the first soft build (0.46 wide, ×1.35), which merged the trees of a forest hex into one canopy."""
     rnd = random.Random(seed)
     cz = 0.33 * s
-    leaf = crown_paint(*LEAF_C, (x, y, cz), 0.2 * s)
+    leaf = crown_paint(*LEAF_C, (x, y, cz), 0.18 * s)
     bark = tex("wood", BARK_SOFT)
-    soft_trunk(x, y, [(-0.02 * s, 0.06 * s), (0.04 * s, 0.047 * s), (0.27 * s, 0.035 * s)], bark)
+    soft_trunk(x, y, [(-0.02 * s, 0.058 * s), (0.04 * s, 0.043 * s), (0.27 * s, 0.033 * s)], bark)
     lumps = []
     for k in range(3):
         a = -math.pi / 2 + k * math.tau / 3 + rnd.uniform(-0.2, 0.2)
-        d = rnd.uniform(0.085, 0.095) * s
+        d = rnd.uniform(0.07, 0.078) * s
         lumps.append(Lump((x + d * math.cos(a), y + d * math.sin(a), cz - rnd.uniform(0.0, 0.02) * s),
-                          rnd.uniform(0.125, 0.135) * s, seed=seed * 7 + k))
-    lumps.append(Lump((x + 0.01 * s, y + 0.015 * s, cz + 0.09 * s), 0.12 * s, seed=seed * 7 + 3))  # the top clump
-    cushion(lumps, leaf, ((x, y, cz + 0.02 * s), (0.24 * s, 0.24 * s, 0.21 * s)))
+                          rnd.uniform(0.112, 0.121) * s, seed=seed * 7 + k))
+    lumps.append(Lump((x + 0.01 * s, y + 0.012 * s, cz + 0.085 * s), 0.115 * s, seed=seed * 7 + 3))  # the top clump
+    cushion(lumps, leaf, ((x, y, cz + 0.02 * s), (0.21 * s, 0.21 * s, 0.2 * s)))
 
 
 def tree_round():

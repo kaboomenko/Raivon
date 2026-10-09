@@ -271,7 +271,8 @@ func _build_battle() -> void:
 	_battle = Control.new()
 	_battle.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_bottom.add_child(_battle)
-	_panel(_battle, Rect2(0, VH - 276, 640, 276), _style(PANEL, 16))
+	# up to y 1364: the hand covers the HUD's folder tabs (they reach 1370 with a dot) until s06 rebuilds this tray
+	_panel(_battle, Rect2(0, VH - 308, 640, 308), _style(PANEL, 16))
 	_energy_lbl = _at(_label("5", 26), _battle, Vector2(26, VH - 262)) as Label
 	var orb := _panel(_battle, Rect2(14, VH - 268, 46, 46), _style(Color(0.55, 0.3, 0.95), 23, Color(1, 1, 1, 0.9), 3), Control.MOUSE_FILTER_IGNORE)
 	_battle.move_child(orb, _battle.get_child_count() - 2)
@@ -1413,6 +1414,10 @@ func _fill_panel(kind: String, items: Array, builder: Callable) -> void:
 	for it in items:
 		var card: Control = builder.call(it)
 		_brow.add_child(card)
+		if card.has_meta("legacy_dx"):
+			for c in card.get_children():
+				if c is Control and not (c as Control).has_meta("card_btn"):
+					(c as Control).position.x += float(card.get_meta("legacy_dx"))
 		if card is Kit.KitCard:
 			ns = mini(ns, (card as Kit.KitCard).name_label.get_theme_font_size("font_size"))
 	for card in _brow.get_children():
@@ -1458,9 +1463,12 @@ func _army_card(it: Dictionary) -> Control:
 	var tex: Texture2D = load(pic) if ResourceLoader.exists(pic) else Kit.icon_tex("helmet")
 	var ready := clampf(float(it["str"]) / maxf(1.0, float(it["max"])), 0.0, 1.0)
 	var pct := roundi(ready * 100.0)
+	if it["refilling"]:  # «str» / «max» come rounded to thousands: a refilling army never reads 100 %
+		pct = mini(pct, 99)
+		ready = minf(ready, 0.99)
 	var tip := PackedStringArray([tr("army.tip.str") % [int(it["str"]), int(it["max"])], tr("army.tip.squads") % int(it["slots"]),
 		tr("army.tip.ready") % pct])
-	if it.has("upkeep"):
+	if int(it.get("upkeep", 0)) > 0:
 		tip.append(tr("army.tip.upkeep") % int(it["upkeep"]))
 	var opts := {"badge": str(int(it.get("num", 1))), "details": "\n".join(tip),
 		"art_bar": {"frac": ready, "role": "go" if ready >= 0.5 else ("gold" if ready >= 0.25 else "war")}}
@@ -1474,7 +1482,7 @@ func _army_card(it: Dictionary) -> Control:
 	if it["refilling"]:
 		# [ad] +29%: what the video gives (the word «Пополнить» does not fit an XS button beside the ad icon); the
 		# time to a full army instead once the game passes it
-		var cap := "+%d%%" % maxi(1, 100 - pct) if not it.has("refill_left") else fmt_time(int(it["refill_left"]))
+		var cap := "+%d%%" % (100 - pct) if not it.has("refill_left") else fmt_time(int(it["refill_left"]))
 		opts["cta"] = {"role": "go", "caption": cap, "icon": "ad", "cb": func(): army_action.emit(id, "refill")}
 		tip.append(tr("army.tip.refill"))
 		opts["details"] = "\n".join(tip)
@@ -1558,32 +1566,23 @@ func _fan(pics: Array) -> Control:
 		fr.position = Vector2(86.0 + k * 42.0 - 32.0, 8.0 + absf(k) * 6.0)
 		fr.pivot_offset = Vector2(32, 76)
 		fr.rotation_degrees = k * 8.0
-		var clip := Panel.new()  # the picture, rounded inside the frame
-		var csb := Kit.style(Kit.SKY_LOW, 8, 0, Kit.INK, 0, 0)
-		csb.set_corner_radius_all(5)  # concentric with the frame (8 − 3)
-		csb.set_meta("kit_kind", "")
-		clip.add_theme_stylebox_override("panel", csb)
-		clip.position = Vector2(3, 3)
-		clip.size = Vector2(58, 70)
-		clip.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
-		clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		# the picture 3 px inside the frame (not clipped round: the art window already clips its children, and
+		# Godot does not nest clip_children)
 		var p: Control = pics[i]
-		p.position = Vector2.ZERO
-		p.size = clip.size
-		clip.add_child(p)
-		fr.add_child(clip)
+		p.position = Vector2(3, 3)
+		p.size = Vector2(58, 70)
+		fr.add_child(p)
 		fan.add_child(fr)
 	return fan
 
 
-## A card of a tab not rebuilt on Kit.card yet (s07): the row's 172 px height; a 150 px card is centred in 180 (its
-## XS button, placed by _card_button, already spans the new width).
+## A card of a tab not rebuilt on Kit.card yet (s07): the row's 172 px height; a 150 px card is widened to 180 and
+## its content centred (_fill_panel moves it once the card is in the tree: moved earlier, an autowrapped label takes
+## its one-line width for good). Its XS button, placed by _card_button, already spans the new width.
 func _legacy_card(card: Control) -> Control:
 	var w := card.custom_minimum_size.x
 	if w < 180.0:
-		for c in card.get_children():
-			if c is Control and not (c as Control).has_meta("card_btn"):
-				(c as Control).position.x += (180.0 - w) * 0.5
+		card.set_meta("legacy_dx", (180.0 - w) * 0.5)
 		card.custom_minimum_size.x = 180.0
 	card.custom_minimum_size.y = 172.0
 	card.size_flags_vertical = Control.SIZE_SHRINK_BEGIN

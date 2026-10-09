@@ -659,7 +659,7 @@ func _style_tab(key: String, sel: bool) -> void:
 	var l: Label = tab_labels[key]
 	l.position = Vector2(4, 1437.0 - t.position.y)  # one baseline for every tab, clear of the tray's edge
 	l.size = Vector2(112, 28)
-	l.modulate.a = 1.0 if sel else 0.85
+	l.add_theme_color_override("font_color", Kit.TEXT if sel else Kit.alpha(Kit.TEXT, 0.85))  # unselected: white α 0.85
 	t.queue_redraw()
 
 
@@ -670,9 +670,11 @@ func _fit_tabs() -> void:
 		s = mini(s, Kit.fit_size((tab_labels[k] as Label).text, 24, 112.0, "d800", 22))
 	for k in tab_labels:
 		var l: Label = tab_labels[k]
+		var col := l.get_theme_color("font_color")
 		Kit.style_label(l, s, Kit.TEXT, true)
 		l.add_theme_font_override("font", Kit.font("d800"))
 		l.add_theme_font_size_override("font_size", s)
+		l.add_theme_color_override("font_color", col)  # keeps the selected / unselected alpha
 
 
 ## A dot on a tab's top-right corner (§4.5): red «new», green with a number «can act» (free builders on Buildings).

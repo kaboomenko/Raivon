@@ -555,6 +555,11 @@ const BIOME_GROUND := {
 	"steppe": {"plain": Color("c8bc66"), "forest": Color("93a64e"), "hills": Color("cba56a")},
 	"badlands": {"plain": Color("d28f5a"), "forest": Color("b08d52"), "hills": Color("c97a4e"), "mountain": Color("a46e55")},
 }
+## One factor on every land colour above (soft_style_plan P3 item 8; hues kept). terrain.gdshader is plain Lambert
+## (the wrap flattened the shadows), which lights the lawn ≈ 1.3× brighter in linear terms than the wrap did: at 1.0
+## the open meadow measured L* 75 and the brightest lawn L* 83, over the 59–75 of §6.3. At 0.92 the open meadow
+## measures ≈ #8FB746, L* 70, hue 80–82° (z03), and the shadows keep a ≈ 2.15 : 1 deep core.
+const GROUND_K := 0.92
 const WATER_BED := Color(0.12, 0.36, 0.52)
 ## The tile sides (§6.3): soil at the top, darker at −0.4, a cool slate deeper down (never black).
 const WALL_TOP := Color("b58a5e")
@@ -589,7 +594,7 @@ func _build_terrain() -> void:
 			col = WATER_BED
 		else:
 			var pal: Dictionary = BIOME_GROUND.get(String(c.get("biome", "meadow")), {})
-			col = pal.get(String(c["terrain"]), col)
+			col = pal.get(String(c["terrain"]), col) * GROUND_K
 		# one draw per cell, as the old per-hex shade had: the props that follow share this RNG, and dropping the
 		# draw would shift its sequence and move every prop on the map
 		rng.randf()

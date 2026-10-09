@@ -2026,8 +2026,9 @@ static func card(art_tex: Texture2D, title: String, opts := {}) -> KitCard:
 	var bar_d: Dictionary = opts.get("art_bar", {})
 	var nw := w - 12.0
 	var ns := fit_size(title, 26, nw, "d900", 22)
-	var two := text_w(title, ns, "d900") > nw
-	if two:
+	var long := text_w(title, ns, "d900") > nw
+	var two := long and title.strip_edges().contains(" ")  # two lines at 22; one long word is cut instead
+	if long:
 		ns = 22
 	var name_bottom := h - (28.0 if not bar_d.is_empty() else 3.0)
 	var sh := minf(h, (h - name_bottom) + (ns * 1.25) * (2.0 if two else 1.0) + 18.0)
@@ -2039,9 +2040,12 @@ static func card(art_tex: Texture2D, title: String, opts := {}) -> KitCard:
 	nl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	nl.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
 	if two:
-		nl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		nl.autowrap_mode = TextServer.AUTOWRAP_WORD
 		nl.max_lines_visible = 2
 		nl.add_theme_constant_override("line_spacing", -4)
+	elif long:
+		nl.clip_text = true
+		nl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	nl.position = Vector2(6, name_bottom - 64.0)
 	nl.size = Vector2(nw, 64.0)
 	aw.add_child(nl)

@@ -8,7 +8,11 @@ shader_type spatial;
 //     (1.0 close … 0.45 far). Never emissive, never a line.
 // The tile sides (soil walls down to the water and the world's edge) only take their vertex colour and a faint
 // speckle: no rock strata.
-render_mode cull_back, diffuse_lambert_wrap;
+// Plain Lambert, not diffuse_lambert_wrap: on flat ground (N·L ≈ 0.82 everywhere) the wrap shapes nothing and only
+// cuts the sun's share against the ambient, 0.77× in linear terms at ROUGHNESS 0.95, which flattens the received
+// shadows below the §6.4 ≈ 2.3 : 1 (P3 review: deep core 2.13 → 1.74 close). The lawn's brightness is set by the
+// vertex colours instead (map_view.GROUND_K).
+render_mode cull_back;
 
 #include "res://shaders/hex_sdf.gdshaderinc"
 
@@ -43,11 +47,12 @@ void fragment() {
 	// fine speckle, only up close
 	c *= mix(1.0, mix(0.96, 1.04, fine), fine_k);
 	// soft rounded hex seams on the land tops (the water bed at y −0.2 is left out): a groove at the edge plus a
-	// slight cushion towards it
+	// slight cushion towards it. The groove is 0.10 wide and 11 % deep, so a neutral hex still reads as a soft cell
+	// up close (at 0.07 / 9 % it was lost among the patches); at strat seam_k 0.45 keeps it faint.
 	vec2 l = hex_local(wpos.xz);
 	float dh = sd_round_hex(l, HEX_IN, SOFT_R);
 	float land = top * step(-0.05, wpos.y);
-	c *= 1.0 - land * seam_k * (0.09 * smoothstep(-0.07, -0.01, dh) + 0.035 * smoothstep(-0.45, -0.07, dh));
+	c *= 1.0 - land * seam_k * (0.11 * smoothstep(-0.10, -0.01, dh) + 0.035 * smoothstep(-0.45, -0.10, dh));
 	// the tile sides: their vertex colour (soil -> deep slate) with a faint speckle
 	c = mix(base * (0.95 + 0.1 * fine), c, top);
 	ALBEDO = c;
