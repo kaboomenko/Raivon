@@ -1482,49 +1482,268 @@ def car(x, y, rz, color):
     build_at(b, x, y, rz)
 
 
+def mansard(w, d, h, loc, roof_c, inset=0.045, n=3, oh=0.012, ct=0.009):
+    """A mansard roof over a w × d block (loc = centre of the wall top): four steep slopes laid in slate courses
+    like the gable roofs (course_rows), dark hip lines, and a flat lead top behind a pale zinc rim (the Paris and
+    Petersburg tenements of the industrial age). Returns the height of the flat top."""
+    x0, y0, z0 = loc
+    W, D = w / 2 + oh, d / 2 + oh
+    Wi, Di = w / 2 - inset, d / 2 - inset
+    b = [(x0 - W, y0 - D, z0), (x0 + W, y0 - D, z0), (x0 + W, y0 + D, z0), (x0 - W, y0 + D, z0)]
+    t = [(x0 - Wi, y0 - Di, z0 + h), (x0 + Wi, y0 - Di, z0 + h), (x0 + Wi, y0 + Di, z0 + h), (x0 - Wi, y0 + Di, z0 + h)]
+    mesh_obj(b + t, [(0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)], tex("roof", shade(roof_c, 0.8), 1.6))
+    MBs, BUTT = [_MB(), _MB()], _MB()
+    for i in range(4):
+        course_rows(MBs, b[i], b[(i + 1) % 4], t[(i + 1) % 4], t[i], n, ct, butt=BUTT, band=0.8)
+    for mb, mt in zip(MBs, _roof_mats(roof_c, 0.84)):
+        mb.obj(mt, "mansard_courses")
+    BUTT.obj(tex("roof", shade(roof_c, 0.68), 1.6), "mansard_butts")
+    lift = lambda p: (p[0], p[1], p[2] + ct * 1.1)  # noqa: E731
+    tm = flat("roof_trim", ROOF_TRIM, 0.8)
+    for i in range(4):
+        beam(lift(b[i]), lift(t[i]), 0.0095, tm)
+    bx((2 * Wi + 0.012, 2 * Di + 0.012, 0.012), (x0, y0, z0 + h + 0.004), flat("zinc", "#aeb3b8", 0.5), bev=0)
+    bx((2 * Wi - 0.01, 2 * Di - 0.01, 0.006), (x0, y0, z0 + h + 0.008), flat("tar", "#4a4b50", 0.9), bev=0)
+    return z0 + h + 0.01
+
+
+def tenement5(w, d, floors, wall, team, fh=0.11, brick=False, dormers=2, smoke=True, shop=True):
+    """An industrial-age tenement (DL5): a stucco or brick block over a ground floor of shops under team awnings,
+    a pale string course and cornice, a slate mansard with lit dormers on the front and two brick stacks (one
+    smoking: the lived-in chimneys of reference frame 3)."""
+    H = floors * fh + 0.03
+    f = facade(wall, WIN_D, 0.065, fh, 0.45, 0.52, lit_p=0.3, z0=0.03, brick=brick, brick_scale=34.0)
+    bx((w, d, H), (0, 0, H / 2), f, bev=0)
+    wh = flat("cornice", WHITE, 0.6)
+    bx((w + 0.012, d + 0.012, 0.014), (0, 0, fh + 0.03), wh, bev=0)  # string course over the shops
+    bx((w + 0.026, d + 0.026, 0.022), (0, 0, H), wh, bev=0)  # cornice
+    roof_c = slate(team, 1.0)
+    rh = 0.1
+    mansard(w, d, rh, (0, 0, H + 0.011), roof_c, inset=0.045, n=3)
+    # dormers on the front slope: a stucco cheek box with a lit window under a little slate gable
+    zd = H + 0.011 + rh * 0.42
+    yf = -(d / 2 + 0.014)  # the dormer cheeks stand on the eave line, proud of the steep slope
+    for i in range(dormers):
+        x = (i + 0.5) / dormers * w * 0.8 - w * 0.4
+        bx((0.044, 0.06, 0.05), (x, yf + 0.03, zd), flat("dormer", shade(wall, 1.1), 0.8), bev=0)
+        bx((0.026, 0.012, 0.03), (x, yf - 0.002, zd - 0.002), win_lit(), bev=0)
+        wedge(0.068, 0.058, 0.026, (x, yf + 0.03, zd + 0.025), tex("roof", roof_c, 1.6), math.pi / 2)
+    tops = []
+    for sx in (-1, 1):
+        tops.append((sx * w * 0.3, d * 0.16, chimney(sx * w * 0.3, d * 0.16, H + 0.04, H + 0.17, 0.034, stone(BRICK, 1.4))))
+    if smoke:
+        smoke_at(*tops[0])
+    if shop:  # ground-floor shop window and a team awning on the street front
+        bx((w * 0.78, 0.012, 0.05), (0, -(d / 2 + 0.004), 0.06), win_lit(), bev=0)
+        bx((w * 0.86, 0.07, 0.012), (0, -(d / 2 + 0.03), 0.11), flat("awn" + team, team, 0.7), bev=0, rot=(-0.38, 0, 0))
+        bx((w * 0.86, 0.012, 0.016), (0, -(d / 2 + 0.064), 0.098), flat("awn_hem", WHITE, 0.7), bev=0)
+    return H
+
+
+def sawtooth_roof(w, d, teeth, h, loc, roof_c, gable_mt, glass_mt):
+    """A factory's sawtooth roof over a w × d hall: `teeth` ridges running front to back (the jagged profile
+    shows on the gable ends towards the camera), each a slate slope rising to a dark ridge with a tall glazed
+    north light dropping from it to the next tooth."""
+    x0, y0, z0 = loc
+    step = w / teeth
+    yf, yk = y0 - d / 2, y0 + d / 2
+    gl, rf, en = _MB(), [_MB(), _MB()], _MB()
+    BUTT = _MB()
+    for k in range(teeth):
+        xa, xb = x0 - w / 2 + k * step, x0 - w / 2 + (k + 1) * step
+        C, D = (xb, yk, z0 + h), (xb, yf, z0 + h)
+        gl.face([(xb, yf, z0), (xb, yk, z0), C, D], (1, 0, 0))
+        en.face([(xa, yf, z0), (xb, yf, z0), D], (0, -1, 0))
+        en.face([(xa, yk, z0), (xb, yk, z0), C], (0, 1, 0))
+        # the slope, laid in three courses from its low edge up to the ridge over the glazing
+        course_rows(rf, (xa, yf, z0), (xa, yk, z0), C, D, 3, 0.008, butt=BUTT, band=0.8)
+        beam((xb, yf - 0.008, z0 + h + 0.004), (xb, yk + 0.008, z0 + h + 0.004), 0.012,
+             flat("roof_trim", ROOF_TRIM, 0.8))
+    gl.obj(glass_mt, "north_lights")
+    en.obj(gable_mt, "saw_ends")
+    for mb, mt in zip(rf, _roof_mats(roof_c, 0.86)):
+        mb.obj(mt, "saw_courses")
+    BUTT.obj(tex("roof", shade(roof_c, 0.68), 1.6), "saw_butts")
+
+
+def tram(team):
+    """A horse-era city tram (DL5): team-coloured lower body, a cream upper band with a lit window strip, a dark
+    roof with a clerestory, open end platforms."""
+    tc = flat("tram" + team, shade(team, 0.85), 0.5)
+    bx((0.2, 0.058, 0.044), (0, 0, 0.04), tc, bev=0)
+    bx((0.2, 0.06, 0.034), (0, 0, 0.079), flat("tram_cream", "#efe3c6", 0.6), bev=0)
+    bx((0.17, 0.064, 0.02), (0, 0, 0.08), win_lit(), bev=0)
+    bx((0.25, 0.07, 0.012), (0, 0, 0.102), flat("tram_roof", "#3a3c40", 0.7), bev=0)
+    bx((0.14, 0.032, 0.014), (0, 0, 0.114), flat("tram_roof", "#3a3c40", 0.7), bev=0)
+    bx((0.25, 0.05, 0.012), (0, 0, 0.018), flat("tyre", "#1f1f21", 0.9), bev=0)  # underframe and wheels
+
+
+def poster_column(x, y):
+    """A Litfaß advertising column: a dark green drum with a band of bright posters and a little dome cap."""
+    cy(0.028, 0.012, (x, y, 0.006), flat("lamp_post", "#2f3237", 0.5), 8)
+    cy(0.024, 0.13, (x, y, 0.075), flat("column_g", "#2f5a3e", 0.6), 8)
+    cy(0.0255, 0.06, (x, y, 0.085), tex("plaster", "#e8d9a8", 3.0), 8)
+    cn(0.03, 0.035, (x, y, 0.157), flat("column_g", "#2f5a3e", 0.6), 8)
+
+
 def city_dl5(team):
+    """The industrial town (DL5): a brick works with a sawtooth north-light hall, two smoking stacks and a water
+    tower behind a cobbled street with tram rails and a team tram; slate-mansard tenements with lit dormers and
+    shops under team awnings; gas lamps, an advertising column, a carter and crates."""
     pad(0.76, stone("#8f8a82", 2.2), 0.012, 14, 0.03, 5)
+    roof_c = slate(team, 1.0)
 
     def factory():
-        f = facade(BRICK, "#3b4552", 0.085, 0.13, 0.5, 0.6, lit="#ffd27a", lit_p=0.35, brick=True)
-        bx((0.62, 0.3, 0.24), (0, 0, 0.12), f, bev=0.01)
+        f = facade(BRICK, "#3b4552", 0.085, 0.13, 0.5, 0.6, lit="#ffd27a", lit_p=0.35, brick=True, pil=2,
+                   pil_c=shade(BRICK, 0.72))
+        bx((0.62, 0.3, 0.24), (0, 0, 0.12), f, bev=0)
         bx((0.64, 0.32, 0.02), (0, 0, 0.24), flat("cornice", "#d8cfc0", 0.6), bev=0)
-        for i in range(3):
-            prism_roof("saw", 0.3, 0.2, 0.1, (-0.2 + i * 0.205, 0, 0.245), tex("roof", slate(team, 0.94)), overhang=0.01, rot_z=math.pi / 2)
+        glass = facade("#3b4552", "#7fa7c4", 0.035, 0.026, 0.72, 0.7, lit="#ffd27a", lit_p=0.3)
+        sawtooth_roof(0.6, 0.3, 3, 0.12, (0, 0, 0.25), roof_c, stone(BRICK, 1.4), glass)
         cm = stone("#9a3d30", 2.0)
         for (x, y, h) in ((-0.2, 0.2, 0.86), (0.06, 0.21, 0.72)):
+            bx((0.13, 0.13, 0.08), (x, y, 0.04), stone("#7d3329", 2.0), bev=0)  # square base
             cy(0.055, h, (x, y, h / 2), cm, 10, r2=0.038)
             cy(0.045, 0.04, (x, y, h * 0.72), flat("band" + team, team, 0.6), 10)
-            cy(0.044, 0.04, (x, y, h - 0.01), flat("soot", "#2b2726", 0.9), 10)
-        bx((0.08, 0.016, 0.13), (-0.12, -0.155, 0.065), tex("wood", WOOD_D), bev=0)
-        bx((0.08, 0.016, 0.13), (0.12, -0.155, 0.065), tex("wood", WOOD_D), bev=0)
-    build_at(factory, -0.04, 0.33)
+            cy(0.05, 0.05, (x, y, h - 0.02), flat("soot", "#2b2726", 0.9), 10, r2=0.044)  # corbelled sooty crown
+            smoke_at(x, y, h + 0.01)
+        for sx in (-1, 1):  # the gates, with a team signboard over them
+            bx((0.08, 0.016, 0.13), (sx * 0.12, -0.155, 0.065), tex("wood", WOOD_D), bev=0)
+            bx((0.1, 0.012, 0.012), (sx * 0.12, -0.158, 0.136), flat("cornice", "#d8cfc0", 0.6), bev=0)
+        bx((0.2, 0.012, 0.04), (0, -0.158, 0.19), flat("sign" + team, shade(team, 0.8), 0.6), bev=0)
+        bx((0.14, 0.014, 0.01), (0, -0.16, 0.19), flat("emblem", WHITE, 0.6), bev=0)
+    build_at(factory, -0.04, 0.36)
 
     def tank():
-        bx((0.16, 0.16, 0.3), (0, 0, 0.15), facade(BRICK, "#3b4552", 0.08, 0.13, 0.4, 0.5, lit_p=0.3, brick=True), bev=0.008)
+        bx((0.16, 0.16, 0.3), (0, 0, 0.15), facade(BRICK, "#3b4552", 0.08, 0.13, 0.4, 0.5, lit_p=0.3, brick=True), bev=0)
         for sx in (-1, 1):
             for sy in (-1, 1):
                 cy(0.01, 0.12, (sx * 0.05, sy * 0.05, 0.36), flat("iron", "#4a4d52", 0.6), 6)
-        cy(0.08, 0.1, (0, 0, 0.47), flat("tankc", "#6d7278", 0.6), 12)
-        cn(0.085, 0.05, (0, 0, 0.545), flat("roofi" + team, shade(team, 0.75), 0.6), 12)
-    build_at(tank, 0.45, 0.16)
-    build_at(lambda: tenement(0.26, 0.24, 4, "#dcb98a", team), -0.48, -0.08, 0.12)
-    build_at(lambda: tenement(0.24, 0.22, 4, "#c9bba8", team), 0.44, -0.2, -0.12)
-    build_at(lambda: tenement(0.3, 0.2, 3, "#e3c99c", team), -0.1, -0.46, 0.05)
+        cy(0.08, 0.1, (0, 0, 0.47), tex("wood", "#7a5a3c", 3.0), 12)  # a staved timber tank with iron hoops
+        for z in (0.44, 0.5):
+            cy(0.082, 0.008, (0, 0, z), flat("iron", "#4a4d52", 0.6), 12)
+        cn(0.088, 0.05, (0, 0, 0.545), tex("roof", roof_c, 1.6), 12)
+    build_at(tank, 0.47, 0.2)
+    # the cobbled street with kerbs and tram rails, and a team tram on it
+    bx((1.4, 0.15, 0.008), (0, 0.04, 0.014), stone("#6d6a66", 3.0), bev=0)
+    for sy in (-1, 1):
+        bx((1.4, 0.012, 0.012), (0, 0.04 + sy * 0.078, 0.016), flat("kerb", "#c9c3b6", 0.7), bev=0)
+        bx((1.38, 0.007, 0.006), (0, 0.04 + sy * 0.026, 0.02), flat("rail", "#8a8f96", 0.4), bev=0)
+    build_at(lambda: tram(team), -0.1, 0.04)
+    build_at(lambda: tenement5(0.26, 0.24, 4, "#dcb98a", team), -0.47, -0.2, 0.12)
+    build_at(lambda: tenement5(0.24, 0.22, 4, "#b8634e", team, brick=True, smoke=False), 0.45, -0.24, -0.12)
+    build_at(lambda: tenement5(0.3, 0.2, 3, "#e3c99c", team, dormers=3), -0.04, -0.5, 0.05)
     crate = tex("wood", WOOD_L)
-    for (x, y) in ((0.2, -0.47), (0.25, -0.43), (0.22, -0.52)):
-        bx((0.05, 0.05, 0.05), (x, y, 0.025), crate, bev=0.005)
-    flagpole(0.2, 0.06, 0.55, team, 0.14)
-    for (x, y) in ((-0.28, -0.24), (0.24, -0.3), (0.1, 0.0), (-0.42, 0.24)):  # gas lamps along the yard
+    for (x, y) in ((0.24, -0.52), (0.29, -0.48), (0.26, -0.57)):
+        bx((0.05, 0.05, 0.05), (x, y, 0.025), crate, bev=0)
+    barrel(0.2, -0.46)
+    flagpole(0.2, -0.1, 0.55, team, 0.14)
+    for (x, y) in ((-0.42, 0.13), (0.1, -0.04), (0.2, 0.13), (0.55, -0.05), (-0.2, -0.3)):  # gas lamps
         street_lamp(x, y, 0.2)
-    build_at(lambda: cart(team, "sacks"), 0.02, -0.2, 0.4)  # a carter at the factory gate
+    poster_column(-0.24, -0.08)
+    tree(0.06, -0.24, 0.8)
+    build_at(lambda: cart(team, "sacks"), 0.26, -0.3, 0.4)  # a carter on the way to the works
+
+
+def panel_block6(w, d, floors, team, fh=0.088, wall=CONC, stacks=(-0.3, 0.1, 0.36), tank=True, mural=0):
+    """A mid-century panel block (DL6): the window grid on a concrete box over a dark plinth, stacks of balconies
+    down the front (pale parapets over shadowed loggias, some lit), a team stair-well stripe over the entrance
+    canopy, and the roof kit of the era: parapet, lift machine room, a water tank and TV aerials."""
+    H = floors * fh + 0.03
+    bx((w, d, H), (0, 0, H / 2), facade(wall, "#3a4656", 0.058, fh, 0.55, 0.5, lit="#ffe08a", lit_p=0.25, z0=0.03),
+       bev=0)
+    dk = flat("parapet", CONC_D)
+    bx((w + 0.008, d + 0.008, 0.03), (0, 0, 0.015), flat("plinth6", "#6f6c67", 0.8), bev=0)
+    bx((w + 0.012, d + 0.012, 0.02), (0, 0, H), dk, bev=0)
+    bx((w - 0.012, d - 0.012, 0.004), (0, 0, H + 0.0105), flat("tar", "#4a4b50", 0.9), bev=0)
+    # balcony stacks: one box each, the parapet / loggia bands come from the facade texture
+    loggia = facade("#ece7dc", "#4d5866", 1.0, fh, 1.0, 0.42, lit="#ffd98a", lit_p=0.18, z0=0.03 + fh * 0.62)
+    for u in stacks:
+        bx((0.07, 0.026, H - fh - 0.04), (u * w, -(d / 2 + 0.013), (H + fh + 0.03) / 2), loggia, bev=0)
+    tc = flat("stripe" + team, team, 0.6)
+    xs = -w * 0.08
+    bx((0.04, 0.014, H - 0.06), (xs, -(d / 2 + 0.004), H / 2 + 0.02), tc, bev=0)
+    bx((0.08, 0.05, 0.012), (xs, -(d / 2 + 0.025), 0.085), dk, bev=0)
+    bx((0.03, 0.012, 0.05), (xs, -(d / 2 + 0.006), 0.045), tex("wood", WOOD_D, 3.0), bev=0)  # the entrance door
+    bx((0.09, 0.07, 0.06), (w * 0.25, 0, H + 0.04), dk, bev=0)  # lift machine room
+    if mural:  # a mosaic on the blank end wall at local x = mural · w/2: a team panel with a pale emblem
+        xm = mural * (w / 2 + 0.004)
+        bx((0.012, d * 0.62, H * 0.55), (xm, 0, H * 0.58), flat("mural" + team, shade(team, 0.85), 0.6), bev=0)
+        bx((0.016, d * 0.26, d * 0.26), (xm + mural * 0.002, 0, H * 0.62), flat("emblem", WHITE, 0.6), bev=0,
+           rot=(math.pi / 4, 0, 0))
+        bx((0.016, d * 0.5, 0.012), (xm + mural * 0.002, 0, H * 0.36), flat("emblem", WHITE, 0.6), bev=0)
+    if tank:  # a water tank on a steel stand
+        bx((0.05, 0.05, 0.03), (-w * 0.3, 0.0, H + 0.025), flat("iron", "#4a4d52", 0.6), bev=0)
+        cy(0.034, 0.05, (-w * 0.3, 0.0, H + 0.065), flat("tank6", "#8d949b", 0.5), 8)
+        cn(0.036, 0.018, (-w * 0.3, 0.0, H + 0.099), flat("tank6", "#8d949b", 0.5), 8)
+    mast = flat("mast", "#d0d4da", 0.5)
+    for k, u in enumerate((0.05, 0.4)):  # TV aerials: a pole and two crossbars
+        x = u * w * (1 if k else -1)
+        h = 0.09 + 0.02 * k
+        rod((x, d * 0.2, H + 0.01), (x, d * 0.2, H + 0.01 + h), 0.003, mast, n=4)
+        for zb, lb in ((h * 0.75, 0.05), (h * 0.95, 0.035)):
+            bx((lb, 0.004, 0.004), (x, d * 0.2, H + 0.01 + zb), mast, bev=0)
+    return H
+
+
+def playground(team):
+    """A courtyard playground (DL6): a sandbox, a swing frame, a slide in the team colour, a little roundabout."""
+    wd = tex("wood", "#b07a44", 3.0)
+    bx((0.1, 0.1, 0.02), (-0.12, 0.0, 0.016), wd, bev=0)
+    bx((0.084, 0.084, 0.022), (-0.12, 0.0, 0.017), flat("sand", "#e6cf8f", 0.95), bev=0)
+    red = flat("play_red", "#d8443a", 0.6)
+    yel = flat("play_yel", "#f2c230", 0.6)
+    for sx in (-1, 1):  # swing frame: two A-legs and a top bar, two seats on chains
+        for sy in (-1, 1):
+            beam((sx * 0.06, sy * 0.03, 0.006), (sx * 0.06, 0.0, 0.11), 0.007, red)
+    beam((-0.064, 0.0, 0.11), (0.064, 0.0, 0.11), 0.008, red)
+    for x in (-0.025, 0.025):
+        bx((0.003, 0.003, 0.06), (x, 0.0, 0.08), flat("iron", "#4a4d52", 0.6), bev=0)
+        bx((0.022, 0.014, 0.005), (x, 0.0, 0.05), yel, bev=0)
+    tc = flat("slide" + team, shade(team, 1.1), 0.5)
+    bx((0.03, 0.03, 0.09), (0.13, 0.03, 0.045), yel, bev=0)  # slide tower
+    beam((0.13, 0.016, 0.09), (0.13, -0.08, 0.012), 0.024, tc)  # the slide
+    cy(0.032, 0.008, (0.04, -0.07, 0.018), tc, 10)  # roundabout
+    cy(0.004, 0.04, (0.04, -0.07, 0.04), yel, 4)
+
+
+def bus(team):
+    """A mid-century bus in the team colour: cream window band, lit windows, a pale roof."""
+    bx((0.17, 0.05, 0.04), (0, 0, 0.032), flat("bus" + team, shade(team, 0.9), 0.5), bev=0)
+    bx((0.15, 0.052, 0.024), (0.006, 0, 0.064), win_lit(), bev=0)
+    bx((0.17, 0.05, 0.012), (0, 0, 0.082), flat("bus_roof", "#e9e4d8", 0.6), bev=0)
+    bx((0.17, 0.04, 0.012), (0, 0, 0.011), flat("tyre", "#1f1f21", 0.9), bev=0)
 
 
 def city_dl6(team):
+    """The mid-century district (DL6): panel blocks with balcony stacks and roof kit round a green courtyard with a
+    playground, trees and benches, a road with lane markings, parked cars and a team bus, the station and rail line."""
     pad(0.78, flat("asph", ASPH, 0.9), 0.012, 14, 0.0, 6)
-    build_at(lambda: panel_block(0.64, 0.16, 9, team), 0.0, 0.44)
-    build_at(lambda: panel_block(0.44, 0.16, 5, team, wall="#d6cfc2"), -0.5, -0.02, math.pi / 2)
-    build_at(lambda: panel_block(0.44, 0.16, 6, team, wall="#cfd3d6"), 0.5, 0.02, math.pi / 2)
+    build_at(lambda: panel_block6(0.64, 0.16, 9, team), 0.0, 0.44)
+    build_at(lambda: panel_block6(0.44, 0.16, 5, team, wall="#d6cfc2", stacks=(-0.25, 0.25), mural=-1), -0.5, -0.02,
+             math.pi / 2)
+    build_at(lambda: panel_block6(0.44, 0.16, 6, team, wall="#cfd3d6", stacks=(-0.25, 0.25), mural=1), 0.5, 0.02,
+             -math.pi / 2)
+    for sx in (-1, 1):  # lawns with a tree and a hedge in the front corners
+        bx((0.22, 0.13, 0.006), (sx * 0.5, -0.36, 0.015), tex("plaster", "#5f9e3c", 2.0), bev=0)
+        bx((0.2, 0.022, 0.03), (sx * 0.5, -0.305, 0.03), flat("hedge", "#2f6a2c", 0.85), bev=0)
+        tree(sx * 0.54, -0.38, 0.8)
+    # the courtyard: a lawn with a path cross, a playground, trees and benches
+    bx((0.68, 0.26, 0.006), (0, 0.205, 0.015), tex("plaster", "#5f9e3c", 2.0), bev=0)
+    paving = flat("paving6", "#bdb7aa", 0.8)
+    bx((0.68, 0.035, 0.004), (0, 0.205, 0.019), paving, bev=0)
+    bx((0.035, 0.26, 0.004), (-0.06, 0.205, 0.0195), paving, bev=0)
+    build_at(lambda: playground(team), 0.14, 0.23)
+    for (x, y, s_) in ((-0.28, 0.27, 0.85), (-0.2, 0.12, 0.75), (0.31, 0.12, 0.8), (-0.06, 0.38, 0.0)):
+        if s_:
+            tree(x, y, s_)
+    for (x, y) in ((-0.13, 0.15), (0.0, 0.27)):
+        bench(x, y, 0.0)
+    # the road in front of the blocks: kerbs and white lane dashes
+    bx((0.86, 0.006, 0.01), (0, 0.072, 0.017), flat("kerb", "#c9c3b6", 0.7), bev=0)
+    paint = flat("paint", "#e8e6df", 0.7)
+    for i in range(6):
+        bx((0.06, 0.008, 0.003), (-0.375 + i * 0.15, -0.02, 0.0135), paint, bev=0)
 
     def station():
         f = facade("#e6dcc4", "#3a4656", 0.06, 0.1, 0.5, 0.65, lit_p=0.4)
@@ -1544,79 +1763,226 @@ def city_dl6(team):
         bx((0.025, 0.11, 0.01), (-0.48 + i * 0.08, -0.52, 0.028), tex("wood", WOOD_D), bev=0)
     for sy in (-0.035, 0.035):
         bx((1.04, 0.011, 0.014), (0, -0.52 + sy, 0.036), flat("rail", "#6f747b", 0.4), bev=0)
-    tree(-0.2, 0.12, 0.9)
-    tree(0.22, 0.14, 0.85)
-    tree(0.0, 0.1, 0.75)
     flagpole(-0.32, -0.3, 0.45, team, 0.12)
-    for (x, y, rz, c) in ((-0.3, -0.02, 0.1, "#b8332a"), (-0.18, -0.04, 0.1, "#e8e4da"), (0.3, -0.03, -0.1, "#2f5f9a"),
-                          (0.18, 0.02, 3.0, "#3f6b3a")):  # parked cars in front of the blocks
+    for (x, y, rz, c) in ((-0.31, 0.04, 0.0, "#b8332a"), (-0.19, 0.04, 0.0, "#e8e4da"), (0.32, 0.04, math.pi, "#2f5f9a"),
+                          (0.26, -0.075, 0.0, "#3f6b3a")):  # parked at the kerb, one driving
         car(x, y, rz, c)
-    for (x, y) in ((-0.38, 0.22), (0.38, 0.24), (-0.1, -0.06), (0.1, -0.08)):
+    build_at(lambda: bus(team), -0.04, -0.075)
+    for (x, y) in ((-0.36, 0.09), (0.36, 0.09), (-0.16, -0.115), (0.12, -0.115)):
         street_lamp(x, y, 0.2, True)
 
 
+def glass_tower7(w, d, h, team, crown="mast", setback=None, tone=0):
+    """A contemporary glass tower (DL7): a granite step and a warm-lit lobby, a curtain wall framed by pale steel
+    corner fins and a centre mullion, cold light bands, an optional setback with a team band on its terrace, and a
+    crown: "mast" (plant room, mast, red beacon), "slant" (a sloped glass top), "helipad" (a pad with a white H on
+    a yellow rim) or "ac" (rooftop plant)."""
+    steel = flat("mullion", "#d9dde2", 0.4)
+    base = flat("plinth", "#5d6470", 0.6)
+    tc = flat("crown" + team, team, 0.5)
+    if tone == 0:
+        gl = facade("#33506b", GLASS, 0.05, 0.065, 0.8, 0.74, lit="#c8ecff", lit_p=0.3)
+    else:
+        gl = facade("#2a4256", "#5aa6cf", 0.045, 0.065, 0.78, 0.72, lit="#ffe6b0", lit_p=0.22)
+    band = glow("band", "#a8e6ff", 1.6)
+    bx((w + 0.04, d + 0.04, 0.03), (0, 0, 0.015), base, bev=0)
+    lobby = facade("#3a4048", "#ffe2a8", 0.05, 0.07, 0.86, 0.8, lit="#ffe2a8", lit_p=1.0, z0=0.03)
+    bx((w - 0.012, d - 0.012, 0.07), (0, 0, 0.065), lobby, bev=0)
+    bx((w * 0.5, 0.05, 0.008), (0, -(d / 2 + 0.02), 0.095), steel, bev=0)  # entrance canopy
+    z1 = h * setback if setback else h
+    parts = [(w, d, 0.1, z1)] + ([(w * 0.78, d * 0.78, z1, h)] if setback else [])
+    for (pw, pd, za, zb) in parts:
+        zm = (za + zb) / 2
+        bx((pw, pd, zb - za), (0, 0, zm), gl, bev=0)
+        for sx in (-1, 1):
+            for sy in (-1, 1):
+                bx((0.016, 0.016, zb - za), (sx * pw / 2, sy * pd / 2, zm), steel, bev=0)
+        bx((0.01, 0.012, zb - za - 0.02), (0, -(pd / 2 + 0.004), zm), steel, bev=0)
+        bx((pw + 0.016, pd + 0.016, 0.026), (0, 0, zb + 0.004), tc, bev=0)
+        z = za + 0.2
+        while z < zb - 0.08:
+            bx((pw + 0.01, pd + 0.01, 0.012), (0, 0, z), band, bev=0)
+            z += 0.2
+    pw, pd = parts[-1][0], parts[-1][1]
+    zt = h + 0.017
+    if crown == "mast":
+        bx((pw * 0.5, pd * 0.5, 0.06), (0, 0, zt + 0.03), base, bev=0)
+        rod((pw * 0.1, 0, zt + 0.06), (pw * 0.1, 0, zt + 0.5), 0.008, flat("mast", "#d0d4da", 0.5), r2=0.004, n=6)
+        ico(0.014, (pw * 0.1, 0, zt + 0.52), glow("beacon", "#ff4a3a", 4.0))
+    elif crown == "slant":
+        taper_box((pw, pd, 0.22), (0, 0, zt + 0.11), gl, (1.0, 0.15))
+    elif crown == "helipad":
+        r = min(pw, pd) * 0.44
+        cy(r + 0.01, 0.008, (0, 0, zt + 0.004), flat("pad_rim", "#f2c230", 0.6), 12)
+        cy(r, 0.012, (0, 0, zt + 0.006), flat("helipad", "#2e3138", 0.7), 12)
+        wm = flat("emblem", WHITE, 0.6)
+        for sx in (-1, 1):
+            bx((0.012, r * 0.9, 0.004), (sx * r * 0.3, 0, zt + 0.013), wm, bev=0)
+        bx((r * 0.6, 0.012, 0.004), (0, 0, zt + 0.013), wm, bev=0)
+        ico(0.01, (pw / 2 - 0.01, pd / 2 - 0.01, zt + 0.01), glow("beacon", "#ff4a3a", 4.0))
+    else:  # rooftop plant: AC boxes with dark fans and a duct
+        for (x, y) in ((-pw * 0.22, -pd * 0.18), (pw * 0.2, -pd * 0.18), (-pw * 0.22, pd * 0.2)):
+            bx((0.05, 0.05, 0.03), (x, y, zt + 0.015), flat("ac_unit", "#8a9099", 0.5), bev=0)
+            cy(0.016, 0.004, (x, y, zt + 0.032), flat("fan", "#2e3138", 0.7), 6)
+        bx((0.03, pd * 0.45, 0.02), (pw * 0.2, pd * 0.12, zt + 0.01), flat("ac_unit", "#8a9099", 0.5), bev=0)
+
+
+def billboard(team, w=0.2, h=0.1, z=0.12):
+    """A lit roadside billboard: two steel posts, a dark frame, a glowing team-tinted panel with a white logo."""
+    post = flat("lamp_post", "#7c838c", 0.5)
+    for sx in (-1, 1):
+        cy(0.007, z, (sx * w * 0.3, 0, z / 2), post, 6)
+    bx((w + 0.016, 0.014, h + 0.016), (0, 0.004, z + h / 2), flat("bb_frame", "#2b2f36", 0.6), bev=0)
+    bx((w, 0.01, h), (0, -0.004, z + h / 2), glow("bb" + team, shade(team, 1.35), 1.4), bev=0)
+    bx((w * 0.5, 0.012, h * 0.22), (-w * 0.12, -0.006, z + h * 0.62), glow("bb_logo", "#f4fbff", 1.6), bev=0)
+
+
 def city_dl7(team):
-    pad(0.8, stone("#c9c6bf", 3.0), 0.015, 14, 0.0, 7)
-    build_at(lambda: glass_tower(0.3, 0.26, 1.42, team, 2), -0.16, 0.32)
-    build_at(lambda: glass_tower(0.25, 0.23, 1.05, team, 1), 0.38, 0.14, -0.2)
-    build_at(lambda: glass_tower(0.22, 0.22, 0.72, team, 0), -0.44, -0.24, 0.3)
+    """The contemporary city (DL7): glass towers framed by steel fins with lit lobbies, setbacks and crowns (a mast
+    with a beacon, a sloped glass top, a helipad, rooftop plant), a glass skybridge, a roof-garden pavilion, street
+    trees in planters, a lit billboard, flags, cars and lamps on a paved plaza."""
+    pad(0.8, stone("#c9c6bf", 1.6), 0.015, 14, 0.0, 7)  # large granite plaza slabs (they read at map size)
+    build_at(lambda: glass_tower7(0.3, 0.26, 1.42, team, "mast", 0.66), -0.16, 0.32)
+    build_at(lambda: glass_tower7(0.25, 0.23, 1.05, team, "slant", tone=1), 0.38, 0.14, -0.2)
+    build_at(lambda: glass_tower7(0.22, 0.22, 0.72, team, "helipad"), -0.44, -0.24, 0.3)
+    build_at(lambda: glass_tower7(0.18, 0.18, 0.55, team, "ac", tone=1), 0.54, -0.24, 0.15)
+    # a glass skybridge from the tall tower to its neighbour
+    bx((0.3, 0.06, 0.05), (0.11, 0.25, 0.62), facade("#33506b", GLASS, 0.03, 0.05, 0.8, 0.7, lit="#c8ecff", lit_p=0.3),
+       -0.08, bev=0)
+    bx((0.3, 0.064, 0.01), (0.11, 0.25, 0.6), glow("band", "#a8e6ff", 1.6), -0.08, bev=0)
 
     def pavilion():
         gl = facade("#33506b", GLASS, 0.05, 0.07, 0.8, 0.74, lit="#c8ecff", lit_p=0.3)
-        bx((0.34, 0.2, 0.15), (0, 0, 0.075), gl, bev=0.008)
-        bx((0.38, 0.24, 0.025), (0, 0, 0.16), flat("crown" + team, team, 0.5), bev=0.005)
-        bx((0.26, 0.14, 0.02), (0, 0, 0.18), flat("lawn", "#5fa83a", 0.9), bev=0)
+        bx((0.34, 0.2, 0.15), (0, 0, 0.075), gl, bev=0)
+        bx((0.38, 0.24, 0.025), (0, 0, 0.16), flat("crown" + team, team, 0.5), bev=0)
+        bx((0.3, 0.18, 0.02), (0, 0, 0.18), flat("lawn", "#5fa83a", 0.9), bev=0)
+        for (x, y) in ((-0.1, 0.03), (0.1, -0.03)):
+            build_at(lambda: tree(0, 0, 0.5), x, y, z=0.19)
     build_at(pavilion, 0.22, -0.42, -0.1)
-    for (x, y) in ((-0.1, -0.2), (0.06, -0.05), (-0.62, 0.1)):
-        bx((0.08, 0.08, 0.04), (x, y, 0.02), flat("planter", "#7a7f88", 0.6), bev=0.006)
+    for (x, y) in ((-0.1, -0.2), (0.06, -0.05), (-0.62, 0.1), (0.64, 0.3), (-0.22, -0.02)):
+        bx((0.08, 0.08, 0.04), (x, y, 0.02), flat("planter", "#7a7f88", 0.6), bev=0)
+        bx((0.066, 0.066, 0.004), (x, y, 0.041), tex("plaster", "#5b3f27", 2.5), bev=0)
         tree(x, y, 0.75)
     for x in (-0.12, -0.04, 0.04):
         flagpole(x, -0.58, 0.42, team, 0.11, "#d0d4da")
-    build_at(lambda: glass_tower(0.18, 0.18, 0.55, team, 0), 0.54, -0.24, 0.15)
-    for (x, y, rz, c) in ((-0.2, -0.36, 0.2, "#e8e4da"), (-0.06, -0.4, 0.2, "#c23a2b"), (0.1, 0.06, 1.7, "#2b2f36")):
+    build_at(lambda: billboard(team), -0.36, -0.52, 0.12)
+    paint = flat("paint", "#e8e6df", 0.7)
+    for i in range(4):  # a zebra crossing on the plaza drive
+        bx((0.016, 0.07, 0.003), (-0.14 + i * 0.03, -0.36, 0.0165), paint, bev=0)
+    for (x, y, rz, c) in ((-0.24, -0.36, 0.0, "#e8e4da"), (0.0, -0.36, 0.0, "#c23a2b"), (0.1, 0.06, 1.7, "#2b2f36")):
         car(x, y, rz, c)
     for (x, y) in ((-0.3, -0.42), (0.02, -0.26), (0.16, 0.2), (-0.3, 0.02)):
         street_lamp(x, y, 0.24, True)
 
 
+def spire8(x, y, w, d, h, mats, rings=(0.62, 0.8), crown=0.12, needle=0.12, buttress=True, banner=None):
+    """A steel tower of the neon city (reference frames 2 and 5, the residence_dl8 kit at city scale): a shaft in
+    the steel facade with plate seams, corner buttresses, thin neon rings round it, inset team panels with a cold
+    light strip on the faces towards the camera, a setback crown and a dark four-sided needle with a lit tip."""
+    st, plate, seam, panel, cap, neon, tip = mats
+    bx((w, d, h), (x, y, h / 2), st, bev=0)
+    bx((w + 0.012, d + 0.012, 0.022), (x, y, h * 0.34), seam, bev=0)
+    if buttress:
+        for sx in (-1, 1):
+            for sy in (-1, 1):
+                bx((0.018, 0.018, h * 0.96), (x + sx * w / 2, y + sy * d / 2, h * 0.48), plate, bev=0)
+    for zf in rings:
+        bx((w + 0.016, d + 0.016, 0.014), (x, y, h * zf), neon, bev=0)
+    mb = _MB()
+    if banner:  # a great banner down the front instead of the panel (reference frame 2's banners on the spires)
+        facade_banner(x, y - d / 2 - 0.016, h * 0.9, w * 0.52, h * 0.4, banner, 0.0, "#c9a24a")
+    for (nx, ny) in (((1, 0),) if banner else ((0, -1), (1, 0))):
+        L = w if ny else d
+        off = (d if ny else w) / 2 + 0.002
+        px, py = x + nx * off, y + ny * off
+        tx, ty = -ny * L * 0.2, nx * L * 0.2
+        mb.face([(px - tx, py - ty, h * 0.38), (px + tx, py + ty, h * 0.38), (px + tx, py + ty, h * 0.93),
+                 (px - tx, py - ty, h * 0.93)], (nx, ny, 0))
+        bx((0.012, 0.008, h * 0.5), (px + nx * 0.003, py + ny * 0.003, h * 0.655), neon, 0.0 if ny else math.pi / 2,
+           bev=0)
+    mb.obj(panel, "panels")
+    ch = h * crown
+    bx((w * 0.78, d * 0.78, ch), (x, y, h + ch / 2), st, bev=0)
+    bx((w * 0.8, d * 0.8, 0.012), (x, y, h + ch), plate, bev=0)
+    hc = min(w, d) * 1.6
+    cn(min(w, d) * 0.42, hc, (x, y, h + ch + hc / 2), cap, 4, rot=(0, 0, math.pi / 4))
+    top = h + ch + hc
+    if needle:
+        rod((x, y, top - 0.01), (x, y, top + needle), 0.006, cap, r2=0.0015, n=4)
+        bx((0.014, 0.014, 0.014), (x, y, top + needle * 0.6), tip, bev=0)
+    return top
+
+
+def round8(x, y, r, h, mats, rings=(0.45, 0.75)):
+    """A round steel tower of the neon city (the drum towers of reference frame 2): neon rings, cold light strips
+    down the front, a plate crown and a glass dome with a lit ring and a needle."""
+    st, plate, seam, panel, cap, neon, tip = mats
+    cy(r, h, (x, y, h / 2), st, 10)
+    for zf in rings:
+        cy(r + 0.007, 0.014, (x, y, h * zf), neon, 10)
+    for a in (-math.pi / 2 - 0.6, -math.pi / 2 + 0.6, 0.35):
+        bx((0.012, 0.008, h * 0.7), (x + math.cos(a) * (r + 0.002), y + math.sin(a) * (r + 0.002), h * 0.5), neon,
+           a + math.pi / 2, bev=0)
+    cy(r * 1.12, 0.03, (x, y, h + 0.015), plate, 10)
+    cy(r * 1.0, 0.01, (x, y, h + 0.034), neon, 10)
+    hemi(r * 0.9, (x, y, h + 0.03), flat("dome_glass", "#6fa9cf", 0.3), 10, 3, (1, 1, 0.8))
+    rod((x, y, h + 0.03 + r * 0.7), (x, y, h + 0.03 + r * 0.7 + 0.12), 0.006, cap, r2=0.0015, n=4)
+    bx((0.014, 0.014, 0.014), (x, y, h + 0.03 + r * 0.7 + 0.08), tip, bev=0)
+
+
 def city_dl8(team):
-    pad(0.8, flat("plaza8", "#3e424a", 0.7), 0.015, 14, 0.0, 8)
-    gl = dark_glass()
-    neon = team_neon(team)
-
-    def tower_a():  # stepped needle, 2.2
-        neon_box(0.36, 0.32, 0.0, 0.92, team, gl)
-        neon_box(0.28, 0.25, 0.92, 0.6, team, gl)
-        neon_box(0.18, 0.16, 1.52, 0.38, team, gl)
-        cn(0.05, 0.3, (0, 0, 2.05), flat("spire", "#c9d0d8", 0.4), 6)
-        ico(0.018, (0, 0, 2.2), neon)
-    build_at(tower_a, -0.14, 0.3)
-
-    def tower_b():  # tapered octagon, 1.7
-        cy(0.22, 1.5, (0, 0, 0.75), gl, 8, r2=0.14)
-        for z in (0.3, 0.6, 0.9, 1.2, 1.48):
-            r = 0.22 + (0.14 - 0.22) * z / 1.5
-            cy(r + 0.008, 0.016, (0, 0, z), neon, 8)
-        cn(0.14, 0.24, (0, 0, 1.62), neon, 8)
-    build_at(tower_b, 0.42, 0.12)
-
-    def tower_c():  # slab with billboard, 1.25
-        neon_box(0.3, 0.18, 0.0, 1.16, team, gl, strips=False)
-        for x in (-0.09, 0.0, 0.09):
-            bx((0.012, 0.012, 1.1), (x, -0.094, 0.58), neon, bev=0)
-        taper_box((0.3, 0.18, 0.12), (0, 0, 1.22), gl, (1.0, 0.1))
-        bx((0.018, 0.018, 0.16), (0.1, -0.04, 1.3), flat("mast", "#d0d4da", 0.5), bev=0)
-        bx((0.22, 0.012, 0.13), (0.0, -0.11, 0.62), glow("holo" + team, shade(team, 1.35), 3.5), bev=0)
-    build_at(tower_c, -0.44, -0.24, 0.35)
-
-    def mall():
-        bx((0.36, 0.22, 0.16), (0, 0, 0.08), gl, bev=0.008)
-        frame(0.36, 0.22, 0.15, neon)
-        bx((0.3, 0.012, 0.03), (0, -0.115, 0.12), glow("cyan", CYAN, 2.5), bev=0)
-    build_at(mall, 0.24, -0.4, -0.1)
-    for (x, y) in ((-0.02, -0.1), (0.12, 0.62), (-0.66, 0.12), (0.0, -0.6)):
+    """The neon city (DL8) after reference frames 2 and 5, in the steel of the late residence: grey steel towers
+    with plate seams and buttresses, inset team panels with cold light strips, neon rings and dark needles round a
+    tall central spire; low steel blocks with lit bands; a dark steel plaza laced with glowing street strips; a
+    holo banner projecting the state's crest, light masts and cargo crates."""
+    st = steel_facade()
+    plate = flat("plate8", "#505760", 0.45)
+    seam = flat("seam8", "#8c939c", 0.45)
+    panel = flat("panel8" + team, shade(team, 0.42), 0.4)
+    cap = flat("spire8", "#4c535d", 0.35)
+    neon = glow("strip" + team, shade(team, 1.25), 2.0)
+    cyan = glow("cyan", CYAN, 2.5)
+    mats = (st, plate, seam, panel, cap, neon, cyan)
+    pad(0.8, stone("#454a52", 0.8), 0.015, 14, 0.0, 8)
+    # glowing street strips: a cross of avenues edged by light lines, and a light rim round the plaza
+    for (x0, y0, x1, y1) in ((-0.74, -0.15, 0.74, -0.15), (-0.74, -0.27, 0.74, -0.27),
+                             (0.07, -0.74, 0.07, 0.74), (0.19, -0.74, 0.19, 0.74)):
+        beam((x0, y0, 0.017), (x1, y1, 0.017), 0.012, neon)
+    paving = flat("road8", "#2c3036", 0.6)
+    bx((1.48, 0.11, 0.004), (0, -0.21, 0.0155), paving, bev=0)
+    for (y0, y1) in ((-0.74, -0.27), (-0.15, 0.74)):  # (not across the other avenue: overlapping plates bake black)
+        bx((0.11, y1 - y0, 0.004), (0.13, (y0 + y1) / 2, 0.0155), paving, bev=0)
+    # the central spire, the city's needle, and the ring of towers stepping down from it
+    spire8(-0.18, 0.36, 0.26, 0.22, 1.42, mats, rings=(0.3, 0.46, 0.94), crown=0.14, needle=0.2, banner=team)
+    spire8(0.42, 0.3, 0.18, 0.16, 1.1, mats, rings=(0.28, 0.94), banner=team)
+    spire8(-0.5, 0.1, 0.17, 0.15, 0.9, mats, rings=(0.66,))
+    spire8(0.5, 0.0, 0.14, 0.14, 0.7, mats, rings=(0.7,), buttress=False)
+    round8(-0.42, -0.46, 0.09, 0.66, mats)
+    # a steel skybridge between the spire and its neighbour, a light line along it (the lit bridges of frame 2)
+    beam((-0.3, 0.3, 0.52), (-0.43, 0.12, 0.52), 0.045, plate)
+    beam((-0.3, 0.3, 0.495), (-0.43, 0.12, 0.495), 0.05, neon)
+    # low steel blocks with lit window bands and roof plant (the podiums of frame 5)
+    for (x, y, w, d, h) in ((-0.2, 0.0, 0.3, 0.2, 0.16), (0.42, -0.46, 0.3, 0.18, 0.14)):
+        bx((w, d, h), (x, y, h / 2), st, bev=0)
+        bx((w + 0.012, d + 0.012, 0.016), (x, y, h), plate, bev=0)
+        bx((w + 0.004, d + 0.004, 0.012), (x, y, h * 0.55), neon, bev=0)
+        bx((0.05, 0.05, 0.03), (x + w * 0.36, y + d * 0.26, h + 0.023), seam, bev=0)  # (clear of the dome)
+    # a glass dome on the front block (the domes of frame 2)
+    hemi(0.09, (0.42, -0.46, 0.148), flat("dome_glass", "#6fa9cf", 0.3), 10, 3, (1, 1, 0.7))
+    cy(0.094, 0.01, (0.42, -0.46, 0.15), neon, 10)
+    # a holo banner: a mast projecting the state's colour as a glowing panel with the crest
+    hx, hy = -0.08, -0.4
+    cy(0.04, 0.03, (hx, hy, 0.03), plate, 6)
+    cy(0.007, 0.36, (hx, hy, 0.2), flat("mast", "#d0d4da", 0.5), 6)
+    bx((0.12, 0.004, 0.17), (hx + 0.066, hy, 0.29), glow("holo" + team, team, 1.0), bev=0)
+    bx((0.13, 0.008, 0.008), (hx + 0.066, hy, 0.38), cyan, bev=0)
+    crest = [(0.0, -0.036), (0.026, -0.016), (0.026, 0.026), (0.0, 0.016), (-0.026, 0.026), (-0.026, -0.016)]
+    extrude(crest, -0.004, 0.004, glow("holo_crest", "#eef8ff", 1.6), (hx + 0.066, hy, 0.305), (math.pi / 2, 0, 0))
+    for (x, y) in ((0.3, -0.08), (-0.06, -0.62), (0.62, -0.28), (-0.66, -0.12)):  # light masts by the avenues
         cy(0.007, 0.16, (x, y, 0.08), flat("mast", "#d0d4da", 0.5), 6)
-        ico(0.016, (x, y, 0.17), glow("cyan", CYAN, 2.5))
+        bx((0.022, 0.022, 0.022), (x, y, 0.17), glow("lamp8", "#bfe8ff", 3.0), bev=0)
+    for (x, y, s_) in ((0.62, 0.14, 0.045), (0.6, 0.2, 0.035), (-0.02, 0.18, 0.04)):
+        bx((s_, s_ * 1.4, s_), (x, y, s_ / 2 + 0.015), flat("crate8", "#b8862e", 0.6), bev=0)
 
 
 # ------------------------------------------------------------------ RESIDENCES (capital, scale 1.0)
@@ -3153,7 +3519,8 @@ def lowpoly(objs):
 
 
 SETTLED = {"homestead", "city_dl1", "city_dl2", "city_dl3", "city_dl4", "residence_dl1", "residence_dl2",
-           "residence_dl3", "residence_dl4", "residence_dl5", "residence_dl6", "residence_dl7", "residence_dl8"}
+           "residence_dl3", "residence_dl4", "residence_dl5", "residence_dl6", "residence_dl7", "residence_dl8",
+           "city_dl5", "city_dl6", "city_dl7", "city_dl8"}
 
 
 def _drop_ground_faces(objs):
@@ -3182,7 +3549,8 @@ def _drop_ground_faces(objs):
         bm.free()
 
 
-ATLAS = {"residence_dl4", "residence_dl5", "residence_dl6", "residence_dl7", "residence_dl8"}
+ATLAS = {"residence_dl4", "residence_dl5", "residence_dl6", "residence_dl7", "residence_dl8",
+         "city_dl5", "city_dl6", "city_dl7", "city_dl8"}  # (the late cities: dense tile courses and thin trim too)
 
 
 def _kept(mt):
