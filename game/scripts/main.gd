@@ -308,32 +308,43 @@ func _show_settings() -> void:
 
 # ====================================================================== scene setup
 
+## The light of the two eras («Raivon Soft», docs/art_direction.md §6.4 and §6.11). Era 0 — medieval and industrial:
+## a warm sun with a cool sky-blue fill. Era 1 — sci-fi (DL8+): a cooler key light and a steel-blue fill, still light
+## (never night-navy). _environment() builds the scene with era 0, _apply_era_light() switches between the two.
+const ERA_LIGHT_0 := {
+	"sun_color": Color("#FFF1DA"), "sun_energy": 1.1,
+	"ambient": Color("#A9C1E8"), "ambient_energy": 0.8,
+	"fog": Color(0.76, 0.83, 0.92), "bg": Color("#8DB4DE"), "glow": 0.6,
+}
+const ERA_LIGHT_1 := {
+	"sun_color": Color("#EAF2FF"), "sun_energy": 1.05,
+	"ambient": Color("#9FB0D6"), "ambient_energy": 0.7,
+	"fog": Color("#8FA9CF"), "bg": Color("#5E7FA8"), "glow": 0.5,
+}
+
+
+## The sunny «Raivon Soft» grade (docs/art_direction.md §6.4): Filmic at exposure 1.0, a light sky-blue fill so the
+## shade side of things stays blue-lilac instead of black (light : shade on flat ground ≈ 2.3 : 1), gentle contrast and a
+## little extra saturation instead of the old dark, contrasty ACES grade. No SSAO: the Mobile renderer phones run has
+## none. Glow is kept for VFX and sci-fi lights only — a threshold above sunlit ground and no bloom, so the frame never
+## hazes and the borders never glow (§6.1 rule 4).
 func _environment() -> void:
 	var we := WorldEnvironment.new()
 	var e := Environment.new()
 	e.background_mode = Environment.BG_COLOR
-	e.background_color = Color(0.13, 0.16, 0.2)
 	e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	e.ambient_light_color = Color(0.7, 0.72, 0.8)
-	e.ambient_light_energy = 0.45
-	e.ssao_enabled = true
-	e.ssao_radius = 1.2
-	e.ssao_intensity = 2.5
-	e.tonemap_mode = Environment.TONE_MAPPER_ACES
-	e.tonemap_exposure = 0.72
-	# glow only on emissive things (neon borders, crystals, fire): a threshold above sunlit ground and no bloom,
-	# otherwise the whole frame hazes into pastel (art direction: saturated, contrasty, CoC-like)
-	e.glow_enabled = true
-	e.glow_intensity = 1.0
-	e.glow_strength = 1.1
+	e.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	e.tonemap_exposure = 1.0
+	e.glow_enabled = false  # TEMP G1 experiment
+	e.glow_strength = 1.0
 	e.glow_bloom = 0.0
 	e.glow_hdr_threshold = 1.1
 	e.fog_enabled = true
-	e.fog_light_color = Color(0.55, 0.62, 0.72)
-	e.fog_density = 0.003
+	e.fog_density = 0.006
 	e.adjustment_enabled = true
-	e.adjustment_saturation = 0.8  # measured on the map area: the reference frames average HSV saturation 113–127
-	e.adjustment_contrast = 1.25
+	e.adjustment_brightness = 1.03
+	e.adjustment_contrast = 1.04
+	e.adjustment_saturation = 1.12
 	we.environment = e
 	add_child(we)
 	_env = e
@@ -341,40 +352,38 @@ func _environment() -> void:
 	_add_tilt_shift()
 	var sun := DirectionalLight3D.new()
 	_sun = sun
-	sun.rotation_degrees = Vector3(-48, -35, 0)
-	sun.light_color = Color(1.0, 0.93, 0.82)
-	sun.light_energy = 1.3
+	sun.rotation_degrees = Vector3(-55, -35, 0)  # higher sun: shorter, softer shadows (§6.4)
 	sun.shadow_enabled = true
-	sun.shadow_blur = 1.5
+	sun.shadow_blur = 2.5  # soft edges; phones need soft_shadow_filter_quality.mobile = 2 (project.godot) to see it
+	sun.shadow_opacity = 0.7  # the shade keeps colour: blue-lilac, not black
 	sun.directional_shadow_max_distance = 60
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS  # half the shadow passes of 4 splits
 	add_child(sun)
+	_set_era_light(ERA_LIGHT_0)
 
 
 var _env: Environment
 var _sun: DirectionalLight3D
-var _light_era := -1
+var _light_era := 0  # _environment() starts in era 0
 
 
-## The light follows the player's era (reference frames 1 vs 2): warm sun and a blue-grey ambient for the medieval
-## and industrial stages, a cool steel-blue sun, ambient and fog for the sci-fi stage (DL8+).
+## The light follows the player's era (reference frames 1 vs 2; values in ERA_LIGHT_0 / ERA_LIGHT_1).
 func _apply_era_light(dl: int) -> void:
 	var era := 1 if dl >= 8 else 0
 	if era == _light_era or _env == null or _sun == null:
 		return
 	_light_era = era
-	if era == 1:
-		_sun.light_color = Color(0.86, 0.92, 1.0)
-		_env.ambient_light_color = Color(0.62, 0.68, 0.82)  # steel-grey, not navy: frame 5 is grey with blue lights
-		_env.fog_light_color = Color(0.42, 0.55, 0.75)
-		_env.background_color = Color(0.08, 0.12, 0.2)
-		_env.glow_intensity = 0.55  # the sci-fi land is full of neon: full glow washed the grey ground navy (frame 5)
-	else:
-		_sun.light_color = Color(1.0, 0.93, 0.82)
-		_env.ambient_light_color = Color(0.7, 0.72, 0.8)
-		_env.fog_light_color = Color(0.55, 0.62, 0.72)
-		_env.background_color = Color(0.13, 0.16, 0.2)
-		_env.glow_intensity = 1.0
+	_set_era_light(ERA_LIGHT_1 if era == 1 else ERA_LIGHT_0)
+
+
+func _set_era_light(l: Dictionary) -> void:
+	_sun.light_color = l.sun_color
+	_sun.light_energy = l.sun_energy
+	_env.ambient_light_color = l.ambient
+	_env.ambient_light_energy = l.ambient_energy
+	_env.fog_light_color = l.fog
+	_env.background_color = l.bg
+	_env.glow_intensity = l.glow
 
 
 func _make_selection() -> void:

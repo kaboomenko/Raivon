@@ -817,10 +817,10 @@ def handshake():
     skin2 = mat("skin2", "#e9b583", 0.6)
     cuff = mat("cuff", "#f6f3ea", 0.6)
     for sx, sleeve_c in ((-1, "#3f86f0"), (1, "#dd3a30")):
-        s = cyl("sleeve", 0.14, 0.42, (sx * 0.52, 0, -0.16), mat("sleeve" + sleeve_c, sleeve_c, 0.6), 20, 0.03)
-        s.rotation_euler.y = math.pi / 2 + sx * 0.32
-        c = cyl("cuff", 0.155, 0.08, (sx * 0.3, 0, -0.085), cuff, 20, 0.02)
-        c.rotation_euler.y = math.pi / 2 + sx * 0.32
+        s = cyl("sleeve", 0.15, 0.32, (sx * 0.43, 0, -0.24), mat("sleeve" + sleeve_c, sleeve_c, 0.6), 20, 0.03)
+        s.rotation_euler.y = math.pi / 2 + sx * 0.62
+        c = cyl("cuff", 0.165, 0.08, (sx * 0.29, 0, -0.14), cuff, 20, 0.02)
+        c.rotation_euler.y = math.pi / 2 + sx * 0.62
     sphere("palm_r", 0.17, (0.08, 0.06, 0.0), skin2, (1.35, 0.85, 0.8), 3)  # the far hand, behind
     sphere("palm_l", 0.17, (-0.08, -0.04, -0.01), skin, (1.35, 0.85, 0.8), 3)
     for k in range(3):  # the far hand's fingers wrapping round the near one
@@ -863,15 +863,14 @@ def horn():
                    0.045 + 0.08 * t0 ** 1.4, 0.045 + 0.08 * t0 ** 1.4, band, 18)
     end, dirx, dirz = pts[-1], math.cos(a1 + math.pi / 2), math.sin(a1 + math.pi / 2)
     tip = (end[0] + dirx * 0.16, 0, end[2] + dirz * 0.16)
-    _along("bell", end, tip, 0.11, 0.21, brass(), 28)
+    _along("bell", end, tip, 0.11, 0.25, brass(), 28)
     inner = _along("bell_in", (tip[0] - dirx * 0.01, 0, tip[2] - dirz * 0.01), (tip[0] + dirx * 0.005, 0, tip[2] + dirz * 0.005),
-                   0.17, 0.17, mat("horn_in", "#5a3a12", 0.6), 24)
+                   0.21, 0.21, mat("horn_in", "#5a3a12", 0.6), 24)
     st = pts[0]
     bx, bz = math.sin(a0), -math.cos(a0)  # backwards from the first segment
     _along("mouth", st, (st[0] + bx * 0.1, 0, st[2] + bz * 0.1), 0.05, 0.035, band, 12)
-    cord = mat("cord", "#c0362c", 0.7)
-    _torus("cord", 0.3, 0.018, (0.0, -0.02, 0.02), cord, (math.pi / 2, 0, 0), keep=lambda co: co.y < 0.02)
-    sphere("tassel", 0.05, (0.0, -0.03, -0.3), cord, (0.8, 0.8, 1.4), 2)
+    _torus("strap", 0.3, 0.022, (0.0, 0.06, 0.02), mat("strap", "#7a4a2a", 0.7), (math.pi / 2, 0, 0),
+           keep=lambda co: co.y < 0.0)
     _tilt(rz=-12)
 
 
@@ -896,21 +895,21 @@ def coins():
     g = gold()
     dark = mat("gold_d", "#b8801c", 0.35, 1.0)
     for k, (x, y) in enumerate(((0.02, 0.0), (-0.05, 0.02), (0.04, -0.02))):
-        z = -0.2 + k * 0.13
+        z = -0.22 + k * 0.15
         cyl("coin", 0.4, 0.12, (x, y, z), g, 48, 0.03)
         cyl("rim", 0.33, 0.13, (x, y, z), dark, 48, 0.0)
         cyl("face", 0.3, 0.135, (x, y, z), g, 48, 0.0)
-    x, y, z = 0.04, -0.02, 0.06 + 0.075
+    x, y, z = 0.04, -0.02, 0.08 + 0.075
     for (bx, by, w, h, rot) in ((-0.1, 0.0, 0.07, 0.42, 0), (0.03, 0.12, 0.22, 0.07, 0), (0.03, 0.0, 0.2, 0.07, 0),
                                 (0.12, 0.06, 0.07, 0.16, 0), (0.07, -0.13, 0.085, 0.28, -0.6)):
         b = box("R", (w, h, 0.04), (x + bx, y + by, z), g, 0.01)
         b.rotation_euler.z = -rot
-    _tilt(rx=48)
+    _tilt(rx=36)
 
 
 def lightning():
     """Speed-up: a chunky yellow lightning bolt."""
-    y_ = mat("bolt", "#ffc531", 0.35, 0.0, "#ffb000", 0.25)
+    y_ = mat("bolt", "#ffcf3a", 0.35, 0.0, "#ffb000", 0.5)
     pts = [(-0.02, 0.62), (0.3, 0.62), (0.08, 0.14), (0.3, 0.14), (-0.22, -0.66), (-0.04, -0.04), (-0.27, -0.04)]
     _extrude("bolt", pts, 0.16, y_, y=-0.08, bevel=0.035)
     _tilt(rz=-22)
@@ -918,8 +917,8 @@ def lightning():
 
 def barrel():
     """Oil (HUD resource and «barrel»): a green oil drum with brass hoops and black oil dripping over the rim."""
-    green = mat("drum", "#2f8a4c", 0.45, 0.25)
-    lid = mat("drum_lid", "#287540", 0.5, 0.25)
+    green = mat("drum", "#34a05a", 0.45, 0.2)
+    lid = mat("drum_lid", "#2b8a4b", 0.5, 0.2)
     oil_m = mat("oil_k", "#14161c", 0.08, 0.0)
 
     def r_at(z):
@@ -931,10 +930,12 @@ def barrel():
         cyl("hoop", r_at(z) + 0.014, 0.05, (0, 0, z), brass(), 32, 0.01)
     cyl("lid", 0.285, 0.03, (0, 0, 0.42), lid, 32, 0.01)
     cyl("bung", 0.05, 0.04, (0.13, 0.06, 0.445), brass(), 12, 0.01)
-    sphere("pool", 0.13, (-0.07, -0.06, 0.435), oil_m, (1.5, 1.1, 0.12), 3)
-    sphere("drip_lip", 0.06, (-0.1, -0.27, 0.41), oil_m, (1.2, 0.8, 0.6), 2)
-    sphere("drip", 0.05, (-0.1, -0.305, 0.28), oil_m, (0.8, 0.55, 2.4), 2)
-    sphere("drop", 0.055, (-0.1, -0.31, 0.12), oil_m, (1, 0.8, 1.15), 2)
+    sphere("pool", 0.12, (-0.08, -0.11, 0.44), oil_m, (1.35, 1.1, 0.12), 3)
+    sphere("drip_lip", 0.065, (-0.1, -0.285, 0.41), oil_m, (1.15, 0.7, 0.75), 2)
+    sphere("drip", 0.045, (-0.1, -0.315, 0.31), oil_m, (1.0, 0.55, 2.3), 2)
+    sphere("drop", 0.07, (-0.1, -0.33, 0.17), oil_m, (1, 0.75, 1.1), 2)
+    cone("drop_top", 0.05, 0.08, (-0.1, -0.33, 0.24), oil_m, 12, 0.0)
+    sphere("glint", 0.018, (-0.12, -0.39, 0.19), mat("oil_glint", "#9aa2bc", 0.2), (1, 0.6, 1.3), 2)
     _tilt(rx=16, rz=-14)
 
 
@@ -1035,16 +1036,16 @@ def chest_cards():
         box("strap", (0.08, 0.52, 0.4), (sx * 0.26, 0, -0.26), g, 0.01)
     before = set(bpy.context.scene.objects)
     box("lid", (0.8, 0.5, 0.08), (0, -0.25, 0.1), body, 0.02)  # built round the hinge (the body's back top edge)
-    box("lid_rim", (0.83, 0.53, 0.04), (0, -0.25, 0.04), g, 0.01)
-    _group(before, (0, 0.25, -0.06), (-105, 0, 0))
+    box("lid_in", (0.72, 0.42, 0.02), (0, -0.25, 0.055), mat("chest_in", "#7a2a22", 0.7), 0.0)
+    _group(before, (0, 0.25, -0.06), (-128, 0, 0))
     back = mat("card_b", "#2a4fa0", 0.5)
     face = mat("card_f", "#efe6cf", 0.7)
-    for k, (a, x) in enumerate(((0.45, -0.2), (0.0, 0.0), (-0.45, 0.2))):
-        c = box("card", (0.3, 0.02, 0.44), (x, 0.02 - k * 0.03, 0.12), back if k != 1 else face, 0.015)
+    for k, (a, x) in enumerate(((0.5, -0.24), (-0.5, 0.24), (0.0, 0.0))):
+        c = box("card", (0.32, 0.02, 0.5), (x, 0.04 - k * 0.04, 0.14), back if k != 2 else face, 0.015)
         c.rotation_euler.y = a
-        f = box("frame", (0.32, 0.016, 0.46), (x, 0.03 - k * 0.03, 0.12), g, 0.015)
+        f = box("frame", (0.345, 0.016, 0.525), (x, 0.05 - k * 0.04, 0.14), g, 0.015)
         f.rotation_euler.y = a
-    _star_mesh("star", 0.09, 0.04, 0.0, 0.13, -0.025, -0.01, mat("star_b", "#2f62c8", 0.4))
+    _star_mesh("star", 0.11, 0.045, 0.0, 0.16, -0.06, -0.04, mat("star_b", "#2f62c8", 0.4))
     box("lock", (0.15, 0.05, 0.16), (0, -0.26, -0.12), g, 0.015)
     _tilt(rx=14, rz=-22)
 
@@ -1254,34 +1255,34 @@ def hex_tile():
 
 
 def food():
-    """Food: a tied burlap sack full of grain, wheat ears standing out of its mouth."""
-    sack = mat("sack", "#d9b779", 0.9)
-    sack_d = mat("sack_d", "#bf9a5c", 0.9)
-    rope = mat("rope", "#8a5e36", 0.8)
+    """Food: an open burlap sack heaped with grain, three big wheat ears standing out of it (not a fan, not a purse)."""
+    sack = mat("sack", "#dcbb7c", 0.9)
+    fold = mat("sack_d", "#c39d5e", 0.9)
     grain = mat("grain", "#f2c650", 0.55)
     stalk = mat("stalk", "#c99a3a", 0.7)
-    sphere("sack", 0.31, (0, 0, -0.2), sack, (1.08, 0.95, 1.0), 3)
-    cyl("neck", 0.17, 0.14, (0, 0, 0.12), sack, 20, 0.02, r2=0.11)
-    _torus("tie", 0.12, 0.03, (0, 0, 0.15), rope, seg=20)
-    cyl("mouth", 0.12, 0.1, (0, 0, 0.23), sack, 20, 0.02, r2=0.2)
-    sphere("grain_top", 0.17, (0, 0, 0.27), grain, (1.05, 1.05, 0.4), 3)
-    box("patch", (0.2, 0.02, 0.16), (0.06, -0.29, -0.22), sack_d, 0.01).rotation_euler.y = 0.12
-    for k, a in enumerate((-0.42, -0.05, 0.36)):
-        x0, z0 = math.sin(a) * 0.05, 0.28
-        L = 0.42 if k != 1 else 0.5
+    sphere("sack", 0.34, (0, 0, -0.2), sack, (1.15, 0.95, 0.9), 3)
+    cyl("shoulder", 0.33, 0.16, (0, 0, 0.04), sack, 28, 0.02, r2=0.25)
+    _torus("fold", 0.255, 0.065, (0, 0, 0.13), fold, seg=28)
+    sphere("grain_top", 0.25, (0, 0, 0.15), grain, (1.0, 1.0, 0.42), 3)
+    for k in range(3):  # stitched seam lines on the front
+        box("seam", (0.012, 0.01, 0.16), (-0.16 + k * 0.16, -0.32, -0.22 + (0.03 if k == 1 else 0)), fold, 0.0)
+    for k, a in enumerate((-0.48, -0.04, 0.42)):
+        x0, z0 = math.sin(a) * 0.08 + (k - 1) * 0.06, 0.2
+        L = 0.4 if k != 1 else 0.48
         x1, z1 = x0 + math.sin(a) * L, z0 + math.cos(a) * L
-        s = cyl("stalk", 0.018, L, ((x0 + x1) / 2, -0.01, (z0 + z1) / 2), stalk, 6, 0.0)
-        s.rotation_euler.y = a
+        s_ = cyl("stalk", 0.022, L, ((x0 + x1) / 2, -0.02, (z0 + z1) / 2), stalk, 6, 0.0)
+        s_.rotation_euler.y = a
         for j in range(5):
-            t = 0.5 + j * 0.11
+            t = 0.45 + j * 0.12
             px, pz = x0 + (x1 - x0) * t, z0 + (z1 - z0) * t
             for side in (-1, 1):
-                g = sphere("ear", 0.045, (px + side * 0.035 * math.cos(a), -0.02, pz - side * 0.035 * math.sin(a)), grain,
-                           (0.75, 0.7, 1.35), 2)
+                g = sphere("ear", 0.055, (px + side * 0.042 * math.cos(a), -0.03, pz - side * 0.042 * math.sin(a)), grain,
+                           (0.72, 0.7, 1.4), 2)
                 g.rotation_euler.y = a + side * 0.35
-        sphere("ear_tip", 0.04, (x1 + math.sin(a) * 0.04, -0.02, z1 + math.cos(a) * 0.04), grain, (0.7, 0.7, 1.3), 2)
-    for (x, y) in ((-0.3, -0.24), (-0.22, -0.3), (0.32, -0.26)):
-        sphere("spill", 0.035, (x, y, -0.48), grain, (1, 1, 0.8), 2)
+        sphere("ear_tip", 0.05, (x1 + math.sin(a) * 0.05, -0.03, z1 + math.cos(a) * 0.05), grain, (0.7, 0.7, 1.35), 2)
+    for (x, y) in ((-0.36, -0.22), (-0.28, -0.3), (0.36, -0.24), (0.3, -0.32)):
+        sphere("spill", 0.04, (x, y, -0.48), grain, (1, 1, 0.75), 2)
+    _tilt(rx=10)
 
 
 def _ingot(loc, rz, m, top):
