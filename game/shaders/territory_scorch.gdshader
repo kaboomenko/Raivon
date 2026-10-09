@@ -22,5 +22,5 @@ void vertex() {
 
 void fragment() {
 	float d = mask_dist(v_p, int(v_mask + 0.5), 0.22);
-	ALBEDO = mix(vec3(1.0), tint, smoothstep(0.07, 0.57, d)) * mul_k;
+	ALBEDO = mix(vec3(1.0), vec3(0.2, 1.0, 1.0), smoothstep(0.07, 0.57, d)) * mul_k;
 }
