@@ -359,17 +359,11 @@ func _build() -> void:
 
 
 ## Sets `text`, shrinking the font from `base` down through the type scale (to 20, or to `base` when a legacy
-## call asks for less) until it fits `max_w` px — long hex and state names differ a lot between languages.
+## call asks for less) until it fits `max_w` px — long hex and state names differ a lot between languages. A text
+## that does not fit even then is cut with an ellipsis at `max_w` (Kit.fit_label).
 func _fit(l: Label, text: String, max_w: float, base: int) -> void:
-	var f := l.get_theme_font("font")
-	var steps := Kit.fit_steps(base, mini(Kit.FIT_FLOOR, base))
-	var s: int = steps[-1]
-	for v in steps:
-		if f.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, v).x <= max_w:
-			s = v
-			break
-	l.add_theme_font_size_override("font_size", s)
 	l.text = text
+	Kit.fit_label(l, base, max_w)
 
 
 ## Re-applies the static labels after a language switch (the rest is refreshed by the game every tick).

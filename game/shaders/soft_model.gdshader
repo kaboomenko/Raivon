@@ -23,7 +23,7 @@ void fragment() {
 	float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
 	c = max(mix(vec3(l), c, 1.15), vec3(0.0));
 	c *= mix(0.86, 1.06, smoothstep(0.0, 0.6, v_y));  // feet in the grass a touch darker, tops a touch lighter
-	ALBEDO = c;
+	ALBEDO = soft_floor(c);  // the 0.86 at the ground had pushed the mine and tent entrances under L* 15
 	ROUGHNESS = roughness_v;
 	SPECULAR = 0.2;
 }

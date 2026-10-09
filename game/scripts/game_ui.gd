@@ -93,16 +93,10 @@ func _label(text: String, size: int, color := TEXT, bold := true) -> Label:
 
 
 ## Shrinks the label's font from `base` down through the type scale (to 20, or to `base` when a legacy call
-## asks for less) until its one-line text fits `max_w` px: captions differ in length between languages.
+## asks for less) until its one-line text fits `max_w` px: captions differ in length between languages. A text
+## that does not fit even then is cut with an ellipsis at `max_w` (Kit.fit_label).
 func _fit(l: Label, base: int, max_w: float) -> void:
-	var f := l.get_theme_font("font")
-	var steps := Kit.fit_steps(base, mini(Kit.FIT_FLOOR, base))
-	var s: int = steps[-1]
-	for v in steps:
-		if f.get_string_size(l.text, HORIZONTAL_ALIGNMENT_LEFT, -1, v).x <= max_w:
-			s = v
-			break
-	l.add_theme_font_size_override("font_size", s)
+	Kit.fit_label(l, base, max_w)
 
 
 func _panel(parent: Control, rect: Rect2, style: StyleBox, filter := Control.MOUSE_FILTER_STOP) -> Panel:
@@ -175,15 +169,18 @@ func _inline(text: String, size: int, color := TEXT, bold := true, max_w := 0.0)
 	var parts := Kit.split_icons(text)
 	var kind := ("d900" if Kit.snap_size(size) >= 26 else "d800") if bold else "b800"
 	var s: int = Kit.snap_size(size) if size >= 21 else size
+	var cut := false  # even the floor does not fit: the text pieces are cut with an ellipsis inside max_w
 	if max_w > 0.0:
 		var steps := Kit.fit_steps(size, mini(Kit.FIT_FLOOR, size))
 		s = steps[-1]
+		cut = true
 		for v in steps:
 			var w := 0.0
 			for p in parts:
 				w += (Kit.text_w(String(p["t"]), v, kind, bold) if p.has("t") else v * 1.2) + 6.0
 			if w <= max_w:
 				s = v
+				cut = false
 				break
 	var hb := HBoxContainer.new()
 	hb.add_theme_constant_override("separation", 6)
@@ -201,7 +198,14 @@ func _inline(text: String, size: int, color := TEXT, bold := true, max_w := 0.0)
 			l.add_theme_font_size_override("font_size", s)
 			l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 			l.size_flags_vertical = Control.SIZE_FILL
+			if cut:
+				l.clip_text = true
+				l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+				l.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+				l.size_flags_stretch_ratio = maxf(1.0, Kit.text_w(l.text, s, kind, bold))
 			hb.add_child(l)
+	if cut:
+		hb.size.x = max_w
 	return hb
 
 
@@ -581,7 +585,7 @@ func _modal_box(rect: Rect2, parchment := false, title := "", icon := "", role :
 	if not swap:
 		Kit.pop_in(frame)
 	if title != "":
-		Kit.title_plate(frame, title, role, icon)
+		Kit.title_plate(frame, title, role, icon, not swap)
 	if closable and not blocking:
 		Kit.close_button(frame, close_modal)
 		var m := _modal

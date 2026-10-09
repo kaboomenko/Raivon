@@ -191,6 +191,31 @@ static func fit_size(text: String, base: int, max_w: float, kind := "d900", floo
 	return floor_
 
 
+## Steps a label's font down from `base` through the scale (to 20, or to `base` when a legacy call asks for less)
+## until its one-line text fits `max_w`. When even the floor does not fit, the line is cut with an ellipsis inside
+## `max_w` instead of running out of its panel (backs game_ui._fit / hud._fit).
+static func fit_label(l: Label, base: int, max_w: float) -> void:
+	var f := l.get_theme_font("font")
+	var steps := fit_steps(base, mini(FIT_FLOOR, base))
+	var s: int = steps[-1]
+	var fits := false
+	for v in steps:
+		if f.get_string_size(l.text, HORIZONTAL_ALIGNMENT_LEFT, -1, v).x <= max_w:
+			s = v
+			fits = true
+			break
+	l.add_theme_font_size_override("font_size", s)
+	if l.has_meta("kit_fit_cut"):  # an earlier, longer text was cut
+		l.remove_meta("kit_fit_cut")
+		l.clip_text = false
+		l.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
+	if not fits and max_w > 0.0 and l.autowrap_mode == TextServer.AUTOWRAP_OFF:
+		l.set_meta("kit_fit_cut", true)
+		l.clip_text = true
+		l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		l.size.x = max_w
+
+
 ## Scale sizes from snap_size(base) down to 22, then 20 and on down to `floor_` when it is lower (legacy
 ## call sites never go below the size they asked for).
 static func fit_steps(base: int, floor_ := FIT_FLOOR) -> Array[int]:
@@ -432,7 +457,7 @@ class KitDecor extends Control:
 		elif kind == "cream" and size.x > 64.0:
 			var inset := 24.0 if size.x > 200.0 else maxf(r, 12.0)
 			draw_line(Vector2(inset, out + 2.0), Vector2(size.x - inset, out + 2.0), Color(1, 1, 1, 0.7), 3.0)
-		elif kind == "role" and size.y >= 30.0:
+		elif kind == "role" and size.y >= 30.0 and not face.is_equal_approx(ROLE["lock"][0]):  # «unavailable»: no gloss
 			var fh := inner.size.y - lip
 			var side := 12.0 if size.y >= 104.0 else 8.0
 			_gl.bg_color = SELF.gloss(face)
@@ -509,12 +534,22 @@ class KitShape extends Control:
 				_hex_badge()
 			"plate":
 				_plate()
-			"dot":
-				var c := size * 0.5
-				var rr := s * 0.5
-				draw_circle(c, rr, INK, true, -1.0, true)
-				draw_circle(c, rr - 3.0, Color.WHITE, true, -1.0, true)
-				draw_circle(c, rr - (7.0 if rr >= 16.0 else 6.0), face, true, -1.0, true)
+			"dot":  # INK ring 3 → white ring 4 → face; wider than tall («99+») it is a pill
+				var rr := size.y * 0.5
+				var ring := 7.0 if rr >= 16.0 else 6.0
+				if size.x > size.y + 1.0:
+					var sb := StyleBoxFlat.new()
+					sb.anti_aliasing = true
+					for layer in [[0.0, INK], [3.0, Color.WHITE], [ring, face]]:
+						var d: float = layer[0]
+						sb.bg_color = layer[1]
+						sb.set_corner_radius_all(int(rr - d))
+						draw_style_box(sb, Rect2(Vector2(d, d), size - Vector2(d, d) * 2.0))
+				else:
+					var c := size * 0.5
+					draw_circle(c, rr, INK, true, -1.0, true)
+					draw_circle(c, rr - 3.0, Color.WHITE, true, -1.0, true)
+					draw_circle(c, rr - ring, face, true, -1.0, true)
 			"bar":
 				_bar()
 			"tail":  # tooltip tail pointing down (data.up = true: up)
@@ -670,15 +705,133 @@ static func clip_below(pts: PackedVector2Array, y: float) -> PackedVector2Array:
 	return r[0] if not r.is_empty() else PackedVector2Array()
 
 
+# ------------------------------------------------------------------ the price plate (§4.1)
+
+## An INK pill with [icon][number] per item. It lays its children out for any height and number size, so a button
+## sizes it by its class. items: [[icon, text, short], …]; `short` (not enough) paints the number NEG. More than
+## two items, or `compact`, show the scarcest one and a «+N» (§4.1: the full list goes to the tooltip).
+class KitPrice extends Panel:
+	var items: Array = []
+	var compact := false
+	var _rows: Array = []  # [{ic: TextureRect or null, l: Label, text, short}]
+	var _more: Label
+	var _sb: StyleBoxFlat
+
+	func _init(its: Array = []) -> void:
+		items = its
+		name = "price"
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_sb = SELF.style(Color(INK, 0.85), 17, 0, INK, 0, 0)
+		_sb.set_meta("kit_kind", "")
+		add_theme_stylebox_override("panel", _sb)
+		for it in items:
+			var a: Array = it
+			var ic: TextureRect = null
+			var tex := SELF.icon_tex(String(a[0])) if a.size() > 0 else null
+			if tex != null:
+				ic = TextureRect.new()
+				ic.texture = tex
+				ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+				ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+				ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				add_child(ic)
+			var short := a.size() > 2 and bool(a[2])
+			var l := SELF.label(String(a[1]) if a.size() > 1 else "", 26, NEG if short else TEXT, true)
+			l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			add_child(l)
+			_rows.append({"ic": ic, "l": l, "text": l.text, "short": short})
+		_more = SELF.label("", 24, TEXT, true)
+		_more.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		_more.visible = false
+		add_child(_more)
+
+	## The items shown: all of them (at most 2), or the scarcest one when compact / more than two.
+	func _shown() -> Array:
+		if _rows.size() <= 2 and not compact:
+			return _rows
+		for r in _rows:
+			if r["short"]:
+				return [r]
+		return _rows.slice(0, 1)
+
+	## The plate's width at a height, number size and icon side (nothing moves).
+	func width_for(h: float, num: int, icon: float) -> float:
+		return _walk(h, num, icon, false)
+
+	## Lays the children out from the final height: icons centred, numbers at `num` (Rubik 900).
+	func lay(h: float, num: int, icon: float) -> void:
+		var w := _walk(h, num, icon, true)
+		_sb.set_corner_radius_all(int(h * 0.5))
+		custom_minimum_size = Vector2(w, h)
+		size = Vector2(w, h)
+		queue_redraw()
+
+	func _walk(h: float, num: int, icon: float, apply: bool) -> float:
+		var shown := _shown()
+		var x := 3.0 if not shown.is_empty() and shown[0]["ic"] != null else roundf(h * 0.32)
+		if apply:
+			for r in _rows:
+				var on: bool = shown.has(r)
+				(r["l"] as Label).visible = on
+				if r["ic"] != null:
+					(r["ic"] as Control).visible = on
+		for i in shown.size():
+			var r: Dictionary = shown[i]
+			if i > 0:
+				x += 6.0
+			if r["ic"] != null:
+				if apply:
+					var ic: TextureRect = r["ic"]
+					ic.size = Vector2(icon, icon)
+					ic.position = Vector2(x, (h - icon) * 0.5)
+				x += icon - 1.0  # the rendered icons have a transparent margin
+			var tw := SELF.text_w(String(r["text"]), num, "d900", false)
+			if apply:
+				_num(r["l"], num, NEG if r["short"] else TEXT, x, tw, h)
+			x += tw
+		var more := _rows.size() - shown.size()
+		if more > 0:
+			var mt := "+%d" % more
+			x += 6.0
+			var mw := SELF.text_w(mt, num, "d900", false)
+			if apply:
+				_more.text = mt
+				_more.visible = true
+				_num(_more, num, TEXT, x, mw, h)
+			x += mw
+		elif apply:
+			_more.visible = false
+		return x + maxf(9.0, roundf(h * 0.24))
+
+	func _num(l: Label, num: int, col: Color, x: float, tw: float, h: float) -> void:
+		SELF.style_label(l, num, col, true)
+		l.add_theme_font_override("font", SELF.font("d900"))
+		l.add_theme_font_size_override("font_size", num)
+		l.position = Vector2(x, -1.0)
+		l.size = Vector2(tw + SELF.outline_for(num), h)
+
+
 # ------------------------------------------------------------------ the button (§4.1)
+
+## Vector chrome a button can take as its main icon (`{icon: "arrow_up"}`), drawn by KitShape.
+const CHROME_KINDS := ["x", "check", "chevron_left", "chevron_right", "plus", "minus", "arrow_up", "arrow_right", "swap",
+	"star", "star_empty"]
+
 
 ## A volumetric button: hard shadow → INK body → face with lip → gloss; a centred row [icon][caption][price].
 ## The handler runs on release inside (like the old _is_tap); a disabled button shakes and emits `denied`.
+## A picture another script puts at the left of the face (the hand picker's card art) moves the row right of it.
 class KitButton extends Panel:
 	signal denied
 
 	## class: [R, OUT, lip, shadow y, caption size, fit floor, icon size]
 	const GEOM := {"L": [24, 5, 10, 8, 40, 30, 72], "M": [20, 4, 8, 6, 32, 26, 56], "S": [20, 4, 6, 6, 26, 22, 44], "XS": [14, 3, 5, 4, 24, 22, 32]}
+	## the price plate in the row, by class: [h, NUM, NUM floor, icon] (§3.3: NUM_M 32 on L, NUM_S 26 on S; §3.5:
+	## a 44–48 icon on L, 28 in a small price)
+	const PRICE_GEOM := {"L": [52, 32, 26, 46], "M": [42, 28, 24, 36], "S": [36, 26, 22, 32], "XS": [32, 24, 22, 28]}
+	## L / M with a price that does not fit beside the caption: the caption over the price, next to the icon.
+	## [caption, caption floor, plate h, NUM, NUM floor, icon]
+	const STACK_GEOM := {"L": [32, 26, 42, 28, 24, 38], "M": [26, 22, 34, 24, 22, 30]}
 
 	var role := "info"
 	var size_class := ""
@@ -691,17 +844,21 @@ class KitButton extends Panel:
 	var hit_pad := 0.0
 	var round_btn := false
 	var icon_scale := 0.0  ## icon-only buttons: icon side as a share of the height
+	var content_left := 0.0  ## the content row starts right of this x (0: centred in the face)
 	var cb := Callable()
 	var cap: Label
 	var press := 0.0:
 		set(v):
 			press = v
 			_apply_press()
-	var _parts: Array = []  # [{node, kind, base}]
+	var _parts: Array = []  # [{node, kind, base, text}]
 	var _down := false
 	var _fired_frame := -1
 	var _hold_t := -1.0
 	var _built := false
+	var _in_rebuild := false
+	var _scan_queued := false
+	var _auto_left := 0.0  # right edge of a foreign picture at the left of the face
 	var _sb := StyleBoxFlat.new()
 
 	func _init() -> void:
@@ -711,6 +868,7 @@ class KitButton extends Panel:
 		_sb.corner_detail = 10
 		gui_input.connect(_on_input)
 		resized.connect(_layout)
+		child_entered_tree.connect(_on_child_entered)
 		set_process(false)
 
 	func cls() -> String:
@@ -741,6 +899,7 @@ class KitButton extends Panel:
 
 	## (Re)builds the content row; call after changing caption / icon / price / role / enabled.
 	func rebuild() -> void:
+		_in_rebuild = true
 		for part in _parts:
 			var old := part["node"] as Node
 			if is_instance_valid(old):
@@ -750,15 +909,16 @@ class KitButton extends Panel:
 		cap = null
 		var pieces: Array = []
 		if icon != "":
-			pieces.append({"i": icon, "main": true})
+			# a rendered icon, or vector chrome («Улучшить» with an arrow up, «Отмена» with ✕)
+			if SELF.icon_tex(icon) == null and SELF.CHROME_KINDS.has(icon):
+				pieces.append({"v": icon, "main": true})
+			else:
+				pieces.append({"i": icon, "main": true})
 		pieces.append_array(SELF.split_icons(caption))
-		var texts := 0
-		for pc in pieces:
-			if pc.has("t"):
-				texts += 1
 		for pc in pieces:
 			var node: Control
 			var kind := ""
+			var main: bool = pc.get("main", false)
 			if pc.has("t"):
 				var l := SELF.label(String(pc["t"]), 24, TEXT, true)
 				l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -776,17 +936,17 @@ class KitButton extends Panel:
 				tr_.mouse_filter = Control.MOUSE_FILTER_IGNORE
 				if not enabled:
 					tr_.modulate = LOCK_MOD
-				if pc.get("main", false):
-					tr_.name = "ic"
 				node = tr_
-				kind = "main_icon" if pc.get("main", false) else "icon"
+				kind = "main_icon" if main else "icon"
 			else:
 				node = SELF.KitShape.new(String(pc["v"]))
-				kind = "chrome"
+				kind = "main_icon" if main else "chrome"
+			if main:
+				node.name = "ic"
 			add_child(node)
 			_parts.append({"node": node, "kind": kind, "base": 0.0, "text": String(pc.get("t", ""))})
 		if not price.is_empty():
-			var pp := SELF.price_plate(price.slice(0, 2), 34, "dark")
+			var pp := KitPrice.new(price)
 			add_child(pp)
 			_parts.append({"node": pp, "kind": "price", "base": 0.0})
 		if cap == null:  # keep a 'cap' Label for callers that look for it
@@ -796,8 +956,34 @@ class KitButton extends Panel:
 			add_child(cap)
 			_parts.append({"node": cap, "kind": "hidden", "base": 0.0})
 		_built = true
+		_in_rebuild = false
 		_layout()
 		queue_redraw()
+
+	func _on_child_entered(n: Node) -> void:
+		if _in_rebuild or _scan_queued or not (n is Control) or n is KitDecor:
+			return
+		_scan_queued = true
+		_scan_foreign.call_deferred()
+
+	## A picture another script added at the left of the face: the row moves right of it, and the content is laid
+	## out again (that script may also have moved the caption).
+	func _scan_foreign() -> void:
+		_scan_queued = false
+		var own := {}
+		for part in _parts:
+			own[part["node"]] = true
+		var left := 0.0
+		for ch in get_children():
+			var c := ch as Control
+			if c == null or own.has(c) or not c.visible or c is Label or c is KitDecor:
+				continue
+			var r := Rect2(c.position, c.size)
+			if r.position.x >= -2.0 and r.position.x < size.x * 0.4 and r.end.x < size.x * 0.6 \
+					and r.position.y < size.y * 0.7 and r.end.y > size.y * 0.3:
+				left = maxf(left, r.end.x)
+		_auto_left = left
+		_layout()
 
 	func _layout() -> void:
 		if not _built or size.x <= 0.0:
@@ -807,97 +993,93 @@ class KitButton extends Panel:
 		var lip: float = g[2]
 		var face_h := size.y - 2.0 * out - lip
 		var cy := out + face_h * 0.5
-		var pad := 18.0 if cls() == "L" else (16.0 if cls() != "XS" else 10.0)
-		var gap := 10.0 if cls() != "XS" else 6.0
-		var avail := size.x - 2.0 * pad
+		var c := cls()
+		var pad := 18.0 if c == "L" else (16.0 if c != "XS" else 10.0)
+		var gap := 10.0 if c != "XS" else 6.0
+		var inset := maxf(content_left, _auto_left)
+		var left := maxf(pad, inset + gap) if inset > 0.0 else pad
+		var right := size.x - pad
+		var avail := maxf(0.0, right - left)
 		var icon_side := minf(float(g[6]), face_h - 6.0)
 		if icon_scale > 0.0:
 			icon_side = size.y * icon_scale
-		var visible_parts: Array = []
+		var all: Array = []
 		for part in _parts:
-			if part["kind"] != "hidden" and part["kind"] != "deco" and part["kind"] != "dropped":
-				visible_parts.append(part)
-		for part in visible_parts:
+			if part["kind"] != "hidden" and part["kind"] != "deco":
+				all.append(part)
+		for part in all:
 			if part["kind"] == "text":
-				(part["node"] as Label).text = String(part.get("text", ""))
-		var only_text: bool = visible_parts.size() == 1 and visible_parts[0]["kind"] == "text"
-		var price_w := 0.0
-		for part in visible_parts:
+				var l0 := part["node"] as Label
+				l0.text = String(part.get("text", ""))
+				l0.clip_text = false
+				l0.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
+				l0.remove_theme_constant_override("line_spacing")
+		var plan := _solve(all, avail, icon_side, gap, face_h)
+		var parts: Array = plan["parts"]
+		var keep := {}
+		for part in parts:
+			keep[part["node"]] = true
+		for part in all:
+			(part["node"] as Control).visible = keep.has(part["node"])
+		var s: int = plan["s"]
+		var two: String = plan["two"]
+		var stack: bool = plan["stack"]
+		var clip_w: float = plan["clip_w"]
+		var pw := 0.0
+		for part in parts:
 			if part["kind"] == "price":
-				(part["node"] as Control).size.y = maxf(26.0, face_h * 0.5)
-				price_w = (part["node"] as Control).get_combined_minimum_size().x
-		# one line: step the caption down through the scale to the class floor (then on to FIT_FLOOR for the
-		# legacy captions that are still too long)
-		var best := -1
-		var steps := SELF.fit_steps(int(g[4]), FIT_FLOOR)
-		for s in steps:
-			if _row_w(visible_parts, s, icon_side, gap, price_w) <= avail:
-				best = s
-				break
-		if best < 0 and visible_parts.size() > 1:
-			# a legacy caption that does not fit with its pictographs («⬆ Улучшить» on a card): keep the words
-			var kept: Array = []
-			for part in visible_parts:
-				if part["kind"] == "text" or part["kind"] == "price":
-					kept.append(part)
-			if not kept.is_empty() and kept.size() < visible_parts.size():
-				for part in visible_parts:
-					if not kept.has(part):
-						part["kind"] = "dropped"
-						(part["node"] as Control).visible = false
-				visible_parts = kept
-				only_text = visible_parts.size() == 1 and visible_parts[0]["kind"] == "text"
-				for s in steps:
-					if _row_w(visible_parts, s, icon_side, gap, price_w) <= avail:
-						best = s
-						break
-		var two_lines := false
-		var two_size := 0
-		var two_w := 0.0
-		var icon_text: bool = visible_parts.size() == 2 and visible_parts[0]["kind"] == "main_icon" and visible_parts[1]["kind"] == "text"
-		if (best < 0 or best < int(g[5])) and (cls() == "L" or cls() == "M") and (only_text or icon_text):
-			# L (and M, for legacy captions) wrap to two lines rather than shrink (spec §4.1: L at 32 in two lines)
-			var tpart: Dictionary = visible_parts[-1]
-			var two := SELF.two_lines(String(tpart.get("text", "")))
-			var room := avail - (icon_side + gap if icon_text else 0.0)
-			if two.contains("\n"):
-				for s in SELF.fit_steps(32 if cls() == "L" else 26, 22):
-					var w := 0.0
-					for ln in two.split("\n"):
-						w = maxf(w, SELF.text_w(ln, s, "d900" if s >= 26 else "d800"))
-					if w <= room and s * 1.2 * 2.0 <= face_h + 6.0:
-						two_lines = true
-						two_size = s
-						two_w = w
-						(tpart["node"] as Label).text = two
-						break
-		if best < 0:
-			best = FIT_FLOOR
-		var s_now := two_size if two_lines else best
-		var total := _row_w(visible_parts, s_now, icon_side, gap, price_w)
-		if two_lines:
-			total = two_w + (icon_side + gap if icon_text else 0.0)
-		var x := (size.x - minf(total, avail)) * 0.5
-		for part in visible_parts:
+				var kp := part["node"] as KitPrice
+				kp.lay(float(plan["ph"]), int(plan["pn"]), float(plan["pi"]))
+				pw = kp.size.x
+		var total: float = plan["w"] if float(plan["w"]) >= 0.0 else _row_w(parts, s, icon_side, gap, pw)
+		total = minf(total, avail)
+		var x := left + (avail - total) * 0.5
+		var only_text: bool = parts.size() == 1 and parts[0]["kind"] == "text"
+		var lcy := cy  # the centre line of the caption row
+		var price_pos := Vector2.ZERO
+		var cap_x := -1.0  # stacked: where the caption row starts
+		if stack:
+			var lead := 0.0
+			for part in parts:
+				if part["kind"] == "main_icon":
+					lead = icon_side + gap
+			var cw: float = plan["cw"]
+			var colw := maxf(cw, pw)
+			var top := cy - (s * 1.2 + 2.0 + float(plan["ph"])) * 0.5
+			lcy = top + s * 0.6
+			price_pos = Vector2(x + lead + (colw - pw) * 0.5, top + s * 1.2 + 2.0)
+			cap_x = x + lead + (colw - cw) * 0.5
+		var started := false
+		for part in parts:
 			var n: Control = part["node"]
-			match String(part["kind"]):
+			var k := String(part["kind"])
+			if stack and not started and k != "main_icon" and k != "price":
+				x = cap_x
+				started = true
+			match k:
 				"text":
 					var l := n as Label
-					SELF.style_label(l, s_now, TEXT, true)
-					l.add_theme_font_size_override("font_size", s_now)
-					if s_now < 22:
+					SELF.style_label(l, s, TEXT, true)
+					l.add_theme_font_size_override("font_size", s)
+					if s < 22:
 						l.add_theme_font_override("font", SELF.font("d800"))
-					if two_lines:
-						l.add_theme_constant_override("line_spacing", -int(s_now * 0.12))
-					if only_text:
-						l.position = Vector2(0, out)
-						l.size = Vector2(size.x, face_h)
-						l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS if not two_lines else TextServer.OVERRUN_NO_TRIMMING
-						l.clip_text = not two_lines and _row_w(visible_parts, s_now, icon_side, gap, price_w) > avail
+					if two != "":
+						l.text = two
+						l.add_theme_constant_override("line_spacing", -int(s * 0.12))
+					if clip_w >= 0.0:
+						l.clip_text = true
+						l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+					if only_text and not stack:
+						# one caption: the label spans the face, centred (inside [left, right] with an inset or a cut)
+						var span := inset > 0.0 or clip_w >= 0.0
+						l.position = Vector2(left if span else 0.0, out)
+						l.size = Vector2(avail if span else size.x, face_h)
 					else:
-						var tw := two_w if two_lines else SELF.text_w(l.text, s_now, "d900" if s_now >= 26 else "d800")
-						var lh := face_h if two_lines else s_now * 1.5
-						l.position = Vector2(x, cy - lh * 0.5)
+						var tw: float = plan["two_w"] if two != "" else SELF.text_w(l.text, s, "d900" if s >= 26 else "d800")
+						if clip_w >= 0.0:
+							tw = minf(tw, clip_w)
+						var lh := face_h if two != "" else s * 1.5
+						l.position = Vector2(x, lcy - lh * 0.5)
 						l.size = Vector2(tw, lh)
 						x += tw + gap
 				"main_icon":
@@ -905,17 +1087,153 @@ class KitButton extends Panel:
 					n.position = Vector2(x, cy - icon_side * 0.5)
 					x += icon_side + gap
 				"icon", "chrome":
-					var side := roundf(s_now * 1.25) if part["kind"] == "icon" else roundf(s_now * 1.1)
-					if visible_parts.size() == 1:
+					var side := roundf(s * 1.25) if k == "icon" else roundf(s * 1.1)
+					if parts.size() == 1:
 						side = icon_side if icon_scale > 0.0 else minf(face_h * 0.62, float(g[6]))
+						x = left + (avail - side) * 0.5 if inset > 0.0 else (size.x - side) * 0.5
 					n.size = Vector2(side, side)
-					n.position = Vector2(x if visible_parts.size() > 1 else (size.x - side) * 0.5, cy - side * 0.5)
+					n.position = Vector2(x, lcy - side * 0.5)
 					x += side + gap
 				"price":
-					n.position = Vector2(x, cy - n.size.y * 0.5)
-					x += n.size.x + gap
+					if stack:
+						n.position = price_pos
+					else:
+						n.position = Vector2(x, cy - n.size.y * 0.5)
+						x += n.size.x + gap
 			part["base"] = n.position.y
 		_apply_press()
+
+	func _plan(parts: Array, s: int, ph: float, pn: int, pi: float) -> Dictionary:
+		return {"parts": parts, "s": s, "ph": ph, "pn": pn, "pi": pi, "two": "", "two_w": 0.0, "stack": false, "cw": 0.0,
+			"clip_w": -1.0, "w": -1.0}
+
+	## The largest layout that fits `avail` (docs/ui_style.md §4.1): the caption steps down to its class floor,
+	## then the price's number; L / M put the price under the caption; XS keeps the prices and drops the caption
+	## (§4.4: «prices or a short caption»); L / M wrap a long caption to two lines; legacy captions go on down to
+	## 20; inline pictographs go, then the main icon; two prices become the scarcest one + «+1»; at the very end
+	## the caption is cut with an ellipsis. The row never gets wider than `avail`.
+	func _solve(all: Array, avail: float, icon_side: float, gap: float, face_h: float) -> Dictionary:
+		var c := cls()
+		var pp: KitPrice = null
+		for part in all:
+			if part["kind"] == "price":
+				pp = part["node"]
+				pp.compact = false
+		var pg: Array = PRICE_GEOM[c]
+		var ph := minf(float(pg[0]), face_h - 2.0)
+		var pi := minf(float(pg[3]), ph)
+		var p_steps := SELF.fit_steps(int(pg[1]), int(pg[2]))
+		var sets: Array = [all]
+		var no_picto := all.filter(func(p): return p["kind"] != "icon" and p["kind"] != "chrome")
+		if no_picto.size() < all.size():
+			sets.append(no_picto)
+		var bare := no_picto.filter(func(p): return p["kind"] != "main_icon")
+		if not all.any(func(p): return p["kind"] == "text" or p["kind"] == "price"):
+			return _plan(all, int(geom()[4]), ph, p_steps[0], pi)  # an icon-only button keeps its icon
+		if bare.size() < no_picto.size():
+			sets.append(bare)
+		for parts in sets:
+			var r := _solve_set(parts, avail, icon_side, gap, face_h, pp, ph, pi, p_steps)
+			if not r.is_empty():
+				return r
+		if pp != null and pp._rows.size() > 1:
+			pp.compact = true
+			for parts in sets:
+				var r := _solve_set(parts, avail, icon_side, gap, face_h, pp, ph, pi, p_steps)
+				if not r.is_empty():
+					return r
+		if pp != null:
+			# no room for the caption at all: the price alone (both prices, then the scarcest + «+1»), rather than a
+			# caption cut to a few letters
+			var with_icon := all.filter(func(p): return p["kind"] == "price" or p["kind"] == "main_icon")
+			var alone := all.filter(func(p): return p["kind"] == "price")
+			for compact in ([false, true] if pp._rows.size() > 1 else [false]):
+				pp.compact = compact
+				for parts in [with_icon, alone]:
+					for pn in p_steps:
+						if _row_w(parts, FIT_FLOOR, icon_side, gap, pp.width_for(ph, pn, pi)) <= avail:
+							return _plan(parts, FIT_FLOOR, ph, pn, pi)
+		# nothing fits: the smallest sizes and a cut caption
+		var last: Array = sets[-1]
+		if pp != null:
+			last = last.filter(func(p): return p["kind"] == "price")
+		var pl := _plan(last, FIT_FLOOR, ph, p_steps[-1], pi)
+		var has_price := last.any(func(p): return p["kind"] == "price")
+		var pw := pp.width_for(ph, p_steps[-1], pi) if has_price else 0.0
+		var texts := last.filter(func(p): return p["kind"] == "text")
+		if not texts.is_empty():
+			var rest := last.filter(func(p): return p["kind"] != "text")
+			var rest_w := _row_w(rest, FIT_FLOOR, icon_side, gap, pw) - gap * maxf(0.0, rest.size() - 1)
+			var room := avail - rest_w - gap * (last.size() - 1)
+			pl["clip_w"] = maxf(0.0, room / texts.size())
+			pl["w"] = avail
+		return pl
+
+	func _solve_set(parts: Array, avail: float, icon_side: float, gap: float, face_h: float, pp: KitPrice, ph: float,
+			pi: float, p_steps: Array[int]) -> Dictionary:
+		var c := cls()
+		var g := geom()
+		var cap_floor := int(g[5])
+		var texts := parts.filter(func(p): return p["kind"] == "text")
+		var pw0 := pp.width_for(ph, p_steps[0], pi) if pp != null else 0.0
+		# the caption down its class steps
+		for s in SELF.fit_steps(int(g[4]), cap_floor):
+			if _row_w(parts, s, icon_side, gap, pw0) <= avail:
+				return _plan(parts, s, ph, p_steps[0], pi)
+		if pp != null:
+			# then the price's number
+			for pn in p_steps:
+				if _row_w(parts, cap_floor, icon_side, gap, pp.width_for(ph, pn, pi)) <= avail:
+					return _plan(parts, cap_floor, ph, pn, pi)
+			# L / M: the caption over the price, beside the icon
+			if STACK_GEOM.has(c) and not texts.is_empty():
+				var sg: Array = STACK_GEOM[c]
+				var sph := float(sg[2])
+				var spi := float(sg[5])
+				var row := parts.filter(func(p): return p["kind"] != "price" and p["kind"] != "main_icon")
+				var lead := icon_side + gap if parts.any(func(p): return p["kind"] == "main_icon") else 0.0
+				for s in SELF.fit_steps(int(sg[0]), int(sg[1])):
+					if s * 1.2 + 2.0 + sph > face_h - 2.0:
+						continue
+					var cw := _row_w(row, s, icon_side, gap, 0.0)
+					for pn in SELF.fit_steps(int(sg[3]), int(sg[4])):
+						var w := lead + maxf(cw, pp.width_for(sph, pn, spi))
+						if w <= avail:
+							var pl := _plan(parts, s, sph, pn, spi)
+							pl["stack"] = true
+							pl["cw"] = cw
+							pl["w"] = w
+							return pl
+			# XS: the prices alone
+			if c == "XS" and not texts.is_empty():
+				var only := parts.filter(func(p): return p["kind"] == "price" or p["kind"] == "main_icon")
+				for pn in p_steps:
+					if _row_w(only, cap_floor, icon_side, gap, pp.width_for(ph, pn, pi)) <= avail:
+						return _plan(only, cap_floor, ph, pn, pi)
+		elif (c == "L" or c == "M") and texts.size() == 1:
+			# L / M: a long caption on two lines (L at 32, §4.1)
+			var two := SELF.two_lines(String(texts[0]["text"]))
+			if two.contains("\n"):
+				var others := parts.filter(func(p): return p["kind"] != "text")
+				for s in SELF.fit_steps(32 if c == "L" else 26, 22):
+					if s * 1.2 * 2.0 > face_h + 6.0:
+						continue
+					var tw := 0.0
+					for ln in two.split("\n"):
+						tw = maxf(tw, SELF.text_w(ln, s, "d900" if s >= 26 else "d800"))
+					var w := tw + (_row_w(others, s, icon_side, gap, 0.0) + gap if not others.is_empty() else 0.0)
+					if w <= avail:
+						var pl := _plan(parts, s, ph, p_steps[0], pi)
+						pl["two"] = two
+						pl["two_w"] = tw
+						pl["w"] = w
+						return pl
+		# legacy captions go on below the class floor (to 20)
+		var pwl := pp.width_for(ph, p_steps[-1], pi) if pp != null else 0.0
+		for s in SELF.fit_steps(cap_floor, FIT_FLOOR):
+			if s < cap_floor and _row_w(parts, s, icon_side, gap, pwl) <= avail:
+				return _plan(parts, s, ph, p_steps[-1], pi)
+		return {}
 
 	func _row_w(parts: Array, s: int, icon_side: float, gap: float, price_w: float) -> float:
 		var w := 0.0
@@ -970,7 +1288,7 @@ class KitButton extends Panel:
 		draw_style_box(_sb, inner)
 		_sb.border_width_bottom = 0
 		var face_h := inner.size.y - lip_now
-		if enabled:
+		if enabled and role != "lock":  # «unavailable» never has a gloss (§4.1), also on a lock button that answers
 			var side := 12.0 if cls() == "L" else 8.0
 			if round_btn:
 				side = maxf(side, r * 0.45)
@@ -1079,8 +1397,15 @@ static func icon_button(parent: Node, rect: Rect2, icon: String, role := "slate"
 	var b := button(parent, rect, role, "", {"icon": icon, "round": round, "cb": cb, "icon_scale": 0.70 if round else 0.74,
 		"size": "M" if rect.size.y >= 80.0 else "S", "hit_pad": maxf(0.0, (96.0 - rect.size.y) * 0.5)})
 	if caption != "":
-		var plate := pill(b, caption, 30, Color(INK, 0.92), 22)
-		plate.position = Vector2((rect.size.x - plate.size.x) * 0.5, rect.size.y - 14.0)
+		# square: INK pill h 30, MICRO 22, 14 px over the bottom; round: SLATE_WELL pill h 32 with an INK 3 contour,
+		# LABEL 24, 10 px over the bottom, kept 12 px from the screen edges (§4.2)
+		var plate := caption_pill(b, caption, 32.0 if round else 30.0, SLATE_WELL if round else Color(INK, 0.92), 24 if round else 22, 3 if round else 0)
+		var px := (rect.size.x - plate.size.x) * 0.5
+		if b.is_inside_tree():
+			var gx := b.get_global_rect().position.x
+			var vw := b.get_viewport_rect().size.x
+			px = clampf(px, 12.0 - gx, vw - 12.0 - gx - plate.size.x)
+		plate.position = Vector2(px, rect.size.y - (10.0 if round else 14.0))
 	return b
 
 
@@ -1127,8 +1452,9 @@ static func hex_badge(parent: Node, center: Vector2, r: float, role: String, tex
 	return s
 
 
-## The hex title plate centred on the window's top edge (y = −42).
-static func title_plate(panel: Control, text: String, role := "info", icon := "") -> KitShape:
+## The hex title plate centred on the window's top edge (y = −42). `animate`: it drops in from −20 px after 60 ms
+## (§3.6 POP_IN); a window replaced in the same frame passes false.
+static func title_plate(panel: Control, text: String, role := "info", icon := "", animate := true) -> KitShape:
 	var h := 84.0
 	var has_icon := icon != "" and icon_tex(icon) != null
 	var tw := text_w(text, 46, "d900")
@@ -1156,22 +1482,32 @@ static func title_plate(panel: Control, text: String, role := "info", icon := ""
 		ic.size = Vector2(92, 92)
 		ic.position = Vector2(-22, (h - 92.0) * 0.5 - 6.0)
 		s.add_child(ic)
+	var d := _dur(0.22)
+	if animate and d > 0.0:
+		s.position.y = -62.0
+		s.modulate.a = 0.0
+		var drop := s.create_tween().set_parallel()
+		drop.tween_property(s, "position:y", -42.0, d).set_delay(0.06).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		drop.tween_property(s, "modulate:a", 1.0, d * 0.5).set_delay(0.06)
 	return s
 
 
-## A notification dot on the parent's top-right corner: Ø40 with a number, Ø26 without.
+## A notification dot on the parent's top-right corner: Ø40 with a number (MICRO 22; «99+» widens it to a pill),
+## Ø26 without.
 static func dot(parent: Control, n := -1, role := "war") -> KitShape:
 	var d := 40.0 if n >= 0 else 26.0
+	var t := ("99+" if n > 99 else str(n)) if n >= 0 else ""
+	var w := maxf(d, text_w(t, 22, "d900") + 14.0) if t.length() > 2 else d
 	var s := KitShape.new("dot", face_of(role))
-	s.size = Vector2(d, d)
-	s.position = Vector2(parent.size.x - 4.0, 6.0) - Vector2(d, d) * 0.5
+	s.size = Vector2(w, d)
+	s.position = Vector2(parent.size.x - 4.0, 6.0) - Vector2(w, d) * 0.5
 	parent.add_child(s)
 	if n >= 0:
-		var l := label("99+" if n > 99 else str(n), 22, TEXT, true)
-		l.add_theme_font_size_override("font_size", fit_size(l.text, 22, d - 6.0, "d800", FIT_FLOOR))
+		var l := label(t, 22, TEXT, true)
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		l.size = Vector2(d, d)
+		l.size = Vector2(w, d)
+		l.position = Vector2(0, -1)
 		s.add_child(l)
 	badge_pop(s)
 	return s
@@ -1203,11 +1539,12 @@ static func set_bar(b: KitShape, frac: float, text := "") -> void:
 		(b.get_node("label") as Label).text = text
 
 
-## An INK pill with a short white text (caption plates, labels under round buttons).
-static func pill(parent: Node, text: String, h := 30.0, face := Color(0, 0, 0, 0), size := 22) -> Panel:
+## A caption pill with a short white text: the plate of a square button (INK, h 30, MICRO 22) or the label under
+## a round one (SLATE_WELL, INK 3 contour, h 32, LABEL 24), §4.2. (`Kit.pill` is left for the resource plate, §4.6.)
+static func caption_pill(parent: Node, text: String, h := 30.0, face := Color(0, 0, 0, 0), size := 22, contour := 0) -> Panel:
 	var p := Panel.new()
 	var f: Color = face if face.a > 0.0 else Color(INK, 0.9)
-	var sb := style(f, int(h * 0.5), 0, INK, 0, 0)
+	var sb := style(f, int(h * 0.5), contour, INK, 0, 0)
 	sb.set_meta("kit_kind", "")
 	p.add_theme_stylebox_override("panel", sb)
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1216,7 +1553,7 @@ static func pill(parent: Node, text: String, h := 30.0, face := Color(0, 0, 0, 0
 	var tw := text_w(text, int(l.get_theme_font_size("font_size")), "d800" if size < 26 else "d900")
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	p.size = Vector2(tw + 24.0, h)
+	p.size = Vector2(tw + 24.0 + 2.0 * contour, h)
 	l.size = p.size
 	l.position = Vector2(0, -1)
 	p.add_child(l)
@@ -1284,38 +1621,12 @@ static func chip(parent: Node, pos: Vector2, icon: String, text: String, kind :=
 	return p
 
 
-## A price plate: INK pill with [icon][number] per item (at most 2 on a button). items: [[icon, text, short], …];
-## `short` (not enough) paints the number NEG.
-static func price_plate(items: Array, h := 34.0, on := "dark") -> Panel:
-	var p := Panel.new()
-	var sb := style(Color(INK, 0.85), int(h * 0.5), 0, INK, 0, 0)
-	sb.set_meta("kit_kind", "")
-	p.add_theme_stylebox_override("panel", sb)
-	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var size := 26 if h >= 34.0 else 24
-	var icon_side := roundf(h * 0.9)
-	var x := 6.0
-	for it in items:
-		var a: Array = it
-		var ic := TextureRect.new()
-		ic.texture = icon_tex(String(a[0]))
-		ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		ic.size = Vector2(icon_side, icon_side)
-		ic.position = Vector2(x - 4.0, (h - icon_side) * 0.5)
-		p.add_child(ic)
-		x += icon_side - 2.0
-		var short := a.size() > 2 and bool(a[2])
-		var l := label(String(a[1]), size, NEG if short else TEXT, true)
-		var tw := text_w(String(a[1]), size, "d900")
-		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		l.position = Vector2(x, -1)
-		l.size = Vector2(tw, h)
-		p.add_child(l)
-		x += tw + 8.0
-	p.custom_minimum_size = Vector2(x + 4.0, h)
-	p.size = p.custom_minimum_size
+## A price plate (KitPrice): INK pill with [icon][number] per item. items: [[icon, text, short], …]; `short` (not
+## enough) paints the number NEG. `num` / `icon` default by height: NUM 32 / 28 / 26 / 24 for h ≥ 50 / 40 / 34 / less.
+static func price_plate(items: Array, h := 34.0, on := "dark", num := 0, icon := 0.0) -> Panel:
+	var p := KitPrice.new(items)
+	var n := num if num > 0 else (32 if h >= 50.0 else (28 if h >= 40.0 else (26 if h >= 34.0 else 24)))
+	p.lay(h, n, icon if icon > 0.0 else roundf(minf(h - 2.0, h * 0.9)))
 	return p
 
 

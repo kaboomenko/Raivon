@@ -4,6 +4,7 @@
 
 [resource]
 base_font = ExtResource("1")
+spacing_space = 3
 variation_opentype = {
 2003265652: 800
 }

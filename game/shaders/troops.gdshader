@@ -88,7 +88,7 @@ void fragment() {
 	float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
 	c = max(mix(vec3(l), c, 1.15), vec3(0.0));
 	c *= mix(0.86, 1.06, smoothstep(0.0, 0.35, v_h));
-	ALBEDO = c;
+	ALBEDO = soft_floor(c);  // no albedo darker than #2A2A30 (§6.1)
 	ROUGHNESS = roughness_v;
 	SPECULAR = 0.2;
 }
