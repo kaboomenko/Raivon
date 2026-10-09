@@ -348,8 +348,8 @@ def quoins(corners, z0, z1, r_at, n=5, d=0.005, arm=(0.034, 0.022), mt=None, pol
 def port_frame(fa, wall, z, outer, inner, proud, mt, dark):
     """A gun port on a wall facing bearing fa (its face at distance `wall` from the axis): a dressed stone frame
     outer = (w, h) standing `proud` off the wall round an opening inner = (w, h), and the dark port set back in it
-    just off the wall face, so the opening reads as a recess (front ring, outer sides, inner reveals, dark back:
-    open shells, the buried faces left out)."""
+    just off the wall face, its reveals in shadow, so the opening reads as a recess from any side (front ring, outer
+    sides, dark reveals and back: open shells, the buried faces left out)."""
     c, s_ = math.cos(fa), math.sin(fa)
     n, t = (c, s_, 0.0), (-s_, c, 0.0)
 
@@ -367,7 +367,7 @@ def port_frame(fa, wall, z, outer, inner, proud, mt, dark):
         en = [(0, 0, -1), t, (0, 0, 1), (-t[0], -t[1], 0)][k]  # this edge's outward normal (bottom, right, top, left)
         if k != 0:  # the outer bottom faces down: never seen from above
             fr.face([P(db, ua, va), P(db, ub, vb), P(d1, ub, vb), P(d1, ua, va)], en)
-        fr.face([P(d0, ia, ja), P(d0, ib, jb), P(d1, ib, jb), P(d1, ia, ja)], tuple(-x for x in en))  # reveal
+        dk.face([P(d0, ia, ja), P(d0, ib, jb), P(d1, ib, jb), P(d1, ia, ja)], tuple(-x for x in en))  # dark reveal
     dk.face([P(d0, u, v) for u, v in i4], n)
     fr.obj(mt, "port_frame")
     dk.obj(dark, "port")
@@ -874,7 +874,7 @@ def tower_l4():
         apz = (0.2 - 0.005 * 0.43) * math.cos(math.pi / 8) - 0.003
         c, s_ = math.cos(fa), math.sin(fa)
         # a stone frame round a dark port set back in it: a recess, not a block
-        port_frame(fa, (0.2 - 0.005 * 0.43) * math.cos(math.pi / 8), 0.36, (0.075, 0.065), (0.05, 0.045), 0.012, trim,
+        port_frame(fa, (0.2 - 0.005 * 0.43) * math.cos(math.pi / 8), 0.36, (0.074, 0.066), (0.054, 0.048), 0.008, trim,
                    flat("slit", "#1e1a17", 0.9))
         rr = (math.pi / 2 + 0.06, 0, fa + math.pi / 2)  # the barrel looks out of the face and a little down
         cy(0.017, 0.07, (c * (apz + 0.03), s_ * (apz + 0.03), 0.358), brz, 8, r2=0.014, rot=rr)
@@ -1024,8 +1024,8 @@ def tower_l6():
 
 def tower_l7():
     """Steel missile tower: hazard-striped plinth with vent grilles and a console; a ribbed column of
-    riveted plates with cold-blue light strips; a tilted 2×3 missile pod in riveted plating, red sensor glow and a
-    small radar dish."""
+    riveted plates with cold-blue light strips; a tilted 2×3 missile pod in riveted plating with a cold strip across
+    its top, red sensor glow and a small radar dish."""
     sw = panels(STEEL, shade(STEEL, 0.6), 0.075, 0.1)
     sd = flat("steelrib", STEEL_D, 0.45)
     pl = panels(STEEL_D, shade(STEEL_D, 0.6), 0.09, 0.06)
@@ -1078,7 +1078,9 @@ def tower_l7():
                     cn(0.02, 0.05, (x, -0.18, z), nose, 8, rot=(math.pi / 2, 0, 0))
             bx((0.06, 0.03, 0.03), (0.06, 0.02, 0.085), sd, bev=0)
             bx((0.05, 0.012, 0.02), (0.06, 0.0, 0.088), glow("sensor", "#ff4a3a", 4.0), bev=0)
-            bx((0.2, 0.006, 0.01), (0, 0.101, 0.05), cold, bev=0)  # a cold strip along the pod's back
+            # a cold strip across the pod's top, in front of the hazard band (the tilted pod's back faces away from
+            # the camera, its top faces up to it)
+            bx((0.2, 0.012, 0.006), (0, -0.062, 0.0715), cold, bev=0)
         build_at(pod, 0, 0.01, tilt=(-0.42, 0), z=0.12)
         cy(0.005, 0.12, (-0.085, 0.07, 0.24), sd, 4)
         ico(0.011, (-0.085, 0.07, 0.305), glow("sensor", "#ff4a3a", 4.0))
