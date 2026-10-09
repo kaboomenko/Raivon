@@ -142,6 +142,36 @@ def netted(base, line, scale=46.0):
     return m
 
 
+def links(base, dark, scale=15.0):
+    """Track links: dark bands across the track every link pitch along Y (world space, baked like any colour)."""
+    key = ("links", base, dark, scale)
+    if key in kit._MATS:
+        return kit._MATS[key]
+    m = bpy.data.materials.new("links")
+    m.use_nodes = True
+    nt = m.node_tree
+    geo = nt.nodes.new("ShaderNodeNewGeometry")
+    wv = nt.nodes.new("ShaderNodeTexWave")
+    wv.wave_type = "BANDS"
+    wv.bands_direction = "Y"
+    wv.wave_profile = "SIN"
+    wv.inputs["Scale"].default_value = scale
+    wv.inputs["Distortion"].default_value = 0.0
+    nt.links.new(geo.outputs["Position"], wv.inputs["Vector"])
+    ramp = nt.nodes.new("ShaderNodeValToRGB")
+    ramp.color_ramp.interpolation = "CONSTANT"
+    els = ramp.color_ramp.elements
+    els[0].position = 0.0
+    els[0].color = (*kit.srgb(base), 1)
+    els[1].position = 0.62
+    els[1].color = (*kit.srgb(dark), 1)
+    nt.links.new(wv.outputs["Fac"], ramp.inputs["Fac"])
+    nt.links.new(ramp.outputs["Color"], nt.nodes["Principled BSDF"].inputs["Base Color"])
+    nt.nodes["Principled BSDF"].inputs["Roughness"].default_value = 0.85
+    kit._MATS[key] = m
+    return m
+
+
 def side_prism(profile, w, mt, x=0.0):
     """Prism along X of width w from a (y, z) side profile — hulls seen from the side."""
     n = len(profile)
@@ -171,6 +201,9 @@ _EAGLE_R = [(0.0, 0.36), (0.07, 0.28), (0.055, 0.18), (0.18, 0.3), (0.3, 0.5), (
             (0.5, 0.14), (0.3, 0.02), (0.11, -0.02), (0.1, -0.16), (0.24, -0.26), (0.08, -0.28), (0.14, -0.5),
             (0.0, -0.42)]
 EAGLE = _EAGLE_R + [(-u, v) for u, v in _EAGLE_R[1:-1]][::-1]
+# a 12-point eagle (raised wings, head, fanned tail) for emblems too small to show the full outline
+_EAGLE_S_R = [(0.0, 0.42), (0.1, 0.2), (0.5, 0.48), (0.38, 0.06), (0.14, -0.04), (0.22, -0.48), (0.0, -0.32)]
+EAGLE_S = _EAGLE_S_R + [(-u, v) for u, v in _EAGLE_S_R[1:-1]][::-1]
 
 
 def face_obj(polys, n, mt, two=0.0):
@@ -230,16 +263,20 @@ def badge_on(target, w, h, loc, mt, axis="y", side=-1, pts=EAGLE, off=0.0025):
     """Emblem laid onto a curved, faceted surface (a caparison): every outline point is cast onto `target` along the
     view axis and lifted `off` back towards the viewer, and the outline is cut in two along its vertical centre
     line so each half follows its own facet instead of bridging under the cloth. axis 'y' + side −1 = seen from the
-    front, axis 'x' + side ±1 = seen from that flank."""
+    front, axis 'x' + side ±1 = seen from that flank, axis 'z' = seen from above (its top towards +Y, like badge
+    'z'; loc z is ignored)."""
     from mathutils import Vector
     from mathutils.bvhtree import BVHTree
     me = target.data
     tree = BVHTree.FromPolygons([target.matrix_world @ v.co for v in me.vertices], [p.vertices for p in me.polygons])
     x, y, z = loc
-    d = Vector((0, -side, 0)) if axis == "y" else Vector((-side, 0, 0))  # ray direction: into the surface
+    d = {"y": Vector((0, -side, 0)), "x": Vector((-side, 0, 0)), "z": Vector((0, 0, -1))}[axis]  # into the surface
 
     def place(u, v):
-        p = Vector((x + u * w, y + side, z + v * h)) if axis == "y" else Vector((x + side, y + u * w, z + v * h))
+        if axis == "z":
+            p = Vector((x + u * w, y + v * h, 2.0))
+        else:
+            p = Vector((x + u * w, y + side, z + v * h)) if axis == "y" else Vector((x + side, y + u * w, z + v * h))
         hit = tree.ray_cast(p, d, 2.0)[0]
         assert hit is not None, "badge_on: outline point off the target surface"
         return tuple(hit - d * off)
@@ -558,7 +595,8 @@ def figure(dl, team, v=0, seated=False):
         # the far view of reference frames 1 and 3 reads these men as deep team blue over dark steel: blued, darker
         # mail and helmets, a deeper surcoat and cape, a darker shield rim — only the eagles stay white
         mail = DL3_MAIL
-        helm = F(mixc(DL3_STEEL, team, 0.18), 0.35)  # blued steel, tinted like the reference helmets
+        # blued steel like the reference helmets (a cold steel tint for the other teams: a red tint reads pink)
+        helm = F(mixc(DL3_STEEL, team if team == TEAMS["blue"] else "#4a5872", 0.18), 0.35)
         _legs(Z, seated, "#2e2826", "#3b291c")
         _torso(Z, mail, 0.045, 0.052)
         _surcoat(Z, team, hem=0.085 if not seated else 0.14, k=0.64)
@@ -641,7 +679,7 @@ def figure(dl, team, v=0, seated=False):
         rod((0.076, -0.004, Z + 0.47), (0.078, 0.002, Z + 0.55), 0.004, F(STEEL, 0.3), r2=0.0005, n=4)
     elif dl == 6:  # WW2 infantry: netted steel helmet with foliage, pale webbing (Y-straps down the chest, a row of
         # ammo pouches), a big pack with a blanket roll and an entrenching tool; rifle with a leather sling at port arms
-        jac = mixc(shade(team, 0.66), OLIVE, 0.18)
+        jac = mixc(shade(team, 0.6), OLIVE, 0.2)
         _legs(Z, seated, "#4b4e40", "#2a2522", gaiter="#8f8566")
         _torso(Z, jac, 0.045, 0.05, skirt=jac, skirt_len=0.05)
         wc = "#c4b588"  # pale webbing: light lines on the dark tunic that read from far
@@ -679,14 +717,14 @@ def figure(dl, team, v=0, seated=False):
     elif dl == 7:  # modern infantry: team multicam fatigues, coyote plate carrier with magazine pouches and an
         # assault pack with a radio, coyote helmet with goggles, NVG mount and ear defenders, team shoulder marks with
         # a white dot (seen from above at the game camera), tan boots and knee pads; carbine with optic at low ready
-        fat = camo(shade(team, 0.6), shade(team, 0.36), mixc(shade(team, 0.85), "#a3a28c", 0.45), 38.0)
-        coy, coy_d = "#857452", "#5f5239"
+        fat = camo(shade(team, 0.6), shade(team, 0.36), mixc(shade(team, 0.72), "#8f8e7a", 0.4), 38.0)
+        coy, coy_d = "#7a6b4c", "#56493a"
         _legs(Z, seated, fat, "#6e5c40", gaiter=fat)
         for sx in (-1, 1):  # knee pads
             if not seated:
                 bx((0.028, 0.012, 0.03), (sx * 0.024, -0.016, 0.095), F("#2a2b2c"), bev=0)
         _torso(Z, fat, 0.044, 0.049)
-        bx((0.1, 0.104, 0.1), (0, 0, Z + 0.25), F(coy, 0.85), bev=0)  # plate carrier
+        bx((0.1, 0.104, 0.1), (0, 0, Z + 0.25), F(coy, 0.85), bev=0.008)  # plate carrier
         for dx in (-0.028, 0.0, 0.028):  # magazine pouches
             bx((0.022, 0.016, 0.032), (dx, -0.059, Z + 0.226), F(coy_d, 0.85), bev=0)
         bx((0.04, 0.01, 0.022), (0.012, -0.056, Z + 0.278), F(coy_d, 0.85), bev=0)  # admin pouch
@@ -726,29 +764,27 @@ def figure(dl, team, v=0, seated=False):
         if seated:
             _legs(Z, True, "#23272d", "#5b636e", 0.022, 0.04)
         else:
-            for sx in (-1, 1):
+            for sx in (-1, 1):  # bronze greaves under navy knee guards (reference frame 5: bronze legs)
                 rod((sx * 0.026, 0, 0.18), (sx * 0.03, 0, 0.1), 0.023, joint, n=6)
-                bx((0.034, 0.012, 0.05), (sx * 0.028, -0.027, 0.148), bronze, bev=0)  # thigh plate
-                bx((0.04, 0.045, 0.06), (sx * 0.03, -0.005, 0.075), navy, bev=0)
-                bx((0.034, 0.014, 0.028), (sx * 0.03, -0.031, 0.118), plate, bev=0)  # knee guard
+                bx((0.04, 0.045, 0.06), (sx * 0.03, -0.005, 0.075), bronze, bev=0)
+                bx((0.034, 0.014, 0.028), (sx * 0.03, -0.031, 0.118), navy, bev=0)  # knee guard
                 bx((0.042, 0.06, 0.03), (sx * 0.03, -0.01, 0.015), joint, bev=0)
         bx((0.1, 0.075, 0.07), (0, 0, Z + 0.17), joint, bev=0)
         bx((0.104, 0.079, 0.016), (0, 0, Z + 0.156), bronze, bev=0)  # belt
         for k, z in enumerate((0.18, 0.199)):  # abdomen plates, the undersuit dark in the seams between them
             bx((0.074 - 0.008 * k, 0.012, 0.015), (0, -0.039, Z + z), navy, bev=0)
-        o = taper_box((0.104, 0.084, 0.115), (0, 0, Z + 0.212), navy, top=(1.2, 1.1), bev=0.012)  # shell
+        taper_box((0.104, 0.084, 0.115), (0, 0, Z + 0.212), navy, top=(1.2, 1.1))  # shell
         taper_box((0.072, 0.012, 0.074), (0, -0.0425, Z + 0.238), bronze, top=(1.3, 1.0))  # chest frame
         taper_box((0.06, 0.012, 0.064), (0, -0.0475, Z + 0.243), tm, top=(1.32, 1.0))  # chest plate
         bx((0.02, 0.012, 0.02), (0, -0.0545, Z + 0.272), gl, bev=0, rot=(0, math.pi / 4, 0))  # core
         bx((0.07, 0.03, 0.08), (0, 0.06, Z + 0.27), joint, bev=0)  # power pack
         for sx in (-1, 1):
             cy(0.012, 0.012, (sx * 0.02, 0.078, Z + 0.25), gl, 6, rot=(math.pi / 2, 0, 0))
-            cy(0.009, 0.05, (sx * 0.024, 0.066, Z + 0.325), plate, 6)  # exhaust stacks
-            # big rounded team pauldron over a navy lame: the team colour stays the brightest note from above
-            uvs(0.034, (sx * 0.074, 0, Z + 0.322), F(team, 0.5), 8, 4, (1.15, 1.2, 0.78))
-            uvs(0.034, (sx * 0.08, 0, Z + 0.298), navy, 8, 3, (1.2, 1.26, 0.4))
-            badge(0.026, 0.026, (sx * 0.074, -0.0372, Z + 0.3375), F(WHITE, 0.6), tilt=math.pi / 4)
-        uvs(0.036, (0, 0.003, Z + 0.374), navy, 8, 5, (1, 1.08, 1.02))  # helmet
+            # rounded team pauldron over a navy lame: the team colour stays the brightest note from above
+            pd = uvs(0.032, (sx * 0.077, 0, Z + 0.314), F(team, 0.5), 6, 4, (1.25, 1.3, 0.62))
+            uvs(0.032, (sx * 0.082, 0, Z + 0.294), navy, 6, 3, (1.3, 1.35, 0.38))
+            badge_on(pd, 0.03, 0.03, (sx * 0.077, -0.004, 0), F(WHITE, 0.6), "z", pts=EAGLE_S, off=0.0015)
+        uvs(0.036, (0, 0.003, Z + 0.374), navy, 8, 4, (1, 1.08, 1.02))  # helmet
         bx((0.052, 0.016, 0.034), (0, -0.031, Z + 0.364), plate, bev=0)  # face plate
         bx((0.046, 0.006, 0.01), (0, -0.0405, Z + 0.374), gl, bev=0)  # T-visor
         bx((0.01, 0.006, 0.018), (0, -0.0405, Z + 0.362), gl, bev=0)
@@ -759,7 +795,7 @@ def figure(dl, team, v=0, seated=False):
             rod(sh, hand, 0.02, joint, n=6)
             p0 = tuple(sh[i] + (hand[i] - sh[i]) * 0.5 for i in range(3))
             p1 = tuple(sh[i] + (hand[i] - sh[i]) * 0.92 for i in range(3))
-            rod(p0, p1, 0.024, bronze, r2=0.022, n=6)
+            rod(p0, p1, 0.024, bronze, r2=0.022, n=5)
         g = F("#3a3f47", 0.5)
         beam((0.075, -0.08, Z + 0.2), (-0.06, -0.095, Z + 0.3), 0.03, g)
         beam((-0.06, -0.095, Z + 0.3), (-0.1, -0.1, Z + 0.33), 0.012, g)
@@ -948,22 +984,42 @@ def assault_dl4(team):
 
 
 def assault_dl5(team):
-    """Armoured car (c. 1914): bonnet in front, riveted body, round MG turret, spoked wheels."""
-    body = F(mixc(team, "#5f6650", 0.5), 0.7)
+    """Armoured car (c. 1914): bonnet with armoured radiator louvres in front, riveted steel-blue body with the team
+    band, round MG turret with the air-recognition roundel, wooden-spoked wheels, a pick and a shovel strapped to the
+    flank, petrol tins on the rear fender, spare wheel on the tail."""
+    body = F(mixc(shade(team, 0.75), "#4f5844", 0.5), 0.7)
     dk = F("#2b2d2f")
+    rv = F("#6d737a", 0.4)
+    wood = F("#a07448", 0.75)
     bx((0.17, 0.42, 0.035), (0, 0, 0.085), dk, bev=0)
     bx((0.21, 0.24, 0.13), (0, 0.07, 0.17), body, bev=0.012)
     o = taper_box((0.17, 0.17, 0.095), (0, -0.13, 0.145), body, (0.82, 0.86), bev=0.01)
     o.location.z = 0.1475
     bx((0.12, 0.012, 0.07), (0, -0.218, 0.14), F("#4a4c4e", 0.5), bev=0)
+    for z in (0.117, 0.131, 0.145, 0.159):  # armoured radiator louvres
+        bx((0.108, 0.006, 0.007), (0, -0.2255, z), dk, bev=0)
     for sx in (-1, 1):
         cy(0.015, 0.02, (sx * 0.06, -0.22, 0.2), glow("lamp", "#ffe2a0", 3.0), 6, rot=(math.pi / 2, 0, 0))
-        bx((0.04, 0.12, 0.012), (sx * 0.1, -0.15, 0.125), dk, bev=0)  # mudguard
-        for sy in (-0.14, 0.15):
+        bx((0.006, 0.006, 0.006), (sx * 0.052, -0.2255, 0.172), rv, bev=0)  # louvre frame rivets
+        for sy in (-0.15, 0.15):
+            bx((0.04, 0.12, 0.012), (sx * 0.1, sy, 0.125), dk, bev=0)  # mudguards
+        for sy in (-0.14, 0.15):  # wheels: black tyre, six wooden spokes, iron hub
             disc(0.058, (sx * 0.1, sy, 0.058), F(RUBBER, 0.9), "x", 10, 0.038)
-            disc(0.034, (sx * 0.122, sy, 0.058), F("#8a8c86", 0.6), "x", 8, 0.006)
+            for k in range(3):
+                b = bx((0.005, 0.082, 0.007), (sx * 0.1215, sy, 0.058), wood, bev=0)
+                b.rotation_euler.x = k * math.pi / 3
+            disc(0.014, (sx * 0.124, sy, 0.058), F("#8a8c86", 0.5), "x", 6, 0.006)
         bx((0.006, 0.08, 0.04), (sx * 0.107, 0.06, 0.18), F("#22252a"), bev=0)  # vision slit plate
+        for k in range(4):  # rivets along the foot of the side plate
+            bx((0.007, 0.008, 0.008), (sx * 0.1065, -0.03 + k * 0.064, 0.12), rv, bev=0)
     bx((0.214, 0.244, 0.025), (0, 0.07, 0.205), F(team, 0.7), bev=0)  # team band
+    # a pick and a shovel strapped to the left flank, petrol tins on the right rear fender
+    rod((-0.11, -0.04, 0.142), (-0.11, 0.12, 0.142), 0.0045, wood, n=4)
+    bx((0.006, 0.008, 0.05), (-0.111, -0.034, 0.142), F(IRON, 0.45), bev=0)
+    rod((-0.11, 0.0, 0.126), (-0.11, 0.13, 0.126), 0.0045, wood, n=4)
+    bx((0.006, 0.03, 0.024), (-0.111, 0.142, 0.126), F(IRON, 0.45), bev=0)
+    for k in range(2):
+        bx((0.026, 0.034, 0.042), (0.1, 0.112 + k * 0.04, 0.152), F(mixc(OLIVE, "#3a3d33", 0.3), 0.7), bev=0)
     cy(0.072, 0.075, (0, 0.06, 0.27), body, 10, r2=0.064)
     cy(0.066, 0.012, (0, 0.06, 0.312), dk, 10)
     badge(0.074, 0.074, (0, 0.06, 0.3195), F(WHITE, 0.6), "z", CIRCLE)  # air-recognition roundel on the turret roof
@@ -993,22 +1049,70 @@ def tracks(L, x, w=0.07, h=0.09, wheels=5, r=0.03, mt_track=None, mt_wheel=None,
     tr = mt_track or F("#3a3631", 0.85)
     for sx in (-1, 1):
         bx((w, L, h), (sx * x, 0, h / 2 + 0.005), tr, bev=0.025)
-        if skirt:
-            bx((0.012, L * 0.86, h * 0.62), (sx * (x + w / 2 + 0.004), -0.01, h * 0.72), skirt, bev=0)
+        if skirt:  # four skirt panels with dark seams between them
+            n, gap = 4, 0.006
+            pl = (L * 0.86 - gap * (n - 1)) / n
+            for k in range(n):
+                y = -0.01 - L * 0.43 + pl / 2 + k * (pl + gap)
+                bx((0.012, pl, h * 0.62), (sx * (x + w / 2 + 0.004), y, h * 0.72), skirt, bev=0)
             continue
         for i in range(wheels):
             y = -L / 2 + 0.06 + i * (L - 0.12) / (wheels - 1)
             disc(r, (sx * (x + w / 2 + 0.002), y, r + 0.012), mt_wheel or F("#5a5c55", 0.7), "x", 8, 0.012)
 
 
-def assault_dl6(team):
-    """WW2 medium tank: sloped glacis, cast round turret, short-ish gun, team stars and pennant."""
-    body = camo(mixc(team, "#5d6b3c", 0.55), mixc(team, "#2f3622", 0.6), mixc(team, "#7d7b56", 0.55), 7.0)
-    tracks(0.46, 0.105, 0.07, 0.09, 5, 0.032)
-    side_prism([(-0.235, 0.075), (-0.24, 0.1), (-0.13, 0.18), (0.2, 0.18), (0.235, 0.14), (0.235, 0.075)], 0.28, body)
+def running_gear(L, x, w, sprocket_y, idler_y, z_hub=0.05, r_sp=0.036, r_id=0.03, inset=0.003, hub=True):
+    """Drive sprocket and idler at the track ends (outer faces at x ± w/2 + inset): the running gear that makes a
+    tank read as tracked at the game camera."""
+    wheel = F("#55574f", 0.65)
     for sx in (-1, 1):
-        bx((0.012, 0.12, 0.012), (sx * 0.04, -0.17, 0.155), F("#3a3631"), bev=0, rot=(-0.6, 0, 0))  # spare tracks
-    cy(0.012, 0.03, (0.08, 0.17, 0.2), F("#2b2d2f"), 6)  # exhaust
+        xo = sx * (x + w / 2 + inset)
+        disc(r_sp, (xo, sprocket_y, z_hub), wheel, "x", 10, 0.014)
+        if hub:
+            disc(r_sp * 0.45, (xo + sx * 0.007, sprocket_y, z_hub), F("#8d9399", 0.45), "x", 6, 0.004)
+        disc(r_id, (xo, idler_y, z_hub - 0.004), wheel, "x", 8, 0.012)
+
+
+def assault_dl6(team):
+    """WW2 medium tank: sloped glacis with driver's hatches, periscopes, a bow MG and spare track links, cast round
+    turret with the team band and white stars, link-textured tracks with sprocket, idler and return rollers, a
+    shovel and an axe on the flank, petrol cans and a rolled tarp on the deck, headlamps with brush guards."""
+    body = camo(mixc(team, "#5d6b3c", 0.55), mixc(team, "#2f3622", 0.6), mixc(team, "#7d7b56", 0.55), 7.0)
+    lk = links("#57534b", "#1c1a18", 15.0)
+    dk = F("#2b2d2f")
+    wood = F("#8a6038", 0.8)
+    tracks(0.46, 0.105, 0.07, 0.09, 5, 0.032, mt_track=lk)
+    running_gear(0.46, 0.105, 0.07, -0.205, 0.205, 0.052)
+    side_prism([(-0.235, 0.075), (-0.24, 0.1), (-0.13, 0.18), (0.2, 0.18), (0.235, 0.14), (0.235, 0.075)], 0.28, body)
+    gla = math.atan2(0.08, 0.11)  # glacis slope
+    gn = (0, -math.sin(gla), math.cos(gla))
+
+    def on_glacis(y, up=0.0):
+        return (y, 0.1 + (y + 0.24) * 0.08 / 0.11 + gn[2] * up, gn[1] * up)
+    for sx in (-1, 1):  # driver's and co-driver's hatches with periscopes
+        yy, zz, dy = on_glacis(-0.152, 0.004)
+        bx((0.046, 0.044, 0.01), (sx * 0.055, yy + dy, zz), F(mixc(team, "#2f3622", 0.6), 0.7), bev=0, rot=(gla, 0, 0))
+        yy, zz, dy = on_glacis(-0.142, 0.014)
+        bx((0.014, 0.01, 0.012), (sx * 0.055, yy + dy, zz), dk, bev=0, rot=(gla, 0, 0))
+    yy, zz, dy = on_glacis(-0.214, 0.004)  # spare track links across the lower glacis
+    bx((0.2, 0.034, 0.008), (0, yy + dy, zz), lk, bev=0, rot=(gla, 0, 0))
+    yy, zz, dy = on_glacis(-0.19, 0.0)  # bow MG in its ball mount
+    uvs(0.014, (0.06, yy, zz), body, 6, 4)
+    rod((0.06, yy - 0.01, zz), (0.06, yy - 0.05, zz - 0.004), 0.004, dk, n=4)
+    for sx in (-1, 1):  # headlamps with brush guards on the front corners
+        cy(0.011, 0.014, (sx * 0.1, -0.243, 0.112), F("#d8d2b8", 0.3), 6, rot=(math.pi / 2, 0, 0))
+        bx((0.028, 0.004, 0.004), (sx * 0.1, -0.256, 0.124), dk, bev=0)
+        bx((0.004, 0.016, 0.026), (sx * 0.1135, -0.248, 0.112), dk, bev=0)
+    # a shovel (front) and an axe (rear) strapped to each flank, clear of the white stars
+    for sx in (-1, 1):
+        xs = sx * 0.1435
+        rod((xs, -0.19, 0.15), (xs, -0.05, 0.15), 0.0045, wood, n=4)
+        bx((0.006, 0.03, 0.026), (xs, -0.2, 0.15), F("#3f4433", 0.6), bev=0)
+        rod((xs, 0.09, 0.145), (xs, 0.21, 0.145), 0.0045, wood, n=4)
+        bx((0.006, 0.012, 0.03), (xs, 0.2, 0.152), F(IRON, 0.45), bev=0)
+    for k in range(2):  # petrol cans beside the turret
+        bx((0.026, 0.034, 0.042), (0.114, 0.104 + k * 0.04, 0.201), F(mixc(OLIVE, "#3a3d33", 0.3), 0.7), bev=0)
+    cy(0.012, 0.03, (-0.11, 0.21, 0.195), dk, 6)  # exhaust
     cy(0.1, 0.085, (0, 0.03, 0.222), body, 12, r2=0.084)
     cy(0.035, 0.03, (0.04, 0.06, 0.278), body, 8)  # cupola
     crewman(0.04, 0.06, 0.293, OLIVE, shade(team, 0.78))
@@ -1032,21 +1136,41 @@ def assault_dl6(team):
 
 
 def assault_dl7(team):
-    """Main battle tank: long flat hull, angular wedge turret, long smoothbore with thermal sleeve, skirts."""
+    """Main battle tank: long flat hull, angular wedge turret with spaced add-on armour on the cheeks, long
+    smoothbore with thermal sleeve, segmented side skirts over link-textured tracks with sprocket and idler, driver's
+    hatch with periscopes, stowage bins and an engine grille on the deck, headlamps, a team panel on the bustle bags
+    beside the white chevron."""
     body = camo(mixc(team, "#6b6f5a", 0.5), mixc(team, "#2c3026", 0.6), mixc(team, "#a09a7a", 0.5), 6.0)
     sk = body
-    tracks(0.48, 0.11, 0.065, 0.08, 6, 0.03, skirt=sk)
+    lk = links("#57534b", "#1c1a18", 15.0)
+    dk = F("#24262a")
+    tracks(0.48, 0.11, 0.065, 0.08, 6, 0.03, mt_track=lk, skirt=sk)
+    running_gear(0.48, 0.11, 0.065, 0.214, -0.228, 0.044, 0.032, 0.027, inset=-0.0015, hub=False)
     side_prism([(-0.25, 0.07), (-0.25, 0.095), (-0.17, 0.15), (0.24, 0.155), (0.255, 0.12), (0.255, 0.07)], 0.29, body)
     tpts = [(-0.055, -0.16), (0.055, -0.16), (0.12, -0.06), (0.118, 0.12), (0.075, 0.17), (-0.075, 0.17), (-0.118, 0.12), (-0.12, -0.06)]
     tur = camo(mixc(team, "#55594a", 0.5), mixc(team, "#262a20", 0.6), mixc(team, "#8c8668", 0.5), 6.0)
-    cy(0.1, 0.02, (0, 0.03, 0.16), F("#24262a"), 10)  # turret ring
+    cy(0.1, 0.02, (0, 0.03, 0.16), dk, 10)  # turret ring
     taper_extrude(tpts, 0, 0.085, tur, 0.84, (0, 0.03, 0.165))
+    era = F(mixc(team, "#3a3d36", 0.75), 0.7)
+    for sx in (-1, 1):  # spaced add-on armour standing off the turret cheeks
+        rz = math.atan2(0.1, 0.065 * sx)
+        nx, ny = 0.838 * sx, -0.545
+        bx((0.108, 0.012, 0.06), (sx * 0.0875 + nx * 0.011, -0.08 + ny * 0.011, 0.2), era, bev=0, rz=rz)
     badge(0.06, 0.055, (0.035, 0.07, 0.2515), F(WHITE, 0.6), "z", CHEVRON)  # white recognition chevron
-    cy(0.028, 0.01, (-0.05, 0.075, 0.253), F("#24262a"), 8)  # commander's hatch ring
+    cy(0.028, 0.01, (-0.05, 0.075, 0.253), dk, 8)  # commander's hatch ring
     crewman(-0.05, 0.075, 0.258, "#3c4046", shade(team, 0.72))
     for k, dx in enumerate((-0.062, 0.0, 0.062)):  # stowage bags in the bustle rack
         bx((0.056, 0.036, 0.042), (dx, 0.192, 0.212), F(("#7d7656", "#5f6447", "#8a8160")[k], 0.9), bev=0)
-    bx((0.19, 0.006, 0.006), (0, 0.212, 0.236), F("#24262a"), bev=0)  # rack rail
+    bx((0.05, 0.03, 0.004), (0, 0.192, 0.235), F(team, 0.7), bev=0)  # team panel on the middle bag
+    bx((0.19, 0.006, 0.006), (0, 0.212, 0.236), dk, bev=0)  # rack rail
+    # driver's hatch with periscopes on the front deck, stowage bins along the deck edges, engine grille, headlamps
+    cy(0.021, 0.006, (0, -0.152, 0.155), dk, 8)
+    for dx in (-0.016, 0.016):
+        bx((0.014, 0.01, 0.01), (dx, -0.176, 0.158), F("#30332c"), bev=0)
+    for sx in (-1, 1):
+        bx((0.024, 0.15, 0.022), (sx * 0.131, 0.06, 0.163), F("#4a4d42", 0.8), bev=0)
+        cy(0.01, 0.012, (sx * 0.112, -0.252, 0.088), F("#d8d2b8", 0.3), 6, rot=(math.pi / 2, 0, 0))
+    bx((0.14, 0.03, 0.004), (0, 0.235, 0.152), links("#3a3c38", "#151617", 40.0), bev=0)  # engine grille
     rod((0, -0.12, 0.21), (0, -0.44, 0.21), 0.0115, F("#3c3f37", 0.6), n=8)
     cy(0.017, 0.07, (0, -0.21, 0.21), F("#3c3f37", 0.6), 8, rot=(math.pi / 2, 0, 0))  # sleeve
     cy(0.018, 0.04, (0, -0.33, 0.21), F("#30332c"), 8, rot=(math.pi / 2, 0, 0))  # fume extractor
@@ -1064,7 +1188,8 @@ def assault_dl7(team):
 
 
 def assault_dl8(team):
-    """Heavy hover tank: a gunmetal wedge on team nacelles floating over glowing pads, twin rail cannon, light strips."""
+    """Heavy hover tank: a gunmetal wedge on team nacelles floating over glowing pads, twin rail cannon, light strips,
+    a team nose plate, glowing intake grilles, team turret cheeks, missile pods, bronze trim (reference frames 2, 5)."""
     plate = F("#68707b", 0.4)
     dk = F("#2c3139", 0.55)
     gl = team_glow(team)
@@ -1093,6 +1218,28 @@ def assault_dl8(team):
             bx((0.03, 0.012, 0.032), (sx * 0.028, -0.2 - k * 0.06, H + 0.13), F(team, 0.5), bev=0)
     bx((0.034, 0.03, 0.05), (-0.06, 0.1, H + 0.19), dk, bev=0)  # sensor mast
     cy(0.012, 0.012, (-0.06, 0.1, H + 0.222), gl, 6)
+    # armour detail after reference frames 2 and 5: a raised team plate on the nose with the gunmetal seams showing
+    # round it, glowing intake grilles on the rear deck, team cheek plates with light strips on the turret, missile
+    # pods with glowing tubes on the nacelles, bronze trim along the nacelles and bronze muzzles on the rails
+    bronze = F("#a8743e", 0.35)
+    ns = math.atan2(0.035, 0.12)
+    bx((0.15, 0.105, 0.008), (0, -0.14 - 0.003 * math.sin(ns), 0.1825 + 0.003 * math.cos(ns)), F(shade(team, 0.7), 0.45),
+       bev=0, rot=(ns, 0, 0))
+    rs = -math.atan2(0.025, 0.32)
+    for sx in (-1, 1):
+        bx((0.044, 0.064, 0.006), (sx * 0.046, 0.185, 0.1813), dk, bev=0, rot=(rs, 0, 0))  # intake grille
+        for y in (0.168, 0.2):
+            bx((0.032, 0.007, 0.004), (sx * 0.046, y, 0.1813 + 0.004 - (y - 0.185) * 0.078), gl, bev=0, rot=(rs, 0, 0))
+        th = -0.407 * sx  # turret side lean
+        nx, nz = 0.918 * sx, 0.395
+        bx((0.006, 0.1, 0.05), (sx * 0.086 + nx * 0.0035, 0.047, 0.2225 + nz * 0.0035), F(team, 0.5), bev=0,
+           rot=(0, th, 0))  # cheek plate
+        bx((0.004, 0.08, 0.008), (sx * 0.086 + nx * 0.0075, 0.047, 0.214 + nz * 0.0075), gl, bev=0, rot=(0, th, 0))
+        bx((0.044, 0.07, 0.03), (sx * 0.125, 0.16, 0.172), dk, bev=0)  # missile pod
+        for dx in (-0.01, 0.01):
+            bx((0.012, 0.004, 0.012), (sx * 0.125 + dx, 0.1235, 0.174), gl, bev=0)
+        bx((0.004, 0.36, 0.008), (sx * 0.1565, 0.045, 0.15), bronze, bev=0)  # nacelle trim
+        bx((0.026, 0.02, 0.03), (sx * 0.028, -0.373, H + 0.13), bronze, bev=0)  # rail muzzle
 
 
 def mech(team):

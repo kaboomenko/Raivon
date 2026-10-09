@@ -101,12 +101,13 @@ def _sock(node, ident, out=False):
 
 
 def facade(wall, win, col=0.07, floor=0.1, wf=0.5, hf=0.55, lit="#ffd27a", lit_p=0.22, brick=False, z0=0.0,
-           brick_scale=30.0, mortar_k=1.35):
+           brick_scale=30.0, mortar_k=1.35, pil=0, pil_c=None):
     """Wall with a grid of windows on every vertical face (world-space, so floors line up with Z=0).
 
     Baked into the texture like every procedural material: cheap windows without extra geometry.
+    pil > 0: a pale pilaster (pil_c) between the windows at every pil-th column.
     """
-    key = ("facade", wall, win, col, floor, wf, hf, lit, lit_p, brick, z0, brick_scale, mortar_k)
+    key = ("facade", wall, win, col, floor, wf, hf, lit, lit_p, brick, z0, brick_scale, mortar_k, pil, pil_c)
     if key in kit._MATS:
         return kit._MATS[key]
     m = bpy.data.materials.new("facade")
@@ -178,7 +179,13 @@ def facade(wall, win, col=0.07, floor=0.1, wf=0.5, hf=0.55, lit="#ffd27a", lit_p
         nz.inputs["Scale"].default_value = 9.0
         L.new(geo.outputs["Position"], nz.inputs["Vector"])
         wallc = mix(nz.outputs["Fac"], shade(wall, 0.86), wall)
-    L.new(mix(mask, wallc, wincol), bsdf.inputs["Base Color"])
+    out = mix(mask, wallc, wincol)
+    if pil:
+        g = mth("FRACT", mth("DIVIDE", u, col * pil))
+        hw = (1 - wf) / 2 * 0.75 / pil
+        pm = mth("MULTIPLY", mth("ADD", mth("LESS_THAN", g, hw), mth("GREATER_THAN", g, 1 - hw)), vert)
+        out = mix(pm, out, pil_c or shade(wall, 1.5))
+    L.new(out, bsdf.inputs["Base Color"])
     bsdf.inputs["Roughness"].default_value = 0.8
     kit._MATS[key] = m
     return m
@@ -1922,9 +1929,33 @@ def slits(items, mt=None, one_side=False):
     mb.obj(mt or flat("slit", "#1c1a19", 0.9), "slits")
 
 
+def lean_to(A, B, C, D, roof_c, n=3, kind="roof", tk=0.01, ct=0.009):
+    """A mono-pitch roof laid in courses like the gable roofs: eave edge A→B (low), top edge D→C (high), a slab
+    under the courses with its eave and verge edges showing."""
+    from mathutils import Vector
+    A, B, C, D = (Vector(p) for p in (A, B, C, D))
+    N = (B - A).cross(D - A).normalized()
+    if N.z < 0:
+        N = -N
+    slab = _MB()
+    At, Bt, Ct, Dt = A + N * tk, B + N * tk, C + N * tk, D + N * tk
+    e = (B - A).normalized()
+    s_ = (D - A).normalized()
+    slab.face([A, B, C, D], -N)
+    slab.face([A, B, Bt, At], -s_)
+    slab.face([A, D, Dt, At], -e)
+    slab.face([B, C, Ct, Bt], e)
+    slab.obj(tex(kind, shade(roof_c, 0.72), 1.6), "lean_slab")
+    MBs, BUTT = [_MB(), _MB()], _MB()
+    course_rows(MBs, At, Bt, Ct, Dt, n, ct, butt=BUTT, band=0.8)
+    for mb, mt in zip(MBs, _roof_mats(roof_c, 0.84, kind)):
+        mb.obj(mt, "lean_courses")
+    BUTT.obj(tex(kind, shade(roof_c, 0.68), 1.6), "lean_butts")
+
+
 def hoarding(x0, y0, x1, y1, out, team, z_top=0.28, wall_t=0.08):
     """A timber hoarding on a curtain wall (reference frame 4's timberwork on the walls): a plank gallery jutting
-    out over the outer face on struts, under a lean-to roof of team slates that runs back over the wall-walk.
+    out over the outer face on struts, under a lean-to of wooden shingles that runs back over the merlons.
     out = +1 builds on the wall's left side (seen walking x0→x1), -1 on its right."""
     L = math.dist((x0, y0), (x1, y1))
     ang = math.atan2(y1 - y0, x1 - x0)
@@ -1942,15 +1973,13 @@ def hoarding(x0, y0, x1, y1, out, team, z_top=0.28, wall_t=0.08):
         px, py = cx + math.cos(ang) * f * (L - 0.012), cy_ + math.sin(ang) * f * (L - 0.012)
         beam((px + nx * (wall_t / 2), py + ny * (wall_t / 2), z_top - 0.07),
              (px + nx * (g1 - 0.004), py + ny * (g1 - 0.004), z_top - 0.01), 0.011, dark)
-    # the lean-to: from the gallery's outer edge (low) back over the wall-walk (high)
-    lo, hi = g1 + 0.012, -wall_t / 2 - 0.004
-    z_lo, z_hi = z_top + 0.062, z_top + 0.115
-    run = lo - hi
-    tilt = math.atan2(z_hi - z_lo, run)
-    ln = math.hypot(run, z_hi - z_lo)
-    m = (lo + hi) / 2
-    bx((L + 0.02, ln, 0.012), (cx + nx * m, cy_ + ny * m, (z_lo + z_hi) / 2),
-       tex("roof", slate(team, 0.9), 2.2), rot=(-tilt * out, 0, ang), bev=0)
+    # the lean-to of wooden shingles: from the gallery's outer edge (low) back over the merlons (high)
+    lo, hi = g1 + 0.012, -0.004
+    z_lo, z_hi = z_top + 0.062, z_top + 0.098
+    ex, ey = math.cos(ang) * (L / 2 + 0.01), math.sin(ang) * (L / 2 + 0.01)
+    lean_to((cx - ex + nx * lo, cy_ - ey + ny * lo, z_lo), (cx + ex + nx * lo, cy_ + ey + ny * lo, z_lo),
+            (cx + ex + nx * hi, cy_ + ey + ny * hi, z_hi), (cx - ex + nx * hi, cy_ - ey + ny * hi, z_hi),
+            "#7a5434", n=3, kind="wood")
 
 
 def barrel(x, y, s=1.0):
@@ -1974,7 +2003,6 @@ def hand_cart(team):
         cy(0.012, 0.016, (0.0, sy * 0.054, 0.034), wd, 6, rot=(math.pi / 2, 0, 0))
         beam((-0.06, sy * 0.03, 0.05), (-0.17, sy * 0.034, 0.008), 0.01, dk)
     uvs(0.06, (0.005, 0, 0.09), tex("wood", THATCH, 3.0), 8, 4, (1.2, 0.8, 0.6))
-    bx((0.012, 0.09, 0.006), (0.02, 0, 0.122), flat("tie" + team, shade(team, 0.8), 0.7), bev=0)
 
 
 def smithy(team):
@@ -1986,9 +2014,8 @@ def smithy(team):
     for sx in (-1, 1):
         bx((0.014, 0.014, 0.16), (sx * 0.1, -0.06, 0.08), wd, bev=0)
     bx((0.22, 0.014, 0.016), (0, -0.06, 0.158), wd, bev=0)
-    tilt = math.atan2(0.06, 0.15)
-    bx((0.25, math.hypot(0.15, 0.06) + 0.01, 0.012), (0, -0.0, 0.19), tex("roof", slate(team, 0.86), 2.2),
-       rot=(tilt, 0, 0), bev=0)
+    lean_to((-0.125, -0.085, 0.152), (0.125, -0.085, 0.152), (0.125, 0.075, 0.22), (-0.125, 0.075, 0.22),
+            slate(team, 0.94), n=3)
     bx((0.09, 0.07, 0.065), (-0.05, 0.035, 0.0325), st, bev=0)
     bx((0.07, 0.05, 0.008), (-0.05, 0.03, 0.068), glow("forge", "#ff8a2a", 3.0), bev=0)
     top = chimney(-0.05, 0.05, 0.065, 0.36, 0.045, st)
@@ -2035,8 +2062,7 @@ def residence_dl4(team):
     slits(slit_items)
     # timber hoardings with slate lean-tos on the side curtains, between the corner and the mid towers
     for sx in (-1, 1):
-        for (ya, yb) in ((-0.37, -0.08), (0.08, 0.37)):
-            hoarding(sx * H, ya, sx * H, yb, -sx, team)
+        hoarding(sx * H, -0.37, sx * H, -0.08, -sx, team)
     # front corners: square towers with steep slate pyramids (reference frame 4); back corners stay round
     for (x, y) in corners[:2]:
         square_tower(x, y, 0.19, 0.56, roof, team, roof_c=roof_c)
@@ -2064,16 +2090,18 @@ def residence_dl4(team):
         bx((0.18 - k * 0.02, 0.04, 0.012 + k * 0.012), (0, -H - 0.13 + k * 0.03, 0.006 + k * 0.006),
            stone(WSTONE_D, 0.6), bev=0.002)
     win_arch(0, -H - 0.082, 0.3, 0.03, 0.04)
-    gable_roof(0.26, 0.16, 0.14, (0, -H, 0.4), roof_c, st, oh=0.03, ohx=0.02, n=4, gable_timber=None, **SOFT_ROOF)
+    gable_roof(0.26, 0.16, 0.15, (0, -H, 0.4), roof_c, st, oh=0.055, ohx=0.03, n=4, gable_timber=None, eave_z=0.0,
+               **SOFT_ROOF)
     # keep with two turrets and a hall under a big coursed slate roof with lit dormers (reference frame 4)
     bx((0.4, 0.32, 0.66), (0.04, 0.12, 0.33), st, bev=0.012)
-    gable_roof(0.4, 0.32, 0.3, (0.04, 0.12, 0.66), roof_c, st, oh=0.03, ohx=0.02, n=6, gable_timber=None, **SOFT_ROOF)
+    gable_roof(0.4, 0.32, 0.32, (0.04, 0.12, 0.66), roof_c, st, oh=0.065, ohx=0.04, n=6, gable_timber=None, eave_z=0.0,
+               **SOFT_ROOF)
     for x in (-0.03, 0.11):  # dormers on the front slope, each with a lit window
-        bx((0.06, 0.085, 0.1), (x, -0.0025, 0.74), st, bev=0)
-        window(x, -0.049, 0.745, 0, 0.026, 0.04, "#6e6152")
-        gable_roof(0.085, 0.06, 0.045, (x, -0.0025, 0.79), roof_c, st, rz=math.pi / 2, oh=0.012, ohx=0.01, n=2,
+        bx((0.06, 0.1, 0.11), (x, 0.0, 0.815), st, bev=0)
+        window(x, -0.054, 0.83, 0, 0.026, 0.04, "#6e6152")
+        gable_roof(0.1, 0.06, 0.045, (x, 0.0, 0.87), roof_c, st, rz=math.pi / 2, oh=0.012, ohx=0.01, n=2,
                    tk=0.008, ct=0.008, gable_timber=None, eave_z=0.0, barge=None, **SOFT_ROOF)
-    chimney(0.19, 0.2, 0.8, 0.98, 0.05, stone(WSTONE_D, 0.8))
+    chimney(0.19, 0.2, 0.85, 1.02, 0.05, stone(WSTONE_D, 0.8))
     for i in range(4):
         win_arch(-0.11 + i * 0.1, -0.042, 0.47, 0.03, 0.05)
         window(-0.11 + i * 0.1, -0.044, 0.28, 0, 0.026, 0.05)
@@ -2092,19 +2120,19 @@ def residence_dl4(team):
             window(sx * w * 0.3, -d / 2 - 0.004, h * 0.62, 0, 0.04, 0.05, WOOD_D)
         window(-w / 2 - 0.004, 0, h * 0.62, math.pi / 2, 0.04, 0.05, WOOD_D)
     build_at(hall, -0.26, 0.3)
-    # the busy yard: a forge against the east curtain, a hay cart, casks, crates and a haystack
-    build_at(lambda: smithy(team), 0.37, -0.2, -math.pi / 2)
-    build_at(lambda: hand_cart(team), -0.3, -0.25, math.pi + 0.4)
-    for (x, y) in ((-0.36, -0.12), (-0.32, -0.1), (-0.355, -0.08)):
+    # the busy outer bailey (the keep fills the inner yard): a forge against the west curtain, a hay cart, a
+    # haystack, casks and crates by the gate, pines at the back corners (reference frames 3 and 4)
+    build_at(lambda: smithy(team), -0.59, 0.24, -math.pi / 2)
+    build_at(lambda: hand_cart(team), -0.65, -0.24, math.pi / 2 + 0.25)
+    haystack(-0.67, -0.02, 0.62)
+    for (x, y) in ((-0.62, 0.4), (-0.66, 0.37)):
         barrel(x, y)
-    barrel(0.2, -0.33)
-    barrel(0.24, -0.35)
-    crate(-0.2, -0.36, 0.045, 0.3)
-    crate(-0.17, -0.31, 0.036, -0.2)
-    haystack(0.36, 0.28, 0.6)
+    crate(-0.6, 0.06, 0.04, 0.3)
     for (x, y) in ((0.22, -0.6), (-0.24, -0.58)):  # casks and a crate stacked outside the gate
         barrel(x, y)
     crate(0.26, -0.56, 0.04, 0.2)
+    pine(-0.56, 0.5, 1.0)
+    pine(0.62, 0.37, 0.95)
     banner(0.04, 0.12, 1.4, team, 0.3)  # the great hanging banners of reference frame 4
     banner(-H, -H, 1.12, team, 0.2)
     banner(H, -H, 1.12, team, 0.2)
@@ -2117,57 +2145,159 @@ def residence_dl4(team):
         uvs(0.012, (sx * 0.085, -H - 0.095, 0.235), glow("torch", "#ffb347", 4.0), 6, 4)
 
 
+def wedge(w, d, h, loc, mt, rz=0.0):
+    """A plain triangular prism, ridge along local X (a dormer roof or a pediment): 8 triangles."""
+    hw, hd = w / 2, d / 2
+    return mesh_obj([(-hw, -hd, 0), (hw, -hd, 0), (hw, hd, 0), (-hw, hd, 0), (-hw, 0, h), (hw, 0, h)],
+                    [(0, 1, 5, 4), (3, 4, 5, 2), (0, 4, 3), (1, 2, 5), (0, 3, 2, 1)], mt, loc, (0, 0, rz))
+
+
+def iron_fence(x0, x1, y, h, gaps=(), step=0.034):
+    """A wrought-iron railing along X at y: two rails and flat bars with spear tips (both faces), skipping the
+    x-ranges in gaps (gates, piers)."""
+    iron = flat("iron", "#2b2d31", 0.6)
+    mb = _MB()
+    spans, a = [], x0
+    for g0, g1 in sorted(gaps):
+        spans.append((a, g0))
+        a = g1
+    spans.append((a, x1))
+    for s0, s1 in spans:
+        if s1 - s0 < 0.02:
+            continue
+        for z in (0.035, h - 0.012):
+            bx((s1 - s0, 0.007, 0.007), ((s0 + s1) / 2, y, z), iron, bev=0)
+        k = max(1, round((s1 - s0) / step))
+        for i in range(k):
+            x = s0 + (i + 0.5) * (s1 - s0) / k
+            for sd in (-1, 1):
+                yy = y + sd * 0.002
+                mb.face([(x - 0.003, yy, 0.014), (x + 0.003, yy, 0.014), (x + 0.003, yy, h), (x, yy, h + 0.012),
+                         (x - 0.003, yy, h)], (0, sd, 0))
+    mb.obj(iron, "railing")
+
+
+def parterre(x, y, w, d, flower):
+    """A clipped box-hedge bed with a lawn inside (the dark border reads as a ring from above) and a flower
+    knot in the middle."""
+    bx((w, d, 0.034), (x, y, 0.017), flat("hedge", "#2f6a2c", 0.85), bev=0)
+    bx((w - 0.026, d - 0.026, 0.038), (x, y, 0.019), tex("plaster", "#6aa543", 2.0), bev=0)
+    q = min(w, d) * 0.42
+    bx((q, q, 0.044), (x, y, 0.022), flat("flowers_" + flower, flower, 0.8), math.pi / 4, bev=0)
+
+
+def topiary(x, y, s=1.0):
+    cy(0.02 * s, 0.03 * s, (x, y, 0.015 * s), stone("#c9bca6", 1.4), 6)
+    cn(0.03 * s, 0.11 * s, (x, y, 0.085 * s), flat("topiary", "#2c6630", 0.85), 6)
+
+
+def statue(x, y, z, mt):
+    """A small gilded statue on a plinth (the roofline figures of a baroque palace)."""
+    bx((0.022, 0.022, 0.016), (x, y, z + 0.008), flat("cornice", WHITE, 0.6), bev=0)
+    cy(0.008, 0.036, (x, y, z + 0.034), mt, 6, r2=0.006)
+    ico(0.008, (x, y, z + 0.058), mt)
+
+
 def residence_dl5(team):
     pad(0.86, stone("#b9b3a8", 2.2), 0.014, 14, 0.0, 15)
     bx((0.88, 0.46, 0.05), (0, 0.12, 0.025), stone("#a59d8e", 1.6), bev=0.01)
     f = facade("#e3cfa6", WIN_D, 0.068, 0.12, 0.42, 0.55, lit_p=0.35, z0=0.05)
-    roof = tex("roof", slate(team, 1.00))
+    roof_c = slate(team, 1.00)
     wh = flat("cornice", WHITE, 0.6)
+    gold = flat("gold", GOLD, 0.35)
     bx((0.62, 0.32, 0.36), (0, 0.14, 0.23), f, bev=0.01)
     bx((0.64, 0.34, 0.025), (0, 0.14, 0.41), wh, bev=0.006)
-    hip_roof(0.62, 0.32, 0.14, (0, 0.14, 0.42), roof, oh=0.02)
-    for sx in (-1, 1):  # corner pavilions with tent roofs
+    bx((0.635, 0.335, 0.014), (0, 0.14, 0.17), wh, bev=0)  # string course between the floors
+    # the roof laid in slate courses, set back behind a balustrade on the cornice, with lit dormers and chimneys
+    coursed_hip(0.58, 0.28, 0.16, (0, 0.14, 0.4225), roof_c, oh=0.0, n=4)
+    bal = facade(WHITE, "#77716a", 0.017, 0.04, 0.5, 0.56, lit="#77716a", lit_p=0.0, z0=0.4225)
+    bx((0.6, 0.012, 0.036), (0, -0.018, 0.4405), bal, bev=0)
+    for sx in (-1, 1):
+        statue(sx * 0.255, -0.018, 0.4585, gold)
+    for x in (-0.2, 0.2):
+        bx((0.05, 0.07, 0.085), (x, 0.03, 0.47), f, bev=0)
+        window(x, -0.0065, 0.478, 0, 0.026, 0.034, WHITE)
+        wedge(0.08, 0.07, 0.034, (x, 0.025, 0.5125), tex("roof", roof_c, 1.6), math.pi / 2)
+    for sx in (-1, 1):
+        chimney(sx * 0.2, 0.24, 0.45, 0.63, 0.036, stone("#b0a594", 1.4))
+    for sx in (-1, 1):  # corner pavilions with tall coursed tent roofs
         bx((0.16, 0.38, 0.44), (sx * 0.36, 0.14, 0.27), f, bev=0.01)
         bx((0.18, 0.4, 0.025), (sx * 0.36, 0.14, 0.49), wh, bev=0.006)
-        hip_roof(0.16, 0.38, 0.18, (sx * 0.36, 0.14, 0.5), roof, oh=0.02)
-        flagpole(sx * 0.36, 0.14, 0.86, team, 0.12)
-    # portico: columns + pediment
+        bx((0.175, 0.395, 0.014), (sx * 0.36, 0.14, 0.17), wh, bev=0)
+        coursed_hip(0.16, 0.38, 0.2, (sx * 0.36, 0.14, 0.5025), roof_c, oh=0.02, n=4)
+        flagpole(sx * 0.36, 0.14, 0.88, team, 0.12)
+    # portico: columns + pediment with gilt acroteria
     bx((0.28, 0.08, 0.04), (0, -0.05, 0.07), stone("#d8cfbe"), bev=0)
     for i in range(5):
         cy(0.016, 0.3, (-0.12 + i * 0.06, -0.06, 0.24), wh, 8)
     bx((0.3, 0.1, 0.03), (0, -0.04, 0.405), wh, bev=0)
     prism_roof("pedi", 0.1, 0.28, 0.08, (0, -0.04, 0.42), wh, overhang=0.01, rot_z=math.pi / 2)
+    for (x, z) in ((0.0, 0.508), (-0.14, 0.43), (0.14, 0.43)):
+        ico(0.013, (x, -0.09, z + 0.012), gold)
     for sx in (-1, 1):
         facade_banner(sx * 0.21, -0.025, 0.39, 0.07, 0.24, team)
-    # central clock tower with a team dome
+    for k, top in enumerate((0.075, 0.055, 0.035)):  # a broad stair down from the portico to the garden walk
+        bx((0.3, 0.03, top), (0, -0.103 - k * 0.028, top / 2), stone("#d8cfbe"), bev=0)
+    # central clock tower with a team dome and a gilt lantern
     bx((0.17, 0.17, 0.36), (0, 0.14, 0.62), stone("#efe6d2", 1.5), bev=0.01)
     bx((0.2, 0.2, 0.025), (0, 0.14, 0.8), wh, bev=0.006)
-    for k in range(4):
-        a = k * math.pi / 2
+    for a in (0.0, math.pi):  # the dials face the square and the park behind (the side dials never showed)
         clock_face(math.sin(a) * 0.087, 0.14 - math.cos(a) * 0.087, 0.7, a, 0.045)
     cy(0.075, 0.08, (0, 0.14, 0.85), stone("#efe6d2"), 12)
     uvs(0.095, (0, 0.14, 0.89), flat("dome" + team, team, 0.45), 12, 6, (1, 1, 0.9))
-    cy(0.02, 0.07, (0, 0.14, 1.0), wh, 8)
+    cy(0.098, 0.012, (0, 0.14, 0.895), gold, 12)
+    cy(0.028, 0.05, (0, 0.14, 1.0), wh, 8)
+    cn(0.034, 0.05, (0, 0.14, 1.05), gold, 8)
     flagpole(0, 0.14, 1.32, team, 0.16)
-    # front square: fountain and two lamp posts
-    cy(0.11, 0.05, (0, -0.42, 0.025), stone(STONE), 12)
-    cy(0.095, 0.004, (0, -0.42, 0.05), flat("water", "#5fb8e0", 0.15), 12)
-    cy(0.02, 0.12, (0, -0.42, 0.09), stone(STONE), 8)
+    # the formal garden of a baroque palace: a gravel forecourt, box-hedge parterres, topiary cones, a tiered
+    # fountain on the central walk, and a wrought-iron railing with gate piers and lanterns along the front
+    bx((0.9, 0.5, 0.006), (0, -0.37, 0.017), tex("plaster", "#d9ccaa", 2.0), bev=0)
+    bx((0.14, 0.52, 0.006), (0, -0.39, 0.0215), stone("#e4dccb", 1.6), bev=0)
     for sx in (-1, 1):
-        cy(0.008, 0.2, (sx * 0.24, -0.4, 0.1), flat("iron", "#3b3d42", 0.6), 6)
-        ico(0.022, (sx * 0.24, -0.4, 0.21), win_lit())
-        tree(sx * 0.58, -0.3, 0.85)
+        for (y, fl) in ((-0.25, "#d9465a"), (-0.5, "#f2c84b")):
+            parterre(sx * 0.25, y, 0.26, 0.17, fl)
+        for (x, y) in ((0.42, -0.15), (0.42, -0.6), (0.09, -0.21), (0.09, -0.6)):
+            topiary(sx * x, y, 1.0)
+    fs = stone(STONE)
+    cy(0.1, 0.045, (0, -0.375, 0.0225), fs, 12)
+    cy(0.088, 0.004, (0, -0.375, 0.046), flat("water", "#5fb8e0", 0.15), 12)
+    cy(0.016, 0.1, (0, -0.375, 0.09), fs, 6)
+    cy(0.045, 0.016, (0, -0.375, 0.14), fs, 10, r2=0.03)
+    cn(0.012, 0.05, (0, -0.375, 0.17), flat("jet", "#cfeefc", 0.2), 6)
+    iron_fence(-0.46, 0.46, -0.66, 0.1, gaps=((-0.48, -0.44), (-0.135, 0.135), (0.44, 0.48)))
+    pier = stone("#d8cfbe", 1.4)
+    for sx in (-1, 1):
+        bx((0.044, 0.044, 0.13), (sx * 0.11, -0.66, 0.065), pier, bev=0)
+        bx((0.054, 0.054, 0.012), (sx * 0.11, -0.66, 0.136), wh, bev=0)
+        bx((0.022, 0.022, 0.03), (sx * 0.11, -0.66, 0.157), glow("lamp_gas", "#ffcf7a", 3.0), bev=0)
+        cn(0.02, 0.016, (sx * 0.11, -0.66, 0.18), flat("lamp_post", "#2f3237", 0.5), 4)
+        bx((0.04, 0.04, 0.11), (sx * 0.46, -0.66, 0.055), pier, bev=0)
+        ico(0.018, (sx * 0.46, -0.66, 0.128), gold)
+        tree(sx * 0.56, 0.48, 0.85)
+
+
+def sedan(x, y, rz, color):
+    """A cheap parked car for the plazas: body, glass cabin, two wheel axles (a cylinder through each pair)."""
+    def b():
+        bx((0.1, 0.048, 0.024), (0, 0, 0.024), flat("car" + color, color, 0.4), bev=0)
+        bx((0.052, 0.044, 0.022), (-0.006, 0, 0.046), flat("car_glass", "#1d2a38", 0.2), bev=0)
+        for sx in (-0.032, 0.032):
+            cy(0.012, 0.052, (sx, 0, 0.012), flat("tyre", "#1f1f21", 0.9), 6, rot=(math.pi / 2, 0, 0))
+    build_at(b, x, y, rz, z=0.014)
 
 
 def residence_dl6(team):
     pad(0.86, flat("asph", ASPH, 0.9), 0.014, 14, 0.0, 16)
     bx((0.94, 0.52, 0.05), (0, 0.12, 0.025), stone("#9a8f84", 1.6), bev=0.01)
-    f = facade("#d8c4a0", "#34404e", 0.06, 0.1, 0.45, 0.55, lit="#ffe08a", lit_p=0.35, z0=0.05)
+    # tall window bands between stone pilasters (the vertical rhythm of a 1950s ministry tower)
+    f = facade("#d8c4a0", "#34404e", 0.055, 0.1, 0.4, 0.78, lit="#ffe08a", lit_p=0.3, z0=0.05, pil=2,
+               pil_c="#f1eadb")
     trim = flat("cornice", "#efe6d2", 0.6)
     spire_m = flat("spire" + team, shade(team, 0.9), 0.4)
     gold = flat("gold", GOLD, 0.35)
     bx((0.88, 0.36, 0.32), (0, 0.16, 0.21), f, bev=0.01)
     bx((0.9, 0.38, 0.025), (0, 0.16, 0.37), trim, bev=0.006)
+    bx((0.895, 0.375, 0.022), (0, 0.16, 0.075), trim, bev=0)  # a pale granite base course
     tiers = [(0.36, 0.32, 0.05, 0.72), (0.27, 0.24, 0.72, 1.0), (0.18, 0.16, 1.0, 1.2)]
     for (w, d, z0, z1) in tiers:
         bx((w, d, z1 - z0), (0, 0.16, (z0 + z1) / 2), f, bev=0.008)
@@ -2176,6 +2306,7 @@ def residence_dl6(team):
             for sy in (-1, 1):
                 cn(0.022, 0.09, (sx * w / 2, 0.16 + sy * d / 2, z1 + 0.055), spire_m, 4)
     cy(0.06, 0.08, (0, 0.16, 1.25), trim, 8)
+    cy(0.066, 0.016, (0, 0.16, 1.29), gold, 8)
     cn(0.06, 0.42, (0, 0.16, 1.5), spire_m, 8)
     # star on the spire (flat five-pointed, glowing faintly in the team colour)
     pts = []
@@ -2196,11 +2327,25 @@ def residence_dl6(team):
     facade_banner(0, 0.035, 0.98, 0.11, 0.4, team)
     for sx in (-1, 1):
         facade_banner(sx * 0.38, 0.09, 0.6, 0.08, 0.3, team)
+    # the monumental stair down to a granite parade square with flagpoles, box-hedged lawns and lamps; cars parked
+    # on the asphalt either side (the reference cities' lived-in streets)
+    gran = stone("#a39d93", 1.3)
+    for k, top in enumerate((0.05, 0.038, 0.026)):
+        bx((0.44 + k * 0.04, 0.03, top), (0, -0.155 - k * 0.03, top / 2), stone("#cfc8bb", 1.4), bev=0)
+    bx((0.84, 0.42, 0.006), (0, -0.39, 0.017), gran, bev=0)
     for x in (-0.3, 0.0, 0.3):
         flagpole(x, -0.5, 0.55, team, 0.14, "#d0d4da")
     for sx in (-1, 1):
-        bx((0.2, 0.18, 0.025), (sx * 0.28, -0.32, 0.0125), flat("lawn", "#5fa83a", 0.9), bev=0)
-        tree(sx * 0.62, -0.18, 0.85)
+        parterre(sx * 0.29, -0.33, 0.2, 0.16, "#d9465a")
+        street_lamp(sx * 0.13, -0.3, 0.22, True)
+        street_lamp(sx * 0.45, -0.52, 0.22, True)
+        tree(sx * 0.6, 0.45, 0.85)
+    paint = flat("paint", "#e8e6df", 0.7)
+    for sx, cars in ((-1, ("#c0392b", "#2f62c8")), (1, ("#e8e2d0", "#2b2d31"))):
+        for i, c in enumerate(cars):
+            sedan(sx * 0.6, -0.3 + i * 0.13, 0.0, c)
+        for i in range(3):
+            bx((0.12, 0.006, 0.004), (sx * 0.6, -0.365 + i * 0.13, 0.016), paint, bev=0)
 
 
 def residence_dl7(team):
@@ -2214,8 +2359,8 @@ def residence_dl7(team):
         bx((0.32, 0.26, 0.17), (sx * 0.38, -0.02, 0.085), gl, bev=0.008)
         bx((0.34, 0.28, 0.025), (sx * 0.38, -0.02, 0.17), tc, bev=0.005)
     bx((0.26, 0.2, 0.02), (-0.38, -0.02, 0.19), flat("lawn", "#5fa83a", 0.9), bev=0)
-    tree(-0.44, -0.06, 0.6)
-    tree(-0.32, 0.02, 0.55)
+    for (x, y, s_) in ((-0.45, -0.07, 0.6), (-0.31, 0.03, 0.55), (-0.46, 0.05, 0.5)):  # on the roof, not in the wing
+        build_at(lambda s_=s_: tree(0, 0, s_), x, y, z=0.2)
     cy(0.1, 0.01, (0.38, -0.02, 0.19), flat("helipad", "#2e3138", 0.7), 16)
     bx((0.012, 0.08, 0.004), (0.355, -0.02, 0.196), flat("emblem", WHITE, 0.6), bev=0)
     bx((0.012, 0.08, 0.004), (0.405, -0.02, 0.196), flat("emblem", WHITE, 0.6), bev=0)
@@ -2242,76 +2387,172 @@ def residence_dl7(team):
     for (x, y) in ((-0.62, 0.3), (0.62, 0.3)):
         bx((0.08, 0.08, 0.04), (x, y, 0.02), flat("planter", "#7a7f88", 0.6), bev=0.006)
         tree(x, y, 0.75)
+    for y in (0.07, -0.11):  # plant on the east wing's roof beside the helipad
+        bx((0.04, 0.05, 0.03), (0.505, y, 0.197), flat("ac_unit", "#8a9099", 0.5), bev=0)
+        cy(0.014, 0.004, (0.505, y, 0.213), flat("fan", "#2e3138", 0.7), 6)
+    # a ribbed glass atrium at the tower's foot (the sculptural entrance of a contemporary parliament), on a
+    # team-lit ring
+    o = cy(0.152, 0.014, (0, -0.15, 0.022), neon, 12)
+    o.scale = (1.3, 1.0, 1.0)
+    hemi(0.14, (0, -0.15, 0.028), flat("atrium_glass", "#7fbfe3", 0.15), 12, 3, (1.3, 1.0, 0.85))
+    fr = flat("mullion", "#d9dde2", 0.4)
+    for a0 in (0.0, math.pi / 2):  # two ribs crossing over the crown
+        pts = []
+        for k in range(7):
+            t = math.pi * k / 6
+            r_ = 0.142
+            ex, ey = math.cos(t) * math.cos(a0) * r_ * 1.3, math.cos(t) * math.sin(a0) * r_
+            pts.append((ex, -0.15 + ey, 0.028 + math.sin(t) * r_ * 0.85))
+        for p0, p1 in zip(pts, pts[1:]):
+            beam(p0, p1, 0.008, fr)
+    # the plaza: a granite walk past the flags to a reflecting pool with fountain jets, benches and lamp posts
+    bx((0.24, 0.34, 0.006), (0, -0.46, 0.018), stone("#8f949c", 1.6), bev=0)
+    bx((0.46, 0.14, 0.03), (0, -0.67, 0.015), stone("#9a9ea6", 1.6), bev=0)
+    bx((0.4, 0.09, 0.004), (0, -0.67, 0.032), flat("water", "#3c9ccc", 0.1), bev=0)
+    for x in (-0.13, 0.0, 0.13):
+        cn(0.012, 0.07, (x, -0.67, 0.069), flat("jet", "#e4f6ff", 0.2), 6)
+    for sx in (-1, 1):
+        bx((0.1, 0.03, 0.022), (sx * 0.3, -0.6, 0.026), stone("#b5b8bd", 1.4), bev=0)
+        street_lamp(sx * 0.27, -0.42, 0.24, True)
+        street_lamp(sx * 0.62, -0.3, 0.24, True)
+        bx((0.08, 0.08, 0.04), (sx * 0.5, -0.47, 0.02), flat("planter", "#7a7f88", 0.6), bev=0.006)
+        tree(sx * 0.5, -0.47, 0.7)
+
+
+def hemi(r, loc, mt, seg=12, rings=3, scale=(1, 1, 1)):
+    """A dome (the upper half of a sphere) without the buried lower half: seg × rings quads closed by a fan."""
+    verts, faces = [], []
+    for i in range(rings):
+        phi = math.pi / 2 * i / rings
+        for j in range(seg):
+            a = math.tau * j / seg
+            verts.append((math.cos(a) * math.cos(phi) * r * scale[0], math.sin(a) * math.cos(phi) * r * scale[1],
+                          math.sin(phi) * r * scale[2]))
+    verts.append((0, 0, r * scale[2]))
+    for i in range(rings - 1):
+        for j in range(seg):
+            a, b = i * seg + j, i * seg + (j + 1) % seg
+            faces.append((a, b, b + seg, a + seg))
+    top = len(verts) - 1
+    for j in range(seg):
+        faces.append(((rings - 1) * seg + j, (rings - 1) * seg + (j + 1) % seg, top))
+    return mesh_obj(verts, faces, mt, loc)
 
 
 def steel_facade():
-    """Light grey steel of the late-era citadel (reference frame 5): rows of dark slit windows, some lit cold blue."""
-    return facade("#5f6670", "#1a222c", 0.04, 0.07, 0.5, 0.5, lit="#9ad8ff", lit_p=0.2)  # darker steel: frame 5 is a dim, cool scene
+    """Grey steel of the late-era citadel (reference frame 5): tall narrow window slits in rows, many lit cold blue."""
+    return facade("#5f6670", "#161c24", 0.04, 0.085, 0.26, 0.64, lit="#8fd4ff", lit_p=0.34)  # darker steel: frame 5 is a dim, cool scene
 
 
-def citadel_tower(x, y, w, d, h, st, plate, neon, cap):
-    """A tall rectangular tower of the citadel: a body with a setback crown, a four-sided spire, vertical light
-    strips in the front corners and a glowing band at the setback."""
+def citadel_tower(x, y, w, d, h, st, plate, neon, cap, seam=None, panel=None, tip=None, needle=True):
+    """A tall rectangular tower of the citadel (reference frame 5): a body with a setback crown and a four-sided
+    spire with a needle and a lit tip, pale plate seams banding it, and on the front and side faces a recessed
+    dark-blue panel with a cold light strip down its middle (the citadel's signature)."""
     bx((w, d, h), (x, y, h / 2), st, bev=0.006)
-    bx((w + 0.012, d + 0.012, 0.03), (x, y, h * 0.35), plate, bev=0.003)  # string course
+    for zf in (0.35, 0.6, 0.83):  # plate seams round the body (the string course of the old tower, and two more)
+        bx((w + 0.012, d + 0.012, 0.02 if zf != 0.35 else 0.03), (x, y, h * zf), seam or plate, bev=0)
     bx((w * 0.78, d * 0.78, h * 0.16), (x, y, h + h * 0.08), st, bev=0.005)  # setback crown
     bx((w * 0.8 + 0.006, 0.008, 0.01), (x, y - d * 0.4 - 0.003, h + 0.006), neon, bev=0)  # a light line under the crown
     cn(min(w, d) * 0.42, h * 0.32, (x, y, h * 1.16 + h * 0.16), cap, 4, rot=(0, 0, math.pi / 4))
-    for sx in (-1, 1):  # light strips running up the front corners
-        bx((0.008, 0.006, h * 0.8), (x + sx * w * 0.36, y - d / 2 - 0.003, h * 0.52), neon, bev=0)
+    top = h * 1.16 + h * 0.32
+    if needle:
+        rod((x, y, top - 0.01), (x, y, top + 0.08), 0.006, cap, r2=0.0015, n=4)
+        bx((0.012, 0.012, 0.012), (x, y, top + 0.05), tip or neon, bev=0)
+    pm = panel or plate
+    for (nx, ny) in ((0, -1), (1, 0), (-1, 0)):
+        L = (w if ny else d)
+        off = (d if ny else w) / 2
+        px, py = x + nx * (off + 0.004), y + ny * (off + 0.004)
+        rz = 0.0 if ny else math.pi / 2
+        bx((L * 0.4, 0.008, h * 0.7), (px, py, h * 0.5), pm, rz, bev=0)
+        bx((0.014, 0.01, h * 0.62), (px + nx * 0.002, py + ny * 0.002, h * 0.5), neon, rz, bev=0)
 
 
 def residence_dl8(team):
     """The late-era capital after reference frame 5: a grey steel citadel of tall towers round a central keep with
-    a spire, cold-blue light strips, a portal hall at the head of a grand stair, side wings and great banners."""
+    a spire, cold-blue light strips, a portal hall at the head of a grand stair, side wings and great banners, on a
+    dark steel plaza laced with light strips."""
     st = steel_facade()
     plate = flat("plate8", "#505760", 0.45)
-    cap = flat("spire8", "#a7afb9", 0.35)
+    seam = flat("seam8", "#8c939c", 0.45)  # pale plate seams: the panel lines of the frame 5 towers
+    panel = flat("panel8" + team, shade(team, 0.42), 0.4)  # recessed panels in a deep team tone behind the strips
+    cap = flat("spire8", "#4c535d", 0.35)  # dark gothic needles (frame 5), not pale cones
     neon = glow("strip" + team, shade(team, 1.25), 2.0)  # cold light strips: thin lines, not lamps (frame 5)
     cyan = glow("cyan", CYAN, 2.5)
-    base = stone("#726e68", 1.4)  # a paved concrete plaza (warm grey: reads neutral under the cool light)
+    gold = "#c9a24a"  # the banners' gilded poles (frame 5)
+    base = stone("#454a52", 0.8)  # dark steel plaza slabs (frame 5's plaza is dark steel, not pale paving)
     extrude(ngon(0.86, 12, math.pi / 12), -0.01, 0.06, base)
     for k in range(12):  # neon rim of the podium
         a0, a1 = math.pi / 12 + k * math.tau / 12, math.pi / 12 + (k + 1) * math.tau / 12
         beam((math.cos(a0) * 0.80, math.sin(a0) * 0.80, 0.062), (math.cos(a1) * 0.80, math.sin(a1) * 0.80, 0.062), 0.014, neon)
-    extrude(ngon(0.56, 8, math.pi / 8), 0.06, 0.14, flat("terrace8", "#64615c", 0.5))  # the citadel's terrace
+    for k in range(6):  # light strips across the plaza from the terrace to the rim
+        a = k * math.tau / 6
+        beam((math.cos(a) * 0.58, math.sin(a) * 0.58, 0.062), (math.cos(a) * 0.78, math.sin(a) * 0.78, 0.062), 0.012, neon)
+    extrude(ngon(0.56, 8, math.pi / 8), 0.06, 0.14, flat("terrace8", "#4b4f56", 0.5))  # the citadel's terrace
+    tp = ngon(0.555, 8, math.pi / 8)
+    for k in range(8):  # a light line along the terrace edge
+        if k == 5:  # (not across the grand stair)
+            continue
+        (x0, y0), (x1, y1) = tp[k], tp[(k + 1) % 8]
+        beam((x0, y0, 0.142), (x1, y1, 0.142), 0.01, neon)
     # the central keep: a tall stepped tower with the spire
-    citadel_tower(0, 0.1, 0.26, 0.22, 1.45, st, plate, neon, cap)
+    citadel_tower(0, 0.1, 0.26, 0.22, 1.45, st, plate, neon, cap, seam, panel, cyan, needle=False)
     rod((0, 0.1, 1.9), (0, 0.1, 2.15), 0.008, cap, n=5)
     ico(0.022, (0, 0.1, 2.16), cyan)
     # the ring of towers, tallest at the back so the silhouette climbs to the keep
     for (x, y, w, h) in ((-0.21, -0.02, 0.13, 1.0), (0.21, -0.02, 0.13, 1.0), (-0.37, 0.16, 0.12, 0.82),
                          (0.37, 0.16, 0.12, 0.82), (-0.17, 0.33, 0.12, 1.2), (0.17, 0.33, 0.12, 1.2)):
-        citadel_tower(x, y, w, w, h, st, plate, neon, cap)
+        citadel_tower(x, y, w, w, h, st, plate, neon, cap, seam, panel, cyan)
     # the portal hall in front of the keep, with a glowing gate
     bx((0.46, 0.16, 0.3), (0, -0.2, 0.15 + 0.06), st, bev=0.008)
     bx((0.48, 0.18, 0.025), (0, -0.2, 0.37), plate, bev=0.004)
+    bx((0.47, 0.17, 0.02), (0, -0.2, 0.3), seam, bev=0)
     bx((0.12, 0.012, 0.16), (0, -0.282, 0.14), cyan, bev=0)
     cy(0.06, 0.012, (0, -0.282, 0.22), cyan, 12, rot=(math.pi / 2, 0, 0))
     for sx in (-1, 1):
         bx((0.03, 0.03, 0.34), (sx * 0.1, -0.29, 0.06 + 0.17), plate, bev=0.004)  # portal pylons
+        bx((0.008, 0.008, 0.28), (sx * 0.1, -0.306, 0.06 + 0.15), neon, bev=0)
         bx((0.18, 0.28, 0.18), (sx * 0.5, -0.06, 0.06 + 0.09), st, bev=0.006)  # low side wings
         bx((0.19, 0.29, 0.02), (sx * 0.5, -0.06, 0.25), plate, bev=0.003)
         bx((0.19, 0.008, 0.008), (sx * 0.5, -0.205, 0.235), neon, bev=0)  # a light line along the wing's front
+        bx((0.06, 0.05, 0.03), (sx * 0.52, -0.02, 0.275), seam, bev=0)  # roof plant on the wings
     for sx in (-1, 1):  # holo masts at the hall corners
         cy(0.008, 0.2, (sx * 0.2, -0.3, 0.46), flat("mast", "#d0d4da", 0.5), 6)
+        bx((0.012, 0.012, 0.012), (sx * 0.2, -0.3, 0.565), cyan, bev=0)
     # the base of reference frame 5: a grand stair up the podium, an energy orb on a pedestal, banners, plaza lamps
-    stair = flat("stair", "#8a929c", 0.5)
+    stair = flat("stair", "#5e656f", 0.5)
     for k in range(5):
         bx((0.34 - k * 0.02, 0.06, 0.036), (0, -0.62 + k * 0.035, 0.018 + k * 0.036), stair, bev=0.004)
     for sx in (-1, 1):
         bx((0.04, 0.2, 0.012), (sx * 0.19, -0.56, 0.11), neon, bev=0)  # light rails along the stair
+        # shield emitters flanking the foot of the stair: dark pylons with a cold glowing head
+        bx((0.04, 0.04, 0.15), (sx * 0.2, -0.69, 0.075 + 0.0), flat("pedestal", "#3a4049", 0.5), bev=0)
+        bx((0.05, 0.05, 0.012), (sx * 0.2, -0.69, 0.156), seam, bev=0)
+        uvs(0.017, (sx * 0.2, -0.69, 0.18), cyan, 6, 4)
     ox, oy = 0.5, -0.42
-    cy(0.07, 0.08, (ox, oy, 0.1), flat("pedestal", "#4a515c", 0.5), 12)
+    cy(0.07, 0.08, (ox, oy, 0.1), flat("pedestal", "#3a4049", 0.5), 12)
     cy(0.075, 0.012, (ox, oy, 0.14), neon, 12)
     uvs(0.08, (ox, oy, 0.24), glow("orb" + team, shade(team, 1.05), 1.6), 14, 8)
     torus(0.11, 0.006, (ox, oy, 0.24), flat("ring_frame", "#c9d0d8", 0.4), (math.pi / 2.6, 0, 0.4), 20, 3)
+    # a holo banner on the other side: a mast projecting the state's colour as a glowing panel
+    hx, hy = -0.5, -0.42
+    cy(0.05, 0.03, (hx, hy, 0.075), flat("pedestal", "#3a4049", 0.5), 8)
+    cy(0.007, 0.36, (hx, hy, 0.24), flat("mast", "#d0d4da", 0.5), 6)
+    bx((0.12, 0.004, 0.17), (hx + 0.066, hy, 0.31), glow("holo" + team, team, 1.0), bev=0)
+    bx((0.13, 0.008, 0.008), (hx + 0.066, hy, 0.4), cyan, bev=0)
     for sx in (-1, 1):  # the two great banners of reference frame 5, down the flanking towers
-        facade_banner(sx * 0.21, -0.091, 0.92, 0.1, 0.42, team, 0.0, "#d0d4da")
-    facade_banner(0, -0.016, 1.3, 0.12, 0.5, team, 0.0, "#d0d4da")
-    for (x, y) in ((-0.55, -0.4), (-0.3, -0.62), (0.28, -0.64), (0.62, -0.2)):
+        facade_banner(sx * 0.21, -0.091, 0.92, 0.1, 0.42, team, 0.0, gold)
+    facade_banner(0, -0.016, 1.3, 0.12, 0.5, team, 0.0, gold)
+    for (x, y) in ((-0.55, -0.24), (-0.3, -0.62), (0.28, -0.64), (0.62, -0.2)):
         cy(0.008, 0.16, (x, y, 0.14), flat("mast", "#d0d4da", 0.5), 6)
         ico(0.016, (x, y, 0.23), glow("lamp8", "#bfe8ff", 3.0))
+    # service blocks with lit window bands at the back corners of the plaza, a few cargo crates
+    for sx in (-1, 1):
+        bx((0.2, 0.13, 0.08), (sx * 0.56, 0.42, 0.1), st, bev=0.004)
+        bx((0.21, 0.14, 0.012), (sx * 0.56, 0.42, 0.146), plate, bev=0)
+        bx((0.16, 0.006, 0.012), (sx * 0.56, 0.352, 0.11), neon, bev=0)
+    for (x, y, s_) in ((-0.62, 0.22, 0.045), (-0.58, 0.18, 0.035), (0.6, 0.24, 0.04)):
+        bx((s_, s_ * 1.4, s_), (x, y, 0.06 + s_ / 2), flat("crate8", "#b8862e", 0.6), bev=0)
 
 
 # ------------------------------------------------------------------ FORTIFICATIONS (team-neutral)
@@ -2899,7 +3140,7 @@ def lowpoly(objs):
 
 
 SETTLED = {"homestead", "city_dl1", "city_dl2", "city_dl3", "city_dl4", "residence_dl1", "residence_dl2",
-           "residence_dl3"}
+           "residence_dl3", "residence_dl4", "residence_dl5", "residence_dl6", "residence_dl7", "residence_dl8"}
 
 
 def _drop_ground_faces(objs):
