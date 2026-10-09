@@ -643,8 +643,11 @@ func show_peace(enemy: String, budget: float, control: int, demands: Array, chos
 		row.add_theme_stylebox_override("panel", _style(Color(0.3, 0.55, 0.3, 0.25) if on else Color(0.3, 0.2, 0.1, 0.08), 12, Color(0.25, 0.5, 0.25) if on else Color(0, 0, 0, 0), 3))
 		row.mouse_filter = Control.MOUSE_FILTER_PASS
 		row.modulate = Color(1, 1, 1, 1.0 if fits else 0.45)
-		var icon := "⭕" if d["kind"] == "pocket" else ("⬢" if d["kind"] == "annex" else ("💰" if d["kind"] == "contribution" else "📜"))
-		_at(_label(icon + "  " + str(d["label"]), 21, ink, false), row, Vector2(16, 14))
+		if d["kind"] == "pocket" or d["kind"] == "annex":
+			_at(_label(("⭕" if d["kind"] == "pocket" else "⬢") + "  " + str(d["label"]), 21, ink, false), row, Vector2(16, 14))
+		else:  # gold or a share of production: the 3D coin / the treaty scroll
+			_at(_icon_rect("res://assets/ui/coin.png" if d["kind"] == "contribution" else "res://assets/ui/icons/hands.png", 34.0), row, Vector2(10, 10))
+			_at(_label(str(d["label"]), 21, ink, false), row, Vector2(52, 14))
 		var c := _label("%.1f" % d["cost"], 23, ink)
 		c.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		_at(c, row, Vector2(590, 12), Vector2(210, 34))
