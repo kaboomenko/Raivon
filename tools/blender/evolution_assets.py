@@ -3755,73 +3755,578 @@ def mine_scifi(team):
         bx((0.08, 0.08, 0.06), (0.38, -0.3 + k * 0.1, 0.03), flat("crate", "#3e4550", 0.5), 0.2, 0.006)
 
 
+# ------------------------------------------------------------------ DL8 DISTRICTS (the built-up land of frame 2)
+
+
+def d8_mats(team):
+    """The citadel's steel kit (residence_dl8 / city_dl8): (steel, plate, seam, panel, cap, neon, cyan). The team
+    panels are a step brighter than the citadel's, so a small district tower still shows its colour at map distance."""
+    return (steel_facade(), flat("plate8", "#505760", 0.45), flat("seam8", "#8c939c", 0.45),
+            flat("panel8d" + team, shade(team, 0.5), 0.4), flat("spire8", "#4c535d", 0.35),
+            glow("strip" + team, shade(team, 1.25), 2.0), glow("cyan", CYAN, 2.5))
+
+
+def d8_plate_pts(r=0.86, lim=0.82):
+    """The outline of a district plate: a flat-top hexagon of circumradius r (lined up with the hex: the game turns a
+    district by 60° steps, so it always fills its hex like the built-up land of frame 2) with the corners cut at lim."""
+    a = r * math.sqrt(3) / 2
+    t = math.sqrt(max(lim * lim - a * a, 0.0))
+    pts = []
+    for k in range(6):
+        m = math.pi / 6 + k * math.pi / 3  # edge midpoint
+        cx, cy_ = a * math.cos(m), a * math.sin(m)
+        ex, ey = -math.sin(m), math.cos(m)
+        pts += [(cx - ex * t, cy_ - ey * t), (cx + ex * t, cy_ + ey * t)]
+    return pts
+
+
+def _clip_convex(poly, clip):
+    """Sutherland–Hodgman: the 2D polygon poly clipped by the convex counter-clockwise polygon clip."""
+    out = list(poly)
+    for i in range(len(clip)):
+        (ax, ay), (bx_, by_) = clip[i], clip[(i + 1) % len(clip)]
+        inp, out = out, []
+        if not inp:
+            break
+
+        def inside(p):
+            return (bx_ - ax) * (p[1] - ay) - (by_ - ay) * (p[0] - ax) >= 0
+
+        def cut(p, q):
+            den = (p[0] - q[0]) * (ay - by_) - (p[1] - q[1]) * (ax - bx_)
+            t = ((p[0] - ax) * (ay - by_) - (p[1] - ay) * (ax - bx_)) / den
+            return (p[0] + t * (q[0] - p[0]), p[1] + t * (q[1] - p[1]))
+        for j in range(len(inp)):
+            p, q = inp[j], inp[(j + 1) % len(inp)]
+            if inside(q):
+                if not inside(p):
+                    out.append(cut(p, q))
+                out.append(q)
+            elif inside(p):
+                out.append(cut(p, q))
+    return out
+
+
+def d8_plate(mats, seed=0):
+    """Dark steel paving in large slabs of three tones (the plaza of frame 5) with a pale kerb round its edge (the
+    plate's sides), so the block reads as built-up land. The slabs are the plate's top itself: nothing to z-fight."""
+    st, plate, seam, panel, cap, neon, tip = mats
+    pts = d8_plate_pts()
+    tones = [_MB(), _MB(), _MB()]
+    rnd = random.Random(80 + seed)
+    t = 0.164
+    for i in range(-5, 5):
+        for j in range(-5, 5):
+            cell = _clip_convex([(i * t, j * t), ((i + 1) * t, j * t), ((i + 1) * t, (j + 1) * t), (i * t, (j + 1) * t)],
+                                pts)
+            if len(cell) >= 3:
+                tones[rnd.choice((0, 0, 1, 2))].face([(x, y, 0.02) for x, y in cell], (0, 0, 1))
+    for mb, c in zip(tones, ("#4d545e", "#565d68", "#454b54")):
+        mb.obj(flat("ground8" + c, c, 0.6), "plate")
+    side = _MB()
+    n = len(pts)
+    for k in range(n):
+        (x0, y0), (x1, y1) = pts[k], pts[(k + 1) % n]
+        nx, ny = (y1 - y0), -(x1 - x0)
+        side.face([(x0, y0, -0.01), (x1, y1, -0.01), (x1, y1, 0.02), (x0, y0, 0.02)], (nx, ny, 0))
+    side.obj(seam, "kerb")
+
+
+def d8_road(p0, p1, w, mats, z=0.022):
+    """A dark avenue with a cold light line along each edge (the glowing streets between the blocks of frame 2)."""
+    st, plate, seam, panel, cap, neon, tip = mats
+    (x0, y0), (x1, y1) = p0, p1
+    ln = math.hypot(x1 - x0, y1 - y0)
+    a = math.atan2(y1 - y0, x1 - x0)
+    bx((ln, w, 0.004), ((x0 + x1) / 2, (y0 + y1) / 2, z), flat("road8", "#2a2e34", 0.6), a, bev=0)
+    ox, oy = -math.sin(a) * w / 2, math.cos(a) * w / 2
+    for s_ in (-1, 1):
+        beam((x0 + s_ * ox, y0 + s_ * oy, z + 0.002), (x1 + s_ * ox, y1 + s_ * oy, z + 0.002), 0.012, neon)
+
+
+def d8_lawn(x, y, w, d, mats, rz=0.0, trees=()):
+    """A raised lawn in a pale kerb with a few pines (frame 2: trees between the towers)."""
+    st, plate, seam, panel, cap, neon, tip = mats
+    bx((w + 0.016, d + 0.016, 0.01), (x, y, 0.024), seam, rz, bev=0)
+    bx((w, d, 0.01), (x, y, 0.027), flat("lawn8", "#3b7432", 0.8), rz, bev=0)
+    c, s_ = math.cos(rz), math.sin(rz)
+    for (u, v, sc_) in trees:
+        pine(x + u * c - v * s_, y + u * s_ + v * c, sc_)
+
+
+def d8_tower(x, y, w, d, h, mats, top="spire", rings=(), buttress=True, needle=0.05, seam_z=0.3, foot=True, sp=1.6):
+    """A district tower in the citadel kit (frames 2 and 5): a plinth, a steel shaft with window slits, a pale plate
+    seam, corner buttresses, neon rings, an inset team panel with a cold light strip on every face (a district is
+    seen from any side), a setback crown with a light line, and a top: a dark four-sided spire, a lit beacon roof, a
+    small glass dome or a flat roof with plant — each with a needle and a lit tip. Returns the height of the top."""
+    st, plate, seam, panel, cap, neon, tip = mats
+    if foot:  # (not on a podium)
+        bx((w + 0.03, d + 0.03, 0.03), (x, y, 0.035), plate, bev=0)
+    bx((w, d, h), (x, y, h / 2), st, bev=0)
+    bx((w + 0.012, d + 0.012, 0.018), (x, y, h * seam_z), seam, bev=0)
+    if buttress:
+        bh = h * 0.95 - 0.05
+        for sx in (-1, 1):
+            for sy in (-1, 1):
+                bx((0.018, 0.018, bh), (x + sx * w / 2, y + sy * d / 2, 0.05 + bh / 2), plate, bev=0)
+    for zf in rings:
+        bx((w + 0.016, d + 0.016, 0.012), (x, y, h * zf), neon, bev=0)
+    pm, sm = _MB(), _MB()
+    z0, z1 = h * seam_z + 0.014, h * 0.93
+    for (nx, ny) in ((0, -1), (1, 0), (-1, 0), (0, 1)):
+        L = w if ny else d
+        off = (d if ny else w) / 2
+        px, py = x + nx * (off + 0.002), y + ny * (off + 0.002)
+        tx, ty = -ny * L * 0.23, nx * L * 0.23
+        pm.face([(px - tx, py - ty, z0), (px + tx, py + ty, z0), (px + tx, py + ty, z1), (px - tx, py - ty, z1)],
+                (nx, ny, 0))
+        qx, qy = x + nx * (off + 0.004), y + ny * (off + 0.004)
+        ux, uy = -ny * 0.015, nx * 0.015
+        sm.face([(qx - ux, qy - uy, z0 + 0.012), (qx + ux, qy + uy, z0 + 0.012), (qx + ux, qy + uy, z1 - 0.012),
+                 (qx - ux, qy - uy, z1 - 0.012)], (nx, ny, 0))
+    pm.obj(panel, "panels")
+    sm.obj(neon, "strips")
+    ch = max(0.035, h * 0.1)
+    bx((w * 0.8, d * 0.8, ch), (x, y, h + ch / 2), st, bev=0)
+    bx((w * 0.86, d * 0.86, 0.012), (x, y, h + ch), plate, bev=0)
+    bx((w * 0.8 + 0.008, d * 0.8 + 0.008, 0.01), (x, y, h + 0.012), neon, bev=0)  # a light line round the crown foot
+    zt = h + ch + 0.006
+    if top == "spire":
+        hc = min(w, d) * sp
+        cn(min(w, d) * 0.4, hc, (x, y, zt + hc / 2), cap, 4, rot=(0, 0, math.pi / 4))
+        zt += hc
+    elif top == "beacon":  # a lit roof light under a dark cap (the glowing tower tips of frame 2)
+        bx((w * 0.46, d * 0.46, 0.032), (x, y, zt + 0.016), tip, bev=0)
+        bx((w * 0.56, d * 0.56, 0.014), (x, y, zt + 0.039), cap, bev=0)
+        zt += 0.046
+    elif top == "dome":
+        r = min(w, d) * 0.36
+        cy(r + 0.006, 0.01, (x, y, zt + 0.003), neon, 8)
+        hemi(r, (x, y, zt), flat("dome_glass", "#6fa9cf", 0.3), 8, 2, (1, 1, 0.9))
+        zt += r * 0.9
+    else:  # flat roof with plant and a dish
+        bx((w * 0.34, d * 0.3, 0.03), (x - w * 0.18, y + d * 0.12, zt + 0.015), seam, bev=0)
+        cy(0.022, 0.012, (x + w * 0.2, y - d * 0.15, zt + 0.006), cap, 8)
+    if needle:
+        rod((x, y, zt - 0.01), (x, y, zt + needle), 0.006, cap, r2=0.0015, n=4)
+        bx((0.014, 0.014, 0.014), (x, y, zt + needle * 0.6), tip, bev=0)
+        zt += needle
+    return zt
+
+
+def d8_podium(x, y, w, d, h, mats, rz=0.0, plant=True, lights=True):
+    """A low steel block (the podiums of frames 2 and 5): window slits, a band of warm lit shopfronts, a cold light
+    line under the plate roof, a dark roof deck with glowing roof-light bars (seen from the game camera above), roof
+    plant."""
+    st, plate, seam, panel, cap, neon, tip = mats
+
+    def b():
+        bx((w, d, h), (0, 0, h / 2), st, bev=0)
+        bx((w + 0.004, d + 0.004, 0.016), (0, 0, 0.022 + 0.012), flat("warm8", "#ffbe62", 0.5), bev=0)
+        bx((w + 0.008, d + 0.008, 0.008), (0, 0, h - 0.005), neon, bev=0)
+        bx((w + 0.016, d + 0.016, 0.014), (0, 0, h + 0.007), plate, bev=0)
+        bx((w - 0.028, d - 0.028, 0.006), (0, 0, h + 0.016), flat("deck8", "#2c3137", 0.6), bev=0)
+        if lights:  # two roof-light bars along the long sides
+            ln, wd = (w, d) if w >= d else (d, w)
+            for s_ in (-1, 1):
+                o = wd / 2 - 0.03
+                bx((ln * 0.62, 0.012, 0.006) if w >= d else (0.012, ln * 0.62, 0.006),
+                   (0, s_ * o, h + 0.02) if w >= d else (s_ * o, 0, h + 0.02), neon, bev=0)
+        if plant:
+            bx((min(w * 0.3, 0.07), min(d * 0.4, 0.05), 0.026), (w * 0.22, d * 0.08, h + 0.027), seam, bev=0)
+            cy(0.016, 0.03, (-w * 0.28, -d * 0.12, h + 0.029), cap, 8)
+    build_at(b, x, y, rz)
+
+
+def d8_mast(x, y, h, mats):
+    """A light mast by the avenue: a slim pale pole with a cold lamp."""
+    st, plate, seam, panel, cap, neon, tip = mats
+    cy(0.006, h, (x, y, 0.02 + h / 2), seam, 6)
+    bx((0.02, 0.02, 0.02), (x, y, 0.02 + h + 0.01), tip, bev=0)
+
+
+def d8_dome(x, y, r, h, mats):
+    """The civic dome of frame 2: a plinth, a steel drum with window slits under a band of team panels with a light
+    ring, a cornice, a blue glass dome with pale ribs and a ring rib, a plate oculus with a lit lantern and a needle."""
+    st, plate, seam, panel, cap, neon, tip = mats
+    n = 16
+    cy(r + 0.03, 0.03, (x, y, 0.035), plate, n)
+    cy(r, h, (x, y, h / 2), st, n)
+    cy(r + 0.004, h * 0.3, (x, y, h * 0.7), panel, n)
+    cy(r + 0.008, 0.012, (x, y, h * 0.7), neon, n)
+    cy(r * 1.08, 0.02, (x, y, h + 0.01), plate, n)
+    R, C, z0 = r * 0.97, r * 0.97 * 0.74, h + 0.02
+    hemi(R, (x, y, z0), flat("dome_glass", "#6fa9cf", 0.3), n, 4, (1, 1, 0.74))
+
+    def pt(phi, a):
+        return (x + R * math.cos(phi) * math.cos(a), y + R * math.cos(phi) * math.sin(a), z0 + C * math.sin(phi))
+
+    def nrm(phi, a):
+        v = (math.cos(phi) * math.cos(a) / R, math.cos(phi) * math.sin(a) / R, math.sin(phi) / C)
+        ln = math.sqrt(sum(c * c for c in v))
+        return tuple(c / ln for c in v)
+
+    ribs = _MB()
+    phis = [0.0, 0.35, 0.7, 1.05, 1.3]
+    for k in range(8):
+        a = math.tau * k / 8 + math.pi / 8
+        for i in range(len(phis) - 1):
+            pm_ = (phis[i] + phis[i + 1]) / 2
+            ribs.strip(pt(phis[i], a), pt(phis[i + 1], a), nrm(pm_, a), 0.012, 0.004)
+    for k in range(n):  # a ring rib round the dome's shoulder
+        a0, a1 = math.tau * k / n, math.tau * (k + 1) / n
+        ribs.strip(pt(0.62, a0), pt(0.62, a1), nrm(0.62, (a0 + a1) / 2), 0.01, 0.004)
+    ribs.obj(seam, "ribs")
+    zt = z0 + C
+    cy(r * 0.24, 0.022, (x, y, zt), plate, 8)
+    cy(r * 0.17, 0.02, (x, y, zt + 0.02), tip, 8)
+    rod((x, y, zt + 0.025), (x, y, zt + 0.11), 0.006, cap, r2=0.0015, n=4)
+    return zt + 0.11
+
+
+def d8_round(x, y, r, h, mats):
+    """A slim round steel tower (the drum towers of frame 2): neon rings, light strips, a plate crown, a glass cap."""
+    st, plate, seam, panel, cap, neon, tip = mats
+    cy(r + 0.025, 0.03, (x, y, 0.035), plate, 10)
+    cy(r, h, (x, y, h / 2), st, 10)
+    for zf in (0.42, 0.78):
+        cy(r + 0.007, 0.012, (x, y, h * zf), neon, 10)
+    sm = _MB()
+    for a in (-math.pi / 2, math.pi / 6, math.pi * 5 / 6):  # light strips down three sides
+        ca, sa = math.cos(a), math.sin(a)
+        px, py = x + ca * (r + 0.003), y + sa * (r + 0.003)
+        ux, uy = -sa * 0.011, ca * 0.011
+        sm.face([(px - ux, py - uy, h * 0.1), (px + ux, py + uy, h * 0.1), (px + ux, py + uy, h * 0.9),
+                 (px - ux, py - uy, h * 0.9)], (ca, sa, 0))
+    sm.obj(neon, "strips")
+    cy(r * 1.15, 0.024, (x, y, h + 0.012), plate, 10)
+    hemi(r * 0.92, (x, y, h + 0.024), flat("dome_glass", "#6fa9cf", 0.3), 10, 2, (1, 1, 0.8))
+    zt = h + 0.024 + r * 0.92 * 0.8
+    rod((x, y, zt - 0.01), (x, y, zt + 0.07), 0.006, cap, r2=0.0015, n=4)
+    bx((0.014, 0.014, 0.014), (x, y, zt + 0.045), tip, bev=0)
+
+
+def d8_skybridge(p0, p1, mats):
+    """A steel skybridge with a light line under it (the lit bridges of frame 2)."""
+    st, plate, seam, panel, cap, neon, tip = mats
+    beam(p0, p1, 0.04, plate)
+    beam((p0[0], p0[1], p0[2] - 0.024), (p1[0], p1[1], p1[2] - 0.024), 0.014, neon)
+
+
+def solar8():
+    """Solar cells: a navy sheet ruled into cells by pale frame lines (world space, baked) — the dark blue panel
+    fields of frame 2."""
+    key = ("solar8",)
+    if key in kit._MATS:
+        return kit._MATS[key]
+    m = bpy.data.materials.new("solar8")
+    m.use_nodes = True
+    nt = m.node_tree
+    L = nt.links
+
+    def mth(op, a, b):
+        n = nt.nodes.new("ShaderNodeMath")
+        n.operation = op
+        for i, v in enumerate((a, b)):
+            if v is None:
+                continue
+            if isinstance(v, (int, float)):
+                n.inputs[i].default_value = v
+            else:
+                L.new(v, n.inputs[i])
+        return n.outputs[0]
+    geo = nt.nodes.new("ShaderNodeNewGeometry")
+    sp = nt.nodes.new("ShaderNodeSeparateXYZ")
+    L.new(geo.outputs["Position"], sp.inputs[0])
+    lx = mth("GREATER_THAN", mth("FRACT", mth("DIVIDE", sp.outputs[0], 0.027), None), 0.8)
+    ly = mth("GREATER_THAN", mth("FRACT", mth("DIVIDE", sp.outputs[1], 0.022), None), 0.78)
+    mx = nt.nodes.new("ShaderNodeMix")
+    mx.data_type = "RGBA"
+    L.new(mth("MAXIMUM", lx, ly), _sock(mx, "Factor_Float"))
+    _sock(mx, "A_Color").default_value = (*kit.srgb("#1f3a6b"), 1)
+    _sock(mx, "B_Color").default_value = (*kit.srgb("#9fb3cc"), 1)
+    bs = nt.nodes["Principled BSDF"]
+    L.new(_sock(mx, "Result_Color", True), bs.inputs["Base Color"])
+    bs.inputs["Roughness"].default_value = 0.4
+    kit._MATS[key] = m
+    return m
+
+
+def d8_solar(x, y, cols, rows, mats, pw=0.12, pd=0.08):
+    """A field of tilted solar panels on low rails, in a pale frame."""
+    st, plate, seam, panel, cap, neon, tip = mats
+    sm = solar8()
+    W, D = cols * (pw + 0.014), rows * (pd + 0.03)
+    bx((W + 0.03, D + 0.02, 0.008), (x, y, 0.024), plate, bev=0)
+    for j in range(rows):
+        yy = y - D / 2 + (j + 0.5) * D / rows
+        bx((W, 0.014, 0.022), (x, yy + 0.012, 0.034), cap, bev=0)  # the rail under the high edge
+        for i in range(cols):
+            xx = x - W / 2 + (i + 0.5) * W / cols
+            bx((pw, pd, 0.006), (xx, yy, 0.044), sm, bev=0, rot=(0.38, 0, 0))  # tilted towards −Y (the sun side)
+
+
+def d8_hangar(x, y, w, d, h, mats, rz=0.0):
+    """A steel hangar under a pale barrel vault with dark ribs; lit doors in both gable ends, a light line along it."""
+    st, plate, seam, panel, cap, neon, tip = mats
+
+    def b():
+        bx((w, d, h), (0, 0, h / 2), st, bev=0)
+        R, hv, segs = d / 2 + 0.008, d * 0.36, 6
+        roof, ends, rib = _MB(), _MB(), _MB()
+        arc = [(R * math.cos(math.pi * i / segs), h + hv * math.sin(math.pi * i / segs)) for i in range(segs + 1)]
+        for i in range(segs):
+            (y0, z0), (y1, z1) = arc[i], arc[i + 1]
+            nyz = (0, (y0 + y1) / 2, (z0 + z1) / 2 - h)  # outward from the vault's axis
+            roof.face([(-w / 2 - 0.01, y0, z0), (w / 2 + 0.01, y0, z0), (w / 2 + 0.01, y1, z1), (-w / 2 - 0.01, y1, z1)],
+                      nyz)
+            for xr in (-w * 0.3, 0.0, w * 0.3):  # ribs across the vault
+                rib.strip((xr, y0, z0), (xr, y1, z1), nyz, 0.014, 0.004)
+        for sx in (-1, 1):
+            ends.face([(sx * w / 2, yy, zz) for yy, zz in arc], (sx, 0, 0))
+        roof.obj(seam, "vault")
+        ends.obj(st, "gables")
+        rib.obj(cap, "ribs")
+        for sx in (-1, 1):
+            bx((0.006, d * 0.5, h * 0.72), (sx * (w / 2 + 0.002), 0, h * 0.36 + 0.02), flat("door8", "#23282f", 0.6),
+               bev=0)
+            bx((0.008, d * 0.56, 0.01), (sx * (w / 2 + 0.004), 0, h * 0.78 + 0.02), neon, bev=0)
+            bx((0.008, d * 0.5, 0.012), (sx * (w / 2 + 0.004), 0, 0.03), flat("warm8", "#ffbe62", 0.5), bev=0)
+        for sy in (-1, 1):
+            bx((w + 0.004, 0.008, 0.01), (0, sy * (d / 2 + 0.002), h - 0.012), neon, bev=0)
+    build_at(b, x, y, rz)
+
+
+def d8_pad(x, y, r, z, mats):
+    """A landing pad: a dark deck on a raised steel drum with a hazard-striped rim, a cold light circle with a cross
+    bar and four lit corner lamps."""
+    st, plate, seam, panel, cap, neon, tip = mats
+    cy(r, z - 0.01, (x, y, (z - 0.01) / 2), plate, 12)
+    # the hazard rim: an open band and a top ring only (full cylinder caps would be big striped islands in the atlas)
+    rim = _MB()
+    R0, R1 = r * 0.92, r + 0.004
+    for k in range(12):
+        a0, a1 = math.tau * k / 12, math.tau * (k + 1) / 12
+        am = (a0 + a1) / 2
+
+        def p_(R, a, zz):
+            return (x + R * math.cos(a), y + R * math.sin(a), zz)
+        rim.face([p_(R1, a0, z - 0.016), p_(R1, a1, z - 0.016), p_(R1, a1, z + 0.002), p_(R1, a0, z + 0.002)],
+                 (math.cos(am), math.sin(am), 0))
+        rim.face([p_(R0, a0, z + 0.002), p_(R1, a0, z + 0.002), p_(R1, a1, z + 0.002), p_(R0, a1, z + 0.002)],
+                 (0, 0, 1))
+    rim.obj(hazard_ring(x, y, R1, 12), "rim")
+    cy(r * 0.94, 0.008, (x, y, z + 0.002), flat("deck8", "#2c3137", 0.6), 12)
+    ring = _MB()
+    for k in range(12):
+        a0, a1 = math.tau * k / 12, math.tau * (k + 1) / 12
+        ring.strip((x + math.cos(a0) * r * 0.66, y + math.sin(a0) * r * 0.66, z + 0.008),
+                   (x + math.cos(a1) * r * 0.66, y + math.sin(a1) * r * 0.66, z + 0.008), (0, 0, 1), 0.016, 0.0)
+    ring.obj(neon, "padring")
+    for k in range(4):
+        a = math.pi / 4 + k * math.pi / 2
+        bx((0.02, 0.02, 0.014), (x + math.cos(a) * r * 0.84, y + math.sin(a) * r * 0.84, z + 0.012), tip, bev=0)
+
+
+def d8_shuttle(x, y, z, rz, team, mats):
+    """A small shuttle parked on a pad: a pale hull with a team stripe, a dark canopy, swept wings, two engine pods."""
+    st, plate, seam, panel, cap, neon, tip = mats
+    hull = flat("hull8", "#c3cad3", 0.4)
+
+    def b():
+        taper_box((0.2, 0.07, 0.045), (0, 0, 0.03), hull, top=(0.82, 0.62))
+        wedge = [(0.1, -0.035), (0.17, 0.0), (0.1, 0.035)]
+        extrude(wedge, 0.008, 0.045, hull)
+        bx((0.06, 0.05, 0.016), (0.075, 0, 0.056), flat("cab8", "#1b2533", 0.3), bev=0)
+        bx((0.09, 0.072, 0.012), (-0.03, 0, 0.054), flat("hullteam" + team, team, 0.5), bev=0)
+        wing = [(0.03, 0.03), (-0.07, 0.13), (-0.1, 0.13), (-0.08, 0.03)]
+        extrude(wing, 0.018, 0.026, hull)
+        extrude([(px, -py) for px, py in wing], 0.018, 0.026, hull)
+        for sy in (-1, 1):
+            cy(0.018, 0.07, (-0.075, sy * 0.115, 0.028), plate, 8, rot=(0, math.pi / 2, 0))
+            cy(0.013, 0.006, (-0.112, sy * 0.115, 0.028), tip, 8, rot=(0, math.pi / 2, 0))
+            bx((0.03, 0.012, 0.006), (-0.085, sy * 0.13, 0.024 + 0.0), flat("hullteam" + team, team, 0.5), bev=0)
+    build_at(b, x, y, rz, z=z)
+
+
+def d8_tank(x, y, r, h, mats):
+    """A pale storage tank with a light band and a domed cap."""
+    st, plate, seam, panel, cap, neon, tip = mats
+    cy(r, h, (x, y, h / 2), seam, 10)
+    cy(r + 0.004, 0.012, (x, y, h * 0.62), neon, 10)
+    cy(r + 0.004, 0.014, (x, y, 0.03), plate, 10)
+    hemi(r, (x, y, h), seam, 10, 2, (1, 1, 0.5))
+
+
+def d8_containers(x, y, rz, team, mats):
+    """A stack of cargo containers (team colour, amber, grey) with dark end doors."""
+    def b():
+        for (u, v, z, c) in ((0.0, 0.0, 0.0, team), (0.0, 0.05, 0.0, "#b8862e"), (0.0, 0.1, 0.0, "#7b838e"),
+                             (0.01, 0.025, 0.04, "#7b838e"), (0.0, 0.075, 0.04, team)):
+            bx((0.11, 0.044, 0.04), (u, v, 0.02 + z + 0.02), flat("cont8" + c, shade(c, 0.85), 0.6), bev=0)
+            for sx in (-1, 1):
+                bx((0.004, 0.036, 0.032), (u + sx * 0.056, v, 0.02 + z + 0.02), flat("door8", "#23282f", 0.6), bev=0)
+    build_at(b, x, y, rz)
+
+
+def d8_car(x, y, rz, color, mats):
+    """A small hover car over an avenue: a rounded body, a dark canopy, a cold glow under it."""
+    st, plate, seam, panel, cap, neon, tip = mats
+
+    def b():
+        taper_box((0.06, 0.03, 0.016), (0, 0, 0.042), flat("car8" + color, color, 0.4), top=(0.8, 0.8))
+        bx((0.026, 0.022, 0.01), (-0.004, 0, 0.054), flat("cab8", "#1b2533", 0.3), bev=0)
+        bx((0.046, 0.022, 0.004), (0, 0, 0.032), tip, bev=0)
+    build_at(b, x, y, rz)
+
+
+def d8_portal(x, y, rz, mats):
+    """A lit entrance porch (the portal of frame 5) facing −Y after the turn rz: steel, plate roof, cold-lit door."""
+    st, plate, seam, panel, cap, neon, tip = mats
+
+    def b():
+        bx((0.13, 0.07, 0.09), (0, 0, 0.045), st, bev=0)
+        bx((0.15, 0.085, 0.014), (0, -0.004, 0.097), plate, bev=0)
+        bx((0.06, 0.006, 0.06), (0, -0.036, 0.05), tip, bev=0)
+        for sx in (-1, 1):
+            bx((0.018, 0.018, 0.1), (sx * 0.056, -0.038, 0.05), plate, bev=0)
+            bx((0.006, 0.006, 0.07), (sx * 0.056, -0.048, 0.05), neon, bev=0)
+    build_at(b, x, y, rz)
+
+
 def district_scifi(team):
-    """DL8+ sprawl on an owned open hex (reference frame 2: the whole land is built up): a dark plate with glowing
-    street lines, four dark-glass blocks of different heights with team neon edges, a skybridge, a small dome and a
-    landing pad — low enough not to hide the capital."""
-    plate = flat("plate8", "#6f6b65", 0.6)  # warm-grey concrete: the cool sci-fi light and grading turn it neutral grey (frames 2, 5)
-    pad(0.82, plate, 0.012, 12, 0.0, 41)
-    street = glow("street" + team, shade(team, 1.25), 1.4)
-    for ang in (0.0, math.pi / 3, -math.pi / 3):  # three glowing avenues across the plate
-        bx((1.3, 0.016, 0.006), (0, 0, 0.016), street, ang, 0)
-    gl = dark_glass()
-    steel = facade("#aab3bf", "#22436e", 0.045, 0.06, 0.62, 0.55, lit="#9fdcff", lit_p=0.4)  # the light steel of frame 2
-    neon = team_neon(team)
-    blocks = [(-0.3, 0.26, 0.2, 0.18, 0.42), (0.28, 0.3, 0.22, 0.2, 0.62), (0.34, -0.24, 0.18, 0.16, 0.34),
-              (-0.26, -0.3, 0.24, 0.16, 0.5)]
-    for i, (x, y, w, d, h) in enumerate(blocks):
-        m_ = steel if i % 2 == 0 else gl
-        build_at(lambda w=w, d=d, h=h, m_=m_: (neon_box(w, d, 0.012, h, team, m_),
-                                        bx((w * 0.6, d * 0.6, 0.04), (0, 0, 0.012 + h + 0.02), flat("roofdeck", "#4a515c", 0.6), bev=0.004)),
-                 x, y, 0.2)
-    beam((-0.3, 0.26, 0.3), (0.28, 0.3, 0.3), 0.04, flat("bridge", "#c9d0d8", 0.4))  # skybridge
-    beam((-0.3, 0.26, 0.3), (0.28, 0.3, 0.3), 0.012, neon)
-    uvs(0.11, (0.02, -0.02, 0.012), flat("dome_glass", "#9fd4ef", 0.25), 12, 6, (1, 1, 0.6))
-    cy(0.115, 0.012, (0.02, -0.02, 0.02), neon, 16)
-    cy(0.08, 0.01, (-0.02, -0.5, 0.017), flat("pad", "#3e4550", 0.5), 12)
-    torus(0.07, 0.005, (-0.02, -0.5, 0.024), neon)
+    """DL8+ built-up land, variant A — the tower cluster of reference frame 2 in the citadel's steel kit: a tall
+    central spire rising from a podium megablock with a second spire and a mid-rise, a beacon tower over a skybridge,
+    a small domed tower, every face with an inset team panel and a cold light strip; podiums with warm lit
+    shopfronts round a glowing avenue and side street, lawns with pines, light masts, crates. On a hex-shaped dark
+    steel plate; lower than city_dl8, so the city still stands out."""
+    mats = d8_mats(team)
+    st, plate, seam, panel, cap, neon, tip = mats
+    d8_plate(mats)
+    d8_road((-0.74, -0.1), (0.74, -0.1), 0.09, mats)
+    d8_road((0.1, -0.145), (0.1, -0.7), 0.07, mats)
+    # the back of the block: a podium megablock with the central spire, a second spire and a mid-rise between them
+    d8_podium(-0.2, 0.25, 0.62, 0.3, 0.1, mats)
+    d8_tower(-0.06, 0.25, 0.19, 0.17, 0.42, mats, "spire", foot=False, sp=1.3)
+    d8_tower(-0.4, 0.22, 0.15, 0.14, 0.3, mats, "spire", foot=False)
+    d8_tower(-0.24, 0.36, 0.13, 0.1, 0.18, mats, "roof", buttress=False, needle=0.0, foot=False)
+    d8_podium(0.38, 0.3, 0.28, 0.24, 0.08, mats, plant=False)
+    d8_tower(0.36, 0.3, 0.16, 0.15, 0.34, mats, "beacon", foot=False)
+    d8_skybridge((0.04, 0.28, 0.27), (0.28, 0.3, 0.27), mats)
+    d8_tower(0.1, 0.56, 0.13, 0.11, 0.22, mats, "dome", buttress=False)
+    d8_tower(0.58, 0.07, 0.14, 0.15, 0.16, mats, "roof", buttress=False, needle=0.05)
+    d8_lawn(-0.38, 0.54, 0.24, 0.15, mats, 0.5, ((-0.07, 0.0, 0.85), (0.06, 0.02, 0.7)))
+    # the front of the block: a spire on a podium, a flat-roofed tower on another, a low block, a lawn with pines
+    d8_podium(0.42, -0.36, 0.32, 0.24, 0.08, mats, plant=False)
+    d8_tower(0.36, -0.34, 0.14, 0.14, 0.27, mats, "spire", foot=False)
+    d8_tower(0.52, -0.43, 0.08, 0.07, 0.13, mats, "beacon", buttress=False, needle=0.0, foot=False)
+    d8_podium(-0.38, -0.36, 0.3, 0.24, 0.07, mats, plant=False)
+    d8_tower(-0.42, -0.34, 0.16, 0.14, 0.22, mats, "roof", foot=False, needle=0.06)
+    d8_podium(-0.2, -0.58, 0.22, 0.12, 0.1, mats, plant=False, lights=False)
+    d8_pad(-0.2, -0.58, 0.05, 0.135, mats)  # a small rooftop landing pad
+    d8_lawn(-0.04, -0.36, 0.14, 0.2, mats, 0.0, ((0.0, 0.05, 0.75), (0.01, -0.05, 0.6)))
+    for (x, y) in ((-0.6, -0.17), (0.2, -0.03), (0.68, -0.17), (0.18, -0.62)):
+        d8_mast(x, y, 0.13, mats)
+    for (x, y, s_) in ((0.22, 0.03, 0.04), (0.27, 0.035, 0.03)):
+        bx((s_, s_ * 1.4, s_), (x, y, 0.02 + s_ / 2), flat("crate8", "#b8862e", 0.6), bev=0)
+    d8_car(-0.3, -0.08, 0.0, "#e6e9ee", mats)
+    d8_car(0.42, -0.12, math.pi, team, mats)
 
 
 def district_scifi_b(team):
-    """Sprawl variant B: a round plaza with one tall needle tower, a glass arcology dome and low ring blocks."""
-    plate = flat("plate8", "#6f6b65", 0.6)  # warm-grey concrete: the cool sci-fi light and grading turn it neutral grey (frames 2, 5)
-    pad(0.82, plate, 0.012, 12, 0.0, 42)
-    neon = team_neon(team)
-    steel = facade("#aab3bf", "#22436e", 0.045, 0.06, 0.62, 0.55, lit="#9fdcff", lit_p=0.4)
-    gl = dark_glass()
-    cy(0.3, 0.008, (0, 0, 0.016), flat("plaza", "#454c57", 0.5), 24)
-    torus(0.3, 0.008, (0, 0, 0.022), neon, seg=24)
-    build_at(lambda: (neon_box(0.14, 0.14, 0.012, 0.82, team, steel),
-                      cn(0.05, 0.22, (0, 0, 0.94), flat("spire", "#c9d0d8", 0.4), 6),
-                      ico(0.016, (0, 0, 1.06), neon)), 0.0, 0.08)
-    uvs(0.2, (-0.3, -0.24, 0.012), flat("dome_glass", "#9fd4ef", 0.25), 14, 7, (1, 1, 0.65))
-    cy(0.205, 0.016, (-0.3, -0.24, 0.02), neon, 20)
-    for k in range(5):  # low ring blocks round the plaza
-        a = 0.6 + k * 1.05
-        x, y = math.cos(a) * 0.5, math.sin(a) * 0.5
-        if x < -0.15 and y < -0.05:
-            continue
-        build_at(lambda: neon_box(0.16, 0.12, 0.012, 0.18 + 0.04 * (k % 2), team, gl if k % 2 else steel), x, y, a + math.pi / 2)
+    """DL8+ built-up land, variant B — the civic block of frame 2: a great blue glass dome with pale ribs over a steel
+    drum banded in team panels and a light ring, on a plaza with a glowing rim, ringed by spired and beacon towers
+    on podiums, a drum tower with a glass cap, mid-rise blocks, podiums with warm lit shopfronts and lawns with
+    pines."""
+    mats = d8_mats(team)
+    st, plate, seam, panel, cap, neon, tip = mats
+    d8_plate(mats, 1)
+    dx_, dy_ = -0.06, 0.06
+    cy(0.33, 0.004, (dx_, dy_, 0.022), flat("road8", "#2a2e34", 0.6), 20)  # the plaza round the dome
+    ring = _MB()
+    for k in range(20):
+        a0, a1 = math.tau * k / 20, math.tau * (k + 1) / 20
+        ring.strip((dx_ + math.cos(a0) * 0.32, dy_ + math.sin(a0) * 0.32, 0.025),
+                   (dx_ + math.cos(a1) * 0.32, dy_ + math.sin(a1) * 0.32, 0.025), (0, 0, 1), 0.014, 0.0)
+    ring.obj(neon, "plazaring")
+    d8_road((dx_ + 0.03, dy_ - 0.32), (0.0, -0.72), 0.08, mats)
+    d8_dome(dx_, dy_, 0.25, 0.14, mats)
+    d8_portal(dx_ + 0.01, dy_ - 0.275, 0.0, mats)
+    d8_car(-0.005, -0.5, 1.48, "#e6e9ee", mats)
+    d8_podium(0.46, 0.27, 0.24, 0.22, 0.07, mats, plant=False)
+    d8_tower(0.44, 0.27, 0.15, 0.14, 0.4, mats, "spire", foot=False)
+    d8_podium(0.45, -0.3, 0.24, 0.22, 0.07, mats, plant=False)
+    d8_tower(0.42, -0.28, 0.14, 0.13, 0.26, mats, "beacon", foot=False)
+    d8_tower(-0.5, -0.24, 0.13, 0.13, 0.3, mats, "spire")
+    d8_round(-0.46, 0.4, 0.08, 0.3, mats)
+    d8_tower(0.33, 0.48, 0.1, 0.1, 0.14, mats, "roof", buttress=False, needle=0.05)
+    d8_podium(0.5, -0.02, 0.16, 0.2, 0.1, mats)
+    d8_podium(0.06, 0.6, 0.32, 0.12, 0.08, mats, 0.0)
+    d8_podium(-0.62, 0.08, 0.12, 0.22, 0.07, mats, plant=False)
+    d8_podium(-0.36, -0.56, 0.2, 0.1, 0.08, mats)
+    d8_lawn(-0.2, -0.42, 0.14, 0.12, mats, 0.0, ((0.0, 0.0, 0.8),))
+    d8_lawn(0.22, -0.52, 0.18, 0.13, mats, 0.0, ((-0.04, 0.0, 0.75), (0.05, 0.01, 0.6)))
+    for (x, y) in ((-0.12, -0.6), (0.11, -0.36), (0.22, 0.34), (-0.42, 0.13)):
+        d8_mast(x, y, 0.13, mats)
 
 
 def district_scifi_c(team):
-    """Sprawl variant C: an energy hub — a raivite reactor core in a ring frame, two cooling towers, hangars."""
-    plate = flat("plate8", "#6f6b65", 0.6)  # warm-grey concrete: the cool sci-fi light and grading turn it neutral grey (frames 2, 5)
-    pad(0.82, plate, 0.012, 12, 0.0, 43)
-    neon = team_neon(team)
-    core = glow("reactor", CYAN, 3.0)
-    cy(0.16, 0.06, (0, 0.05, 0.04), flat("reactor_base", "#4a515c", 0.5), 16)
-    cn(0.07, 0.3, (0, 0.05, 0.22), core, 6)
-    cn(0.07, 0.2, (0, 0.05, 0.03), core, 6, rot=(math.pi, 0, 0))
-    torus(0.2, 0.016, (0, 0.05, 0.22), flat("ring_frame", "#c9d0d8", 0.4), (math.pi / 2, 0, 0), 20, 4)
-    torus(0.2, 0.006, (0, 0.05, 0.22), neon, (math.pi / 2, 0, 0), 20, 3)
-    for x in (-0.38, 0.38):  # cooling towers with a glow band
-        cy(0.13, 0.36, (x, 0.28, 0.19), flat("tower_c", "#b9c0c9", 0.5), 16, r2=0.09)
-        cy(0.11, 0.02, (x, 0.28, 0.3), neon, 16)
-    for x in (-0.25, 0.25):  # hangars with rounded roofs
-        build_at(lambda: (bx((0.22, 0.14, 0.08), (0, 0, 0.052), flat("hangar", "#8a929c", 0.5), bev=0.006),
-                          cy(0.07, 0.22, (0, 0, 0.092), flat("hangar_r", "#6e7681", 0.5), 12, rot=(0, math.pi / 2, 0)),
-                          bx((0.2, 0.004, 0.012), (0, -0.072, 0.05), neon, bev=0)), x, -0.32)
+    """DL8+ built-up land, variant C — the service block: a raised landing pad with a hazard rim, a light circle and
+    a parked shuttle in the team colour, a steel hangar under a ribbed vault, stacks of cargo containers, a control
+    tower with a glass cab, a field of solar panels (the dark blue grids of frame 2), storage tanks with light bands
+    and pipes, a works block with two stacks, a gatehouse, light masts along a glowing service road."""
+    mats = d8_mats(team)
+    st, plate, seam, panel, cap, neon, tip = mats
+    d8_plate(mats, 2)
+    d8_road((-0.74, -0.02), (0.74, -0.02), 0.085, mats)
+    # front: the landing pad with a shuttle, the hangar, containers, a gatehouse
+    d8_pad(0.36, -0.3, 0.21, 0.05, mats)
+    d8_shuttle(0.36, -0.3, 0.049, 0.6, team, mats)  # (hull on the deck)
+    d8_hangar(-0.33, -0.3, 0.38, 0.24, 0.11, mats)
+    d8_containers(0.03, -0.3, math.pi / 2, team, mats)
+    d8_podium(-0.08, -0.58, 0.2, 0.12, 0.08, mats)
+    d8_car(-0.12, -0.04, 0.0, team, mats)
+    d8_car(0.46, 0.0, math.pi, "#e6e9ee", mats)
+    # back: the control tower, the solar field, tanks with pipes, the works block with two stacks
+    tx, ty = 0.06, 0.24
+    bx((0.15, 0.15, 0.03), (tx, ty, 0.035), plate, bev=0)
+    bx((0.1, 0.1, 0.36), (tx, ty, 0.18), st, bev=0)
+    bx((0.112, 0.112, 0.016), (tx, ty, 0.12), seam, bev=0)
+    pm, sm_ = _MB(), _MB()
+    for (nx, ny) in ((0, -1), (1, 0), (-1, 0), (0, 1)):
+        px, py = tx + nx * 0.052, ty + ny * 0.052
+        ux, uy = -ny * 0.024, nx * 0.024
+        pm.face([(px - ux, py - uy, 0.135), (px + ux, py + uy, 0.135), (px + ux, py + uy, 0.34),
+                 (px - ux, py - uy, 0.34)], (nx, ny, 0))
+        px, py = tx + nx * 0.054, ty + ny * 0.054
+        ux, uy = -ny * 0.013, nx * 0.013
+        sm_.face([(px - ux, py - uy, 0.145), (px + ux, py + uy, 0.145), (px + ux, py + uy, 0.33),
+                  (px - ux, py - uy, 0.33)], (nx, ny, 0))
+    pm.obj(panel, "panels")
+    sm_.obj(neon, "strips")
+    cy(0.1, 0.018, (tx, ty, 0.369), plate, 8)
+    cy(0.095, 0.05, (tx, ty, 0.403), flat("cab8", "#1b2533", 0.3), 8)
+    cy(0.099, 0.01, (tx, ty, 0.405), tip, 8)
+    cy(0.105, 0.016, (tx, ty, 0.436), cap, 8)
+    rod((tx, ty, 0.44), (tx, ty, 0.56), 0.007, cap, r2=0.002, n=4)
+    bx((0.016, 0.016, 0.016), (tx, ty, 0.52), tip, bev=0)
+    bx((0.05, 0.004, 0.03), (tx + 0.02, ty, 0.5), seam, bev=0)  # a radar vane on the mast
+    d8_solar(-0.36, 0.33, 3, 2, mats)
+    d8_tank(0.38, 0.2, 0.065, 0.17, mats)
+    d8_tank(0.54, 0.07, 0.055, 0.14, mats)
+    pipe = flat("pipe8", "#6b737e", 0.4)
+    rod((0.38, 0.2, 0.08), (0.54, 0.07, 0.08), 0.012, pipe, n=6)
+    rod((0.38, 0.2, 0.06), (0.11, 0.24, 0.06), 0.012, pipe, n=6)
+    d8_podium(0.26, 0.5, 0.26, 0.15, 0.12, mats, 0.0, plant=False)
+    for sx in (-1, 1):
+        x = 0.26 + sx * 0.065
+        cy(0.034, 0.14, (x, 0.5, 0.19), seam, 10)
+        cy(0.038, 0.014, (x, 0.5, 0.255), cap, 10)
+        cy(0.036, 0.01, (x, 0.5, 0.21), neon, 10)
+    d8_podium(-0.62, 0.15, 0.12, 0.16, 0.09, mats, 0.0)
+    d8_lawn(-0.18, 0.6, 0.22, 0.11, mats, 0.0, ((-0.06, 0.0, 0.7), (0.06, 0.0, 0.6)))
+    for (x, y) in ((-0.5, -0.09), (-0.02, 0.05), (0.62, -0.09), (0.12, -0.52)):
+        d8_mast(x, y, 0.13, mats)
 
 
 CITY = [city_dl1, city_dl2, city_dl3, city_dl4, city_dl5, city_dl6, city_dl7, city_dl8]
@@ -3904,6 +4409,9 @@ def _drop_ground_faces(objs):
 
 ATLAS = {"residence_dl4", "residence_dl5", "residence_dl6", "residence_dl7", "residence_dl8",
          "city_dl5", "city_dl6", "city_dl7", "city_dl8"}  # (the late cities: dense tile courses and thin trim too)
+# the DL8 districts stand on many hexes at once: the tight atlas at 512 px (as the towers), so their window slits and
+# panels keep their texels without a 1024 sheet per variant
+DISTRICTS = {"district_scifi", "district_scifi_b", "district_scifi_c"}
 
 
 def _kept(mt):
@@ -4054,12 +4562,14 @@ def export(name, out):
     bpy.context.view_layer.update()
     lowpoly(objs)
     smokes = [o for o in bpy.context.scene.objects if o.type == "EMPTY" and o.name.startswith(("smoke", "flag"))]
-    if name.rsplit("_", 1)[0] in SETTLED or name.startswith("fort_"):
+    if name.rsplit("_", 1)[0] in SETTLED or name.rsplit("_", 1)[0] in DISTRICTS or name.startswith("fort_"):
         _drop_ground_faces(objs)
     # the hero model is seen up close, and the dense towns carry hundreds of thin beams and tile courses that need
     # the texels (at 512 they shrink below a pixel and sample the black gutter)
     if name.rsplit("_", 1)[0] in ATLAS:
         ob = bake_atlas(objs, 1024)
+    elif name.rsplit("_", 1)[0] in DISTRICTS:
+        ob = bake_atlas(objs, 512)
     else:
         ob = ea.bake_asset(objs, 1024 if name.startswith(("residence", "city_dl1", "city_dl2", "city_dl3", "city_dl4"))
                            else 512)

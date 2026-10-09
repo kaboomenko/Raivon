@@ -34,7 +34,7 @@ import export_assets as ea  # noqa: E402  (guarded: importing it builds nothing)
 import evolution_assets as ev  # noqa: E402  (guarded: importing it builds nothing)
 import tower_assets as ta  # noqa: E402  (guarded: importing it builds nothing)
 from evolution_assets import (bx, cy, cn, ico, uvs, torus, rod, beam, hip_roof, flat, tex, stone,  # noqa: E402
-                              glow, build_at, mesh_obj, extrude, shade, WOOD_D, WOOD_L, STONE,
+                              glow, build_at, mesh_obj, extrude, shade, taper_box, WOOD_D, WOOD_L, STONE,
                               STONE_D, GOLD)
 from kit import prism_roof  # noqa: E402
 
@@ -761,7 +761,7 @@ def crane():
         rod((0.27, 0.0, 0.21), (0.27 + math.cos(a) * 0.04, math.sin(a) * 0.04, 0.17), 0.0035, rope, n=3)
 
 
-def _cove(quay, water_c=WATER, shallow_c="#79c1df", joints=False):
+def _cove(quay, water_c=WATER, shallow_c="#79c1df", joints=False, edge=None):
     """The port's water cove opening at the +X edge with a lighter rim and a quay along the land side. `joints`:
     the quay and the rim are continuous mitred strips (no stone ends overlapping in one plane where two runs meet at
     an angle — the dark notches and flicker of separate beams); otherwise one beam per stretch."""
@@ -800,6 +800,8 @@ def _cove(quay, water_c=WATER, shallow_c="#79c1df", joints=False):
         for ch in chains:  # the cove runs counter-clockwise: the water lies to the left of each chain
             _strip(ch, 0.05, -0.005, 0.045, quay)
             _strip(_offset(ch, 0.04), 0.025, 0.0015, 0.0265, shallow)
+            if edge:  # a painted / lit line along the quay's water edge (the late-era ports)
+                _strip(_offset(ch, 0.018), 0.008, 0.044, 0.0475, edge)
         return cx
     for k in range(n):
         if not built[k]:
@@ -1493,239 +1495,1077 @@ def warship(team):
     bx((0.07, 0.06, 0.008), (-0.075, 0.0, 0.082), planks("#5a3a20", 0.008, 0.02, True), bev=0)
 
 
-def _turret(x, z, steel, dark, aim=1):
-    """A gun turret on the deck centreline: a squat round mount, an angled shield and a twin barrel toward ±X."""
-    cy(0.032, 0.026, (x, 0, z + 0.013), steel, 10)
-    bx((0.05, 0.05, 0.022), (x + aim * 0.006, 0, z + 0.035), steel, bev=0.004)
-    for sy in (-0.008, 0.008):
-        beam((x + aim * 0.02, sy, z + 0.036), (x + aim * 0.085, sy, z + 0.04), 0.0045, dark)
+# ------------------------------------------------------------------ steel ships (DL6+)
+
+
+def _sta_at(L, stations, x):
+    """Half-beam and sheer of a station hull at x (linear between the stations (t along the length, half-beam,
+    sheer height))."""
+    t = min(max((x + L / 2) / L, 0.0), 1.0)
+    for (t0, w0, s0), (t1, w1, s1) in zip(stations, stations[1:]):
+        if t <= t1:
+            f = (t - t0) / max(t1 - t0, 1e-9)
+            return w0 + (w1 - w0) * f, s0 + (s1 - s0) * f
+    return stations[-1][1], stations[-1][2]
+
+
+def _flare_y(w, z, flare):
+    """Half-width of a flared hull side at height z (flare = (fraction of the beam at the waterline, z of full beam))."""
+    return w * (flare[0] + (1.0 - flare[0]) * min(1.0, z / flare[1]))
+
+
+def _orient(o, out):
+    """Flip the faces of an open shell whose normal points against out(centre) (recalc can't tell in from out)."""
+    for p_ in o.data.polygons:
+        if p_.normal.dot(Vector(out(p_.center))) < 0:
+            p_.flip()
+    o.data.update()
+    return o
+
+
+def steel_hull(L, stations, levels, mats, deck_mt, transom_mt, flare=(0.72, 0.035), rake=0.03):
+    """A steel hull along X (bow at +X) lofted through `stations` (t, half-beam, sheer): horizontal colour bands with
+    their feet at `levels` (mats[k] from levels[k] up to the next level, the last one up to the sheer), sides flaring
+    from flare[0] of the beam at the waterline to the full beam at flare[1], a stem raked forward by `rake`, a flat
+    transom and a deck following the sheer (a raised forecastle where the sheer steps up)."""
+    zs_band = list(levels)
+    verts, idx = [], {}
+
+    def vid(p):
+        k = tuple(round(c, 6) for c in p)
+        if k not in idx:
+            idx[k] = len(verts)
+            verts.append(p)
+        return idx[k]
+
+    rows = []
+    n = len(stations)
+    for i, (t, w, sh) in enumerate(stations):
+        zp = sorted(set([z for z in zs_band if z < sh - 1e-4] + ([flare[1]] if flare[1] < sh else []))) + [sh]
+        row = []
+        for z in zp:
+            x = -L / 2 + t * L + (rake * z / sh if i == n - 1 else 0.0)
+            row.append((x, _flare_y(w, z, flare), z))
+        rows.append(row)
+    band_faces = [[] for _ in mats]
+
+    def band_of(z):
+        k = 0
+        for j, lv in enumerate(zs_band):
+            if z >= lv - 1e-6:
+                k = j
+        return k
+    def pt(j, z, sy):
+        t_, w_, sh_ = stations[j]
+        z = min(z, sh_)
+        return (-L / 2 + t_ * L + (rake * z / sh_ if j == n - 1 else 0.0), sy * _flare_y(w_, z, flare), z)
+    for sy in (1, -1):
+        for i in range(n - 1):
+            # walk both rows together by z (they hold different z sets where the sheer steps: the lower one stops
+            # at its sheer, so the step closes with triangles)
+            zall = sorted(set(round(p[2], 6) for p in rows[i] + rows[i + 1]))
+            for z0, z1 in zip(zall, zall[1:]):
+                q = [vid(pt(i, z0, sy)), vid(pt(i, z1, sy)), vid(pt(i + 1, z1, sy)), vid(pt(i + 1, z0, sy))]
+                q = list(dict.fromkeys(q))
+                if len(q) >= 3:
+                    band_faces[band_of(z0)].append(tuple(q))
+    for k, mt in enumerate(mats):
+        if not band_faces[k]:
+            continue
+        used = sorted({v for f in band_faces[k] for v in f})
+        remap = {v: j for j, v in enumerate(used)}
+        o = mesh_obj([verts[v] for v in used], [tuple(remap[v] for v in f) for f in band_faces[k]], mt)
+        _orient(o, lambda c: (0.0, 1.0 if c.y > 0 else -1.0, 0.0))
+    # transom: the flat stern between the two sides
+    st = rows[0]
+    ring = [(p[0], p[1], p[2]) for p in reversed(st)] + [(p[0], -p[1], p[2]) for p in st[1:]]
+    _orient(mesh_obj(ring, [tuple(range(len(ring)))], transom_mt), lambda c: (-1.0, 0.0, 0.0))
+    # deck: a strip between the gunwales just under the sheer
+    dverts, didx = [], {}
+
+    def did(p):
+        k = tuple(round(c, 6) for c in p)
+        if k not in didx:
+            didx[k] = len(dverts)
+            dverts.append(p)
+        return didx[k]
+    df = []
+    for i in range(n - 1):
+        ring = []
+        for j, sy in ((i, -1), (i + 1, -1), (i + 1, 1), (i, 1)):
+            t_, w_, sh_ = stations[j]
+            x = -L / 2 + t_ * L + (0.004 if j == 0 else 0.0) + (rake - 0.012 if j == n - 1 else 0.0)
+            ring.append(did((x, sy * _flare_y(w_, sh_, flare) * 0.95, sh_ - 0.004)))
+        ring = list(dict.fromkeys(ring))
+        if len(ring) >= 3:
+            df.append(tuple(ring))
+    _orient(mesh_obj(dverts, df, deck_mt), lambda c: (0.0, 0.0, 1.0))
+    return rows
+
+
+def _hull_side(L, stations, flare, x, z, sy, off=0.0016):
+    """Point on the hull side at (x, z) on side sy, `off` proud of it, and the side's heading (rz) there."""
+    w, _ = _sta_at(L, stations, x)
+    w2, _ = _sta_at(L, stations, x + 0.01)
+    y = _flare_y(w, z, flare) + off
+    dy = _flare_y(w2, z, flare) - _flare_y(w, z, flare)
+    return (x, sy * y, z), math.atan2(sy * dy, 0.01)
+
+
+_SEG7 = {0: "abcdef", 1: "bc", 2: "abged", 3: "abgcd", 4: "fgbc", 5: "afgcd", 6: "afgedc", 7: "abc", 8: "abcdefg",
+         9: "abcdfg"}
+
+
+def hull_number(L, stations, flare, digits, x0, z0, h, mt, t=0.0045):
+    """The hull number painted on both bows: seven-segment digits of height h lying on the hull side, read from
+    the bow aft on starboard and port alike."""
+    wd = h * 0.55
+    pitch = wd + h * 0.32
+    nd = len(digits)
+    for sy in (-1, 1):
+        for k, d in enumerate(digits):
+            # read left to right from either side: starboard (sy < 0) runs aft → bow, port bow → aft
+            xc = x0 - sy * (k - (nd - 1) / 2) * pitch
+            for s in _SEG7[d]:
+                hor = s in "agd"
+                zz = {"a": h, "g": h / 2, "d": 0.0, "b": h * 0.75, "c": h * 0.25, "e": h * 0.25, "f": h * 0.75}[s]
+                side = {"b": 1, "c": 1, "e": -1, "f": -1}.get(s, 0)
+                p, rz = _hull_side(L, stations, flare, xc - sy * side * wd / 2, z0 + zz, sy)
+                bx((wd + t if hor else t, 0.002, t if hor else h / 2 + t), p, mt, rz, bev=0)
+
+
+def _gun_turret(x, y, z, aim, house, dark, barrels=2, r=0.03, length=0.075, sc=1.0):
+    """A naval gun turret: a barbette ring, a house with sloped faces and a flat-faced front, a blast bag and
+    `barrels` long guns toward aim (±1 along X)."""
+    def b():
+        cy(r * 1.05, 0.012, (0, 0, 0.006), dark, 10)
+        taper_box((r * 2.2, r * 1.8, r * 0.85), (-r * 0.15, 0, 0.012 + r * 0.42), house, (0.78, 0.8))
+        bx((0.006, r * 1.2, r * 0.5), (r * 0.98, 0, 0.012 + r * 0.38), dark, bev=0)  # the gun port plate
+        for k in range(barrels):
+            yy = (k - (barrels - 1) / 2) * r * 0.5
+            rod((r * 0.95, yy, 0.012 + r * 0.38), (r * 0.95 + length, yy, 0.012 + r * 0.46), 0.0042, dark, n=5)
+            cy(0.0055, 0.008, (r * 0.95 + length, yy, 0.012 + r * 0.46), dark, 5, rot=(0, math.pi / 2 - 0.03, 0))
+    build_at(b, x, y, 0.0 if aim > 0 else math.pi, sc, z=z)
 
 
 def destroyer(team):
-    """A steel destroyer of the industrial and modern eras (DL6–7) along X (bow at +X): a grey hull with a team
-    boot stripe and hull number, a stepped bridge with windows, a raked funnel, a lattice mast with a radar bar,
-    turrets fore and aft and the state ensign at the stern."""
-    grey = flat("ship_grey", "#7b828a", 0.55)
-    deck = flat("ship_deck", "#5a6067", 0.7)
+    """A steel destroyer of the industrial and modern eras (DL6–7) along X (bow at +X): a lofted hull with a rising
+    sheer and a raised forecastle, red bottom, black boot topping and the state's stripe, the hull number on both
+    bows; a stepped bridge with a wrap-round window band and wings, a tripod mast with yards, radar and a lamp, two
+    raked funnels with the state's band, a superfiring pair of twin turrets forward and one aft, missile cells, lifeboats
+    on davits, a helideck with its H at the stern, the ensign and a jack."""
+    grey = flat("ship_grey", "#7d848c", 0.55)
+    light = ev.facade("#a5acb4", "#1c2a38", 0.026, 0.03, 0.42, 0.42, lit="#ffd27a", lit_p=0.18, z0=0.004)
+    plain = flat("ship_light", "#a5acb4", 0.5)
+    deck = ev.facade("#5d636a", "#5d636a", wf=0.0, brick=True, brick_scale=22.0, mortar_k=0.9)  # deck plating
+    roof = flat("ship_roof", "#686f77", 0.6)
+    # the upper strakes with a row of portholes under the deck edge
+    upper = ev.facade("#7d848c", "#262d34", 0.024, 0.06, 0.3, 0.22, lit="#ffd27a", lit_p=0.12, z0=0.035)
     dark = flat("ship_dark", "#2c3035", 0.5)
-    stripe = flat("hull_stripe" + team, ev.slate(team, 1.1), 0.6)
-    hull(0.72, 0.16, 0.085, grey, deck, stripe)
-    win = flat("bridge_win", "#1c2a38", 0.2)
-    z0 = 0.085
-    bx((0.2, 0.1, 0.05), (-0.02, 0, z0 + 0.025), grey, bev=0.006)  # main deckhouse
-    bx((0.11, 0.085, 0.045), (0.04, 0, z0 + 0.072), grey, bev=0.006)  # bridge
-    bx((0.012, 0.075, 0.014), (0.096, 0, z0 + 0.08), win, bev=0)
+    red = flat("ship_red", "#8a2f26", 0.6)
+    boot = flat("ship_boot", "#1e2023", 0.6)
+    stripe = flat("hull_stripe" + team, team, 0.55)
+    white = flat("hull_no", "#ecebe6", 0.6)
+    win = flat("bridge_win", "#16212c", 0.2)
+    L = 0.7
+    S = [(0.0, 0.064, 0.07), (0.14, 0.076, 0.068), (0.4, 0.08, 0.068), (0.53, 0.08, 0.07), (0.545, 0.08, 0.086),
+         (0.72, 0.072, 0.092), (0.86, 0.05, 0.098), (0.95, 0.024, 0.104), (1.0, 0.0, 0.108)]
+    FL = (0.72, 0.034)
+    steel_hull(L, S, [0.0, 0.01, 0.018, 0.044, 0.054], [red, boot, grey, stripe, upper], deck, grey, FL, 0.03)
+    hull_number(L, S, FL, (7, 4), 0.255, 0.06, 0.026, white)
+    zq, zf = 0.064, 0.082  # quarterdeck and forecastle deck heights (just under the sheer)
+    # ---- forward: superfiring twin turrets, missile cells, the jack and the anchor gear
+    _gun_turret(0.21, 0, zf, 1, plain, dark)
+    cy(0.034, 0.024, (0.135, 0, zf + 0.012), grey, 10)  # barbette lifting B turret over A
+    _gun_turret(0.135, 0, zf + 0.024, 1, plain, dark)
+    for i in range(3):
+        for j in range(2):
+            bx((0.011, 0.011, 0.004), (0.085 + i * 0.014 - 0.0, -0.012 + j * 0.024, zf + 0.001), dark, bev=0)
+    rod((0.37, 0, 0.1), (0.37, 0, 0.15), 0.0025, dark, n=4)  # jack staff
+    bx((0.03, 0.003, 0.02), (0.355, 0, 0.14), flat("flag" + team, team, 0.7), bev=0)
     for sy in (-1, 1):
-        bx((0.08, 0.004, 0.012), (0.04, sy * 0.043, z0 + 0.08), win, bev=0)
-    bx((0.07, 0.07, 0.012), (0.03, 0, z0 + 0.1), deck, bev=0.003)
-    rod((-0.07, 0, z0 + 0.05), (-0.09, 0, z0 + 0.13), 0.022, grey, n=10)  # raked funnel
-    cy(0.023, 0.012, (-0.091, 0, z0 + 0.13), dark, 10)
-    rod((0.02, 0, z0 + 0.1), (0.015, 0, z0 + 0.24), 0.006, dark, n=5)  # mast
-    for z, w in ((0.17, 0.07), (0.215, 0.045)):
-        bx((0.008, w, 0.006), (0.017, 0, z0 + z), dark, bev=0)
-    bx((0.02, 0.07, 0.012), (0.015, 0, z0 + 0.245), grey, bev=0.002)  # radar bar
-    _turret(0.2, z0, grey, dark, 1)
-    _turret(-0.2, z0, grey, dark, -1)
-    for k in range(3):  # hull number
-        bx((0.018, 0.004, 0.028), (0.24 + k * 0.024, -0.081, 0.055), flat("hull_no", "#e8e6e0", 0.6), bev=0)
-        bx((0.018, 0.004, 0.028), (0.24 + k * 0.024, 0.081, 0.055), flat("hull_no", "#e8e6e0", 0.6), bev=0)
-    rod((-0.33, 0, z0), (-0.33, 0, z0 + 0.1), 0.004, dark, n=4)  # ensign staff
-    bx((0.06, 0.004, 0.04), (-0.3, 0, z0 + 0.08), flat("flag" + team, team, 0.7), bev=0)
-    bx((0.022, 0.006, 0.015), (-0.3, 0, z0 + 0.08), flat("emblem", "#f3efe6", 0.6), bev=0)
+        cy(0.007, 0.008, (0.3, sy * 0.022, 0.1), dark, 6)  # windlass
+    # ---- the bridge: a stepped house, a wrap-round window band, wings, a radar dome on top
+    bx((0.15, 0.104, 0.042), (0.03, 0, zf - 0.002 + 0.021), light, bev=0.004)
+    bx((0.1, 0.09, 0.036), (0.045, 0, zf + 0.04 + 0.018), light, bev=0.004)
+    bx((0.104, 0.094, 0.014), (0.046, 0, zf + 0.061), win, bev=0)
+    bx((0.012, 0.15, 0.008), (0.07, 0, zf + 0.066), plain, bev=0)  # bridge wings
+    bx((0.11, 0.1, 0.008), (0.044, 0, zf + 0.08), roof, bev=0)
+    uvs(0.016, (0.03, 0, zf + 0.09), flat("radome", "#e4e6e8", 0.4), 8, 4)
+    # ---- the tripod mast with yards, a radar bar, a lamp and the state's pennant
+    mx, mz = 0.0, zf + 0.084
+    top = 0.33
+    rod((mx, 0, mz), (mx - 0.004, 0, top), 0.0045, dark, n=5)
+    for sy in (-1, 1):
+        rod((mx - 0.03, sy * 0.028, mz - 0.01), (mx - 0.003, 0, top - 0.08), 0.0032, dark, n=4)
+    for (z, w) in ((top - 0.08, 0.09), (top - 0.045, 0.06)):
+        bx((0.006, w, 0.005), (mx - 0.002, 0, z), dark, bev=0)
+    bx((0.022, 0.012, 0.012), (mx - 0.002, 0, top - 0.08 + 0.01), plain, bev=0)  # platform
+    bx((0.012, 0.075, 0.014), (mx - 0.003, 0, top - 0.02), plain, bev=0)  # radar bar
+    ico(0.006, (mx - 0.004, 0, top + 0.004), glow("mast_lamp", "#ffd27a", 2.5))
+    tri_plate((mx - 0.004, 0, top - 0.03), (mx - 0.004, 0, top - 0.046), (mx - 0.07, 0, top - 0.04),
+              flat("pennant" + team, team, 0.7), 0.003)
+    # ---- two raked funnels with black caps and the state's band
+    for (fx, h) in ((-0.07, 0.085), (-0.135, 0.075)):
+        p0, p1 = (fx, 0, zq), (fx - 0.014, 0, zq + h)
+        rod(p0, p1, 0.02, plain, n=10)
+        rod((fx - 0.0105, 0, zq + h * 0.62), (fx - 0.0125, 0, zq + h * 0.74), 0.0215, stripe, n=10)
+        rod((fx - 0.0128, 0, zq + h * 0.92), (fx - 0.015, 0, zq + h + 0.004), 0.0215, boot, n=10)
+    # midships deckhouse between the funnels, lifeboats on davits each side
+    bx((0.2, 0.086, 0.034), (-0.1, 0, zq + 0.017), light, bev=0.004)
+    bx((0.21, 0.09, 0.006), (-0.1, 0, zq + 0.036), roof, bev=0)
+    boat = flat("lifeboat", "#e8752a", 0.6)
+    for sy in (-1, 1):
+        for bxp in (-0.04, -0.17):
+            uvs(0.011, (bxp, sy * 0.056, zq + 0.04), boat, 8, 4, (2.4, 1.0, 0.8))
+            for dx in (-0.016, 0.016):
+                tube((bxp + dx, sy * 0.042, zq + 0.034), (bxp + dx, sy * 0.058, zq + 0.056), 0.0022, dark, n=3)
+    # ---- aft: Y turret facing astern, the helideck with its H, the ensign
+    _gun_turret(-0.235, 0, zq, -1, plain, dark)
+    hd = -0.31
+    bx((0.09, 0.1, 0.004), (hd, 0, zq + 0.002), flat("helideck", "#3a3f45", 0.7), bev=0)
+    cy(0.036, 0.002, (hd, 0, zq + 0.005), white, 16)
+    cy(0.031, 0.002, (hd, 0, zq + 0.006), flat("helideck", "#3a3f45", 0.7), 16)
+    for dx in (-0.011, 0.011):  # the H, its uprights across the ship so it reads from the side camera
+        bx((0.005, 0.032, 0.002), (hd + dx, 0, zq + 0.0075), white, bev=0)
+    bx((0.024, 0.005, 0.002), (hd, 0, zq + 0.0075), white, bev=0)
+    rod((-0.352, 0, zq), (-0.352, 0, zq + 0.1), 0.003, dark, n=4)  # ensign staff
+    bx((0.06, 0.004, 0.04), (-0.32, 0, zq + 0.078), flat("flag" + team, team, 0.7), bev=0)
+    bx((0.022, 0.006, 0.015), (-0.32, 0, zq + 0.078), flat("emblem", "#f3efe6", 0.6), bev=0)
 
 
 def cruiser_scifi(team):
-    """A hover cruiser of the late era (DL8+) along X (bow at +X): a dark faceted hull riding on a glowing skirt,
-    team-coloured neon strips, a wedge bridge, a missile block and a rail gun, an energy glow at the stern."""
-    hullc = flat("sf_hull", "#2b3240", 0.35)
-    plate = flat("sf_plate", "#454e5e", 0.4)
+    """A hover cruiser of the late era (DL8+) along X (bow at +X), in the grey steel of the late citadel: a faceted
+    hull of pale plates over a dark keel riding on a cold glowing cushion, the state's light strips and inset team
+    panels along the sides; a stepped steel bridge tower with a lit window band and a dark needle mast with a lit tip;
+    twin rail-gun turrets fore and aft with cold coils, a missile block with lit hatches, three engine nozzles
+    glowing at the stern."""
+    dk = flat("sf_hull", "#2b3240", 0.35)
+    plate = ev.facade("#4a515c", "#9aa2ac", 0.09, 0.024, 0.95, 0.8, lit="#9aa2ac", lit_p=0.0)
+    plain = flat("sf_plate", "#8c939c", 0.4)
+    trim = flat("sf_trim", "#454e5e", 0.4)
+    deck = ev.facade("#3a414b", "#3a414b", wf=0.0, brick=True, brick_scale=12.0, mortar_k=1.16)  # armour plates, pale seams
+    st = ev.steel_facade()
+    cap = flat("spire8", "#4c535d", 0.35)
+    panel = flat("panel8" + team, ev.shade(team, 0.42), 0.4)
     neon = ev.glow("team" + team, team, 3.0)
     cyan = ev.glow("engine", "#7fe6ff", 4.0)
-    hull(0.74, 0.18, 0.075, hullc, plate)
-    for sy in (-1, 1):  # neon strips along both sides
-        bx((0.46, 0.006, 0.008), (0.0, sy * 0.088, 0.05), neon, bev=0)
-        bx((0.26, 0.006, 0.006), (-0.04, sy * 0.084, 0.025), cyan, bev=0)
-    z0 = 0.075
-    for k, (x, w, h, d) in enumerate(((0.0, 0.24, 0.05, 0.12), (-0.03, 0.15, 0.04, 0.09))):  # stepped wedge citadel
-        bx((w, d, h), (x, 0, z0 + h / 2 + k * 0.05), hullc if k == 0 else plate, bev=0.008)
-    bx((0.01, 0.07, 0.012), (0.042, 0, z0 + 0.075), cyan, bev=0)  # bridge glazing
-    rod((-0.05, 0, z0 + 0.09), (-0.05, 0, z0 + 0.2), 0.005, plate, n=5)  # sensor spire
-    uvs(0.012, (-0.05, 0, z0 + 0.205), neon, 6, 4)
-    bx((0.07, 0.07, 0.03), (0.2, 0, z0 + 0.015), plate, bev=0.005)  # missile block
+    L = 0.7
+    S = [(0.0, 0.07, 0.058), (0.1, 0.086, 0.06), (0.45, 0.09, 0.064), (0.68, 0.082, 0.07), (0.86, 0.052, 0.08),
+         (1.0, 0.0, 0.092)]
+    FL = (0.6, 0.026)
+    steel_hull(L, S, [0.0, 0.007, 0.026, 0.034], [cyan, dk, neon, plate], deck, trim, FL, 0.035)
+    # a light line along both gunwales (the neon outlines of reference frame 2), broken at the stations
+    for sy in (-1, 1):
+        for (t0, w0, s0), (t1, w1, s1) in zip(S[:-1], S[1:-1] + [(0.985, 0.012, 0.09)]):
+            p0 = (-L / 2 + t0 * L + 0.003, sy * (_flare_y(w0, s0, FL) - 0.0025), s0 + 0.0015)
+            p1 = (-L / 2 + t1 * L, sy * (_flare_y(w1, s1, FL) - 0.0025), s1 + 0.0015)
+            beam(p0, p1, 0.005, neon)
+    # inset team panels along the plated upper sides, cold strips down their middles (the citadel's signature)
+    for sy in (-1, 1):
+        for (x, w) in ((-0.2, 0.12), (-0.04, 0.12), (0.12, 0.1)):
+            p, rz = _hull_side(L, S, FL, x, 0.05, sy, 0.0012)
+            bx((w, 0.003, 0.018), p, panel, rz, bev=0)
+            p, rz = _hull_side(L, S, FL, x, 0.05, sy, 0.0026)
+            bx((w * 0.8, 0.003, 0.004), p, cyan, rz, bev=0)
+    # stern: an engine block with three glowing nozzles and light slits
+    bx((0.05, 0.12, 0.045), (-0.355, 0, 0.034), trim, bev=0.004)
+    for (y, r) in ((-0.038, 0.016), (0.0, 0.019), (0.038, 0.016)):
+        cy(r, 0.02, (-0.382, y, 0.034), dk, 10, rot=(0, math.pi / 2, 0))
+        cy(r * 0.72, 0.004, (-0.393, y, 0.034), cyan, 10, rot=(0, math.pi / 2, 0))
+    for sy in (-1, 1):  # side engine nacelles on swept pylons, glowing aft, a light line along the outboard side
+        beam((-0.22, sy * 0.08, 0.042), (-0.27, sy * 0.106, 0.042), 0.012, trim)
+        cy(0.014, 0.09, (-0.295, sy * 0.112, 0.042), plain, 8, rot=(0, math.pi / 2, 0))
+        cn(0.014, 0.04, (-0.23, sy * 0.112, 0.042), plain, 8, rot=(0, math.pi / 2, 0))
+        cy(0.016, 0.016, (-0.335, sy * 0.112, 0.042), dk, 8, rot=(0, math.pi / 2, 0))
+        cy(0.011, 0.004, (-0.344, sy * 0.112, 0.042), cyan, 8, rot=(0, math.pi / 2, 0))
+        bx((0.07, 0.003, 0.004), (-0.295, sy * 0.1265, 0.042), neon, bev=0)
+    z0 = 0.064
+    # ---- the bridge tower: stepped steel blocks with plate seams, a lit window band, a needle mast
+    bx((0.22, 0.12, 0.04), (-0.04, 0, z0 + 0.02), st, bev=0.006)
+    bx((0.23, 0.13, 0.008), (-0.04, 0, z0 + 0.04), plain, bev=0)
+    taper_box((0.14, 0.095, 0.04), (-0.05, 0, z0 + 0.044 + 0.02), st, (0.82, 0.8))
+    bx((0.012, 0.074, 0.012), (0.018, 0, z0 + 0.066), cyan, bev=0)  # bridge glazing
+    for sy in (-1, 1):
+        bx((0.1, 0.004, 0.006), (-0.05, sy * 0.044, z0 + 0.066), cyan, bev=0)
+    bx((0.07, 0.06, 0.024), (-0.07, 0, z0 + 0.096), plain, bev=0.004)
+    for sy in (-1, 1):  # inset team panels on the tower's sides with a cold strip
+        bx((0.08, 0.003, 0.022), (-0.04, sy * 0.0615, z0 + 0.02), panel, bev=0)
+        bx((0.06, 0.003, 0.004), (-0.04, sy * 0.063, z0 + 0.02), neon, bev=0)
+    mz = z0 + 0.108
+    cn(0.022, 0.06, (-0.075, 0, mz + 0.03), cap, 4, rot=(0, 0, math.pi / 4))
+    rod((-0.075, 0, mz + 0.05), (-0.075, 0, 0.29), 0.004, cap, r2=0.0012, n=4)
+    for z in (mz + 0.075, mz + 0.105):
+        bx((0.006, 0.05, 0.004), (-0.075, 0, z), cap, bev=0)
+    bx((0.01, 0.01, 0.01), (-0.075, 0, 0.27), cyan, bev=0)
+    uvs(0.014, (-0.02, 0.036, z0 + 0.12), flat("radome", "#e4e6e8", 0.4), 8, 4)
+    # ---- twin rail-gun turrets fore and aft: angular houses, long rails with cold coils
+    def railgun(x, z, aim):
+        def b():
+            cy(0.03, 0.01, (0, 0, 0.005), dk, 8)
+            taper_box((0.07, 0.056, 0.024), (0, 0, 0.022), plain, (0.75, 0.7))
+            bx((0.03, 0.058, 0.006), (-0.01, 0, 0.022), trim, bev=0)
+            for sy in (-0.011, 0.011):
+                beam((0.028, sy, 0.024), (0.11, sy, 0.028), 0.007, trim)
+                for k in range(3):
+                    bx((0.006, 0.01, 0.01), (0.05 + k * 0.02, sy, 0.0255 + k * 0.001), cyan, bev=0)
+        build_at(b, x, 0, 0.0 if aim > 0 else math.pi, z=z)
+    railgun(0.17, 0.07, 1)
+    railgun(-0.24, z0 - 0.002, -1)
+    # missile block with lit hatches ahead of the bridge
+    bx((0.07, 0.07, 0.022), (0.09, 0, 0.074 + 0.011), trim, bev=0.004)
     for i in range(3):
         for j in range(3):
-            bx((0.012, 0.012, 0.004), (0.18 + i * 0.02, -0.02 + j * 0.02, z0 + 0.031), neon, bev=0)
-    beam((-0.2, 0, z0 + 0.02), (-0.08, 0, z0 + 0.03), 0.009, plate)  # rail gun, aft-facing
-    cy(0.026, 0.02, (-0.2, 0, z0 + 0.01), hullc, 10)
-    bx((0.012, 0.11, 0.03), (-0.37, 0, 0.04), cyan, bev=0)  # engine glow at the stern
-    bx((0.05, 0.004, 0.03), (-0.31, 0, z0 + 0.055), flat("flag" + team, team, 0.7), bev=0)
-    rod((-0.34, 0, z0), (-0.34, 0, z0 + 0.07), 0.003, plate, n=4)
+            bx((0.013, 0.013, 0.003), (0.072 + i * 0.018, -0.018 + j * 0.018, 0.0965), neon, bev=0)
+    # the state's ensign aft of the tower
+    rod((-0.3, 0, z0), (-0.3, 0, z0 + 0.09), 0.003, cap, n=4)
+    bx((0.05, 0.004, 0.032), (-0.274, 0, z0 + 0.07), flat("flag" + team, team, 0.7), bev=0)
+    bx((0.018, 0.006, 0.013), (-0.274, 0, z0 + 0.07), flat("emblem", "#f3efe6", 0.6), bev=0)
 
 
-def _containers(spots, team, seed=3):
-    """Stacks of shipping containers (one in the state's colour per stack), 1–3 high."""
+def _ribbed(color, axis=0, period=0.011, k=0.78):
+    """Corrugated steel baked like every procedural colour: ribs that vary along X (axis 0), Y (1), Z (2: the
+    horizontal slats of a roller door) or X + Y (3: round every wall of a box)."""
+    def s_of(nt, L, pos):
+        sp = nt.nodes.new("ShaderNodeSeparateXYZ")
+        L.new(pos, sp.inputs[0])
+        if axis == 3:
+            ad = nt.nodes.new("ShaderNodeMath")
+            ad.operation = "ADD"
+            L.new(sp.outputs[0], ad.inputs[0])
+            L.new(sp.outputs[1], ad.inputs[1])
+            src = ad.outputs[0]
+        else:
+            src = sp.outputs[axis]
+        dv = nt.nodes.new("ShaderNodeMath")
+        dv.operation = "DIVIDE"
+        L.new(src, dv.inputs[0])
+        dv.inputs[1].default_value = period
+        return dv.outputs[0]
+    return ev._stripe_mat(("ribbed", color, axis, period, k), s_of, color, shade(color, k))
+
+
+CONT_COLS = ["#b5452f", "#d9822b", "#2f7f8f", "#8a8f96", "#3f7a3a", "#c9b23a"]
+
+
+def container(x, y, z, rz, c, L=0.13, W=0.05, H=0.048):
+    """A corrugated shipping container (ribs across its length, plain door ends)."""
+    axis = 0 if abs(math.cos(rz)) > 0.7 else 1
+    bx((L, W, H), (x, y, z + H / 2), _ribbed(c, axis, 0.0095), rz, bev=0)
+
+
+def container_stack(x, y, rz, team, heights, seed=3, pitch=0.054):
+    """A block of container stacks side by side (across rz), each heights[k] high; the state's colour on one box
+    of every other stack."""
     rnd = random.Random(seed)
-    cols = [team, "#c23a2b", "#2f6f8f", "#d9962a", "#3f7a3a", "#8a8f96"]
-    for (x, y, rz) in spots:
-        for k in range(rnd.randint(1, 3)):
-            c = cols[0] if k == 0 else rnd.choice(cols[1:])
-            bx((0.13, 0.055, 0.052), (x, y, 0.03 + k * 0.053), flat("cont" + c, c, 0.55), rz, bev=0.004)
+    c, s = math.cos(rz), math.sin(rz)
+    for k, n in enumerate(heights):
+        off = (k - (len(heights) - 1) / 2) * pitch
+        px, py = x - s * off, y + c * off
+        for j in range(n):
+            col = team if (j == n - 1 and k % 2 == 0) else rnd.choice(CONT_COLS)
+            container(px, py, 0.008 + j * 0.051, rz, col)
+
+
+def sts_crane(team, reach=0.34, back=0.15, load=True):
+    """A ship-to-shore container crane (local frame: it rides rails along X; the boom runs along +Y over the berth):
+    a portal of four legs in the state's colour on hazard-striped bogies with cross bracing, a white lattice boom
+    with a back-reach, an A-frame with stays, a machinery house, the operator's cab, a trolley with its spreader
+    and a container on the hook."""
+    frame = flat("crane" + team, team, 0.45)
+    white = flat("crane_w", "#e9ecef", 0.45)
+    dk = flat("crane_dk", "#2c3036", 0.5)
+    haz = ev.hazard(0.018)
+    sx, sy, z0, zp, zb = 0.055, 0.058, 0.0, 0.3, 0.355
+    for y in (-sy, sy):
+        bx((2 * sx + 0.04, 0.026, 0.022), (0, y, z0 + 0.011), haz, bev=0)  # bogie sill on the rail
+        for x in (-sx, sx):
+            bx((0.02, 0.02, zp - z0), (x, y, (z0 + zp) / 2), frame, bev=0)
+        beam((-sx, y, z0 + 0.03), (sx, y, zp - 0.03), 0.009, frame)  # diagonal brace
+        bx((2 * sx + 0.02, 0.022, 0.024), (0, y, zp - 0.012), frame, bev=0)  # portal beam along X
+    for x in (-sx, sx):
+        bx((0.022, 2 * sy + 0.02, 0.026), (x, 0, zp + 0.013), frame, bev=0)  # cross beams under the boom
+        bx((0.016, 2 * sy, 0.014), (x, 0, z0 + 0.12), frame, bev=0)  # lower tie between the legs
+    # the boom: two white girders with ties on top, from the back-reach to the tip over the water
+    y0, y1 = -back, reach
+    for x in (-0.02, 0.02):
+        bx((0.012, y1 - y0, 0.022), (x, (y0 + y1) / 2, zb), white, bev=0)
+    n = int((y1 - y0) / 0.05)
+    for k in range(n + 1):
+        y = y0 + (y1 - y0) * k / n
+        bx((0.052, 0.008, 0.008), (0, y, zb + 0.012), white, bev=0)
+    for k in range(n):  # zigzag web on both girders (the lattice of the boom)
+        ya, yb = y0 + (y1 - y0) * k / n, y0 + (y1 - y0) * (k + 1) / n
+        for x in (-0.026, 0.026):
+            beam((x, ya, zb - 0.009), (x, yb, zb + 0.009) if k % 2 == 0 else (x, yb, zb - 0.009), 0.004, white)
+    # A-frame over the portal with forestays to the tip and backstays to the tail
+    za = 0.53
+    for x in (-0.03, 0.03):
+        beam((x * 1.6, -0.03, zb), (x, -0.005, za), 0.014, frame)
+        beam((x * 1.6, 0.04, zb), (x, -0.005, za), 0.011, frame)
+    bx((0.07, 0.02, 0.018), (0, -0.005, za), frame, bev=0)
+    for x in (-0.024, 0.024):
+        tube((x, -0.005, za), (x, y1 - 0.02, zb + 0.012), 0.003, dk, n=4)
+        tube((x, -0.005, za), (x, y0 + 0.02, zb + 0.012), 0.003, dk, n=4)
+    # machinery house on the tail, a band of the state's colour
+    bx((0.07, 0.07, 0.045), (0, y0 + 0.04, zb + 0.034), white, bev=0.004)
+    bx((0.072, 0.072, 0.01), (0, y0 + 0.04, zb + 0.03), frame, bev=0)
+    # the operator's cab hung under the boom, its glass toward the water
+    bx((0.035, 0.035, 0.03), (0.0, 0.1, zb - 0.03), white, bev=0)
+    bx((0.03, 0.004, 0.016), (0.0, 0.1 + 0.019, zb - 0.028), flat("cab_glass", "#1d2a38", 0.2), bev=0)
+    # the trolley, its ropes and the spreader with a container
+    yt = reach - 0.1
+    bx((0.05, 0.04, 0.016), (0, yt, zb - 0.017), dk, bev=0)
+    if load:
+        zc = 0.17
+        for x in (-0.012, 0.012):
+            tube((x, yt, zb - 0.025), (x, yt, zc + 0.058), 0.0022, dk, n=3)
+        bx((0.135, 0.045, 0.008), (0, yt, zc + 0.054), flat("spreader", "#d9b23a", 0.5), math.pi / 2, bev=0)
+        container(0, yt, zc, math.pi / 2, team)
+
+
+def cargo_ship(team):
+    """A container feeder along X (bow at +X): a dark hull with a red boot band and the state's sheer stripe, rows of
+    containers two tiers high, a white bridge house aft with lit windows and wings, a funnel with the state's band,
+    a foremast and a lifeboat."""
+    hull(0.62, 0.17, 0.08, flat("hull_cargo", "#2f3a46", 0.6), flat("deck_cargo", "#7a3a2c", 0.7),
+         flat("boot" + team, team, 0.6))
+    rnd = random.Random(11)
+    for i in range(4):
+        for j in range(3):
+            for k in range(2 if (i + j) % 3 else 1):
+                c = team if (i == 1 and k == 1) else rnd.choice(CONT_COLS)
+                ax = 0
+                bx((0.088, 0.046, 0.04), (-0.1 + i * 0.094, -0.05 + j * 0.05, 0.1 + k * 0.042), _ribbed(c, ax, 0.009),
+                   bev=0)
+    # bridge house: white with window rows (some lit), a dark window band at the top, wings, a radar mast
+    house = ev.facade("#e8e6e0", "#1d2a38", 0.022, 0.03, 0.5, 0.45, lit="#ffd27a", lit_p=0.3, z0=0.08)
+    bx((0.07, 0.12, 0.09), (-0.24, 0, 0.125), house, bev=0.004)
+    bx((0.074, 0.124, 0.014), (-0.24, 0, 0.162), flat("bridge_g", "#1d2a38", 0.2), bev=0)
+    bx((0.03, 0.17, 0.008), (-0.215, 0, 0.165), flat("bridge_w", "#e8e6e0", 0.5), bev=0)
+    bx((0.08, 0.13, 0.01), (-0.24, 0, 0.175), flat("bridge_r", "#3b4048", 0.5), bev=0)
+    rod((-0.24, 0, 0.18), (-0.24, 0, 0.25), 0.004, flat("mast_dk", "#2c3036", 0.5), n=4)
+    bx((0.008, 0.05, 0.006), (-0.24, 0, 0.235), flat("mast_dk", "#2c3036", 0.5), bev=0)
+    cy(0.022, 0.07, (-0.285, 0, 0.17), flat("funnel_w", "#e8e6e0", 0.5), 10)
+    cy(0.0225, 0.02, (-0.285, 0, 0.19), flat("funnel" + team, team, 0.5), 10)
+    cy(0.0225, 0.008, (-0.285, 0, 0.207), flat("funnel_cap", "#1e2023", 0.5), 10)
+    uvs(0.012, (-0.2, 0.072, 0.1), flat("lifeboat", "#e8752a", 0.6), 8, 4, (2.2, 1.0, 0.8))
+    rod((0.25, 0, 0.08), (0.25, 0, 0.17), 0.004, flat("mast_dk", "#2c3036", 0.5), n=4)
+
+
+def tug(team):
+    """A harbour tug along X: a red hull with a black sheer band and tyre fenders, a white wheelhouse with a dark
+    window band, a black funnel with the state's band, a towing post aft."""
+    hull(0.2, 0.08, 0.05, flat("tug_red", "#b03a2e", 0.6), flat("tug_deck", "#4a4f55", 0.7),
+         flat("tug_band", "#1e2023", 0.6))
+    bx((0.07, 0.05, 0.035), (0.01, 0, 0.065), flat("tug_house", "#ecebe6", 0.5), bev=0.004)
+    bx((0.074, 0.054, 0.012), (0.01, 0, 0.074), flat("bridge_g", "#1d2a38", 0.2), bev=0)
+    bx((0.05, 0.04, 0.02), (0.015, 0, 0.092), flat("tug_house", "#ecebe6", 0.5), bev=0)
+    bx((0.054, 0.044, 0.008), (0.015, 0, 0.096), flat("bridge_g", "#1d2a38", 0.2), bev=0)
+    cy(0.012, 0.05, (-0.03, 0, 0.1), flat("tug_band", "#1e2023", 0.6), 8)
+    cy(0.0125, 0.012, (-0.03, 0, 0.1), flat("funnel" + team, team, 0.5), 8)
+    cy(0.008, 0.02, (-0.07, 0, 0.06), flat("tug_band", "#1e2023", 0.6), 6)
+    tyre = flat("tyre", "#1f1f21", 0.9)
+    for (x, y) in ((0.09, 0.0), (0.06, 0.03), (0.06, -0.03), (-0.04, 0.042), (-0.04, -0.042)):
+        torus(0.011, 0.005, (x + 0.004 * (1 if x > 0 else 0), y * 1.05, 0.032), tyre,
+              (math.pi / 2, 0, math.atan2(y, x) + math.pi / 2), 6, 3)
+
+
+def warehouse_modern(team, w=0.42, d=0.24, h=0.16):
+    """A terminal shed facing −Y: corrugated white walls with a band of the state's colour under the eaves, three
+    roller doors in dark frames with yellow bollards, a low gable roof with skylight strips, and a two-storey office
+    at the +X end with warm lit windows and roof plant."""
+    wall = _ribbed("#c9cdd2", 3, 0.012, 0.82)
+    bx((w, d, h), (0, 0, h / 2), wall, bev=0)
+    bx((w + 0.006, d + 0.006, 0.024), (0, 0, h - 0.018), flat("band" + team, team, 0.6), bev=0)
+    roofm = flat("shed_roof", "#5b636c", 0.6)
+    ev.hip_roof(w + 0.02, d + 0.02, 0.05, (0, 0, h), roofm, oh=0.0)
+    sky = flat("skylight", "#a9c6d6", 0.25)
+    for x in (-0.12, 0.0, 0.12):  # skylight strips down the front slope
+        mesh_obj([(x - 0.025, -d / 2 + 0.02, h + 0.009), (x + 0.025, -d / 2 + 0.02, h + 0.009),
+                  (x + 0.025, -0.02, h + 0.043), (x - 0.025, -0.02, h + 0.043)], [(0, 1, 2, 3)], sky)
+    door = _ribbed("#e1e4e8", 2, 0.008, 0.82)
+    fr = flat("door_frame", "#3a3e44", 0.6)
+    yel = flat("bollard_y", "#e8c12e", 0.5)
+    for x in (-0.13, -0.01):
+        bx((0.1, 0.008, 0.11), (x, -d / 2 - 0.002, 0.055), fr, bev=0)
+        bx((0.086, 0.01, 0.1), (x, -d / 2 - 0.004, 0.05), door, bev=0)
+        for sx in (-1, 1):
+            cy(0.007, 0.03, (x + sx * 0.055, -d / 2 - 0.02, 0.015), yel, 6)
+    # the office at the +X end: two storeys of lit windows, a flat roof with plant, a sign in the state's colour
+    ow = 0.12
+    office = ev.facade("#e6e2d8", "#25313d", 0.03, 0.05, 0.55, 0.5, lit="#ffd27a", lit_p=0.4, z0=0.01)
+    bx((ow, d + 0.03, h + 0.04), (w / 2 + ow / 2 - 0.005, 0.0, (h + 0.04) / 2), office, bev=0)
+    bx((ow + 0.008, d + 0.038, 0.012), (w / 2 + ow / 2 - 0.005, 0.0, h + 0.046), flat("office_cap", "#8a9097", 0.6), bev=0)
+    for (x, y) in ((w / 2 + 0.03, 0.04), (w / 2 + 0.08, -0.03)):
+        bx((0.03, 0.03, 0.02), (x, y, h + 0.062), flat("ac", "#aeb4bb", 0.5), bev=0)
+    bx((0.08, 0.006, 0.026), (w / 2 + ow / 2 - 0.005, -d / 2 - 0.018, h + 0.01), flat("sign" + team, team, 0.5), bev=0)
+    bx((0.05, 0.007, 0.008), (w / 2 + ow / 2 - 0.005, -d / 2 - 0.019, h + 0.01), flat("sign_w", "#f3efe6", 0.5), bev=0)
+
+
+def flood_mast(x, y, h=0.4):
+    """A tall floodlight mast of the quay with a head of three warm lamps."""
+    post = flat("lamp_post", "#7c838c", 0.5)
+    cy(0.009, h, (x, y, h / 2), post, 6)
+    bx((0.06, 0.012, 0.03), (x, y, h + 0.012), post, bev=0)
+    for dx in (-0.018, 0.0, 0.018):
+        bx((0.014, 0.008, 0.014), (x + dx, y - 0.009, h + 0.008), glow("flood", "#ffd99a", 3.0), bev=0)
+
+
+def box_truck(team, cont_c):
+    """A container truck along X: a cab in the state's colour, a dark chassis and a container on the trailer."""
+    dk = flat("chassis", "#2b2d31", 0.6)
+    bx((0.2, 0.04, 0.012), (-0.02, 0, 0.022), dk, bev=0)
+    bx((0.045, 0.05, 0.045), (0.105, 0, 0.042), flat("cab" + team, team, 0.45), bev=0.005)
+    bx((0.006, 0.042, 0.018), (0.128, 0, 0.05), flat("cab_glass", "#1d2a38", 0.2), bev=0)
+    container(-0.035, 0, 0.028, 0.0, cont_c, 0.14)
+    for dx in (-0.09, -0.06, 0.03, 0.1):
+        for sy in (-1, 1):
+            cy(0.013, 0.01, (dx, sy * 0.024, 0.013), flat("tyre", "#1f1f21", 0.9), 8, rot=(math.pi / 2, 0, 0))
 
 
 def port_modern(team):
-    """The industrial port (DL6–7): a concrete quay and pier, a gantry container crane in the state's colour over the
-    water, container stacks, a cargo ship with containers on deck, a big shed with roller doors, lamps."""
-    conc = flat("conc_quay", "#8e9298", 0.85)
-    _cove(conc, "#3a7fae", "#6aaecc")
-    ev.pad(0.36, flat("conc_yard", "#83878d", 0.85), 0.008, 12, 0.08, 6, 1.0, 1.25)
+    """The industrial port (DL6–7) after the late-era harbours of reference frame 2: a concrete terminal round the
+    cove with a yellow-lined quay edge, two ship-to-shore gantry cranes in the state's colour on the pier (rails,
+    bogies, lattice booms, A-frames, a container on the hook), a container feeder at the berth, a red tug, stacked
+    corrugated containers, a terminal shed with roller doors and a lit office, fuel tanks with the state's band, a
+    container truck, tyre fenders, bollards and warm floodlight masts."""
+    conc = ev.facade("#8e9298", "#8e9298", wf=0.0, brick=True, brick_scale=7.0, mortar_k=0.82)  # quay slabs
+    yel = flat("paint_y", "#e8c12e", 0.6)
+    _cove(conc, "#3a7fae", "#6aaecc", joints=True, edge=yel)
+    apron = ev.facade("#868a90", "#868a90", wf=0.0, brick=True, brick_scale=9.0, mortar_k=0.88)
+    # the terminal apron covers the land side of the hex (the late-era harbours are built up to the edge)
+    ground_poly([clamp_hex(p_, 0.8)[0] for p_ in ((0.22, -0.7), (-0.3, -0.7), (-0.66, -0.36), (-0.74, 0.0),
+                                                   (-0.62, 0.42), (-0.3, 0.68), (0.22, 0.68), (0.1, 0.0))], apron, 0.008)
     py = -0.03
-    bx((0.78, 0.16, 0.05), (0.41, py, 0.05), conc, bev=0.004)  # concrete pier to the edge
-    for i in range(6):
-        cy(0.012, 0.03, (0.12 + i * 0.13, py - 0.07, 0.09), flat("bollard", "#2b2d31", 0.5), 8)
-    steel = flat("crane" + team, ev.shade(team, 0.9), 0.45)
+    pier = ev.facade("#959a9f", "#959a9f", wf=0.0, brick=True, brick_scale=6.0, mortar_k=0.84)
+    bx((0.78, 0.16, 0.05), (0.41, py, 0.05), pier, bev=0)  # concrete pier to the edge
     dk = flat("crane_dk", "#2c3036", 0.5)
-    gx = 0.36
-    for sx in (-1, 1):  # the gantry's four legs and their sills
+    for sy in (-1, 1):
+        bx((0.76, 0.006, 0.002), (0.41, py + sy * 0.058, 0.076), dk, bev=0)  # crane rails
+        bx((0.76, 0.006, 0.002), (0.41, py + sy * 0.075, 0.076), yel, bev=0)  # yellow edge line
+    tyre = flat("tyre", "#1f1f21", 0.9)
+    for i in range(7):  # rubber fenders along both faces of the pier
+        x = 0.1 + i * 0.11
         for sy in (-1, 1):
-            beam((gx + sx * 0.07, py + sy * 0.07, 0.07), (gx + sx * 0.06, py + sy * 0.06, 0.42), 0.014, steel)
-        beam((gx + sx * 0.07, py - 0.07, 0.42), (gx + sx * 0.07, py + 0.07, 0.42), 0.012, steel)
-    bx((0.72, 0.05, 0.035), (gx + 0.1, py, 0.45), steel, bev=0.003)  # boom out over the water, back-reach inland
-    bx((0.06, 0.06, 0.05), (gx + 0.05, py, 0.5), dk, bev=0.004)  # operator cab
-    beam((gx - 0.1, py, 0.45), (gx + 0.02, py, 0.62), 0.008, dk)
-    beam((gx + 0.02, py, 0.62), (gx + 0.42, py, 0.46), 0.005, dk)  # stay
-    bx((0.12, 0.05, 0.05), (gx + 0.36, py, 0.3), flat("cont" + team, team, 0.55), bev=0.004)  # a box on the hook
-    beam((gx + 0.36, py, 0.33), (gx + 0.36, py, 0.44), 0.003, dk)
-    # cargo ship moored on the +Y side
-    def ship():
-        hull(0.6, 0.15, 0.08, flat("hull_cargo", "#3b4048", 0.6), flat("deck_cargo", "#7a3a2c", 0.7),
-             flat("boot" + team, team, 0.6))
-        for i in range(3):
-            for j in range(2):
-                c = [team, "#c23a2b", "#d9962a"][(i + j) % 3]
-                bx((0.11, 0.05, 0.045), (-0.08 + i * 0.12, -0.028 + j * 0.056, 0.105), flat("cont" + c, c, 0.55), bev=0.003)
-        bx((0.08, 0.12, 0.09), (-0.22, 0, 0.125), flat("bridge_w", "#e8e6e0", 0.5), bev=0.006)
-        bx((0.09, 0.13, 0.012), (-0.22, 0, 0.175), flat("bridge_r", "#3b4048", 0.5), bev=0)
-        bx((0.006, 0.1, 0.014), (-0.18, 0, 0.15), flat("bridge_g", "#1d2a38", 0.2), bev=0)
-        cy(0.02, 0.07, (-0.26, 0, 0.2), flat("funnel" + team, team, 0.5), 10)
-    build_at(ship, 0.46, 0.2, 0.0, z=0.004)
-    _containers([(-0.24, -0.28, 0.0), (-0.24, -0.2, 0.0), (-0.08, -0.3, 0.1), (-0.08, -0.22, 0.1), (0.06, -0.3, 0.0),
-                 (-0.04, 0.16, 1.57), (0.04, 0.2, 1.57)], team)
-    # the shed: corrugated walls, a team band, roller doors
-    def shed():
-        w, d, h = 0.4, 0.26, 0.2
-        bx((w, d, h), (0, 0, h / 2), ev.facade("#9aa1a8", "#5b636c", 0.05, 0.05, 0.3, 0.2, lit_p=0.1), bev=0.006)
-        bx((w + 0.01, d + 0.01, 0.03), (0, 0, h - 0.02), flat("band" + team, team, 0.6), bev=0)
-        hip_roof(w, d, 0.05, (0, 0, h), flat("shed_roof", "#5b636c", 0.6), oh=0.01)
-        for x in (-0.1, 0.1):
-            bx((0.12, 0.012, 0.13), (x, -d / 2 - 0.004, 0.065), flat("roller", "#c8ccd1", 0.5), bev=0)
-    build_at(shed, -0.36, 0.32, -0.1)
-    for (x, y) in ((0.0, -0.12), (0.2, 0.08), (-0.36, -0.06)):
-        ev.street_lamp(x, y, 0.22, True)
+            bx((0.016, 0.008, 0.03), (x, py + sy * 0.083, 0.05), tyre, bev=0)
+    for i in range(6):
+        cy(0.011, 0.022, (0.15 + i * 0.12, py - 0.068, 0.086), flat("bollard", "#2b2d31", 0.5), 8)
+    # two gantry cranes on the pier, booms out over the berth (+Y)
+    build_at(lambda: sts_crane(team), 0.3, py, 0.0, z=0.075)
+    build_at(lambda: sts_crane(team, load=False), 0.6, py, 0.0, z=0.075)
+    # the container feeder at the berth and a tug off the pier's other side
+    build_at(lambda: cargo_ship(team), 0.47, 0.215, 0.0, z=0.004)
+    build_at(lambda: tug(team), 0.58, -0.32, 0.5, z=0.004)
+    # the container yard on the apron (front), a truck with a box on the way to the pier
+    container_stack(-0.34, -0.36, 0.0, team, (3, 2, 3, 1), seed=5)
+    container_stack(-0.12, -0.38, 0.0, team, (2, 3, 1), seed=8)
+    container_stack(-0.3, -0.1, 0.0, team, (1, 2, 2), seed=12)
+    for (x0, x1, y) in ((-0.56, 0.06, -0.235), (-0.4, 0.06, -0.5)):
+        bx((x1 - x0, 0.006, 0.002), ((x0 + x1) / 2, y, 0.0085), yel, bev=0)  # yard lane lines
+    build_at(lambda: box_truck(team, CONT_COLS[2]), -0.02, -0.16, 0.15)
+    # the terminal shed at the back, fuel tanks on the left
+    build_at(lambda: warehouse_modern(team), -0.34, 0.34, -0.1)
+    for (x, y, r) in ((-0.62, 0.02, 0.07), (-0.58, -0.17, 0.055)):
+        cy(r, 0.12 if r > 0.06 else 0.1, (x, y, 0.06 if r > 0.06 else 0.05), flat("tank_w", "#e3e6e9", 0.4), 14)
+        cy(r + 0.002, 0.016, (x, y, 0.085 if r > 0.06 else 0.07), flat("band" + team, team, 0.6), 14)
+        cn(r, 0.03, (x, y, (0.12 if r > 0.06 else 0.1) + 0.015), flat("tank_top", "#aeb4bb", 0.5), 14)
+    flood_mast(0.06, 0.06, 0.4)
+    flood_mast(-0.02, -0.5, 0.36)
+    flood_mast(0.12, -0.4, 0.36)
+
+
+def steel_kit(team):
+    """The grey steel kit of the late citadel (residence_dl8, city_dl8; reference frame 5): steel with narrow lit
+    slits, dark plate trim, pale plate seams, recessed panels in a deep team tone, dark spire caps, the state's cold
+    light strips and cyan lamps."""
+    return dict(st=ev.steel_facade(), plate=flat("plate8", "#505760", 0.45), seam=flat("seam8", "#8c939c", 0.45),
+                panel=flat("panel8" + team, shade(team, 0.42), 0.4), cap=flat("spire8", "#4c535d", 0.35),
+                neon=glow("strip" + team, shade(team, 1.25), 2.0), cyan=glow("cyan", ev.CYAN, 2.5),
+                comp=ev.facade("#7d858f", "#a3abb5", 0.1, 0.07, 0.94, 0.86, lit="#a3abb5", lit_p=0.0),
+                dark=flat("comptrim", "#3e444d", 0.5), white=flat("pod", "#e3e8ee", 0.35))
+
+
+def inset_panel(x, y, z, w, h, nx, ny, k):
+    """A recessed team panel on a wall facing (nx, ny) with a cold light strip down its middle (the citadel's
+    signature), standing just proud of the wall at (x, y)."""
+    rz = 0.0 if ny else math.pi / 2
+    bx((w, 0.004, h), (x + nx * 0.001, y + ny * 0.001, z), k["panel"], rz, bev=0)
+    bx((0.01, 0.006, h * 0.8), (x + nx * 0.003, y + ny * 0.003, z), k["neon"], rz, bev=0)
+
+
+def control_tower8(k, h=0.42):
+    """The harbour control tower in the citadel's steel: a plinth, a shaft with pale plate seams and inset team
+    panels with cold strips, a glass cab ringed by a light band, a dark spire with a lit needle."""
+    w = 0.1
+    bx((0.16, 0.16, 0.05), (0, 0, 0.025), k["plate"], bev=0.004)
+    bx((0.165, 0.165, 0.008), (0, 0, 0.052), k["seam"], bev=0)
+    bx((w, w, h), (0, 0, h / 2), k["st"], bev=0)
+    for zf in (0.4, 0.7):
+        bx((w + 0.01, w + 0.01, 0.016), (0, 0, h * zf), k["seam"], bev=0)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            bx((0.016, 0.016, h * 0.94), (sx * w / 2, sy * w / 2, h * 0.47), k["plate"], bev=0)
+    inset_panel(0, -w / 2, h * 0.55, w * 0.42, h * 0.5, 0, -1, k)
+    inset_panel(w / 2, 0, h * 0.55, w * 0.42, h * 0.5, 1, 0, k)
+    zc = h + 0.02
+    cy(0.085, 0.02, (0, 0, h + 0.01), k["plate"], 8)
+    cy(0.1, 0.05, (0, 0, zc + 0.025), flat("cab8", "#1b2533", 0.25), 8)
+    cy(0.102, 0.012, (0, 0, zc + 0.03), k["cyan"], 8)
+    cy(0.112, 0.016, (0, 0, zc + 0.058), k["plate"], 8)
+    cn(0.05, 0.13, (0, 0, zc + 0.066 + 0.065), k["cap"], 4, rot=(0, 0, math.pi / 4))
+    rod((0, 0, zc + 0.19), (0, 0, zc + 0.27), 0.005, k["cap"], r2=0.0015, n=4)
+    bx((0.014, 0.014, 0.014), (0, 0, zc + 0.24), k["cyan"], bev=0)
+    for sx in (-1, 1):  # antenna dishes on the cab roof
+        uvs(0.016, (sx * 0.06, 0.03, zc + 0.075), k["white"], 8, 4, (1, 1, 0.5))
+
+
+def cargo_hall8(k, team, w=0.34, d=0.22, h=0.14):
+    """A steel cargo hall facing −Y (the chunky steel blocks of reference frame 5): a chamfered roof, buttresses with
+    plate seams, a wide glowing bay door in a dark frame flanked by team panels, a light line under the eaves and
+    roof plant with a vent glow."""
+    bx((w, d, h), (0, 0, h / 2), k["st"], bev=0)
+    taper_box((w + 0.012, d + 0.012, 0.04), (0, 0, h + 0.02), k["plate"], (0.86, 0.8))
+    bx((w + 0.014, d + 0.014, 0.012), (0, 0, h * 0.4), k["seam"], bev=0)
+    for x in (-w / 2, -w / 6, w / 6, w / 2):  # buttresses on the front and back
+        for sy in (-1, 1):
+            bx((0.02, 0.016, h * 0.95), (x, sy * d / 2, h * 0.475), k["plate"], bev=0)
+    bx((0.13, 0.01, 0.1), (0, -d / 2 - 0.003, 0.05), k["dark"], bev=0)
+    bx((0.11, 0.012, 0.085), (0, -d / 2 - 0.005, 0.043), glow("bay8", "#9fdcff", 0.9), bev=0)
+    for sx in (-1, 1):
+        inset_panel(sx * 0.115, -d / 2 - 0.002, h * 0.55, 0.05, h * 0.62, 0, -1, k)
+    bx((w * 0.9, 0.006, 0.008), (0, -d / 2 - 0.004, h - 0.01), k["neon"], bev=0)
+    for (x, y) in ((-0.08, 0.04), (0.09, 0.02)):
+        bx((0.06, 0.06, 0.03), (x, y, h + 0.055), k["comp"], bev=0)
+        cy(0.016, 0.006, (x, y, h + 0.072), k["cyan"], 8)
+
+
+def energy_crane(k, team, reach=0.3, back=0.12, pod=True):
+    """A late-era cargo gantry (local frame like sts_crane: rails along X, the arm along +Y over the berth): steel
+    pylons with cold strips on a dark sill, a plated arm with a light line under it, a counterweight block, and an
+    emitter ring at the tip holding a cargo pod in a column of cold light (a tractor beam)."""
+    sx, sy, zp, zb = 0.05, 0.055, 0.3, 0.33
+    for y in (-sy, sy):
+        bx((2 * sx + 0.04, 0.03, 0.02), (0, y, 0.01), k["dark"], bev=0)
+        for x in (-sx, sx):
+            taper_box((0.03, 0.03, zp), (x, y, zp / 2), k["comp"], (0.7, 0.7))
+            bx((0.006, 0.032, zp * 0.7), (x, y, zp * 0.5), k["cyan"], bev=0)
+    for x in (-sx, sx):
+        bx((0.026, 2 * sy + 0.03, 0.03), (x, 0, zp + 0.015), k["plate"], bev=0)
+    y0, y1 = -back, reach
+    for x in (-0.016, 0.016):  # twin plated girders with light lines along their tops
+        bx((0.018, y1 - y0, 0.028), (x, (y0 + y1) / 2, zb + 0.014), k["comp"], bev=0)
+        bx((0.006, y1 - y0 - 0.03, 0.004), (x, (y0 + y1) / 2 + 0.01, zb + 0.03), k["neon"], bev=0)
+    for f in (0.3, 0.55, 0.8):
+        bx((0.05, 0.012, 0.01), (0, y0 + (y1 - y0) * f, zb + 0.022), k["plate"], bev=0)
+    bx((0.08, 0.07, 0.05), (0, y0 + 0.035, zb + 0.06), k["st"], bev=0)  # counterweight / machinery block
+    inset_panel(0, y0 + 0.035 - 0.036, zb + 0.06, 0.05, 0.035, 0, -1, k)
+    yt = reach - 0.05
+    cy(0.032, 0.014, (0, yt, zb - 0.005), k["dark"], 10)
+    cy(0.026, 0.006, (0, yt, zb - 0.014), k["cyan"], 10)
+    if pod:
+        zc = 0.13
+        bx((0.026, 0.026, zb - 0.02 - (zc + 0.05)), (0, yt, (zb - 0.02 + zc + 0.05) / 2), glow("tractor", "#7fdcff", 0.7), bev=0)
+        bx((0.1, 0.06, 0.05), (0, yt, zc + 0.025), k["white"], math.pi / 2, bev=0.012)
+        bx((0.102, 0.008, 0.008), (0.031, yt, zc + 0.03), k["neon"], math.pi / 2, bev=0)
+
+
+def hover_lifter(k, team):
+    """A hover cargo lifter parked on its pad: a pale hull with a dark canopy, the state's stripe, four ducted fans
+    glowing cold."""
+    bx((0.14, 0.07, 0.035), (0, 0, 0.03), k["white"], bev=0.012)
+    bx((0.04, 0.05, 0.02), (0.05, 0, 0.055), flat("canopy8", "#1b2533", 0.2), bev=0.008)
+    bx((0.142, 0.072, 0.008), (0, 0, 0.03), k["neon"], bev=0)
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            cy(0.022, 0.014, (sx * 0.06, sy * 0.052, 0.025), k["dark"], 10)
+            cy(0.016, 0.004, (sx * 0.06, sy * 0.052, 0.033), k["cyan"], 10)
+
+
+def pod_rack(k, team, n=3):
+    """A two-tier steel rack of rounded cargo pods with the state's and cyan strips."""
+    for x in (-n * 0.045, n * 0.045):
+        for y in (-0.035, 0.035):
+            bx((0.012, 0.012, 0.14), (x, y, 0.07), k["plate"], bev=0)
+    for z in (0.004, 0.07):
+        bx((n * 0.09 + 0.02, 0.08, 0.008), (0, 0, z + 0.004), k["plate"], bev=0)
+    for t in range(2):
+        for i in range(n):
+            if t == 1 and i == n - 1:
+                continue
+            x = (i - (n - 1) / 2) * 0.09
+            bx((0.08, 0.06, 0.054), (x, 0, 0.012 + t * 0.066 + 0.027), k["white"], bev=0.014)
+            bx((0.082, 0.062, 0.008), (x, 0, 0.012 + t * 0.066 + 0.03), k["neon"] if (i + t) % 2 else k["cyan"], bev=0)
 
 
 def port_scifi(team):
-    """The late-era port (DL8+): a dark plated quay with neon edges, a glowing pier, a hover cruiser at berth, a
-    control tower with a light ring, white cargo pods and a landing pad in the state's colour."""
-    plate = flat("sf_quay", "#3e434b", 0.5)
-    _cove(plate, "#2f6e9c", "#5aa0c4")
-    ev.pad(0.36, flat("sf_yard", "#4a4f58", 0.6), 0.008, 12, 0.08, 6, 1.0, 1.25)
-    neon = ev.glow("neon" + team, team, 3.0)
-    cyan = ev.glow("cyan", "#14d2ff", 2.5)
+    """The late-era port (DL8+) after the lit harbours of reference frame 2, in the steel kit of the late citadel: a
+    dark steel apron laced with the state's light strips, composite quays with a cold lit edge, a plated pier with
+    neon edges and light posts, the hover cruiser at berth under an energy gantry that holds a cargo pod in a tractor
+    beam, a docking arm to the cruiser, a steel control tower with team panels and a lit spire, a steel cargo hall
+    with a glowing bay door, a lit pad with a hover lifter and racks of cargo pods."""
+    kk = steel_kit(team)
+    _cove(kk["comp"], "#2f6e9c", "#5aa0c4", joints=True, edge=kk["cyan"])
+    apron = ev.stone("#454a52", 0.8)  # the dark steel plaza slabs of the late capital
+    ground_poly([clamp_hex(p_, 0.8)[0] for p_ in ((0.22, -0.7), (-0.3, -0.7), (-0.66, -0.36), (-0.74, 0.0),
+                                                   (-0.62, 0.42), (-0.3, 0.68), (0.22, 0.68), (0.1, 0.0))], apron, 0.008)
+    for (p0, p1) in (((-0.62, -0.2), (0.06, -0.2)), ((-0.06, -0.62), (-0.06, 0.6))):  # light strips across the apron
+        beam((p0[0], p0[1], 0.009), (p1[0], p1[1], 0.009), 0.01, kk["neon"])
     py = -0.03
-    bx((0.78, 0.15, 0.04), (0.41, py, 0.05), plate, bev=0.004)
+    bx((0.78, 0.15, 0.04), (0.41, py, 0.05), kk["comp"], bev=0)
     for sy in (-1, 1):
-        bx((0.76, 0.008, 0.008), (0.41, py + sy * 0.077, 0.066), neon, bev=0)
+        bx((0.76, 0.008, 0.008), (0.41, py + sy * 0.077, 0.068), kk["neon"], bev=0)
+        bx((0.76, 0.012, 0.03), (0.41, py + sy * 0.077, 0.045), kk["dark"], bev=0)
+    for i in range(5):  # light posts along the pier
+        x = 0.16 + i * 0.15
+        bx((0.012, 0.012, 0.06), (x, py - 0.062, 0.1), kk["plate"], bev=0)
+        bx((0.016, 0.016, 0.012), (x, py - 0.062, 0.134), kk["cyan"], bev=0)
     build_at(lambda: cruiser_scifi(team), 0.46, 0.22, 0.0, 0.75, z=0.004)
-    def tower():
-        cy(0.07, 0.5, (0, 0, 0.25), flat("sf_tower", "#59606a", 0.4), 10)
-        cy(0.074, 0.014, (0, 0, 0.3), neon, 10)
-        cy(0.12, 0.05, (0, 0, 0.52), flat("sf_cab", "#2b3240", 0.3), 12)
-        cy(0.122, 0.012, (0, 0, 0.53), cyan, 12)
-        rod((0, 0, 0.55), (0, 0, 0.68), 0.006, flat("mast", "#d0d4da", 0.5), n=5)
-        ico(0.014, (0, 0, 0.69), neon)
-    build_at(tower, -0.42, 0.3)
-    pod = flat("pod", "#e8ecf0", 0.35)
-    for i, (x, y) in enumerate(((-0.22, -0.26), (-0.1, -0.3), (0.02, -0.26), (-0.16, -0.16), (-0.04, -0.18))):
-        bx((0.08, 0.06, 0.06), (x, y, 0.04), pod, 0.1 * i, bev=0.016)
-        bx((0.082, 0.008, 0.008), (x, y - 0.031, 0.05), neon if i % 2 else cyan, 0.1 * i, bev=0)
-    cy(0.11, 0.012, (-0.1, 0.18, 0.012), flat("pad_sf", "#2c323b", 0.5), 16)
-    cy(0.1, 0.006, (-0.1, 0.18, 0.02), ev.glow("padring" + team, team, 1.6), 16)
-    cy(0.085, 0.008, (-0.1, 0.18, 0.021), flat("pad_sf", "#2c323b", 0.5), 16)
+    build_at(lambda: energy_crane(kk, team), 0.34, py, 0.0, z=0.07)
+    # a docking arm from the pier to the cruiser's side, a glowing joint at the elbow
+    for (p0, p1) in (((0.6, py + 0.06, 0.075), (0.6, 0.08, 0.13)), ((0.6, 0.08, 0.13), (0.6, 0.145, 0.07))):
+        beam(p0, p1, 0.022, kk["plate"])
+    ico(0.016, (0.6, 0.08, 0.13), kk["cyan"])
+    # the control tower, the cargo hall, the pad with a lifter, racks of pods
+    build_at(lambda: control_tower8(kk), -0.5, 0.32)
+    build_at(lambda: cargo_hall8(kk, team), -0.16, 0.42, -0.08)
+    cy(0.13, 0.014, (-0.3, -0.04, 0.012), kk["dark"], 16)
+    cy(0.118, 0.006, (-0.3, -0.04, 0.02), ev.glow("padring" + team, team, 1.6), 16)
+    cy(0.104, 0.008, (-0.3, -0.04, 0.021), flat("pad_sf", "#2c323b", 0.5), 16)
+    build_at(lambda: hover_lifter(kk, team), -0.3, -0.04, 0.4, z=0.024)
+    build_at(lambda: pod_rack(kk, team), -0.32, -0.42, 0.0)
+    build_at(lambda: pod_rack(kk, team, 2), 0.0, -0.44, 0.0)
+    for (x, y) in ((-0.06, 0.12), (-0.62, -0.14), (0.0, -0.28)):  # light masts
+        cy(0.007, 0.18, (x, y, 0.09), flat("mast", "#d0d4da", 0.5), 6)
+        bx((0.022, 0.022, 0.022), (x, y, 0.19), glow("lamp8", "#bfe8ff", 3.0), bev=0)
 
 
-def _compound_walls(S, wall, cap, h=0.1, gate=0.12):
-    """Four straight walls round a square yard with a gate gap in the front (−Y) wall."""
-    for (x0, y0, x1, y1) in ((-S, S, S, S), (S, S, S, -S), (-S, -S, -S, S), (S, -S, gate, -S), (-gate, -S, -S, -S)):
-        ln = math.dist((x0, y0), (x1, y1))
-        ang = math.atan2(y1 - y0, x1 - x0)
-        bx((ln, 0.045, h), ((x0 + x1) / 2, (y0 + y1) / 2, h / 2), wall, ang, bev=0.004)
-        bx((ln, 0.055, 0.014), ((x0 + x1) / 2, (y0 + y1) / 2, h + 0.007), cap, ang, bev=0)
+def _walls(S, gate, h, t, body, cap, cap_t=0.012, cap_w=None, base=None):
+    """Four straight walls round a square yard (half-size S) with a gate gap of half-width `gate` in the front (−Y)
+    wall: the body, a coping on top (and a darker plinth); returns the wall runs as (p0, p1)."""
+    runs = [((-S, S), (S, S)), ((S, S), (S, -S)), ((-S, -S), (-S, S)), ((S, -S), (gate, -S)), ((-gate, -S), (-S, -S))]
+    for (p0, p1) in runs:
+        ln = math.dist(p0, p1)
+        ang = math.atan2(p1[1] - p0[1], p1[0] - p0[0])
+        m = ((p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2)
+        bx((ln + t, t, h), (m[0], m[1], h / 2), body, ang, bev=0)
+        bx((ln + t + 0.008, cap_w or t + 0.01, cap_t), (m[0], m[1], h + cap_t / 2), cap, ang, bev=0)
+        if base:
+            bx((ln + t + 0.006, t + 0.008, 0.02), (m[0], m[1], 0.01), base, ang, bev=0)
+    return runs
+
+
+def razor_wire(p0, p1, z, mt, pitch=0.026, amp=0.02):
+    """Razor wire along a wall top seen from afar: a zigzag ribbon (one quad per tooth) standing on the coping."""
+    ln = math.dist(p0, p1)
+    n = max(2, int(ln / pitch))
+    ux, uy = (p1[0] - p0[0]) / ln, (p1[1] - p0[1]) / ln
+    vs, fs = [], []
+    for i in range(n + 1):
+        f = i / n
+        x, y = p0[0] + (p1[0] - p0[0]) * f, p0[1] + (p1[1] - p0[1]) * f
+        zz = z + (amp if i % 2 else 0.0)
+        vs += [(x - uy * 0.002, y + ux * 0.002, zz), (x + uy * 0.002, y - ux * 0.002, zz + 0.004)]
+    for i in range(n):
+        fs.append((2 * i, 2 * i + 2, 2 * i + 3, 2 * i + 1))
+    mesh_obj(vs, fs, mt)
+
+
+def guard_tower(team, h=0.26, big=True):
+    """A concrete watch post: a square shaft with a ladder line, a cabin with dark windows all round under a roof in
+    the state's slate, a warm searchlight toward the front and sandbags on the gallery."""
+    conc = ev.facade("#8c9095", "#a9acb0", 0.06, 0.4, 0.9, 0.99, lit="#a9acb0", lit_p=0.0, z0=-0.01)
+    w = 0.07 if big else 0.055
+    bx((w, w, h), (0, 0, h / 2), conc, bev=0)
+    bx((w + 0.03, w + 0.03, 0.012), (0, 0, h + 0.006), flat("tower_deck", "#6f747a", 0.6), bev=0)
+    cw = w + 0.02
+    bx((cw, cw, 0.05), (0, 0, h + 0.012 + 0.025), flat("tower_cab", "#c8c9c4", 0.6), bev=0)
+    bx((cw + 0.002, cw + 0.002, 0.018), (0, 0, h + 0.012 + 0.03), flat("cab_glass", "#1d2a38", 0.2), bev=0)
+    ev.hip_roof(cw + 0.024, cw + 0.024, 0.035, (0, 0, h + 0.062), flat("roof" + team, ev.slate(team, 1.05), 0.6),
+                oh=0.0)
+    bx((0.018, 0.016, 0.014), (0, -cw / 2 - 0.01, h + 0.052), flat("lamp_body", "#2b2d31", 0.5), bev=0)
+    bx((0.014, 0.004, 0.01), (0, -cw / 2 - 0.019, h + 0.052), glow("search", "#ffe2a0", 3.0), bev=0)
+    bx((0.006, 0.004, h - 0.02), (w / 2 * 0.4, -w / 2 - 0.002, h / 2), flat("ladder", "#3a3e44", 0.6), bev=0)
+
+
+def quonset(team, L=0.36, R=0.15):
+    """An arched steel hangar along X: a ribbed half-barrel standing on the ground, end walls, a big ribbed door with
+    a band of the state's colour over it, and a light over the door."""
+    n = 12
+    rib = _ribbed("#8f969d", 0, 0.03, 0.84)
+    vs, fs = [], []
+    for k in range(n + 1):
+        a = math.pi * k / n
+        for x in (-L / 2, L / 2):
+            vs.append((x, math.cos(a) * R, math.sin(a) * R * 0.95))
+    for k in range(n):
+        fs.append((2 * k, 2 * k + 1, 2 * k + 3, 2 * k + 2))
+    _orient(mesh_obj(vs, fs, rib), lambda c: (0.0, c.y, c.z))
+    for sx in (-1, 1):  # end walls
+        pts = [(sx * L / 2, math.cos(math.pi * k / n) * R * 0.995, math.sin(math.pi * k / n) * R * 0.945)
+               for k in range(n + 1)]
+        _orient(mesh_obj(pts, [tuple(range(n + 1))], flat("hangar_end", "#a3a8ae", 0.6)), lambda c: (sx, 0.0, 0.0))
+    door = _ribbed("#5d636a", 2, 0.012, 0.8)
+    bx((0.006, 0.17, 0.11), (L / 2 + 0.003, 0, 0.055), door, bev=0)
+    bx((0.008, 0.19, 0.016), (L / 2 + 0.004, 0, 0.118), flat("band" + team, team, 0.6), bev=0)
+    bx((0.012, 0.016, 0.008), (L / 2 + 0.008, 0, 0.135), glow("door_lamp", "#ffe2a0", 3.0), bev=0)
+
+
+def barracks_block(team, w=0.3, d=0.13, floors=2):
+    """A barracks block: two storeys of windows (some lit warm), a pitched roof in the state's slate with a dark
+    ridge, an entrance canopy, air conditioners."""
+    fh = 0.07
+    wall = ev.facade("#cbc6b8", "#25313d", 0.04, fh, 0.45, 0.5, lit="#ffd27a", lit_p=0.35, z0=0.0)
+    bx((w, d, fh * floors), (0, 0, fh * floors / 2), wall, bev=0)
+    bx((w + 0.006, d + 0.006, 0.01), (0, 0, fh * floors), flat("cornice", "#8a9097", 0.6), bev=0)
+    ev.gable_roof(w + 0.01, d + 0.01, 0.07, (0, 0, fh * floors), ev.slate(team, 1.05), wall, n=4, eave_z=0.0)
+    bx((0.06, 0.03, 0.008), (0, -d / 2 - 0.015, 0.06), flat("canopy", "#5d636a", 0.6), bev=0)
+    bx((0.04, 0.006, 0.05), (0, -d / 2 - 0.002, 0.025), flat("door", "#3a3e44", 0.6), bev=0)
+    for x in (-0.1, 0.09):
+        bx((0.026, 0.014, 0.02), (x, -d / 2 - 0.007, 0.1), flat("ac", "#aeb4bb", 0.5), bev=0)
+
+
+def helicopter(team):
+    """A utility helicopter along X: an olive body with a dark canopy and the state's roundel, a tail boom with a fin
+    and a rotor, skids, two long rotor blades."""
+    od = flat("olive", "#56603a", 0.6)
+    dk = flat("rotor", "#26282b", 0.5)
+    uvs(0.03, (0.0, 0, 0.042), od, 10, 6, (1.9, 1.0, 0.9))
+    uvs(0.022, (0.04, 0, 0.05), flat("canopy_h", "#1b2533", 0.2), 8, 5, (1.2, 0.95, 0.8))
+    rod((-0.04, 0, 0.05), (-0.15, 0, 0.06), 0.009, od, r2=0.005, n=6)
+    bx((0.03, 0.004, 0.04), (-0.15, 0, 0.075), od, bev=0)
+    bx((0.004, 0.04, 0.004), (-0.152, 0.004, 0.075), dk, bev=0)
+    for sy in (-1, 1):
+        bx((0.11, 0.006, 0.005), (0.0, sy * 0.03, 0.006), dk, bev=0)
+        for x in (-0.03, 0.03):
+            beam((x, sy * 0.03, 0.006), (x, sy * 0.018, 0.026), 0.004, dk)
+    cy(0.012, 0.012, (0.0, 0, 0.078), dk, 6)
+    for a in (0.4, 0.4 + math.pi / 2):
+        bx((0.3, 0.012, 0.003), (0.0, 0, 0.086), dk, a, bev=0)
+    for sy in (-1, 1):
+        cy(0.012, 0.002, (-0.01, sy * 0.028, 0.044), flat("roundel" + team, team, 0.6), 10, rot=(math.pi / 2, 0, 0))
+
+
+def tank_parked(team):
+    """A parked battle tank along X: an olive hull on dark tracks, a turret with a long gun and the state's mark."""
+    od = flat("olive", "#56603a", 0.6)
+    dk = flat("track", "#26282b", 0.7)
+    for sy in (-1, 1):
+        bx((0.15, 0.024, 0.03), (0, sy * 0.034, 0.015), dk, bev=0)
+    taper_box((0.15, 0.064, 0.026), (0, 0, 0.041), od, (0.92, 0.9))
+    taper_box((0.07, 0.054, 0.024), (-0.01, 0, 0.064), od, (0.8, 0.8))
+    rod((0.025, 0, 0.066), (0.13, 0, 0.068), 0.0045, od, n=5)
+    bx((0.02, 0.02, 0.002), (-0.015, 0, 0.0765), flat("mark" + team, team, 0.6), bev=0)
+
+
+def army_truck(team):
+    """An army truck along X: an olive cab, a canvas-covered bed, six wheels."""
+    olive = flat("truck", "#4f5a3a", 0.6)
+    bx((0.11, 0.07, 0.012), (-0.02, 0, 0.022), flat("chassis", "#2b2d31", 0.6), bev=0)
+    bx((0.05, 0.068, 0.05), (0.06, 0, 0.045), olive, bev=0.006)
+    bx((0.006, 0.054, 0.02), (0.086, 0, 0.055), flat("cab_glass", "#1d2a38", 0.2), bev=0)
+    bx((0.1, 0.07, 0.04), (-0.035, 0, 0.048), flat("canvas", "#6b7350", 0.8), bev=0.008)
+    for dx in (-0.065, -0.03, 0.06):
+        for sy in (-1, 1):
+            cy(0.016, 0.01, (dx, sy * 0.036, 0.016), flat("tyre", "#1f1f21", 0.9), 8, rot=(math.pi / 2, 0, 0))
 
 
 def military_base_modern(team):
-    """The industrial base (DL6–7): a concrete-walled compound, two steel watchtowers, a quonset hangar with the
-    state's band, a helipad with an H, parked trucks, a sandbag nest, a flag."""
+    """The industrial base (DL6–7), a compound of the late-era maps (reference frame 2): concrete panel walls with
+    razor wire, a gatehouse with a striped barrier, four concrete watch posts with slate roofs in the state's tone
+    and warm searchlights, an arched steel hangar with a fighter on its apron, a barracks block with lit windows,
+    a helipad with a helicopter, a radar mast with a dish, a parked tank and trucks, sandbags and the flag."""
     S = 0.55
-    ground_poly([(-S, -S), (S, -S), (S, S), (-S, S)], flat("base_asph", "#5d6166", 0.85), 0.006)
-    conc = flat("base_conc", "#a3a6aa", 0.8)
-    _compound_walls(S, conc, flat("base_cap", "#7d8186", 0.7))
-    steel = flat("steel_dk", "#3a3e44", 0.5)
-    for (x, y) in ((-S, -S), (S, S)):  # watchtowers on two corners
-        for sx in (-1, 1):
-            for sy in (-1, 1):
-                beam((x + sx * 0.05, y + sy * 0.05, 0.0), (x + sx * 0.035, y + sy * 0.035, 0.3), 0.008, steel)
-        bx((0.11, 0.11, 0.07), (x, y, 0.335), flat("tower_cab", "#6f747a", 0.6), bev=0.004)
-        bx((0.13, 0.13, 0.012), (x, y, 0.376), steel, bev=0)
-        bx((0.112, 0.006, 0.02), (x, y - 0.056, 0.34), flat("cab_glass", "#1d2a38", 0.2), bev=0)
-    def hangar():  # a half-cylinder of ribbed steel with end walls and a door
-        cy(0.17, 0.42, (0, 0, 0.0), flat("hangar", "#8a9097", 0.55), 16, rot=(0, math.pi / 2, 0))  # half sunk: an arch
-        for x in (-0.21, 0.21):
-            cy(0.172, 0.012, (x, 0, 0.0), flat("band" + team, team, 0.6), 16, rot=(0, math.pi / 2, 0))
-        bx((0.012, 0.16, 0.12), (-0.215, 0, 0.06), flat("hangar_door", "#3a3e44", 0.6), bev=0)
-    build_at(hangar, -0.12, 0.3)
-    # helipad
-    cy(0.16, 0.01, (0.28, -0.22, 0.012), flat("pad_c", "#7d8186", 0.7), 20)
-    cy(0.13, 0.004, (0.28, -0.22, 0.018), flat("pad_w", "#e8e6e0", 0.6), 20)
-    cy(0.122, 0.006, (0.28, -0.22, 0.019), flat("pad_c", "#7d8186", 0.7), 20)
+    asph = ev.facade("#5d6166", "#5d6166", wf=0.0, brick=True, brick_scale=5.0, mortar_k=0.86)  # concrete slabs
+    ground_poly([(-S, -S), (S, -S), (S, S), (-S, S)], asph, 0.006)
+    conc = ev.facade("#8c9095", "#aaadb1", 0.07, 0.14, 0.92, 0.99, lit="#aaadb1", lit_p=0.0, z0=-0.02)
+    cap = flat("base_cap", "#7d8186", 0.7)
+    runs = _walls(S, 0.1, 0.1, 0.04, conc, cap)
+    wire = flat("wire", "#4a4d52", 0.5)
+    for (p0, p1) in runs:
+        razor_wire(p0, p1, 0.112, wire)
+    # the gate: two pillars with hazard bands, a guard booth, a striped barrier arm across the road
+    haz = ev.hazard(0.02, "#f2c230", "#26272b")
+    for sx in (-1, 1):
+        bx((0.05, 0.05, 0.14), (sx * 0.125, -S, 0.07), conc, bev=0)
+        bx((0.054, 0.054, 0.03), (sx * 0.125, -S, 0.11), haz, bev=0)
+    bx((0.06, 0.05, 0.06), (0.17, -S + 0.06, 0.03), flat("booth", "#c8c9c4", 0.6), bev=0)
+    bx((0.062, 0.052, 0.02), (0.17, -S + 0.06, 0.044), flat("cab_glass", "#1d2a38", 0.2), bev=0)
+    bx((0.074, 0.064, 0.008), (0.17, -S + 0.06, 0.064), flat("roof" + team, ev.slate(team, 1.05), 0.6), bev=0)
+    bx((0.2, 0.01, 0.01), (0.0, -S - 0.03, 0.06), ev.hazard_dir(0.03, 0.0, "#e8e6e0", "#c0392b"), bev=0)
+    bx((0.02, 0.02, 0.06), (0.1, -S - 0.03, 0.03), flat("barrier_post", "#3a3e44", 0.6), bev=0)
+    # a road in from the gate and the parade ground lines
+    white = flat("paint_w", "#e8e6e0", 0.6)
+    for x in (-0.09, 0.09):
+        bx((0.008, 0.36, 0.002), (x, -S + 0.2, 0.0075), white, bev=0)
+    # watch posts on the four corners
+    for (x, y, big) in ((-S, -S, False), (S, -S, False), (-S, S, True), (S, S, True)):
+        build_at(lambda b=big: guard_tower(team, 0.26 if b else 0.2, b), x, y, 0.0)
+    # the arched hangar at the back left, a fighter on its apron
+    build_at(lambda: quonset(team), -0.24, 0.3, 0.0)
+    bx((0.2, 0.2, 0.002), (-0.0, 0.3, 0.0075), flat("apron_c", "#787c82", 0.8), bev=0)
+    build_at(ea.fighter, 0.1, 0.3, 0.0, 0.62, z=0.04)
+    for sy in (-1, 1):
+        cy(0.008, 0.035, (0.12, 0.3 + sy * 0.03, 0.0175), flat("tyre", "#1f1f21", 0.9), 6)
+    # the barracks block along the right wall
+    build_at(lambda: barracks_block(team), 0.36, -0.04, -math.pi / 2)
+    # helipad with a helicopter
+    hx, hy = -0.26, -0.2
+    cy(0.15, 0.01, (hx, hy, 0.012), flat("pad_c", "#7d8186", 0.7), 20)
+    cy(0.125, 0.004, (hx, hy, 0.018), white, 20)
+    cy(0.117, 0.006, (hx, hy, 0.019), flat("pad_c", "#7d8186", 0.7), 20)
     for (dx, w, d) in ((-0.035, 0.016, 0.1), (0.035, 0.016, 0.1), (0.0, 0.07, 0.016)):
-        bx((w, d, 0.004), (0.28 + dx, -0.22, 0.022), flat("pad_w", "#e8e6e0", 0.6), bev=0)
-    # parked trucks
-    olive = flat("truck", "#4f5a3a", 0.6)
-    for (x, y) in ((-0.3, -0.2), (-0.3, -0.06)):
-        bx((0.16, 0.07, 0.06), (x, y, 0.045), olive, bev=0.006)
-        bx((0.05, 0.068, 0.05), (x + 0.1, y, 0.04), olive, bev=0.006)
-        bx((0.006, 0.05, 0.02), (x + 0.125, y, 0.05), flat("cab_glass", "#1d2a38", 0.2), bev=0)
-        for dx in (-0.05, 0.03, 0.1):
-            for sy in (-1, 1):
-                cy(0.016, 0.01, (x + dx, y + sy * 0.036, 0.016), flat("tyre", "#1f1f21", 0.9), 8, rot=(math.pi / 2, 0, 0))
-    ev.sandbag_ring(0.0, -0.42, 0.07, 2)
-    ev.flagpole(0.3, 0.3, 0.42, team, 0.12)
+        bx((w, d, 0.004), (hx + dx, hy, 0.022), white, bev=0)
+    build_at(lambda: helicopter(team), hx, hy, 0.5, z=0.024)
+    # radar mast with a dish and a red light, the flag
+    rx, ry = 0.36, 0.32
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            beam((rx + sx * 0.04, ry + sy * 0.04, 0.0), (rx + sx * 0.012, ry + sy * 0.012, 0.3), 0.007, flat("steel_dk", "#3a3e44", 0.5))
+    for z in (0.1, 0.2):
+        bx((0.08 - z * 0.18, 0.08 - z * 0.18, 0.006), (rx, ry, z), flat("steel_dk", "#3a3e44", 0.5), bev=0)
+    bx((0.04, 0.04, 0.012), (rx, ry, 0.306), flat("steel_dk", "#3a3e44", 0.5), bev=0)
+    ev.hemi(0.06, (rx, ry - 0.005, 0.36), flat("dish", "#e4e6e8", 0.4), 10, 3, (1, 1, 0.45)).rotation_euler = (math.pi / 2 + 0.5, 0, 0.3)
+    rod((rx, ry, 0.312), (rx, ry - 0.02, 0.35), 0.006, flat("steel_dk", "#3a3e44", 0.5), n=4)
+    ico(0.008, (rx + 0.02, ry + 0.02, 0.31), glow("beacon_red", "#ff4a3a", 3.0))
+    ev.flagpole(0.06, 0.04, 0.42, team, 0.12)
+    # vehicles: a tank and two trucks parked in a row, sandbags by the gate
+    build_at(lambda: tank_parked(team), 0.24, -0.38, math.pi)
+    for k in range(2):
+        build_at(lambda: army_truck(team), 0.0, -0.12 - k * 0.09, 0.0)
+    ev.sandbag_ring(-0.42, 0.0, 0.06, 2)
+    for (x, y) in ((0.0, -0.06), (0.15, 0.12)):
+        crate(x + 0.09, y + 0.02, 0.04, 0.2, c="#5b6436")
+
+
+def mech_walker(team, k):
+    """A parked walker of the late armies: two digitigrade legs, a wedge torso in steel with a glowing visor, arm
+    guns and a missile pod, the state's panel on the hull."""
+    st, dk = k["seam"], k["dark"]
+    for sy in (-1, 1):
+        beam((0.0, sy * 0.035, 0.0), (0.02, sy * 0.035, 0.05), 0.016, dk)  # shin
+        beam((0.02, sy * 0.035, 0.05), (-0.015, sy * 0.032, 0.09), 0.018, st)  # thigh
+        bx((0.05, 0.022, 0.008), (0.008, sy * 0.035, 0.004), dk, bev=0)  # foot
+    taper_box((0.08, 0.09, 0.05), (0.0, 0, 0.115), st, (0.8, 0.85))
+    bx((0.06, 0.06, 0.02), (-0.03, 0, 0.13), k["plate"], bev=0)
+    bx((0.006, 0.05, 0.01), (0.041, 0, 0.122), k["cyan"], bev=0)  # visor
+    bx((0.03, 0.004, 0.026), (0.0, -0.046, 0.11), k["panel"], bev=0)
+    bx((0.03, 0.004, 0.026), (0.0, 0.046, 0.11), k["panel"], bev=0)
+    for sy in (-1, 1):
+        bx((0.03, 0.024, 0.03), (0.0, sy * 0.06, 0.12), dk, bev=0)  # shoulder
+        rod((0.0, sy * 0.064, 0.105), (0.075, sy * 0.064, 0.105), 0.008, dk, n=6)  # arm gun
+    bx((0.03, 0.04, 0.022), (-0.03, 0.0, 0.15), k["plate"], bev=0)  # missile pod
+    for j in range(2):
+        bx((0.004, 0.008, 0.008), (-0.0145, -0.008 + j * 0.016, 0.152), k["neon"], bev=0)
+
+
+def mech_bay(k, team, w=0.3, d=0.2, h=0.2):
+    """An open-fronted steel mech bay facing −Y: steel side walls and a back wall with plate seams, a plated roof with
+    a light line along its front edge, gantry beams with cold lamps inside, a bay number panel and a walker parked
+    inside on a lit floor plate."""
+    for sx in (-1, 1):
+        bx((0.03, d, h), (sx * (w / 2 - 0.015), 0, h / 2), k["st"], bev=0)
+        inset_panel(sx * (w / 2 - 0.015), -d / 2 - 0.001, h * 0.55, 0.018, h * 0.7, 0, -1, k)
+    bx((w, 0.03, h), (0, d / 2 - 0.015, h / 2), k["st"], bev=0)
+    taper_box((w + 0.02, d + 0.02, 0.03), (0, 0, h + 0.015), k["plate"], (0.9, 0.86))
+    bx((w * 0.92, 0.006, 0.008), (0, -d / 2 - 0.006, h - 0.008), k["neon"], bev=0)
+    bx((w - 0.06, 0.02, 0.02), (0, -d / 2 + 0.02, h - 0.03), k["plate"], bev=0)  # gantry beam over the opening
+    for x in (-0.07, 0.07):
+        bx((0.03, 0.012, 0.006), (x, -d / 2 + 0.02, h - 0.043), glow("bay_lamp", "#cfeeff", 2.5), bev=0)
+    bx((w - 0.07, d - 0.04, 0.006), (0, 0.0, 0.003), flat("bay_floor", "#2c323b", 0.5), bev=0)
+    bx((w - 0.1, 0.004, h * 0.55), (0, d / 2 - 0.032, h * 0.45), glow("bay8", "#9fdcff", 0.9), bev=0)  # lit back wall
+    bx((w - 0.09, 0.008, 0.002), (0, -d / 2 + 0.04, 0.0065), k["cyan"], bev=0)
+    build_at(lambda: mech_walker(team, k), 0.0, 0.01, -math.pi / 2, 1.0, z=0.006)
+
+
+def defence_turret(k, team):
+    """A corner defence turret: a steel drum with a cold light band, a domed turret with twin barrels pointing out of
+    the corner, a sensor fin."""
+    cy(0.075, 0.12, (0, 0, 0.06), k["comp"], 8)
+    cy(0.078, 0.012, (0, 0, 0.09), k["cyan"], 8)
+    cy(0.082, 0.014, (0, 0, 0.127), k["dark"], 8)
+    ev.hemi(0.05, (0, 0, 0.134), k["seam"], 8, 3, (1, 1, 0.75))
+    for sy in (-0.012, 0.012):
+        rod((0.03, sy, 0.15), (0.09, sy, 0.152), 0.0055, k["dark"], n=5)
+    bx((0.016, 0.004, 0.012), (0.044, 0, 0.166), k["neon"], bev=0)
+    bx((0.012, 0.004, 0.04), (-0.03, 0, 0.18), k["dark"], bev=0)
 
 
 def military_base_scifi(team):
-    """The late-era base (DL8+): a dark plated compound with neon wall strips, a wedge hangar with a glowing door, a
-    parked walker, a pad with a hover gunship, sensor masts."""
+    """The late-era base (DL8+) in the steel kit of the late citadel (reference frames 2 and 5): composite walls with
+    glowing joints and a cold light line along the coping, corner turrets with light bands, a gate with an energy
+    barrier, an open mech bay with a walker inside, two lit landing pads (a gunship on one), shield emitter pylons
+    with glowing orbs, a steel command block with inset team panels and a holo banner, a dark steel yard laced with
+    light strips."""
+    kk = steel_kit(team)
     S = 0.55
-    ground_poly([(-S, -S), (S, -S), (S, S), (-S, S)], flat("sf_ground", "#3e434b", 0.6), 0.006)
-    neon = ev.glow("neon" + team, team, 3.0)
-    cyan = ev.glow("cyan", "#14d2ff", 2.5)
-    _compound_walls(S, flat("sf_wall", "#59606a", 0.45), neon, 0.09)
-    def hangar():
-        side_w = 0.42
-        extrude([(-0.2, 0.0), (0.2, 0.0), (0.14, 0.2), (-0.14, 0.2)], -side_w / 2, side_w / 2,
-                flat("sf_hangar", "#4a515c", 0.4), (0, 0, 0), (math.pi / 2, 0, 0))
-        bx((0.2, 0.012, 0.12), (0, -0.215, 0.07), cyan, bev=0)
-        bx((0.3, 0.44, 0.012), (0, 0, 0.205), flat("sf_roof", "#2b3240", 0.4), bev=0.004)
-        bx((0.006, 0.42, 0.008), (0.15, 0, 0.2), neon, bev=0)
-        bx((0.006, 0.42, 0.008), (-0.15, 0, 0.2), neon, bev=0)
-    build_at(hangar, -0.22, 0.26, math.pi / 2)
-    cy(0.17, 0.012, (0.26, -0.2, 0.012), flat("pad_sf", "#2c323b", 0.5), 20)
-    cy(0.15, 0.006, (0.26, -0.2, 0.02), ev.glow("padring" + team, team, 1.6), 20)
-    cy(0.135, 0.008, (0.26, -0.2, 0.021), flat("pad_sf", "#2c323b", 0.5), 20)
-    build_at(ea.gunship, 0.26, -0.2, 0.6, 0.5, z=0.03)
-    for (x, y) in ((0.36, 0.34), (-0.4, -0.38)):
-        rod((x, y, 0.0), (x, y, 0.32), 0.008, flat("mast", "#d0d4da", 0.5), n=5)
-        uvs(0.02, (x, y, 0.33), cyan, 8, 5)
+    ground_poly([(-S, -S), (S, -S), (S, S), (-S, S)], ev.stone("#454a52", 0.8), 0.006)
+    # the coping glows in the state's colour (the lit wall tops of reference frame 2 outline the compound from afar)
+    runs = _walls(S, 0.11, 0.1, 0.05, kk["comp"], kk["neon"], 0.01, 0.054, kk["dark"])
+    for (p0, p1) in runs:  # the light line along the coping and glowing joints down the plates
+        ln = math.dist(p0, p1)
+        ang = math.atan2(p1[1] - p0[1], p1[0] - p0[0])
+        n = (math.sin(ang), -math.cos(ang))
+        for side in (-1, 1):
+            m = ((p0[0] + p1[0]) / 2 + n[0] * side * 0.0265, (p0[1] + p1[1]) / 2 + n[1] * side * 0.0265)
+            bx((ln - 0.04, 0.004, 0.008), (m[0], m[1], 0.075), kk["neon"], ang, bev=0)
+        for f in [i / max(1, int(ln / 0.16)) for i in range(1, int(ln / 0.16))]:
+            q = (p0[0] + (p1[0] - p0[0]) * f, p0[1] + (p1[1] - p0[1]) * f)
+            bx((0.008, 0.056, 0.06), (q[0], q[1], 0.05), kk["cyan"], ang, bev=0)
+    # the gate: two emitter posts and an energy barrier between them
+    for sx in (-1, 1):
+        bx((0.04, 0.07, 0.16), (sx * 0.13, -S, 0.08), kk["st"], bev=0)
+        bx((0.044, 0.074, 0.012), (sx * 0.13, -S, 0.165), kk["dark"], bev=0)
+        bx((0.006, 0.076, 0.1), (sx * 0.13, -S, 0.08), kk["cyan"], bev=0)
+    for z in (0.03, 0.07, 0.11):
+        bx((0.22, 0.004, 0.012), (0, -S, z), glow("curtain", "#1a8fd0", 0.9), bev=0)
+    # corner turrets
+    for (x, y) in ((-S, -S), (S, -S), (-S, S), (S, S)):  # (the front ones aim down the approach, the back ones out)
+        build_at(lambda: defence_turret(kk, team), x, y, -math.pi / 2 if y < 0 else (0.0 if x > 0 else math.pi))
+    # the mech bay on the back left, the command block on the back right
+    build_at(lambda: mech_bay(kk, team), -0.24, 0.3, 0.0)
+    cx_, cy_ = 0.28, 0.3
+    bx((0.24, 0.16, 0.16), (cx_, cy_, 0.08), kk["st"], bev=0)
+    bx((0.25, 0.17, 0.014), (cx_, cy_, 0.16), kk["plate"], bev=0)
+    bx((0.252, 0.172, 0.012), (cx_, cy_, 0.07), kk["seam"], bev=0)
+    taper_box((0.14, 0.1, 0.05), (cx_ + 0.01, cy_ + 0.01, 0.192), kk["st"], (0.8, 0.75))
+    bx((0.2, 0.006, 0.008), (cx_, cy_ - 0.083, 0.15), kk["neon"], bev=0)
+    for x in (-0.07, 0.07):
+        inset_panel(cx_ + x, cy_ - 0.081, 0.11, 0.04, 0.07, 0, -1, k=kk)
+    bx((0.05, 0.008, 0.06), (cx_, cy_ - 0.083, 0.03), kk["dark"], bev=0)  # door
+    bx((0.04, 0.009, 0.05), (cx_, cy_ - 0.084, 0.026), glow("bay8", "#9fdcff", 0.9), bev=0)
+    for (x, y) in ((cx_ + 0.06, cy_ + 0.03),):
+        rod((x, y, 0.21), (x, y, 0.34), 0.004, kk["cap"], r2=0.0015, n=4)
+        bx((0.012, 0.012, 0.012), (x, y, 0.32), kk["cyan"], bev=0)
+    uvs(0.022, (cx_ - 0.05, cy_ + 0.03, 0.225), kk["white"], 8, 4, (1, 1, 0.5))
+    # holo banner by the command block
+    hx, hy = 0.08, 0.16
+    cy(0.03, 0.02, (hx, hy, 0.016), kk["plate"], 6)
+    cy(0.006, 0.3, (hx, hy, 0.15), flat("mast", "#d0d4da", 0.5), 6)
+    bx((0.1, 0.004, 0.13), (hx + 0.056, hy, 0.23), glow("holo" + team, team, 1.0), bev=0)
+    bx((0.11, 0.008, 0.008), (hx + 0.056, hy, 0.3), kk["cyan"], bev=0)
+    crest = [(0.0, -0.03), (0.022, -0.013), (0.022, 0.022), (0.0, 0.013), (-0.022, 0.022), (-0.022, -0.013)]
+    extrude(crest, -0.004, 0.004, glow("holo_crest", "#eef8ff", 1.6), (hx + 0.056, hy, 0.24), (math.pi / 2, 0, 0))
+    # two landing pads with lit rims, a gunship on the right one
+    for (px, py, r) in ((0.26, -0.24, 0.15), (-0.26, -0.24, 0.13)):
+        cy(r, 0.012, (px, py, 0.012), kk["dark"], 16)
+        cy(r - 0.014, 0.006, (px, py, 0.02), ev.glow("padring" + team, team, 1.6), 16)
+        cy(r - 0.026, 0.008, (px, py, 0.021), flat("pad_sf", "#2c323b", 0.5), 16)
+        for a in (0.0, math.pi / 2):
+            bx((r * 1.1, 0.008, 0.002), (px, py, 0.0255), kk["cyan"], a + math.pi / 4, bev=0)
+    build_at(ea.gunship, 0.26, -0.24, 0.6, 0.5, z=0.06)
+    build_at(lambda: hover_lifter(kk, team), -0.26, -0.24, 2.0, z=0.026)
+    # shield emitter pylons with glowing orbs, light strips across the yard
+    for (x, y) in ((-0.02, -0.06), (0.0, 0.42)):
+        bx((0.04, 0.04, 0.2), (x, y, 0.1), kk["comp"], bev=0)
+        bx((0.006, 0.042, 0.16), (x, y, 0.1), kk["cyan"], bev=0)
+        bx((0.06, 0.06, 0.016), (x, y, 0.205), kk["dark"], bev=0)
+        uvs(0.028, (x, y, 0.245), glow("orb" + team, shade(team, 1.05), 1.6), 10, 6)
+        torus(0.042, 0.004, (x, y, 0.245), flat("ring_frame", "#c9d0d8", 0.4), (math.pi / 2.6, 0, 0.4), 14, 3)
+    for (p0, p1) in (((0.0, -0.53), (0.0, -0.1)), ((-0.5, 0.08), (0.5, 0.08))):
+        beam((p0[0], p0[1], 0.0075), (p1[0], p1[1], 0.0075), 0.012, kk["neon"])
+    for (x, y, s_) in ((0.46, -0.02, 0.045), (0.42, 0.04, 0.035), (-0.46, -0.02, 0.04)):
+        bx((s_, s_ * 1.4, s_), (x, y, s_ / 2 + 0.006), flat("crate8", "#b8862e", 0.6), bev=0)
 
 
 PROPS = [raider_camp, port, military_base]
@@ -1747,6 +2587,11 @@ for _t, _c in ev.TEAMS.items():
 # get UV islands under a texel wide that no texel centre falls into, so they bake black — they get a 1024 px atlas
 # (like the residences); one of each per map, so the extra texture memory stays small
 BAKE_1024 = {"raider_camp", "port", "military_base"}
+# the late-era ports, bases and steel ships: hundreds of thin rails, struts, seams and light strips — the tight atlas of
+# the residences (flat colours and thin faces on a palette strip, only textured faces unwrapped) keeps them out of the
+# black gutter; the ships stay at 512 (small on the screen, several on the map)
+SHIPS = ("destroyer_", "cruiser_scifi_")
+ATLAS_PROPS = ("port_modern_", "port_scifi_", "military_base_modern_", "military_base_scifi_") + SHIPS
 
 
 def export(name, out):
@@ -1755,7 +2600,12 @@ def export(name, out):
     objs = [o for o in bpy.context.scene.objects if o.type == "MESH"]
     bpy.context.view_layer.update()
     ev.lowpoly(objs)
-    ob = ea.bake_asset(objs, 1024 if name in BAKE_1024 else 512)
+    if name.startswith(ATLAS_PROPS):
+        if not name.startswith(SHIPS):
+            ev._drop_ground_faces(objs)
+        ob = ev.bake_atlas(objs, 512 if name.startswith(SHIPS) else 1024)
+    else:
+        ob = ea.bake_asset(objs, 1024 if name in BAKE_1024 else 512)
     ob.name = name
     ob.data.transform(ob.matrix_world)
     ob.matrix_world = Matrix.Identity(4)
