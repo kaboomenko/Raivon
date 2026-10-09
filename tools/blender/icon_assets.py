@@ -298,23 +298,38 @@ def flask():
 
 
 def cart():
-    """Convoy yard: a two-wheeled cart loaded with sacks."""
+    """Convoy yard: a two-wheeled cart in three-quarter view, a big spoked wheel, a load of tied sacks."""
     wd = mat("cart_w", "#a0713f", 0.7)
     dk = mat("cart_d", "#5e3d22", 0.7)
-    box("bed", (0.7, 0.36, 0.08), (0, 0, -0.08), wd, 0.02)
+    iron = mat("iron_i", "#4a4d52", 0.5, 0.6)
+    box("bed", (0.66, 0.4, 0.07), (0.04, 0, -0.06), wd, 0.015)
     for sy in (-1, 1):
-        box("side", (0.7, 0.04, 0.16), (0, sy * 0.18, 0.0), wd, 0.01)
-        w = cyl("wheel", 0.24, 0.06, (0.0, sy * 0.24, -0.2), dk, 20, 0.01)
+        box("side", (0.66, 0.035, 0.15), (0.04, sy * 0.2, 0.03), wd, 0.01)
+        box("rail", (0.68, 0.04, 0.03), (0.04, sy * 0.2, 0.115), dk, 0.005)
+    for sx in (-1, 1):
+        box("end", (0.035, 0.4, 0.15), (0.04 + sx * 0.33, 0, 0.03), wd, 0.01)
+    for sy in (-1, 1):
+        y = sy * 0.26
+        rim = bpy.ops.mesh.primitive_torus_add(major_radius=0.22, minor_radius=0.03, location=(0.04, y, -0.2),
+                                               major_segments=28, minor_segments=8)
+        w = bpy.context.active_object
         w.rotation_euler.x = math.pi / 2
-        h = cyl("hub", 0.06, 0.08, (0.0, sy * 0.27, -0.2), mat("iron_i", "#4a4d52", 0.5, 0.6), 12, 0.0)
+        w.data.materials.append(dk)
+        for k in range(6):
+            sp = box("spoke", (0.024, 0.024, 0.42), (0.04, y, -0.2), wd, 0.0)
+            sp.rotation_euler.y = k * math.pi / 6
+        h = cyl("hub", 0.055, 0.08, (0.04, y - sy * 0.01, -0.2), iron, 12, 0.0)
         h.rotation_euler.x = math.pi / 2
-    s1 = cyl("shaft", 0.025, 0.6, (-0.6, 0.12, -0.12), dk, 8, 0.0)
-    s1.rotation_euler.y = math.pi / 2 + 0.15
-    s2 = cyl("shaft", 0.025, 0.6, (-0.6, -0.12, -0.12), dk, 8, 0.0)
-    s2.rotation_euler.y = math.pi / 2 + 0.15
+    for sy in (-1, 1):
+        s_ = cyl("shaft", 0.022, 0.42, (-0.47, sy * 0.13, -0.13), dk, 8, 0.0)
+        s_.rotation_euler.y = math.pi / 2 + 0.25
     sack = mat("sack_i", "#d8c08c", 0.9)
-    for (x, z) in ((-0.15, 0.1), (0.15, 0.1), (0.0, 0.26)):
-        sphere("sack", 0.16, (x, 0, z), sack, (1.0, 0.8, 0.75), 3)
+    tie = mat("tie_i", "#8a5e36", 0.8)
+    for (x, y, z, r) in ((-0.15, 0.05, 0.13, 0.15), (0.13, -0.04, 0.13, 0.16), (0.0, 0.0, 0.3, 0.14)):
+        sphere("sack", r, (x, y, z), sack, (1.0, 0.85, 0.8), 3)
+        cyl("neck", r * 0.28, r * 0.5, (x, y, z + r * 0.85), sack, 8, 0.0)
+        cyl("tie", r * 0.32, r * 0.14, (x, y, z + r * 0.72), tie, 8, 0.0)
+    _tilt(rz=-28)
 
 
 def stall():
@@ -616,7 +631,7 @@ ICONS = {"coin": coin, "food": food, "metal": metal, "raivite": raivite, "oil": 
          "hourglass": hourglass, "key": key, "frame": frame}
 
 
-ORTHO = {"hourglass": 1.2, "key": 1.15, "frame": 1.25, "book": 1.0, "orders": 1.2, "crown": 1.15, "cards": 1.2, "lock": 1.2, "ad": 1.2, "medal": 1.25, "crate": 1.4, "cart": 1.6, "stall": 1.5, "anchor": 1.5, "houses": 1.45, "target": 1.5, "pin": 1.45, "fort": 1.5, "tower": 1.7, "castle_icon": 1.75, "hammer": 1.6, "scales": 1.5, "trophy": 1.45, "gear": 1.4, "hands": 1.45}
+ORTHO = {"hourglass": 1.2, "key": 1.15, "frame": 1.25, "book": 1.0, "orders": 1.2, "crown": 1.15, "cards": 1.2, "lock": 1.2, "ad": 1.2, "medal": 1.25, "crate": 1.4, "cart": 1.08, "stall": 1.5, "anchor": 1.5, "houses": 1.45, "target": 1.5, "pin": 1.45, "fort": 1.5, "tower": 1.7, "castle_icon": 1.75, "hammer": 1.6, "scales": 1.5, "trophy": 1.45, "gear": 1.4, "hands": 1.45}
 
 
 def render(path, ortho=1.35):
