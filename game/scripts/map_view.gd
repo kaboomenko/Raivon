@@ -10,6 +10,9 @@ const FlagView := preload("res://scripts/flag_view.gd")
 const SoftLook := preload("res://scripts/soft_look.gd")
 const SoftPalette := preload("res://scripts/soft_palette.gd")
 const RIBBON_SHADER := preload("res://shaders/border_ribbon.gdshader")
+const FILL_SHADER := preload("res://shaders/territory_fill.gdshader")
+const SCORCH_SHADER := preload("res://shaders/territory_scorch.gdshader")
+const HATCH_SHADER := preload("res://shaders/occupation_hatch.gdshader")
 
 const SQ3 := 1.7320508
 const DIRS := [Vector2i(1, 0), Vector2i(1, -1), Vector2i(0, -1), Vector2i(-1, 0), Vector2i(-1, 1), Vector2i(0, 1)]
@@ -1717,100 +1720,68 @@ func _territory_snapshot() -> String:
 func _rebuild_overlay() -> void:
 	for n in _overlay_root.get_children():
 		n.queue_free()
-	var tints := {}
-	var washes := {}  # owner -> the strategic-zoom fill: the rim gradient spread over the whole hex (reference frame 1)
-	var scorch := {}  # owner -> darkening layer under the fills (burnt ground under AI land, cooler under the player's)
-	var hatch := {}
+	# §6.6: per state one fill and (AI states only) one soft scorch under it. Both are a fan of radius 1.0 per hex
+	# whose shader fades along the exact distance to foreign land (hex_sdf.gdshaderinc), so the contours are round:
+	# no star creases from the hex centres, no hexagonal bands.
+	var fills := {}  # owner -> SurfaceTool (territory_fill.gdshader)
+	var scorch := {}  # owner -> SurfaceTool (territory_scorch.gdshader); the player has none
+	var hatch := {}  # occupier -> SurfaceTool (occupation_hatch.gdshader)
 	var owners := {}  # states with land: each gets one border ribbon
 	for c in sim.cells:
 		if not Types.is_passable(c):
 			continue
+		var id: int = c["id"]
 		var own := owner_of(c)
-		var center := cell_world(c["id"]) + Vector3(0, 0.03, 0)
-		var pts := _hex_pts(center, 0.995)
+		var center := cell_world(id)
 		if own != Types.NOBODY:
 			owners[own] = true
-			var st: SurfaceTool = tints.get(own)
-			if st == null:
-				st = SurfaceTool.new()
-				st.begin(Mesh.PRIMITIVE_TRIANGLES)
-				tints[own] = st
-			# the reference frames (docs/reference): a light tint over the land that deepens toward the territory's
-			# border — per territory, not per hex, so the inner hexes don't read as tiles
-			var tc := Color(0.16, 0.33, 0.86) if own == Types.PLAYER else state_color(own).darkened(0.25)  # royal blue (measured against the reference), crimson
-			var built: bool = own >= 0 and own < sim.states.size() and int(sim.states[own]["dev_level"]) >= 8
-			var c_in := Color(tc.r, tc.g, tc.b, 0.08 if built else (0.07 if own == Types.PLAYER else 0.14))  # built-up sci-fi land: a lighter veil, the city shows
-			var c_rim := Color(tc.r, tc.g, tc.b, 0.38 if built else 0.5)
-			var rim := [false, false, false, false, false, false]
+			# bit k: neighbour k is foreign land — off-map, impassable or another owner (the ribbon loops' predicate)
+			var mask := 0
 			for d in 6:
-				var nb: int = sim.neighbors[c["id"]][d]
-				if nb >= 0 and Types.is_passable(sim.cells[nb]) and owner_of(sim.cells[nb]) == own:
-					continue
-				var nc := center + Vector3(1.5 * DIRS[d].x, 0, SQ3 * (DIRS[d].y + DIRS[d].x / 2.0))
-				for k in 6:
-					if (pts[k] as Vector3).distance_to(nc) < 1.3:
-						rim[k] = true
-			var ws := _st(washes, own)
-			var w_in := Color(tc.r, tc.g, tc.b, 0.08 if built else 0.14)
-			for k in 6:
-				ws.set_color(w_in); ws.add_vertex(center)
-				ws.set_color(c_rim if rim[k] else w_in); ws.add_vertex(pts[k])
-				ws.set_color(c_rim if rim[(k + 1) % 6] else w_in); ws.add_vertex(pts[(k + 1) % 6])
-			# close up the glow hugs the border (reference frame 3: a narrow band, the land inside keeps its own
-			# colours): a flat-tinted core and a band over the outer quarter of the radius fading from the rim inward
-			var inner := _hex_pts(center, 0.74)
-			for k in 6:
-				var k2 := (k + 1) % 6
-				st.set_color(c_in); st.add_vertex(center); st.add_vertex(inner[k]); st.add_vertex(inner[k2])
-				var o1 := c_rim if rim[k] else c_in
-				var o2 := c_rim if rim[k2] else c_in
-				st.set_color(o1); st.add_vertex(pts[k])
-				st.set_color(o2); st.add_vertex(pts[k2])
-				st.set_color(c_in); st.add_vertex(inner[k2])
-				st.set_color(o1); st.add_vertex(pts[k])
-				st.set_color(c_in); st.add_vertex(inner[k2])
-				st.set_color(c_in); st.add_vertex(inner[k])
-			# a multiply layer under every fill: burnt ground for AI states, a cool deepening for the player
-			var ss := _st(scorch, own)
-			var sc := center - Vector3(0, 0.006, 0)
-			var sp := _hex_pts(sc, 0.995)
-			for k in 6:
-				ss.add_vertex(sc); ss.add_vertex(sp[k]); ss.add_vertex(sp[(k + 1) % 6])
+				var nb: int = sim.neighbors[id][d]
+				if nb < 0 or not Types.is_passable(sim.cells[nb]) or owner_of(sim.cells[nb]) != own:
+					mask |= 1 << d
+			# a hex captured in the ceremony fades in from its flip, as its ribbon draws on; a hex still waiting for
+			# its flip belongs to its old owner and stays whole
+			var flipped := ceremony_t >= 0.0 and flip_at.has(id) and ceremony_t >= float(flip_at[id])
+			var data := Vector2(mask, float(flip_at[id]) if flipped else -1000.0)
+			_hex_fan(_st(fills, own), center, FILL_Y, data)
+			if own != Types.PLAYER:
+				_hex_fan(_st(scorch, own), center, SCORCH_Y, data)
 		# occupation hatch in the occupier colour (canon §3.1)
 		if c["controller"] != own and c["controller"] != Types.NOBODY:
-			var hs: SurfaceTool = hatch.get(c["controller"])
-			if hs == null:
-				hs = SurfaceTool.new()
-				hs.begin(Mesh.PRIMITIVE_TRIANGLES)
-				hatch[c["controller"]] = hs
-			var hc := center + Vector3(0, 0.01, 0)
-			var hp := _hex_pts(hc, 0.96)
-			for k in 6:
-				hs.add_vertex(hc); hs.add_vertex(hp[k]); hs.add_vertex(hp[(k + 1) % 6])
+			_hex_fan(_st(hatch, c["controller"]), center, HATCH_Y, Vector2.ZERO)
 	for o in scorch:
-		var m := StandardMaterial3D.new()
-		m.blend_mode = BaseMaterial3D.BLEND_MODE_MUL
-		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		m.albedo_color = Color(0.72, 0.62, 0.6) if o == at_war_with else Color(0.86, 0.8, 0.78)
-		if o >= 0 and o < sim.states.size() and o != at_war_with and int(sim.states[o]["dev_level"]) >= 8:
-			m.albedo_color = Color(0.8, 0.85, 0.95)  # the sci-fi stage: built-up, cool steel-grey land (reference frame 2)
-		elif o == Types.PLAYER:
-			m.albedo_color = Color(0.96, 0.98, 1.0)  # a cool deepening: the land reads bluish without losing its colours
-		m.cull_mode = BaseMaterial3D.CULL_DISABLED
-		m.albedo_color *= MUL_K
-		_add(scorch[o], m)
-	_tint_mats = []
-	_wash_mats = []
-	for o in tints:
-		var tm := _tint_mat(Color.WHITE, _tint_k * (1.0 - _wash_w))
-		_tint_mats.append(tm)
-		_add(tints[o], tm)
-	for o in washes:
-		var wm := _tint_mat(Color.WHITE, _tint_k * _wash_w)
-		_wash_mats.append(wm)
-		_add(washes[o], wm)
+		var sm := ShaderMaterial.new()
+		sm.shader = SCORCH_SHADER
+		var tint := Color(0.96, 0.93, 0.90)  # other AI states: faintly sun-baked
+		if o == at_war_with:
+			tint = Color(0.90, 0.82, 0.78)  # the enemy at war: burnt ground
+		elif _built(o):
+			tint = Color(0.94, 0.96, 1.0)  # the sci-fi stage: a cool steel cast
+		sm.set_shader_parameter("tint", tint)
+		sm.set_shader_parameter("mul_k", MUL_K)  # mandatory: the Mobile renderer halves multiply layers
+		sm.render_priority = -1  # under the fills (0), whatever the depth sort says
+		_add(scorch[o], sm)
+	_fill_mats = []
+	for o in fills:
+		var fm := ShaderMaterial.new()
+		fm.shader = FILL_SHADER
+		fm.set_shader_parameter("team", team_look(o)["fill"])
+		# built-up DL8 land: a lighter veil, the city shows through; the player: a lighter interior
+		fm.set_meta("k_rim", 0.75 if _built(o) else 1.0)
+		fm.set_meta("k_in", (0.6 if _built(o) else 1.0) * (0.7 if o == Types.PLAYER else 1.0))
+		_fill_zoom(fm)
+		fm.set_shader_parameter("now", _ribbon_now())
+		fm.render_priority = 0
+		_fill_mats.append(fm)
+		_add(fills[o], fm)
 	for o in hatch:
-		_add(hatch[o], _hatch_mat(state_color(o)))
+		var hm := ShaderMaterial.new()
+		hm.shader = HATCH_SHADER
+		hm.set_shader_parameter("col", team_look(o)["body"])
+		hm.render_priority = 1
+		_add(hatch[o], hm)
 	# one rounded candy ribbon per state along its whole border (§6.6): no inner hex grid, no glow, no white core
 	_ribbon_mats = []
 	for o in owners:
@@ -2101,11 +2072,8 @@ func _land_path(from: int, to: int, own: int) -> Array:
 	return path
 
 
-var _tint_mats: Array = []
-var _wash_mats: Array = []
+var _fill_mats: Array = []  # one territory_fill ShaderMaterial per state with land (meta k_rim, k_in)
 var _ribbon_mats: Array = []  # one border_ribbon ShaderMaterial per state with land
-var _tint_k := 1.0
-var _wash_w := 1.0  # 1 = the wide strategic fill, 0 = the narrow close-up rim band
 var _zoom := 1.0  # the camera zoom last applied (camera_rig.gd: 0 close … 1 far)
 var _zoom_applied := -1.0  # -1: nothing applied yet
 var _rib_w := 0.16  # the ribbon's visible width (border_ribbon.gdshader w)
@@ -2113,27 +2081,36 @@ var _rib_skirt_a := 0.32  # the ribbon's outer skirt alpha
 var _rib_now := 1000000.0  # the "now" last sent to the ribbons (the ceremony clock)
 
 
-## The territory fills follow the zoom (art direction §1): rich colour on the strategic view, see-through up close
-## where the land, buildings and troops are the point. zoom: 0 close … 1 far (camera_rig.gd).
+## The territory fills follow the zoom (art direction §1, §6.6): rich colour on the strategic view, see-through up
+## close where the land, buildings and troops are the point. zoom: 0 close … 1 far (camera_rig.gd).
 ## The border ribbons (§6.6) are 0.08 wide close up (≈ 25 px) … 0.16 on the strategic view (15–20 px).
 func set_zoom(zoom: float) -> void:
 	_zoom = zoom
 	if absf(zoom - _zoom_applied) < 0.002:
 		return
 	_zoom_applied = zoom
-	var k := lerpf(0.3, 1.0, smoothstep(0.1, 0.6, zoom))
-	var w := smoothstep(0.3, 0.6, zoom)  # reference frame 1 (far) washes the land in the state colour, frame 3 (near) doesn't
-	_tint_k = k
-	_wash_w = w
 	_rib_w = lerpf(0.08, 0.16, smoothstep(0.05, 0.8, zoom))
 	_rib_skirt_a = lerpf(0.2, 0.32, smoothstep(0.1, 0.6, zoom))
-	for m in _tint_mats:
-		(m as StandardMaterial3D).albedo_color.a = k * (1.0 - w)
-	for m in _wash_mats:
-		(m as StandardMaterial3D).albedo_color.a = k * w
+	for m in _fill_mats:
+		_fill_zoom(m)
 	for m in _ribbon_mats:
 		(m as ShaderMaterial).set_shader_parameter("w", _rib_w)
 		(m as ShaderMaterial).set_shader_parameter("skirt_a", _rib_skirt_a)
+
+
+## The territory fill by zoom (§6.6): close up only a band along the border (alpha 0.30 at the ribbon, nothing
+## inside, gone within 0.35); on the strategic view the whole land is washed (0.42 at the border … 0.10 inside,
+## over 0.9 — no further: the per-hex field only sees the six neighbours). Scaled by the material's meta k_rim / k_in.
+func _fill_zoom(m: ShaderMaterial) -> void:
+	var zk := smoothstep(0.1, 0.6, _zoom)
+	m.set_shader_parameter("a_rim", lerpf(0.30, 0.42, zk) * float(m.get_meta("k_rim", 1.0)))
+	m.set_shader_parameter("a_in", lerpf(0.0, 0.10, zk) * float(m.get_meta("k_in", 1.0)))
+	m.set_shader_parameter("fade", lerpf(0.35, 0.9, zk))
+
+
+## True for a state at the sci-fi stage (dev level 8): built-up land, a lighter fill and a cool scorch.
+func _built(o: int) -> bool:
+	return o >= 0 and o < sim.states.size() and int(sim.states[o]["dev_level"]) >= 8
 
 
 ## The ribbons' ceremony clock: the edges of a hex captured in the ceremony draw on 0.3 s after its flip.
@@ -2163,8 +2140,8 @@ func _strip(st: SurfaceTool, a: Vector3, b: Vector3, w: float, y: float) -> void
 	st.add_vertex(a0 - n); st.add_vertex(b0 + n); st.add_vertex(a0 + n)
 
 
+## An overlay layer (unshaded, its normals set by _hex_fan) as one MeshInstance3D under _overlay_root.
 func _add(st: SurfaceTool, m: Material) -> void:
-	st.generate_normals()
 	var mi := MeshInstance3D.new()
 	mi.mesh = st.commit()
 	mi.material_override = m
@@ -2172,15 +2149,22 @@ func _add(st: SurfaceTool, m: Material) -> void:
 	_overlay_root.add_child(mi)
 
 
-func _tint_mat(c: Color, alpha: float) -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	m.albedo_color = Color(c.r, c.g, c.b, alpha)
-	m.vertex_color_use_as_albedo = true
-	m.vertex_color_is_srgb = true  # the fill colours are picked in sRGB: read as linear, royal blue went pastel azure
-	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	m.roughness = 0.9
-	m.cull_mode = BaseMaterial3D.CULL_DISABLED
-	return m
+const FILL_Y := 0.03  # §6.6 layer heights: scorch < fill < roads (0.033) < cloud shadows < hatch < ribbon (0.046)
+const SCORCH_Y := 0.024
+const HATCH_Y := 0.04
+const HEX_CORNERS := [Vector2(1.0, 0.0), Vector2(0.5, 0.8660254), Vector2(-0.5, 0.8660254), Vector2(-1.0, 0.0),
+		Vector2(-0.5, -0.8660254), Vector2(0.5, -0.8660254)]  # corner k at 60°·k, as _hex_pts
+
+## One hex of a territory layer (fill, scorch, hatch): a 6-triangle fan of radius 1.0 at height y, so neighbouring
+## fans abut with no seam. UV = the vertex offset from the hex centre in (x, z), the local frame of
+## hex_sdf.gdshaderinc; UV2 = per-hex data (fill and scorch: the foreign-neighbour mask and the flip time).
+func _hex_fan(st: SurfaceTool, center: Vector3, y: float, data: Vector2) -> void:
+	for k in 6:
+		for p: Vector2 in [Vector2.ZERO, HEX_CORNERS[k], HEX_CORNERS[(k + 1) % 6]]:
+			st.set_normal(Vector3.UP)
+			st.set_uv(p)
+			st.set_uv2(data)
+			st.add_vertex(Vector3(center.x + p.x, y, center.z + p.y))
 
 
 ## A plain coloured, unlit material (the deposit ring and the strike arrow until P8). No emission: the old black
@@ -2280,12 +2264,17 @@ func _fillet(pts: PackedVector2Array, rho := SoftPalette.SOFT_R, seg := RIB_SEG)
 ## edge, the capture draw-on) and born (the flip time; -1000 = always drawn). A segment takes kind and born from
 ## its end point, and starts at t = 0 when t restarts there (a new edge). Rows: -skirt_w (outward), 0 (the line),
 ## +inner_w (inward = the left of the direction of travel). UV = (arc length, signed offset), COLOR = (kind / 2,
-## wild, t, 1), UV2 = (born, 0). P8 reuses it for the markers.
+## wild, t, aa), UV2 = (born, 0). aa (optional, 0..1 per point) anti-aliases the outer edge where ground shows
+## beyond it although the edge is not wild (the middle of a corner arc at a three-way junction). P8 reuses it.
 func _emit_ribbon(st: SurfaceTool, pts: PackedVector2Array, kind: PackedInt32Array, wild: PackedFloat32Array,
-		t: PackedFloat32Array, born: PackedFloat32Array, inner_w: float, skirt_w: float, y: float, closed := true) -> void:
+		t: PackedFloat32Array, born: PackedFloat32Array, inner_w: float, skirt_w: float, y: float, closed := true,
+		aa := PackedFloat32Array()) -> void:
 	var n := pts.size()
 	if n < 2:
 		return
+	if aa.size() != n:
+		aa = PackedFloat32Array()
+		aa.resize(n)  # zero-filled: the outer edge stays crisp except on wild edges
 	var nl := PackedVector2Array()  # the miter left normal per point
 	nl.resize(n)
 	for i in n:
@@ -2317,13 +2306,13 @@ func _emit_ribbon(st: SurfaceTool, pts: PackedVector2Array, kind: PackedInt32Arr
 		for r in rows.size() - 1:
 			var o0: float = rows[r]
 			var o1: float = rows[r + 1]
-			var quad := [[a, o0, arc, wild[i], ta, nl[i]], [b, o0, arc + seg_len, wild[j], t[j], nl[j]],
-					[b, o1, arc + seg_len, wild[j], t[j], nl[j]], [a, o1, arc, wild[i], ta, nl[i]]]
+			var quad := [[a, o0, arc, wild[i], ta, nl[i], aa[i]], [b, o0, arc + seg_len, wild[j], t[j], nl[j], aa[j]],
+					[b, o1, arc + seg_len, wild[j], t[j], nl[j], aa[j]], [a, o1, arc, wild[i], ta, nl[i], aa[i]]]
 			for qi in [0, 1, 2, 0, 2, 3]:
 				var vq: Array = quad[qi]
 				var p: Vector2 = vq[0] + vq[5] * vq[1]
 				st.set_normal(Vector3.UP)
-				st.set_color(Color(kc, vq[3], vq[4], 1.0))
+				st.set_color(Color(kc, vq[3], vq[4], vq[6]))
 				st.set_uv(Vector2(vq[2], vq[1]))
 				st.set_uv2(uv2)
 				st.add_vertex(Vector3(p.x, y, p.y))
@@ -2349,7 +2338,18 @@ func _ribbon_mesh(loops: Array, o: int) -> ArrayMesh:
 		for e in ne:
 			ekind.append(_edge_kind(o, nbs[e]))
 			var hx := hexes[e]
-			eborn.append(float(flip_at[hx]) if ceremony_t >= 0.0 and flip_at.has(hx) else -1000.0)
+			# draw-on only for a hex that has flipped: a hex still waiting for its flip belongs to its old owner, whose
+			# ribbon stays whole until then (a future flip time would hide it and leave stubs at the corners)
+			var flipped := ceremony_t >= 0.0 and flip_at.has(hx) and ceremony_t >= float(flip_at[hx])
+			eborn.append(float(flip_at[hx]) if flipped else -1000.0)
+		# three-way junctions: at a convex corner whose two outside hexes belong to different sides, all three
+		# ribbons round their corners inward and a small wedge of ground shows between them (0.046 deep). The outer
+		# edge is anti-aliased across the middle of that arc; elsewhere a shared edge stays crisp (one dark seam).
+		var junction := PackedByteArray()
+		for c in ne:
+			var cp := (c - 1 + ne) % ne
+			var convex := (corners[c] - corners[cp]).cross(corners[(c + 1) % ne] - corners[c]) > 0.0
+			junction.append(1 if convex and _side_of(nbs[cp]) != _side_of(nbs[c]) else 0)
 		var f := _fillet(corners)
 		var fp: PackedVector2Array = f["pts"]
 		var fe: PackedInt32Array = f["edge"]
@@ -2360,6 +2360,7 @@ func _ribbon_mesh(loops: Array, o: int) -> ArrayMesh:
 		var kind := PackedInt32Array()
 		var wild := PackedFloat32Array()
 		var born := PackedFloat32Array()
+		var aa := PackedFloat32Array()
 		for k in m:
 			var src := (k + half) % m
 			var e := fe[src]
@@ -2370,6 +2371,7 @@ func _ribbon_mesh(loops: Array, o: int) -> ArrayMesh:
 			var w_in := 1.0 if ekind[(corner - 1 + ne) % ne] == 0 else 0.0
 			var w_out := 1.0 if ekind[corner] == 0 else 0.0
 			wild.append(lerpf(w_in, w_out, fu[src]))
+			aa.append(1.0 - absf(fu[src] * 2.0 - 1.0) if junction[corner] == 1 else 0.0)
 		# t along each edge: 0 at its first point … 1 at the next edge's first point
 		var t := PackedFloat32Array()
 		t.resize(m)
@@ -2382,11 +2384,18 @@ func _ribbon_mesh(loops: Array, o: int) -> ArrayMesh:
 				total += pts[e * run + k].distance_to(pts[(e * run + k + 1) % m])
 			for k in run:
 				t[e * run + k] = lens[k] / maxf(total, 0.0001)
-		_emit_ribbon(st, pts, kind, wild, t, born, RIB_W, RIB_SKIRT, RIB_Y)
+		_emit_ribbon(st, pts, kind, wild, t, born, RIB_W, RIB_SKIRT, RIB_Y, true, aa)
 		any = true
 	if not any:
 		return null
 	return st.commit()
+
+
+## The side a cell nb belongs to for the ribbons: its owner, or NOBODY for off-map, impassable and no-man's land.
+func _side_of(nb: int) -> int:
+	if nb < 0 or not Types.is_passable(sim.cells[nb]):
+		return Types.NOBODY
+	return owner_of(sim.cells[nb])
 
 
 ## The kind of a border edge of state o toward cell nb: 0 wild (off-map, impassable, water, no-man's land),
@@ -2403,29 +2412,6 @@ func _edge_kind(o: int, nb: int) -> int:
 	if at_war_with >= 0 and ((o == Types.PLAYER and nbo == at_war_with) or (o == at_war_with and nbo == Types.PLAYER)):
 		return 2
 	return 1
-
-
-var _hatch_shader: Shader
-
-func _hatch_mat(c: Color) -> ShaderMaterial:
-	if _hatch_shader == null:
-		_hatch_shader = Shader.new()
-		_hatch_shader.code = """
-shader_type spatial;
-render_mode unshaded, cull_disabled, shadows_disabled;
-uniform vec4 col : source_color;
-varying vec3 wp;
-void vertex() { wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; }
-void fragment() {
-	float s = step(0.55, fract((wp.x + wp.z) * 2.6));
-	ALBEDO = col.rgb * 1.6;
-	ALPHA = s * 0.7;
-}
-"""
-	var m := ShaderMaterial.new()
-	m.shader = _hatch_shader
-	m.set_shader_parameter("col", c)
-	return m
 
 
 # ------------------------------------------------------------------ armies
@@ -3837,9 +3823,11 @@ func _process(delta: float) -> void:
 		_dirty = false
 		_rebuild_overlay()
 	var now := _ribbon_now()
-	if now != _rib_now:  # the ceremony clock drives the ribbons' draw-on
+	if now != _rib_now:  # the ceremony clock drives the ribbons' draw-on and the fills' fade-in
 		_rib_now = now
 		for m in _ribbon_mats:
+			(m as ShaderMaterial).set_shader_parameter("now", now)
+		for m in _fill_mats:
 			(m as ShaderMaterial).set_shader_parameter("now", now)
 	var bt := Time.get_ticks_msec() / 1000.0
 	for h in _bubbles:

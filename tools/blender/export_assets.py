@@ -59,13 +59,16 @@ def _fill_gutter(img):
     img.update()
 
 
-def paint_ao(ob, img, k=0.45, dist=0.25, samples=32, keep_rows_from=None):
+def paint_ao(ob, img, k=0.45, dist=0.25, samples=16, keep_rows_from=None):
     """Paint ambient occlusion into a baked colour sheet: colour × mix(1, AO, k) (art direction §6.5, «Raivon Soft»).
 
     This is the only light the bake carries: crevices, eaves and the feet of walls and props darken softly, so a
     model reads as a painted toy and its shadow side never goes black. The height gradient and the warm/cool tint
     live only in the runtime shader (soft_model.gdshader), so nothing is applied twice. AO rays reach `dist` model
-    units (1 hex = radius 1) with `samples` rays per texel; the factor is applied to the stored (sRGB) texel values.
+    units (1 hex = radius 1); the factor is applied to the stored (sRGB) texel values.
+    Noise: `samples` rays per texel, then a 3×3 average over the baked texels (the AO margin keeps it inside each
+    island): 16 rays and the blur give 144 rays per 3×3 patch, less grain than §6.5's 32 raw rays (≈ 2 % vs 4 % of
+    the colour at AO 0.5) at half its bake time; the AO bake time is linear in the samples.
     keep_rows_from: texel rows at and above this index keep their colour (bake_atlas's palette strip, where many
     faces share one cell and their AO would be garbage). ob must be the selected, active object."""
     import time
@@ -79,22 +82,37 @@ def paint_ao(ob, img, k=0.45, dist=0.25, samples=32, keep_rows_from=None):
     w_, h_ = img.size
     ao = bpy.data.images.new("bake_ao", w_, h_, float_buffer=True)
     ao.colorspace_settings.name = "Non-Color"  # raw AO in [0, 1], no view transform on the way in or out
-    added = []
+    ao.pixels.foreach_set(np.full(w_ * h_ * 4, -1.0, dtype=np.float32))  # texels the bake leaves alone stay < 0
+    # AO depends on the geometry only: every slot gets one plain material for the bake, so Cycles does not evaluate
+    # the procedural node trees (bricks, facades) for each of the AO samples (about half the bake time)
+    tmp = bpy.data.materials.new("ao_bake")
+    tmp.use_nodes = True
+    node = tmp.node_tree.nodes.new("ShaderNodeTexImage")
+    node.image = ao
+    tmp.node_tree.nodes.active = node
+    saved = [slot.material for slot in ob.material_slots]
     for slot in ob.material_slots:
-        nt = slot.material.node_tree
-        node = nt.nodes.new("ShaderNodeTexImage")
-        node.image = ao
-        nt.nodes.active = node
-        added.append((nt, node))
-    samples0 = sc.cycles.samples
+        slot.material = tmp
+    samples0, clear0 = sc.cycles.samples, sc.render.bake.use_clear
     sc.cycles.samples = samples
+    sc.render.bake.use_clear = False
     try:
         bpy.ops.object.bake(type="AO", margin=8)
     finally:
-        sc.cycles.samples = samples0
+        sc.cycles.samples, sc.render.bake.use_clear = samples0, clear0
+        for slot, mt in zip(ob.material_slots, saved):
+            slot.material = mt
+        bpy.data.materials.remove(tmp)
     a = np.empty(w_ * h_ * 4, dtype=np.float32)
     ao.pixels.foreach_get(a)
-    f = (1.0 - k) + k * np.clip(a.reshape(h_, w_, 4)[:, :, 0], 0.0, 1.0)
+    a = a.reshape(h_, w_, 4)[:, :, 0]
+    m = (a >= 0).astype(np.float32)  # baked texels (the islands and their 8 px AO margin)
+    a = np.clip(a, 0.0, 1.0) * m
+    ap, mp = np.pad(a, 1), np.pad(m, 1)
+    num = sum(ap[1 + dy:h_ + 1 + dy, 1 + dx:w_ + 1 + dx] for dy in (-1, 0, 1) for dx in (-1, 0, 1))
+    den = sum(mp[1 + dy:h_ + 1 + dy, 1 + dx:w_ + 1 + dx] for dy in (-1, 0, 1) for dx in (-1, 0, 1))
+    a = np.where(m > 0, num / np.maximum(den, 1.0), 1.0)
+    f = (1.0 - k) + k * a
     if keep_rows_from is not None:
         f[int(keep_rows_from):, :] = 1.0
     px = np.empty(w_ * h_ * 4, dtype=np.float32)
@@ -103,8 +121,6 @@ def paint_ao(ob, img, k=0.45, dist=0.25, samples=32, keep_rows_from=None):
     px[:, :, :3] *= f[:, :, None]
     img.pixels.foreach_set(px.ravel())
     img.update()
-    for nt, node in added:
-        nt.nodes.remove(node)
     bpy.data.images.remove(ao)
     print(f"paint_ao: {w_}px {samples} spp dist {dist} k {k}: {time.time() - t0:.1f} s", flush=True)
 

@@ -1419,14 +1419,26 @@ static func icon_caption(b: KitButton, caption: String) -> Panel:
 	var round := b.round_btn
 	var plate := caption_pill(b, caption, 32.0 if round else 30.0, SLATE_WELL if round else Color(INK, 0.92), 24 if round else 22, 3 if round else 0)
 	plate.name = "caption"
-	var px := (b.size.x - plate.size.x) * 0.5
+	b.set_meta("kit_caption", plate)
+	place_caption(b)
+	return plate
+
+
+## Centres an icon button's caption plate under it, clamped 12 px inside the visible screen; call again when the
+## viewport changes size.
+static func place_caption(b: KitButton) -> void:
+	if not b.has_meta("kit_caption"):
+		return
+	var plate: Variant = b.get_meta("kit_caption")
+	if not is_instance_valid(plate):
+		return
+	var p := plate as Control
+	var px := (b.size.x - p.size.x) * 0.5
 	if b.is_inside_tree():
 		var gx := b.get_global_rect().position.x
-		var vw := b.get_viewport_rect().size.x
-		px = clampf(px, 12.0 - gx, vw - 12.0 - gx - plate.size.x)
-	plate.position = Vector2(px, b.size.y - (10.0 if round else 14.0))
-	b.set_meta("kit_caption", plate)
-	return plate
+		var vis := b.get_viewport_rect()
+		px = clampf(px, vis.position.x + 12.0 - gx, vis.end.x - 12.0 - gx - p.size.x)
+	p.position = Vector2(px, b.size.y - (10.0 if b.round_btn else 14.0))
 
 
 ## Ø76 war button with a vector ✕ at the window's top-right corner.
@@ -1515,22 +1527,37 @@ static func title_plate(panel: Control, text: String, role := "info", icon := ""
 ## A notification dot on the parent's top-right corner: Ø40 with a number (MICRO 22; «99+» widens it to a pill),
 ## Ø26 without.
 static func dot(parent: Control, n := -1, role := "war") -> KitShape:
-	var d := 40.0 if n >= 0 else 26.0
-	var t := ("99+" if n > 99 else str(n)) if n >= 0 else ""
-	var w := maxf(d, text_w(t, 22, "d900") + 14.0) if t.length() > 2 else d
 	var s := KitShape.new("dot", face_of(role))
-	s.size = Vector2(w, d)
-	s.position = Vector2(parent.size.x - 4.0, 6.0) - Vector2(w, d) * 0.5
 	parent.add_child(s)
 	if n >= 0:
-		var l := label(t, 22, TEXT, true)
+		var l := label("", 22, TEXT, true)
+		l.name = "n"
+		l.add_theme_font_override("font", font("d900"))  # MICRO is Rubik 900
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		l.size = Vector2(w, d)
 		l.position = Vector2(0, -1)
 		s.add_child(l)
+	set_dot(s, n)
 	badge_pop(s)
 	return s
+
+
+## Sets the number of a dot made with one («99+» above 99, widened to a pill) and keeps the dot on its parent's
+## top-right corner.
+static func set_dot(s: KitShape, n: int) -> void:
+	var l := s.get_node_or_null("n") as Label
+	var d := 40.0 if l != null else 26.0
+	var t := ("99+" if n > 99 else str(maxi(n, 0))) if l != null else ""
+	var w := maxf(d, text_w(t, 22, "d900") + 14.0) if t.length() > 2 else d
+	s.size = Vector2(w, d)
+	s.pivot_offset = s.size * 0.5
+	var parent := s.get_parent() as Control
+	if parent != null:
+		s.position = Vector2(parent.size.x - 4.0, 6.0) - s.size * 0.5
+	if l != null:
+		l.text = t
+		l.size = s.size
+	s.queue_redraw()
 
 
 ## A progress bar (§4.7): INK contour, track, fill with a darker bottom and a gloss strip, label inside.
@@ -1569,8 +1596,11 @@ static func caption_pill(parent: Node, text: String, h := 30.0, face := Color(0,
 	p.add_theme_stylebox_override("panel", sb)
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var l := label(text, size, TEXT, true)
-	l.add_theme_font_size_override("font_size", snap_size(size) if size >= 22 else size)
-	var tw := text_w(text, int(l.get_theme_font_size("font_size")), "d800" if size < 26 else "d900")
+	var fs := snap_size(size) if size >= 22 else size
+	l.add_theme_font_size_override("font_size", fs)
+	var kind := "d800" if fs < 22 or fs == 24 else "d900"  # LABEL 24 is Rubik 800, MICRO 22 and 26+ are Rubik 900
+	l.add_theme_font_override("font", font(kind))
+	var tw := text_w(text, fs, kind)
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	p.size = Vector2(tw + 24.0 + 2.0 * contour, h)
@@ -1650,14 +1680,17 @@ class KitPill extends Control:
 			rate_cap = r
 			lay()
 
-	## Five plates share the bar from DL5 (value_size 28): a smaller icon and «+», the text closer to the icon.
+	## Five plates share the bar from DL5 (value_size 28): a smaller icon and «+». The icon overhangs the left end by
+	## 10; the text starts 6 px (compact: 4) right of the icon's visible edge, so a narrow crystal or sack leaves the
+	## numbers more room than the round coin (which lands on §4.6's x+60). The go «+» sits on the right rim.
 	func _geom() -> Dictionary:
 		var compact := value_size < 32
-		var side := 60.0 if compact else 68.0
+		var side := 56.0 if compact else 68.0
+		var ox := -10.0
 		var pb := (42.0 if compact else 48.0) if plus != null else 0.0
-		var tx := 54.0 if compact else 63.0  # §4.6 says x+60; 3 px more keep the first digit off the icon's rim
-		var right := size.x - (pb + 10.0 if plus != null else (7.0 if compact else 10.0))
-		return {"side": side, "ox": -8.0 if compact else -10.0, "tx": tx, "avail": maxf(10.0, right - tx), "pb": pb}
+		var tx := ox + side * SELF.icon_vis_right(ic.texture if ic != null else null) + (4.0 if compact else 6.0)
+		var right := size.x - pb - 4.0 if plus != null else size.x - (7.0 if compact else 10.0)
+		return {"side": side, "ox": ox, "tx": tx, "avail": maxf(10.0, right - tx), "pb": pb}
 
 	## Glyph width plus one outline (the outline overlaps the margins a little; text_w counts two).
 	func _w(text: String, s: int, kind: String) -> float:
@@ -1708,7 +1741,7 @@ class KitPill extends Control:
 		if plus != null:
 			var pb: float = g["pb"]
 			plus.size = Vector2(pb, pb)
-			plus.position = Vector2(size.x - pb - 8.0, (h - pb) * 0.5)
+			plus.position = Vector2(size.x - pb - 2.0, (h - pb) * 0.5)  # its contour on the plate's INK rim
 		queue_redraw()
 
 	func _box(r: Rect2, col: Color, rad: float) -> void:
@@ -1903,6 +1936,7 @@ const ICON_FALLBACK := {"swords": "target", "shield": "fort", "dove": "hands", "
 	"blueprint": "flask", "xp": "medal", "mason": "builder", "white_flag": "orders", "pencil": "gear", "sound_on": "gear",
 	"sound_off": "gear", "dice": "cards", "eye_off": "lock"}
 static var _tex_cache := {}
+static var _vis_right := {}
 
 
 ## res://assets/ui/icons/<name>.png, then res://assets/ui/<name>.png, then the stand-in; null if none exists.
@@ -1920,6 +1954,21 @@ static func icon_tex(name: String) -> Texture2D:
 		t = icon_tex(String(ICON_FALLBACK[name]))
 	_tex_cache[name] = t
 	return t
+
+
+## The right edge of an icon's visible pixels as a share of its width (the round coin ≈ 0.97, the raivite crystal
+## ≈ 0.83); 0.97 when the image cannot be read.
+static func icon_vis_right(t: Texture2D) -> float:
+	if t == null:
+		return 0.97
+	var key := t.resource_path if t.resource_path != "" else str(t.get_instance_id())
+	if not _vis_right.has(key):
+		var f := 0.97
+		var img := t.get_image()
+		if img != null and not img.is_compressed() and img.get_width() > 0:
+			f = float(img.get_used_rect().end.x) / float(img.get_width())
+		_vis_right[key] = clampf(f, 0.5, 1.0)
+	return float(_vis_right[key])
 
 
 ## Pictographs still in strings / literals → icon names {i} or vector chrome {v}; others are dropped (s14 removes
@@ -1986,6 +2035,21 @@ static func fmt_num(n: int) -> String:
 	if a < 10000:
 		s = fmt_exact(a)
 	elif a < 100000:
+		s = _trim0(fmt_dec(floorf(a / 100.0) / 10.0, 1)) + "K"
+	elif a < 1000000:
+		s = str(a / 1000) + "K"
+	else:
+		s = _trim0(fmt_dec(floorf(a / 100000.0) / 10.0, 1)) + "M"
+	return (MINUS if n < 0 else "") + s
+
+
+## A shorter fmt_num for a tight slot: 1,8K from 1 000 (floored like fmt_num), 12K / 124K, 1,2M; exact below 1 000.
+static func fmt_short(n: int) -> String:
+	var a := absi(n)
+	var s := ""
+	if a < 1000:
+		s = str(a)
+	elif a < 10000:
 		s = _trim0(fmt_dec(floorf(a / 100.0) / 10.0, 1)) + "K"
 	elif a < 1000000:
 		s = str(a / 1000) + "K"

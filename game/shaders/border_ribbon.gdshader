@@ -4,11 +4,13 @@ shader_type spatial;
 //   UV.x  = arc length along the loop (world units), UV.y = signed offset from the border line (+ inward);
 //   COLOR = (edge kind / 2: 0 wild or water, 0.5 another state, 1 the war front;
 //            wild: 1 on edges facing no-man's land or water, faded across the corner arcs;
-//            t along the edge 0..1 for the capture draw-on; 1);
+//            t along the edge 0..1 for the capture draw-on;
+//            outer-edge anti-aliasing: 1 mid-arc at a three-way junction, where ground shows between three rounded
+//            corners, 0 elsewhere — wild edges are anti-aliased through .g);
 //   UV2.x = the time the hex flipped in the capture ceremony (-1000 = always drawn).
 // Profile from the border line inward (v = UV.y / w): dark rim 0–17 %, body, light band 30–52 %, an anti-aliased
 // edge at 100 %, a soft inner shadow to 145 % (alpha 0.28). Outward: a soft skirt 0.10 wide, only on wild edges.
-// No emission (unshaded ignores it): in DL8 the light band glows by adding to the HDR albedo (glow_k).
+// No emission (unshaded ignores it): in DL8 the light band glows in the state's own hue (glow_k), never toward white.
 render_mode unshaded, blend_mix, cull_disabled, depth_draw_never, shadows_disabled;
 
 uniform vec3 body : source_color;
@@ -18,14 +20,14 @@ uniform float w = 0.16;  // visible width, by zoom (map_view.set_zoom): 0.08 clo
 uniform float skirt = 0.10;  // the outer skirt width (map_view.RIB_SKIRT)
 uniform float skirt_a = 0.3;  // skirt alpha, by zoom 0.2 … 0.32
 uniform float now = 1000000.0;  // the ceremony clock (map_view.ceremony_t), 1e6 outside a ceremony
-uniform float glow_k = 0.0;  // DL8: the light band adds hi * glow_k (keep the result <= 1.6)
+uniform float glow_k = 0.0;  // DL8 0.6: the band turns to mix(hi, body, 0.85 k) + body * k (max channel <= 1.6)
 uniform float pulse = 0.0;  // 0..1 alpha pulse (P8 markers)
 uniform float dash = 0.0;  // > 0: dashed along UV.x with this period (P8 markers)
 
 void fragment() {
 	float prog = clamp((now - UV2.x) / 0.3, 0.0, 1.0);
-	if (COLOR.b > prog + 0.0001) {
-		discard;  // capture: the edge is drawn on along its length in 0.3 s
+	if (COLOR.b >= prog) {
+		discard;  // capture: the edge is drawn on along its length in 0.3 s (t < 1 always, so prog 1 shows it all)
 	}
 	float y = UV.y;
 	vec3 c;
@@ -44,14 +46,19 @@ void fragment() {
 		float band = smoothstep(0.30 - aa, 0.30 + aa, v) * (1.0 - smoothstep(0.52 - aa, 0.52 + aa, v));
 		float front = step(0.75, COLOR.r);
 		float breathe = front * (0.5 + 0.5 * sin(TIME * 3.14159));  // 0.5 Hz
-		float tick = front * band * smoothstep(0.45, 0.55, fract(UV.x / 0.6 - TIME * 0.5));
-		c = mix(c, hi, band * mix(0.85, 1.0, breathe));
+		// soft strokes along the war front's band: period 0.6, 0.5 units/s, a symmetric pulse (soft in and out)
+		float f = fract((UV.x - TIME * 0.5) / 0.6);
+		float tick = front * band * smoothstep(0.3, 0.5, f) * (1.0 - smoothstep(0.5, 0.7, f));
+		// DL8 (glow_k 0.6): the band glows in the state's own hue, half-way back to the body and brighter by
+		// body × k. Adding hi × k instead drove every channel past 1, and Filmic plus the grade's saturation turned
+		// the band into a white core (on screen S 0.12–0.18).
+		vec3 band_c = mix(hi, body, 0.85 * glow_k) + body * glow_k;
+		c = mix(c, band_c, band * mix(0.85, 1.0, breathe));
 		c = mix(c, vec3(1.0), tick * 0.35);
-		c += hi * band * glow_k;
-		// The outer edge is anti-aliased only where ground shows beyond it (wild edges): on a shared border the
-		// neighbour's ribbon starts exactly at the same line, and fading both rims there let the ground through as a
-		// light hairline in the middle of the dark seam.
-		float outer = mix(1.0, smoothstep(0.0, 2.0 * aa, v), COLOR.g);
+		// The outer edge is anti-aliased only where ground shows beyond it: wild edges (.g) and the middle of the
+		// corner arcs at three-way junctions (.a). On a shared border the neighbour's ribbon starts exactly at the
+		// same line, and fading both rims there let the ground through as a light hairline in the dark seam.
+		float outer = mix(1.0, smoothstep(0.0, 2.0 * aa, v), max(COLOR.g, COLOR.a));
 		a = (1.0 - smoothstep(1.0 - aa, 1.0 + aa, v)) * outer;
 		if (v > 1.0) {  // the soft inner shadow
 			c = rim * 0.35;

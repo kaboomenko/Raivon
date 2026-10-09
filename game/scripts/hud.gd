@@ -3,7 +3,7 @@ extends CanvasLayer
 ## (docs/ui_style.md §5, §6 HUD): resource plates on their own currency layer (above every modal dim), a soft top
 ## scrim instead of a dark slab, the ruler's portrait with the level hex, one family of square buttons on the
 ## left, the minimap well and the labelled round map tools on the right. The top group follows the safe area's
-## top inset, the bottom group (tabs, tray, hex panel) the visible bottom (Kit.vb).
+## top inset, the bottom group (tabs, tray, hex panel) the visible bottom (Kit.vb) once BOTTOM_ON_VB is on (s04).
 
 const CmdPortrait := preload("res://scripts/cmd_portrait.gd")
 const Kit := preload("res://scripts/ui_kit.gd")
@@ -19,6 +19,10 @@ const MUTED := Color(0.62, 0.68, 0.78)
 const RES_ICON := {"gold": "coin", "food": "food", "metal": "metal", "oil": "barrel", "raivite": "raivite"}
 const RES_LAYOUT_4 := {"gold": [120, 186], "food": [318, 186], "metal": [516, 186], "raivite": [714, 214]}
 const RES_LAYOUT_5 := {"gold": [120, 146], "food": [278, 146], "metal": [436, 146], "oil": [594, 146], "raivite": [752, 177]}
+## The bottom group (tabs, tray, hex panel) moves to the visible bottom (VB − 1672) together with game_ui's card
+## row and big button, which s04 puts in game_ui's own bottom container: until then both stay on the 1672 canvas,
+## so on a tall phone the bottom UI keeps together (the map shows below it) instead of splitting apart.
+const BOTTOM_ON_VB := false
 ## The left column (§5): squares 84×84 at x 16, one every 96 px; the shop is the only gold one in the HUD.
 const LEFT := [["trophy", 252.0], ["book", 348.0], ["mail", 444.0], ["gear", 540.0]]
 ## Round map tools (§5): [signal name, icon, centre y, caption key]; centre x 885, Ø80.
@@ -152,15 +156,19 @@ func _build() -> void:
 
 
 ## Places the groups for the safe area: the top group under the status bar, the bottom group on the visible bottom
-## (VB, §3.1). Runs again on every viewport size change.
+## (VB, §3.1) once BOTTOM_ON_VB is on. Runs again on every viewport size change (the caption plates of the icon
+## buttons are clamped to the screen again too).
 func _anchor_groups() -> void:
 	var top := Kit.top_inset(self)
 	var vis := get_viewport().get_visible_rect()
 	_top.position.y = top
 	_pills.position.y = top
-	_bottom.position.y = Kit.vb(self) - 1672.0
+	_bottom.position.y = Kit.vb(self) - 1672.0 if BOTTOM_ON_VB else 0.0
 	_scrim.position = Vector2(vis.position.x, 0)
 	_scrim.size = Vector2(maxf(941.0, vis.size.x), 150.0 + top)
+	Kit.place_caption(_shop_btn)
+	for n in _tools:
+		Kit.place_caption(_tools[n])
 
 
 # ---------------------------------------------------------------- resource plates (§4.6, currency layer)
@@ -189,7 +197,8 @@ func _layout_res(with_oil: bool) -> void:
 
 
 ## The plates: stored amounts (exact below 10 000) with the warehouse fill (brown and a yellow number when full),
-## the net income per hour, the tooltip text. Free builders are kept for the Buildings tab badge.
+## the net income per hour (green, red, or a neutral «0/ч»), the tooltip text. Free builders are kept for the
+## Buildings tab badge.
 func set_resources(res: Dictionary, per_hour: Dictionary, caps: Dictionary, free_builders: int, builders: int) -> void:
 	_free_builders = free_builders
 	_builders = builders
@@ -197,12 +206,6 @@ func set_resources(res: Dictionary, per_hour: Dictionary, caps: Dictionary, free
 	if int(with_oil) != _oil_shown:
 		_oil_shown = int(with_oil)
 		_layout_res(with_oil)
-	# «+160/ч» on every plate, or «+160» on every plate when one rate does not fit (five plates, big incomes)
-	var short := false
-	for r in res_pills:
-		var p: Kit.KitPill = res_pills[r]
-		if p.visible and p.has_rate:
-			short = short or not p.rate_fits(_rate_text(int(per_hour.get(r, 0)), false))
 	for r in res_pills:
 		var p: Kit.KitPill = res_pills[r]
 		if not p.visible:
@@ -216,30 +219,40 @@ func set_resources(res: Dictionary, per_hour: Dictionary, caps: Dictionary, free
 			p.tip_text = tr("hud.tip.raivite")
 			continue
 		var ph: int = int(per_hour.get(r, 0))
-		p.set_rate(_rate_text(ph, short), Kit.POS if ph >= 0 else Kit.NEG)
-		var lines := PackedStringArray([tr("hud.tip.rate") % _rate_text(ph, false)])
+		# «+1 855/ч» when it fits the plate at 22, else «+1,8K/ч», only then without the unit; 0 is neutral
+		var shown := _rate_text(ph, 0)
+		for form in [1, 2, 3]:
+			if p.rate_fits(shown):
+				break
+			shown = _rate_text(ph, form)
+		p.set_rate(shown, Kit.POS if ph > 0 else (Kit.NEG if ph < 0 else Kit.SOFT))
+		var lines := PackedStringArray([tr("hud.tip.rate") % _rate_text(ph, 0)])
 		if cap > 0:
 			lines.append(tr("hud.tip.cap") % [Kit.fmt_exact(amount), Kit.fmt_exact(cap)])
 		lines.append(tr("hud.tip.full") if full else tr("hud.tip.src"))
 		p.tip_text = "\n".join(lines)
-	# one size for the numbers of the bar: the smallest any resource plate needs (raivite sizes on its own)
+	# one size for the numbers of the bar (raivite included): the smallest any plate needs; the rates one size
+	# below the values, also shared
 	var vcap := 64
 	var rcap := 64
 	for r in res_pills:
 		var p: Kit.KitPill = res_pills[r]
-		if p.visible and p.has_rate:
+		if p.visible:
 			vcap = mini(vcap, p.value_fit())
-			rcap = mini(rcap, p.rate_fit())
+			if p.has_rate:
+				rcap = mini(rcap, p.rate_fit())
 	for r in res_pills:
 		var p: Kit.KitPill = res_pills[r]
-		if p.visible and p.has_rate:
-			p.set_caps(vcap, maxi(22, mini(rcap, vcap - 2)))  # the rate stays a step under the value
+		if p.visible:
+			p.set_caps(vcap, maxi(22, mini(rcap, vcap - 2)) if p.has_rate else 0)
 
 
-## «+160/ч» (Kit.fmt_num: −8 has a real minus), or «+160» when the bar is short of room.
-func _rate_text(ph: int, short: bool) -> String:
-	var sign := "+" if ph >= 0 else ""
-	return sign + Kit.fmt_num(ph) if short else tr("hud.per_hour") % [sign, Kit.fmt_num(ph)]
+## The income line, from the fullest form down: 0 «+1 855/ч», 1 «+1,8K/ч», 2 «+1 855», 3 «+1,8K» (Kit.fmt_num:
+## −8 has a real minus; no sign on 0).
+func _rate_text(ph: int, form: int) -> String:
+	var sign := "+" if ph > 0 else ""
+	var num := Kit.fmt_short(ph) if form % 2 == 1 else Kit.fmt_num(ph)
+	return tr("hud.per_hour") % [sign, num] if form < 2 else sign + num
 
 
 # ---------------------------------------------------------------- crest, ruler portrait, left column
@@ -400,6 +413,37 @@ func _build_tools() -> void:
 		_tools[n] = b
 
 
+## The charge count on a round map tool (the fort's and the tower's, §5): an info hex badge on its top-right;
+## n < 0 hides it.
+func set_tool_badge(name: String, n := -1, role := "info") -> void:
+	var b: Kit.KitButton = _tools.get(name)
+	if b == null:
+		return
+	var hb := b.get_node_or_null("charges") as Kit.KitShape
+	if n < 0:
+		if hb != null:
+			hb.visible = false
+		return
+	if hb == null or hb.face != Kit.face_of(role):
+		if hb != null:
+			hb.free()
+		hb = Kit.hex_badge(b, Vector2(b.size.x - 14.0, 12.0), 20.0, role, str(n))
+		hb.name = "charges"
+		hb.visible = false
+	(hb.get_child(0) as Label).text = str(n)
+	_show_dot(hb, true)
+
+
+## The plates' taps and the raivite «+» (on the currency layer, above every dim) can be switched off while a
+## mandatory coach step blocks the screen; off, the taps fall through to the layer under them.
+func set_currency_input(on: bool) -> void:
+	for r in res_pills:
+		var p: Kit.KitPill = res_pills[r]
+		p.mouse_filter = Control.MOUSE_FILTER_STOP if on else Control.MOUSE_FILTER_IGNORE
+		if p.plus != null:
+			p.plus.mouse_filter = Control.MOUSE_FILTER_STOP if on else Control.MOUSE_FILTER_IGNORE
+
+
 ## Global rect of a round map tool (target / pin / fort / tower), for the coach.
 func tool_rect(name: String) -> Rect2:
 	var b: Control = _tools.get(name)
@@ -516,8 +560,8 @@ static func fmt(v: int) -> String:
 
 
 func set_mail(unread: int) -> void:
+	Kit.set_dot(mail_badge[0], unread)  # «99+» above 99
 	_show_dot(mail_badge[0], unread > 0)
-	(mail_badge[1] as Label).text = str(mini(unread, 99))
 
 
 func set_orders(text: String, ready: bool, shown: bool) -> void:
@@ -529,8 +573,8 @@ func set_orders(text: String, ready: bool, shown: bool) -> void:
 func set_book(n: int) -> void:
 	if book_badge.is_empty():
 		return
+	Kit.set_dot(book_badge[0], n)
 	_show_dot(book_badge[0], n > 0)
-	(book_badge[1] as Label).text = str(mini(n, 99))
 
 
 func set_level(dl: int) -> void:
@@ -612,7 +656,7 @@ class Icon extends Control:
 # ====================================================================== minimap
 
 ## The whole open world in the states' colours on the sea well, each hex with a light top edge; the camera's view
-## is a rounded white frame over an INK one, clipped by the well.
+## is a rounded white frame over an INK one, kept inside the well.
 class Minimap extends Control:
 	var world: Node3D  # map_view.gd
 	var view_rect := Rect2()
@@ -633,7 +677,7 @@ class Minimap extends Control:
 			var wp: Vector3 = world.axial_to_world(cell["q"], cell["r"])
 			lo = lo.min(Vector2(wp.x, wp.z))
 			hi = hi.max(Vector2(wp.x, wp.z))
-		var span := hi - lo + Vector2(2.0, 2.0)
+		var span := hi - lo + Vector2(3.0, 3.0)  # half a hex of sea around the outer row
 		var sc := minf(size.x / span.x, size.y / span.y)
 		var c := size / 2 - (lo + hi) / 2.0 * sc
 		var water := Kit.SEA_WELL.lightened(0.1)
@@ -655,9 +699,11 @@ class Minimap extends Control:
 			if cell["controller"] != cell["owner"] and cell["controller"] != 0:
 				draw_circle(o, sc * 0.35, world.state_color(cell["controller"]))
 		if view_rect.size != Vector2.ZERO:
-			var r := Rect2(c + view_rect.position * sc, view_rect.size * sc)
-			_frame(r.grow(3.0), Kit.INK, 6, 11)
-			_frame(r.grow(1.5), Kit.WHITE, 3, 8)
+			# clamped to the well (the frame 3 px inside its edge): zoomed far out it hugs the well, never vanishes
+			var r := Rect2(c + view_rect.position * sc, view_rect.size * sc).intersection(Rect2(Vector2.ZERO, size).grow(-6.0))
+			if r.has_area():
+				_frame(r.grow(3.0), Kit.INK, 6, 11)
+				_frame(r.grow(1.5), Kit.WHITE, 3, 8)
 
 	func _frame(r: Rect2, col: Color, w: int, rad: int) -> void:
 		_sb.border_color = col
