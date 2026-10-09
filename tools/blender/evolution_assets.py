@@ -1707,11 +1707,25 @@ def playground(team):
     cy(0.004, 0.04, (0.04, -0.07, 0.04), yel, 4)
 
 
+def park_bench(x, y, rz):
+    """A park bench (DL6+): a slatted seat and a backrest (towards local +Y) on two dark iron ends."""
+    def b():
+        wd = tex("wood", "#b07a44", 3.0)
+        iron = flat("iron", "#3b3d42", 0.6)
+        for sx in (-0.03, 0.03):
+            bx((0.007, 0.03, 0.028), (sx, 0.003, 0.014), iron, bev=0)
+        bx((0.076, 0.028, 0.007), (0, 0, 0.0315), wd, bev=0)
+        bx((0.076, 0.007, 0.026), (0, 0.0175, 0.048), wd, bev=0)
+    build_at(b, x, y, rz)
+
+
 def bus(team):
-    """A mid-century bus in the team colour: cream window band, lit windows, a pale roof."""
+    """A mid-century bus in the team colour: lit windows, a team roof with a cream roof light strip (the game camera
+    looks down on it, so the roof carries the colour)."""
     bx((0.17, 0.05, 0.04), (0, 0, 0.032), flat("bus" + team, shade(team, 0.9), 0.5), bev=0)
     bx((0.15, 0.052, 0.024), (0.006, 0, 0.064), win_lit(), bev=0)
-    bx((0.17, 0.05, 0.012), (0, 0, 0.082), flat("bus_roof", "#e9e4d8", 0.6), bev=0)
+    bx((0.17, 0.05, 0.012), (0, 0, 0.082), flat("busroof" + team, shade(team, 1.1), 0.6), bev=0)
+    bx((0.12, 0.018, 0.004), (0.004, 0, 0.09), flat("bus_roof", "#e9e4d8", 0.6), bev=0)
     bx((0.17, 0.04, 0.012), (0, 0, 0.011), flat("tyre", "#1f1f21", 0.9), bev=0)
 
 
@@ -1734,16 +1748,15 @@ def city_dl6(team):
     bx((0.68, 0.035, 0.004), (0, 0.205, 0.019), paving, bev=0)
     bx((0.035, 0.26, 0.004), (-0.06, 0.205, 0.0195), paving, bev=0)
     build_at(lambda: playground(team), 0.14, 0.23)
-    for (x, y, s_) in ((-0.28, 0.27, 0.85), (-0.2, 0.12, 0.75), (0.31, 0.12, 0.8), (-0.06, 0.38, 0.0)):
-        if s_:
-            tree(x, y, s_)
-    for (x, y) in ((-0.13, 0.15), (0.0, 0.27)):
-        bench(x, y, 0.0)
-    # the road in front of the blocks: kerbs and white lane dashes
+    for (x, y, s_) in ((-0.28, 0.27, 0.85), (-0.27, 0.115, 0.75), (0.31, 0.12, 0.8)):
+        tree(x, y, s_)
+    for (y, rz) in ((0.245, 0.0), (0.165, math.pi)):  # two benches facing each other across the path, on the lawn
+        park_bench(-0.15, y, rz)
+    # the road in front of the blocks: kerbs and white lane dashes (only where the station leaves them in sight)
     bx((0.86, 0.006, 0.01), (0, 0.072, 0.017), flat("kerb", "#c9c3b6", 0.7), bev=0)
     paint = flat("paint", "#e8e6df", 0.7)
-    for i in range(6):
-        bx((0.06, 0.008, 0.003), (-0.375 + i * 0.15, -0.02, 0.0135), paint, bev=0)
+    for x in (-0.38, -0.3, 0.3, 0.38):
+        bx((0.06, 0.008, 0.003), (x, -0.02, 0.0135), paint, bev=0)
 
     def station():
         f = facade("#e6dcc4", "#3a4656", 0.06, 0.1, 0.5, 0.65, lit_p=0.4)
@@ -1765,9 +1778,10 @@ def city_dl6(team):
         bx((1.04, 0.011, 0.014), (0, -0.52 + sy, 0.036), flat("rail", "#6f747b", 0.4), bev=0)
     flagpole(-0.32, -0.3, 0.45, team, 0.12)
     for (x, y, rz, c) in ((-0.31, 0.04, 0.0, "#b8332a"), (-0.19, 0.04, 0.0, "#e8e4da"), (0.32, 0.04, math.pi, "#2f5f9a"),
-                          (0.26, -0.075, 0.0, "#3f6b3a")):  # parked at the kerb, one driving
+                          (-0.32, -0.065, 0.0, "#3f6b3a")):  # parked at the kerb, one driving
         car(x, y, rz, c)
-    build_at(lambda: bus(team), -0.04, -0.075)
+    # the team bus waiting at the station, in the open lane beside it (behind the station it was out of sight)
+    build_at(lambda: bus(team), 0.33, -0.21, math.pi / 2)
     for (x, y) in ((-0.36, 0.09), (0.36, 0.09), (-0.16, -0.115), (0.12, -0.115)):
         street_lamp(x, y, 0.2, True)
 
@@ -1846,10 +1860,15 @@ def city_dl7(team):
     build_at(lambda: glass_tower7(0.25, 0.23, 1.05, team, "slant", tone=1), 0.38, 0.14, -0.2)
     build_at(lambda: glass_tower7(0.22, 0.22, 0.72, team, "helipad"), -0.44, -0.24, 0.3)
     build_at(lambda: glass_tower7(0.18, 0.18, 0.55, team, "ac", tone=1), 0.54, -0.24, 0.15)
-    # a glass skybridge from the tall tower to its neighbour
-    bx((0.3, 0.06, 0.05), (0.11, 0.25, 0.62), facade("#33506b", GLASS, 0.03, 0.05, 0.8, 0.7, lit="#c8ecff", lit_p=0.3),
-       -0.08, bev=0)
-    bx((0.3, 0.064, 0.01), (0.11, 0.25, 0.6), glow("band", "#a8e6ff", 1.6), -0.08, bev=0)
+    # a glass skybridge from the tall tower to its neighbour, aimed so each end sinks 0.02 into a tower: from
+    # (-0.03, 0.26) inside the tall tower's east face to the slant tower's local (-0.105, 0.07)
+    ta, tb = (-0.03, 0.26), (0.38 - 0.105 * math.cos(0.2) + 0.07 * math.sin(0.2),
+                             0.14 + 0.105 * math.sin(0.2) + 0.07 * math.cos(0.2))
+    bl, brz = math.dist(ta, tb), math.atan2(tb[1] - ta[1], tb[0] - ta[0])
+    bc = ((ta[0] + tb[0]) / 2, (ta[1] + tb[1]) / 2)
+    bx((bl, 0.06, 0.05), (bc[0], bc[1], 0.62), facade("#33506b", GLASS, 0.03, 0.05, 0.8, 0.7, lit="#c8ecff", lit_p=0.3),
+       brz, bev=0)
+    bx((bl, 0.064, 0.01), (bc[0], bc[1], 0.598), glow("band", "#a8e6ff", 1.6), brz, bev=0)
 
     def pavilion():
         gl = facade("#33506b", GLASS, 0.05, 0.07, 0.8, 0.74, lit="#c8ecff", lit_p=0.3)
@@ -1956,7 +1975,7 @@ def city_dl8(team):
     spire8(-0.18, 0.36, 0.26, 0.22, 1.42, mats, rings=(0.3, 0.46, 0.94), crown=0.14, needle=0.2, banner=team)
     spire8(0.42, 0.3, 0.18, 0.16, 1.1, mats, rings=(0.28, 0.94), banner=team)
     spire8(-0.5, 0.1, 0.17, 0.15, 0.9, mats, rings=(0.66,))
-    spire8(0.5, 0.0, 0.14, 0.14, 0.7, mats, rings=(0.7,), buttress=False)
+    spire8(0.6, -0.04, 0.14, 0.14, 0.7, mats, rings=(0.7,), buttress=False)  # (clear of the banner on its right)
     round8(-0.42, -0.46, 0.09, 0.66, mats)
     # a steel skybridge between the spire and its neighbour, a light line along it (the lit bridges of frame 2)
     beam((-0.3, 0.3, 0.52), (-0.43, 0.12, 0.52), 0.045, plate)
@@ -1981,7 +2000,7 @@ def city_dl8(team):
     for (x, y) in ((0.3, -0.08), (-0.06, -0.62), (0.62, -0.28), (-0.66, -0.12)):  # light masts by the avenues
         cy(0.007, 0.16, (x, y, 0.08), flat("mast", "#d0d4da", 0.5), 6)
         bx((0.022, 0.022, 0.022), (x, y, 0.17), glow("lamp8", "#bfe8ff", 3.0), bev=0)
-    for (x, y, s_) in ((0.62, 0.14, 0.045), (0.6, 0.2, 0.035), (-0.02, 0.18, 0.04)):
+    for (x, y, s_) in ((0.41, -0.02, 0.045), (0.36, 0.03, 0.035), (-0.02, 0.18, 0.04)):  # (in sight of the camera)
         bx((s_, s_ * 1.4, s_), (x, y, s_ / 2 + 0.015), flat("crate8", "#b8862e", 0.6), bev=0)
 
 
@@ -3035,6 +3054,77 @@ def hazard(period=0.035, c1="#f2c230", c2="#26272b"):
     return m
 
 
+def _stripe_mat(key, s_of, c1, c2):
+    """Two-colour stripes baked like every procedural colour: s_of(nt, links, pos) returns the stripe coordinate
+    (one stripe pair per unit); the fractional part picks c1 or c2."""
+    if key in kit._MATS:
+        return kit._MATS[key]
+    m = bpy.data.materials.new("hazard")
+    m.use_nodes = True
+    nt = m.node_tree
+    L = nt.links
+    geo = nt.nodes.new("ShaderNodeNewGeometry")
+    s = s_of(nt, L, geo.outputs["Position"])
+    fr = nt.nodes.new("ShaderNodeMath")
+    fr.operation = "FRACT"
+    L.new(s, fr.inputs[0])
+    gt = nt.nodes.new("ShaderNodeMath")
+    gt.operation = "GREATER_THAN"
+    L.new(fr.outputs[0], gt.inputs[0])
+    gt.inputs[1].default_value = 0.5
+    mx = nt.nodes.new("ShaderNodeMix")
+    mx.data_type = "RGBA"
+    L.new(gt.outputs[0], _sock(mx, "Factor_Float"))
+    _sock(mx, "A_Color").default_value = (*kit.srgb(c1), 1)
+    _sock(mx, "B_Color").default_value = (*kit.srgb(c2), 1)
+    bs = nt.nodes["Principled BSDF"]
+    L.new(_sock(mx, "Result_Color", True), bs.inputs["Base Color"])
+    bs.inputs["Roughness"].default_value = 0.6
+    kit._MATS[key] = m
+    return m
+
+
+def hazard_dir(period, ang, c1="#f2c230", c2="#26272b"):
+    """Hazard stripes for a band running along the direction ang: they lean at 45° on both long faces of the band
+    whatever way the edge runs (the world-space hazard() turns to long smears on some edge directions)."""
+    def s_of(nt, L, pos):
+        dp = nt.nodes.new("ShaderNodeVectorMath")
+        dp.operation = "DOT_PRODUCT"
+        L.new(pos, dp.inputs[0])
+        dp.inputs[1].default_value = (math.cos(ang) / period, math.sin(ang) / period, 1.0 / period)
+        return _sock(dp, "Value", True)
+    return _stripe_mat(("hazard_dir", period, round(ang, 4), c1, c2), s_of, c1, c2)
+
+
+def hazard_ring(cx, cy_, r, n=8, c1="#f2c230", c2="#26272b"):
+    """Hazard stripes round a vertical drum centred on (cx, cy_) with radius r: n stripe pairs per turn, leaning at
+    45° (seamless, since a whole number of pairs fits the circumference)."""
+    pz = math.tau * r / n
+
+    def s_of(nt, L, pos):
+        sub = nt.nodes.new("ShaderNodeVectorMath")
+        sub.operation = "SUBTRACT"
+        L.new(pos, sub.inputs[0])
+        sub.inputs[1].default_value = (cx, cy_, 0.0)
+        sp = nt.nodes.new("ShaderNodeSeparateXYZ")
+        L.new(sub.outputs[0], sp.inputs[0])
+        at = nt.nodes.new("ShaderNodeMath")
+        at.operation = "ARCTAN2"
+        L.new(sp.outputs[1], at.inputs[0])
+        L.new(sp.outputs[0], at.inputs[1])
+        ma = nt.nodes.new("ShaderNodeMath")
+        ma.operation = "MULTIPLY_ADD"  # angle · n/τ + z/pz
+        L.new(at.outputs[0], ma.inputs[0])
+        ma.inputs[1].default_value = n / math.tau
+        zz = nt.nodes.new("ShaderNodeMath")
+        zz.operation = "DIVIDE"
+        L.new(sp.outputs[2], zz.inputs[0])
+        zz.inputs[1].default_value = pz
+        L.new(zz.outputs[0], ma.inputs[2])
+        return ma.outputs[0]
+    return _stripe_mat(("hazard_ring", round(cx, 4), round(cy_, 4), r, n, c1, c2), s_of, c1, c2)
+
+
 def zigzag_wire(p0, p1, u0, u1, v, z, amp, n_z, mt, w=0.006):
     """Razor / barbed wire seen from afar: a zigzag ribbon along the edge (both faces), n_z teeth."""
     L, ang, mid, nrm = edge_frame(p0, p1)
@@ -3118,8 +3208,8 @@ def f2_post(p):
     cy(0.055, 0.4, (p[0], p[1], 0.2), tex("wood", "#8a5e36", 3.0), 8)
     cn(0.055, 0.09, (p[0], p[1], 0.445), flat("stake_tip", "#d8b27a", 0.8), 8)
     bx((0.12, 0.12, 0.02), (p[0], p[1], 0.3), tex("wood", WOOD_D), a, 0)
-    for z in (0.12, 0.25):
-        bx((0.116, 0.116, 0.018), (p[0], p[1], z), flat("rope", ROPE, 0.9), a + math.pi / 4, 0)
+    for z in (0.12, 0.25):  # rope lashings square to the wall lines (corners inside the old 0.922 footprint)
+        bx((0.116, 0.116, 0.018), (p[0], p[1], z), flat("rope", ROPE, 0.9), a, 0)
 
 
 def f3_edge(p0, p1, gate=False):
@@ -3260,15 +3350,16 @@ def f4_post(p):
     extrude(ring(1.03), 0.125, 0.14, flat("cordon", "#e6dfd0", 0.7))  # cordon
     extrude(ring(0.85), 0.24, 0.252, flat("grassy", "#6f9a45", 0.9))
     cannon(p[0] - math.cos(a) * 0.04, p[1] - math.sin(a) * 0.04, a, 0.252)
-    # the échauguette at the salient
-    tx, ty = p[0] + math.cos(a) * 0.118, p[1] + math.sin(a) * 0.118
+    # the échauguette at the salient (kept inside the old footprint: 0.86 + 0.09 + 0.036 stays under the bastion's
+    # 0.987, so the turrets of two posts sharing a corner never meet)
+    tx, ty = p[0] + math.cos(a) * 0.09, p[1] + math.sin(a) * 0.09
     st = stone("#bdb6a8", 1.4)
-    cn(0.032, 0.05, (tx, ty, 0.205), st, 8, rot=(math.pi, 0, 0))  # corbel cone under it
-    cy(0.032, 0.085, (tx, ty, 0.272), st, 8)
-    bx((0.012, 0.012, 0.03), (tx + math.cos(a) * 0.029, ty + math.sin(a) * 0.029, 0.28), flat("slit", "#1c1a19", 0.9),
+    cn(0.03, 0.05, (tx, ty, 0.2), st, 8, rot=(math.pi, 0, 0))  # corbel cone under it
+    cy(0.03, 0.075, (tx, ty, 0.2625), st, 8)
+    bx((0.012, 0.01, 0.028), (tx + math.cos(a) * 0.028, ty + math.sin(a) * 0.028, 0.268), flat("slit", "#1c1a19", 0.9),
        a + math.pi / 2, 0)
-    cn(0.042, 0.058, (tx, ty, 0.343), tex("roof", FORT_SLATE, 1.6), 8)
-    ico(0.008, (tx, ty, 0.375), flat("finial", GOLD, 0.35))
+    cn(0.036, 0.05, (tx, ty, 0.325), tex("roof", FORT_SLATE, 1.6), 8)
+    ico(0.007, (tx, ty, 0.351), flat("finial", GOLD, 0.35))
 
 
 SANDBAG = "#b8a576"
@@ -3364,11 +3455,11 @@ def f5_post(p):
     build_at(nest, p[0] * 0.8, p[1] * 0.8, a + math.pi)
 
 
-def hedgehog(x, y, rz):
+def hedgehog(x, y, rz, s=1.0):
     def b():
         m_ = flat("hedge", "#5b4a42", 0.6)
         for k in range(3):
-            o = bx((0.15, 0.018, 0.018), (0, 0, 0.05), m_, bev=0)
+            o = bx((0.15 * s, 0.018, 0.018), (0, 0, 0.012 + 0.038 * s), m_, bev=0)
             o.rotation_euler = (0, 0.62, k * math.tau / 3)
     build_at(b, x, y, rz)
 
@@ -3389,14 +3480,15 @@ def f6_edge(p0, p1, gate=False):
     for s_ in (-1, 1):
         cy(0.011, L - 0.26, (tr[0] + n[0] * 0.034 * s_, tr[1] + n[1] * 0.034 * s_, 0.014), lg, 6, rot=(0, math.pi / 2, ang))
     sandbags(p0, p1, -0.03, n, 1, "#9c936a", 0.2, 0.8)
-    for f in (0.3, 0.5, 0.7):
+    # the wire belt in front of the berm, all inside the tile (apothem 0.866 = edge line + 0.121): steel hedgehogs
+    # (one beam along the line, so they reach 0.045 out) between wooden stakes, a barbed wire strung through them
+    for k, f in enumerate((0.3, 0.5, 0.7)):
         q = lerp2(p0, p1, f)
-        hedgehog(q[0] + n[0] * 0.11, q[1] + n[1] * 0.11, ang + f * 2)
-    # a low barbed-wire fence on stakes in front of the hedgehogs
+        hedgehog(q[0] + n[0] * 0.067, q[1] + n[1] * 0.067, ang + k * math.pi / 3, 0.85)
     pk = tex("wood", WOOD_D, 3.0)
-    for f in (0.16, 0.38, 0.62, 0.84):
-        ebox(p0, p1, L * f - 0.006, L * f + 0.006, 0.17, 0.012, 0.0, 0.09, pk)
-    zigzag_wire(p0, p1, L * 0.16, L * 0.84, 0.17, 0.06, 0.018, 10, flat("wire", "#4c4f55", 0.5))
+    for f in (0.16, 0.39, 0.61, 0.84):
+        ebox(p0, p1, L * f - 0.006, L * f + 0.006, 0.08, 0.012, 0.0, 0.1, pk)
+    zigzag_wire(p0, p1, L * 0.16, L * 0.84, 0.08, 0.06, 0.018, 10, flat("wire", "#4c4f55", 0.5))
 
 
 def f6_post(p):
@@ -3433,33 +3525,41 @@ def f6_post(p):
     build_at(searchl, p[0], p[1], a, z=0.16)
 
 
+F7_PLATES = ("#4f5761", "#8e98a4")  # dark seams round pale steel plates (the plates read light, as the old wall did)
+
+
 def f7_edge(p0, p1, gate=False):
-    """Steel wall: riveted plates with seams between buttress ribs, a hazard-striped coping, razor wire along the
-    top, warning lamps and a plinth."""
+    """Steel wall: pale riveted plates with dark seams between buttress ribs, a bold solid yellow coping (the gold
+    outline that makes L7 read on the map) with amber warning lamps, a wide hazard-striped band lower down wrapping
+    the ribs, razor wire along the top and a plinth."""
     L, ang, mid, n = edge_frame(p0, p1)
-    plates = facade("#7f8995", "#5c6570", 0.11, 0.11, 0.94, 0.9, lit="#5c6570", lit_p=0.0)
+    plates = facade(F7_PLATES[0], F7_PLATES[1], 0.11, 0.11, 0.94, 0.9, lit=F7_PLATES[1], lit_p=0.0)
     rib = flat("steelrib", "#5c6570", 0.45)
     ebox(p0, p1, 0.08, L - 0.08, 0.0, 0.06, 0.0, 0.33, plates)
     for i in range(5):
         u = L * (0.18 + i * 0.64 / 4)
         ebox(p0, p1, u - 0.011, u + 0.011, 0.0, 0.075, 0.0, 0.33, rib)
-    ebox(p0, p1, 0.08, L - 0.08, 0.0, 0.074, 0.33, 0.36, hazard(0.035))
+    ebox(p0, p1, 0.08, L - 0.08, 0.0, 0.08, 0.235, 0.28, hazard_dir(0.1, ang))  # wide stripes: they survive the map
+    ebox(p0, p1, 0.08, L - 0.08, 0.0, 0.074, 0.33, 0.36, flat("warn", "#f2c230", 0.6))
     ebox(p0, p1, 0.08, L - 0.08, 0.0, 0.082, 0.0, 0.03, rib)
-    zigzag_wire(p0, p1, 0.1, L - 0.1, 0.0, 0.38, 0.015, 12, flat("wire", "#9aa1aa", 0.4))
+    zigzag_wire(p0, p1, 0.1, L - 0.1, 0.0, 0.385, 0.02, 8, flat("wire", "#c3c9d1", 0.4), w=0.009)
     for f in (0.34, 0.66):  # warning lamps on the coping
         c = lerp2(p0, p1, f)
-        bx((0.016, 0.016, 0.016), (c[0] + n[0] * 0.03, c[1] + n[1] * 0.03, 0.368), glow("warnlamp", "#ffb02e", 3.0), ang, 0)
+        bx((0.024, 0.024, 0.02), (c[0] + n[0] * 0.025, c[1] + n[1] * 0.025, 0.37), glow("warnlamp", "#ffb02e", 3.0), ang, 0)
 
 
 def f7_post(p):
-    """Steel watchtower: a plated drum with a hazard-striped band, a twin-gun turret with a red sensor, a cold
-    floodlight on the inner side and a red beacon."""
+    """Steel watchtower: a plated drum with a solid yellow top band (it ties into the coping) and a hazard-striped
+    band level with the wall's, a twin-gun turret with a red sensor, a cold floodlight on the inner side and a red
+    beacon."""
     a = math.atan2(p[1], p[0])
     dm = flat("steelrib", "#5c6570", 0.45)
-    plates = facade("#7f8995", "#5c6570", 0.08, 0.1, 0.92, 0.9, lit="#5c6570", lit_p=0.0)
+    plates = facade(F7_PLATES[0], F7_PLATES[1], 0.08, 0.1, 0.92, 0.9, lit=F7_PLATES[1], lit_p=0.0)
     cy(0.1, 0.42, (p[0], p[1], 0.21), plates, 8, rot=(0, 0, a))
-    cy(0.105, 0.03, (p[0], p[1], 0.405), hazard(0.03), 8)
-    cy(0.106, 0.03, (p[0], p[1], 0.03), dm, 8)
+    # (the bands turn with the drum: an octagon turned against another pokes its corners through)
+    cy(0.105, 0.03, (p[0], p[1], 0.405), flat("warn", "#f2c230", 0.6), 8, rot=(0, 0, a))
+    cy(0.105, 0.045, (p[0], p[1], 0.2575), hazard_ring(p[0], p[1], 0.105, 8), 8, rot=(0, 0, a))
+    cy(0.106, 0.03, (p[0], p[1], 0.03), dm, 8, rot=(0, 0, a))
     bx((0.03, 0.016, 0.02), (p[0] - math.cos(a) * 0.1, p[1] - math.sin(a) * 0.1, 0.36), glow("flood", "#d8f0ff", 3.0),
        a + math.pi / 2, 0)
 
