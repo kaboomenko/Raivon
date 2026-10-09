@@ -1086,10 +1086,12 @@ def _plated(color, scale=9.0, width=0.9, row=0.5, mortar=0.03, offset=0.5):
     return kit._MATS[key]
 
 
-def _warpaint(colors, belly, scale=14.0, panels=8.0):
-    """Aircraft paint of the trench era: hard-edged camouflage blotches on every surface facing up or sideways, a
-    pale belly underneath, fine panel lines over both."""
-    key = ("warpaint", tuple(colors), belly, scale, panels)
+def _warpaint(colors, scale=14.0, panels=8.0):
+    """Aircraft paint of the trench era: hard-edged camouflage blotches with fine panel lines. Camouflage only — the
+    pale belly is its own material (_belly_paint, laid on the down-facing faces by _paint_belly), so wherever a tight
+    atlas collapses the thin fuselage facets onto one palette cell (the parked fighter of the industrial base) the
+    cell bakes a camouflage colour, never the belly's pale grey."""
+    key = ("warpaint", tuple(colors), scale, panels)
     if key not in kit._MATS:
         def base(nt, tc, sn):
             noise = nt.nodes.new("ShaderNodeTexNoise")
@@ -1106,18 +1108,44 @@ def _warpaint(colors, belly, scale=14.0, panels=8.0):
             for s, ccol in zip(stops[2:], colors[2:]):
                 els.new(s).color = (*kit.srgb(ccol), 1)
             nt.links.new(noise.outputs["Fac"], ramp.inputs["Fac"])
-            under = nt.nodes.new("ShaderNodeMath")
-            under.operation = "LESS_THAN"
-            under.inputs[1].default_value = -0.35
-            nt.links.new(sn.outputs["Z"], under.inputs[0])
-            pick = nt.nodes.new("ShaderNodeMix")
-            pick.data_type = "RGBA"
-            nt.links.new(under.outputs[0], pick.inputs["Factor"])
-            nt.links.new(ramp.outputs["Color"], pick.inputs["A"])
-            pick.inputs["B"].default_value = (*kit.srgb(belly), 1)
-            return pick.outputs["Result"]
+            return ramp.outputs["Color"]
         kit._MATS[key] = _panelled("warpaint", base, (1.0, 0.66), panels, 0.9, 0.5, 0.025, 0.1, offset=0.0)
     return kit._MATS[key]
+
+
+def _belly_paint(color, panels=8.0):
+    """The pale underside of _warpaint: one flat colour under the same panel lines."""
+    key = ("belly_paint", color, panels)
+    if key not in kit._MATS:
+        def base(nt, tc, sn):
+            rgb = nt.nodes.new("ShaderNodeRGB")
+            rgb.outputs[0].default_value = (*kit.srgb(color), 1)
+            return rgb.outputs[0]
+        kit._MATS[key] = _panelled("belly_paint", base, (1.0, 0.66), panels, 0.9, 0.5, 0.025, 0.1, offset=0.0)
+    return kit._MATS[key]
+
+
+def _merge(objs):
+    """Join objs (their modifiers applied) into the first of them; returns the joined object."""
+    bpy.ops.object.select_all(action="DESELECT")
+    for o in objs:
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = objs[0]
+    bpy.ops.object.convert(target="MESH")
+    bpy.ops.object.join()
+    return bpy.context.view_layer.objects.active
+
+
+def _paint_belly(o, mt, nz=-0.35):
+    """Give the faces of o that face down (world normal z below nz) the material mt (a second slot)."""
+    o.data.materials.append(mt)
+    k = len(o.data.materials) - 1
+    r3 = o.matrix_world.to_3x3()
+    for p in o.data.polygons:
+        n = r3 @ p.normal
+        if n.length > 0 and n.normalized().z < nz:
+            p.material_index = k
+    return o
 
 
 def rocket_launcher():
@@ -1126,7 +1154,8 @@ def rocket_launcher():
     a dark visor over a cyan light line, cyan headlights, a roof hatch with a pintle gun and a radar dish — carrying a
     ribbed launch box raised on a turntable, its front a dark grid of nine pale rocket noses; stowage on the deck: a
     rolled tarp, strapped tan cases, a whip aerial with a cyan tip."""
-    comp = _plated("#68707b")
+    comp = _plated("#68707b", 8.0, width=1.4, offset=0.0)  # a clean grid of broad plates, not staggered courses
+    plain = mat("gunmetal", "#68707b", 0.45)  # the tilted launch box: its four dark ribs alone break it up
     dk = mat("comptrim", "#2c3139", 0.55)
     tyre = mat("tyre", "#1f1f21", 0.9)
     cyan = mat("cyan", "#14d2ff", 0.4, 0.0, "#14d2ff", 3.0)
@@ -1193,7 +1222,7 @@ def rocket_launcher():
         return (pc[0] + ax[0] * a + up[0] * u, pc[1] + ax[1] * a + up[1] * u)
     rot = (0, -el, 0)
     x, z = at(0)
-    _bx("pod", (L, W, H), (x, 0, z), comp, 0.006, rot=rot)
+    _bx("pod", (L, W, H), (x, 0, z), plain, 0.006, rot=rot)
     for a in (-L / 2 + 0.01, -0.02, 0.05, L / 2 - 0.008):
         x, z = at(a)
         _bx("pod_rib", (0.014, W + 0.008, H + 0.008), (x, 0, z), dk, rot=rot)
@@ -1420,7 +1449,9 @@ def fighter():
     pale belly with panel lines (the trench-era paint of the howitzer), a cream identification band and spinner, a
     dark cowling with exhaust stubs, a three-blade propeller with yellow tips, tapered wings with pale roundels, wing
     guns and drop tanks, a framed bubble canopy, a tail fin with a cream tip."""
-    paint = _warpaint(("#66703d", "#86704a", "#46522f"), "#b4bcb6", 14.0)
+    before = {o.name for o in bpy.context.scene.objects}
+    paint = _warpaint(("#66703d", "#86704a", "#46522f"), 14.0)
+    belly = _belly_paint("#b4bcb6")
     cream = mat("cream", "#efe6cf", 0.55)
     dark = mat("cowl", "#2b2f25", 0.6)
     slate = mat("roundel", "#3b4250", 0.6)
@@ -1437,8 +1468,8 @@ def fighter():
                 t = (a[0] - x) / (a[0] - b[0])
                 return tuple(a[i] + (b[i] - a[i]) * t for i in (1, 2, 3))
         return fus[-1][1:]
-    _loft("fuselage", [(0.153, _ell(*sec(0.153)))] + [(x, _ell(ry, rz, cz)) for x, ry, rz, cz in fus if x < 0.153],
-          paint)
+    _paint_belly(_loft("fuselage", [(0.153, _ell(*sec(0.153)))] + [(x, _ell(ry, rz, cz)) for x, ry, rz, cz in fus
+                                                                    if x < 0.153], paint), belly)
     # dark cowling ring, cream spinner, three-blade propeller with yellow tips, exhaust stubs
     _loft("cowl", [(x, _ell(sec(x)[0] * 1.04, sec(x)[1] * 1.04, sec(x)[2])) for x in (0.152, 0.17, 0.186)], dark)
     cone("spinner", 0.021, 0.03, (0.201, 0, 0.002), cream, 10, 0.0).rotation_euler = (0, math.pi / 2, 0)
@@ -1471,7 +1502,8 @@ def fighter():
     for sy in (-1, 1):
         def wp(x, s, h):
             return (x, sy * (s * math.cos(d) - h * math.sin(d)), zw + s * math.sin(d) + h * math.cos(d))
-        _slab("wing", [wp(x, s, t / 2) for x, s in plan], [wp(x, s, -t / 2) for x, s in plan], paint)
+        _paint_belly(_slab("wing", [wp(x, s, t / 2) for x, s in plan], [wp(x, s, -t / 2) for x, s in plan], paint),
+                     belly)
         for r, mt, k in ((0.029, cream, 1), (0.019, slate, 2), (0.008, cream, 3)):
             _disc("roundel", r, wp(0.026, 0.15, t / 2 + 0.001 * k), mt, 12, rot=(sy * d, 0, 0))
         for s in (0.1, 0.116):
@@ -1480,17 +1512,20 @@ def fighter():
         tz = wp(0.02, 0.085, -t / 2)[2] - 0.016
         ty = wp(0.02, 0.085, 0.0)[1]
         _bx("pylon", (0.03, 0.004, 0.016), (0.02, ty, tz + 0.0095), dark)
-        _loft("drop_tank", [(0.075, [(ty, tz)]), (0.062, _ell(0.007, 0.007, tz, 8, ty)),
-                            (0.04, _ell(0.0105, 0.0105, tz, 8, ty)), (0.0, _ell(0.0105, 0.0105, tz, 8, ty)),
-                            (-0.03, _ell(0.006, 0.006, tz, 8, ty)), (-0.04, [(ty, tz)])], paint)
+        _paint_belly(_loft("drop_tank", [(0.075, [(ty, tz)]), (0.062, _ell(0.007, 0.007, tz, 8, ty)),
+                                         (0.04, _ell(0.0105, 0.0105, tz, 8, ty)), (0.0, _ell(0.0105, 0.0105, tz, 8, ty)),
+                                         (-0.03, _ell(0.006, 0.006, tz, 8, ty)), (-0.04, [(ty, tz)])], paint), belly)
     # tailplane and fin with a cream tip
     tp = [(-0.12, 0.012), (-0.133, 0.068), (-0.145, 0.078), (-0.16, 0.076), (-0.168, 0.06), (-0.17, 0.012)]
     tp = tp + [(x, -y) for x, y in reversed(tp)]
-    _slab("tailplane", [(x, y, 0.0155) for x, y in tp], [(x, y, 0.0085) for x, y in tp], paint)
+    _paint_belly(_slab("tailplane", [(x, y, 0.0155) for x, y in tp], [(x, y, 0.0085) for x, y in tp], paint), belly)
     fin = [(-0.115, 0.02), (-0.14, 0.05), (-0.155, 0.066), (-0.168, 0.07), (-0.178, 0.06), (-0.178, 0.015)]
     _extrude_xz("fin", fin, -0.004, 0.004, paint)
     _extrude_xz("fin_tip", [(-0.1462, 0.0565), (-0.1546, 0.0668), (-0.168, 0.0708), (-0.1787, 0.0604),
                             (-0.1787, 0.0565)], -0.0046, 0.0046, cream)
+    # one object (into the fuselage, made first and unrotated: the frame the camouflage is laid out in), so export()
+    # bakes the small plane on a 512 px sheet rather than the 1024 px one it gives models of 12 parts or more
+    _merge([o for o in bpy.context.scene.objects if o.name not in before and o.type == "MESH"])
 
 
 def mounted_knight(color):

@@ -2,24 +2,27 @@
 комбинат», «деревянная вышка-качалка → стальная вышка → нефтекомплекс → плазменный экстрактор»).
 
 Builds and exports to OUT (default game/assets/models), team-neutral, one hex each:
-  factory_l1  brick works (DL ≤ 5)       brick halls under a slate sawtooth roof with warm-lit north lights, a bottle
-                                         kiln with a glowing mouth, tall brick stacks, a flagged yard with rails, a
-                                         brick wagon, a coal heap, pallets of bricks, a timber jib crane, crates
-  factory_l2  conveyor plant (DL 6–7)    concrete halls with ribbon windows, a corrugated roof with a lit monitor, a
-                                         conveyor gallery from a row of silos, banded steel stacks, a yellow gantry
-                                         crane over a loading track, trucks, pipe racks, an asphalt yard
+  factory_l1  brick works (DL ≤ 5)       a brick hall under a slate sawtooth roof (north lights, lit windows), a bottle
+                                         kiln with a glowing mouth, tall brick stacks, a hack shed of drying bricks, a
+                                         flagged yard with rails, a brick wagon, a coal bunker, pallets of bricks, a
+                                         timber jib crane, crates, barrels, a lantern
+  factory_l2  conveyor plant (DL 6–7)    a concrete hall with lit ribbon windows under a corrugated roof with a lit
+                                         monitor, an open belt conveyor carrying crates from a row of silos (bucket
+                                         elevator, truck hopper) to a vaulted assembly shed, banded steel stacks, a
+                                         yellow gantry crane over a loading track, trucks, a pipe rack, containers
   factory_l3  robotic combine (DL ≥ 8)   the citadel's steel kit (residence_dl8 / city_dl8 / district_scifi): a core
-                                         block with two great funnels, cold light slots and bronze buttresses, a glass
-                                         dome over a glowing reactor core, conveyor tubes with light rings, a robot
-                                         assembly bay, a landing pad with a cargo drone
+                                         block with two great funnels, cold light slots and bronze buttresses, a cage
+                                         of ribs round a glowing reactor core, conveyor tubes with light rings, a
+                                         robot assembly bay, a vaulted hall, a landing pad with a cargo drone
   oil_l1      wooden derrick (DL ≤ 5)    a timber lattice derrick with a sheave on top, a nodding pumpjack, a black
                                          pond in a plank kerb, a plank engine shed with a smoking flue, barrels
   oil_l2      steel derrick (DL 6)       a steel lattice derrick, two pumpjacks, pipe runs to a storage tank, a pump
                                          house, a slush pit of black oil, a tanker truck
   oil_l3      oil complex (DL 7)         tanks with spiral stairs, a distillation column with platforms, a flare stack
                                          with a flame, pipe racks, a separator basin of black oil
-  oil_l4      plasma extractor (DL ≥ 8)  a steel drill spire with a glowing ring over a lit well-head, tanks with light
-                                         bands, cyan pipes, a black reservoir in a lit steel frame
+  oil_l4      plasma extractor (DL ≥ 8)  a drill spire round a glowing plasma core with two glowing rings over a lit
+                                         well ring, tanks with light bands, cyan pipes, capacitor pods, a steam vent,
+                                         a black reservoir in a lit steel frame, a control podium with a drone
 
 Run:   python3 tools/blender/industry_assets.py game/assets/models [name ...]
 
@@ -44,8 +47,7 @@ import export_assets as ea  # noqa: E402  (guarded: importing it builds nothing)
 import evolution_assets as ev  # noqa: E402  (guarded: importing it builds nothing)
 from evolution_assets import (bx, cy, cn, ico, uvs, rod, beam, taper_box, extrude, pad, flat, tex, stone, glow,  # noqa: E402
                               win_lit, build_at, shade, smoke_at, hemi, gable_roof, steel_facade, facade, hazard,
-                              hazard_ring, lr_ring, _MB, WOOD, WOOD_D, WOOD_L, STONE, STONE_D, BRICK, CONC, CONC_D,
-                              GOLD, CYAN, TIMBER, ROOF_TRIM)
+                              lr_ring, _MB, WOOD_D, WOOD_L, STONE, BRICK, CONC, CYAN)
 
 IRON = "#2e3034"
 SOOT = "#2b2726"
@@ -53,10 +55,9 @@ CREAM = "#d8cfc0"  # dressed stone trim (cornices, sills, the band on the stacks
 SLATE_N = "#56657a"  # neutral blue-grey slate (the forts' and towers' roofs: no team colour)
 COAL = "#26252a"
 OIL = "#0b0a0e"
-RUST = "#8a4a2c"
 SAFETY = "#f2b31d"  # crane yellow
-STEEL = "#7f8995"
-STEEL_D = "#5c6570"
+BAND_N = "#4b5a70"  # the neutral slate band on tanks and columns (no team blue on team-neutral models)
+ORANGE = "#e2782a"
 
 
 # ------------------------------------------------------------------ materials
@@ -416,7 +417,7 @@ def silo(x, y, r, h, c="#dedbd3", ladder=True, rz=0.0):
         bx((0.012, 0.012, h * 0.9), (px, py, h * 0.45), flat("ladder", "#3d4148", 0.5), rz, 0)
 
 
-def truck(x, y, rz, cab="#e2782a", box="#d9d6cf", tanker=False):
+def truck(x, y, rz, cab=ORANGE, box="#d9d6cf", tanker=False):
     """A lorry facing +X (turned rz): a coloured cab with a dark windscreen and a box (or tank) body, six wheels."""
     def b():
         dk = flat("tyre", "#1f1f21", 0.9)
@@ -429,7 +430,7 @@ def truck(x, y, rz, cab="#e2782a", box="#d9d6cf", tanker=False):
             bx((0.05, 0.016, 0.008), (-0.03, 0, 0.092), flat("walk", "#3d4148", 0.5), bev=0)
         else:
             bx((0.13, 0.058, 0.06), (-0.03, 0, 0.06), flat("box" + box, box, 0.6), bev=0.003)
-            bx((0.132, 0.06, 0.008), (-0.03, 0, 0.034), flat("stripe_o", "#e2782a", 0.5), bev=0)
+            bx((0.132, 0.06, 0.008), (-0.03, 0, 0.034), flat("stripe_o", ORANGE, 0.5), bev=0)
         for u in (-0.07, -0.04, 0.075):
             for sy in (-1, 1):
                 cy(0.016, 0.012, (u, sy * 0.026, 0.016), dk, 8, rot=(math.pi / 2, 0, 0))
@@ -459,34 +460,6 @@ def low_roof(w, d, h, loc, mt, rz=0.0, oh=0.012):
     return ev.mesh_obj(verts, faces, mt, loc, (0, 0, rz))
 
 
-def conveyor_gallery(p0, p1, w, h, legs=2, clad="#c9c3b6", win=True):
-    """An enclosed conveyor gallery (a long box on a slope) from p0 to p1 (centre line of its floor), corrugated
-    cladding, a strip of small windows along it, a roof plate, on steel trestles down to the ground."""
-    a, b = Vector(p0), Vector(p1)
-    d = b - a
-    L = d.length
-    yaw = math.atan2(d.y, d.x)
-    pitch = math.atan2(d.z, math.hypot(d.x, d.y))
-    mid = (a + b) / 2
-
-    def body():
-        bx((L, w, h), (0, 0, h / 2), corrugated(clad, 0.01, 0.84), bev=0)
-        bx((L + 0.01, w + 0.012, 0.01), (0, 0, h + 0.004), flat("groof", "#5b6168", 0.6), bev=0)
-        if win:
-            for sy in (-1, 1):
-                bx((L * 0.86, 0.004, h * 0.26), (0, sy * (w / 2 + 0.001), h * 0.62), flat("gwin", "#2a3340", 0.35),
-                   bev=0)
-    build_at(lambda: build_at(body, 0, 0, 0, tilt=(0, -pitch)), mid.x, mid.y, yaw, z=mid.z)
-    st = flat("trestle", "#59606a", 0.5)
-    for k in range(legs):
-        f = (k + 1) / (legs + 1)
-        q = a.lerp(b, f)
-        ox, oy = -math.sin(yaw) * w * 0.55, math.cos(yaw) * w * 0.55
-        for sg in (-1, 1):
-            beam((q.x + sg * ox * 1.3, q.y + sg * oy * 1.3, 0.0), (q.x + sg * ox, q.y + sg * oy, q.z), 0.012, st)
-        beam((q.x - ox, q.y - oy, q.z * 0.55), (q.x + ox, q.y + oy, q.z * 0.55), 0.01, st)
-
-
 def gantry_crane(x, y, span, h, rz=0.0, c=SAFETY):
     """A yellow overhead gantry crane on rails (turned rz; spans local X): two A-frame legs, a box girder, a trolley
     with a cab, the hook block, a container hanging from it."""
@@ -508,7 +481,8 @@ def gantry_crane(x, y, span, h, rz=0.0, c=SAFETY):
         bx((0.02, 0.03, 0.016), (span * 0.12, 0, h * 0.5), yel, bev=0)
         bx((0.12, 0.05, 0.05), (span * 0.12, 0, h * 0.5 - 0.04), flat("cont_r", "#a8452e", 0.6), bev=0)
         for sx in (-1, 1):
-            bx((0.004, 0.044, 0.044), (span * 0.12 + sx * 0.061, 0, h * 0.5 - 0.04), flat("door8", "#23282f", 0.6), bev=0)
+            bx((0.004, 0.044, 0.044), (span * 0.12 + sx * 0.061, 0, h * 0.5 - 0.04), flat("door8", "#23282f", 0.6),
+               bev=0)
     build_at(b, x, y, rz)
 
 
@@ -557,8 +531,8 @@ def factory_l2():
     """Conveyor plant (DL 6–7; the modern works beside city_dl6 / port_modern): on a concrete yard, a long concrete
     hall with pilasters and warm-lit ribbon windows under a blue-grey corrugated roof with a glazed monitor along its
     ridge; an open belt conveyor carrying crates across the yard from the silos to a corrugated assembly shed with a
-    hazard-framed roller door; three silos under a head house with a bucket elevator and a truck hopper, an enclosed
-    gallery to the hall; two banded steel stacks; a yellow gantry crane over a loading track lifting a container;
+    hazard-framed roller door; three silos under a head house with a bucket elevator and a truck hopper; two banded
+    steel stacks; a yellow gantry crane over a loading track lifting a container;
     trucks, a pipe rack, stacked containers, lamps."""
     pad(0.74, stone("#a3a19b", 1.1), 0.012, 16, 0.03, 11, 1.0, 0.95)
     asph = flat("asphalt", "#5d6066", 0.85)
@@ -635,8 +609,8 @@ def factory_l2():
         bx((0.06, 0.008, 0.002), (-0.22 + k * 0.16, -0.24, 0.017), line, bev=0)
     rails((-0.26, -0.34), (0.28, -0.34), gauge=0.16, z=0.016, sleeper=0.05)
     gantry_crane(-0.02, -0.34, 0.3, 0.24)
-    truck(0.08, -0.34, math.pi, cab="#2f6db3")
-    truck(0.3, -0.58, 0.6, cab="#e2782a", box="#d9d6cf")
+    truck(0.08, -0.34, math.pi, cab="#5c6570")
+    truck(0.3, -0.58, 0.6, cab=ORANGE, box="#d9d6cf")
     truck(ex - 0.03, ey - 0.3, math.pi / 2, cab="#c9ccd0", box="#7b838e", tanker=False)
     # a pipe rack from the hall to the bucket elevator, stacked containers, lamps
     pipe_rack((hx + W / 2 + 0.01, 0.13), (0.62, 0.13), 0.15, posts=3)
@@ -672,7 +646,8 @@ def light_slots(x, y, w, z0, z1, n, mats, rz=0.0, inset=0.6):
         for i in range(n):
             u = -w / 2 + (i + 0.5) * step
             hw = step * inset / 2
-            pm.face([(u - hw, -0.002, z0), (u + hw, -0.002, z0), (u + hw, -0.002, z1), (u - hw, -0.002, z1)], (0, -1, 0))
+            pm.face([(u - hw, -0.002, z0), (u + hw, -0.002, z0), (u + hw, -0.002, z1), (u - hw, -0.002, z1)],
+                    (0, -1, 0))
             sm.face([(u - 0.007, -0.004, z0 + 0.01), (u + 0.007, -0.004, z0 + 0.01), (u + 0.007, -0.004, z1 - 0.01),
                      (u - 0.007, -0.004, z1 - 0.01)], (0, -1, 0))
         pm.obj(panel, "slot_panels")
@@ -806,7 +781,7 @@ def factory_l3():
     rim = _MB()
     for (p0, p1) in (((bx_ - 0.17, by_ - 0.115), (bx_ + 0.17, by_ - 0.115)), ((bx_ + 0.17, by_ - 0.115),
                                                                               (bx_ + 0.17, by_ + 0.1))):
-        rim.strip((p0[0], p0[1], 0.0365), (p1[0], p1[1], 0.0365), (0, 0, 1), 0.014, 0.0)
+        rim.strip((p0[0], p0[1], 0.0385), (p1[0], p1[1], 0.0385), (0, 0, 1), 0.014, 0.0)
     rim.obj(hazard(0.025), "bay_rim")
     tube_bridge((cx_ - W / 2, 0.1, 0.2), (bx_ - 0.05, by_ + 0.13, 0.13), 0.02, mats, 2)
     # the landing pad with a cargo drone, tanks, masts
@@ -900,16 +875,14 @@ def pumpjack(x, y, rz, s=1.0, frame="#6e4526", beam_c="#7a4f2c", head="#2e3034",
         p_front = (L1 * ca, 0, pz - L1 * sa)
         beam(p_back, p_front, 0.018, bm)
         ico(0.01, (0, 0, pz), hm)
-        # the horsehead: a curved plate at the front end, built as a thick fan
+        # the horsehead: a D-shaped plate at the front end (its arc facing the well)
         hx, _, hz = p_front
-        pts = []
-        for k in range(5):
-            a = -0.9 + k * 0.45 - nod
-            pts.append((hx + 0.008 + 0.05 * math.cos(a) * 0.55, hz + 0.055 * math.sin(a)))
-        prof = [(hx - 0.004, hz - 0.036)] + pts + [(hx - 0.004, hz + 0.036)]  # bottom-left, the arc up, top-left
+        pts = [(hx + 0.006 + 0.034 * math.cos(-1.15 + k * 0.46 - nod), hz + 0.05 * math.sin(-1.15 + k * 0.46 - nod))
+               for k in range(6)]
+        prof = [(hx - 0.01, pts[0][1])] + pts + [(hx - 0.01, pts[-1][1])]  # bottom-left, the arc up, top-left
         extrude(prof, -0.012, 0.012, hm, rot=(math.pi / 2, 0, 0))
-        rx = hx + 0.035
-        beam((rx, 0, hz - 0.045), (rx, 0, 0.05), 0.004, flat("rod_pol", "#c9ccd0", 0.3))
+        rx = hx + 0.04
+        beam((rx, 0, hz - 0.03), (rx, 0, 0.05), 0.004, flat("rod_pol", "#c9ccd0", 0.3))
         cy(0.012, 0.04, (rx, 0, 0.02), flat("wh" + wellhead, wellhead, 0.5), 8)
         bx((0.034, 0.01, 0.01), (rx, 0, 0.034), flat("wh" + wellhead, wellhead, 0.5), bev=0)
         # the crank at the back: gearbox, two crank discs with counterweights, pitman arms up to the beam's tail
@@ -1067,8 +1040,8 @@ def steel_tank(x, y, r, h, c="#e6e3dc", band=None, stair=True, roof="cone", n=16
         for i in range(k):
             a = -math.pi / 2 - 0.3 + i * 0.16
             z = (i + 0.5) / k * h
-            bx((0.03, 0.016, 0.006), (x + math.cos(a) * (r + 0.01), y + math.sin(a) * (r + 0.01), z), st, a + math.pi / 2,
-               bev=0)
+            bx((0.03, 0.016, 0.006), (x + math.cos(a) * (r + 0.01), y + math.sin(a) * (r + 0.01), z), st,
+               a + math.pi / 2, bev=0)
         a0, a1 = -math.pi / 2 - 0.3, -math.pi / 2 - 0.3 + (k - 1) * 0.16
         pts = [(x + math.cos(a0 + (a1 - a0) * t) * (r + 0.024), y + math.sin(a0 + (a1 - a0) * t) * (r + 0.024),
                 0.03 + t * h) for t in (0.0, 0.33, 0.66, 1.0)]
@@ -1076,7 +1049,7 @@ def steel_tank(x, y, r, h, c="#e6e3dc", band=None, stair=True, roof="cone", n=16
             beam(pts[i], pts[i + 1], 0.005, flat("rail_y", SAFETY, 0.5))
 
 
-def pump_house(x, y, rz=0.0, w=0.16, d=0.12, h=0.1, wall="#c9b9a0", roof="#5b6168", sign="#2f6db3"):
+def pump_house(x, y, rz=0.0, w=0.16, d=0.12, h=0.1, wall="#c9b9a0", roof="#5b6168", sign=ORANGE):
     """A small brick-and-render pump house: a flat roof with a parapet, a lit window, a steel door, a vent."""
     def b():
         bx((w, d, h), (0, 0, h / 2), tex("plaster", wall, 2.5), bev=0)
@@ -1122,13 +1095,13 @@ def oil_l2():
     beam((dx, dy, top), (dx, dy, 0.12), 0.006, flat("cable", "#2b2d31", 0.6))
     bx((0.03, 0.03, 0.04), (dx, dy, 0.32), flat("block_y", SAFETY, 0.5), bev=0)  # the travelling block
     # the doghouse on the rig floor's side, the drawworks
-    bx((0.12, 0.08, 0.08), (dx + 0.25, dy + 0.06, 0.12), flat("doghouse", "#e2782a", 0.5), bev=0)
+    bx((0.12, 0.08, 0.08), (dx + 0.25, dy + 0.06, 0.12), flat("doghouse", ORANGE, 0.5), bev=0)
     bx((0.05, 0.004, 0.026), (dx + 0.23, dy + 0.018, 0.13), win_lit(), bev=0)
     bx((0.13, 0.09, 0.008), (dx + 0.25, dy + 0.06, 0.164), flat("roof_d", "#3d4148", 0.7), bev=0)
-    bx((0.07, 0.06, 0.04), (dx + 0.06, dy + 0.12, 0.104), flat("drawworks", "#2f6db3", 0.5), bev=0)
+    bx((0.07, 0.06, 0.04), (dx + 0.06, dy + 0.12, 0.104), flat("drawworks", SAFETY, 0.5), bev=0)
     # the diesel power unit behind the rig floor, its exhaust smoking
     bx((0.1, 0.07, 0.06), (dx + 0.27, dy + 0.19, 0.03), flat("engine", "#5c6570", 0.5), bev=0)
-    bx((0.104, 0.074, 0.01), (dx + 0.27, dy + 0.19, 0.062), flat("engine_top", "#e2782a", 0.5), bev=0)
+    bx((0.104, 0.074, 0.01), (dx + 0.27, dy + 0.19, 0.062), flat("engine_top", ORANGE, 0.5), bev=0)
     cy(0.009, 0.1, (dx + 0.3, dy + 0.2, 0.11), flat("iron", IRON, 0.5), 6)
     smoke_at(dx + 0.3, dy + 0.2, 0.165)
     # the catwalk from the V-door down to the pipe rack in front
@@ -1146,7 +1119,7 @@ def oil_l2():
     pumpjack(0.48, 0.0, -0.3, 1.25, nod=-0.08, **pj)
     # the storage tank, pipe runs on low supports from the wellheads, valve wheels
     tx, ty = 0.32, 0.36
-    steel_tank(tx, ty, 0.14, 0.2, band="#2f6db3")
+    steel_tank(tx, ty, 0.14, 0.2, band=BAND_N)
     pipe = flat("pipe_g", "#7d858f", 0.4)
     wh1 = (0.26 + math.cos(0.3) * 0.2, -0.3 + math.sin(0.3) * 0.2)
     wh2 = (0.48 + math.cos(-0.3) * 0.17, math.sin(-0.3) * 0.17)
@@ -1170,14 +1143,254 @@ def oil_l2():
     truck(0.0, -0.16, 0.25, cab="#c9ccd0", box="#e6e3dc", tanker=True)
     bx((0.09, 0.07, 0.01), (0.46, -0.44, 0.017), tex("wood", WOOD_L, 4.0), bev=0)
     for k, (u, v) in enumerate(((-0.022, -0.016), (0.022, -0.016), (-0.022, 0.018), (0.022, 0.018))):
-        cy(0.018, 0.05, (0.46 + u, -0.44 + v, 0.047), flat("drum" + ("#2f6db3" if k % 3 else "#c8382c"),
-                                                            "#2f6db3" if k % 3 else "#c8382c", 0.45), 8)
+        dc = ORANGE if k % 3 else "#c8382c"
+        cy(0.018, 0.05, (0.46 + u, -0.44 + v, 0.047), flat("drum" + dc, dc, 0.45), 8)
     for (x, y) in ((-0.08, -0.4), (0.62, 0.22), (-0.56, 0.06)):
         ev.street_lamp(x, y, 0.2, modern=True)
 
 
+def column(x, y, r, h, c="#d9d6cf", platforms=(0.35, 0.62, 0.86), cage=True, band=None):
+    """A refinery column: a tall pale shell on a skirt, platform rings with yellow rails at the given height
+    fractions, a caged ladder up its front, a domed head; a coloured band near the top."""
+    sh = flat("col" + c, c, 0.45)
+    cy(r + 0.012, 0.05, (x, y, 0.025), flat("skirt", "#7d858f", 0.5), 10)
+    cy(r, h, (x, y, h / 2), sh, 10)
+    hemi(r, (x, y, h), sh, 10, 2, (1, 1, 0.6))
+    if band:
+        lr_ring(x, y, r + 0.002, h * 0.93, 0.025, flat("cband" + band, band, 0.5), 10)
+    for f in platforms:
+        z = h * f
+        cy(r + 0.022, 0.006, (x, y, z), flat("grate", "#4a4f57", 0.5), 10)
+        lr_ring(x, y, r + 0.02, z + 0.016, 0.005, flat("rail_y", SAFETY, 0.5), 10)
+    if cage:
+        bx((0.012, 0.01, h * 0.9), (x, y - r - 0.012, h * 0.45), flat("ladder", "#4a4f57", 0.5), bev=0)
+        for k in range(5):
+            cy(0.016, 0.004, (x, y - r - 0.016, h * (0.15 + k * 0.17)), flat("rail_y", SAFETY, 0.5), 6)
+
+
+def flare_stack(x, y, h, mats_flame=None):
+    """A flare stack: a slim derrick-braced pipe with a platform near the tip, a burner, a flame (its own emissive
+    material) and a smoke marker over it."""
+    pipe = flat("flare_pipe", "#b8bcc2", 0.45)
+    cy(0.026, 0.04, (x, y, 0.02), flat("skirt", "#7d858f", 0.5), 8)
+    cy(0.014, h, (x, y, h / 2), pipe, 8)
+    for k in range(3):  # bands of red and white near the top
+        lr_ring(x, y, 0.016, h - 0.04 - k * 0.04, 0.02, flat("band#d8342a" if k % 2 == 0 else "band#f1eee8",
+                                                            "#d8342a" if k % 2 == 0 else "#f1eee8", 0.55), 8)
+    for k in range(3):  # three guy legs
+        a = math.pi / 2 + k * math.tau / 3
+        beam((x + math.cos(a) * 0.09, y + math.sin(a) * 0.09, 0.0), (x, y, h * 0.55), 0.008,
+             flat("trestle", "#59606a", 0.5))
+    cy(0.04, 0.006, (x, y, h - 0.16), flat("grate", "#4a4f57", 0.5), 8)
+    cy(0.022, 0.03, (x, y, h + 0.012), flat("iron", IRON, 0.5), 8)
+    flame = glow("flame", "#ff8a1e", 6.0)
+    core = glow("flame_y", "#ffd34a", 7.0)
+    cn(0.042, 0.13, (x, y, h + 0.09), flame, 7)
+    cn(0.026, 0.085, (x + 0.004, y - 0.006, h + 0.07), core, 6)
+    smoke_at(x, y, h + 0.16)
+
+
+def sphere_tank(x, y, r, legs=6, c="#e6e3dc"):
+    """A pressure sphere on a ring of legs with a girder belt and a stair to its crown."""
+    uvs(r, (x, y, 0.05 + r), flat("sph" + c, c, 0.4), 14, 8)
+    lr_ring(x, y, r + 0.002, 0.05 + r, 0.012, flat("weld" + c, shade(c, 0.82), 0.5), 14)
+    for k in range(legs):
+        a = k * math.tau / legs + 0.3
+        px, py = x + math.cos(a) * r * 0.9, y + math.sin(a) * r * 0.9
+        bx((0.014, 0.014, 0.05 + r), (px, py, (0.05 + r) / 2), flat("leg_s", "#7d858f", 0.5), bev=0)
+    beam((x - r - 0.02, y - 0.05, 0.0), (x - 0.02, y - 0.03, 0.05 + 2 * r), 0.01, flat("rail_y", SAFETY, 0.5))
+
+
+def process_frame(x, y, w, d, levels, mt, deck):
+    """An open steel process structure: columns at the corners, a grated deck on each level, cross braces."""
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            bx((0.014, 0.014, levels[-1]), (x + sx * w / 2, y + sy * d / 2, levels[-1] / 2), mt, bev=0)
+    for z in levels:
+        bx((w + 0.01, d + 0.01, 0.008), (x, y, z), deck, bev=0)
+    for sy in (-1, 1):
+        beam((x - w / 2, y + sy * d / 2, 0.0), (x + w / 2, y + sy * d / 2, levels[0]), 0.008, mt)
+
+
+def oil_l3():
+    """Oil complex (DL 7): on a concrete pad with an asphalt lane, a tall distillation column with platforms and a
+    caged ladder beside a second column, both rising from an open steel process frame with drums and exchangers; a
+    flare stack burning on the left edge (the flame its own emissive material, a smoke marker over it); white tanks
+    with blue bands and climbing stairs; a pressure sphere on legs; a pipe rack of coloured pipes tying them together;
+    a separator basin of black oil with a walkway across it; a control house with lit ribbon windows; a tanker at a
+    loading gantry; lamps."""
+    pad(0.73, tex("plaster", "#b3ada2", 2.2), 0.012, 16, 0.03, 41, 1.0, 0.95)
+    asph = flat("asphalt", "#5d6066", 0.85)
+    line = flat("line_y", "#e8c547", 0.6)
+    ground_strip([(-0.7, -0.14), (0.7, -0.14), (0.7, -0.03), (-0.7, -0.03)], asph)
+    for k in range(6):
+        bx((0.07, 0.008, 0.002), (-0.55 + k * 0.22, -0.085, 0.017), line, bev=0)
+    steel = flat("pstruct", "#7d858f", 0.5)
+    deck = flat("grate", "#4a4f57", 0.5)
+    # the process unit at the back left: an open frame, two columns, drums and exchangers
+    px_, py_ = -0.2, 0.3
+    process_frame(px_ + 0.06, py_ - 0.02, 0.22, 0.14, (0.1, 0.2, 0.3), steel, deck)
+    column(px_ - 0.08, py_ + 0.04, 0.055, 0.96, band=BAND_N)
+    column(px_ + 0.1, py_ + 0.06, 0.038, 0.62, platforms=(0.5, 0.85), cage=False)
+    for (u, z, c) in ((0.0, 0.135, "#e6e3dc"), (0.0, 0.235, "#c8382c")):
+        cy(0.026, 0.16, (px_ + 0.06 + u, py_ - 0.02, z), flat("drum" + c, c, 0.45), 10, rot=(0, math.pi / 2, 0))
+    for k in range(3):
+        cy(0.012, 0.12, (px_ + 0.02 + k * 0.035, py_ - 0.07, 0.06), flat("exch", "#9aa0a6", 0.45), 8,
+           rot=(math.pi / 2, 0, 0))
+    # the flare stack at the left edge
+    flare_stack(-0.56, 0.2, 0.86)
+    # tanks at the right, a pressure sphere
+    steel_tank(0.3, 0.36, 0.14, 0.17, band=BAND_N)
+    steel_tank(0.55, 0.12, 0.11, 0.15, band=BAND_N, stair=True)
+    steel_tank(0.12, 0.5, 0.08, 0.12, c="#d9d6cf", stair=False)
+    sphere_tank(0.5, -0.3, 0.09)
+    # the pipe rack across the middle, tying the unit to the tanks
+    pipe_rack((-0.44, 0.08), (0.44, 0.08), 0.13, posts=4,
+              pipes=(("#d8b23a", 0.01), ("#b5413a", 0.01), ("#9aa0a6", 0.013), ("#5f6f84", 0.009)))
+    pipe = flat("pipe_g", "#7d858f", 0.4)
+    for (p0, p1) in (((0.3, 0.22, 0.14), (0.3, 0.08, 0.14)), ((0.46, 0.06, 0.14), (0.47, 0.08, 0.14)),
+                     ((-0.2, 0.24, 0.14), (-0.2, 0.08, 0.14)), ((0.5, -0.21, 0.08), (0.44, 0.08, 0.14))):
+        rod(p0, p1, 0.01, pipe, n=6)
+    # the separator basin of black oil, a walkway across it, a skimmer
+    bx_, by_ = -0.36, -0.36
+    bx((0.34, 0.22, 0.03), (bx_, by_, 0.015), flat("basin_c", "#c9c3b6", 0.8), bev=0)
+    oil_pool([(bx_ - 0.15, by_ - 0.09), (bx_ + 0.15, by_ - 0.09), (bx_ + 0.15, by_ + 0.09), (bx_ - 0.15, by_ + 0.09)],
+             0.034)
+    bx((0.012, 0.18, 0.012), (bx_ + 0.04, by_, 0.044), flat("basin_c", "#c9c3b6", 0.8), bev=0)  # the divider wall
+    bx((0.05, 0.26, 0.008), (bx_ - 0.06, by_, 0.056), deck, bev=0)  # the walkway
+    for sg in (-1, 1):
+        beam((bx_ - 0.06 + sg * 0.024, by_ - 0.13, 0.075), (bx_ - 0.06 + sg * 0.024, by_ + 0.13, 0.075), 0.005,
+             flat("rail_y", SAFETY, 0.5))
+    bx((0.04, 0.03, 0.03), (bx_ - 0.06, by_, 0.075), flat("skimmer", ORANGE, 0.5), bev=0)
+    # the control house with lit ribbon windows
+    cx_, cy_ = 0.02, -0.34
+    bx((0.2, 0.12, 0.09), (cx_, cy_, 0.045), tex("plaster", "#d9d4ca", 2.5), bev=0)
+    bx((0.21, 0.13, 0.012), (cx_, cy_, 0.096), flat("parapet", "#5b6168", 0.6), bev=0)
+    ribbon(cx_ - 0.08, cx_ + 0.08, cy_ - 0.061, 0.058, 0.03, 0.0, 4, lit=(0, 1, 3))
+    bx((0.06, 0.04, 0.05), (cx_ + 0.05, cy_ + 0.02, 0.12), flat("ac", "#9aa0a6", 0.5), bev=0)
+    rod((cx_ - 0.07, cy_ + 0.03, 0.1), (cx_ - 0.07, cy_ + 0.03, 0.2), 0.004, steel, n=4)  # a radio mast
+    # the loading gantry with a tanker under it
+    gx, gy = 0.28, -0.52
+    for sx in (-1, 1):
+        bx((0.014, 0.014, 0.16), (gx + sx * 0.1, gy + 0.07, 0.08), steel, bev=0)
+    bx((0.22, 0.05, 0.012), (gx, gy + 0.07, 0.16), deck, bev=0)
+    beam((gx - 0.04, gy + 0.06, 0.16), (gx - 0.02, gy + 0.0, 0.1), 0.008, flat("arm_y", SAFETY, 0.5))
+    truck(gx, gy - 0.01, 0.0, cab="#c9ccd0", box="#e6e3dc", tanker=True)
+    for (x, y) in ((-0.62, -0.1), (0.3, -0.2), (-0.1, -0.56), (0.66, -0.06)):
+        ev.street_lamp(x, y, 0.2, modern=True)
+
+
+def oil_l4():
+    """Plasma extractor (DL ≥ 8; the steel kit of residence_dl8 / city_dl8 / district_scifi, after mine_scifi's drill
+    derrick): on a round steel deck with a cold light ring, a drum housing with a team-neutral dark panel band and a
+    light line, a drill spire of four plate legs round a glowing cyan plasma core, two glowing rings on struts round
+    it and a crown with a lit needle; a lit well ring on the deck; tanks with light bands; cyan-glowing pipes from the
+    drill to the tanks and pump modules; a hexagonal reservoir of black oil in a lit steel frame; a control podium with
+    warm-lit shopfronts; a cargo drone; light masts and a lit avenue."""
+    mats = kit8()
+    st, plate, seam, panel, cap, neon, tip = mats
+    cyan = glow("cyan", CYAN, 2.5)
+    core = glow("core8", "#7ff0ff", 3.0)
+    ev.lr_deck(0.72, mats, 3)
+    ev.d8_road((0.16, -0.7), (0.06, -0.14), 0.08, mats, z=0.02)
+    # the drum housing at the centre back
+    dx, dy = -0.08, 0.14
+    ring = _MB()
+    for k in range(20):  # the lit well ring on the deck round the housing
+        a0, a1 = math.tau * k / 20, math.tau * (k + 1) / 20
+        ring.strip((dx + math.cos(a0) * 0.23, dy + math.sin(a0) * 0.23, 0.017),
+                   (dx + math.cos(a1) * 0.23, dy + math.sin(a1) * 0.23, 0.017), (0, 0, 1), 0.016, 0.0015)
+    ring.obj(cyan, "well_ring")
+    cy(0.2, 0.03, (dx, dy, 0.031), plate, 12)
+    cy(0.17, 0.13, (dx, dy, 0.08), st, 12)
+    lr_ring(dx, dy, 0.174, 0.1, 0.04, panel, 12)
+    lr_ring(dx, dy, 0.176, 0.1, 0.008, neon, 12)
+    cy(0.18, 0.014, (dx, dy, 0.152), plate, 12)
+    # the spire: four plate legs round the plasma core, girts, two glowing rings on struts, the crown
+    z0, z1 = 0.15, 0.86
+    legs = []
+    for k in range(4):
+        a = math.pi / 4 + k * math.pi / 2
+        legs.append(((dx + math.cos(a) * 0.12, dy + math.sin(a) * 0.12, z0),
+                     (dx + math.cos(a) * 0.035, dy + math.sin(a) * 0.035, z1)))
+    for (p, q) in legs:
+        beam(p, q, 0.026, plate)
+    for f in (0.3, 0.58, 0.82):
+        pts = [tuple(p[i] + (q[i] - p[i]) * f for i in range(3)) for p, q in legs]
+        for k in range(4):
+            beam(pts[k], pts[(k + 1) % 4], 0.012, seam)
+    for (p, q) in legs[:2] + legs[3:]:  # cold strips down the legs facing the camera
+        beam((p[0], p[1] - 0.004, p[2] + 0.04), (q[0], q[1] - 0.004, q[2] - 0.04), 0.008, neon)
+    cy(0.03, z1 - z0, (dx, dy, (z0 + z1) / 2), core, 8)
+    for (z, R) in ((0.38, 0.17), (0.64, 0.12)):
+        ev.torus(R, 0.012, (dx, dy, z), cyan, seg=16, mseg=4)
+        for k in range(4):
+            a = k * math.pi / 2
+            f = (z - z0) / (z1 - z0)
+            w = 0.12 + (0.035 - 0.12) * f
+            beam((dx + math.cos(a) * w * 0.7, dy + math.sin(a) * w * 0.7, z),
+                 (dx + math.cos(a) * R, dy + math.sin(a) * R, z), 0.008, seam)
+    bx((0.1, 0.1, 0.05), (dx, dy, z1 + 0.025), st, bev=0)
+    bx((0.11, 0.11, 0.01), (dx, dy, z1 + 0.05), plate, bev=0)
+    bx((0.104, 0.104, 0.008), (dx, dy, z1 + 0.006), neon, bev=0)
+    cn(0.05, 0.08, (dx, dy, z1 + 0.095), cap, 4, rot=(0, 0, math.pi / 4))
+    rod((dx, dy, z1 + 0.13), (dx, dy, z1 + 0.2), 0.005, cap, r2=0.0015, n=4)
+    bx((0.014, 0.014, 0.014), (dx, dy, z1 + 0.17), tip, bev=0)
+    # tanks with light bands at the right
+    for (x, y, r, h) in ((0.4, 0.32, 0.095, 0.22), (0.56, 0.08, 0.075, 0.17), (0.2, 0.52, 0.06, 0.14)):
+        cy(r + 0.02, 0.03, (x, y, 0.031), plate, 12)
+        cy(r, h, (x, y, h / 2), seam, 12)
+        lr_ring(x, y, r + 0.004, h * 0.62, 0.014, neon, 12)
+        lr_ring(x, y, r + 0.004, h * 0.3, 0.03, panel, 12)
+        hemi(r, (x, y, h), seam, 12, 2, (1, 1, 0.45))
+        cy(r * 0.3, 0.012, (x, y, h + r * 0.45), plate, 8)
+    # glowing cyan pipes from the drill housing to the tanks, a pump module on each run
+    for (p0, p1) in (((dx + 0.16, dy + 0.04, 0.05), (0.32, 0.28, 0.05)),
+                     ((dx + 0.17, dy - 0.03, 0.05), (0.49, 0.06, 0.05)), ((0.37, 0.24, 0.05), (0.21, 0.47, 0.05))):
+        rod(p0, p1, 0.011, cyan, n=6)
+        m = tuple((p0[i] + p1[i]) / 2 for i in range(3))
+        bx((0.05, 0.04, 0.05), (m[0], m[1], 0.035), st, bev=0)
+        bx((0.054, 0.044, 0.008), (m[0], m[1], 0.06), neon, bev=0)
+    # the reservoir of black oil in a lit steel frame at the front left
+    rx, ry = -0.36, -0.3
+    hexp = [(rx + math.cos(k * math.pi / 3) * 0.19, ry + math.sin(k * math.pi / 3) * 0.17) for k in range(6)]
+    oil_pool(hexp, 0.03)
+    plank_kerb(hexp, plate, t=0.03, h=0.04)
+    lit = _MB()
+    for k in range(6):
+        (x0, y0), (x1, y1) = hexp[k], hexp[(k + 1) % 6]
+        lit.strip((x0, y0, 0.041), (x1, y1, 0.041), (0, 0, 1), 0.01, 0.0)
+    lit.obj(neon, "pool_light")
+    bx((0.05, 0.26, 0.01), (rx + 0.02, ry, 0.05), plate, bev=0)  # a gantry walkway across it with a skimmer head
+    bx((0.04, 0.04, 0.03), (rx + 0.02, ry, 0.07), st, bev=0)
+    bx((0.044, 0.006, 0.01), (rx + 0.02, ry - 0.022, 0.07), tip, bev=0)
+    rod((dx - 0.12, dy - 0.12, 0.05), (rx + 0.1, ry + 0.12, 0.05), 0.011, cyan, n=6)
+    # plasma capacitor pods on the left, fed by a glowing line from the housing (tower_l8's capacitor pods)
+    pods = ((-0.5, 0.14), (-0.45, 0.29), (-0.34, 0.42))
+    for (x, y) in pods:
+        cy(0.055, 0.03, (x, y, 0.031), plate, 10)
+        cy(0.042, 0.1, (x, y, 0.08), st, 10)
+        lr_ring(x, y, 0.045, 0.1, 0.02, panel, 10)
+        cy(0.034, 0.026, (x, y, 0.143), cyan, 10)
+        cy(0.046, 0.01, (x, y, 0.16), plate, 10)
+    for i in range(len(pods) - 1):
+        rod((pods[i][0], pods[i][1], 0.05), (pods[i + 1][0], pods[i + 1][1], 0.05), 0.009, cyan, n=6)
+    rod((pods[0][0] + 0.04, pods[0][1], 0.05), (dx - 0.17, dy + 0.0, 0.05), 0.009, cyan, n=6)
+    # a steam vent on the housing's back (the venting plumes of frame 5)
+    vx, vy = dx + 0.06, dy + 0.15
+    cy(0.02, 0.14, (vx, vy, 0.19), seam, 8)
+    lr_ring(vx, vy, 0.022, 0.24, 0.01, neon, 8)
+    cy(0.026, 0.012, (vx, vy, 0.265), plate, 8)
+    smoke_at(vx, vy, 0.275)
+    # the control podium at the front right, a cargo drone by it, masts
+    ev.d8_podium(0.4, -0.3, 0.22, 0.16, 0.09, mats, plant=False)
+    cargo_drone(0.4, -0.3, 0.105, 0.4, mats, crate_c="#2b2d31")
+    for (x, y) in ((0.02, -0.5), (0.28, -0.08), (-0.6, -0.04), (0.0, 0.52), (0.62, -0.22)):
+        ev.lr_mast(x, y, 0.13, mats, 0.016)
+
+
 FACTORIES = [factory_l1, factory_l2, factory_l3]
-OILS = [oil_l1, oil_l2]
+OILS = [oil_l1, oil_l2, oil_l3, oil_l4]
 ASSETS = {f"factory_l{n + 1}": f for n, f in enumerate(FACTORIES)}
 ASSETS.update({f"oil_l{n + 1}": f for n, f in enumerate(OILS)})
 SIZE = {}  # bake size per model (the tight atlas at 512 by default, as the towers and the districts)
@@ -1206,7 +1419,8 @@ def export(name, out):
         o.select_set(True)
     bpy.context.view_layer.objects.active = ob
     path = os.path.join(out, f"{name}.glb")
-    bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", use_selection=True, export_apply=True, export_yup=True)
+    bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", use_selection=True, export_apply=True,
+                              export_yup=True)
     vs = [v.co for v in ob.data.vertices]
     rad = max(math.hypot(v.x, v.y) for v in vs)
     print(f"EXPORTED {name}: tris={tris} radius={rad:.3f} zmin={min(v.z for v in vs):.3f} "
