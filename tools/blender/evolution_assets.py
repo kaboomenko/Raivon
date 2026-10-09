@@ -1792,11 +1792,44 @@ def residence_dl3(team):
     tree(-0.6, -0.3, 0.8)
 
 
-def castle_tower(x, y, r, h, roof, team, flag=True):
+def coursed_cone(x, y, z0, r, h, roof_c, rings=3, sides=12, lip=0.007, band=0.78):
+    """A tower's cone roof laid in rings of slates (the steep tower roofs of reference frame 4): the lower edge of
+    each ring stands a lip proud of the ring below, the rings alternate two tones and the top of each ring darkens
+    just under the next ring's edge (the shadow line the high game camera reads, as course_rows does on the flat
+    roofs). Open at the bottom: the tower top closes it."""
+    mbs, butt = [_MB(), _MB()], _MB()
+
+    def P(rr, z, a):
+        return (x + rr * math.cos(a), y + rr * math.sin(a), z)
+    for k in range(rings):
+        last = k == rings - 1
+        fa, fb = k / rings, (1.0 if last else (k + 1.18) / rings)
+        za, zb = z0 + h * fa, z0 + h * fb
+        ra, rb = r * (1 - fa) + lip, r * (1 - fb)
+        fm = (k + band) / rings
+        lam = (fm - fa) / (fb - fa)
+        zm, rm = za + (zb - za) * lam, ra + (rb - ra) * lam
+        for i in range(sides):
+            a0, a1 = math.tau * i / sides, math.tau * (i + 1) / sides
+            am = (a0 + a1) / 2
+            n = (math.cos(am), math.sin(am), r / h)
+            if last:
+                mbs[k % 2].face([P(ra, za, a0), P(ra, za, a1), P(0.0, zb, 0.0)], n)
+            else:
+                mbs[k % 2].face([P(ra, za, a0), P(ra, za, a1), P(rm, zm, a1), P(rm, zm, a0)], n)
+                butt.face([P(rm, zm, a0), P(rm, zm, a1), P(rb, zb, a1), P(rb, zb, a0)], n)
+    for mb, mt in zip(mbs, _roof_mats(roof_c, 0.86)):
+        mb.obj(mt, "cone_courses")
+    butt.obj(tex("roof", shade(roof_c, 0.62), 1.6), "cone_butts")
+    return z0 + h
+
+
+def castle_tower(x, y, r, h, roof, team, flag=True, roof_c=None, rings=3):
     """A round castle tower as in the concept art: plinth, body, a string course, merlons, a tall cone roof
-    with a gilt finial and a pennant in the team colour."""
+    with a gilt finial and a pennant in the team colour. roof_c: lay the cone in slate rings of that colour."""
     st = stone(WSTONE, 0.6)
     dk = stone(WSTONE_D, 0.6)
+    slit_list = []
     cy(r + 0.012, 0.05, (x, y, 0.025), dk, 12)
     cy(r, h, (x, y, h / 2), st, 12)
     cy(r + 0.006, 0.016, (x, y, h * 0.55), dk, 12)
@@ -1810,9 +1843,17 @@ def castle_tower(x, y, r, h, roof, team, flag=True):
             wx, wy = x + math.cos(a) * (r + 0.002), y + math.sin(a) * (r + 0.002)
             if k == 0:
                 bx((0.022, 0.012, 0.04), (wx, wy, h * zf), win_lit(), a + math.pi / 2, 0)
+            elif roof_c:  # one quad on the face (a box spent 12 triangles on faces buried in the wall)
+                slit_list.append((wx + math.cos(a) * 0.004, wy + math.sin(a) * 0.004, h * zf, a + math.pi / 2, 0.0,
+                                  0.014, 0.034))
             else:
                 bx((0.014, 0.012, 0.034), (wx, wy, h * zf), flat("slit", "#1c1a19", 0.9), a + math.pi / 2, 0)
-    cn(r + 0.03, r * 3.4, (x, y, h + r * 1.7 + 0.02), roof, 12)
+    if slit_list:
+        slits(slit_list, one_side=True)
+    if roof_c:
+        coursed_cone(x, y, h + 0.02, r + 0.03, r * 3.4, roof_c, rings)
+    else:
+        cn(r + 0.03, r * 3.4, (x, y, h + r * 1.7 + 0.02), roof, 12)
     top = h + r * 3.4 + 0.02
     uvs(0.012, (x, y, top + 0.01), flat("finial", GOLD, 0.35), 6, 4)
     if flag:
@@ -1820,9 +1861,10 @@ def castle_tower(x, y, r, h, roof, team, flag=True):
         bx((0.07, 0.004, 0.04), (x + 0.036, y, top + 0.11), flat("pennant_" + team, team, 0.6), 0, 0)
 
 
-def square_tower(x, y, w, h, roof, team, flag=True, roofed=True):
+def square_tower(x, y, w, h, roof, team, flag=True, roofed=True, roof_c=None):
     """A square keep tower of reference frame 4: plinth, body with an arched lit window and slits, a corbelled
-    crenellated parapet and (roofed) a steep team-slate pyramid roof with a gilt finial and pennant."""
+    crenellated parapet and (roofed) a steep team-slate pyramid roof with a gilt finial and pennant.
+    roof_c: lay the pyramid in slate courses of that colour."""
     st = stone(WSTONE, 0.6)
     dk = stone(WSTONE_D, 0.6)
     bx((w + 0.024, w + 0.024, 0.05), (x, y, 0.025), dk, bev=0.004)
@@ -1838,11 +1880,17 @@ def square_tower(x, y, w, h, roof, team, flag=True, roofed=True):
             py = y + math.sin(a) * t + math.cos(a) * (w / 2 + 0.012)
             bx(((w + 0.012) / n * 0.55, 0.018, 0.04), (px, py, h + 0.034), st, a, 0)
     win_arch(x, y - w / 2 - 0.003, h * 0.7, 0.026, 0.05)
-    for sx in (-1, 1):  # arrow slits on the side faces
-        bx((0.012, 0.012, 0.04), (x + sx * (w / 2 + 0.002), y, h * 0.4), flat("slit", "#1c1a19", 0.9), math.pi / 2, 0)
+    if roof_c is not None or not roofed:  # arrow slits on the side faces: one quad each
+        slits([(x + sx * (w / 2 + 0.003), y, h * 0.4, sx * math.pi / 2, 0.0, 0.012, 0.04) for sx in (-1, 1)], one_side=True)
+    else:
+        for sx in (-1, 1):  # arrow slits on the side faces
+            bx((0.012, 0.012, 0.04), (x + sx * (w / 2 + 0.002), y, h * 0.4), flat("slit", "#1c1a19", 0.9), math.pi / 2, 0)
     top = h + 0.02
     if roofed:
-        hip_roof(w - 0.01, w - 0.01, w * 1.6, (x, y, h + 0.012), roof, oh=0.008)
+        if roof_c:
+            coursed_hip(w - 0.01, w - 0.01, w * 1.6, (x, y, h + 0.012), roof_c, oh=0.008, n=5, ct=0.009)
+        else:
+            hip_roof(w - 0.01, w - 0.01, w * 1.6, (x, y, h + 0.012), roof, oh=0.008)
         top = h + 0.012 + w * 1.6
         uvs(0.011, (x, y, top + 0.008), flat("finial", GOLD, 0.35), 6, 4)
     if flag:
@@ -1859,12 +1907,110 @@ def win_arch(x, y, z, w, h, rz=0.0):
     cy(w / 2, 0.012, (x, y - 0.002, z + h / 2), win_lit(), 10, rot=(math.pi / 2, 0, rz))
 
 
+def slits(items, mt=None, one_side=False):
+    """Arrow slits as two flat quads each (both faces of the wall), all in one mesh: a box per slit spent 12
+    triangles on faces buried in the masonry. items: (x, y, z, ang, through, w, h), the slit centred on the wall
+    line at (x, y), the wall running along ang and `through` thick."""
+    mb = _MB()
+    for (x, y, z, ang, th, w, h) in items:
+        e = (math.cos(ang), math.sin(ang), 0.0)
+        n = (-e[1], e[0], 0.0)
+        for s in ((-1,) if one_side else (1, -1)):
+            c = (x + n[0] * th / 2 * s, y + n[1] * th / 2 * s)
+            pts = [(c[0] + e[0] * w / 2 * a, c[1] + e[1] * w / 2 * a, z + h / 2 * b) for a, b in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
+            mb.face(pts, (n[0] * s, n[1] * s, 0.0))
+    mb.obj(mt or flat("slit", "#1c1a19", 0.9), "slits")
+
+
+def hoarding(x0, y0, x1, y1, out, team, z_top=0.28, wall_t=0.08):
+    """A timber hoarding on a curtain wall (reference frame 4's timberwork on the walls): a plank gallery jutting
+    out over the outer face on struts, under a lean-to roof of team slates that runs back over the wall-walk.
+    out = +1 builds on the wall's left side (seen walking x0→x1), -1 on its right."""
+    L = math.dist((x0, y0), (x1, y1))
+    ang = math.atan2(y1 - y0, x1 - x0)
+    nx, ny = -math.sin(ang) * out, math.cos(ang) * out
+    cx, cy_ = (x0 + x1) / 2, (y0 + y1) / 2
+    plank = tex("wood", "#8a5c36", 2.6)
+    dark = tex("wood", WOOD_D, 2.0)
+    g0, g1 = wall_t / 2 - 0.006, wall_t / 2 + 0.048  # gallery from just inside the outer face to 4.8 cm out
+    gm = (g0 + g1) / 2
+    bx((L, g1 - g0, 0.07), (cx + nx * gm, cy_ + ny * gm, z_top + 0.025), plank, ang, 0)
+    bx((L + 0.008, 0.012, 0.012), (cx + nx * (g1 + 0.002), cy_ + ny * (g1 + 0.002), z_top - 0.008), dark, ang, 0)
+    k = max(2, round(L / 0.12))
+    for i in range(k + 1):  # struts under the gallery
+        f = i / k - 0.5
+        px, py = cx + math.cos(ang) * f * (L - 0.012), cy_ + math.sin(ang) * f * (L - 0.012)
+        beam((px + nx * (wall_t / 2), py + ny * (wall_t / 2), z_top - 0.07),
+             (px + nx * (g1 - 0.004), py + ny * (g1 - 0.004), z_top - 0.01), 0.011, dark)
+    # the lean-to: from the gallery's outer edge (low) back over the wall-walk (high)
+    lo, hi = g1 + 0.012, -wall_t / 2 - 0.004
+    z_lo, z_hi = z_top + 0.062, z_top + 0.115
+    run = lo - hi
+    tilt = math.atan2(z_hi - z_lo, run)
+    ln = math.hypot(run, z_hi - z_lo)
+    m = (lo + hi) / 2
+    bx((L + 0.02, ln, 0.012), (cx + nx * m, cy_ + ny * m, (z_lo + z_hi) / 2),
+       tex("roof", slate(team, 0.9), 2.2), rot=(-tilt * out, 0, ang), bev=0)
+
+
+def barrel(x, y, s=1.0):
+    """A cask (staves in the wood grain)."""
+    cy(0.021 * s, 0.05 * s, (x, y, 0.025 * s), tex("wood", "#8d5f35", 4.0), 8)
+
+
+def crate(x, y, s, rz=0.0):
+    bx((s, s, s), (x, y, s / 2), tex("wood", "#a77b48", 5.0), rz, 0)
+    bx((s + 0.002, s * 0.18, s + 0.002), (x, y, s / 2), tex("wood", WOOD_D, 3.0), rz, 0)
+
+
+def hand_cart(team):
+    """A two-wheeled cart heaped with hay, its shafts on the ground (local: shafts towards −X)."""
+    wd = tex("wood", "#8a5e36", 2.5)
+    dk = tex("wood", WOOD_D, 2.0)
+    bx((0.13, 0.085, 0.014), (0.0, 0, 0.055), wd, bev=0)
+    for sy in (-1, 1):
+        bx((0.13, 0.008, 0.03), (0.0, sy * 0.043, 0.075), wd, bev=0)
+        cy(0.034, 0.01, (0.0, sy * 0.052, 0.034), dk, 8, rot=(math.pi / 2, 0, 0))
+        cy(0.012, 0.016, (0.0, sy * 0.054, 0.034), wd, 6, rot=(math.pi / 2, 0, 0))
+        beam((-0.06, sy * 0.03, 0.05), (-0.17, sy * 0.034, 0.008), 0.01, dk)
+    uvs(0.06, (0.005, 0, 0.09), tex("wood", THATCH, 3.0), 8, 4, (1.2, 0.8, 0.6))
+    bx((0.012, 0.09, 0.006), (0.02, 0, 0.122), flat("tie" + team, shade(team, 0.8), 0.7), bev=0)
+
+
+def smithy(team):
+    """A lean-to forge against a wall (local: the wall behind at +Y, open to −Y): timber posts, a slate lean-to
+    roof, a stone hearth with glowing coals under a stone chimney (a smoke marker), an anvil on a stump and a quench
+    tub — the busy castle yard of reference frame 4."""
+    wd = tex("wood", WOOD, 2.5)
+    st = stone(WSTONE_D, 0.9)
+    for sx in (-1, 1):
+        bx((0.014, 0.014, 0.16), (sx * 0.1, -0.06, 0.08), wd, bev=0)
+    bx((0.22, 0.014, 0.016), (0, -0.06, 0.158), wd, bev=0)
+    tilt = math.atan2(0.06, 0.15)
+    bx((0.25, math.hypot(0.15, 0.06) + 0.01, 0.012), (0, -0.0, 0.19), tex("roof", slate(team, 0.86), 2.2),
+       rot=(tilt, 0, 0), bev=0)
+    bx((0.09, 0.07, 0.065), (-0.05, 0.035, 0.0325), st, bev=0)
+    bx((0.07, 0.05, 0.008), (-0.05, 0.03, 0.068), glow("forge", "#ff8a2a", 3.0), bev=0)
+    top = chimney(-0.05, 0.05, 0.065, 0.36, 0.045, st)
+    smoke_at(-0.05, 0.05, top + 0.01)
+    cy(0.016, 0.03, (0.05, -0.02, 0.015), tex("wood", "#6a4327", 3.0), 7)
+    bx((0.034, 0.014, 0.014), (0.05, -0.02, 0.037), flat("anvil", "#2c2c2e", 0.5), bev=0)
+    cy(0.022, 0.026, (0.09, 0.03, 0.013), tex("wood", "#8d5f35", 4.0), 8)
+    cy(0.018, 0.003, (0.09, 0.03, 0.027), flat("water_d", "#24333d", 0.3), 8)
+
+
 def residence_dl4(team):
     pad(0.84, stone("#a48c6c", 1.2), 0.014, 14, 0.03, 14)  # warm paved court
+    # the big pale flagstones of reference frame 4's castle yard, and a flagged road out of the gate
+    flags = stone("#c9b38e", 0.9)
+    bx((0.9, 0.9, 0.006), (0, 0, 0.017), flags, bev=0)
+    bx((0.2, 0.19, 0.006), (0, -0.695, 0.017), flags, bev=0)
     st = stone(WSTONE, 0.6)  # larger blocks that survive the bake (reference frame 4 shows every stone)
-    roof = tex("roof", slate(team, 0.94))
+    roof_c = slate(team, 0.94)
+    roof = tex("roof", roof_c)
     H = 0.48
     corners = [(-H, -H), (H, -H), (H, H), (-H, H)]
+    slit_items = []
 
     def wall(x0, y0, x1, y1, gap=0.0):
         ln = math.dist((x0, y0), (x1, y1))
@@ -1881,22 +2027,26 @@ def residence_dl4(team):
                 bx(((b - a) / n, 0.085, 0.06), (x0 + (x1 - x0) * g, y0 + (y1 - y0) * g, 0.31), st, ang, bev=0)
             for i in range(1, int((b - a) / 0.12)):  # arrow slits along the curtain
                 g = (a + i * 0.12) / ln
-                bx((0.012, 0.086, 0.045), (x0 + (x1 - x0) * g, y0 + (y1 - y0) * g, 0.17), flat("slit", "#1c1a19", 0.9),
-                   ang, 0)
+                slit_items.append((x0 + (x1 - x0) * g, y0 + (y1 - y0) * g, 0.17, ang, 0.086, 0.012, 0.045))
     for i in range(4):
         x0, y0 = corners[i]
         x1, y1 = corners[(i + 1) % 4]
         wall(x0, y0, x1, y1, 0.22 if i == 0 else 0.0)
+    slits(slit_items)
+    # timber hoardings with slate lean-tos on the side curtains, between the corner and the mid towers
+    for sx in (-1, 1):
+        for (ya, yb) in ((-0.37, -0.08), (0.08, 0.37)):
+            hoarding(sx * H, ya, sx * H, yb, -sx, team)
     # front corners: square towers with steep slate pyramids (reference frame 4); back corners stay round
     for (x, y) in corners[:2]:
-        square_tower(x, y, 0.19, 0.56, roof, team)
+        square_tower(x, y, 0.19, 0.56, roof, team, roof_c=roof_c)
     for (x, y) in corners[2:]:
-        castle_tower(x, y, 0.1, 0.52, roof, team)
+        castle_tower(x, y, 0.1, 0.52, roof, team, roof_c=roof_c)
     # open crenellated mid-wall towers and slate-capped turrets flanking the gate
     for (x, y) in ((-H, 0.0), (H, 0.0), (0.0, H)):
         square_tower(x, y, 0.14, 0.4, roof, team, flag=False, roofed=False)
     for sx in (-1, 1):
-        castle_tower(sx * 0.17, -H - 0.02, 0.06, 0.5, roof, team, flag=False)
+        castle_tower(sx * 0.17, -H - 0.02, 0.06, 0.5, roof, team, flag=False, roof_c=roof_c, rings=2)
     # gatehouse: an arched gate with a lit passage and steps up to it
     bx((0.26, 0.16, 0.4), (0, -H, 0.2), st, bev=0.01)
     sur = flat("arch_sur", "#6e6152", 0.85)
@@ -1914,17 +2064,47 @@ def residence_dl4(team):
         bx((0.18 - k * 0.02, 0.04, 0.012 + k * 0.012), (0, -H - 0.13 + k * 0.03, 0.006 + k * 0.006),
            stone(WSTONE_D, 0.6), bev=0.002)
     win_arch(0, -H - 0.082, 0.3, 0.03, 0.04)
-    prism_roof("gate_roof", 0.28, 0.18, 0.14, (0, -H, 0.4), roof)
-    # keep with two turrets and a hall
+    gable_roof(0.26, 0.16, 0.14, (0, -H, 0.4), roof_c, st, oh=0.03, ohx=0.02, n=4, gable_timber=None, **SOFT_ROOF)
+    # keep with two turrets and a hall under a big coursed slate roof with lit dormers (reference frame 4)
     bx((0.4, 0.32, 0.66), (0.04, 0.12, 0.33), st, bev=0.012)
-    prism_roof("keep_roof", 0.42, 0.34, 0.3, (0.04, 0.12, 0.66), roof)
+    gable_roof(0.4, 0.32, 0.3, (0.04, 0.12, 0.66), roof_c, st, oh=0.03, ohx=0.02, n=6, gable_timber=None, **SOFT_ROOF)
+    for x in (-0.03, 0.11):  # dormers on the front slope, each with a lit window
+        bx((0.06, 0.085, 0.1), (x, -0.0025, 0.74), st, bev=0)
+        window(x, -0.049, 0.745, 0, 0.026, 0.04, "#6e6152")
+        gable_roof(0.085, 0.06, 0.045, (x, -0.0025, 0.79), roof_c, st, rz=math.pi / 2, oh=0.012, ohx=0.01, n=2,
+                   tk=0.008, ct=0.008, gable_timber=None, eave_z=0.0, barge=None, **SOFT_ROOF)
+    chimney(0.19, 0.2, 0.8, 0.98, 0.05, stone(WSTONE_D, 0.8))
     for i in range(4):
         win_arch(-0.11 + i * 0.1, -0.042, 0.47, 0.03, 0.05)
         window(-0.11 + i * 0.1, -0.044, 0.28, 0, 0.026, 0.05)
     for (x, y, h) in ((-0.16, -0.04, 0.86), (0.24, -0.04, 0.78)):
-        castle_tower(x, y, 0.08, h, roof, team, flag=False)
-    castle_tower(0.04, 0.24, 0.085, 1.08, roof, team)  # the tall central tower — the castle's silhouette
-    build_at(lambda: stone_house(0.3, 0.22, 0.28, team, WSTONE), -0.26, 0.3)
+        castle_tower(x, y, 0.08, h, roof, team, flag=False, roof_c=roof_c)
+    castle_tower(0.04, 0.24, 0.085, 1.08, roof, team, roof_c=roof_c, rings=4)  # the tall central tower
+    # the great hall behind the keep: warm stone under a coursed slate roof, lit windows
+    def hall():
+        w, d, h = 0.3, 0.22, 0.28
+        bx((w, d, h), (0, 0, h / 2), stone(WSTONE, 1.0), bev=0.012)
+        bx((w + 0.02, d + 0.02, 0.035), (0, 0, 0.0175), stone(STONE_D), bev=0)
+        gable_roof(w, d, 0.17, (0, 0, h), roof_c, stone(WSTONE, 1.0), oh=0.03, ohx=0.02, n=4, gable_timber=None,
+                   **SOFT_ROOF)
+        bx((0.065, 0.014, 0.11), (0, -d / 2 - 0.004, 0.055), tex("wood", WOOD_D), bev=0)
+        for sx in (-1, 1):
+            window(sx * w * 0.3, -d / 2 - 0.004, h * 0.62, 0, 0.04, 0.05, WOOD_D)
+        window(-w / 2 - 0.004, 0, h * 0.62, math.pi / 2, 0.04, 0.05, WOOD_D)
+    build_at(hall, -0.26, 0.3)
+    # the busy yard: a forge against the east curtain, a hay cart, casks, crates and a haystack
+    build_at(lambda: smithy(team), 0.37, -0.2, -math.pi / 2)
+    build_at(lambda: hand_cart(team), -0.3, -0.25, math.pi + 0.4)
+    for (x, y) in ((-0.36, -0.12), (-0.32, -0.1), (-0.355, -0.08)):
+        barrel(x, y)
+    barrel(0.2, -0.33)
+    barrel(0.24, -0.35)
+    crate(-0.2, -0.36, 0.045, 0.3)
+    crate(-0.17, -0.31, 0.036, -0.2)
+    haystack(0.36, 0.28, 0.6)
+    for (x, y) in ((0.22, -0.6), (-0.24, -0.58)):  # casks and a crate stacked outside the gate
+        barrel(x, y)
+    crate(0.26, -0.56, 0.04, 0.2)
     banner(0.04, 0.12, 1.4, team, 0.3)  # the great hanging banners of reference frame 4
     banner(-H, -H, 1.12, team, 0.2)
     banner(H, -H, 1.12, team, 0.2)
