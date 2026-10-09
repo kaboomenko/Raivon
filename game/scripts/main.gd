@@ -6678,8 +6678,9 @@ func _demo(spec: String) -> void:
 		_select(_mill)
 		rig.focus(map_view.cell_world(_mill), 0.3)
 		return
-	if what == "tower":  # a finished tower on the player's plain nearest the capital
+	if what == "tower":  # a finished tower on the player's plain nearest the capital (tower:N — at level N)
 		var cap: int = sim.states[Types.PLAYER]["capital_id"]
+		var lv := clampi(int(parts[1]), 1, 8) if parts.size() > 1 else 1
 		var picks: Array = []
 		for i in sim.cells.size():
 			if sim.cells[i]["owner"] == Types.PLAYER and sim.cells[i]["kind"] == "plain":
@@ -6694,7 +6695,11 @@ func _demo(spec: String) -> void:
 			_tower_action()
 			econ.buildings_at(n)[-1]["upgrade_end"] = 1
 			_econ_tick()
-			rig.focus(map_view.cell_world(n), 0.12)
+			if lv > 1:
+				econ.buildings_at(n)[-1]["level"] = lv
+				_econ_tick()
+				map_view.refresh_props()
+			rig.focus(map_view.cell_world(n), 0.07)
 			break
 		return
 	if what == "ruin":
