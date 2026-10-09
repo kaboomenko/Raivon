@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Renders the Godot client headlessly (software Vulkan) and saves a screenshot.
 # Usage: tools/godot_shot.sh OUT.png [extra user args, e.g. --zoom=0.3]
+# --res=WxH sets the window (and the virtual X screen) size, default 941x1672 — e.g. --res=941x2040 for a tall phone
+# (the project stretches with aspect "expand", so the canvas grows taller and VB moves down).
 set -euo pipefail
 # Renders with the Mobile renderer — what phones run (the project's rendering_method.mobile default); pass
 # --forward-plus as an extra argument for the desktop renderer.
@@ -9,12 +11,14 @@ set -euo pipefail
 # renderer is; a --shot-delay then costs N frames a second, so use it without a delay.
 OUT="$1"; shift || true
 METHOD=mobile
+RES=941x1672
 ENGINE=()
 ARGS=()
 for a in "$@"; do
   case "$a" in
     --forward-plus) METHOD=forward_plus ;;
     --fixed-fps=*) ENGINE+=(--fixed-fps "${a#--fixed-fps=}") ;;
+    --res=*) RES="${a#--res=}" ;;
     *) ARGS+=("$a") ;;
   esac
 done
@@ -30,8 +34,8 @@ START=$(date +%s)
 # compile renders invisible and is easy to miss.
 rc=0
 flock -E 75 -o -w "$LOCK_WAIT" "$LOCK" \
-  env VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json timeout "$RUN_LIMIT" xvfb-run -a -s "-screen 0 941x1672x24" \
-  "$GODOT" --path . --rendering-method "$METHOD" ${ENGINE[@]+"${ENGINE[@]}"} --resolution 941x1672 \
+  env VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json timeout "$RUN_LIMIT" xvfb-run -a -s "-screen 0 ${RES}x24" \
+  "$GODOT" --path . --rendering-method "$METHOD" ${ENGINE[@]+"${ENGINE[@]}"} --resolution "$RES" \
   -- --shot="$OUT" ${ARGS[@]+"${ARGS[@]}"} 2>&1 \
   | grep -E 'shot saved|perf |SCRIPT ERROR|SHADER ERROR|Parse Error|ERROR: .*([Ss]hader|uniform)|^E +[0-9]+->' \
   || rc=${PIPESTATUS[0]}

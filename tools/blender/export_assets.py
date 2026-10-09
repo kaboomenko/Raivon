@@ -32,8 +32,86 @@ def reset():
     kit._MATS.clear()
 
 
-def bake_asset(objs, size=1024):
-    """Join, unwrap and bake base colour of procedural materials into one texture (glTF-friendly)."""
+def _fill_gutter(img):
+    """Fill the unbaked (pure black) texels with the colours of the islands around them (push-pull: average the
+    baked texels down a pyramid, then pull the coarse averages back up into the holes), so the small mip levels the
+    game samples at map distance blend an island with its neighbours instead of with black."""
+    import numpy as np
+    n = img.size[0]
+    px = np.empty(n * n * 4, dtype=np.float32)
+    img.pixels.foreach_get(px)
+    px = px.reshape(n, n, 4)
+    rgb = px[:, :, :3].copy()
+    w = (rgb.max(axis=2) > 0).astype(np.float32)
+    levels = [(rgb * w[:, :, None], w)]
+    while levels[-1][1].shape[0] > 1:
+        c, m = levels[-1]
+        levels.append((c[0::2, 0::2] + c[1::2, 0::2] + c[0::2, 1::2] + c[1::2, 1::2],
+                       m[0::2, 0::2] + m[1::2, 0::2] + m[0::2, 1::2] + m[1::2, 1::2]))
+    fill = levels[-1][0] / np.maximum(levels[-1][1], 1e-6)[:, :, None]
+    for c, m in reversed(levels[:-1]):
+        up = np.repeat(np.repeat(fill, 2, axis=0), 2, axis=1)
+        avg = c / np.maximum(m, 1e-6)[:, :, None]
+        fill = np.where((m > 0)[:, :, None], avg, up)
+    px[:, :, :3] = np.where((w > 0)[:, :, None], rgb, fill)
+    px[:, :, 3] = 1.0
+    img.pixels.foreach_set(px.ravel())
+    img.update()
+
+
+def paint_ao(ob, img, k=0.45, dist=0.25, samples=32, keep_rows_from=None):
+    """Paint ambient occlusion into a baked colour sheet: colour × mix(1, AO, k) (art direction §6.5, «Raivon Soft»).
+
+    This is the only light the bake carries: crevices, eaves and the feet of walls and props darken softly, so a
+    model reads as a painted toy and its shadow side never goes black. The height gradient and the warm/cool tint
+    live only in the runtime shader (soft_model.gdshader), so nothing is applied twice. AO rays reach `dist` model
+    units (1 hex = radius 1) with `samples` rays per texel; the factor is applied to the stored (sRGB) texel values.
+    keep_rows_from: texel rows at and above this index keep their colour (bake_atlas's palette strip, where many
+    faces share one cell and their AO would be garbage). ob must be the selected, active object."""
+    import time
+
+    import numpy as np
+    t0 = time.time()
+    sc = bpy.context.scene
+    if sc.world is None:  # reset() leaves no world, and Cycles reads the AO distance from it
+        sc.world = bpy.data.worlds.new("w")
+    sc.world.light_settings.distance = dist
+    w_, h_ = img.size
+    ao = bpy.data.images.new("bake_ao", w_, h_, float_buffer=True)
+    ao.colorspace_settings.name = "Non-Color"  # raw AO in [0, 1], no view transform on the way in or out
+    added = []
+    for slot in ob.material_slots:
+        nt = slot.material.node_tree
+        node = nt.nodes.new("ShaderNodeTexImage")
+        node.image = ao
+        nt.nodes.active = node
+        added.append((nt, node))
+    samples0 = sc.cycles.samples
+    sc.cycles.samples = samples
+    try:
+        bpy.ops.object.bake(type="AO", margin=8)
+    finally:
+        sc.cycles.samples = samples0
+    a = np.empty(w_ * h_ * 4, dtype=np.float32)
+    ao.pixels.foreach_get(a)
+    f = (1.0 - k) + k * np.clip(a.reshape(h_, w_, 4)[:, :, 0], 0.0, 1.0)
+    if keep_rows_from is not None:
+        f[int(keep_rows_from):, :] = 1.0
+    px = np.empty(w_ * h_ * 4, dtype=np.float32)
+    img.pixels.foreach_get(px)
+    px = px.reshape(h_, w_, 4)
+    px[:, :, :3] *= f[:, :, None]
+    img.pixels.foreach_set(px.ravel())
+    img.update()
+    for nt, node in added:
+        nt.nodes.remove(node)
+    bpy.data.images.remove(ao)
+    print(f"paint_ao: {w_}px {samples} spp dist {dist} k {k}: {time.time() - t0:.1f} s", flush=True)
+
+
+def bake_asset(objs, size=1024, ao=0.45):
+    """Join, unwrap and bake base colour of procedural materials into one texture (glTF-friendly), with soft
+    ambient occlusion painted in (paint_ao; ao=0 leaves it out) and the gutter filled (_fill_gutter)."""
     bpy.ops.object.select_all(action="DESELECT")
     for o in objs:
         o.select_set(True)
@@ -59,6 +137,9 @@ def bake_asset(objs, size=1024):
     sc.render.bake.use_pass_indirect = False
     sc.render.bake.margin = 4
     bpy.ops.object.bake(type="DIFFUSE", pass_filter={"COLOR"})
+    if ao > 0:
+        paint_ao(ob, img, ao)
+    _fill_gutter(img)  # no black gutter bleeding into the small mip levels
     # one material: baked colour + per-slot roughness/metal/emission averaged into the main one
     emissive = [s.material for s in ob.material_slots if s.material.node_tree.nodes["Principled BSDF"].inputs["Emission Strength"].default_value > 0]
     metal = [s.material for s in ob.material_slots if s.material.node_tree.nodes["Principled BSDF"].inputs["Metallic"].default_value > 0.3]

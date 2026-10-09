@@ -2,8 +2,9 @@ extends RefCounted
 ## «Raivon Soft» materials for every imported model, without re-exporting one (docs/art_direction.md §6.5).
 ## Each GLB ships exactly one albedo-baked StandardMaterial3D (plus emissive and metal slots) and all lighting
 ## happens in Godot, so swapping that material for the soft_model shader restyles the whole model set:
-## - the baked material -> a ShaderMaterial on soft_model.gdshader (wrapped warm light, rim, saturation, height
-##   gradient), one per albedo texture, carrying the original in meta "src" (map_view._animate_troops reads it);
+## - the baked material -> a ShaderMaterial on soft_model.gdshader (half-wrapped light with a warm terminator, rim,
+##   lilac shade fill, saturation, height gradient), one per albedo texture, carrying the original in meta "src"
+##   (map_view._animate_troops reads it);
 ## - emissive materials keep their emission, get Godot's wrapped diffuse and lose the highlight;
 ## - metal becomes painted steel: metallic <= 0.25, roughness >= 0.55, wrapped diffuse.
 ## The swap is made on the meshes of the PackedScene (shared sub-resources), so every instance, the scenery
@@ -93,14 +94,17 @@ static func source(m: Material) -> Material:
 	return m
 
 
-## A procedural solid (aircraft, carts, camp posts, tinted tents): Godot's wrapped diffuse and no highlight.
-## Godot's LAMBERT_WRAP is energy-conserving with roughness as the wrap: a lit face gets 1 / (1 + roughness)
-## of the light, so the default roughness 1.0 would halve the sunny side; 0.5 keeps it at 2/3 and still lifts
-## the shade side (N·L = 0 gets 0.22 instead of 0).
+## A procedural solid (aircraft, carts, camp posts, tinted tents): Godot's wrapped diffuse and no highlight,
+## matched to the half wrap of soft_light.gdshaderinc that the baked models next to it get.
+## Godot's LAMBERT_WRAP is energy-conserving with roughness r as the wrap: (N·L + r) / (1 + r)². At r = 0.15 a
+## face square to the sun gets 0.87, a front wall (N·L ≈ 0.47) 0.47 as with Lambert and the terminator 0.11, as on
+## the models (1.0 / 0.47 / 0.11); r = 0.5 had left the sunny side at 2/3, duller than the models.
+## metallic_specular 0: a low roughness would otherwise mirror the sky as a pale sheen at grazing angles.
 static func matte(m: BaseMaterial3D) -> BaseMaterial3D:
 	m.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
 	m.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
-	m.roughness = minf(m.roughness, 0.5)
+	m.roughness = 0.15
+	m.metallic_specular = 0.0
 	return m
 
 

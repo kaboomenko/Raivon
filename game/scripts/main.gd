@@ -6171,7 +6171,7 @@ func _ftue_tick(delta: float) -> void:
 			if dh >= 0:
 				target = rig.cam.unproject_position(map_view.cell_world(dh) + Vector3(0, 0.8, 0))
 		9:
-			target = Vector2(895, 486)
+			target = hud.tool_rect("fort").get_center()
 		10:
 			var ht := _hamlets_target()
 			if ht < 0 and mode == Mode.MAP:

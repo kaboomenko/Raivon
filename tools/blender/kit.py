@@ -266,20 +266,22 @@ def textured(kind, color, scale=1.0):
     bsdf = nt.nodes["Principled BSDF"]
     co = _coords(nt)
     base = srgb(color)
-    dark = tuple(c * 0.55 for c in base)
+    # «Raivon Soft» (art direction §6.5): faint mortar (0.82 of the stone, was 0.55), blocks twice as big, light
+    # noise (×0.15, was 0.35): the masonry reads as a soft painted texture, not a dark grid at map distance
+    mortar = tuple(c * 0.82 for c in base)
     if kind in ("stone", "roof"):
         br = nt.nodes.new("ShaderNodeTexBrick")
         nt.links.new(co, br.inputs["Vector"])
         br.inputs["Color1"].default_value = (*base, 1)
         br.inputs["Color2"].default_value = (*tuple(c * 0.8 for c in base), 1)
-        br.inputs["Mortar"].default_value = (*dark, 1)
+        br.inputs["Mortar"].default_value = (*mortar, 1)
         if kind == "stone":
-            br.inputs["Scale"].default_value = 9.0 * scale
-            br.inputs["Mortar Size"].default_value = 0.025
+            br.inputs["Scale"].default_value = 4.5 * scale
+            br.inputs["Mortar Size"].default_value = 0.02
             br.inputs["Brick Width"].default_value = 0.6
             br.inputs["Row Height"].default_value = 0.3
-        else:  # roof tiles: short rows, strong shadow lines
-            br.inputs["Scale"].default_value = 14.0 * scale
+        else:  # roof tiles: short rows (the course geometry and AO carry the shadow lines)
+            br.inputs["Scale"].default_value = 7.0 * scale
             br.inputs["Mortar Size"].default_value = 0.04
             br.inputs["Brick Width"].default_value = 0.35
             br.inputs["Row Height"].default_value = 0.22
@@ -289,7 +291,7 @@ def textured(kind, color, scale=1.0):
         mix = nt.nodes.new("ShaderNodeMix")
         mix.data_type = "RGBA"
         mix.blend_type = "MULTIPLY"
-        mix.inputs["Factor"].default_value = 0.35
+        mix.inputs["Factor"].default_value = 0.15
         nt.links.new(br.outputs["Color"], mix.inputs["A"])
         nt.links.new(noise.outputs["Color"], mix.inputs["B"])
         nt.links.new(mix.outputs["Result"], bsdf.inputs["Base Color"])
@@ -297,11 +299,11 @@ def textured(kind, color, scale=1.0):
         wave = nt.nodes.new("ShaderNodeTexWave")
         wave.wave_type = "BANDS"
         wave.inputs["Scale"].default_value = 6.0 * scale
-        wave.inputs["Distortion"].default_value = 6.0
+        wave.inputs["Distortion"].default_value = 3.0  # calm grain (was 6: busy swirls)
         wave.inputs["Detail"].default_value = 3.0
         nt.links.new(co, wave.inputs["Vector"])
         ramp = nt.nodes.new("ShaderNodeValToRGB")
-        ramp.color_ramp.elements[0].color = (*dark, 1)
+        ramp.color_ramp.elements[0].color = (*tuple(c * 0.8 for c in base), 1)  # was 0.55: no dark stripes
         ramp.color_ramp.elements[1].color = (*base, 1)
         nt.links.new(wave.outputs["Fac"], ramp.inputs["Fac"])
         nt.links.new(ramp.outputs["Color"], bsdf.inputs["Base Color"])
@@ -312,7 +314,7 @@ def textured(kind, color, scale=1.0):
         nt.links.new(co, noise.inputs["Vector"])
         ramp = nt.nodes.new("ShaderNodeValToRGB")
         ramp.color_ramp.elements[0].position = 0.3
-        ramp.color_ramp.elements[0].color = (*tuple(c * 0.82 for c in base), 1)
+        ramp.color_ramp.elements[0].color = (*tuple(c * 0.9 for c in base), 1)  # soft mottling (was 0.82)
         ramp.color_ramp.elements[1].position = 0.75
         ramp.color_ramp.elements[1].color = (*base, 1)
         nt.links.new(noise.outputs["Fac"], ramp.inputs["Fac"])

@@ -30,7 +30,9 @@ import kit  # noqa: E402
 import export_assets as ea  # noqa: E402  (guarded: importing it builds nothing)
 from kit import mat, prism_roof  # noqa: E402
 
-TEAMS = {"blue": "#2673ff", "red": "#e6261a", "green": "#40a64d"}  # Color(0.15,0.45,1) / (0.9,0.15,0.1) / (0.25,0.65,0.3)
+# «Raivon Soft» team colours on the models (art direction §6.3): a sky blue, a warm red and a fresh green, lighter and
+# less neon than the old #2673ff / #e6261a / #40a64d; troops and props import TEAMS, so their re-exports follow
+TEAMS = {"blue": "#3F86F0", "red": "#DD3A30", "green": "#4CB050"}
 
 WOOD = "#7d5130"
 WOOD_L = "#a8743f"
@@ -38,8 +40,8 @@ WOOD_D = "#5a3a22"
 LOG = "#a06c3c"
 THATCH = "#d8b25c"
 DAUB = "#c7a77a"
-STONE = "#bdbab2"  # light grey stone (reference frames), was beige #cbc3b4
-STONE_D = "#86837c"
+STONE = "#D3C8B4"  # warm light building stone (§6.3), was the cooler grey #bdbab2
+STONE_D = "#A39A8C"  # its shade (was #86837c): a darker stone, never a near-black one
 WSTONE, WSTONE_D = "#c6b6a0", "#8e8070"  # the warm sandstone of reference frame 4's castle
 COBBLE = "#a8a091"
 DIRT = "#9c7a52"
@@ -84,8 +86,11 @@ def flat(name, color, rough=0.75):
 
 
 def stone(color, scale=1.0):
-    """Stone blocks laid in world space (rows stay horizontal on walls at any angle)."""
-    return facade(color, color, wf=0.0, brick=True, brick_scale=11.0 * scale, mortar_k=0.72)
+    """Stone blocks laid in world space (rows stay horizontal on walls at any angle).
+
+    «Raivon Soft» (§6.5): blocks twice as big (scale 11 -> 5.5) and a faint seam: mortar 0.9 of the stone in sRGB
+    (≈ 0.8 in linear light, as kit.textured's 0.82), was 0.72 — a soft painted course, no dark grid at map distance."""
+    return facade(color, color, wf=0.0, brick=True, brick_scale=5.5 * scale, mortar_k=0.9)
 
 
 def glow(name, color, strength=3.0):
@@ -101,7 +106,7 @@ def _sock(node, ident, out=False):
 
 
 def facade(wall, win, col=0.07, floor=0.1, wf=0.5, hf=0.55, lit="#ffd27a", lit_p=0.22, brick=False, z0=0.0,
-           brick_scale=30.0, mortar_k=1.35, pil=0, pil_c=None):
+           brick_scale=15.0, mortar_k=1.35, pil=0, pil_c=None):
     """Wall with a grid of windows on every vertical face (world-space, so floors line up with Z=0).
 
     Baked into the texture like every procedural material: cheap windows without extra geometry.
@@ -271,7 +276,27 @@ def pad(r, mt, h=0.02, n=14, jitter=0.0, seed=0, sx=1.0, sy=1.0):
     return extrude(ngon(r, n, 0.1, sx, sy, jitter, seed), -0.01, h, mt)
 
 
-ROOF_TRIM = "#3e2f25"  # ridge caps and eave boards: dark lines that keep a small roof readable at game size
+# ridge caps, hip lines and eave boards keep a small roof readable at game size. «Raivon Soft» (§6.3): a deep shade of
+# the roof itself (roof colour × TRIM_K) where the roof colour is known, else warm timber — never the old near-black
+# #3e2f25
+ROOF_TRIM = "#6B4A30"
+TRIM_K = 0.62
+TRIM_AUTO = "auto"  # gable_roof's default ridge: roof_trim(roof_c)
+
+
+def roof_trim(roof_c=None):
+    """The trim colour of a roof of colour roof_c (an sRGB hex), or ROOF_TRIM when the roof colour is unknown."""
+    return shade(roof_c, TRIM_K) if isinstance(roof_c, str) and roof_c.startswith("#") else ROOF_TRIM
+
+
+def _mat_color(mt):
+    """The sRGB hex a kit material was made from (kit.mat, kit.textured or facade), or None."""
+    for key, m_ in kit._MATS.items():
+        if m_ is not mt or not isinstance(key, tuple) or len(key) < 2:
+            continue
+        c = key[2] if key[0] == "tex" else key[1]
+        return c if isinstance(c, str) and c.startswith("#") else None
+    return None
 
 
 def _rt(p, loc, rz):
@@ -280,8 +305,8 @@ def _rt(p, loc, rz):
     return (loc[0] + p[0] * c - p[1] * s_, loc[1] + p[0] * s_ + p[1] * c, loc[2] + p[2])
 
 
-def _trim_lines(lines, loc, rz, t):
-    tm = flat("roof_trim", ROOF_TRIM, 0.8)
+def _trim_lines(lines, loc, rz, t, roof_c=None):
+    tm = flat("roof_trim", roof_trim(roof_c), 0.8)
     for p0, p1 in lines:
         beam(_rt(p0, loc, rz), _rt(p1, loc, rz), t, tm)
 
@@ -292,7 +317,8 @@ def prism_roof(name, w, d, h, loc, material, overhang=0.08, rot_z=0.0):
     L, D = w / 2 + overhang, d / 2 + overhang
     t = max(0.008, 0.05 * min(w, d))
     _trim_lines([((-L, 0, h + t * 0.2), (L, 0, h + t * 0.2)),
-                 ((-L, -D, t * 0.3), (L, -D, t * 0.3)), ((-L, D, t * 0.3), (L, D, t * 0.3))], loc, rot_z, t)
+                 ((-L, -D, t * 0.3), (L, -D, t * 0.3)), ((-L, D, t * 0.3), (L, D, t * 0.3))], loc, rot_z, t,
+                _mat_color(material))
     return o
 
 
@@ -315,7 +341,7 @@ def hip_roof(w, d, h, loc, mt, oh=0.03, rz=0.0):
     for i in range(4):
         lines.append((corners[i], tops[i]))  # hip ridges
         lines.append((corners[i], corners[(i + 1) % 4]))  # eaves
-    _trim_lines(lines, loc, rz, t)
+    _trim_lines(lines, loc, rz, t, _mat_color(mt))
     return o
 
 
@@ -620,7 +646,7 @@ def onion(x, y, z, r, mt, drum_mt=None):
 # little hood with a step, shutters and flower boxes. Built from cheap flat strips and wedge rows so a whole town
 # stays inside the mobile budget.
 
-TIMBER = "#47301f"  # dark oak beams
+TIMBER = "#6B4A30"  # oak beams (§6.3), was the near-black #47301f
 SHUTTER_K = 0.62  # shutters: a deep shade of the team colour
 # the settlement roofs: course shadow bands a little lighter and narrower than gable_roof's defaults, and a lighter
 # slab edge, so the courses read as bright tile rows (reference frames 3 and 4) rather than dark seams or louvres
@@ -715,7 +741,7 @@ def _roof_mats(roof_c, tone=0.9, kind="roof", scale=1.6):
 
 
 def gable_roof(w, d, h, loc, roof_c, gable_mt, rz=0.0, oh=0.035, ohx=0.03, n=5, tk=0.012, ct=0.012, tone=0.84,
-               kind="roof", barge=TIMBER, ridge=ROOF_TRIM, ridge_t=None, gable_timber=TIMBER, gable_win=False,
+               kind="roof", barge=TIMBER, ridge=TRIM_AUTO, ridge_t=None, gable_timber=TIMBER, gable_win=False,
                eave_z=None, butt_k=0.58, slab_k=0.72, band=0.72):
     """Gable roof of the reference cottages, ridge along local X, loc = centre of the wall top (w × d):
     two slabs with eaves and verges, courses laid on them, gable walls in the house material under the verges
@@ -773,6 +799,8 @@ def gable_roof(w, d, h, loc, roof_c, gable_mt, rz=0.0, oh=0.035, ohx=0.03, n=5, 
     for mb, mt in zip(MBs, _roof_mats(roof_c, tone, kind)):
         mb.obj(mt, "roof_courses")
     BUTT.obj(tex(kind, shade(roof_c, butt_k), 1.6), "roof_butts")
+    if ridge == TRIM_AUTO:
+        ridge = roof_trim(roof_c)
     if ridge:
         rt_ = ridge_t or (tk + ct + 0.008)
         beam(tuple(P(-L - 0.006, 0, h + tk * 0.9)), tuple(P(L + 0.006, 0, h + tk * 0.9)), rt_, flat("ridge" + ridge, ridge, 0.8))
@@ -836,7 +864,7 @@ def coursed_hip(w, d, h, loc, roof_c, oh=0.03, rz=0.0, n=5, ct=0.011, tone=0.84,
             lines.append((corners[i], corners[(i + 1) % 4]))
         lift = lambda p: (p[0], p[1], p[2] + ct * 1.1)  # noqa: E731
         t = max(0.0095, 0.05 * min(w, d))  # thin hip lines bake below a texel (and read too faint at map size)
-        _trim_lines([(lift(p0), lift(p1)) for p0, p1 in lines], loc, rz, t)
+        _trim_lines([(lift(p0), lift(p1)) for p0, p1 in lines], loc, rz, t, roof_c)
 
 
 def chimney(x, y, z0, z1, w=0.044, mt=None, cap=STONE_D):
@@ -1499,7 +1527,7 @@ def mansard(w, d, h, loc, roof_c, inset=0.045, n=3, oh=0.012, ct=0.009):
         mb.obj(mt, "mansard_courses")
     BUTT.obj(tex("roof", shade(roof_c, 0.68), 1.6), "mansard_butts")
     lift = lambda p: (p[0], p[1], p[2] + ct * 1.1)  # noqa: E731
-    tm = flat("roof_trim", ROOF_TRIM, 0.8)
+    tm = flat("roof_trim", roof_trim(roof_c), 0.8)
     for i in range(4):
         beam(lift(b[i]), lift(t[i]), 0.0095, tm)
     bx((2 * Wi + 0.012, 2 * Di + 0.012, 0.012), (x0, y0, z0 + h + 0.004), flat("zinc", "#aeb3b8", 0.5), bev=0)
@@ -1558,7 +1586,7 @@ def sawtooth_roof(w, d, teeth, h, loc, roof_c, gable_mt, glass_mt):
         # the slope, laid in three courses from its low edge up to the ridge over the glazing
         course_rows(rf, (xa, yf, z0), (xa, yk, z0), C, D, 3, 0.008, butt=BUTT, band=0.8)
         beam((xb, yf - 0.008, z0 + h + 0.004), (xb, yk + 0.008, z0 + h + 0.004), 0.012,
-             flat("roof_trim", ROOF_TRIM, 0.8))
+             flat("roof_trim", roof_trim(roof_c), 0.8))
     gl.obj(glass_mt, "north_lights")
     en.obj(gable_mt, "saw_ends")
     for mb, mt in zip(rf, _roof_mats(roof_c, 0.86)):
@@ -5574,31 +5602,9 @@ def _uniform(mt):
     return b is not None and not b.inputs["Base Color"].is_linked
 
 
-def _fill_gutter(img):
-    """Fill the unbaked (pure black) texels with the colours of the islands around them (push-pull: average the
-    baked texels down a pyramid, then pull the coarse averages back up into the holes), so the small mip levels the
-    game samples at map distance blend an island with its neighbours instead of with black."""
-    import numpy as np
-    n = img.size[0]
-    px = np.empty(n * n * 4, dtype=np.float32)
-    img.pixels.foreach_get(px)
-    px = px.reshape(n, n, 4)
-    rgb = px[:, :, :3].copy()
-    w = (rgb.max(axis=2) > 0).astype(np.float32)
-    levels = [(rgb * w[:, :, None], w)]
-    while levels[-1][1].shape[0] > 1:
-        c, m = levels[-1]
-        levels.append((c[0::2, 0::2] + c[1::2, 0::2] + c[0::2, 1::2] + c[1::2, 1::2],
-                       m[0::2, 0::2] + m[1::2, 0::2] + m[0::2, 1::2] + m[1::2, 1::2]))
-    fill = levels[-1][0] / np.maximum(levels[-1][1], 1e-6)[:, :, None]
-    for c, m in reversed(levels[:-1]):
-        up = np.repeat(np.repeat(fill, 2, axis=0), 2, axis=1)
-        avg = c / np.maximum(m, 1e-6)[:, :, None]
-        fill = np.where((m > 0)[:, :, None], avg, up)
-    px[:, :, :3] = np.where((w > 0)[:, :, None], rgb, fill)
-    px[:, :, 3] = 1.0
-    img.pixels.foreach_set(px.ravel())
-    img.update()
+# the gutter fill moved to export_assets (bake_asset fills its gutter too); kept under the old name for the other
+# exporters that call it from here
+_fill_gutter = ea._fill_gutter
 
 
 def bake_atlas(objs, size=1024, thin=0.018, cell=12, margin=0.003):
@@ -5684,6 +5690,9 @@ def bake_atlas(objs, size=1024, thin=0.018, cell=12, margin=0.003):
     sc.render.bake.margin = 4
     sc.render.bake.margin_type = "EXTEND"  # a palette cell spreads its own colour, not a neighbour's across a seam
     bpy.ops.object.bake(type="DIFFUSE", pass_filter={"COLOR"})
+    # soft painted AO on the packed islands only: the palette strip along the top (v >= s) holds many faces collapsed
+    # onto one cell, so AO there would be garbage
+    ea.paint_ao(ob, img, keep_rows_from=int(round(s * size)))
     _fill_gutter(img)
     # one material: the baked colour; lamps, glass and metal keep their own (as bake_asset does)
     baked = bpy.data.materials.new("baked")

@@ -1,15 +1,29 @@
 extends CanvasLayer
-## HUD laid out exactly like the owner's reference frames (docs/art_direction.md §3).
+## HUD frame, laid out like the owner's reference frames (docs/art_direction.md §3) in the kit's language
+## (docs/ui_style.md §5, §6 HUD): resource plates on their own currency layer (above every modal dim), a soft top
+## scrim instead of a dark slab, the ruler's portrait with the level hex, one family of square buttons on the
+## left, the minimap well and the labelled round map tools on the right. The top group follows the safe area's
+## top inset, the bottom group (tabs, tray, hex panel) the visible bottom (Kit.vb).
 
 const CmdPortrait := preload("res://scripts/cmd_portrait.gd")
 const Kit := preload("res://scripts/ui_kit.gd")
+const FlagView := preload("res://scripts/flag_view.gd")
+# the bottom group keeps its legacy palette until s04 / s05 rebuild it on the kit
 const PANEL := Color(0.055, 0.085, 0.14, 0.92)
-const PANEL_2 := Color(0.09, 0.13, 0.2, 0.95)
 const EDGE := Color(0.32, 0.42, 0.58, 0.55)
-const ACCENT := Color(0.16, 0.42, 0.95)
-const GOOD := Color(0.42, 0.9, 0.48)
 const TEXT := Color(0.96, 0.97, 1.0)
 const MUTED := Color(0.62, 0.68, 0.78)
+
+## Resource plates (§4.6, §5): the icon of each resource and [x, w] in the four-plate bar (DL1–4) and in the
+## five-plate bar once oil opens (DL5+). y 12, h 70.
+const RES_ICON := {"gold": "coin", "food": "food", "metal": "metal", "oil": "barrel", "raivite": "raivite"}
+const RES_LAYOUT_4 := {"gold": [120, 186], "food": [318, 186], "metal": [516, 186], "raivite": [714, 214]}
+const RES_LAYOUT_5 := {"gold": [120, 146], "food": [278, 146], "metal": [436, 146], "oil": [594, 146], "raivite": [752, 177]}
+## The left column (§5): squares 84×84 at x 16, one every 96 px; the shop is the only gold one in the HUD.
+const LEFT := [["trophy", 252.0], ["book", 348.0], ["mail", 444.0], ["gear", 540.0]]
+## Round map tools (§5): [signal name, icon, centre y, caption key]; centre x 885, Ø80.
+const TOOLS := [["target", "swords", 356.0, "hud.tool.front"], ["pin", "pin", 468.0, "hud.tool.capital"],
+	["fort", "fort", 580.0, "hud.tool.fort"], ["tower", "tower", 692.0, "hud.tool.tower"]]
 
 var world: Node3D
 var font_bold: Font
@@ -21,27 +35,36 @@ var tile_bonus: Label
 var attack_btn: Panel
 var minimap: Control
 var _tab_icons := {}  # tab key -> Icon
-var res_labels := {}  # res -> [value Label, rate Label]
-var builders_label: Label
-var level_label: Label
+var res_pills := {}  # res -> Kit.KitPill
+var _free_builders := 0  # free / all builders: the Buildings tab badge (s04)
+var _builders := 0
+var level_label: Label  # the numeral of the level hex on the ruler's portrait
 var ruler_face: TextureRect  # the rendered ruler portrait (assets/ui/portraits/ruler*.png), by the player's era
 var _ruler_era := 1
-var mail_badge: Array = []
-var book_badge: Array = []  # «Летопись»: rewards waiting
-var shop_dot: Panel  # red dot: a free crate is ready
-var _orders_chip: Panel  # «⚑ 1/3» — today's orders (08 §8.6)
-var _orders_lbl: Label
-var _orders_dot: Panel
+var _ruler_frame: Panel
+var _trim := ""  # brass (DL1–4) / steel (DL5–8): the only era switch in the UI (§3.2)
+var mail_badge: Array = []  # [dot, number Label]
+var book_badge: Array = []  # «Летопись»: rewards waiting, [dot, number Label]
+var shop_dot: Control  # red dot on the shop: a free crate is ready
+var _orders_chip: Panel  # the orders button (a KitButton) — hidden until today's orders exist (08 §8.6)
+var _orders_lbl: Label  # «1/3» in the counter pill under it
+var _orders_dot: Control  # green: an order is ready to claim
+var _shop_btn: Panel
 var tab_highlight: Panel
 var tab_labels := {}
 var _tab_keys := {}  # tab -> translation key of its label
-var _shop_lbl: Label
 var _attack_lbl: Label
 var _tile_set := false  # false while the tile box still shows its placeholder
-var unit_cards: Control  # the Army tab content (hidden while another tab is open)
+var _top: Control  # crest, portrait, left column, minimap, map tools: offset by the safe top inset
+var _bottom: Control  # tabs, tray, hex panel: offset by VB − 1672
+var _currency: CanvasLayer  # layer 3: the resource plates stay above game_ui's modal dim (layer 2)
+var _pills: Control
+var _scrim: TextureRect
+var _buttons := {}  # name -> the frame's buttons (left column, crest, portrait, minimap)
+var _tools := {}  # name -> round map tool button
+var _oil_shown := -1
 
 signal button_pressed(name: String)
-const FlagView := preload("res://scripts/flag_view.gd")
 var crest_flag: Control  # the realm's flag, top-left (tap — the profile)
 
 
@@ -53,6 +76,7 @@ func set_flag(f: Dictionary) -> void:
 func _ready() -> void:
 	font_bold = Kit.font("d900")  # Rubik 900 (docs/ui_style.md §3.3)
 	_build()
+	get_viewport().size_changed.connect(_anchor_groups)
 
 
 ## The legacy palette mapped onto the kit (opaque slate surfaces, INK contour, hard shadow, lip).
@@ -60,8 +84,10 @@ func _style(bg: Color, radius := 14, border := EDGE, bw := 2) -> StyleBoxFlat:
 	return Kit.legacy_style(bg, radius, border, bw)
 
 
-## The ruler's portrait follows the player's era like the commanders' (a crown, a bicorne coat, a field cap, armour).
+## The ruler's portrait follows the player's era like the commanders' (a crown, a bicorne coat, a field cap, armour);
+## its frame is brass up to DL4 and steel from DL5.
 func set_ruler_era(dl: int) -> void:
+	_set_trim("steel" if dl >= 5 else "brass")
 	var era := CmdPortrait.era_of(dl)
 	if ruler_face == null or era == _ruler_era:
 		return
@@ -75,253 +101,351 @@ func _label(text: String, size: int, color := TEXT, bold := true) -> Label:
 	return Kit.label(text, size, color, bold)
 
 
-func _panel(rect: Rect2, style: StyleBox) -> Panel:
+func _panel(rect: Rect2, style: StyleBox, parent: Node = null) -> Panel:
 	var p := Panel.new()
 	p.position = rect.position
 	p.size = rect.size
 	p.add_theme_stylebox_override("panel", style)
 	if style is StyleBoxFlat and int(style.get_meta("kit_lip", 0)) > 0 and rect.size.y >= 40.0:
 		p.add_child(Kit.KitDecor.new())  # the lip / highlight line / gloss (child 0)
-	add_child(p)
+	(parent if parent != null else self).add_child(p)
 	return p
 
 
+func _group(n: String, parent: Node) -> Control:
+	var g := Control.new()
+	g.name = n
+	g.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	g.size = Vector2(941, 1672)
+	parent.add_child(g)
+	return g
+
+
+func _emit(name: String) -> void:
+	button_pressed.emit(name)
+
+
 func _build() -> void:
-	var vw := 941.0
-	var vh := 1672.0
+	# ---- top scrim: INK α 0.55 → 0 over y 0–150 instead of a dark slab (§5); the first child, under everything
+	_scrim = TextureRect.new()
+	_scrim.name = "scrim"
+	_scrim.texture = Kit.vgradient(Kit.alpha(Kit.INK, 0.55), Kit.alpha(Kit.INK, 0.0))
+	_scrim.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_scrim.stretch_mode = TextureRect.STRETCH_SCALE
+	_scrim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_scrim.size = Vector2(941, 150)
+	add_child(_scrim)
+	_top = _group("top", self)
+	_bottom = _group("bottom", self)
+	_currency = CanvasLayer.new()
+	_currency.name = "currency"
+	_currency.layer = 3  # above game_ui (layer 2) and its modal dim: rewards can fly into the plates
+	add_child(_currency)
+	_pills = _group("pills", _currency)
+	_build_pills()
+	_build_crest()
+	_build_left()
+	_build_minimap()
+	_build_tools()
+	_build_bottom()
+	_anchor_groups()
 
-	# ---- top resource bar (live values from the economy, set_resources)
-	_panel(Rect2(108, 10, 680, 66), _style(PANEL, 12))
-	var res := [["gold", "coin"], ["food", "food"], ["metal", "metal"], ["oil", "oil"], ["raivite", "raivite"]]
-	for i in res.size():
-		var x := 120.0 + i * 168.0
-		var icon := TextureRect.new()
-		icon.texture = load("res://assets/ui/%s.png" % res[i][1])
-		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		icon.position = Vector2(x, 18)
-		icon.size = Vector2(48, 48)
-		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		add_child(icon)
-		var v := _label("—", 22)
-		v.position = Vector2(x + 52, 14)
-		add_child(v)
-		var d := _label("", 15, GOOD, false)
-		d.position = Vector2(x + 54, 42)
-		add_child(d)
-		res_labels[res[i][0]] = [v, d, icon]
-	_panel(Rect2(800, 10, 130, 66), _style(PANEL, 12))
-	var bi := TextureRect.new()
-	bi.texture = load("res://assets/ui/builder.png")
-	bi.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	bi.position = Vector2(808, 18)
-	bi.size = Vector2(48, 48)
-	bi.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(bi)
-	builders_label = _label("2/2", 24)
-	builders_label.position = Vector2(860, 24)
-	add_child(builders_label)
 
-	# ---- crest banner (top-left)
+## Places the groups for the safe area: the top group under the status bar, the bottom group on the visible bottom
+## (VB, §3.1). Runs again on every viewport size change.
+func _anchor_groups() -> void:
+	var top := Kit.top_inset(self)
+	var vis := get_viewport().get_visible_rect()
+	_top.position.y = top
+	_pills.position.y = top
+	_bottom.position.y = Kit.vb(self) - 1672.0
+	_scrim.position = Vector2(vis.position.x, 0)
+	_scrim.size = Vector2(maxf(941.0, vis.size.x), 150.0 + top)
+
+
+# ---------------------------------------------------------------- resource plates (§4.6, currency layer)
+
+func _build_pills() -> void:
+	for r in ["gold", "food", "metal", "oil", "raivite"]:
+		var opts := {"rate": r != "raivite"}
+		if r == "raivite":
+			opts["plus"] = _emit.bind("shop")  # the only «+»: opens the shop, like the shop button
+		res_pills[r] = Kit.pill(_pills, Rect2(120, 12, 186, 70), String(RES_ICON[r]), opts)
+	_layout_res(false)
+
+
+## Lays the resource plates out: 4 across, 5 once oil appears (DL5, canon §4) with a smaller value.
+func _layout_res(with_oil: bool) -> void:
+	var lay: Dictionary = RES_LAYOUT_5 if with_oil else RES_LAYOUT_4
+	for r in res_pills:
+		var p: Kit.KitPill = res_pills[r]
+		p.visible = lay.has(r)
+		if not p.visible:
+			continue
+		p.position = Vector2(float(lay[r][0]), 12.0)
+		p.size = Vector2(float(lay[r][1]), 70.0)
+		p.value_size = 28 if with_oil else 32
+		p.lay()
+
+
+## The plates: stored amounts (exact below 10 000) with the warehouse fill (brown and a yellow number when full),
+## the net income per hour, the tooltip text. Free builders are kept for the Buildings tab badge.
+func set_resources(res: Dictionary, per_hour: Dictionary, caps: Dictionary, free_builders: int, builders: int) -> void:
+	_free_builders = free_builders
+	_builders = builders
+	var with_oil := caps.has("oil")
+	if int(with_oil) != _oil_shown:
+		_oil_shown = int(with_oil)
+		_layout_res(with_oil)
+	# «+160/ч» on every plate, or «+160» on every plate when one rate does not fit (five plates, big incomes)
+	var short := false
+	for r in res_pills:
+		var p: Kit.KitPill = res_pills[r]
+		if p.visible and p.has_rate:
+			short = short or not p.rate_fits(_rate_text(int(per_hour.get(r, 0)), false))
+	for r in res_pills:
+		var p: Kit.KitPill = res_pills[r]
+		if not p.visible:
+			continue
+		var amount: int = int(res.get(r, 0))
+		var cap: int = int(caps.get(r, 0))
+		var full := cap > 0 and amount >= cap
+		p.set_value(Kit.fmt_num(amount), float(amount) / float(cap) if cap > 0 else 0.0, full)
+		p.tip_title = tr("res.name." + r)
+		if r == "raivite":
+			p.tip_text = tr("hud.tip.raivite")
+			continue
+		var ph: int = int(per_hour.get(r, 0))
+		p.set_rate(_rate_text(ph, short), Kit.POS if ph >= 0 else Kit.NEG)
+		var lines := PackedStringArray([tr("hud.tip.rate") % _rate_text(ph, false)])
+		if cap > 0:
+			lines.append(tr("hud.tip.cap") % [Kit.fmt_exact(amount), Kit.fmt_exact(cap)])
+		lines.append(tr("hud.tip.full") if full else tr("hud.tip.src"))
+		p.tip_text = "\n".join(lines)
+	# one size for the numbers of the bar: the smallest any resource plate needs (raivite sizes on its own)
+	var vcap := 64
+	var rcap := 64
+	for r in res_pills:
+		var p: Kit.KitPill = res_pills[r]
+		if p.visible and p.has_rate:
+			vcap = mini(vcap, p.value_fit())
+			rcap = mini(rcap, p.rate_fit())
+	for r in res_pills:
+		var p: Kit.KitPill = res_pills[r]
+		if p.visible and p.has_rate:
+			p.set_caps(vcap, maxi(22, mini(rcap, vcap - 2)))  # the rate stays a step under the value
+
+
+## «+160/ч» (Kit.fmt_num: −8 has a real minus), or «+160» when the bar is short of room.
+func _rate_text(ph: int, short: bool) -> String:
+	var sign := "+" if ph >= 0 else ""
+	return sign + Kit.fmt_num(ph) if short else tr("hud.per_hour") % [sign, Kit.fmt_num(ph)]
+
+
+# ---------------------------------------------------------------- crest, ruler portrait, left column
+
+func _build_crest() -> void:
 	crest_flag = FlagView.new()
 	crest_flag.position = Vector2(12, 4)
 	crest_flag.size = Vector2(92, 118)
 	crest_flag.mouse_filter = Control.MOUSE_FILTER_STOP
 	crest_flag.gui_input.connect(_on_button_input.bind("profile"))
-	add_child(crest_flag)
-
-	# ---- ruler portrait + level
-	var rp := _panel(Rect2(14, 132, 86, 92), _style(PANEL_2, 10, Color(0.85, 0.7, 0.35, 0.9), 3))
-	rp.gui_input.connect(_on_button_input.bind("profile"))  # the ruler's portrait opens the profile (10 §4.23)
+	_top.add_child(crest_flag)
+	_buttons["profile"] = crest_flag
+	# the ruler's portrait (the profile too, 10 §4.23): a brass / steel frame, the render on the sky (§5)
+	var fr := Panel.new()
+	fr.name = "ruler"
+	fr.position = Vector2(14, 134)
+	fr.size = Vector2(90, 96)
+	fr.mouse_filter = Control.MOUSE_FILTER_STOP
+	fr.gui_input.connect(_on_button_input.bind("profile"))
+	_top.add_child(fr)
+	fr.add_child(Kit.KitDecor.new())  # the lip (child 0)
+	_ruler_frame = fr
+	_buttons["ruler"] = fr
+	_set_trim("brass")
+	var well := Panel.new()
+	well.position = Vector2(8, 8)
+	well.size = Vector2(74, 72)
+	var wsb := Kit.style(Kit.SKY_LOW, 14, 0, Kit.INK, 0, 0)
+	wsb.set_meta("kit_kind", "")
+	well.add_theme_stylebox_override("panel", wsb)
+	well.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW  # the art takes the well's rounded corners
+	well.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fr.add_child(well)
+	var sky := TextureRect.new()
+	sky.texture = Kit.vgradient(Kit.SKY_TOP, Kit.SKY_LOW)
+	sky.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	sky.stretch_mode = TextureRect.STRETCH_SCALE
+	sky.size = well.size
+	sky.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	well.add_child(sky)
 	if ResourceLoader.exists("res://assets/ui/portraits/ruler.png"):  # the rendered king of reference frame 1
 		var face := TextureRect.new()
 		ruler_face = face
 		face.texture = load("res://assets/ui/portraits/ruler.png")
 		face.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		face.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-		face.position = Vector2(18, 136)
-		face.size = Vector2(78, 84)
-		face.clip_contents = true
+		face.size = well.size
 		face.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		add_child(face)
-	else:
-		var ruler := Icon.new("ruler")
-		ruler.position = Vector2(18, 136)
-		ruler.size = Vector2(78, 84)
-		add_child(ruler)
-	var lvl := Icon.new("level")
-	lvl.position = Vector2(10, 196)
-	lvl.size = Vector2(40, 40)
-	add_child(lvl)
-	var lvl_t := _label("1", 18)
-	level_label = lvl_t
-	lvl_t.position = Vector2(20, 203)
-	add_child(lvl_t)
-	_panel(Rect2(52, 212, 44, 8), _style(Color(0.15, 0.2, 0.3), 4, Color(0, 0, 0, 0), 0))
-	_panel(Rect2(52, 212, 14, 8), _style(GOOD, 4, Color(0, 0, 0, 0), 0))
+		well.add_child(face)
+	var rim := Panel.new()  # an INK line between the art and the trim
+	var rsb := Kit.style(Kit.alpha(Kit.INK, 0.0), 14, 3, Kit.INK, 0, 0)
+	rsb.draw_center = false
+	rsb.set_meta("kit_kind", "")
+	rim.add_theme_stylebox_override("panel", rsb)
+	rim.position = well.position
+	rim.size = well.size
+	rim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fr.add_child(rim)
+	# the development level: an info hex on the frame's corner (no fake XP bar)
+	var hb := Kit.hex_badge(_top, Vector2(30, 224), 24, "info", "1")
+	level_label = hb.get_child(0) as Label
 
-	# ---- left buttons
-	var left := ["trophy", "book", "mail", "gear"]
-	for i in left.size():
-		var y := 244.0 + i * 70.0
-		var lb := _panel(Rect2(16, y, 64, 60), _style(PANEL, 12, Color(0.66, 0.7, 0.78, 0.7), 2))  # a silver edge, as the reference column
-		lb.gui_input.connect(_on_button_input.bind(left[i]))
-		var ic := Icon.new(left[i])
-		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		ic.position = Vector2(26, y + 8)
-		ic.size = Vector2(44, 44)
-		add_child(ic)
-		if left[i] == "mail":
-			var badge := Icon.new("badge")
-			badge.position = Vector2(62, y - 8)
-			badge.size = Vector2(26, 26)
-			add_child(badge)
-			var bt := _label("", 15)
-			bt.position = Vector2(62, y - 6)
-			bt.size = Vector2(26, 22)
-			bt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			add_child(bt)
-			mail_badge = [badge, bt]
-		if left[i] == "book":
-			var bb := Icon.new("badge")
-			bb.position = Vector2(62, y - 8)
-			bb.size = Vector2(26, 26)
-			add_child(bb)
-			var bbt := _label("", 15)
-			bbt.position = Vector2(62, y - 6)
-			bbt.size = Vector2(26, 22)
-			bbt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			add_child(bbt)
-			book_badge = [bb, bbt]
-			bb.visible = false
-			bbt.visible = false
 
-	# ---- store button (below the left column)
-	var sb := _panel(Rect2(16, 524, 64, 74), _style(Color(0.35, 0.2, 0.55), 14, Color(1.0, 0.8, 0.35, 0.9), 2))
-	sb.gui_input.connect(_on_button_input.bind("shop"))
-	var si := TextureRect.new()
-	si.texture = load("res://assets/ui/raivite.png")
-	si.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	si.position = Vector2(26, 528)
-	si.size = Vector2(44, 44)
-	si.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(si)
-	var sl := _label(tr("hud.shop"), 14)
-	_shop_lbl = sl
-	sl.position = Vector2(16, 572)
-	sl.size = Vector2(64, 22)
-	sl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	add_child(sl)
-	shop_dot = Panel.new()
-	shop_dot.add_theme_stylebox_override("panel", _style(Color(0.9, 0.2, 0.15), 9, Color(1, 1, 1, 0.9), 2))
-	shop_dot.position = Vector2(66, 518)
-	shop_dot.size = Vector2(18, 18)
-	shop_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
+func _set_trim(kind: String) -> void:
+	if kind == _trim or _ruler_frame == null:
+		return
+	_trim = kind
+	var sb := Kit.style(Kit.face_of(kind), 20, 4, Kit.INK, 6, 6)
+	sb.set_meta("kit_kind", "")  # a frame, not a button: the lip without the gloss
+	_ruler_frame.add_theme_stylebox_override("panel", sb)
+	_ruler_frame.queue_redraw()
+
+
+func _build_left() -> void:
+	for it in LEFT:
+		var n := String(it[0])
+		_buttons[n] = Kit.icon_button(_top, Rect2(16, float(it[1]), 84, 84), n, "slate", false, "", _emit.bind(n))
+	var md := Kit.dot(_buttons["mail"], 0, "war")
+	mail_badge = [md, md.get_child(0)]
+	md.visible = false
+	var bd := Kit.dot(_buttons["book"], 0, "war")
+	book_badge = [bd, bd.get_child(0)]
+	bd.visible = false
+	# the shop: the only gold button of the HUD, with its caption plate
+	_shop_btn = Kit.icon_button(_top, Rect2(16, 636, 84, 84), "stall", "gold", false, tr("hud.shop"), _emit.bind("shop"))
+	_buttons["shop"] = _shop_btn
+	shop_dot = Kit.dot(_shop_btn, -1, "war")
 	shop_dot.visible = false
-	add_child(shop_dot)
-
-	# ---- daily orders chip (below the store)
-	_orders_chip = _panel(Rect2(16, 612, 64, 74), _style(PANEL, 14, Color(0.85, 0.7, 0.35, 0.9), 2))
-	_orders_chip.gui_input.connect(_on_button_input.bind("orders"))
-	var og := TextureRect.new()  # a blue war flag (tools/blender/icon_assets.py «orders»)
-	og.texture = load("res://assets/ui/icons/orders.png")
-	og.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	og.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	og.position = Vector2(10, 0)
-	og.size = Vector2(44, 44)
-	og.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_orders_chip.add_child(og)
-	_orders_lbl = _label("0/3", 18)
-	_orders_lbl.position = Vector2(0, 42)
-	_orders_lbl.size = Vector2(64, 26)
+	# today's orders: a square with a «1/3» counter pill and a green dot when one can be claimed
+	var ob := Kit.icon_button(_top, Rect2(16, 752, 84, 84), "orders", "slate", false, "", _emit.bind("orders"))
+	_buttons["orders"] = ob
+	_orders_chip = ob
+	var ch := 34.0
+	var cnt := Panel.new()
+	cnt.name = "counter"
+	var csb := Kit.style(Kit.SLATE_WELL, int(ch * 0.5), 3, Kit.INK, 0, 0)
+	csb.set_meta("kit_kind", "")
+	cnt.add_theme_stylebox_override("panel", csb)
+	cnt.position = Vector2(4, 84.0 - 14.0)
+	cnt.size = Vector2(76, ch)
+	cnt.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ob.add_child(cnt)
+	_orders_lbl = Kit.label("0/3", 24, Kit.TEXT, true)
 	_orders_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_orders_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_orders_chip.add_child(_orders_lbl)
-	_orders_dot = Panel.new()
-	_orders_dot.add_theme_stylebox_override("panel", _style(Color(0.9, 0.2, 0.15), 9, Color(1, 1, 1, 0.9), 2))
-	_orders_dot.position = Vector2(66, 606)
-	_orders_dot.size = Vector2(18, 18)
-	_orders_dot.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(_orders_dot)
-	_orders_chip.visible = false
+	_orders_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_orders_lbl.position = Vector2(0, -1)
+	_orders_lbl.size = cnt.size
+	cnt.add_child(_orders_lbl)
+	_orders_dot = Kit.dot(ob, -1, "go")
 	_orders_dot.visible = false
+	_orders_chip.visible = false
 
-	# ---- minimap (top-right)
-	var mm_panel := _panel(Rect2(730, 90, 198, 206), _style(PANEL, 12, Color(0.4, 0.5, 0.65, 0.8)))
+
+## A dot appears with BADGE_POP; hiding is immediate.
+func _show_dot(d: Control, on: bool) -> void:
+	if on and not d.visible:
+		d.visible = true
+		Kit.badge_pop(d)
+	elif not on:
+		d.visible = false
+
+
+# ---------------------------------------------------------------- minimap, map tools
+
+func _build_minimap() -> void:
+	# a slate frame like every HUD surface, the sea well inside it clips the map and the view rectangle (§5)
+	var fr := Panel.new()
+	fr.name = "minimap"
+	fr.position = Vector2(733, 96)
+	fr.size = Vector2(196, 196)
+	fr.add_theme_stylebox_override("panel", Kit.style(Kit.SLATE, 24, 4, Kit.INK, 6, 6))
+	_top.add_child(fr)
+	fr.add_child(Kit.KitDecor.new())
+	_buttons["minimap"] = fr
+	var well := Panel.new()
+	well.position = Vector2(8, 8)
+	well.size = Vector2(180, 174)
+	var r_in := 24 - 8  # concentric with the frame's corners
+	var wsb := Kit.style(Kit.SEA_WELL, r_in, 0, Kit.INK, 0, 0)
+	wsb.set_meta("kit_kind", "")
+	well.add_theme_stylebox_override("panel", wsb)
+	well.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
+	well.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fr.add_child(well)
 	var mm := Minimap.new()
 	mm.world = world
-	mm.position = Vector2(740, 100)
-	mm.size = Vector2(178, 186)
-	add_child(mm)
+	mm.size = well.size
+	mm.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	well.add_child(mm)
 	minimap = mm
 
-	# ---- right buttons
-	var right := ["target", "pin", "fort", "tower"]
-	for i in right.size():
-		var y := 312.0 + i * 74.0
-		var rb := _panel(Rect2(864, y, 62, 62), _style(PANEL, 14))
-		rb.gui_input.connect(_on_button_input.bind(right[i]))
-		var ic := Icon.new(right[i])
-		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		ic.position = Vector2(873, y + 9)
-		ic.size = Vector2(44, 44)
-		add_child(ic)
 
-	# ---- bottom tabs + unit cards
+func _build_tools() -> void:
+	for t in TOOLS:
+		var n := String(t[0])
+		var b := Kit.icon_button(_top, Rect2(845, float(t[2]) - 40.0, 80, 80), String(t[1]), "slate", true, tr(String(t[3])), _emit.bind(n))
+		b.set_meta("caption_key", String(t[3]))
+		_tools[n] = b
+
+
+## Global rect of a round map tool (target / pin / fort / tower), for the coach.
+func tool_rect(name: String) -> Rect2:
+	var b: Control = _tools.get(name)
+	return b.get_global_rect() if b != null else Rect2()
+
+
+## Global rect of a frame element: trophy / book / mail / gear / shop / orders, profile (the crest), ruler, minimap,
+## a map tool, or a resource plate by its resource (gold / food / metal / oil / raivite).
+func button_rect(name: String) -> Rect2:
+	var b: Control = _buttons.get(name, _tools.get(name, res_pills.get(name)))
+	return b.get_global_rect() if b != null else Rect2()
+
+
+# ---------------------------------------------------------------- bottom group (tabs, tray, hex panel; s04 / s05)
+
+func _build_bottom() -> void:
+	var vh := 1672.0
 	var base_y := vh - 276.0
-	_panel(Rect2(0, base_y, 640, 276), _style(PANEL, 16))
+	_panel(Rect2(0, base_y, 640, 276), _style(PANEL, 16), _bottom)
 	var tabs := [["tab.buildings", "castle_icon", "buildings"], ["tab.army", "helmet", "army"], ["tab.development", "hammer", "development"], ["tab.diplomacy", "hands", "diplomacy"], ["tab.world", "scales", "world"]]
-	tab_highlight = _panel(Rect2(8 + 126 + 2, base_y + 6, 120, 76), _style(Color(0.12, 0.2, 0.34), 10, Color(0.35, 0.55, 0.95, 0.9)))
+	tab_highlight = _panel(Rect2(8 + 126 + 2, base_y + 6, 120, 76), _style(Color(0.12, 0.2, 0.34), 10, Color(0.35, 0.55, 0.95, 0.9)), _bottom)
 	tab_highlight.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	for i in tabs.size():
 		var x := 8.0 + i * 126.0
-		var hit := _panel(Rect2(x + 2, base_y + 6, 120, 76), StyleBoxEmpty.new())
+		var hit := _panel(Rect2(x + 2, base_y + 6, 120, 76), StyleBoxEmpty.new(), _bottom)
 		hit.gui_input.connect(_on_button_input.bind("tab_" + tabs[i][2]))
 		var ic := Icon.new(tabs[i][1])
 		ic.position = Vector2(x + 44, base_y + 14)
 		ic.size = Vector2(36, 34)
 		ic.lit = i == 1
-		add_child(ic)
+		_bottom.add_child(ic)
 		_tab_icons[tabs[i][2]] = ic
 		var t := _label(tr(tabs[i][0]), 16, TEXT if i == 1 else MUTED, i == 1)
 		t.position = Vector2(x + 10, base_y + 50)
 		t.size = Vector2(108, 24)
 		t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		add_child(t)
+		_bottom.add_child(t)
 		tab_labels[tabs[i][2]] = t
 		_tab_keys[tabs[i][2]] = tabs[i][0]
-	unit_cards = Control.new()
-	unit_cards.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(unit_cards)
-	var units := [["squad_blue", "320", "20"], ["archer", "180", "15"], ["knight_blue", "40", "60"], ["catapult", "12", "80"]]
-	for i in units.size():
-		var x := 14.0 + i * 148.0
-		var card := _panel(Rect2(x, base_y + 92, 136, 172), _style(PANEL_2, 12, Color(0.4, 0.5, 0.65, 0.7)))
-		remove_child(card)
-		unit_cards.add_child(card)
-		var portrait := Portrait.new(units[i][0])
-		portrait.position = Vector2(x + 6, base_y + 98)
-		portrait.size = Vector2(124, 104)
-		unit_cards.add_child(portrait)
-		var n := _label(units[i][1], 22)
-		n.position = Vector2(x, base_y + 204)
-		n.size = Vector2(136, 28)
-		n.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		unit_cards.add_child(n)
-		var ci := Icon.new("coin")
-		ci.position = Vector2(x + 40, base_y + 236)
-		ci.size = Vector2(22, 22)
-		unit_cards.add_child(ci)
-		var c := _label(units[i][2], 18, TEXT)
-		c.position = Vector2(x + 66, base_y + 234)
-		unit_cards.add_child(c)
 
 	# ---- tile info + attack button
-	_panel(Rect2(652, base_y, 280, 140), _style(PANEL, 16))
+	_panel(Rect2(652, base_y, 280, 140), _style(PANEL, 16), _bottom)
 	var tile := Icon.new("tile")
 	tile.position = Vector2(664, base_y + 14)
 	tile.size = Vector2(70, 60)
-	add_child(tile)
+	_bottom.add_child(tile)
 	tile_icon = tile
 	tile_pic = TextureRect.new()  # the rendered hex of that land (tools/blender/card_art.py tile_*)
 	tile_pic.position = Vector2(658, base_y + 8)
@@ -329,33 +453,33 @@ func _build() -> void:
 	tile_pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	tile_pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	tile_pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(tile_pic)
+	_bottom.add_child(tile_pic)
 	var tn := _label(tr("terrain.plain"), 21)
 	tile_title = tn
 	tn.position = Vector2(746, base_y + 18)
-	add_child(tn)
+	_bottom.add_child(tn)
 	var to := _label(tr("tile.your_territory"), 17, Color(0.45, 0.7, 1.0), false)
 	tile_owner = to
 	to.position = Vector2(746, base_y + 48)
-	add_child(to)
+	_bottom.add_child(to)
 	var shield := Icon.new("plus")
 	shield.position = Vector2(674, base_y + 92)
 	shield.size = Vector2(28, 28)
-	add_child(shield)
+	_bottom.add_child(shield)
 	var bonus := _label(tr("hud.tile_bonus"), 18, TEXT, false)
 	tile_bonus = bonus
 	bonus.position = Vector2(712, base_y + 92)
-	add_child(bonus)
-	var btn := _panel(Rect2(660, vh - 122, 266, 92), _style(Color(0.13, 0.4, 0.9), 16, Color(0.55, 0.75, 1.0), 3))
+	_bottom.add_child(bonus)
+	var btn := _panel(Rect2(660, vh - 122, 266, 92), _style(Color(0.13, 0.4, 0.9), 16, Color(0.55, 0.75, 1.0), 3), _bottom)
 	attack_btn = btn
 	var sw := Icon.new("swords")
 	sw.position = Vector2(684, vh - 104)
 	sw.size = Vector2(54, 54)
-	add_child(sw)
+	_bottom.add_child(sw)
 	var at := _label(tr("hud.attack"), 28)
 	_attack_lbl = at
 	at.position = Vector2(748, vh - 98)
-	add_child(at)
+	_bottom.add_child(at)
 
 
 ## Sets `text`, shrinking the font from `base` down through the type scale (to 20, or to `base` when a legacy
@@ -368,7 +492,10 @@ func _fit(l: Label, text: String, max_w: float, base: int) -> void:
 
 ## Re-applies the static labels after a language switch (the rest is refreshed by the game every tick).
 func retranslate() -> void:
-	_shop_lbl.text = tr("hud.shop")
+	Kit.icon_caption(_shop_btn, tr("hud.shop"))
+	for n in _tools:
+		var b: Kit.KitButton = _tools[n]
+		Kit.icon_caption(b, tr(String(b.get_meta("caption_key"))))
 	_attack_lbl.text = tr("hud.attack")
 	if not _tile_set:
 		tile_title.text = tr("terrain.plain")
@@ -388,68 +515,22 @@ static func fmt(v: int) -> String:
 	return Kit.fmt_num(v)
 
 
-## Top bar: stored amounts (orange when the warehouse is full), net income per hour, free builders.
-## Lays the resource slots out: 4 across, 5 once oil appears (DL5, canon §4).
-func _layout_res(with_oil: bool) -> void:
-	var order := ["gold", "food", "metal", "oil", "raivite"] if with_oil else ["gold", "food", "metal", "raivite"]
-	var step := 134.0 if with_oil else 168.0
-	for r in res_labels:
-		var on := order.has(r)
-		for n in res_labels[r]:
-			(n as Control).visible = on
-		if not on:
-			continue
-		var x := 120.0 + order.find(r) * step
-		var icon: Control = res_labels[r][2]
-		icon.position = Vector2(x, 18)
-		icon.size = Vector2(42, 42) if with_oil else Vector2(48, 48)
-		(res_labels[r][0] as Control).position = Vector2(x + (44 if with_oil else 52), 14)
-		(res_labels[r][1] as Control).position = Vector2(x + (46 if with_oil else 54), 42)
-
-
-var _oil_shown := -1
-
-
-func set_resources(res: Dictionary, per_hour: Dictionary, caps: Dictionary, free_builders: int, builders: int) -> void:
-	var with_oil := caps.has("oil")
-	if int(with_oil) != _oil_shown:
-		_oil_shown = int(with_oil)
-		_layout_res(with_oil)
-	for r in res_labels:
-		if not (res_labels[r][0] as Control).visible:
-			continue
-		var v: Label = res_labels[r][0]
-		var d: Label = res_labels[r][1]
-		var amount: int = res.get(r, 0)
-		v.text = fmt(amount)
-		var full: bool = caps.has(r) and amount >= int(caps[r])
-		v.add_theme_color_override("font_color", Color(1.0, 0.7, 0.3) if full else TEXT)
-		if r == "raivite":
-			d.text = ""
-		else:
-			var ph: int = per_hour.get(r, 0)
-			d.text = (tr("hud.per_hour") % ["+" if ph >= 0 else "", fmt(ph)]) if not full else tr("hud.storage_full")
-			d.add_theme_color_override("font_color", GOOD if ph >= 0 and not full else Color(1.0, 0.55, 0.4))
-	builders_label.text = "%d/%d" % [free_builders, builders]
-
-
 func set_mail(unread: int) -> void:
-	for n in mail_badge:
-		(n as Control).visible = unread > 0
-	(mail_badge[1] as Label).text = str(mini(unread, 9))
+	_show_dot(mail_badge[0], unread > 0)
+	(mail_badge[1] as Label).text = str(mini(unread, 99))
 
 
 func set_orders(text: String, ready: bool, shown: bool) -> void:
 	_orders_chip.visible = shown
 	_orders_lbl.text = text
-	_orders_dot.visible = shown and ready
+	_show_dot(_orders_dot, shown and ready)
 
 
 func set_book(n: int) -> void:
-	for nd in book_badge:
-		(nd as Control).visible = n > 0
-	if book_badge.size() > 1:
-		(book_badge[1] as Label).text = str(mini(n, 9))
+	if book_badge.is_empty():
+		return
+	_show_dot(book_badge[0], n > 0)
+	(book_badge[1] as Label).text = str(mini(n, 99))
 
 
 func set_level(dl: int) -> void:
@@ -474,7 +555,6 @@ func select_tab(key: String) -> void:
 		if _tab_icons.has(k):
 			(_tab_icons[k] as Icon).lit = k == key
 			(_tab_icons[k] as Icon).queue_redraw()
-	unit_cards.visible = false  # the Army tab content now comes from the game (game_ui.show_armies)
 
 
 func show_tile(info: Dictionary) -> void:
@@ -495,13 +575,14 @@ func show_tile(info: Dictionary) -> void:
 	attack_btn.modulate = Color(1, 1, 1, 1.0 if info["attackable"] else 0.45)
 
 
-# ====================================================================== icons drawn in code
+# ====================================================================== icons
 
+## A rendered 3D icon (tools/blender/icon_assets.py → assets/ui/icons) drawn exactly in its box (§3.5: no 1.15×
+## overflow). Only the hex panel's «tile» placeholder still has a vector stand-in (s05 removes it).
 class Icon extends Control:
 	var kind: String
-	var lit := false  # tab icons: bright when their tab is selected
-
-	var _tex: Texture2D  # a rendered 3D icon (tools/blender/icon_assets.py → assets/ui/icons), drawn instead of the vector one
+	var lit := false  # tab icons: the selected tab's (unselected ones are not dimmed, §3.5)
+	var _tex: Texture2D
 
 	func _init(k: String) -> void:
 		kind = k
@@ -511,134 +592,14 @@ class Icon extends Control:
 			_tex = load(p)
 
 	func _draw() -> void:
-		var w := size.x
-		var h := size.y
 		var c := size / 2
 		if _tex != null:
-			var side := minf(w, h)  # exactly the box (docs/ui_style.md §3.5: no 1.15× overflow)
-			var tab := kind in ["castle_icon", "helmet", "hammer", "hands", "scales"]
-			draw_texture_rect(_tex, Rect2(c - Vector2(side, side) / 2.0, Vector2(side, side)), false,
-				Color(1, 1, 1) if lit or not tab else Color(0.86, 0.88, 0.95))  # an unselected tab is only a little quieter
+			var side := minf(size.x, size.y)
+			draw_texture_rect(_tex, Rect2(c - Vector2(side, side) / 2.0, Vector2(side, side)), false)
 			return
-		match kind:
-			"coin":
-				draw_circle(c, w * 0.46, Color(0.75, 0.5, 0.08))
-				draw_circle(c, w * 0.4, Color(1.0, 0.78, 0.2))
-				draw_circle(c, w * 0.28, Color(0.95, 0.68, 0.12))
-				draw_arc(c, w * 0.28, 0, TAU, 24, Color(1, 0.9, 0.5), 2)
-			"wood":
-				for i in 3:
-					var y := h * (0.35 + i * 0.18) - (h * 0.09 if i == 2 else 0.0)
-					var x := w * (0.12 + (0.18 if i == 2 else 0.0))
-					draw_rect(Rect2(x, y - h * 0.08, w * 0.62, h * 0.16), Color(0.55, 0.33, 0.16))
-					draw_circle(Vector2(x + w * 0.62, y), h * 0.09, Color(0.85, 0.62, 0.35))
-					draw_circle(Vector2(x + w * 0.62, y), h * 0.05, Color(0.65, 0.42, 0.2))
-			"stone":
-				draw_colored_polygon(PackedVector2Array([Vector2(w * .1, h * .7), Vector2(w * .35, h * .3), Vector2(w * .65, h * .35), Vector2(w * .55, h * .8)]), Color(0.62, 0.64, 0.68))
-				draw_colored_polygon(PackedVector2Array([Vector2(w * .45, h * .78), Vector2(w * .6, h * .4), Vector2(w * .9, h * .5), Vector2(w * .85, h * .82)]), Color(0.8, 0.82, 0.85))
-			"wheat":
-				draw_line(Vector2(w * .3, h * .9), Vector2(w * .7, h * .15), Color(0.85, 0.65, 0.2), 3)
-				for i in 5:
-					var t := 0.25 + i * 0.12
-					var p := Vector2(w * .3, h * .9).lerp(Vector2(w * .7, h * .15), t)
-					draw_circle(p + Vector2(-5, 0), 4.5, Color(0.98, 0.78, 0.3))
-					draw_circle(p + Vector2(5, 2), 4.5, Color(0.92, 0.7, 0.25))
-			"crystal":
-				draw_colored_polygon(PackedVector2Array([Vector2(w * .5, h * .05), Vector2(w * .88, h * .38), Vector2(w * .5, h * .95), Vector2(w * .12, h * .38)]), Color(0.3, 0.6, 1.0))
-				draw_colored_polygon(PackedVector2Array([Vector2(w * .5, h * .05), Vector2(w * .65, h * .38), Vector2(w * .5, h * .95), Vector2(w * .35, h * .38)]), Color(0.6, 0.85, 1.0))
-			"people":
-				draw_circle(Vector2(w * .38, h * .32), w * .16, MUTED_C)
-				draw_rect(Rect2(w * .14, h * .52, w * .48, h * .36), MUTED_C)
-				draw_circle(Vector2(w * .7, h * .36), w * .12, MUTED_C)
-				draw_rect(Rect2(w * .58, h * .54, w * .32, h * .3), MUTED_C)
-			"crest":
-				var pts := PackedVector2Array([Vector2(w * .08, 0), Vector2(w * .92, 0), Vector2(w * .92, h * .8), Vector2(w * .5, h * .98), Vector2(w * .08, h * .8)])
-				draw_colored_polygon(pts, Color(0.12, 0.3, 0.75))
-				draw_polyline(pts + PackedVector2Array([pts[0]]), Color(0.9, 0.75, 0.35), 4)
-				_eagle(Vector2(w * .5, h * .42), w * .32)
-			"ruler":
-				draw_rect(Rect2(0, 0, w, h), Color(0.25, 0.3, 0.42))
-				draw_circle(Vector2(w * .5, h * .5), w * .24, Color(0.92, 0.72, 0.56))
-				draw_rect(Rect2(w * .2, h * .74, w * .6, h * .26), Color(0.2, 0.32, 0.7))
-				draw_colored_polygon(PackedVector2Array([Vector2(w * .28, h * .3), Vector2(w * .34, h * .12), Vector2(w * .42, h * .24), Vector2(w * .5, h * .08), Vector2(w * .58, h * .24), Vector2(w * .66, h * .12), Vector2(w * .72, h * .3)]), Color(1, 0.8, 0.2))
-				draw_rect(Rect2(w * .3, h * .56, w * .4, h * .18), Color(0.45, 0.3, 0.2))
-			"level":
-				draw_colored_polygon(_hexagon(c, w * .48), Color(0.15, 0.4, 0.9))
-				draw_polyline(_hexagon(c, w * .48) + PackedVector2Array([_hexagon(c, w * .48)[0]]), Color(0.7, 0.85, 1), 2)
-			"trophy":
-				draw_colored_polygon(PackedVector2Array([Vector2(w * .25, h * .15), Vector2(w * .75, h * .15), Vector2(w * .65, h * .55), Vector2(w * .35, h * .55)]), GOLD_C)
-				draw_rect(Rect2(w * .45, h * .55, w * .1, h * .2), GOLD_C)
-				draw_rect(Rect2(w * .3, h * .75, w * .4, h * .1), GOLD_C)
-			"book":
-				draw_rect(Rect2(w * .12, h * .2, w * .36, h * .6), Color(0.95, 0.85, 0.55))
-				draw_rect(Rect2(w * .52, h * .2, w * .36, h * .6), Color(0.9, 0.78, 0.45))
-				draw_line(Vector2(w * .5, h * .2), Vector2(w * .5, h * .8), Color(0.5, 0.35, 0.15), 3)
-			"mail":
-				draw_rect(Rect2(w * .1, h * .25, w * .8, h * .5), Color(0.92, 0.78, 0.45))
-				draw_polyline(PackedVector2Array([Vector2(w * .1, h * .25), Vector2(w * .5, h * .55), Vector2(w * .9, h * .25)]), Color(0.6, 0.45, 0.2), 3)
-			"gear":
-				draw_circle(c, w * .3, Color(0.78, 0.8, 0.85))
-				for i in 8:
-					var a := TAU / 8 * i
-					draw_line(c, c + Vector2(cos(a), sin(a)) * w * .42, Color(0.78, 0.8, 0.85), 7)
-				draw_circle(c, w * .13, Color(0.08, 0.1, 0.15))
-			"badge":
-				draw_circle(c, w * .5, Color(0.88, 0.15, 0.15))
-			"target":
-				draw_arc(c, w * .32, 0, TAU, 32, TEXT_C, 3)
-				draw_circle(c, w * .08, TEXT_C)
-				for v in [Vector2.UP, Vector2.DOWN, Vector2.LEFT, Vector2.RIGHT]:
-					draw_line(c + v * w * .22, c + v * w * .46, TEXT_C, 3)
-			"pin":
-				draw_colored_polygon(PackedVector2Array([Vector2(w * .1, h * .8), Vector2(w * .35, h * .45), Vector2(w * .65, h * .45), Vector2(w * .9, h * .8)]), Color(0.55, 0.62, 0.72))
-				draw_circle(Vector2(w * .5, h * .3), w * .16, TEXT_C)
-			"fort", "castle_icon":
-				var col := TEXT_C if kind == "fort" or lit else MUTED_C
-				draw_rect(Rect2(w * .2, h * .35, w * .6, h * .5), col)
-				for i in 3:
-					draw_rect(Rect2(w * (.2 + i * .23), h * .2, w * .14, h * .16), col)
-				draw_rect(Rect2(w * .42, h * .6, w * .16, h * .25), Color(0.06, 0.08, 0.13))
-			"tower":
-				draw_rect(Rect2(w * .34, h * .3, w * .32, h * .58), TEXT_C)
-				draw_rect(Rect2(w * .26, h * .16, w * .48, h * .16), TEXT_C)
-				for i in 3:
-					draw_rect(Rect2(w * (.26 + i * .18), h * .06, w * .12, h * .12), TEXT_C)
-				draw_rect(Rect2(w * .46, h * .42, w * .08, h * .18), Color(0.06, 0.08, 0.13))
-			"helmet":
-				var hc := TEXT_C if lit else MUTED_C
-				draw_circle(Vector2(w * .5, h * .5), w * .34, hc)
-				draw_rect(Rect2(w * .16, h * .5, w * .68, h * .35), hc)
-				draw_rect(Rect2(w * .42, h * .45, w * .16, h * .4), Color(0.06, 0.08, 0.13))
-			"hammer":
-				var mc := TEXT_C if lit else MUTED_C
-				draw_line(Vector2(w * .3, h * .85), Vector2(w * .62, h * .35), mc, 5)
-				draw_colored_polygon(PackedVector2Array([Vector2(w * .45, h * .2), Vector2(w * .8, h * .1), Vector2(w * .9, h * .3), Vector2(w * .6, h * .45)]), mc)
-			"hands":
-				var dc := TEXT_C if lit else MUTED_C
-				draw_arc(Vector2(w * .5, h * .55), w * .3, PI, TAU, 16, dc, 6)
-				draw_line(Vector2(w * .2, h * .55), Vector2(w * .8, h * .55), dc, 4)
-			"scales":
-				var sc := TEXT_C if lit else MUTED_C
-				draw_line(Vector2(w * .5, h * .1), Vector2(w * .5, h * .85), sc, 3)
-				draw_line(Vector2(w * .15, h * .25), Vector2(w * .85, h * .25), sc, 3)
-				draw_arc(Vector2(w * .22, h * .5), w * .14, 0, PI, 12, sc, 3)
-				draw_arc(Vector2(w * .78, h * .5), w * .14, 0, PI, 12, sc, 3)
-			"tile":
-				draw_colored_polygon(_hexagon(c, w * .48), Color(0.35, 0.6, 0.25))
-				draw_colored_polygon(_hexagon(c + Vector2(0, h * .08), w * .4), Color(0.45, 0.7, 0.3))
-			"plus":
-				draw_line(Vector2(w * .5, h * .1), Vector2(w * .5, h * .9), GOOD, 6)
-				draw_line(Vector2(w * .1, h * .5), Vector2(w * .9, h * .5), GOOD, 6)
-			"swords":
-				draw_line(Vector2(w * .15, h * .15), Vector2(w * .85, h * .85), Color(0.92, 0.95, 1), 6)
-				draw_line(Vector2(w * .85, h * .15), Vector2(w * .15, h * .85), Color(0.92, 0.95, 1), 6)
-				draw_line(Vector2(w * .2, h * .62), Vector2(w * .38, h * .8), Color(0.75, 0.82, 0.95), 5)
-				draw_line(Vector2(w * .8, h * .62), Vector2(w * .62, h * .8), Color(0.75, 0.82, 0.95), 5)
-
-	const MUTED_C := Color(0.62, 0.68, 0.78)
-	const TEXT_C := Color(0.96, 0.97, 1.0)
-	const GOLD_C := Color(1.0, 0.78, 0.2)
-	const GOOD := Color(0.42, 0.9, 0.48)
+		if kind == "tile":
+			draw_colored_polygon(_hexagon(c, size.x * .48), Kit.GRASS.darkened(0.25))
+			draw_colored_polygon(_hexagon(c + Vector2(0, size.y * .08), size.x * .4), Kit.GRASS)
 
 	func _hexagon(c: Vector2, r: float) -> PackedVector2Array:
 		var p := PackedVector2Array()
@@ -647,58 +608,20 @@ class Icon extends Control:
 			p.append(c + Vector2(cos(a), sin(a)) * r)
 		return p
 
-	func _eagle(c: Vector2, s: float) -> void:
-		var white := Color(0.96, 0.97, 1)
-		draw_colored_polygon(PackedVector2Array([c + Vector2(0, -s * .5), c + Vector2(s * .15, -s * .1), c + Vector2(s * 1.0, -s * .55), c + Vector2(s * .7, s * .05), c + Vector2(s * .25, s * .2), c + Vector2(s * .12, s * .8), c + Vector2(-s * .12, s * .8), c + Vector2(-s * .25, s * .2), c + Vector2(-s * .7, s * .05), c + Vector2(-s * 1.0, -s * .55), c + Vector2(-s * .15, -s * .1)]), white)
-
-
-# ====================================================================== 3D unit portraits rendered live
-
-class Portrait extends SubViewportContainer:
-	var model: String
-
-	func _init(m: String) -> void:
-		model = m
-		stretch = true
-		mouse_filter = Control.MOUSE_FILTER_IGNORE
-
-	func _ready() -> void:
-		var vp := SubViewport.new()
-		vp.size = Vector2i(248, 208)
-		vp.own_world_3d = true
-		vp.transparent_bg = false
-		add_child(vp)
-		var env := WorldEnvironment.new()
-		var e := Environment.new()
-		e.background_mode = Environment.BG_COLOR
-		e.background_color = Color(0.32, 0.42, 0.58)
-		e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-		e.ambient_light_color = Color(0.7, 0.75, 0.85)
-		e.ambient_light_energy = 0.6
-		env.environment = e
-		vp.add_child(env)
-		var light := DirectionalLight3D.new()
-		light.rotation_degrees = Vector3(-40, 35, 0)
-		light.light_energy = 1.4
-		vp.add_child(light)
-		var path := "res://assets/models/%s.glb" % ("squad_blue" if model == "archer" else model)
-		if ResourceLoader.exists(path):
-			var n: Node3D = load(path).instantiate()
-			vp.add_child(n)
-			n.rotation.y = -0.6
-		var cam := Camera3D.new()
-		cam.fov = 30
-		var focus := Vector3(0, 0.22, 0)
-		cam.position = focus + Vector3(0.9, 0.45, 1.25) * (1.2 if model == "catapult" else 1.0)
-		vp.add_child(cam)
-		cam.look_at(focus)
-
 
 # ====================================================================== minimap
 
+## The whole open world in the states' colours on the sea well, each hex with a light top edge; the camera's view
+## is a rounded white frame over an INK one, clipped by the well.
 class Minimap extends Control:
 	var world: Node3D  # map_view.gd
 	var view_rect := Rect2()
+	var _sb := StyleBoxFlat.new()
+
+	func _init() -> void:
+		_sb.draw_center = false
+		_sb.anti_aliasing = true
+		_sb.corner_detail = 8
 
 	func _draw() -> void:
 		if world == null or world.get("sim") == null:
@@ -713,19 +636,31 @@ class Minimap extends Control:
 		var span := hi - lo + Vector2(2.0, 2.0)
 		var sc := minf(size.x / span.x, size.y / span.y)
 		var c := size / 2 - (lo + hi) / 2.0 * sc
+		var water := Kit.SEA_WELL.lightened(0.1)
 		for cell in world.sim.cells:
 			var p: Vector3 = world.axial_to_world(cell["q"], cell["r"])
-			var col := Color(0.32, 0.36, 0.42)
+			var col := Kit.MAP_ROCK
 			if cell["terrain"] == "water":
-				col = Color(0.16, 0.32, 0.5)
+				col = water
 			elif cell["terrain"] != "mountain":
-				col = world.state_color(world.owner_of(cell)).darkened(0.15)
+				col = world.state_color(world.owner_of(cell))
 			var pts := PackedVector2Array()
+			var o := c + Vector2(p.x, p.z) * sc
 			for i in 6:
 				var a := PI / 3 * i
-				pts.append(c + Vector2(p.x, p.z) * sc + Vector2(cos(a), sin(a)) * sc * 0.95)
+				pts.append(o + Vector2(cos(a), sin(a)) * sc * 0.94)
 			draw_colored_polygon(pts, col)
+			if cell["terrain"] != "water":  # the upper edges catch the light, like the tiles on the map
+				draw_polyline(PackedVector2Array([pts[3], pts[4], pts[5], pts[0]]), col.lightened(0.35), 1.0, true)
 			if cell["controller"] != cell["owner"] and cell["controller"] != 0:
-				draw_circle(c + Vector2(p.x, p.z) * sc, sc * 0.35, world.state_color(cell["controller"]))
+				draw_circle(o, sc * 0.35, world.state_color(cell["controller"]))
 		if view_rect.size != Vector2.ZERO:
-			draw_rect(Rect2(c + view_rect.position * sc, view_rect.size * sc), Color(1, 1, 1), false, 2)
+			var r := Rect2(c + view_rect.position * sc, view_rect.size * sc)
+			_frame(r.grow(3.0), Kit.INK, 6, 11)
+			_frame(r.grow(1.5), Kit.WHITE, 3, 8)
+
+	func _frame(r: Rect2, col: Color, w: int, rad: int) -> void:
+		_sb.border_color = col
+		_sb.set_border_width_all(w)
+		_sb.set_corner_radius_all(rad)
+		draw_style_box(_sb, r)

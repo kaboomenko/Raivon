@@ -120,7 +120,16 @@ tile.your_territory,Ваша территория,Your territory
 hud.tile_bonus,+25% к защите,+25% defense
 hud.attack,Атаковать,Attack
 hud.per_hour,%s%s/ч,%s%s/h
-hud.storage_full,склад полон,storage full
+hud.tool.front,Фронт,Front
+hud.tool.capital,Столица,Capital
+hud.tool.fort,Форт,Fort
+hud.tool.tower,Башня,Tower
+hud.tip.rate,Доход: %s,Income: %s
+hud.tip.cap,Склад: %s из %s,Storage: %s of %s
+hud.tip.full,Склад полон: улучшите Склад,Storage full: upgrade the Warehouse
+hud.tip.src,Приносят ваши гексы,Produced by your hexes
+hud.tip.raivite,"Награды, райвитовые жилы и Лавка","Rewards, raivite veins and the Shop"
+res.name.raivite,Райвиты,Raivites
 ui.war_score_zero,Военный счёт: 0,War score: 0
 ui.last_stand,ВЫ НА ГРАНИ ПОРАЖЕНИЯ! Последний рубеж +25%,ON THE BRINK OF DEFEAT! Last stand +25%
 ui.war_status,Война: %s · счёт %+.1f,War: %s · score %+.1f

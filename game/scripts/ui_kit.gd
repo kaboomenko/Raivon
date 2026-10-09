@@ -27,6 +27,7 @@ const GRASS := Color("86c45e")
 const BLUEPRINT := Color("3e7fc1")
 const SEA_WELL := Color("2a6596")
 const FULL := Color("8c5a1f")
+const MAP_ROCK := Color("a9aebb")  ## minimap mountains (the land is in the states' colours, water shows the well)
 const WHITE := Color(1, 1, 1)
 
 # ------------------------------------------------------------------ tokens: text
@@ -71,6 +72,12 @@ const LOCK_MOD := Color(0.55, 0.57, 0.62)  ## a closed item's icon (§3.5)
 
 static func gloss(face: Color) -> Color:
 	return face.lerp(WHITE, 0.38)
+
+
+## A token at another alpha (INK α 0.55 for the top scrim, a transparent frame).
+static func alpha(c: Color, a: float) -> Color:
+	c.a = a
+	return c
 
 
 static func face_of(role: String) -> Color:
@@ -1397,16 +1404,29 @@ static func icon_button(parent: Node, rect: Rect2, icon: String, role := "slate"
 	var b := button(parent, rect, role, "", {"icon": icon, "round": round, "cb": cb, "icon_scale": 0.70 if round else 0.74,
 		"size": "M" if rect.size.y >= 80.0 else "S", "hit_pad": maxf(0.0, (96.0 - rect.size.y) * 0.5)})
 	if caption != "":
-		# square: INK pill h 30, MICRO 22, 14 px over the bottom; round: SLATE_WELL pill h 32 with an INK 3 contour,
-		# LABEL 24, 10 px over the bottom, kept 12 px from the screen edges (§4.2)
-		var plate := caption_pill(b, caption, 32.0 if round else 30.0, SLATE_WELL if round else Color(INK, 0.92), 24 if round else 22, 3 if round else 0)
-		var px := (rect.size.x - plate.size.x) * 0.5
-		if b.is_inside_tree():
-			var gx := b.get_global_rect().position.x
-			var vw := b.get_viewport_rect().size.x
-			px = clampf(px, 12.0 - gx, vw - 12.0 - gx - plate.size.x)
-		plate.position = Vector2(px, rect.size.y - (10.0 if round else 14.0))
+		icon_caption(b, caption)
 	return b
+
+
+## (Re)sets the caption plate of an icon button (a language switch calls it again; the old plate goes).
+## Square: INK pill h 30, MICRO 22, 14 px over the bottom; round: SLATE_WELL pill h 32 with an INK 3 contour,
+## LABEL 24, 10 px over the bottom. Both are kept 12 px from the screen edges (§4.2).
+static func icon_caption(b: KitButton, caption: String) -> Panel:
+	if b.has_meta("kit_caption"):
+		var old: Variant = b.get_meta("kit_caption")
+		if is_instance_valid(old):
+			(old as Node).queue_free()
+	var round := b.round_btn
+	var plate := caption_pill(b, caption, 32.0 if round else 30.0, SLATE_WELL if round else Color(INK, 0.92), 24 if round else 22, 3 if round else 0)
+	plate.name = "caption"
+	var px := (b.size.x - plate.size.x) * 0.5
+	if b.is_inside_tree():
+		var gx := b.get_global_rect().position.x
+		var vw := b.get_viewport_rect().size.x
+		px = clampf(px, 12.0 - gx, vw - 12.0 - gx - plate.size.x)
+	plate.position = Vector2(px, b.size.y - (10.0 if round else 14.0))
+	b.set_meta("kit_caption", plate)
+	return plate
 
 
 ## Ø76 war button with a vector ✕ at the window's top-right corner.
@@ -1540,7 +1560,7 @@ static func set_bar(b: KitShape, frac: float, text := "") -> void:
 
 
 ## A caption pill with a short white text: the plate of a square button (INK, h 30, MICRO 22) or the label under
-## a round one (SLATE_WELL, INK 3 contour, h 32, LABEL 24), §4.2. (`Kit.pill` is left for the resource plate, §4.6.)
+## a round one (SLATE_WELL, INK 3 contour, h 32, LABEL 24), §4.2. (`Kit.pill` is the resource plate, §4.6.)
 static func caption_pill(parent: Node, text: String, h := 30.0, face := Color(0, 0, 0, 0), size := 22, contour := 0) -> Panel:
 	var p := Panel.new()
 	var f: Color = face if face.a > 0.0 else Color(INK, 0.9)
@@ -1560,6 +1580,220 @@ static func caption_pill(parent: Node, text: String, h := 30.0, face := Color(0,
 	if parent:
 		parent.add_child(p)
 	return p
+
+
+# ------------------------------------------------------------------ the resource plate (§4.6)
+
+## A sunken pill: hard shadow +4 → INK body (radius h/2) → SLATE_WELL face inset 4 → the storage fill from the left
+## (SLATE_FILL, FULL when the warehouse is full) → a shade along the top of the face. Children: the icon `ic` (68,
+## overhanging the left end by 10), the value `value` (NUM 32, Rubik 900) over the rate `rate` (LABEL 24), and for
+## raivite the go XS «+» `plus` instead of the rate. A tap opens a tooltip with `tip_title` / `tip_text`.
+class KitPill extends Control:
+	var icon_name := ""
+	var frac := 0.0
+	var full := false
+	var has_rate := true
+	var value_size := 32  ## NUM_M 32; 28 when five plates share the bar
+	var value_cap := 0  ## set_caps: the bar's common value size (0: none)
+	var rate_cap := 0
+	var tip_title := ""
+	var tip_text := ""
+	var ic: TextureRect
+	var value: Label
+	var rate: Label
+	var plus: KitButton
+	var _sb := StyleBoxFlat.new()
+	var _tip_frame := -1
+
+	func _init() -> void:
+		name = "pill"
+		mouse_filter = Control.MOUSE_FILTER_STOP
+		_sb.anti_aliasing = true
+		_sb.corner_detail = 12
+		resized.connect(lay)
+
+	## Stored amount (already formatted), the warehouse share 0..1 and whether it is full (FULL fill, WARN value).
+	func set_value(text: String, f: float, is_full: bool) -> void:
+		var changed := text != value.text or is_full != full
+		frac = clampf(f, 0.0, 1.0)
+		full = is_full
+		if changed:
+			value.text = text
+			lay()
+		queue_redraw()
+
+	## The «+160/ч» line; `col` POS or NEG.
+	func set_rate(text: String, col: Color) -> void:
+		if not has_rate:
+			return
+		if text != rate.text:
+			rate.text = text
+			lay()
+		rate.add_theme_color_override("font_color", col)
+
+	## True when `text` fits the rate line at its floor (22): the bar drops «/ч» from every rate when one does not.
+	func rate_fits(text: String) -> bool:
+		return _w(text, 22, "d800") <= _geom()["avail"]
+
+	## The sizes the current value / rate would fit at; the bar caps every plate to the smallest, so the numbers
+	## of one bar share one size.
+	func value_fit() -> int:
+		return _fit(value.text, value_size, _geom()["avail"], "d900")
+
+	func rate_fit() -> int:
+		return _fit(rate.text, 24, _geom()["avail"], "d800") if has_rate else 24
+
+	## Caps the value / rate sizes (0: no cap); lays out again only when they change.
+	func set_caps(v: int, r: int) -> void:
+		if v != value_cap or r != rate_cap:
+			value_cap = v
+			rate_cap = r
+			lay()
+
+	## Five plates share the bar from DL5 (value_size 28): a smaller icon and «+», the text closer to the icon.
+	func _geom() -> Dictionary:
+		var compact := value_size < 32
+		var side := 60.0 if compact else 68.0
+		var pb := (42.0 if compact else 48.0) if plus != null else 0.0
+		var tx := 54.0 if compact else 63.0  # §4.6 says x+60; 3 px more keep the first digit off the icon's rim
+		var right := size.x - (pb + 10.0 if plus != null else (7.0 if compact else 10.0))
+		return {"side": side, "ox": -8.0 if compact else -10.0, "tx": tx, "avail": maxf(10.0, right - tx), "pb": pb}
+
+	## Glyph width plus one outline (the outline overlaps the margins a little; text_w counts two).
+	func _w(text: String, s: int, kind: String) -> float:
+		return SELF.text_w(text, s, kind, false) + SELF.outline_for(s)
+
+	func _fit(text: String, base: int, avail: float, kind: String) -> int:
+		for s in SELF.fit_steps(base, 22):
+			if _w(text, s, kind) <= avail:
+				return s
+		return 22
+
+	## Lays the children out from the size: value and rate between the icon and the right end (or the «+»).
+	func lay() -> void:
+		if value == null:
+			return
+		var g := _geom()
+		var h := size.y
+		var side: float = g["side"]
+		var tx: float = g["tx"]
+		var avail: float = g["avail"]
+		ic.size = Vector2(side, side)
+		ic.position = Vector2(float(g["ox"]), (h - side) * 0.5)
+		var vs := _fit(value.text, value_size, avail, "d900")
+		if value_cap > 0:
+			vs = mini(vs, value_cap)
+		SELF.style_label(value, vs, WARN if full else TEXT, true)
+		value.add_theme_font_override("font", SELF.font("d900"))
+		value.add_theme_font_size_override("font_size", vs)
+		value.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		value.clip_text = _w(value.text, vs, "d900") > avail  # never past the plate (an ellipsis at worst)
+		value.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		value.position = Vector2(tx, 3.0) if has_rate else Vector2(tx, 0.0)
+		value.size = Vector2(avail, 38.0) if has_rate else Vector2(avail, h - 2.0)
+		rate.visible = has_rate
+		if has_rate:
+			var col := rate.get_theme_color("font_color")
+			var rs := _fit(rate.text, 24, avail, "d800")
+			if rate_cap > 0:
+				rs = mini(rs, rate_cap)
+			SELF.style_label(rate, rs, col, true)
+			rate.add_theme_font_override("font", SELF.font("d800"))
+			rate.add_theme_font_size_override("font_size", rs)
+			rate.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			rate.clip_text = _w(rate.text, rs, "d800") > avail
+			rate.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+			rate.position = Vector2(tx, 38.0)
+			rate.size = Vector2(avail, 26.0)
+		if plus != null:
+			var pb: float = g["pb"]
+			plus.size = Vector2(pb, pb)
+			plus.position = Vector2(size.x - pb - 8.0, (h - pb) * 0.5)
+		queue_redraw()
+
+	func _box(r: Rect2, col: Color, rad: float) -> void:
+		_sb.draw_center = true
+		_sb.bg_color = col
+		_sb.set_border_width_all(0)
+		_sb.set_corner_radius_all(int(rad))
+		draw_style_box(_sb, r)
+
+	func _draw() -> void:
+		var w := size.x
+		var h := size.y
+		var r := h * 0.5
+		_box(Rect2(0, 4, w, h), Color(INK, SHADOW_A), r)
+		_box(Rect2(0, 0, w, h), INK, r)
+		var face := Rect2(4, 4, w - 8.0, h - 8.0)
+		_box(face, SLATE_WELL, r - 4.0)
+		if frac > 0.0:
+			var fw := maxf(face.size.y, face.size.x * frac)
+			_box(Rect2(face.position, Vector2(fw, face.size.y)), FULL if full else SLATE_FILL, r - 4.0)
+		# sunken: the rim of the body casts a shade along the top of the face
+		_sb.draw_center = false
+		_sb.set_border_width_all(0)
+		_sb.border_width_top = 4
+		_sb.border_color = Color(INK, 0.5)
+		_sb.set_corner_radius_all(int(r - 4.0))
+		draw_style_box(_sb, face)
+		_sb.draw_center = true
+
+	func _gui_input(e: InputEvent) -> void:
+		var up: bool = (e is InputEventMouseButton and (e as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT \
+			and not e.is_pressed()) or (e is InputEventScreenTouch and not e.is_pressed())
+		if not up or tip_title == "":
+			return
+		var f := Engine.get_process_frames()
+		if f == _tip_frame or not Rect2(Vector2.ZERO, size).grow(6.0).has_point(e.position):
+			return  # the emulated mouse twin of a touch, or a drag that ended elsewhere
+		_tip_frame = f
+		SELF.tooltip(self, tip_title, tip_text)
+
+
+## A resource plate at `rect` (h 70). opts: rate (false: no rate line, the value centred), value_size (32 / 28),
+## plus (a Callable: the go XS «+» at the right end, raivite only).
+static func pill(parent: Node, rect: Rect2, icon: String, opts := {}) -> KitPill:
+	var p := KitPill.new()
+	p.icon_name = icon
+	p.has_rate = bool(opts.get("rate", true))
+	p.value_size = int(opts.get("value_size", 32))
+	p.position = rect.position
+	p.size = rect.size
+	p.ic = TextureRect.new()
+	p.ic.name = "icon"
+	p.ic.texture = icon_tex(icon)
+	p.ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	p.ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	p.ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	p.add_child(p.ic)
+	p.value = label("—", 32, TEXT, true)
+	p.value.name = "value"
+	p.add_child(p.value)
+	p.rate = label("", 24, POS, true)
+	p.rate.name = "rate"
+	p.add_child(p.rate)
+	var cb: Callable = opts.get("plus", Callable())
+	if cb.is_valid():
+		p.plus = button(p, Rect2(rect.size.x - 56.0, 11, 48, 48), "go", "", {"icon": "plus", "size": "XS", "cb": cb, "hit_pad": 12.0})
+		p.plus.name = "plus"
+	if parent:
+		parent.add_child(p)
+	p.lay()
+	return p
+
+
+## A vertical two-stop gradient texture (the HUD's top scrim, sky backdrops).
+static func vgradient(top: Color, bottom: Color) -> GradientTexture2D:
+	var g := Gradient.new()
+	g.set_color(0, top)
+	g.set_color(1, bottom)
+	var t := GradientTexture2D.new()
+	t.gradient = g
+	t.width = 4
+	t.height = 64
+	t.fill_from = Vector2(0, 0)
+	t.fill_to = Vector2(0, 1)
+	return t
 
 
 ## Chips (§4.8). kind: status (INK pill), owner (fill = the state's colour), stat (SLATE_WELL), timer (M size),
@@ -2098,7 +2332,8 @@ static func tooltip(source: Control, title: String, text := "") -> Control:
 		bl = label(text, 26, SOFT_CREAM, false)
 		bl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		bl.max_lines_visible = 4
-		w = maxf(w, minf(text_w(text, 26, "b800", false), max_w - 2.0 * pad.x))
+		for ln in text.split("\n"):  # the longest line, not the whole text as one
+			w = maxf(w, minf(text_w(ln, 26, "b800", false) + 2.0, max_w - 2.0 * pad.x))
 	w = maxf(w, 160.0)
 	var box := Panel.new()
 	box.add_theme_stylebox_override("panel", style(CREAM, 24, 4, INK, 6, 6))
