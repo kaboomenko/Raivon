@@ -451,16 +451,21 @@ class KitDecor extends Control:
 		if size.y < 36.0:
 			lip = 0.0
 		var inner := Rect2(out, out, size.x - 2.0 * out, size.y - 2.0 * out)
-		var ir := maxf(0.0, r - out)
 		if lip > 0.0:
 			_sb.bg_color = face
-			_sb.set_corner_radius_all(int(ir))
+			# concentric with each of the parent's corners (one may be square: the tray under the first tab)
+			_sb.corner_radius_top_left = int(maxf(0.0, sb.corner_radius_top_left - out))
+			_sb.corner_radius_top_right = int(maxf(0.0, sb.corner_radius_top_right - out))
+			_sb.corner_radius_bottom_left = int(maxf(0.0, sb.corner_radius_bottom_left - out))
+			_sb.corner_radius_bottom_right = int(maxf(0.0, sb.corner_radius_bottom_right - out))
 			_sb.border_width_bottom = int(lip)
 			_sb.border_color = sb.get_meta("kit_lip_color", face.darkened(0.3))
 			draw_style_box(_sb, inner)
 		var kind: String = sb.get_meta("kit_kind", "")
-		if kind == "slate" and size.x > 2.0 * r + 8.0:
-			draw_line(Vector2(maxf(r, 12.0), out + 1.0), Vector2(size.x - maxf(r, 12.0), out + 1.0), SLATE_HI, 2.0)
+		var rl := maxf(float(sb.corner_radius_top_left), 12.0)
+		var rr := maxf(float(sb.corner_radius_top_right), 12.0)
+		if kind == "slate" and size.x > rl + rr + 8.0:
+			draw_line(Vector2(rl, out + 1.0), Vector2(size.x - rr, out + 1.0), SLATE_HI, 2.0)
 		elif kind == "cream" and size.x > 64.0:
 			var inset := 24.0 if size.x > 200.0 else maxf(r, 12.0)
 			draw_line(Vector2(inset, out + 2.0), Vector2(size.x - inset, out + 2.0), Color(1, 1, 1, 0.7), 3.0)
@@ -475,7 +480,7 @@ class KitDecor extends Control:
 # ------------------------------------------------------------------ vector chrome and shapes
 
 ## Draws kit shapes: vector chrome (x, check, chevron_left/right, plus, minus, arrow_up, arrow_right, swap), stars,
-## hex badges, the title plate, dots, bars and the tooltip tail. Never a font glyph.
+## hex badges, the title plate, dots, discs, bars, the blueprint grid and the tooltip tail. Never a font glyph.
 class KitShape extends Control:
 	var kind := ""
 	var face := Color.WHITE
@@ -559,6 +564,23 @@ class KitShape extends Control:
 					draw_circle(c, rr - ring, face, true, -1.0, true)
 			"bar":
 				_bar()
+			"disc":  # a round badge: INK ring → lip → face raised by the lip (the tray card's «ready» check)
+				var c := size * 0.5
+				var rr := minf(size.x, size.y) * 0.5
+				draw_circle(c, rr, INK, true, -1.0, true)
+				draw_circle(c, rr - 3.0, lip, true, -1.0, true)
+				draw_circle(c - Vector2(0, rr * 0.1), rr - 3.0 - rr * 0.08, face, true, -1.0, true)
+			"grid":  # the blueprint backdrop: white 10 % lines every data.step px
+				var step: float = data.get("step", 16.0)
+				var col := Color(1, 1, 1, 0.1)
+				var x := step
+				while x < size.x:
+					draw_line(Vector2(x, 0), Vector2(x, size.y), col, 1.0)
+					x += step
+				var y := step
+				while y < size.y:
+					draw_line(Vector2(0, y), Vector2(size.x, y), col, 1.0)
+					y += step
 			"tail":  # tooltip tail pointing down (data.up = true: up)
 				var up: bool = data.get("up", false)
 				var p := PackedVector2Array([Vector2(0, 0), Vector2(size.x, 0), Vector2(size.x * 0.5, size.y)]) if not up \
@@ -1829,6 +1851,326 @@ static func vgradient(top: Color, bottom: Color) -> GradientTexture2D:
 	return t
 
 
+## A horizontal two-stop gradient texture (the card row's right-edge fade).
+static func hgradient(left: Color, right: Color) -> GradientTexture2D:
+	var t := vgradient(left, right)
+	t.width = 64
+	t.height = 4
+	t.fill_to = Vector2(1, 0)
+	return t
+
+
+# ------------------------------------------------------------------ the tray card (§4.4)
+
+const LOCK_ART := Color(0.45, 0.47, 0.52)  ## a closed card's art (§4.4)
+
+## A tray card (§4.4, 180×172). Everything is drawn by `body` (hard shadow +5 → INK R 20 → SLATE face with a lip 6),
+## which lifts by 6 px when the card is selected: the art in the top 172×104 window (`art`, clipped to its rounded
+## top) on its backdrop, an INK divider, the name on a scrim at the art's bottom; a hex badge top-left, a round chip
+## top-right, a dot; the bottom zone (y 112–162) holds one XS button (`cta`) or one stat line. The card passes input
+## on (a drag still scrolls the row): a tap on the chip runs `chip_cb`, a tap anywhere else on the body (not on the
+## button) opens a tooltip with the title and `details`.
+class KitCard extends Panel:
+	const W := 180.0
+	const H := 172.0
+	var title := ""
+	var details := ""
+	var body: Panel
+	var art: Panel
+	var pic: Control  ## the backdrop and the picture (dimmed together when locked)
+	var name_label: Label
+	var cta: KitButton
+	var chip: Control
+	var chip_cb := Callable()
+	var _press_at := Vector2(-1, -1)
+	var _tap_frame := -1
+
+	func _init() -> void:
+		name = "card"
+		add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+		mouse_filter = Control.MOUSE_FILTER_PASS
+		custom_minimum_size = Vector2(W, H)
+		size = custom_minimum_size
+		size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+		gui_input.connect(_on_input)
+
+	func _on_input(e: InputEvent) -> void:
+		var pos := Vector2.ZERO
+		var pressed := false
+		if e is InputEventMouseButton and (e as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
+			pos = (e as InputEventMouseButton).position
+			pressed = e.pressed
+		elif e is InputEventScreenTouch:
+			pos = (e as InputEventScreenTouch).position
+			pressed = e.pressed
+		else:
+			return
+		if pressed:
+			_press_at = pos
+			return
+		var from := _press_at
+		_press_at = Vector2(-1, -1)
+		var f := Engine.get_process_frames()
+		if f == _tap_frame or from.x < 0.0 or from.distance_to(pos) > 16.0 or not Rect2(Vector2.ZERO, size).has_point(pos):
+			return  # the emulated mouse twin of a touch, or a drag that scrolled the row
+		if cta != null and cta.visible and Rect2(body.position + cta.position, cta.size).has_point(pos):
+			return  # the button acts on its own
+		_tap_frame = f
+		if chip != null and chip.visible and Rect2(body.position + chip.position, chip.size).grow(6.0).has_point(pos):
+			if not (chip is KitButton) and chip_cb.is_valid():
+				chip_cb.call()
+			return
+		SELF.tooltip(self, title, details)
+
+
+## A tray card (§4.4) — see KitCard. `art_tex` is cover-cropped into the art window, or, with opts.art_side, drawn
+## as an icon of that side centred at opts.art_y (default 42) on the backdrop. opts:
+##   backdrop: "sky" (default: the sky gradient over a grass strip) | "blueprint" | "team" (+ team: Color) | "cream"
+##   art_node: a Control laid into the art window (172×104 local coordinates) over the picture
+##   badge: the text of the top-left hex badge (R 22, centre 16, 16); badge_role (info)
+##   tag: a short text on an INK pill at the art's top-left instead of a badge («7/12»)
+##   chip: {node: Control} (a portrait, clipped round) | {plus: true} (a go «+» button) | {icon: name}; chip_cb
+##   dot: the role of a dot on the card's corner; dot_n: its number (-1: none)
+##   art_bar: {frac, role}: an S bar along the art's bottom, under the name
+##   cta: {role, caption, icon, price ([[icon, text, short]] ≤ 2), cb, enabled, reason} → an XS button at
+##        (6, 114, 168, 46); without a cb it opens the card's tooltip; a disabled one shows `reason` when tapped
+##   stat: {icon, text, bar_frac, bar_role, check} → icon 36 + NUM_S 26, an optional S bar at y 146, a go check
+##   locked: dark art + a lock 56; the cta becomes lock XS with a lock and opts.lock_caption («УР3»), its tap shows
+##           opts.reason
+##   selected: a brass outline 5 and a 6 px lift
+##   details: the tooltip text of a tap on the body
+static func card(art_tex: Texture2D, title: String, opts := {}) -> KitCard:
+	var c := KitCard.new()
+	c.title = title
+	c.details = String(opts.get("details", ""))
+	var sel: bool = opts.get("selected", false)
+	var locked: bool = opts.get("locked", false)
+	var b := Panel.new()
+	b.name = "body"
+	b.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.size = Vector2(KitCard.W, KitCard.H)
+	var sb := style(SLATE, 20, 5 if sel else 4, face_of("brass") if sel else INK, 5, 6)
+	b.add_theme_stylebox_override("panel", sb)
+	b.position.y = -6.0 if sel else 0.0
+	c.add_child(b)
+	c.body = b
+	b.add_child(KitDecor.new())  # the lip (child 0)
+	var o := float(sb.border_width_left)
+	# ---- the art window
+	var aw := Panel.new()
+	aw.name = "art"
+	aw.position = Vector2(o, o)
+	aw.size = Vector2(KitCard.W - 2.0 * o, 108.0 - o)
+	aw.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	aw.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
+	var kind := String(opts.get("backdrop", "sky"))
+	var team: Color = opts.get("team", face_of("info"))
+	var asb := StyleBoxFlat.new()
+	asb.bg_color = {"blueprint": BLUEPRINT, "team": team, "cream": CREAM}.get(kind, SKY_LOW)
+	asb.anti_aliasing = true
+	asb.corner_detail = 8
+	asb.corner_radius_top_left = int(20.0 - o)
+	asb.corner_radius_top_right = int(20.0 - o)
+	aw.add_theme_stylebox_override("panel", asb)
+	b.add_child(aw)
+	c.art = aw
+	var w := aw.size.x
+	var h := aw.size.y
+	var pic := Control.new()
+	pic.name = "pic"
+	pic.size = aw.size
+	pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	aw.add_child(pic)
+	c.pic = pic
+	match kind:
+		"sky":
+			pic.add_child(_card_rect(vgradient(SKY_TOP, SKY_LOW), Rect2(0, 0, w, h)))
+			var grass := ColorRect.new()
+			grass.color = GRASS
+			grass.position = Vector2(0, h - 30.0)
+			grass.size = Vector2(w, 30.0)
+			grass.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			pic.add_child(grass)
+		"blueprint":
+			var grid := KitShape.new("grid")
+			grid.size = aw.size
+			pic.add_child(grid)
+		"team":
+			pic.add_child(_card_rect(vgradient(team.lightened(0.15), team.darkened(0.2)), Rect2(0, 0, w, h)))
+	if art_tex != null:
+		var side := float(opts.get("art_side", 0.0))
+		if side > 0.0:
+			var cy := float(opts.get("art_y", 42.0))
+			var ic := _card_rect(art_tex, Rect2((w - side) * 0.5, cy - side * 0.5, side, side))
+			ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			pic.add_child(ic)
+		else:
+			var cover := _card_rect(art_tex, Rect2(0, 0, w, h))
+			cover.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+			pic.add_child(cover)
+	var node: Control = opts.get("art_node")
+	if node != null:
+		pic.add_child(node)
+	if locked:
+		pic.modulate = LOCK_ART
+		# the lock 56 in the middle of a cover art; beside an icon art it sits on the icon's lower right, so the
+		# dimmed icon still reads (a lock over a helmet hid all but its crest)
+		var side := float(opts.get("art_side", 0.0))
+		var lc := Vector2(w * 0.5, 42.0)
+		if side > 0.0 and art_tex != null:
+			lc = Vector2(w * 0.5, float(opts.get("art_y", 42.0))) + Vector2(side * 0.36, side * 0.18)
+		var lk := _card_rect(icon_tex("lock"), Rect2(lc - Vector2(28, 28), Vector2(56, 56)))
+		lk.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		aw.add_child(lk)
+	# ---- the name on its scrim (an S bar under it with art_bar)
+	var bar_d: Dictionary = opts.get("art_bar", {})
+	var nw := w - 12.0
+	var ns := fit_size(title, 26, nw, "d900", 22)
+	var two := text_w(title, ns, "d900") > nw
+	if two:
+		ns = 22
+	var name_bottom := h - (28.0 if not bar_d.is_empty() else 3.0)
+	var sh := minf(h, (h - name_bottom) + (ns * 1.25) * (2.0 if two else 1.0) + 18.0)
+	aw.add_child(_card_rect(vgradient(alpha(INK, 0.0), alpha(INK, 0.9)), Rect2(0, h - sh, w, sh)))
+	var nl := label(title, ns, TEXT, true)
+	nl.name = "name"
+	nl.add_theme_font_override("font", font("d900"))  # CARD: Rubik 900 down to 22
+	nl.add_theme_font_size_override("font_size", ns)
+	nl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	nl.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	if two:
+		nl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		nl.max_lines_visible = 2
+		nl.add_theme_constant_override("line_spacing", -4)
+	nl.position = Vector2(6, name_bottom - 64.0)
+	nl.size = Vector2(nw, 64.0)
+	aw.add_child(nl)
+	c.name_label = nl
+	if not bar_d.is_empty():
+		bar(aw, Rect2(8, h - 24.0, w - 16.0, 16.0), float(bar_d.get("frac", 0.0)), String(bar_d.get("role", "go")))
+	var div := ColorRect.new()  # INK 3 px under the art
+	div.color = INK
+	div.position = Vector2(o, 108.0)
+	div.size = Vector2(KitCard.W - 2.0 * o, 3.0)
+	div.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	b.add_child(div)
+	# ---- the bottom zone: one XS button or one stat line
+	var ct: Dictionary = opts.get("cta", {})
+	if locked and opts.has("lock_caption"):
+		ct = {"role": "lock", "caption": String(opts["lock_caption"]), "icon": "lock", "enabled": false,
+			"reason": String(opts.get("reason", ""))}
+	if not ct.is_empty():
+		var en: bool = ct.get("enabled", true)
+		var cb: Callable = ct.get("cb", Callable())
+		var btn := button(b, Rect2(6, 114, 168, 46), String(ct.get("role", "go")), String(ct.get("caption", "")),
+			{"icon": String(ct.get("icon", "")), "price": ct.get("price", []), "enabled": en, "size": "XS",
+			"filter": Control.MOUSE_FILTER_PASS})
+		btn.cb = cb if cb.is_valid() else func(): SELF.tooltip(btn, title, c.details)
+		var why := String(ct.get("reason", ""))
+		if why != "":
+			btn.denied.connect(func(): SELF.tooltip(btn, title, why))
+		c.cta = btn
+	else:
+		var st: Dictionary = opts.get("stat", {})
+		if not st.is_empty():
+			_card_stat(b, st)
+	# ---- corners: badge or tag top-left, chip top-right, dot
+	if opts.has("badge"):
+		hex_badge(b, Vector2(16, 16), 22, String(opts.get("badge_role", "info")), String(opts["badge"]))
+	elif opts.has("tag"):
+		var tg := caption_pill(b, String(opts["tag"]), 32.0, alpha(INK, 0.85), 24)
+		tg.name = "tag"
+		tg.position = Vector2(o + 4.0, o + 4.0)
+	var chd: Dictionary = opts.get("chip", {})
+	var chip_r := Rect2(142, -6, 44, 44)  # Ø44 centred on (164, 16)
+	if chd.get("plus", false):
+		c.chip = button(b, chip_r, "go", "", {"icon": "plus", "round": true, "size": "XS", "filter": Control.MOUSE_FILTER_PASS,
+			"cb": opts.get("chip_cb", Callable()), "hit_pad": 8.0})
+	elif chd.has("node") or chd.has("icon"):
+		var ring := Panel.new()
+		ring.name = "chip"
+		var rsb := style(SLATE_WELL, 22, 3, INK, 3, 0)
+		rsb.set_meta("kit_kind", "")
+		ring.add_theme_stylebox_override("panel", rsb)
+		ring.position = chip_r.position
+		ring.size = chip_r.size
+		ring.mouse_filter = Control.MOUSE_FILTER_PASS
+		b.add_child(ring)
+		var inner := Panel.new()  # the picture inside the ring, clipped round
+		var isb := StyleBoxFlat.new()
+		isb.bg_color = SKY_LOW
+		isb.anti_aliasing = true
+		isb.set_corner_radius_all(19)
+		inner.add_theme_stylebox_override("panel", isb)
+		inner.position = Vector2(3, 3)
+		inner.size = Vector2(38, 38)
+		inner.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
+		inner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		ring.add_child(inner)
+		if chd.has("node"):
+			var pn: Control = chd["node"]
+			pn.position = Vector2(-5, -3)  # a little larger than the circle: the portrait's own frame stays outside
+			pn.size = Vector2(48, 50)
+			inner.add_child(pn)
+		else:
+			inner.add_child(_card_rect(icon_tex(String(chd["icon"])), Rect2(3, 3, 32, 32)))
+		c.chip = ring
+		c.chip_cb = opts.get("chip_cb", Callable())
+	if opts.has("dot"):
+		var d := dot(b, int(opts.get("dot_n", -1)), String(opts["dot"]))
+		d.name = "dot"
+	return c
+
+
+## A TextureRect stretched over `r` (backdrops, scrims, pictures) that ignores the mouse.
+static func _card_rect(tex: Texture2D, r: Rect2) -> TextureRect:
+	var t := TextureRect.new()
+	t.texture = tex
+	t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	t.stretch_mode = TextureRect.STRETCH_SCALE
+	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	t.position = r.position
+	t.size = r.size
+	return t
+
+
+## The stat line of a tray card's bottom zone: icon 36 + NUM_S 26 (fit to 22), an optional S bar at y 146, an
+## optional go check at the right end.
+static func _card_stat(b: Control, st: Dictionary) -> void:
+	var has_bar := st.has("bar_frac")
+	var cy := 128.0 if has_bar else 137.0
+	var x := 12.0
+	var tex := icon_tex(String(st.get("icon", "")))
+	if tex != null:
+		var ic := _card_rect(tex, Rect2(x, cy - 18.0, 36.0, 36.0))
+		ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		b.add_child(ic)
+		x += 40.0
+	var right := 168.0
+	if st.get("check", false):
+		var ck := KitShape.new("disc", face_of("go"))
+		ck.lip = lip_of("go")
+		ck.position = Vector2(134, cy - 17.0)
+		ck.size = Vector2(34, 34)
+		b.add_child(ck)
+		chrome(ck, "check", Rect2(4, 2, 26, 26))
+		right = 128.0
+	var text := String(st.get("text", ""))
+	var s := fit_size(text, 26, right - x, "d900", 22)
+	var l := label(text, s, TEXT, true)
+	l.add_theme_font_override("font", font("d900"))
+	l.add_theme_font_size_override("font_size", s)
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.clip_text = true
+	l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	l.position = Vector2(x, cy - 20.0)
+	l.size = Vector2(right - x, 40.0)
+	l.name = "stat"
+	b.add_child(l)
+	if has_bar:
+		bar(b, Rect2(12, 146, 156, 16), float(st["bar_frac"]), String(st.get("bar_role", "go")))
+
+
 ## Chips (§4.8). kind: status (INK pill), owner (fill = the state's colour), stat (SLATE_WELL), timer (M size),
 ## timer_war (red). Returns the chip Panel sized to its content.
 static func chip(parent: Node, pos: Vector2, icon: String, text: String, kind := "status", fill := Color(0, 0, 0, 0)) -> Panel:
@@ -2225,6 +2567,16 @@ static func breathe(node: Control) -> void:
 	var tw := node.create_tween().set_loops().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	tw.tween_property(node, "scale", Vector2(1.03, 1.03), 0.45)
 	tw.tween_property(node, "scale", Vector2.ONE, 0.45)
+
+
+## TAB: the new content of a switched tab fades in (120 ms).
+static func fade_in(node: CanvasItem, d := 0.12) -> void:
+	var t := _dur(d)
+	if t <= 0.0:
+		node.modulate.a = 1.0
+		return
+	node.modulate.a = 0.0
+	node.create_tween().tween_property(node, "modulate:a", 1.0, t)
 
 
 static func count_up(l: Label, from: int, to: int, ms := 450) -> void:

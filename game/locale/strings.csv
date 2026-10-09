@@ -114,7 +114,7 @@ hud.shop,Лавка,Shop
 tab.buildings,Здания,Buildings
 tab.army,Армия,Army
 tab.development,Развитие,Research
-tab.diplomacy,Дипломатия,Diplomacy
+tab.diplomacy,Соседи,Realms
 tab.world,Мир,World
 tile.your_territory,Ваша территория,Your territory
 hud.tile_bonus,+25% к защите,+25% defense
@@ -181,11 +181,14 @@ settings.new_game,Новая игра (удерживайте),New game (hold)
 settings.autosave,Прогресс сохраняется автоматически на устройстве.,Progress is saved automatically on this device.
 settings.build,Raivon: Territory Wars · тестовая сборка %s,Raivon: Territory Wars · test build %s
 army.recruiting,сбор новобранцев,recruiting
-army.locked_dl,🔒 с УР%d,🔒 DL%d
-army.train,➕ Собрать,➕ Recruit
-army.squads,%d отр. · %d%%,%d sq. · %d%%
-army.refill,🎬 Пополнить,🎬 Refill
-army.ready,Готова к бою,Battle-ready
+army.locked_dl,Откроется с УР%d,Opens at DL%d
+army.train,Собрать,Recruit
+army.tip.refill,Видео пополнит армию сразу,A video refills the army at once
+army.tip.str,Сила: %d из %d,Strength: %d of %d
+army.tip.squads,Отрядов: %d,Squads: %d
+army.tip.ready,Готовность: %d%%,Readiness: %d%%
+army.tip.upkeep,Содержание: −%d еды/ч,Upkeep: −%d food/h
+army.tip.time,Сбор новобранцев: %s,Recruiting takes %s
 dipl.opinion,Мнение: %+d · %s,Opinion: %+d · %s
 dipl.war,⚔ Война,⚔ War
 dipl.gift,🎁 %d зол.,🎁 %d gold
@@ -452,7 +455,6 @@ market.full_hint,Склад: %s почти полон · обменяй на Р�
 trader.needed,Нужное,Needed
 trader.common,Ходовой,Popular
 trader.generous,Щедрый,Generous
-army.upkeep,−%d еды/ч,−%d food/h
 ui.march,⇢ Марш армии,⇢ March
 ui.marching,Армия в пути · %s,Army marching · %s
 march.pick,Выберите гекс — куда идти армии,Pick a hex for the army to march to
@@ -879,7 +881,8 @@ separate.share_own,Их доля в счёте войны: %.1f · «%s»,Their 
 separate.sign,Заключить мир,Sign the peace
 hand.title,Рука карт,Card hand
 hand.title_full,Рука на наступление,Offensive hand
-hand.edit,Настроить,Set up
+hand.deck,Колода,Deck
+hand.tip,В руке: %s,In hand: %s
 hand.rule,«Атака» всегда в руке. Слотов занято: %d из %d — тап добавляет или убирает карту.,«Attack» is always in hand. Slots used: %d of %d — tap to add or remove a card.
 hand.attack_fixed,«Атака» закреплена в руке,«Attack» is fixed in the hand
 hand.min_one,Хотя бы одна карта в слотах,Keep at least one card in the slots
@@ -1017,6 +1020,7 @@ chr.ach_arena_legend,Легенда Рубежей,Legend of the Frontier
 chr.ach_arena_legend.d,Достигните лиги Легенда на Арене,Reach the Legend league in the Arena
 cmdr.title,Командиры,Commanders
 cmdr.open,Открыть,Open
+cmdr.tip_up,Командира можно повысить,A commander can level up
 cmdr.collection,Коллекция %d/%d,Collection %d/%d
 cmdr.lvl,ур. %d/%d,lv. %d/%d
 cmdr.lvl_n,Ур. %d,Lv. %d

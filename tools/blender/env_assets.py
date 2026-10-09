@@ -413,30 +413,37 @@ def pine_tree(x=0.0, y=0.0, s=1.0, n=9, tiers=4, seed=0, mats=None):
 
 
 def pine_paint(dark="#2E6B3E", mid="#3F8A47", light="#8CC152", deep="#24563A", seed=0.0):
-    """Conifer tiers of «Raivon Soft» (art direction §6.3, §6.8): a calm mid green with big soft mottles, sunlit
-    yellow-green rims, and the deep green only up under the tier above. The tip factor comes from a point attribute
-    "tip" written by soft_tier (0.15 at the apex ring → 1 on the rim and the rolled lip), so the layering reads
-    wherever the tree stands and however it is scaled. Few, large colour patches (scale 5, detail 2) instead of the
-    old needle speckle: nothing finer than the eye can hold at map zoom (§6.1 rule 5)."""
+    """Conifer tiers of «Raivon Soft» (art direction §6.3, §6.8): on every tier deep green up under the tier above,
+    then the dark green with big soft mid-green mottles, a mid-green band and sunlit yellow-green rims — the value
+    steps of a cartoon pine. The tip factor (0.15 at the apex ring → 1 on the rim and the rolled lip) is the per-tier
+    line tip_a + tip_b·z that soft_tier writes as two point attributes: constant over a tier, so the paint follows
+    the height exactly (interpolating the per-vertex "tip" over the long apex-to-rim fan triangles drew a dark
+    six-point star on every tier), wherever the tree stands and however it is scaled. Few, large colour patches
+    (noise scale 5, detail 2) instead of the old needle speckle: nothing finer than the eye can hold at map zoom
+    (§6.1 rule 5)."""
     def build():
         p = Paint("pine")
-        at = p.nt.nodes.new("ShaderNodeAttribute")
-        at.attribute_name = "tip"
-        tip = at.outputs["Fac"]
-        col = p.mix(p.step(p.noise(5.0, 2.0), 0.35, 0.68), dark, mid)
-        col = p.mix(p.math("MULTIPLY", p.step(tip, 0.5, 0.82), 0.6), col, mid)  # the outer slope a clean mid green
-        lit = p.math("MULTIPLY", p.step(tip, 0.78, 0.97), p.step(p.nz, -0.6, 0.2))
-        lit = p.math("MULTIPLY", lit, p.math("ADD", 0.62, p.math("MULTIPLY", p.step(p.noise(4.0, 2.0), 0.3, 0.6), 0.38)))
+        ta, tb = (p.nt.nodes.new("ShaderNodeAttribute") for _ in range(2))
+        ta.attribute_name, tb.attribute_name = "tip_a", "tip_b"
+        tip = p.math("ADD", ta.outputs["Fac"], p.math("MULTIPLY", tb.outputs["Fac"], p.z))
+        tip = p.math("MINIMUM", p.math("MAXIMUM", tip, 0.0), 1.0)
+        # the visible band of a tier runs from tip ≈ 0.72 (just under the tier above, seen from the map camera) to the
+        # rim: deep green up under the overhang → dark → a mid green band → the sunlit rim, so each tier reads as its
+        # own layer (the value steps of a cartoon pine) while the base stays as dark as the forest ground needs
+        col = p.mix(p.math("MULTIPLY", p.step(p.noise(5.0, 2.0), 0.45, 0.75), 0.5), dark, mid)
+        col = p.mix(p.math("MULTIPLY", p.step(tip, 0.84, 0.95), 0.5), col, mid)
+        lit = p.math("MULTIPLY", p.step(tip, 0.93, 1.0), p.step(p.nz, -0.6, 0.2))
+        lit = p.math("MULTIPLY", lit, p.math("ADD", 0.5, p.math("MULTIPLY", p.step(p.noise(4.0, 2.0), 0.3, 0.6), 0.3)))
         col = p.mix(lit, col, light)
-        col = p.mix(p.math("MULTIPLY", p.step(tip, 0.42, 0.15), 0.85), col, deep)
+        col = p.mix(p.math("MULTIPLY", p.step(tip, 0.84, 0.64), 0.85), col, deep)
         return p.done(col, 0.9)
     return cached(("pinepaint", dark, mid, light, deep, seed), build)
 
 
 def soft_normals(o, fn):
-    """Custom per-vertex normals (fn(co), or a list of one normal per vertex) on a part built in world coordinates (identity transform): the bake and the
-    game shade it as one smooth volume, whatever its facets and scallops (§6.8: «нормали одного объёма»). The part is
-    marked "flat", so ev.lowpoly's smooth-by-angle leaves the normals alone."""
+    """Custom per-vertex normals (fn(co), or a list of one normal per vertex) on a part built in world coordinates
+    (identity transform): the bake and the game shade it as one smooth volume, whatever its facets and scallops
+    (§6.8, normals of one volume). The part is marked "flat", so ev.lowpoly's smooth-by-angle leaves them alone."""
     me = o.data
     for p in me.polygons:
         p.use_smooth = True
@@ -460,9 +467,9 @@ def soft_tier(cx, cy_, z0, z1, r, mt, seed, n=24, waves=6, wave=0.1, droop=0.02,
     crests hanging `droop` lower like heavy branch ends; a rolled lip (one more ring `lip` in from the rim and `lip`
     under it), so the edge reads as a soft rounded rim instead of a blade; and a small apex ring (apex·r) instead of
     a point, closed only on the top tier (`cap`) — lower apexes sit inside the tier above. Normals come from a cone
-    proxy, normalize(radial + up·0.6) (the lip rolls under, radial − up·0.25), so each tier shades as one soft volume.
-    Writes the "tip" attribute (apex 0.15, rim 0.9–1, lip 1) for pine_paint. Open underneath: the camera (pitch
-    ≥ 40°) never looks up into it. 6 + 24 + 24 vertices, 78 triangles (82 with the cap)."""
+    proxy, normalize(radial + up·0.6) (the lip rolls under: radial − up·0.25), so each tier shades as one soft
+    volume. Writes the tip attributes for pine_paint (tip_attrs: apex 0.15 → rim 1, linear in height). Open
+    underneath: the camera (pitch ≥ 40°) never looks up into it. 6 + 24 + 24 vertices, 78 triangles (82 capped)."""
     rnd = random.Random(seed)
     rot = rnd.uniform(0.0, math.tau)
     na = 6
@@ -497,9 +504,7 @@ def soft_tier(cx, cy_, z0, z1, r, mt, seed, n=24, waves=6, wave=0.1, droop=0.02,
     if cap:
         faces.append(tuple(range(na)))
     o = poly(verts, faces, [mt], flat_shade=False, name="tier")
-    at = o.data.attributes.new("tip", "FLOAT", "POINT")
-    for i, v in enumerate(tip):
-        at.data[i].value = v
+    tip_attrs(o, tip, 0.15 + 0.85 * z1 / (z1 - z0), -0.85 / (z1 - z0))
     rad = _radial((cx, cy_))
     soft_normals(o, [rad(Vector(v)) + Vector((0.0, 0.0, up if i < L else -0.25)) for i, v in enumerate(verts)])
     return o
@@ -538,9 +543,15 @@ def tall_pine(x=0.0, y=0.0, s=1.0, seed=0, mt=None, bark=None):
     # the ball on the apex (tip 0.9: it catches the light like the rims)
     c = Vector((x + ox, y + oy, (tiers[-1][2] + 0.012) * s))
     ball = soft_ball(0.03 * s, c, mt, sub=1)
-    at = ball.data.attributes.new("tip", "FLOAT", "POINT")
-    for i in range(len(ball.data.vertices)):
-        at.data[i].value = 0.9
+    tip_attrs(ball, [0.9] * len(ball.data.vertices), 0.9, 0.0)
+
+
+def tip_attrs(o, tip, a, b):
+    """Tip point attributes: the per-vertex "tip" (as before) and the part's tip line tip_a + tip_b·z, which
+    pine_paint reads (exact in height, see there)."""
+    for name, vals in (("tip", tip), ("tip_a", [a] * len(tip)), ("tip_b", [b] * len(tip))):
+        at = o.data.attributes.new(name, "FLOAT", "POINT")
+        at.data.foreach_set("value", vals)
 
 
 def soft_ball(r, c, mt, sub=1, scale=(1.0, 1.0, 1.0)):
@@ -589,11 +600,11 @@ def crown_paint(dark, mid, light, deep, centre, radius):
         vm.operation = "DISTANCE"
         p.L.new(p.pos, vm.inputs[0])
         vm.inputs[1].default_value = centre
-        occ = p.step(p.math("DIVIDE", vm.outputs["Value"], radius), 0.6, 0.95)
-        col = p.mix(p.step(p.noise(5.0, 2.0), 0.35, 0.68), dark, mid)
-        top = p.math("MULTIPLY", p.step(p.nz, 0.35, 0.85), p.step(p.noise(4.0, 2.0), 0.25, 0.55))
-        col = p.mix(p.math("MULTIPLY", top, p.math("MULTIPLY", occ, 0.85)), col, light)
-        col = p.mix(p.math("MULTIPLY", p.math("SUBTRACT", 1.0, occ), 0.8), col, deep)
+        occ = p.step(p.math("DIVIDE", vm.outputs["Value"], radius), 0.65, 1.0)
+        col = p.mix(p.math("MULTIPLY", p.step(p.noise(5.0, 2.0), 0.45, 0.75), 0.45), dark, mid)
+        top = p.math("MULTIPLY", p.step(p.nz, 0.65, 0.95), p.step(p.noise(4.0, 2.0), 0.3, 0.6))
+        col = p.mix(p.math("MULTIPLY", top, p.math("MULTIPLY", occ, 0.45)), col, light)
+        col = p.mix(p.math("MULTIPLY", p.math("SUBTRACT", 1.0, occ), 0.9), col, deep)
         col = p.mix(p.math("MULTIPLY", p.step(p.nz, -0.2, -0.8), 0.5), col, deep)
         return p.done(col, 0.9)
     return cached(("crown", dark, mid, light, deep, tuple(centre), radius), build)
@@ -624,56 +635,69 @@ class Lump:
         return d < 1e-9 or d < margin * self.k(q / d)
 
 
-def cushion(lumps, mt, proxy, sub=2, ground=-0.004, extra=(), extra_mt=None):
+def cushion(lumps, mt, proxy, sub=2, ground=-0.004):
     """A crown of «Raivon Soft» (§6.8): the lumps' icospheres joined into one mesh with every face hidden inside
     another lump or under the ground dropped (no overdraw, no wasted triangles), and all normals transferred from
     one proxy ellipsoid (centre, (a, a, b)) enclosing the crown, so the crown shades as one cushion while its
-    silhouette keeps the lumps. extra: small balls (berries) [(c, r)] with their own sphere normals and extra_mt,
-    with their faces inside the crown dropped too."""
+    silhouette keeps the lumps."""
     pc, pa = Vector(proxy[0]), Vector(proxy[1])
     us, fs = _ico(sub)
-    verts, faces, fmat, normals = [], [], [], []
-
-    def add(pts, fs_, mat, nrm, cull):
-        keep = [f for f in fs_ if not all(pts[i].z < ground for i in f)
-                and not any(all(o.inside(pts[i]) for i in f) for o in cull)]
+    verts, faces, normals = [], [], []
+    for lump in lumps:
+        pts = [lump.at(u) for u in us]
+        others = [o for o in lumps if o is not lump]
+        keep = [f for f in fs if not all(pts[i].z < ground for i in f)
+                and not any(all(o.inside(pts[i]) for i in f) for o in others)]
         used = sorted({i for f in keep for i in f})
         remap = {i: len(verts) + n for n, i in enumerate(used)}
         verts.extend(pts[i] for i in used)
-        normals.extend(nrm(pts[i]) for i in used)
         faces.extend(tuple(remap[i] for i in f) for f in keep)
-        fmat.extend([mat] * len(keep))
-
-    def proxy_n(p):
+    for p in verts:
         d = p - pc
-        return Vector((d.x / pa.x ** 2, d.y / pa.y ** 2, d.z / pa.z ** 2))
-
-    for lump in lumps:
-        add([lump.at(u) for u in us], fs, 0, proxy_n, [o for o in lumps if o is not lump])
-    eus, efs = _ico(1)
-    for c, r in extra:
-        c = Vector(c)
-        add([c + u * r for u in eus], efs, 1, lambda p, c=c: p - c, lumps)
-    o = poly(verts, faces, [mt] + ([extra_mt] if extra_mt else []), fmat, flat_shade=False, name="crown")
+        normals.append(Vector((d.x / pa.x ** 2, d.y / pa.y ** 2, d.z / pa.z ** 2)))
+    o = poly(verts, faces, [mt], flat_shade=False, name="crown")
     return soft_normals(o, normals)
 
 
+def crown_surface(lumps, c, u, step=0.001):
+    """Where a ray from c (inside the crown) along u leaves the crown."""
+    t = 0.0
+    while any(o.inside(c + u * t, 1.0) for o in lumps) and t < 1.0:
+        t += step
+    return c + u * t
+
+
+def dome(c, r, n, mt, k=6):
+    """A berry: a k-sided dome of radius r on the crown surface at c, facing n, its rim sunk a quarter radius into
+    the leaves (the hidden half of a ball is never built) — sphere normals, k triangles."""
+    n = Vector(n).normalized()
+    e1 = n.orthogonal().normalized()
+    e2 = n.cross(e1)
+    verts = [c + n * r]
+    for i in range(k):
+        a = i / k * math.tau
+        verts.append(c + (e1 * math.cos(a) + e2 * math.sin(a)) * r - n * (0.25 * r))
+    o = poly(verts, [(0, 1 + i, 1 + (i + 1) % k) for i in range(k)], [mt], flat_shade=False, name="berry")
+    return soft_normals(o, lambda p: p - c)
+
+
 def lush_tree(x=0.0, y=0.0, s=1.15, seed=0):
-    """«Raivon Soft» broadleaf (§6.8): a cushion crown of four merged clumps with the normals of one volume, on a
-    stout trunk (≈ 22 % of the crown width) with a root flare. s = 1.15: the old tree ×1.15. ≤ 300 triangles."""
+    """«Raivon Soft» broadleaf (§6.8): a cushion crown of four merged clumps — three round the trunk and one on top —
+    with the normals of one volume, on a stout trunk (≈ 23 % of the crown width) with a root flare. s = 1.15: the old
+    tree ×1.15 (crown ≈ 0.47 wide, 0.6 tall). ≤ 300 triangles."""
     rnd = random.Random(seed)
     cz = 0.33 * s
-    leaf = crown_paint(*LEAF_C, (x, y, cz), 0.21 * s)
+    leaf = crown_paint(*LEAF_C, (x, y, cz), 0.2 * s)
     bark = tex("wood", BARK_SOFT)
-    soft_trunk(x, y, [(-0.02 * s, 0.06 * s), (0.04 * s, 0.047 * s), (0.25 * s, 0.035 * s)], bark)
-    lumps = [Lump((x, y, cz), 0.15 * s, seed=seed * 7)]
-    for k in range(2):  # two side clumps, front-left and front-right (the side the camera sees)
-        a = -math.pi / 2 + (k - 0.5) * 2.0 + rnd.uniform(-0.2, 0.2)
-        d = rnd.uniform(0.1, 0.115) * s
-        lumps.append(Lump((x + d * math.cos(a), y + d * math.sin(a), cz - rnd.uniform(0.03, 0.045) * s),
-                          rnd.uniform(0.105, 0.115) * s, seed=seed * 7 + 1 + k))
-    lumps.append(Lump((x + 0.03 * s, y + 0.035 * s, cz + 0.105 * s), 0.11 * s, seed=seed * 7 + 3))  # the top clump
-    cushion(lumps, leaf, ((x, y, cz + 0.02 * s), (0.22 * s, 0.22 * s, 0.2 * s)))
+    soft_trunk(x, y, [(-0.02 * s, 0.06 * s), (0.04 * s, 0.047 * s), (0.27 * s, 0.035 * s)], bark)
+    lumps = []
+    for k in range(3):
+        a = -math.pi / 2 + k * math.tau / 3 + rnd.uniform(-0.2, 0.2)
+        d = rnd.uniform(0.085, 0.095) * s
+        lumps.append(Lump((x + d * math.cos(a), y + d * math.sin(a), cz - rnd.uniform(0.0, 0.02) * s),
+                          rnd.uniform(0.125, 0.135) * s, seed=seed * 7 + k))
+    lumps.append(Lump((x + 0.01 * s, y + 0.015 * s, cz + 0.09 * s), 0.12 * s, seed=seed * 7 + 3))  # the top clump
+    cushion(lumps, leaf, ((x, y, cz + 0.02 * s), (0.24 * s, 0.24 * s, 0.21 * s)))
 
 
 def tree_round():
@@ -681,17 +705,21 @@ def tree_round():
 
 
 def bush():
-    """«Raivon Soft» bush (§6.8): a low cushion of three merged clumps (×1.15) with the normals of one volume and
-    four round berries (r 0.02) — a red accent that still reads at map size. ≤ 200 triangles."""
-    s = 1.15
+    """«Raivon Soft» bush (§6.8): a low cushion of three tightly merged clumps with the normals of one volume, as big
+    as the old bush ×1.15 (0.30 × 0.23 × 0.16), and four round berries (r 0.02, was six) — a red accent that still
+    reads at map size. ≤ 200 triangles."""
+    s = 1.34  # the clumps overlap more than the old ones (one cushion): ×1.34 on their layout = the old size ×1.15
     leaf = crown_paint(*LEAF_C, (0.0, 0.0, 0.03 * s), 0.12 * s)
-    lumps = [Lump((0.0, 0.0, 0.055 * s), 0.085 * s, (1.0, 1.0, 0.85), seed=40),
-             Lump((0.07 * s, -0.03 * s, 0.04 * s), 0.065 * s, (1.0, 1.0, 0.85), seed=41),
-             Lump((-0.065 * s, 0.025 * s, 0.04 * s), 0.068 * s, (1.0, 1.0, 0.85), seed=42)]
-    berries = [((0.03 * s, -0.08 * s, 0.075 * s), 0.02), ((-0.06 * s, -0.045 * s, 0.07 * s), 0.02),
-               ((0.09 * s, -0.055 * s, 0.05 * s), 0.02), ((-0.005 * s, -0.03 * s, 0.125 * s), 0.02)]
-    cushion(lumps, leaf, ((0.0, 0.0, 0.03 * s), (0.15 * s, 0.15 * s, 0.11 * s)), extra=berries,
-            extra_mt=flat("berry", "#e0304a", 0.6))
+    lumps = [Lump((0.0, 0.0, 0.045 * s), 0.085 * s, (1.0, 1.0, 0.85), seed=40),
+             Lump((0.045 * s, -0.02 * s, 0.033 * s), 0.065 * s, (1.0, 1.0, 0.85), seed=41),
+             Lump((-0.042 * s, 0.016 * s, 0.033 * s), 0.068 * s, (1.0, 1.0, 0.85), seed=42)]
+    cushion(lumps, leaf, ((0.0, 0.0, 0.03 * s), (0.15 * s, 0.15 * s, 0.11 * s)))
+    berry = flat("berry", "#e0304a", 0.6)
+    c = Vector((0.0, 0.0, 0.03 * s))
+    for az, el in ((-60, 28), (-140, 40), (40, 30), (150, 58)):  # two on the camera side, one aside, one on top
+        u = Vector((math.cos(math.radians(az)) * math.cos(math.radians(el)),
+                    math.sin(math.radians(az)) * math.cos(math.radians(el)), math.sin(math.radians(el))))
+        dome(crown_surface(lumps, c, u), 0.02, u, berry)
 
 
 def petal_disc(x, y, z, r, mt, centre_mt, rnd, lobes=5):

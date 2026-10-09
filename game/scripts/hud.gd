@@ -2,8 +2,9 @@ extends CanvasLayer
 ## HUD frame, laid out like the owner's reference frames (docs/art_direction.md §3) in the kit's language
 ## (docs/ui_style.md §5, §6 HUD): resource plates on their own currency layer (above every modal dim), a soft top
 ## scrim instead of a dark slab, the ruler's portrait with the level hex, one family of square buttons on the
-## left, the minimap well and the labelled round map tools on the right. The top group follows the safe area's
-## top inset, the bottom group (tabs, tray, hex panel) the visible bottom (Kit.vb) once BOTTOM_ON_VB is on (s04).
+## left, the minimap well and the labelled round map tools on the right; at the bottom the folder tabs over the
+## slate tray that holds game_ui's card row (§4.5). The top group follows the safe area's top inset, the bottom
+## group (tabs, tray, hex panel) the visible bottom (Kit.vb), like game_ui's own bottom group.
 
 const CmdPortrait := preload("res://scripts/cmd_portrait.gd")
 const Kit := preload("res://scripts/ui_kit.gd")
@@ -19,15 +20,16 @@ const MUTED := Color(0.62, 0.68, 0.78)
 const RES_ICON := {"gold": "coin", "food": "food", "metal": "metal", "oil": "barrel", "raivite": "raivite"}
 const RES_LAYOUT_4 := {"gold": [120, 186], "food": [318, 186], "metal": [516, 186], "raivite": [714, 214]}
 const RES_LAYOUT_5 := {"gold": [120, 146], "food": [278, 146], "metal": [436, 146], "oil": [594, 146], "raivite": [752, 177]}
-## The bottom group (tabs, tray, hex panel) moves to the visible bottom (VB − 1672) together with game_ui's card
-## row and big button, which s04 puts in game_ui's own bottom container: until then both stay on the 1672 canvas,
-## so on a tall phone the bottom UI keeps together (the map shows below it) instead of splitting apart.
-const BOTTOM_ON_VB := false
 ## The left column (§5): squares 84×84 at x 16, one every 96 px; the shop is the only gold one in the HUD.
 const LEFT := [["trophy", 252.0], ["book", 348.0], ["mail", 444.0], ["gear", 540.0]]
 ## Round map tools (§5): [signal name, icon, centre y, caption key]; centre x 885, Ø80.
 const TOOLS := [["target", "swords", 356.0, "hud.tool.front"], ["pin", "pin", 468.0, "hud.tool.capital"],
 	["fort", "fort", 580.0, "hud.tool.fort"], ["tower", "tower", 692.0, "hud.tool.tower"]]
+## The folder tabs (§4.5, §5): [key, label key, icon]. x = 12 + i·124 (flush with the tray's left edge), w 120;
+## unselected y 1384 h 84, the selected one y 1374 and 8 px into the tray, so tab and cards read as one folder.
+const TABS := [["buildings", "tab.buildings", "castle_icon"], ["army", "tab.army", "helmet"],
+	["development", "tab.development", "flask"], ["diplomacy", "tab.diplomacy", "handshake"], ["world", "tab.world", "globe"]]
+const TRAY := Rect2(12, 1464, 628, 196)
 
 var world: Node3D
 var font_bold: Font
@@ -38,9 +40,8 @@ var tile_owner: Label
 var tile_bonus: Label
 var attack_btn: Panel
 var minimap: Control
-var _tab_icons := {}  # tab key -> Icon
 var res_pills := {}  # res -> Kit.KitPill
-var _free_builders := 0  # free / all builders: the Buildings tab badge (s04)
+var _free_builders := 0  # free / all builders: the green count on the Buildings tab
 var _builders := 0
 var level_label: Label  # the numeral of the level hex on the ruler's portrait
 var ruler_face: TextureRect  # the rendered ruler portrait (assets/ui/portraits/ruler*.png), by the player's era
@@ -54,9 +55,12 @@ var _orders_chip: Panel  # the orders button (a KitButton) — hidden until toda
 var _orders_lbl: Label  # «1/3» in the counter pill under it
 var _orders_dot: Control  # green: an order is ready to claim
 var _shop_btn: Panel
-var tab_highlight: Panel
-var tab_labels := {}
+var tab_labels := {}  # tab key -> its Label (text = tr(key): the tests read it)
 var _tab_keys := {}  # tab -> translation key of its label
+var _tabs := {}  # tab key -> the folder tab Panel
+var _tab_dots := {}  # tab key -> [dot, n, role]
+var _tab_sel := "army"
+var _tray: Panel
 var _attack_lbl: Label
 var _tile_set := false  # false while the tile box still shows its placeholder
 var _top: Control  # crest, portrait, left column, minimap, map tools: offset by the safe top inset
@@ -156,14 +160,14 @@ func _build() -> void:
 
 
 ## Places the groups for the safe area: the top group under the status bar, the bottom group on the visible bottom
-## (VB, §3.1) once BOTTOM_ON_VB is on. Runs again on every viewport size change (the caption plates of the icon
-## buttons are clamped to the screen again too).
+## (VB, §3.1). Runs again on every viewport size change (the caption plates of the icon buttons are clamped to the
+## screen again too).
 func _anchor_groups() -> void:
 	var top := Kit.top_inset(self)
 	var vis := get_viewport().get_visible_rect()
 	_top.position.y = top
 	_pills.position.y = top
-	_bottom.position.y = Kit.vb(self) - 1672.0 if BOTTOM_ON_VB else 0.0
+	_bottom.position.y = Kit.vb(self) - 1672.0
 	_scrim.position = Vector2(vis.position.x, 0)
 	_scrim.size = Vector2(maxf(941.0, vis.size.x), 150.0 + top)
 	Kit.place_caption(_shop_btn)
@@ -197,11 +201,12 @@ func _layout_res(with_oil: bool) -> void:
 
 
 ## The plates: stored amounts (exact below 10 000) with the warehouse fill (brown and a yellow number when full),
-## the net income per hour (green, red, or a neutral «0/ч»), the tooltip text. Free builders are kept for the
-## Buildings tab badge.
+## the net income per hour (green, red, or a neutral «0/ч»), the tooltip text. Free builders show as the green
+## count on the Buildings tab.
 func set_resources(res: Dictionary, per_hour: Dictionary, caps: Dictionary, free_builders: int, builders: int) -> void:
 	_free_builders = free_builders
 	_builders = builders
+	set_tab_badge("buildings", maxi(0, free_builders), "go")
 	var with_oil := caps.has("oil")
 	if int(with_oil) != _oil_shown:
 		_oil_shown = int(with_oil)
@@ -462,27 +467,7 @@ func button_rect(name: String) -> Rect2:
 func _build_bottom() -> void:
 	var vh := 1672.0
 	var base_y := vh - 276.0
-	_panel(Rect2(0, base_y, 640, 276), _style(PANEL, 16), _bottom)
-	var tabs := [["tab.buildings", "castle_icon", "buildings"], ["tab.army", "helmet", "army"], ["tab.development", "hammer", "development"], ["tab.diplomacy", "hands", "diplomacy"], ["tab.world", "scales", "world"]]
-	tab_highlight = _panel(Rect2(8 + 126 + 2, base_y + 6, 120, 76), _style(Color(0.12, 0.2, 0.34), 10, Color(0.35, 0.55, 0.95, 0.9)), _bottom)
-	tab_highlight.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	for i in tabs.size():
-		var x := 8.0 + i * 126.0
-		var hit := _panel(Rect2(x + 2, base_y + 6, 120, 76), StyleBoxEmpty.new(), _bottom)
-		hit.gui_input.connect(_on_button_input.bind("tab_" + tabs[i][2]))
-		var ic := Icon.new(tabs[i][1])
-		ic.position = Vector2(x + 44, base_y + 14)
-		ic.size = Vector2(36, 34)
-		ic.lit = i == 1
-		_bottom.add_child(ic)
-		_tab_icons[tabs[i][2]] = ic
-		var t := _label(tr(tabs[i][0]), 16, TEXT if i == 1 else MUTED, i == 1)
-		t.position = Vector2(x + 10, base_y + 50)
-		t.size = Vector2(108, 24)
-		t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		_bottom.add_child(t)
-		tab_labels[tabs[i][2]] = t
-		_tab_keys[tabs[i][2]] = tabs[i][0]
+	_build_tabs()
 
 	# ---- tile info + attack button
 	_panel(Rect2(652, base_y, 280, 140), _style(PANEL, 16), _bottom)
@@ -547,6 +532,7 @@ func retranslate() -> void:
 		tile_bonus.text = tr("hud.tile_bonus")
 	for k in tab_labels:
 		(tab_labels[k] as Label).text = tr(String(_tab_keys[k]))
+	_fit_tabs()
 
 
 func _on_button_input(e: InputEvent, name: String) -> void:
@@ -581,24 +567,144 @@ func set_level(dl: int) -> void:
 	level_label.text = str(dl)
 
 
+## The selected folder tab merges into the tray; the others sit behind it, lower and darker (§4.5). The card row
+## of the tab is game_ui's (it fades in there).
 func select_tab(key: String) -> void:
-	var keys := tab_labels.keys()
-	var i := keys.find(key)
-	if i < 0:
+	if not _tabs.has(key):
 		return
-	tab_highlight.position.x = 8 + i * 126 + 2
+	_tab_sel = key
+	for k in _tabs:
+		_style_tab(k, k == key)
+	# draw order: unselected tabs → tray → the selected tab
+	for k in _tabs:
+		var t: Control = _tabs[k]
+		var behind := t.get_index() < _tray.get_index()
+		if (k == key) == behind:
+			_bottom.move_child(t, _tray.get_index())
+	# the first tab, selected, runs straight into the tray's left side: no rounded corner there
+	var sb := _tray.get_theme_stylebox("panel") as StyleBoxFlat
+	sb.corner_radius_top_left = 0 if key == String(TABS[0][0]) else 24
+	_tray.queue_redraw()
+
+
+# ---------------------------------------------------------------- folder tabs and the tray (§4.5, §5)
+
+func _build_tabs() -> void:
+	for i in TABS.size():
+		var key := String(TABS[i][0])
+		var t := Panel.new()
+		t.name = "tab_" + key
+		t.mouse_filter = Control.MOUSE_FILTER_STOP
+		t.gui_input.connect(_on_button_input.bind("tab_" + key))
+		t.set_meta("i", i)
+		_bottom.add_child(t)
+		t.add_child(Kit.KitDecor.new())  # the selected tab's top highlight line (child 0)
+		var bridge := ColorRect.new()  # the selected tab's face carried 6 px into the tray, over its top line
+		bridge.name = "bridge"
+		bridge.color = Kit.SLATE
+		bridge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		t.add_child(bridge)
+		for side in [-1, 1]:  # concave curves where the selected tab's sides meet the tray's top edge
+			var f := Fillet.new()
+			f.name = "fillet_l" if side < 0 else "fillet_r"
+			f.flip = side > 0
+			f.size = Vector2(Fillet.R + 4.0, Fillet.R + 4.0)
+			f.position = Vector2(-Fillet.R if side < 0 else 116.0, 90.0 - Fillet.R)
+			t.add_child(f)
+		var ic := TextureRect.new()
+		ic.name = "icon"
+		ic.texture = Kit.icon_tex(String(TABS[i][2]))
+		ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		t.add_child(ic)
+		var l := _label(tr(String(TABS[i][1])), 24)  # LABEL 24, Rubik 800, white with the INK outline
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		t.add_child(l)
+		tab_labels[key] = l
+		_tab_keys[key] = String(TABS[i][1])
+		_tabs[key] = t
+	_tray = _panel(TRAY, Kit.style(Kit.SLATE, 24, 4, Kit.INK, 6, 6), _bottom)
+	_tray.name = "tray"
+	_fit_tabs()
+	select_tab(_tab_sel)
+
+
+## Unselected: (x, 1384, 120, 84), SLATE_WELL, the INK contour, rounded at the top only, icon 52, the label at α 0.85.
+## Selected: (x, 1374, 120, 94) + a 6 px bridge = 8 px into the tray: SLATE without a bottom contour, icon 60.
+func _style_tab(key: String, sel: bool) -> void:
+	var t: Panel = _tabs[key]
+	var x := 12.0 + int(t.get_meta("i")) * 124.0
+	t.position = Vector2(x, 1374.0 if sel else 1384.0)
+	t.size = Vector2(120, 94 if sel else 84)
+	var sb := Kit.style(Kit.SLATE if sel else Kit.SLATE_WELL, 20, 4, Kit.INK, 0, 0)
+	sb.corner_radius_bottom_left = 0
+	sb.corner_radius_bottom_right = 0
+	if sel:
+		sb.border_width_bottom = 0
+	else:
+		sb.set_meta("kit_kind", "")  # no highlight line on the well
+	t.add_theme_stylebox_override("panel", sb)
+	(t.get_node("fillet_l") as Control).visible = sel and int(t.get_meta("i")) > 0  # the first tab is flush with the tray
+	(t.get_node("fillet_r") as Control).visible = sel
+	var br := t.get_node("bridge") as ColorRect
+	br.visible = sel
+	br.position = Vector2(4, 94)
+	br.size = Vector2(112, 6)
+	var side := 60.0 if sel else 52.0
+	var ic := t.get_node("icon") as TextureRect
+	ic.size = Vector2(side, side)
+	ic.position = Vector2((120.0 - side) * 0.5, 6.0 if sel else 5.0)
+	var l: Label = tab_labels[key]
+	l.position = Vector2(4, 1437.0 - t.position.y)  # one baseline for every tab, clear of the tray's edge
+	l.size = Vector2(112, 28)
+	l.modulate.a = 1.0 if sel else 0.85
+	t.queue_redraw()
+
+
+## LABEL 24, down to 22 when a translation is long: one size for the five labels (the smallest one needs).
+func _fit_tabs() -> void:
+	var s := 24
+	for k in tab_labels:
+		s = mini(s, Kit.fit_size((tab_labels[k] as Label).text, 24, 112.0, "d800", 22))
 	for k in tab_labels:
 		var l: Label = tab_labels[k]
-		l.add_theme_color_override("font_color", TEXT if k == key else MUTED)
-		# only the selected tab is bold with an outline
-		l.add_theme_constant_override("outline_size", 4 if k == key else 0)
-		if k == key:
-			l.add_theme_font_override("font", font_bold)
-		else:
-			l.remove_theme_font_override("font")
-		if _tab_icons.has(k):
-			(_tab_icons[k] as Icon).lit = k == key
-			(_tab_icons[k] as Icon).queue_redraw()
+		Kit.style_label(l, s, Kit.TEXT, true)
+		l.add_theme_font_override("font", Kit.font("d800"))
+		l.add_theme_font_size_override("font_size", s)
+
+
+## A dot on a tab's top-right corner (§4.5): red «new», green with a number «can act» (free builders on Buildings).
+## n > 0: with that number; n < 0: a dot without one; n == 0: none.
+func set_tab_badge(key: String, n := -1, role := "war") -> void:
+	var t: Panel = _tabs.get(key)
+	if t == null:
+		return
+	var rec: Array = _tab_dots.get(key, [])
+	if not rec.is_empty() and int(rec[1]) == n and String(rec[2]) == role:
+		return
+	var d: Kit.KitShape = rec[0] if not rec.is_empty() else null
+	if n == 0:
+		if d != null:
+			d.visible = false
+		_tab_dots[key] = [d, n, role]
+		return
+	if d == null or String(rec[2]) != role or (d.get_node_or_null("n") != null) != (n > 0):
+		if d != null:
+			d.free()
+		d = Kit.dot(t, 0 if n > 0 else -1, role)
+		d.z_index = 2  # above the neighbouring tab and the tray
+		d.visible = false
+	Kit.set_dot(d, n)
+	_tab_dots[key] = [d, n, role]
+	_show_dot(d, true)
+
+
+## Global rect of a folder tab (for the coach).
+func tab_rect(key: String) -> Rect2:
+	var t: Control = _tabs.get(key)
+	return t.get_global_rect() if t != null else Rect2()
 
 
 func show_tile(info: Dictionary) -> void:
@@ -625,7 +731,6 @@ func show_tile(info: Dictionary) -> void:
 ## overflow). Only the hex panel's «tile» placeholder still has a vector stand-in (s05 removes it).
 class Icon extends Control:
 	var kind: String
-	var lit := false  # tab icons: the selected tab's (unselected ones are not dimmed, §3.5)
 	var _tex: Texture2D
 
 	func _init(k: String) -> void:
@@ -651,6 +756,37 @@ class Icon extends Control:
 			var a := PI / 3 * k
 			p.append(c + Vector2(cos(a), sin(a)) * r)
 		return p
+
+
+# ====================================================================== folder tab fillet
+
+## The concave curve (R 8) where a selected folder tab's side meets the tray's top edge: the INK contour bends
+## round instead of meeting at a right angle. Box (R + 4)²; the tab's side and the tray's top contour cross in its
+## far corner (the near corner for `flip`, the right side).
+class Fillet extends Control:
+	const R := 8.0
+	var flip := false
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _region(rad: float) -> PackedVector2Array:
+		var s := R + 4.0
+		var pts := PackedVector2Array()
+		for v in [Vector2(rad, 0), Vector2(s, 0), Vector2(s, s), Vector2(0, s), Vector2(0, rad)]:
+			if pts.is_empty() or not pts[-1].is_equal_approx(v):
+				pts.append(v)
+		for k in range(1, 8):
+			var a := PI * 0.5 * (1.0 - k / 8.0)
+			pts.append(Vector2(cos(a), sin(a)) * rad)
+		if flip:
+			for i in pts.size():
+				pts[i].x = s - pts[i].x
+		return pts
+
+	func _draw() -> void:
+		draw_colored_polygon(_region(R), Kit.INK)
+		draw_colored_polygon(_region(R + 4.0), Kit.SLATE)
 
 
 # ====================================================================== minimap

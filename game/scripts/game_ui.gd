@@ -58,6 +58,7 @@ var _action2: Control
 var _action2_lbl: Label
 var _action2_kind := ""
 var _modal: Control
+var _bottom: Control  # the bottom group (card row, battle hand, status / big buttons): moved to VB − 1672 (§3.1)
 var _drag_card := ""
 var _ghost: Label
 var _seal_t := -1.0
@@ -71,6 +72,11 @@ func _ready() -> void:
 	root.size = Vector2(VW, VH)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(root)
+	_bottom = Control.new()
+	_bottom.name = "bottom"
+	_bottom.size = Vector2(VW, VH)
+	_bottom.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(_bottom)
 	_build_control_bar()
 	_build_battle()
 	_build_action()
@@ -78,6 +84,13 @@ func _ready() -> void:
 	_ghost.visible = false
 	_ghost.z_index = 50
 	root.add_child(_ghost)
+	get_viewport().size_changed.connect(_anchor_bottom)
+	_anchor_bottom()
+
+
+## The bottom group follows the visible bottom (VB, §3.1) like the HUD's tabs and tray under it.
+func _anchor_bottom() -> void:
+	_bottom.position.y = Kit.vb(self) - VH
 
 
 # ------------------------------------------------------------------ helpers
@@ -257,7 +270,7 @@ func set_control(score: float, control: int, enemy: String, visible_bar: bool, f
 func _build_battle() -> void:
 	_battle = Control.new()
 	_battle.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(_battle)
+	_bottom.add_child(_battle)
 	_panel(_battle, Rect2(0, VH - 276, 640, 276), _style(PANEL, 16))
 	_energy_lbl = _at(_label("5", 26), _battle, Vector2(26, VH - 262)) as Label
 	var orb := _panel(_battle, Rect2(14, VH - 268, 46, 46), _style(Color(0.55, 0.3, 0.95), 23, Color(1, 1, 1, 0.9), 3), Control.MOUSE_FILTER_IGNORE)
@@ -464,7 +477,7 @@ func _input(event: InputEvent) -> void:
 			_drag_card = ""
 			_ghost.visible = false
 			card_drag.emit(c, pos, false)
-			if pos.y < VH - 280:
+			if pos.y < _bottom.position.y + VH - 280:  # above the hand (it moves with the bottom group)
 				card_drop.emit(c, pos)
 		else:
 			card_drag.emit(_drag_card, pos, true)
@@ -474,8 +487,8 @@ func _input(event: InputEvent) -> void:
 # ------------------------------------------------------------------ action buttons (bottom-right)
 
 func _build_action() -> void:
-	_action = _panel(root, Rect2(652, VH - 276, 280, 140), _style(PANEL, 16))
-	_action2 = _panel(root, Rect2(660, VH - 122, 266, 92), _style(Color(0.13, 0.4, 0.9), 16, Color(0.55, 0.75, 1.0), 3))
+	_action = _panel(_bottom, Rect2(652, VH - 276, 280, 140), _style(PANEL, 16))
+	_action2 = _panel(_bottom, Rect2(660, VH - 122, 266, 92), _style(Color(0.13, 0.4, 0.9), 16, Color(0.55, 0.75, 1.0), 3))
 	_action_lbl = _label("", 34)
 	_action_lbl.position = Vector2(0, 22)
 	_action_lbl.size = Vector2(280, 50)
@@ -1322,31 +1335,63 @@ static func fmt_time(sec: int) -> String:
 
 ## items: [{id, name, level, max, busy, left, speed, cost: {res: n}, seconds, reason}]
 var _bkey := ""
+var _bfam := ""  # the tab whose cards the row shows (a switch fades the new cards in)
+var _bfade: TextureRect
 var _finger_down := false
 
 
+## The card row inside the HUD's slate tray (§5): a horizontal scroll over the tray's face (16, 1468, 620, 186);
+## the cards (180×172, 12 apart) start at (20, 1476), so 3 whole cards and 40 px of the 4th show, and a 40 px fade
+## into the slate on the right says that more follow. The badges and chips that stand out of the cards' corners
+## stay inside the scroll's clip.
 func _ensure_panel() -> void:
 	if _bpanel != null:
 		return
 	_bpanel = Control.new()
-	_bpanel.position = Vector2(0, VH - 188)
-	_bpanel.size = Vector2(640, 182)
+	_bpanel.name = "cards"
+	_bpanel.size = Vector2(VW, VH)
 	_bpanel.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(_bpanel)
-	root.move_child(_bpanel, 0)
+	_bottom.add_child(_bpanel)
+	_bottom.move_child(_bpanel, 0)
 	_bscroll = ScrollContainer.new()
-	_bscroll.position = Vector2(8, 0)
-	_bscroll.size = Vector2(626, 182)
+	_bscroll.position = Vector2(16, 1468)
+	_bscroll.size = Vector2(620, 186)
 	_bscroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_bscroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
 	_bpanel.add_child(_bscroll)
+	var pad := MarginContainer.new()
+	pad.mouse_filter = Control.MOUSE_FILTER_PASS
+	for m in [["margin_left", 4], ["margin_top", 8], ["margin_right", 4], ["margin_bottom", 0]]:
+		pad.add_theme_constant_override(m[0], m[1])
+	_bscroll.add_child(pad)
 	_brow = HBoxContainer.new()
-	_brow.add_theme_constant_override("separation", 8)
-	_bscroll.add_child(_brow)
+	_brow.mouse_filter = Control.MOUSE_FILTER_PASS
+	_brow.add_theme_constant_override("separation", 12)
+	pad.add_child(_brow)
+	_bfade = TextureRect.new()
+	_bfade.name = "fade"
+	_bfade.texture = Kit.hgradient(Kit.alpha(Kit.SLATE, 0.0), Kit.SLATE)
+	_bfade.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_bfade.stretch_mode = TextureRect.STRETCH_SCALE
+	_bfade.position = Vector2(596, 1468)
+	_bfade.size = Vector2(40, 180)
+	_bfade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bpanel.add_child(_bfade)
+	var hb := _bscroll.get_h_scroll_bar()
+	hb.value_changed.connect(_update_fade)
+	hb.changed.connect(_update_fade.bind(0.0))
+
+
+## The right-edge fade shows only while cards are hidden past the right edge.
+func _update_fade(_v := 0.0) -> void:
+	if _bfade == null:
+		return
+	var hb := _bscroll.get_h_scroll_bar()
+	_bfade.visible = hb.max_value - hb.page - hb.value > 4.0
 
 
 ## Rebuilds the card row only when its content changed, and never under a finger (a rebuild between
-## press and release would swallow the tap).
+## press and release would swallow the tap). Another tab's cards start from the left and fade in (TAB, 120 ms).
 func _fill_panel(kind: String, items: Array, builder: Callable) -> void:
 	_ensure_panel()
 	_bpanel.visible = true
@@ -1356,192 +1401,192 @@ func _fill_panel(kind: String, items: Array, builder: Callable) -> void:
 	if _finger_down and _bkey.begins_with(kind):
 		return
 	_bkey = key
-	var keep := _bscroll.scroll_horizontal
+	# the Development tab fills the row through show_buildings too: its items carry a research line
+	var fam := kind + ("r" if items.any(func(x): return x is Dictionary and (x as Dictionary).has("line")) else "")
+	var switched := fam != _bfam
+	_bfam = fam
+	var keep := 0 if switched else _bscroll.scroll_horizontal
 	for c in _brow.get_children():
 		_brow.remove_child(c)
 		c.queue_free()
+	var ns := 26  # the names of a row share one size: the smallest any card needed
 	for it in items:
-		_brow.add_child(builder.call(it))
+		var card: Control = builder.call(it)
+		_brow.add_child(card)
+		if card is Kit.KitCard:
+			ns = mini(ns, (card as Kit.KitCard).name_label.get_theme_font_size("font_size"))
+	for card in _brow.get_children():
+		if card is Kit.KitCard:
+			(card as Kit.KitCard).name_label.add_theme_font_size_override("font_size", ns)
 	_bscroll.set_deferred("scroll_horizontal", keep)
+	if switched:
+		Kit.fade_in(_brow)
+	_update_fade.call_deferred()
 
 
 func show_buildings(items: Array) -> void:
 	_fill_panel("b", items, _building_card)
 
 
-## Army tab: one card per army (strength, readiness, refill) and a «Новая армия» card (canon §8.1).
+## Army tab (§6 Армия): a card per army, «Новая армия», then «Рука» and «Командиры» (canon §8.1). The armies are
+## numbered in order for their badges.
 func show_armies(items: Array) -> void:
-	_fill_panel("a", items, _army_card)
+	var shown: Array = []
+	var n := 0
+	for it in items:
+		var d: Dictionary = it
+		if int(d.get("id", -1)) >= 0:
+			n += 1
+			d = d.duplicate()
+			d["num"] = n
+		shown.append(d)
+	_fill_panel("a", shown, _army_card)
 
 
+## An army (Kit.card): its era's troops as the art, its number on the hex badge, the commander's face (or a «+» to
+## assign one) on the chip, the readiness bar under the name; at the bottom its strength with a check when it is
+## full, or — while it refills — the refill-for-an-ad button. Squads, readiness and upkeep are in the tooltip.
 func _army_card(it: Dictionary) -> Control:
 	if it.has("hand"):
 		return _hand_card(it)
 	if it.has("commanders"):
 		return _commanders_card(it)
-	var card := Panel.new()
-	card.custom_minimum_size = Vector2(150, 178)
-	card.add_theme_stylebox_override("panel", _style(Color(0.1, 0.15, 0.25), 12, Color(0.45, 0.58, 0.8, 0.8), 2))
-	card.mouse_filter = Control.MOUSE_FILTER_PASS
-	var nm := _label(it["name"], 17)
-	nm.position = Vector2(0, 6)
-	nm.size = Vector2(150, 24)
-	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	card.add_child(nm)
 	var id: int = it["id"]
 	if id < 0:
-		if it.has("left"):
-			var t := _label(fmt_time(int(it["left"])), 26, Color(1.0, 0.85, 0.4))
-			t.position = Vector2(0, 60)
-			t.size = Vector2(150, 40)
-			t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			card.add_child(t)
-			var sub := _label(tr("army.recruiting"), 15, MUTED, false)
-			sub.position = Vector2(0, 104)
-			sub.size = Vector2(150, 22)
-			sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			card.add_child(sub)
-			return card
-		if it["locked"]:
-			var m := _inline(tr("army.locked_dl") % int(it.get("need_dl", 3)), 20, MUTED, false, 134)
-			m.position = Vector2(8, 70)
-			m.size = Vector2(134, 40)
-			m.alignment = BoxContainer.ALIGNMENT_CENTER
-			card.add_child(m)
-			return card
-		var row := HBoxContainer.new()
-		row.position = Vector2(26, 60)
-		var ic := TextureRect.new()
-		ic.texture = _icon("food")
-		ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		ic.custom_minimum_size = Vector2(24, 24)
-		row.add_child(ic)
-		row.add_child(_label(str(it["food"]), 18, TEXT, false))
-		card.add_child(row)
-		var tl := _label("⏱ " + fmt_time(int(it["seconds"])), 15, MUTED, false)
-		tl.position = Vector2(26, 90)
-		card.add_child(tl)
-		_card_button(card, tr("army.train"), Color(0.2, 0.55, 0.3), func(): army_action.emit(-1, "train"), true)
-		return card
-	if it.get("cmd", "") != "" or bool(it.get("cmd_free", false)):
-		# the commander frame (04 §15.6): a portrait, or «+» while the army has none
-		var cid: String = it.get("cmd", "")
-		var fr := Control.new()
-		fr.position = Vector2(110, 4)
-		fr.size = Vector2(36, 42)
-		fr.mouse_filter = Control.MOUSE_FILTER_STOP
-		if cid != "":
-			var pr := CmdPortrait.new(cid, String(it.get("cmd_rarity", "common")))
-			pr.size = fr.size
-			fr.add_child(pr)
-		else:
-			_panel(fr, Rect2(Vector2.ZERO, fr.size), _style(Color(0.12, 0.17, 0.28), 6, Color(1.0, 0.8, 0.4, 0.8), 2), Control.MOUSE_FILTER_IGNORE)
-			var plus := _label("+", 24, Color(1.0, 0.85, 0.4))
-			plus.size = fr.size
-			plus.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			plus.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-			plus.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			fr.add_child(plus)
-		var aid: int = it["id"]
-		fr.gui_input.connect(func(e): if _is_tap(e): army_action.emit(aid, "cmd"))
-		card.add_child(fr)
-		nm.size = Vector2(118, 24)
+		return _new_army_card(it)
 	var pic := "res://assets/ui/cards/unit_dl%d.png" % clampi(int(it.get("dl", 1)), 1, 8)
-	var big_y := 34.0
-	if ResourceLoader.exists(pic):
-		# the era's troops as the card picture (the unit cards of the reference HUD), the name and strength over it
+	var tex: Texture2D = load(pic) if ResourceLoader.exists(pic) else Kit.icon_tex("helmet")
+	var ready := clampf(float(it["str"]) / maxf(1.0, float(it["max"])), 0.0, 1.0)
+	var pct := roundi(ready * 100.0)
+	var tip := PackedStringArray([tr("army.tip.str") % [int(it["str"]), int(it["max"])], tr("army.tip.squads") % int(it["slots"]),
+		tr("army.tip.ready") % pct])
+	if it.has("upkeep"):
+		tip.append(tr("army.tip.upkeep") % int(it["upkeep"]))
+	var opts := {"badge": str(int(it.get("num", 1))), "details": "\n".join(tip),
+		"art_bar": {"frac": ready, "role": "go" if ready >= 0.5 else ("gold" if ready >= 0.25 else "war")}}
+	if not ResourceLoader.exists(pic):
+		opts["art_side"] = 72.0
+	var cid: String = it.get("cmd", "")
+	if cid != "" or bool(it.get("cmd_free", false)):
+		# the commander frame (04 §15.6): a portrait, or «+» while the army has none
+		opts["chip"] = {"node": CmdPortrait.new(cid, String(it.get("cmd_rarity", "common")))} if cid != "" else {"plus": true}
+		opts["chip_cb"] = func(): army_action.emit(id, "cmd")
+	if it["refilling"]:
+		# [ad] +29%: what the video gives (the word «Пополнить» does not fit an XS button beside the ad icon); the
+		# time to a full army instead once the game passes it
+		var cap := "+%d%%" % maxi(1, 100 - pct) if not it.has("refill_left") else fmt_time(int(it["refill_left"]))
+		opts["cta"] = {"role": "go", "caption": cap, "icon": "ad", "cb": func(): army_action.emit(id, "refill")}
+		tip.append(tr("army.tip.refill"))
+		opts["details"] = "\n".join(tip)
+	else:
+		opts["stat"] = {"icon": "swords", "text": fmt_num(int(it["str"])), "check": true}
+	return Kit.card(tex, String(it["name"]), opts)
+
+
+## «Новая армия»: the helmet on the sky; closed — dark with the lock and a lock «УР3» (its tap says when it opens);
+## open — go «Собрать» with the food price; recruiting — the hourglass and the time left.
+func _new_army_card(it: Dictionary) -> Control:
+	var opts := {"art_side": 76.0, "art_y": 40.0, "details": tr("army.tip.time") % fmt_time(int(it.get("seconds", 0)))}
+	if it.has("left"):
+		opts["details"] = tr("army.recruiting")
+		opts["cta"] = {"role": "info", "caption": fmt_time(int(it["left"])), "icon": "hourglass"}
+	elif it["locked"]:
+		var need := int(it.get("need_dl", 3))
+		opts["locked"] = true
+		opts["lock_caption"] = tr("dl.short") % need
+		opts["reason"] = tr("army.locked_dl") % need
+		opts["details"] = opts["reason"]
+	else:
+		opts["cta"] = {"role": "go", "caption": tr("army.train"), "price": [["food", fmt_num(int(it["food"]))]],
+			"cb": func(): army_action.emit(-1, "train")}
+	return Kit.card(Kit.icon_tex("helmet"), String(it["name"]), opts)
+
+
+## The Army tab's «Рука» card: a fan of three of its cards, the hand's size on the badge, «Колода» opens the picker
+## (03 §5.2: «Атака» + 4 slots, 5 from DL6).
+func _hand_card(it: Dictionary) -> Control:
+	var hand: Array = it["hand"]
+	var shown: Array = hand.slice(1, 4) if hand.size() >= 4 else hand.slice(0, 3)
+	var pics: Array = []
+	var names := PackedStringArray()
+	for c in hand:
+		if CARD_NAME_KEYS.has(c):
+			names.append(_card_name(String(c)))
+	for c in shown:
+		var p := "res://assets/ui/cards/%s.png" % c
 		var tr_ := TextureRect.new()
-		tr_.texture = load(pic)
+		tr_.texture = load(p) if ResourceLoader.exists(p) else Kit.icon_tex("cards")
 		tr_.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		tr_.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-		tr_.clip_contents = true
-		tr_.position = Vector2(4, 4)
-		tr_.size = Vector2(142, 78)
 		tr_.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		card.add_child(tr_)
-		card.move_child(tr_, 0)
-		big_y = 46.0
-	var big := _label("⚔ %d" % int(it["str"]), 28)
-	big.position = Vector2(0, big_y)
-	big.size = Vector2(150, 40)
-	big.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	card.add_child(big)
-	var ready := float(it["str"]) / maxf(1.0, float(it["max"]))
-	var bar := _panel(card, Rect2(14, 82, 122, 12), _style(Color(1, 1, 1, 0.1), 6, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
-	_panel(bar, Rect2(0, 0, 122 * ready, 12), _style(Color(0.3, 0.62, 1.0) if ready >= 0.5 else Color(1.0, 0.6, 0.25), 6, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
-	var sub2 := _label(tr("army.squads") % [int(it["slots"]), roundi(ready * 100.0)], 15, MUTED, false)
-	sub2.position = Vector2(0, 100)
-	sub2.size = Vector2(150, 22)
-	sub2.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	card.add_child(sub2)
-	if it.has("upkeep"):
-		var up := _label(tr("army.upkeep") % int(it["upkeep"]), 13, Color(0.9, 0.8, 0.5), false)
-		up.position = Vector2(0, 117)
-		up.size = Vector2(150, 16)
-		up.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		card.add_child(up)
-	if it["refilling"]:
-		_card_button(card, tr("army.refill"), Color(0.85, 0.55, 0.1), func(): army_action.emit(id, "refill"), true)
-	else:
-		var ok := _label(tr("army.ready"), 16, Color(0.5, 1.0, 0.6))
-		ok.position = Vector2(0, 142)
-		ok.size = Vector2(150, 24)
-		ok.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		card.add_child(ok)
-	return card
+		pics.append(tr_)
+	return Kit.card(null, String(it["name"]), {"art_node": _fan(pics), "badge": str(hand.size()),
+		"details": tr("hand.tip") % ", ".join(names),
+		"cta": {"role": "info", "caption": tr("hand.deck"), "cb": func(): army_action.emit(-2, "hand")}})
 
 
-## Diplomacy tab: a card per neighbour — leader, opinion, status, war / gift buttons (canon §10.6).
-## The Army tab's «Рука» card: the cards of the hand and «Настроить» (03 §5.2: «Атака» + 4 slots, 5 from DL6).
-func _hand_card(it: Dictionary) -> Control:
-	var card := Panel.new()
-	card.custom_minimum_size = Vector2(150, 178)
-	card.add_theme_stylebox_override("panel", _style(Color(0.16, 0.12, 0.24), 12, Color(0.75, 0.6, 1.0, 0.8), 2))
-	card.mouse_filter = Control.MOUSE_FILTER_PASS
-	var nm := _label(it["name"], 17)
-	nm.position = Vector2(0, 6)
-	nm.size = Vector2(150, 24)
-	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	card.add_child(nm)
-	var glyphs := PackedStringArray()
-	for c in it["hand"]:
-		glyphs.append(String(CARD_ART.get(c, "?")))
-	var g := _label(" ".join(glyphs), 24, Color(1.0, 0.85, 0.4))
-	g.autowrap_mode = TextServer.AUTOWRAP_WORD
-	g.custom_minimum_size = Vector2(140, 0)
-	g.position = Vector2(5, 40)
-	g.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	card.add_child(g)
-	_card_button(card, tr("hand.edit"), Color(0.45, 0.3, 0.75), func(): army_action.emit(-2, "hand"), true)
-	return card
-
-
-## The Army tab's «Командиры» card: three faces of the collection, «7/12», a dot when a level can be bought.
+## The Army tab's «Командиры» card: a fan of three faces, «7/12», a green dot when a level can be bought.
 func _commanders_card(it: Dictionary) -> Control:
-	var card := Panel.new()
-	card.custom_minimum_size = Vector2(150, 178)
-	card.add_theme_stylebox_override("panel", _style(Color(0.2, 0.15, 0.08), 12, Color(1.0, 0.75, 0.35, 0.8), 2))
-	card.mouse_filter = Control.MOUSE_FILTER_PASS
-	var nm := _label(it["name"], 17)
-	nm.position = Vector2(0, 6)
-	nm.size = Vector2(150, 24)
-	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	card.add_child(nm)
 	var faces := [["cmd_lira", "common"], ["cmd_rai", "legendary"], ["cmd_vega", "rare"]]
-	for i in faces.size():
-		var p := CmdPortrait.new(faces[i][0], faces[i][1])
-		p.position = Vector2(10 + i * 44, 34 + (0 if i == 1 else 6))
-		p.size = Vector2(42, 50)
-		card.add_child(p)
+	var pics: Array = []
+	for f in faces:
+		pics.append(CmdPortrait.new(f[0], f[1]))
 	var n: Array = it["commanders"]
-	var cnt := _label("%d / %d" % [int(n[0]), int(n[1])], 18, Color(1.0, 0.85, 0.4))
-	cnt.position = Vector2(0, 92)
-	cnt.size = Vector2(150, 24)
-	cnt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	card.add_child(cnt)
-	_card_button(card, tr("cmdr.open"), Color(0.7, 0.45, 0.12), func(): army_action.emit(-3, "commanders"), true)
-	if bool(it.get("dot", false)):
-		_panel(card, Rect2(128, 4, 18, 18), _style(Color(0.3, 0.9, 0.4), 9, Color(1, 1, 1, 0.8), 2), Control.MOUSE_FILTER_IGNORE)
+	var up := bool(it.get("dot", false))
+	var opts := {"art_node": _fan(pics), "tag": "%d/%d" % [int(n[0]), int(n[1])],
+		"details": tr("cmdr.collection") % [int(n[0]), int(n[1])] + ("\n" + tr("cmdr.tip_up") if up else ""),
+		"cta": {"role": "info", "caption": tr("cmdr.open"), "cb": func(): army_action.emit(-3, "commanders")}}
+	if up:
+		opts["dot"] = "go"
+	return Kit.card(null, String(it["name"]), opts)
+
+
+## Three small framed pictures (the hand's cards, the collection's faces) fanned out at −8 / 0 / +8° in a card's
+## art window (172×104); the middle one on top.
+func _fan(pics: Array) -> Control:
+	var fan := Control.new()
+	fan.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fan.size = Vector2(172, 104)
+	var n := pics.size()
+	var order: Array = [0, 2, 1] if n == 3 else range(n)
+	for i in order:
+		var k := float(i) - (n - 1) * 0.5
+		var fr := Panel.new()  # an INK frame with a hard shadow
+		fr.add_theme_stylebox_override("panel", Kit.style(Kit.INK, 8, 0, Kit.INK, 3, 0))
+		fr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		fr.size = Vector2(64, 76)
+		fr.position = Vector2(86.0 + k * 42.0 - 32.0, 8.0 + absf(k) * 6.0)
+		fr.pivot_offset = Vector2(32, 76)
+		fr.rotation_degrees = k * 8.0
+		var clip := Panel.new()  # the picture, rounded inside the frame
+		var csb := Kit.style(Kit.SKY_LOW, 8, 0, Kit.INK, 0, 0)
+		csb.set_corner_radius_all(5)  # concentric with the frame (8 − 3)
+		csb.set_meta("kit_kind", "")
+		clip.add_theme_stylebox_override("panel", csb)
+		clip.position = Vector2(3, 3)
+		clip.size = Vector2(58, 70)
+		clip.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
+		clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var p: Control = pics[i]
+		p.position = Vector2.ZERO
+		p.size = clip.size
+		clip.add_child(p)
+		fr.add_child(clip)
+		fan.add_child(fr)
+	return fan
+
+
+## A card of a tab not rebuilt on Kit.card yet (s07): the row's 172 px height; a 150 px card is centred in 180 (its
+## XS button, placed by _card_button, already spans the new width).
+func _legacy_card(card: Control) -> Control:
+	var w := card.custom_minimum_size.x
+	if w < 180.0:
+		for c in card.get_children():
+			if c is Control and not (c as Control).has_meta("card_btn"):
+				(c as Control).position.x += (180.0 - w) * 0.5
+		card.custom_minimum_size.x = 180.0
+	card.custom_minimum_size.y = 172.0
+	card.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	return card
 
 
@@ -2179,7 +2224,7 @@ func _diplomacy_card(it: Dictionary) -> Control:
 	lg.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	bg.add_child(lg)
 	bg.gui_input.connect(func(e): if _is_tap(e): diplomacy_action.emit(id, "gift"))
-	return card
+	return _legacy_card(card)
 
 
 ## «Тревога соседей» (canon §10.8): threat / coalition threshold as a bar, what it means now, how to calm it.
@@ -2213,7 +2258,7 @@ func _alarm_card(it: Dictionary) -> Control:
 	h.position = Vector2(12, 108)
 	h.size = Vector2(284, 64)
 	card.add_child(h)
-	return card
+	return _legacy_card(card)
 
 
 ## World tab: chapter progress and the chapter stars (canon §12.1).
@@ -2249,7 +2294,7 @@ func _chapter_card(it: Dictionary) -> Control:
 		hint.autowrap_mode = TextServer.AUTOWRAP_WORD
 		hint.custom_minimum_size = Vector2(226, 0)  # autowrap needs a fixed width
 		card.add_child(hint)
-	return card
+	return _legacy_card(card)
 
 
 func _star_card(it: Dictionary) -> Control:
@@ -2286,7 +2331,7 @@ func _star_card(it: Dictionary) -> Control:
 	if it.get("open", false):
 		_card_button(card, tr("ui.open"), Color(0.55, 0.25, 0.8), func(): world_action.emit(id), true)
 		var pr := _label("%d / %d" % [int(it["progress"]), int(it["need"])], 15, MUTED)
-		pr.position = Vector2(0, 116)
+		pr.position = Vector2(0, 94)
 		pr.size = Vector2(150, 22)
 		pr.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		card.add_child(pr)
@@ -2304,13 +2349,14 @@ func _star_card(it: Dictionary) -> Control:
 		p.size = Vector2(150, 28)
 		p.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		card.add_child(p)
-	return card
+	return _legacy_card(card)
 
 
 func hide_buildings() -> void:
 	if _bpanel:
 		_bpanel.visible = false
 	_bkey = ""
+	_bfam = ""
 
 
 ## The rendered icon of each building on its card (tools/blender/icon_assets.py → assets/ui/icons).
@@ -2357,7 +2403,7 @@ func _building_card(it: Dictionary) -> Control:
 	var id: int = it["id"]
 	if busy:
 		var t := _label(fmt_time(int(it["left"])), 28, Color(1.0, 0.85, 0.4))
-		t.position = Vector2(0, 62)
+		t.position = Vector2(0, 52)
 		t.size = Vector2(150, 40)
 		t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		card.add_child(t)
@@ -2367,7 +2413,7 @@ func _building_card(it: Dictionary) -> Control:
 		var line_s: String = it.get("line", "")
 		if int(it.get("bp", 0)) > 0:
 			# «Применить чертёж» (07 §6.1)
-			var bpb := _panel(card, Rect2(20, 102, 110, 30), _style(Color(0.45, 0.32, 0.18), 8, Color(1.0, 0.85, 0.5, 0.7), 2))
+			var bpb := _panel(card, Rect2(20, 86, 110, 30), _style(Color(0.45, 0.32, 0.18), 8, Color(1.0, 0.85, 0.5, 0.7), 2))
 			var bpl := _label(tr("bld.blueprint") % int(it["bp"]), 15)
 			bpl.size = Vector2(110, 30)
 			bpl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -2380,7 +2426,7 @@ func _building_card(it: Dictionary) -> Control:
 				research_speedup.emit(line_s)
 			else:
 				building_speedup.emit(id), sp > 0)
-		return card
+		return _legacy_card(card)
 	if int(it["level"]) >= int(it["max"]) and String(it["reason"]) != "":
 		var m := _label(it["reason"], 15, MUTED, false)
 		m.position = Vector2(8, 66)
@@ -2388,8 +2434,8 @@ func _building_card(it: Dictionary) -> Control:
 		m.custom_minimum_size = Vector2(134, 0)  # autowrap needs a fixed width
 		m.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		card.add_child(m)
-		return card
-	var y := 54.0
+		return _legacy_card(card)
+	var y := 50.0
 	var cost: Dictionary = it["cost"]
 	for r in cost:
 		var row := HBoxContainer.new()
@@ -2403,7 +2449,7 @@ func _building_card(it: Dictionary) -> Control:
 		row.add_child(ic)
 		row.add_child(_label(str(cost[r]), 16, TEXT, false))
 		card.add_child(row)
-		y += 20
+		y += 18
 	var tl := _label("⏱ " + fmt_time(int(it["seconds"])), 14, MUTED, false)
 	tl.position = Vector2(26, y)
 	card.add_child(tl)
@@ -2416,7 +2462,7 @@ func _building_card(it: Dictionary) -> Control:
 			building_upgrade.emit(id)
 		else:
 			toast(it["reason"]), true)
-	return card
+	return _legacy_card(card)
 
 
 ## First card of the Buildings tab once the Market stands: current rate and an «open» button.
@@ -2448,15 +2494,16 @@ func _market_card(it: Dictionary) -> Control:
 	rl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	card.add_child(rl)
 	_card_button(card, tr("market.open"), Color(0.85, 0.55, 0.1), func(): market_open.emit(), true)
-	return card
+	return _legacy_card(card)
 
 
-## The XS button at the bottom of a tray card (PASS: a drag still scrolls the row). The legacy «can't» grey shows
-## the lock role but still runs `cb` (the callers explain the reason in a toast). `_enabled` stays unused as
-## before: the speed-up card passes false for its free speed-up.
+## The XS button at the bottom of a legacy tray card (6, 120, 168, 46 on the 180×172 card; PASS: a drag still
+## scrolls the row). The legacy «can't» grey shows the lock role but still runs `cb` (the callers explain the
+## reason in a toast). `_enabled` stays unused as before: the speed-up card passes false for its free speed-up.
 func _card_button(card: Control, text: String, color: Color, cb: Callable, _enabled: bool) -> void:
 	var role := "lock" if Kit.is_legacy_disabled(color) else Kit.role_of(color)
-	Kit.button(card, Rect2(8, 130, 134, 42), role, text, {"cb": cb, "size": "XS", "filter": Control.MOUSE_FILTER_PASS})
+	var b := Kit.button(card, Rect2(6, 120, 168, 46), role, text, {"cb": cb, "size": "XS", "filter": Control.MOUSE_FILTER_PASS})
+	b.set_meta("card_btn", true)
 
 
 # ------------------------------------------------------------------ coach (FTUE, canon §14.3)
@@ -2530,10 +2577,14 @@ func _process_coach(delta: float) -> void:
 	if has_t:
 		var k := 1.0 + 0.12 * sin(_coach_t * 6.0)
 		var sb := _coach_ring.get_theme_stylebox("panel") as StyleBoxFlat
+		# targets given on the 1672 canvas inside the bottom band (tabs, cards, big button) follow the bottom group
+		# down to the visible bottom on a tall screen
+		var dy := _bottom.position.y
+		var tgt := _coach_target + Vector2(0, dy if _coach_target.y >= VH - 332.0 else 0.0)
 		var frame := Rect2()
 		for f in COACH_FRAMES:
 			if (f as Rect2).has_point(_coach_target):
-				frame = f
+				frame = Rect2((f as Rect2).position + Vector2(0, dy), (f as Rect2).size)
 		if frame.size != Vector2.ZERO:  # a button: a pulsing frame around it, not a circle across its label
 			var g := 8.0 + 6.0 * (k - 1.0) / 0.12
 			_coach_ring.position = frame.position - Vector2(g, g)
@@ -2541,9 +2592,9 @@ func _process_coach(delta: float) -> void:
 			sb.set_corner_radius_all(22)
 		else:
 			_coach_ring.size = Vector2(120, 120) * k
-			_coach_ring.position = _coach_target - _coach_ring.size / 2
+			_coach_ring.position = tgt - _coach_ring.size / 2
 			sb.set_corner_radius_all(int(60 * k))
-		_coach_arrow.position = _coach_target + Vector2(-20, -150 + 14 * sin(_coach_t * 5.0))
+		_coach_arrow.position = tgt + Vector2(-20, -150 + 14 * sin(_coach_t * 5.0))
 	var has_g := _ghost_from.x >= 0
 	_ghost_dot.visible = has_g
 	if has_g:

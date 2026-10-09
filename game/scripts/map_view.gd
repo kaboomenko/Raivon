@@ -546,61 +546,121 @@ func _hex_pts(center: Vector3, radius: float) -> Array:
 	return pts
 
 
-## Ground colours of the biomes (02 §4.2): meadow is the default palette above; the taiga is darker and cooler,
-## the steppe golden, the badlands rust-red.
+## Ground colours (sRGB vertex colours, docs/art_direction.md §6.3): a sunny yellow-green meadow by default, the taiga
+## cooler and bluer, the steppe golden, the badlands rust-red (02 §4.2). Forests are only a little darker than their
+## plain, so wooded hexes no longer read as dark tiles.
+const GROUND_MEADOW := {"plain": Color("74a645"), "forest": Color("5a8a40"), "hills": Color("9baa55"), "mountain": Color("a39a86")}
 const BIOME_GROUND := {
-	"taiga": {"plain": Color(0.24, 0.43, 0.24), "forest": Color(0.15, 0.33, 0.18), "hills": Color(0.36, 0.41, 0.31), "mountain": Color(0.4, 0.41, 0.42)},
-	"steppe": {"plain": Color(0.6, 0.58, 0.27), "forest": Color(0.42, 0.5, 0.22), "hills": Color(0.62, 0.52, 0.3)},
-	"badlands": {"plain": Color(0.72, 0.47, 0.29), "forest": Color(0.58, 0.47, 0.26), "hills": Color(0.74, 0.39, 0.23), "mountain": Color(0.56, 0.36, 0.28)},
+	"taiga": {"plain": Color("5f9a57"), "forest": Color("4a7e4a"), "hills": Color("7e9470"), "mountain": Color("9a9aa0")},
+	"steppe": {"plain": Color("c8bc66"), "forest": Color("93a64e"), "hills": Color("cba56a")},
+	"badlands": {"plain": Color("d28f5a"), "forest": Color("b08d52"), "hills": Color("c97a4e"), "mountain": Color("a46e55")},
 }
+const WATER_BED := Color(0.12, 0.36, 0.52)
+## The tile sides (§6.3): soil at the top, darker at −0.4, a cool slate deeper down (never black).
+const WALL_TOP := Color("b58a5e")
+const WALL_MID := Color("7e5a45")
+const WALL_DEEP := Color("6b6178")
+const INNER_RING := 0.6  # the blended ground: the hex's own colour inside 0.6 R, blending to its corners and edges
+
+var _terrain_mat: ShaderMaterial
 
 
+## An edge midpoint's lattice key: midpoints sit on x = k/4 and z = m·√3/4 (as _corner_key, exact in float32).
+static func _mid_key(p: Vector2) -> Vector2i:
+	return Vector2i(roundi(p.x * 4.0), roundi(p.y / (SQ3 * 0.25)))
+
+
+## The ground as one continuous lawn (docs/art_direction.md §6.7), after Catlike Coding's hex-map colour blending:
+## each land top is a centre and an inner ring at 0.6 R in the hex's own colour, plus an outer ring of 6 corners
+## (the mean colour of the ≤ 3 land hexes meeting there) and 6 edge midpoints (the mean of the ≤ 2 land hexes on
+## that edge), 24 triangles. So the colour never steps on an edge. All land is at y = 0, so there are no walls between
+## land hexes: soil walls only face water (down to −0.4) and the world's edge (down to −1.4). Water beds (y −0.2)
+## stay one flat colour, walled only towards the world's edge.
 func _build_terrain() -> void:
 	if _terrain_mi:
 		_terrain_mi.queue_free()
+	# pass 1: each hex's colour, and the sums of the land colours at every corner and edge midpoint
+	var cols: Array = []
+	var corner_sum := {}  # _corner_key -> [colour sum, count]
+	var edge_sum := {}  # _mid_key -> [colour sum, count]
+	for c in sim.cells:
+		var col: Color = GROUND_MEADOW.get(String(c["terrain"]), GROUND_MEADOW["plain"])
+		if c["terrain"] == "water":
+			col = WATER_BED
+		else:
+			var pal: Dictionary = BIOME_GROUND.get(String(c.get("biome", "meadow")), {})
+			col = pal.get(String(c["terrain"]), col)
+		# one draw per cell, as the old per-hex shade had: the props that follow share this RNG, and dropping the
+		# draw would shift its sequence and move every prop on the map
+		rng.randf()
+		col.a = 1.0
+		cols.append(col)
+		if c["terrain"] == "water":
+			continue
+		var center := axial_to_world(c["q"], c["r"])
+		var cv := Vector2(center.x, center.z)
+		for k in 6:
+			var ck: Vector2 = cv + HEX_CORNERS[k]
+			var mk: Vector2 = cv + (HEX_CORNERS[k] + HEX_CORNERS[(k + 1) % 6]) * 0.5
+			_acc(corner_sum, _corner_key(ck), col)
+			_acc(edge_sum, _mid_key(mk), col)
+	# pass 2: the tops and the visible walls
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for c in sim.cells:
+	for i in sim.cells.size():
+		var c: Dictionary = sim.cells[i]
+		var col: Color = cols[i]
 		var center := axial_to_world(c["q"], c["r"])
-		var top := 0.0
-		var col := Color(0.31, 0.33, 0.16)  # a muted, warm meadow: hue measured against the reference greens (~73°), not lime
-		var pal: Dictionary = BIOME_GROUND.get(String(c.get("biome", "meadow")), {})
-		match c["terrain"]:
-			"forest":
-				col = Color(0.16, 0.2, 0.11)
-			"hills":
-				col = Color(0.45, 0.46, 0.27)
-			"mountain":
-				col = Color(0.42, 0.4, 0.36)
-			"water":
-				col = Color(0.12, 0.36, 0.52)
-				top = -0.2
-		col = pal.get(String(c["terrain"]), col)
-		col = col * (0.94 + rng.randf() * 0.12)
-		col.a = 1.0
-		var pts := _hex_pts(center + Vector3(0, top, 0), 0.995)
-		for k in 6:
+		var cv := Vector2(center.x, center.z)
+		var wet: bool = c["terrain"] == "water"
+		var top := -0.2 if wet else 0.0
+		var pts := _hex_pts(center + Vector3(0, top, 0), 1.0)
+		st.set_normal(Vector3.UP)
+		if wet:
 			st.set_color(col)
-			st.set_normal(Vector3.UP)
-			st.add_vertex(center + Vector3(0, top, 0))
-			st.add_vertex(pts[k])
-			st.add_vertex(pts[(k + 1) % 6])
-		var side := col.darkened(0.45)
+			for k in 6:
+				st.add_vertex(center + Vector3(0, top, 0)); st.add_vertex(pts[k]); st.add_vertex(pts[(k + 1) % 6])
+		else:
+			var inner: Array = []
+			var cc: Array = []  # corner colours
+			var mids: Array = []
+			var mc: Array = []  # edge-midpoint colours
+			for k in 6:
+				var a: Vector3 = pts[k]
+				var b: Vector3 = pts[(k + 1) % 6]
+				inner.append(center.lerp(a, INNER_RING))
+				mids.append((a + b) * 0.5)
+				cc.append(_mean(corner_sum, _corner_key(cv + HEX_CORNERS[k]), col))
+				mc.append(_mean(edge_sum, _mid_key(cv + (HEX_CORNERS[k] + HEX_CORNERS[(k + 1) % 6]) * 0.5), col))
+			for k in 6:
+				var k1 := (k + 1) % 6
+				_vtx(st, center, col); _vtx(st, inner[k], col); _vtx(st, inner[k1], col)
+				_vtx(st, inner[k], col); _vtx(st, pts[k], cc[k]); _vtx(st, mids[k], mc[k])
+				_vtx(st, inner[k], col); _vtx(st, mids[k], mc[k]); _vtx(st, inner[k1], col)
+				_vtx(st, inner[k1], col); _vtx(st, mids[k], mc[k]); _vtx(st, pts[k1], cc[k1])
+		# walls only where they can be seen: land towards water (−0.4) or off-map (−1.4); water only off-map
 		for k in 6:
 			var a: Vector3 = pts[k]
 			var b: Vector3 = pts[(k + 1) % 6]
-			var n := ((a + b) / 2.0 - center).normalized()
-			st.set_color(side)
-			st.set_normal(n)
-			st.add_vertex(a); st.add_vertex(b + Vector3(0, -1.4, 0)); st.add_vertex(b)
-			st.add_vertex(a); st.add_vertex(a + Vector3(0, -1.4, 0)); st.add_vertex(b + Vector3(0, -1.4, 0))
+			var mid := (a + b) * 0.5
+			var nb := id_at_world(center + 2.0 * (Vector3(mid.x, 0, mid.z) - center))
+			var n := (Vector3(mid.x, 0, mid.z) - center).normalized()
+			if wet:
+				if nb < 0:
+					_wall(st, a, b, n, top, -1.4, WALL_DEEP, WALL_DEEP)
+			elif nb < 0:
+				_wall(st, a, b, n, 0.0, -0.4, WALL_TOP, WALL_MID)
+				_wall(st, a, b, n, -0.4, -1.4, WALL_MID, WALL_DEEP)
+			elif sim.cells[nb]["terrain"] == "water":
+				_wall(st, a, b, n, 0.0, -0.4, WALL_TOP, WALL_MID)
 	_terrain_mi = MeshInstance3D.new()
 	_terrain_mi.mesh = st.commit()
-	var mat := ShaderMaterial.new()
-	mat.shader = load("res://shaders/terrain.gdshader")
-	mat.set_shader_parameter("noise_big", _noise_tex(0.9, 3, 101))
-	mat.set_shader_parameter("noise_fine", _noise_tex(6.0, 2, 202))
-	_terrain_mi.material_override = mat
+	_terrain_mat = ShaderMaterial.new()
+	_terrain_mat.shader = load("res://shaders/terrain.gdshader")
+	_terrain_mat.set_shader_parameter("noise_big", _noise_tex(0.9, 3, 101))
+	_terrain_mat.set_shader_parameter("noise_fine", _noise_tex(6.0, 2, 202))
+	_terrain_zoom()
+	_terrain_mi.material_override = _terrain_mat
 	add_child(_terrain_mi)
 	_build_grass()
 	_cloud_shadows()
@@ -615,6 +675,47 @@ func _build_terrain() -> void:
 	wm.set_shader_parameter("shore_k", 0.0)
 	water.material_override = wm
 	add_child(water)
+
+
+static func _acc(sums: Dictionary, key: Vector2i, col: Color) -> void:
+	var e: Array = sums.get(key, [Color(0, 0, 0, 0), 0])
+	e[0] = (e[0] as Color) + col
+	e[1] = int(e[1]) + 1
+	sums[key] = e
+
+
+## The mean land colour at a corner / edge key (the hex's own colour if no land was summed there).
+static func _mean(sums: Dictionary, key: Vector2i, fallback: Color) -> Color:
+	var e: Array = sums.get(key, [])
+	if e.is_empty():
+		return fallback
+	var m: Color = (e[0] as Color) / float(e[1])
+	m.a = 1.0
+	return m
+
+
+static func _vtx(st: SurfaceTool, p: Vector3, col: Color) -> void:
+	st.set_color(col)
+	st.add_vertex(p)
+
+
+## A vertical soil wall under the edge a -> b, from y0 down to y1, coloured c0 at the top and c1 at the bottom.
+static func _wall(st: SurfaceTool, a: Vector3, b: Vector3, n: Vector3, y0: float, y1: float, c0: Color, c1: Color) -> void:
+	var at := Vector3(a.x, y0, a.z)
+	var bt := Vector3(b.x, y0, b.z)
+	var ab := Vector3(a.x, y1, a.z)
+	var bb := Vector3(b.x, y1, b.z)
+	st.set_normal(n)
+	_vtx(st, at, c0); _vtx(st, bb, c1); _vtx(st, bt, c0)
+	_vtx(st, at, c0); _vtx(st, ab, c1); _vtx(st, bb, c1)
+
+
+## The ground shader by zoom (§6.7): the fine speckle only up close, the seams full close up and faint from afar.
+func _terrain_zoom() -> void:
+	if _terrain_mat == null:
+		return
+	_terrain_mat.set_shader_parameter("fine_k", 1.0 - smoothstep(0.1, 0.5, _zoom))
+	_terrain_mat.set_shader_parameter("seam_k", lerpf(1.0, 0.45, smoothstep(0.15, 0.5, _zoom)))
 
 
 var _grass_mi: MultiMeshInstance3D
@@ -2091,6 +2192,7 @@ func set_zoom(zoom: float) -> void:
 	_zoom_applied = zoom
 	_rib_w = lerpf(0.08, 0.16, smoothstep(0.05, 0.8, zoom))
 	_rib_skirt_a = lerpf(0.2, 0.32, smoothstep(0.1, 0.6, zoom))
+	_terrain_zoom()
 	for m in _fill_mats:
 		_fill_zoom(m)
 	for m in _ribbon_mats:
