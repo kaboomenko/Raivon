@@ -4806,18 +4806,24 @@ def mine_scifi(team):
     # crystals: a big cluster on the floor round the derrick, smaller ones on the terraces
     rnd = random.Random(11)
     items = []
-    for k in range(4):  # the big cluster on the floor: tall prisms rising steeply round the core between the legs
+    # (a tilt of (-sin a, cos a) * t leans a crystal at angle a outwards, away from the core)
+    for k in range(4):  # the big cluster on the floor: tall prisms splaying out round the core between the legs
         a = k * math.pi / 2 + rnd.uniform(-0.2, 0.2)
-        rr = rnd.uniform(0.045, 0.06)
-        t_ = rnd.uniform(0.14, 0.24)
-        items.append((px + math.cos(a) * rr, py + math.sin(a) * rr, 0.012, rnd.uniform(0.04, 0.046),
-                      rnd.uniform(0.24, 0.29), math.sin(a) * t_, -math.cos(a) * t_))
-    for k in range(4):  # shorter ones leaning out under the legs
+        rr = rnd.uniform(0.04, 0.055)
+        t_ = rnd.uniform(0.22, 0.32)
+        items.append((px + math.cos(a) * rr, py + math.sin(a) * rr, 0.012, rnd.uniform(0.042, 0.048),
+                      rnd.uniform(0.26, 0.3), -math.sin(a) * t_, math.cos(a) * t_))
+    for k in range(4):  # shorter ones under the legs
         a = math.pi / 4 + k * math.pi / 2 + rnd.uniform(-0.15, 0.15)
-        rr = rnd.uniform(0.07, 0.085)
-        t_ = rnd.uniform(0.35, 0.5)
-        items.append((px + math.cos(a) * rr, py + math.sin(a) * rr, 0.012, rnd.uniform(0.028, 0.034),
-                      rnd.uniform(0.12, 0.16), math.sin(a) * t_, -math.cos(a) * t_))
+        rr = rnd.uniform(0.065, 0.075)
+        t_ = rnd.uniform(0.25, 0.35)
+        items.append((px + math.cos(a) * rr, py + math.sin(a) * rr, 0.012, rnd.uniform(0.03, 0.036),
+                      rnd.uniform(0.13, 0.16), -math.sin(a) * t_, math.cos(a) * t_))
+    for k in range(4):  # and small ones splaying out at the foot of the floor wall
+        a = k * math.pi / 2 + 0.45 + rnd.uniform(-0.15, 0.15)
+        t_ = rnd.uniform(0.5, 0.7)
+        items.append((px + math.cos(a) * 0.12, py + math.sin(a) * 0.12, 0.014, rnd.uniform(0.018, 0.022),
+                      rnd.uniform(0.07, 0.1), -math.sin(a) * t_, math.cos(a) * t_))
     for (a, R, z) in ((0.5, 0.265, 0.052), (2.3, 0.265, 0.052), (3.4, 0.19, 0.03), (5.6, 0.19, 0.03), (3.9, 0.33, 0.077),
                       (1.4, 0.33, 0.077), (0.0, 0.33, 0.077)):
         for j in range(3):
