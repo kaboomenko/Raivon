@@ -885,6 +885,24 @@ func _era_model(kind: String, owner: int, side: String) -> String:
 	return ""
 
 
+## Factory or oil field model by era (canon, buildings table: «кирпичный цех → конвейерный завод → роботизированный
+## комбинат», «деревянная вышка-качалка → стальная вышка → нефтекомплекс → плазменный экстрактор»): the owner's
+## development level, or the player's on unowned land. "" when no model exists (the procedural one is drawn instead).
+func _industry_model(kind: String, owner: int) -> String:
+	var o := owner if owner > Types.NOBODY and owner < sim.states.size() else Types.PLAYER
+	var dl: int = int(sim.states[o]["dev_level"])
+	var lv := 1
+	if kind == "factory":
+		lv = 3 if dl >= 8 else (2 if dl >= 6 else 1)
+	else:
+		lv = 4 if dl >= 8 else (3 if dl == 7 else (2 if dl == 6 else 1))
+	for n in range(lv, 0, -1):
+		var name := "%s_l%d" % [kind, n]
+		if has_model(name):
+			return name
+	return ""
+
+
 ## Model name for `kind` ("city", "residence") in the style of the owner's development level
 ## (canon §6: every DL changes how the state looks); falls back to lower levels, "" if none exist.
 func evolved(kind: String, owner: int) -> String:
@@ -1249,12 +1267,20 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 			_place_fort(c, holder)
 			return
 		"oil":
-			_place_dark_lake(holder)
-			_place_derrick(holder)
+			var om := _industry_model("oil", int(c["owner"]))
+			if om != "":  # its own derrick or rig over its own pool of oil, by era
+				spawn(om, holder, p, 0.2, 1.0)
+			else:
+				_place_dark_lake(holder)
+				_place_derrick(holder)
 			_place_fort(c, holder)
 			return
 		"factory":
-			_place_factory(holder)
+			var fm := _industry_model("factory", int(c["owner"]))
+			if fm != "":
+				spawn(fm, holder, p, 0.35, 1.0)
+			else:
+				_place_factory(holder)
 			_place_fort(c, holder)
 			return
 		"port":
