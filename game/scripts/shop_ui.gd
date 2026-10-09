@@ -64,7 +64,7 @@ func _render() -> void:
 	dim.size = size
 	add_child(dim)
 	var sheet: Panel = ui._panel(self, Rect2(16, 88, VW - 32, VH - 110), ui._style(Color(0.06, 0.09, 0.15, 0.98), 22, Color(0.45, 0.6, 0.9, 0.8), 3))
-	ui._at(ui._label(tr("shop.title"), 36), sheet, Vector2(30, 22))
+	ui._title(sheet, tr("shop.title"), 36, GameUI.TEXT, Vector2(30, 22), "stall")
 	var bal := HBoxContainer.new()
 	bal.position = Vector2(560, 26)
 	var ic := TextureRect.new()
@@ -107,7 +107,7 @@ func _cases_tab() -> void:
 	# Военный ящик: free every 6 h (stores 2), +2 per day for a rewarded ad
 	var free: int = cases.claim_free_crates(now)
 	var c1 := _card(Rect2(0, 0, 861, 300))
-	ui._at(ui._label("📦 " + cases.case_name("case_war_crate"), 30), c1, Vector2(24, 18))
+	ui._title(c1, cases.case_name("case_war_crate"), 30, GameUI.TEXT, Vector2(24, 18), "crate")
 	ui._at(ui._label(tr("shop.crate_free") + " " + cases.pity_text("case_war_crate"), 19, MUTED, false), c1, Vector2(24, 64))
 	var nxt := tr("shop.ready") % free if free > 0 else tr("shop.next_in") % GameUI.fmt_time(cases.free_crate_left(now))
 	ui._at(ui._label(nxt, 22, Color(1.0, 0.85, 0.4)), c1, Vector2(24, 100))
@@ -120,7 +120,7 @@ func _cases_tab() -> void:
 	_info_button(c1, Vector2(780, 160), "case_war_crate")
 	# Королевский кейс: 160 / ×10 1440 raivites
 	var c2 := _card(Rect2(0, 320, 861, 330), Color(0.16, 0.12, 0.25))
-	ui._at(ui._label("👑 " + cases.case_name("case_royal"), 30), c2, Vector2(24, 18))
+	ui._title(c2, cases.case_name("case_royal"), 30, GameUI.TEXT, Vector2(24, 18), "crown")
 	ui._at(ui._label(cases.pity_text("case_royal"), 19, Color(1.0, 0.85, 0.4), false), c2, Vector2(24, 64))
 	var tgt: String = cases.target_commander
 	var tname: String = cases.commander_name(tgt) if tgt != "" else tr("shop.target_none")
@@ -135,7 +135,7 @@ func _cases_tab() -> void:
 	_info_button(c2, Vector2(780, 160), "case_royal")
 	# Кейс коллекции (сезонный): no duplicates, 8 items
 	var c3 := _card(Rect2(0, 670, 861, 250), Color(0.12, 0.2, 0.18))
-	ui._at(ui._label("🎴 " + cases.case_name("case_collection"), 30), c3, Vector2(24, 18))
+	ui._title(c3, cases.case_name("case_collection"), 30, GameUI.TEXT, Vector2(24, 18), "cards")
 	ui._at(ui._label(tr("shop.collection_desc") + " " + cases.pity_text("case_collection"), 19, MUTED, false), c3, Vector2(24, 64))
 	var p3: int = cases.price("case_collection")
 	if p3 > 0:

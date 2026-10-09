@@ -136,6 +136,85 @@ func _at(l: Control, parent: Control, pos: Vector2, size := Vector2.ZERO) -> Con
 	return l
 
 
+## Emoji that are drawn as the rendered 3D icons (tools/blender/icon_assets.py) inside button captions and rows.
+const INLINE_ICONS := {"💎": "res://assets/ui/raivite.png", "🔒": "res://assets/ui/icons/lock.png", "🎬": "res://assets/ui/icons/ad.png"}
+
+
+func _icon_rect(path: String, side: float) -> TextureRect:
+	var ic := TextureRect.new()
+	ic.texture = load(path)
+	ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	ic.custom_minimum_size = Vector2(side, side)
+	ic.size = Vector2(side, side)
+	ic.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return ic
+
+
+## A window title with its rendered 3D icon (assets/ui/icons/<icon>.png) in front, as in the reference HUD.
+func _title(parent: Control, text: String, size: int, color: Color, pos: Vector2, icon: String, bold := true, max_w := 0.0) -> Label:
+	var p := "res://assets/ui/icons/%s.png" % icon
+	if ResourceLoader.exists(p):
+		var side := roundf(size * 1.6)
+		var ic := _icon_rect(p, side)
+		ic.position = pos + Vector2(-6, size * 0.68 - side / 2.0)  # centred on the first text line
+		parent.add_child(ic)
+		pos.x += side - 2.0
+		max_w -= side - 2.0
+	var l := _label(text, size, color, bold)
+	if max_w > 0.0:
+		_fit(l, size, max_w)
+	return _at(l, parent, pos) as Label
+
+
+func _has_inline(text: String) -> bool:
+	for k in INLINE_ICONS:
+		if text.contains(k):
+			return true
+	return false
+
+
+## One line of text whose 💎 / 🔒 / 🎬 are drawn as the 3D icons; the font shrinks (down to 12) to fit max_w.
+func _inline(text: String, size: int, color := TEXT, bold := true, max_w := 0.0) -> HBoxContainer:
+	var parts: Array[String] = []  # text pieces; an icon is its INLINE_ICONS key
+	var buf := ""
+	for i in text.length():
+		var ch := text[i]
+		if INLINE_ICONS.has(ch):
+			if buf.strip_edges() != "":
+				parts.append(buf.strip_edges())
+			parts.append(ch)
+			buf = ""
+		else:
+			buf += ch
+	if buf.strip_edges() != "":
+		parts.append(buf.strip_edges())
+	var probe := _label("", size, color, bold)
+	var f := probe.get_theme_font("font")
+	probe.free()
+	var s := size
+	while max_w > 0.0 and s > 12:
+		var w := 0.0
+		for p in parts:
+			w += (s * 1.3 if INLINE_ICONS.has(p) else f.get_string_size(p, HORIZONTAL_ALIGNMENT_LEFT, -1, s).x) + 6.0
+		if w <= max_w:
+			break
+		s -= 1
+	var hb := HBoxContainer.new()
+	hb.add_theme_constant_override("separation", 6)
+	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for p in parts:
+		if INLINE_ICONS.has(p):
+			hb.add_child(_icon_rect(INLINE_ICONS[p], roundf(s * 1.3)))
+		else:
+			var l := _label(p, s, color, bold)
+			l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			l.size_flags_vertical = Control.SIZE_FILL
+			hb.add_child(l)
+	return hb
+
+
 # ------------------------------------------------------------------ control bar (war)
 
 func _build_control_bar() -> void:
@@ -492,12 +571,18 @@ func _modal_box(rect: Rect2, parchment := false) -> Panel:
 
 func _button(parent: Control, rect: Rect2, text: String, color: Color, cb: Callable) -> Panel:
 	var b := _panel(parent, rect, _style(color, 14, Color(1, 1, 1, 0.5), 2))
-	var l := _label(text, 22)
-	_fit(l, 22, rect.size.x - 16.0)
-	l.size = rect.size
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	b.add_child(l)
+	if _has_inline(text):
+		var hb := _inline(text, 22, TEXT, true, rect.size.x - 16.0)
+		hb.size = rect.size
+		hb.alignment = BoxContainer.ALIGNMENT_CENTER
+		b.add_child(hb)
+	else:
+		var l := _label(text, 22)
+		_fit(l, 22, rect.size.x - 16.0)
+		l.size = rect.size
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		b.add_child(l)
 	b.gui_input.connect(func(e): if _is_tap(e): cb.call())
 	return b
 
@@ -532,9 +617,7 @@ func show_peace(enemy: String, budget: float, control: int, demands: Array, chos
 	var ink := Color(0.24, 0.16, 0.07)
 	if portrait != "":
 		_leader_seal(box, portrait, plate, Rect2(881 - 120, 14, 96, 116), "tired")  # the loser, worn out by the war
-	var pt := _label(tr("peace.title") % enemy, 32, ink, false)
-	_fit(pt, 32, 700.0 if portrait != "" else 820.0)
-	_at(pt, box, Vector2(30, 24))
+	_title(box, tr("peace.title") % enemy, 32, ink, Vector2(30, 24), "hands", false, 700.0 if portrait != "" else 820.0)
 	var used := 0.0
 	for d in demands:
 		if chosen.has(d["id"]):
@@ -642,7 +725,7 @@ func show_ceremony_counters(lines: Array, on_done: Callable, on_double := Callab
 ## title / text are translation keys packed with their arguments (l10n.gd `pack`), shown in the current language.
 func show_inbox(items: Array, now: int) -> void:
 	var box := _modal_box(Rect2(50, 300, 841, 1060))
-	_at(_label(tr("inbox.title"), 34), box, Vector2(36, 26))
+	_title(box, tr("inbox.title"), 34, TEXT, Vector2(36, 26), "mail")
 	var scroll := ScrollContainer.new()
 	scroll.position = Vector2(24, 90)
 	scroll.size = Vector2(793, 830)
@@ -680,7 +763,7 @@ func show_inbox(items: Array, now: int) -> void:
 ##   rows: [{lvl, free_text, free_state, prem_text, prem_state}]} — state: "claim" | "claimed" | "locked"
 func show_pass(info: Dictionary, on_claim: Callable, on_buy: Callable) -> void:
 	var box := _modal_box(Rect2(30, 170, 881, 1330))
-	_at(_label(tr("pass.title") % int(info["season"]), 32, Color(1.0, 0.85, 0.4)), box, Vector2(30, 22))
+	_title(box, tr("pass.title") % int(info["season"]), 32, Color(1.0, 0.85, 0.4), Vector2(30, 22), "medal", true, 600.0)
 	var dl := _label(tr("pass.days_left") % int(info["days_left"]), 18, MUTED, false)
 	_at(dl, box, Vector2(30, 66))
 	var lv := _label(tr("pass.level") % int(info["level"]), 26)
@@ -750,11 +833,17 @@ func show_pass(info: Dictionary, on_claim: Callable, on_buy: Callable) -> void:
 				b.mouse_filter = Control.MOUSE_FILTER_PASS
 				b.gui_input.connect(func(e): if _is_tap(e): on_claim.call(lvl, track))
 			else:
-				var m := _label("✓" if state == "claimed" else "🔒", 22, Color(0.5, 1.0, 0.6) if state == "claimed" else MUTED)
-				m.position = Vector2(x + 220, 18)
-				m.size = Vector2(130, 40)
-				m.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-				row.add_child(m)
+				if state == "claimed":
+					var m := _label("✓", 22, Color(0.5, 1.0, 0.6))
+					m.position = Vector2(x + 220, 18)
+					m.size = Vector2(130, 40)
+					m.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+					row.add_child(m)
+				else:
+					var lk := _icon_rect(INLINE_ICONS["🔒"], 30.0)
+					lk.position = Vector2(x + 270, 23)
+					lk.modulate = Color(1, 1, 1, 0.8)
+					row.add_child(lk)
 		col.add_child(row)
 	_button(box, Rect2(30, 1330 - 96, 821, 76), tr("ui.close"), Color(0.13, 0.4, 0.9), close_modal)
 
@@ -873,7 +962,7 @@ func show_patent(info: Dictionary, on_buy: Callable, on_restore: Callable) -> vo
 func show_chronicle(info: Dictionary, on_claim: Callable) -> void:
 	var box := _modal_box(Rect2(30, 150, 881, 1370))
 	_button(box, Rect2(881 - 86, 18, 64, 56), "✕", Color(0.3, 0.33, 0.42), close_modal)
-	_at(_label(tr("chr.title") % [int(info["done"]), int(info["total"])], 30, Color(1.0, 0.85, 0.4)), box, Vector2(30, 26))
+	_title(box, tr("chr.title") % [int(info["done"]), int(info["total"])], 30, Color(1.0, 0.85, 0.4), Vector2(30, 26), "book", true, 740.0)
 	var scroll := ScrollContainer.new()
 	scroll.position = Vector2(20, 90)
 	scroll.size = Vector2(841, 1260)
@@ -904,9 +993,8 @@ func show_chronicle(info: Dictionary, on_claim: Callable) -> void:
 		_fit(ds, 15, 540)
 		ds.position = Vector2(14, 36)
 		row.add_child(ds)
-		var rw := _label(String(r["reward"]), 15, Color(0.75, 0.85, 1.0), false)
-		_fit(rw, 15, 540)
-		rw.position = Vector2(14, 62)
+		var rw := _inline(String(r["reward"]), 15, Color(0.75, 0.85, 1.0), false, 540)
+		rw.position = Vector2(14, 60)
 		row.add_child(rw)
 		var need: int = r["need"]
 		var prog: int = r["progress"]
@@ -941,9 +1029,7 @@ func show_ultimatum(enemy: String, hex_name: String, tribute: int, can_pay: bool
 	if portrait != "":
 		_leader_seal(box, portrait, plate, Rect2(841 - 166, 22, 136, 162), "angry")
 		text_w = 620.0
-	var tl := _label(tr("ult.title") % enemy, 32, ink, false)
-	_fit(tl, 32, text_w)
-	_at(tl, box, Vector2(30, 26))
+	_title(box, tr("ult.title") % enemy, 32, ink, Vector2(30, 26), "target", false, text_w)
 	var t := _label(tr("ult.text") % [hex_name, tribute, fmt_time(left_sec)], 23, Color(0.25, 0.16, 0.08), false)
 	t.autowrap_mode = TextServer.AUTOWRAP_WORD
 	_at(t, box, Vector2(30, 90), Vector2(text_w, 260))
@@ -1025,7 +1111,7 @@ func show_choice(title: String, lines: Array, buttons: Array) -> void:
 ## modal is shown again by the caller), new game, build info.
 func show_settings(sound_on: bool, on_sound: Callable, on_new_game: Callable, on_lang: Callable, on_manage := Callable(), on_restore := Callable()) -> void:
 	var box := _modal_box(Rect2(90, 380, 761, 804))
-	_at(_label(tr("settings.title"), 36), box, Vector2(40, 30))
+	_title(box, tr("settings.title"), 36, TEXT, Vector2(40, 30), "gear")
 	_button(box, Rect2(40, 110, 681, 84), tr("settings.sound_on") if sound_on else tr("settings.sound_off"), Color(0.2, 0.3, 0.45), func():
 		on_sound.call()
 		show_settings(not sound_on, on_sound, on_new_game, on_lang, on_manage, on_restore))
@@ -1308,10 +1394,10 @@ func _army_card(it: Dictionary) -> Control:
 			card.add_child(sub)
 			return card
 		if it["locked"]:
-			var m := _label(tr("army.locked_dl") % int(it.get("need_dl", 3)), 20, MUTED, false)
+			var m := _inline(tr("army.locked_dl") % int(it.get("need_dl", 3)), 20, MUTED, false, 134)
 			m.position = Vector2(8, 70)
 			m.size = Vector2(134, 40)
-			m.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			m.alignment = BoxContainer.ALIGNMENT_CENTER
 			card.add_child(m)
 			return card
 		var row := HBoxContainer.new()
@@ -1599,7 +1685,7 @@ func show_flag_editor(flag: Dictionary, owned: Dictionary, on_change: Callable, 
 				tile.add_child(art)
 				if locked:
 					tile.modulate = Color(1, 1, 1, 0.45)
-					_at(_label("🔒", 22), tile, Vector2(88, 4))
+					_at(_icon_rect(INLINE_ICONS["🔒"], 28.0), tile, Vector2(86, 4))
 				tile.gui_input.connect(func(e):
 					if _is_tap(e):
 						if locked:
@@ -1687,7 +1773,7 @@ func _flag_tile(parent: Control, r: Rect2, f: Dictionary, sel: bool, locked: boo
 	tile.add_child(fv)
 	if locked:
 		tile.modulate = Color(1, 1, 1, 0.45)
-		_at(_label("🔒", 24), tile, Vector2(r.size.x - 40, 6))
+		_at(_icon_rect(INLINE_ICONS["🔒"], 30.0), tile, Vector2(r.size.x - 40, 6))
 	tile.gui_input.connect(func(e): if _is_tap(e): cb.call())
 
 

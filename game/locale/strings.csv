@@ -139,7 +139,7 @@ plunder.spare,Пощадить,Spare
 plunder.light,Лёгкое 30%,Light 30%
 plunder.medium,Среднее 45%,Medium 45%
 plunder.heavy,Тяжёлое 60%,Heavy 60%
-peace.title,📜 Мирный договор: %s,📜 Peace Treaty: %s
+peace.title,Мирный договор: %s,Peace Treaty: %s
 peace.points,Очки: %.1f / %.1f · Контроль фронта %d%%,Points: %.1f / %.1f · Front control %d%%
 peace.hint,"ИИ согласится, если сумма не больше счёта. Ядро врага требовать нельзя.",The AI agrees if the total fits your score. The enemy core is off-limits.
 peace.plunder,Разграбление:,Plunder:
@@ -150,14 +150,14 @@ ui.continue,Продолжить,Continue
 ui.close,Закрыть,Close
 ui.claim,Забрать,Claim
 ui.upgrade,⬆ Улучшить,⬆ Upgrade
-inbox.title,✉ Донесения,✉ Reports
+inbox.title,Донесения,Reports
 inbox.empty,Пока тихо. Здесь появятся донесения о набегах и обороне.,All quiet. Reports on raids and defenses will show up here.
 time.just_now,только что,just now
 time.min_ago,%d мин назад,%d min ago
 time.h_ago,%d ч назад,%d h ago
 time.hm,%d ч %02d мин,%dh %02dm
 time.s,%d с,%ds
-ult.title,⚔ Ультиматум: %s,⚔ Ultimatum: %s
+ult.title,Ультиматум: %s,Ultimatum: %s
 ult.text,«Отдай нам «%s» — или заплати дань %d золота. Иначе — война.»\n\nНа ответ: %s. Без ответа — война.,"“Hand over ‘%s’ or pay a tribute of %d gold. Otherwise, it's war.”\n\nTime to answer: %s. No answer means war."
 ult.accept,Принять: отдать «%s» (перемирие 24 ч),Accept: cede “%s” (24 h truce)
 ult.pay,Откупиться: %d золота,Pay them off: %d gold
@@ -189,7 +189,7 @@ bld.level,ур. %d / %d,Lv %d / %d
 bld.free,⚡ бесплатно,⚡ Free
 bld.stock,⏩ запас %d мин,⏩ %d min stock
 bld.research,🔬 Изучить,🔬 Research
-shop.title,🏪 Лавка,🏪 Shop
+shop.title,Лавка,Shop
 shop.tab.cases,Кейсы,Cases
 shop.tab.raivite,Райвиты,Raivites
 shop.tab.packs,Наборы,Packs

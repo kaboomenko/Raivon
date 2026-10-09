@@ -348,14 +348,178 @@ def houses():
             box("win", (0.07, 0.03, 0.09), (x, -0.155, -0.33 + k * 0.2), lit, 0.0)
 
 
+def crown():
+    """Royal case: a gold crown with five pearl-tipped points, gems on the band, a blue velvet cap."""
+    g = gold()
+    dark = mat("gold_d", "#b8801c", 0.35, 1.0)
+    sphere("cap", 0.3, (0, 0.02, -0.02), mat("velvet", "#2b4fa8", 0.85), (1.0, 1.0, 0.85), 3)
+    cyl("band", 0.36, 0.2, (0, 0, -0.2), g, 40, 0.02)
+    cyl("rim_lo", 0.375, 0.04, (0, 0, -0.29), dark, 40, 0.01)
+    cyl("rim_hi", 0.37, 0.035, (0, 0, -0.11), dark, 40, 0.01)
+    for k in range(10):
+        a = math.radians(-90 + k * 36)
+        x, y = math.cos(a) * 0.35, math.sin(a) * 0.35
+        if k % 2 == 0:  # five tall points topped by pearls
+            p = cone("point", 0.1, 0.34, (x, y, 0.06), g, 4, 0.0)
+            p.rotation_euler.z = a + math.pi / 4
+            sphere("pearl", 0.045, (x, y, 0.25), mat("pearl", "#f6f1e4", 0.25), (1, 1, 1), 2)
+        else:  # small fleurons between them
+            cone("fleuron", 0.055, 0.14, (x, y, -0.04), g, 4, 0.0).rotation_euler.z = a + math.pi / 4
+    for k, c in enumerate(("#c0392b", "#2f62c8", "#2e9e5a", "#2f62c8", "#c0392b")):
+        a = math.radians(-90 + (k - 2) * 30)
+        sphere("gem", 0.05, (math.cos(a) * 0.37, math.sin(a) * 0.37, -0.2), mat("gem" + c, c, 0.1), (1, 0.6, 1.2), 2)
+    sphere("orb", 0.06, (0, 0.02, 0.29), g, (1, 1, 1), 2)
+    box("cross_v", (0.025, 0.025, 0.13), (0, 0.02, 0.38), g, 0.004)
+    box("cross_h", (0.08, 0.025, 0.025), (0, 0.02, 0.39), g, 0.004)
+
+
+def _star_mesh(name, r_out, r_in, cx, cz, y0, y1, material, rot_y=0.0):
+    """A five-point star prism facing −Y (front face at y0, back at y1), centred at (cx, cz)."""
+    pts = []
+    for k in range(10):
+        a = math.pi / 2 + k * math.pi / 5
+        rr = r_out if k % 2 == 0 else r_in
+        pts.append((math.cos(a) * rr, math.sin(a) * rr))
+    me = bpy.data.meshes.new(name)
+    verts = [(x, y0, z) for (x, z) in pts] + [(x, y1, z) for (x, z) in pts]
+    faces = [tuple(range(9, -1, -1)), tuple(range(10, 20))] + [(i, (i + 1) % 10, 10 + (i + 1) % 10, 10 + i) for i in range(10)]
+    me.from_pydata(verts, [], faces)
+    me.update()
+    o = bpy.data.objects.new(name, me)
+    bpy.context.scene.collection.objects.link(o)
+    o.location = (cx, 0, cz)
+    o.rotation_euler.y = rot_y
+    o.data.materials.append(material)
+    return o
+
+
+def cards():
+    """Collection case: three fanned cards — blue backs with a gold border, the front one showing a gold star."""
+    back = mat("card_b", "#2a4fa0", 0.5)
+    face = mat("card_f", "#efe6cf", 0.7)
+    trim = gold()
+    for k, (a, x, y) in enumerate(((0.42, -0.2, 0.08), (0.0, 0.0, 0.04), (-0.42, 0.2, 0.0))):
+        c = box("card", (0.42, 0.02, 0.6), (x, y, -0.02), back if k < 2 else face, 0.02)
+        c.rotation_euler.y = a
+        fr = box("frame", (0.44, 0.016, 0.62), (x, y + 0.006, -0.02), trim, 0.02)
+        fr.rotation_euler.y = a
+        if k < 2:
+            d = box("diamond", (0.14, 0.03, 0.14), (x, y - 0.012, -0.02), trim, 0.01)
+            d.rotation_euler = (0, a + math.pi / 4, 0)
+    pic = box("pic", (0.32, 0.03, 0.4), (0.2, -0.016, 0.0), back, 0.01)
+    pic.rotation_euler.y = -0.42
+    _star_mesh("star", 0.13, 0.055, 0.2, 0.0, -0.034, -0.05, mat("star_w", "#f6f3ea", 0.4), -0.42)
+    for o in [o for o in bpy.context.scene.objects if o.type == "MESH"]:
+        o.rotation_euler.x += math.radians(8)
+
+
+def lock():
+    """Locked reward: a brass padlock with a steel shackle and a dark keyhole."""
+    brass = mat("brass", "#d4a03a", 0.3, 1.0)
+    dark = mat("brass_d", "#9c7228", 0.35, 1.0)
+    bpy.ops.mesh.primitive_torus_add(major_radius=0.22, minor_radius=0.065, location=(0, 0, 0.12),
+                                     major_segments=32, minor_segments=10)
+    sh = bpy.context.active_object
+    import bmesh
+    bm = bmesh.new()
+    bm.from_mesh(sh.data)
+    bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.co.y < -0.01], context="VERTS")  # the upper half only
+    bm.to_mesh(sh.data)
+    bm.free()
+    sh.rotation_euler.x = math.pi / 2  # local +y → up
+    sh.data.materials.append(steel())
+    for sx in (-1, 1):
+        cyl("leg", 0.065, 0.14, (sx * 0.22, 0, 0.06), steel(), 12, 0.0)
+    box("body", (0.66, 0.26, 0.5), (0, 0, -0.22), brass, 0.06)
+    box("band", (0.68, 0.27, 0.06), (0, 0, -0.04), dark, 0.02)
+    box("band2", (0.68, 0.27, 0.06), (0, 0, -0.42), dark, 0.02)
+    k = cyl("hole", 0.06, 0.04, (0, -0.13, -0.18), mat("hole", "#1d1b1a", 0.8), 16, 0.0)
+    k.rotation_euler.x = math.pi / 2
+    box("slot", (0.04, 0.04, 0.13), (0, -0.13, -0.27), mat("hole", "#1d1b1a", 0.8), 0.0)
+    for o in [o for o in bpy.context.scene.objects if o.type == "MESH"]:
+        o.rotation_euler.z += math.radians(-14)
+
+
+def _parallelogram(name, x0, x1, z0, z1, skew, y, material):
+    """A flat stripe on a −Y-facing face: bottom edge x0..x1 at z0, top edge shifted by skew at z1."""
+    me = bpy.data.meshes.new(name)
+    me.from_pydata([(x0, y, z0), (x1, y, z0), (x1 + skew, y, z1), (x0 + skew, y, z1)], [], [(0, 1, 2, 3)])
+    me.update()
+    o = bpy.data.objects.new(name, me)
+    bpy.context.scene.collection.objects.link(o)
+    o.data.materials.append(material)
+    return o
+
+
+def ad():
+    """Rewarded ad: a film clapperboard — a slate with a striped clapper flipped open and a gold play mark."""
+    slate_m = mat("slate_i", "#2a2d33", 0.55)
+    white = mat("disc_w", "#f3efe6", 0.5)
+    box("slate", (0.8, 0.08, 0.52), (0, 0, -0.18), slate_m, 0.03)
+    for zz in (0.0, -0.36):
+        box("line", (0.66, 0.09, 0.018), (0, 0, zz), mat("chalk", "#9aa3ad", 0.6), 0.0)
+    play = mat("play", "#f2b632", 0.3, 0.6)
+    tri = cone("play", 0.15, 0.03, (0.02, -0.055, -0.18), play, 3, 0.0)
+    tri.rotation_euler = (math.pi / 2, 0, 0)
+    tri.rotation_euler.y = math.pi / 2
+
+    def bar(z):
+        objs = [box("bar", (0.8, 0.09, 0.1), (0, 0, z), white, 0.005)]
+        for k in range(4):
+            x0 = -0.38 + k * 0.2
+            objs.append(_parallelogram("stripe", x0, x0 + 0.09, z - 0.05, z + 0.05, 0.06, -0.0462, slate_m))
+        return objs
+
+    bar(0.13)
+    hinge = bpy.data.objects.new("hinge", None)
+    bpy.context.scene.collection.objects.link(hinge)
+    hinge.location = (-0.4, 0, 0.18)
+    for o in bar(0.25):
+        o.parent = hinge
+        o.location.x += 0.4
+        o.location.z -= 0.18
+    hinge.rotation_euler.y = -0.36
+    cyl("pin", 0.035, 0.12, (-0.4, 0, 0.18), steel(), 12, 0.0).rotation_euler.x = math.pi / 2
+
+
+def medal():
+    """War pass: a gold star medal on a blue-and-white ribbon (the season's military pass)."""
+    g = gold()
+    blue = mat("ribbon_b", "#2f62c8", 0.6)
+    white = mat("disc_w", "#f3efe6", 0.5)
+    for sx in (-1, 1):
+        r = box("ribbon", (0.2, 0.03, 0.46), (sx * 0.1, 0.04, 0.24), blue, 0.005)
+        r.rotation_euler.y = sx * -0.32
+        s_ = box("stripe", (0.05, 0.035, 0.46), (sx * 0.1, 0.035, 0.24), white, 0.0)
+        s_.rotation_euler.y = sx * -0.32
+    box("clasp", (0.42, 0.06, 0.08), (0, 0.0, 0.03), g, 0.015)
+    d = cyl("disc", 0.27, 0.06, (0, 0, -0.26), mat("gold_d", "#b8801c", 0.35, 1.0), 40, 0.02)
+    d.rotation_euler.x = math.pi / 2
+    star = []
+    for k in range(10):
+        a = math.pi / 2 + k * math.pi / 5
+        rr = 0.24 if k % 2 == 0 else 0.1
+        star.append((math.cos(a) * rr, math.sin(a) * rr))
+    me = bpy.data.meshes.new("star")
+    verts = [(x, -0.04, z - 0.26) for (x, z) in star] + [(x, -0.08, z - 0.26) for (x, z) in star]
+    faces = [tuple(range(9, -1, -1)), tuple(range(10, 20))] + [(i, (i + 1) % 10, 10 + (i + 1) % 10, 10 + i) for i in range(10)]
+    me.from_pydata(verts, [], faces)
+    me.update()
+    so = bpy.data.objects.new("star", me)
+    bpy.context.scene.collection.objects.link(so)
+    so.data.materials.append(g)
+    cyl("gem", 0.05, 0.03, (0, -0.095, -0.26), mat("gem", "#c0392b", 0.1), 16, 0.0).rotation_euler.x = math.pi / 2
+
+
 ICONS = {"coin": coin, "food": food, "metal": metal, "raivite": raivite, "oil": oil, "builder": builder,
          "castle_icon": castle_icon, "helmet": helmet, "hammer": hammer, "hands": hands, "scales": globe,
          "trophy": trophy, "book": book, "mail": mail, "gear": gear,
          "target": target, "pin": pin, "fort": fort, "tower": tower,
-         "crate": crate, "flask": flask, "cart": cart, "stall": stall, "anchor": anchor, "houses": houses}
+         "crate": crate, "flask": flask, "cart": cart, "stall": stall, "anchor": anchor, "houses": houses,
+         "crown": crown, "cards": cards, "lock": lock, "ad": ad, "medal": medal}
 
 
-ORTHO = {"crate": 1.4, "cart": 1.6, "stall": 1.5, "anchor": 1.5, "houses": 1.45, "target": 1.5, "pin": 1.45, "fort": 1.5, "tower": 1.7, "castle_icon": 1.75, "hammer": 1.6, "scales": 1.5, "trophy": 1.45, "gear": 1.4, "hands": 1.45}
+ORTHO = {"crown": 1.15, "cards": 1.2, "lock": 1.2, "ad": 1.2, "medal": 1.25, "crate": 1.4, "cart": 1.6, "stall": 1.5, "anchor": 1.5, "houses": 1.45, "target": 1.5, "pin": 1.45, "fort": 1.5, "tower": 1.7, "castle_icon": 1.75, "hammer": 1.6, "scales": 1.5, "trophy": 1.45, "gear": 1.4, "hands": 1.45}
 
 
 def render(path, ortho=1.35):
