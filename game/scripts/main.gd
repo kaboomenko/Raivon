@@ -6678,16 +6678,24 @@ func _demo(spec: String) -> void:
 		_select(_mill)
 		rig.focus(map_view.cell_world(_mill), 0.3)
 		return
-	if what == "tower":
+	if what == "tower":  # a finished tower on the player's plain nearest the capital
 		var cap: int = sim.states[Types.PLAYER]["capital_id"]
-		for n in sim.neighbors[cap]:
-			if n >= 0 and sim.cells[n]["kind"] == "plain" and econ.can_build(sim, "tower", n, now_s()) == "":
-				_select(n)
-				_tower_action()
-				econ.buildings_at(n)[-1]["upgrade_end"] = 1
-				_econ_tick()
-				rig.focus(map_view.cell_world(n), 0.4)
-				break
+		var picks: Array = []
+		for i in sim.cells.size():
+			if sim.cells[i]["owner"] == Types.PLAYER and sim.cells[i]["kind"] == "plain":
+				picks.append(i)
+		picks.sort_custom(func(x, y): return _hex_dist(x, cap) < _hex_dist(y, cap))
+		for n in picks:
+			var why: String = econ.can_build(sim, "tower", n, now_s())
+			if why != "":
+				print("demo tower: hex %d — %s" % [n, why])
+				continue
+			_select(n)
+			_tower_action()
+			econ.buildings_at(n)[-1]["upgrade_end"] = 1
+			_econ_tick()
+			rig.focus(map_view.cell_world(n), 0.12)
+			break
 		return
 	if what == "ruin":
 		_apply_defeat(MapGen.BARONS, [])
