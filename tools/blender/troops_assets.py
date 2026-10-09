@@ -1255,41 +1255,175 @@ def assault_dl8(team):
         bx((0.026, 0.02, 0.03), (sx * 0.028, -0.373, H + 0.13), bronze, bev=0)  # rail muzzle
 
 
+def _seg(p0, p1, w, t, mt, out=0.0, bev=0.0):
+    """Box from p0 to p1 (its length), w wide across X and t thick along the normal that faces the front (−Y),
+    pushed `out` along that normal: armour plates laid on the front of a leg or arm segment."""
+    from mathutils import Vector
+    a, b = Vector(p0), Vector(p1)
+    d = (b - a).normalized()
+    xa = Vector((1, 0, 0))
+    xa = (xa - d * xa.dot(d)).normalized()
+    n = d.cross(xa)
+    if n.y > 0:
+        n = -n
+    if xa.cross(n).dot(d) < 0:
+        xa = -xa
+    o = bx((w, t, (b - a).length), tuple((a + b) / 2 + n * out), mt, bev=bev)
+    o.rotation_euler = Matrix((xa, n, d)).transposed().to_euler()
+    return o
+
+
+def _vprism(profile, hw0, hw1, z0, z1, mt):
+    """side_prism whose half-width grows from hw0 at z0 to hw1 at z1: a chest broadening to the shoulders."""
+    n = len(profile)
+
+    def hw(z):
+        return hw0 + (hw1 - hw0) * (z - z0) / (z1 - z0)
+    verts = [(-hw(z), y, z) for y, z in profile] + [(hw(z), y, z) for y, z in profile]
+    faces = [tuple(range(n)), tuple(range(n, 2 * n))] + [(k, (k + 1) % n, (k + 1) % n + n, k + n) for k in range(n)]
+    return mesh_obj(verts, faces, mt)
+
+
 def mech(team):
-    """DL8 walker (reference frames 2 and 5: mechs among the infantry) facing −Y: reverse-jointed legs with broad
-    feet, a hip block, an armoured cockpit with a glowing visor, a shoulder rail cannon and a missile pod, team plates
-    and light strips. Gunmetal like the walkers of reference frames 2 and 5."""
-    plate = F("#626a75", 0.4)
-    dk = F("#2c3139", 0.55)
+    """DL8 heavy walker (reference frames 2 and 5: the hunched gunmetal mechs among the late-era infantry) facing
+    −Y: a broad chest under huge rounded team pauldrons with the white eagle, a low armoured head with a glowing
+    visor slit, a rotary-cannon right arm and an armoured fist on the left, twin shoulder missile pods with glowing
+    tube ends, armoured legs with knee guards, glowing joints and hydraulic pistons, broad three-toed feet with a
+    heel spur; a navy chest plate framed in bronze with a glowing core and bronze trim like the DL8 power armour."""
+    plate = F("#636b77", 0.4)    # gunmetal armour
+    dk = F("#262a31", 0.55)      # frame and joints
+    steel = F("#b9c0c9", 0.3)    # piston rods
+    navy = F(shade(team, 0.5), 0.45)
     tm = F(team, 0.5)
+    bronze = F("#a8743e", 0.35)
     gl = team_glow(team)
+    visor = glow("visor" + team, team, 4.5)
+    # ---- legs: hip → knee forward → ankle back, a broad three-toed foot
     for sx in (-1, 1):
-        x = sx * 0.075
-        hip = (x, 0.0, 0.26)
-        knee = (x, -0.06, 0.16)
-        ankle = (x, 0.03, 0.05)
-        beam(hip, knee, 0.045, plate)  # thigh forward
-        beam(knee, ankle, 0.034, dk)   # shin back (digitigrade)
-        cy(0.026, 0.05, knee, dk, 8, rot=(0, math.pi / 2, 0))
-        bx((0.007, 0.036, 0.05), (x + sx * 0.026, -0.02, 0.2), gl, bev=0)
-        bx((0.07, 0.1, 0.022), (x, -0.005, 0.012), dk, bev=0.006)  # foot
-        bx((0.05, 0.035, 0.018), (x, -0.06, 0.016), plate, bev=0.004)  # toe
-    bx((0.2, 0.09, 0.06), (0, 0.0, 0.27), dk, bev=0.01)  # hips
-    # cockpit torso, tilted forward
-    side_prism([(-0.07, 0.29), (0.06, 0.29), (0.09, 0.34), (0.05, 0.42), (-0.06, 0.43), (-0.09, 0.36)], 0.16, plate)
-    bx((0.11, 0.012, 0.03), (0, -0.081, 0.385), glow("visor" + team, team, 3.0), bev=0)
+        hip = (sx * 0.066, 0.01, 0.262)
+        knee = (sx * 0.076, -0.05, 0.155)
+        ankle = (sx * 0.082, 0.022, 0.056)
+        cy(0.03, 0.05, hip, dk, 8, rot=(0, math.pi / 2, 0))  # hip joint
+        disc(0.016, (sx * 0.092, 0.01, 0.262), gl, "x", 6, 0.004)
+        beam(hip, knee, 0.04, dk)  # thigh frame
+        _seg((sx * 0.066, 0.004, 0.272), (sx * 0.076, -0.05, 0.165), 0.056, 0.018, plate, 0.018, 0.004)  # thigh plate
+        _seg((sx * 0.066, -0.002, 0.255), (sx * 0.075, -0.042, 0.19), 0.03, 0.006, tm, 0.03)  # team stripe
+        cy(0.024, 0.056, knee, dk, 8, rot=(0, math.pi / 2, 0))  # knee joint
+        disc(0.013, (sx * 0.105, -0.05, 0.155), gl, "x", 6, 0.004)
+        beam(knee, ankle, 0.034, dk)  # shin frame
+        _seg((sx * 0.077, -0.046, 0.15), (sx * 0.082, 0.016, 0.068), 0.05, 0.016, plate, 0.016, 0.004)  # greave
+        _seg((sx * 0.077, -0.042, 0.14), (sx * 0.081, 0.004, 0.08), 0.054, 0.006, bronze, 0.026)  # bronze shin trim
+        # knee guard: a heavy cap over the joint with two bronze rivets
+        _seg((sx * 0.076, -0.058, 0.2), (sx * 0.077, -0.082, 0.14), 0.05, 0.016, plate, 0.0, 0.004)
+        for dx in (-0.014, 0.014):
+            _seg((sx * 0.076 + dx, -0.062, 0.19), (sx * 0.076 + dx, -0.072, 0.165), 0.008, 0.006, bronze, 0.0095)
+        # hydraulic piston on the outer flank: dark cylinder from the hip, steel rod into the calf
+        top, mid, bot = (sx * 0.104, 0.024, 0.245), (sx * 0.108, 0.026, 0.165), (sx * 0.11, 0.02, 0.09)
+        rod(top, mid, 0.0095, dk, n=6)
+        rod(mid, bot, 0.0065, steel, n=5)
+        bx((0.022, 0.02, 0.02), (sx * 0.097, 0.022, 0.248), dk, bev=0)  # mounts on the hip and the calf
+        bx((0.026, 0.02, 0.018), (sx * 0.098, 0.016, 0.09), dk, bev=0)
+        cy(0.02, 0.05, ankle, dk, 8, rot=(0, math.pi / 2, 0))  # ankle joint
+        x = sx * 0.084
+        bx((0.054, 0.05, 0.034), (x, 0.004, 0.035), plate, bev=0.006)  # ankle block
+        bx((0.074, 0.07, 0.016), (x, -0.008, 0.008), dk, bev=0)  # sole
+        for dx in (-0.025, 0.0, 0.025):  # toes splayed forward, bronze toe caps
+            tx = x + dx * 1.15
+            _seg((x + dx * 0.6, -0.03, 0.016), (tx, -0.078, 0.01), 0.02, 0.018, plate, 0.0)
+            bx((0.022, 0.012, 0.014), (tx, -0.084, 0.008), bronze, bev=0)
+        _seg((x, 0.03, 0.016), (x, 0.066, 0.008), 0.022, 0.014, dk, 0.0)  # heel spur
+    # ---- hips: a dark block, a navy fauld framed in bronze
+    bx((0.15, 0.085, 0.056), (0, 0.01, 0.272), dk, bev=0.008)
+    taper_box((0.08, 0.014, 0.05), (0, -0.04, 0.244), bronze, top=(1.15, 1.0))
+    taper_box((0.066, 0.014, 0.044), (0, -0.045, 0.247), navy, top=(1.18, 1.0))
+    # ---- torso: a hunched chest broadening to the shoulders
+    prof = [(-0.055, 0.29), (0.065, 0.29), (0.088, 0.35), (0.065, 0.425), (-0.035, 0.438), (-0.084, 0.398),
+            (-0.09, 0.335)]
+    _vprism(prof, 0.068, 0.092, 0.29, 0.438, plate)
+    tilt = -math.atan2(0.006, 0.063)  # the chest front leans back a little
+    yf = -0.0905
+    bx((0.11, 0.008, 0.066), (0, yf - 0.002, 0.366), bronze, bev=0, rot=(tilt, 0, 0))  # chest frame
+    bx((0.094, 0.008, 0.052), (0, yf - 0.0045, 0.367), navy, bev=0, rot=(tilt, 0, 0))  # chest plate
+    bx((0.024, 0.008, 0.024), (0, yf - 0.0075, 0.368), gl, bev=0, rot=(tilt, math.pi / 4, 0))  # core
+    for dx in (-0.048, 0.048):  # rivets at the frame corners
+        for z in (0.338, 0.394):
+            bx((0.007, 0.006, 0.007), (dx, yf - 0.006 - (z - 0.366) * 0.095, z), steel, bev=0)
+    # upper chest: a dark vent either side of the head with two glowing slats, laid on the upper front slope
+    y0, z0, y1, z1 = -0.084, 0.398, -0.035, 0.438
+    ln = math.hypot(y1 - y0, z1 - z0)
+    dy, dz = (y1 - y0) / ln, (z1 - z0) / ln
+    th = -math.atan2(dy, dz)  # local Z along the slope
+
+    def on_slope(x, s_, out):
+        return (x, y0 + dy * s_ - dz * out, z0 + dz * s_ + dy * out)
     for sx in (-1, 1):
-        bx((0.012, 0.13, 0.1), (sx * 0.083, 0.0, 0.36), tm, bev=0.003)  # team side plates
-    # shoulder weapons: a rail cannon on the right, a missile pod on the left
-    bx((0.04, 0.06, 0.05), (0.11, 0.0, 0.42), dk, bev=0.006)
-    bx((0.022, 0.2, 0.022), (0.11, -0.12, 0.43), plate, bev=0.003)
-    bx((0.006, 0.18, 0.008), (0.11, -0.12, 0.444), gl, bev=0)
-    bx((0.07, 0.07, 0.06), (-0.12, 0.0, 0.42), dk, bev=0.008)
-    for i in range(2):
-        for j in range(2):
-            cy(0.01, 0.012, (-0.135 + i * 0.03, -0.036, 0.405 + j * 0.03), gl, 6, rot=(math.pi / 2, 0, 0))
-    cy(0.006, 0.08, (0.04, 0.05, 0.47), dk, 5)  # antenna
-    cy(0.009, 0.01, (0.04, 0.05, 0.512), gl, 6)
+        bx((0.028, 0.004, 0.026), on_slope(sx * 0.06, 0.032, 0.002), dk, bev=0, rot=(th, 0, 0))
+        for s_ in (0.025, 0.039):
+            bx((0.022, 0.003, 0.005), on_slope(sx * 0.06, s_, 0.0045), gl, bev=0, rot=(th, 0, 0))
+    for sx in (-1, 1):  # side armour under the pauldrons: team plates with bronze edge strips
+        bx((0.01, 0.11, 0.07), (sx * 0.088, 0.008, 0.352), tm, bev=0.003)
+        bx((0.012, 0.115, 0.008), (sx * 0.089, 0.008, 0.315), bronze, bev=0)
+    # ---- head: low between the shoulders, a gunmetal helm with a glowing visor slit and a bronze crest
+    bx((0.07, 0.062, 0.05), (0, -0.052, 0.44), plate, bev=0.007)
+    bx((0.064, 0.006, 0.016), (0, -0.0835, 0.447), visor, bev=0)
+    bx((0.046, 0.008, 0.016), (0, -0.0825, 0.425), dk, bev=0)  # jaw grille
+    bx((0.012, 0.05, 0.012), (0, -0.05, 0.469), bronze, bev=0)  # crest
+    # ---- shoulders: huge rounded team pauldrons with the white eagle over a bronze rim and a navy lame
+    for sx in (-1, 1):
+        cy(0.026, 0.05, (sx * 0.105, 0.005, 0.395), dk, 8, rot=(0, math.pi / 2, 0))  # shoulder joint
+        pd = uvs(0.052, (sx * 0.122, 0.004, 0.428), tm, 10, 5, (0.9, 1.12, 0.68))
+        ring(0.047, 0.012, (sx * 0.122, 0.004, 0.41), bronze, 10, r2=0.046)
+        ring(0.042, 0.018, (sx * 0.124, 0.004, 0.392), navy, 8, r2=0.044, a0=math.pi / 8)
+        badge_on(pd, 0.05, 0.05, (sx * 0.122, -0.004, 0), F(WHITE, 0.6), "z", pts=EAGLE_S, off=0.0015)
+    # ---- arms: upper arm down to the elbow, forearm forward
+    for sx in (-1, 1):
+        sh, el = (sx * 0.128, 0.004, 0.39), (sx * 0.136, 0.006, 0.305)
+        beam(sh, el, 0.034, dk)
+        _seg((sx * 0.128, 0.0, 0.385), (sx * 0.136, 0.0, 0.322), 0.04, 0.012, plate, 0.018)  # upper-arm plate
+        cy(0.022, 0.048, el, dk, 8, rot=(0, math.pi / 2, 0))  # elbow
+        disc(0.012, (el[0] + sx * 0.025, el[1], el[2]), gl, "x", 6, 0.004)
+    x = 0.138  # right: a rotary cannon in a gunmetal housing with a team ammo box and a bronze clamp
+    cy(0.03, 0.085, (x, -0.04, 0.292), plate, 8, rot=(math.pi / 2, 0, 0))
+    cy(0.032, 0.008, (x, -0.07, 0.292), gl, 8, rot=(math.pi / 2, 0, 0))  # glowing coil
+    bx((0.036, 0.05, 0.02), (x, -0.036, 0.326), tm, bev=0)  # ammo box
+    bx((0.038, 0.006, 0.022), (x, -0.012, 0.326), bronze, bev=0)
+    for k in range(3):
+        a = math.pi / 2 + k * math.tau / 3
+        bx_, bz = x + 0.012 * math.cos(a), 0.292 + 0.012 * math.sin(a)
+        rod((bx_, -0.08, bz), (bx_, -0.172, bz), 0.0065, dk, n=5)
+    cy(0.023, 0.012, (x, -0.128, 0.292), bronze, 8, rot=(math.pi / 2, 0, 0))  # barrel clamp
+    cy(0.022, 0.01, (x, -0.168, 0.292), dk, 8, rot=(math.pi / 2, 0, 0))  # muzzle plate
+    x = -0.138  # left: an armoured forearm with a team guard and a heavy three-fingered fist
+    bx((0.05, 0.085, 0.048), (x, -0.045, 0.292), plate, bev=0.006)
+    bx((0.04, 0.07, 0.008), (x, -0.045, 0.319), tm, bev=0)  # forearm guard
+    bx((0.042, 0.008, 0.01), (x, -0.083, 0.319), bronze, bev=0)
+    bx((0.048, 0.036, 0.044), (x, -0.104, 0.288), dk, bev=0.005)  # fist
+    for dx in (-0.015, 0.0, 0.015):
+        bx((0.013, 0.016, 0.03), (x + dx, -0.126, 0.279), plate, bev=0)  # knuckles
+    bx((0.012, 0.03, 0.014), (x + 0.03, -0.1, 0.28), plate, bev=0)  # thumb
+    # ---- twin shoulder missile pods behind the head, tipped up so the glowing tube ends face the camera
+    a = -0.3
+    ca, sa = math.cos(a), math.sin(a)
+    for sx in (-1, 1):
+        px, py, pz = sx * 0.064, 0.04, 0.452
+
+        def P(u, v, w):
+            return (px + u, py + v * ca - w * sa, pz + v * sa + w * ca)
+        bx((0.054, 0.07, 0.044), P(0, 0, 0), dk, bev=0.005, rot=(a, 0, 0))
+        bx((0.05, 0.004, 0.04), P(0, -0.0365, 0), navy, bev=0, rot=(a, 0, 0))  # tube face
+        bx((0.058, 0.012, 0.048), P(0, -0.024, 0), bronze, bev=0, rot=(a, 0, 0))  # bronze band
+        for i in (-1, 1):
+            for j in (-1, 1):
+                cy(0.0085, 0.006, P(i * 0.013, -0.038, j * 0.0105), gl, 6, rot=(math.pi / 2 + a, 0, 0))
+        bx((0.044, 0.04, 0.006), P(0, 0.008, 0.024), plate, bev=0, rot=(a, 0, 0))  # lid
+    rod((0.08, 0.06, 0.46), (0.08, 0.06, 0.51), 0.0035, dk, n=4)  # antenna, rooted in the right pod
+    cy(0.007, 0.008, (0.08, 0.06, 0.514), gl, 6)
+    # ---- back: a power pack with glowing vents and two exhaust stacks
+    bx((0.11, 0.03, 0.08), (0, 0.092, 0.365), dk, bev=0.006)
+    for sx in (-1, 1):
+        cy(0.011, 0.04, (sx * 0.042, 0.095, 0.42), dk, 6)
+    for k in range(3):  # vent slats
+        bx((0.074, 0.004, 0.007), (0, 0.1085, 0.343 + k * 0.018), gl, bev=0)
 
 
 ASSAULT = {2: assault_dl2, 3: assault_dl3, 4: assault_dl4, 5: assault_dl5, 6: assault_dl6, 7: assault_dl7, 8: assault_dl8}
