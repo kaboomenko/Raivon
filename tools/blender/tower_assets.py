@@ -3,21 +3,28 @@
 Builds and exports to OUT (default game/assets/models):
   tower_l{1..8}.glb   team-neutral tower, spawned at the back-right of a hex (small footprint)
 
-  1 вышка с пращником          crude lookout on rough poles, slinger on top, stone pile
-  2 деревянная вышка лучника   timber watchtower, plank parapet, thatch tent roof, archer with a bow
-  3 каменная башня с баллистой  round stone tower, corbelled crenellations, ballista on top
-  4 пушечная башня             octagonal brick bastion on a stone plinth, cannons, grey flag
-  5 пулемётное гнездо          concrete tower, sandbag ring, machine gun and a helmeted gunner
-  6 ДОТ с зениткой (ПВО)        hexagonal concrete pillbox with a twin anti-aircraft gun
-  7 ракетная башня             steel column, hazard stripes, tilted missile pod, red sensor glow
-  8 лазерная турель            white composite pylon, turret head with a glowing cyan emitter
+  1 вышка с пращником          crude lookout on rope-lashed poles, slinger, signal brazier, rag pennant, stone piles
+  2 деревянная вышка лучника   timber watchtower, battened parapet hung with shields, coursed thatch tent roof with a
+                               pennant, a lantern under the eave, archer with a bow, barrel and crates
+  3 каменная башня с баллистой  round tower of big grey courses, string course, machicolation corbels, crenels, stair
+                               turret under a slate cone, lit arched window, banner, lantern, ballista and its crew
+  4 пушечная башня             octagonal brick bastion with stone quoins on a stone plinth, two bartizans under slate
+                               cones, bronze cannons on spoked carriages and in gun ports, shot, powder kegs, grey flag
+  5 пулемётное гнездо          cast-concrete tower (formwork lines, tie holes), three courses of sandbags, camouflage
+                               net, machine gun with gunner and an observer, ammo crates, searchlight, radio whip
+  6 ДОТ с зениткой (ПВО)        hexagonal concrete pillbox with sandbags on its ledge and a camouflage-painted twin AA gun
+  7 ракетная башня             riveted steel plating, cold-blue light strips, hazard stripes, tilted missile pod, red
+                               sensor glow, radar dish, vent grilles and a console on the plinth
+  8 лазерная турель            white composite plates, dark inset panels with cold light slits, cyan edge seams, energy
+                               ring, capacitor pods, turret head with heat-sink fins and a glowing cyan emitter
 
 Run:   python3 tools/blender/tower_assets.py game/assets/models [name ...]
 Sheet: python3 tools/blender/tower_assets.py game/assets/models --sheet OUT.png [--cols 1,2,3] [--tile 1.0]
 
 Conventions (same as evolution_assets.py): Z up, base on Z=0, origin = model centre, front faces −Y.
-Footprint radius ≤ 0.28, height 0.55–0.95. Procedural colours are baked into one 512 px texture;
-emissive materials (sensor, cyan emitter) stay separate so they keep glowing in Godot.
+Footprint radius ≤ 0.28, height 0.55–0.95. Procedural colours are baked into one 512 px texture (the masonry towers
+through evolution_assets' tight atlas); emissive materials (fire, lanterns, lit window, sensor, cyan light) stay separate
+so they keep glowing in Godot. The towers carry no team colour: neutral off-white/grey cloth, slate-blue cones.
 """
 import math
 import os
@@ -261,6 +268,19 @@ def rocks(pts, mt, seed=0):
 BRONZE = "#94692f"  # the field guns' barrels (export_assets.cannon's bronze, a shade darker for the small scale)
 
 
+def bore(p, d, r, n=6, mt=None):
+    """The dark bore of a gun: a flat n-gon of radius r at the muzzle p, facing along the barrel direction d
+    (one face, so a muzzle reads as a gun at the cost of a few triangles)."""
+    from mathutils import Vector
+    d = Vector(d).normalized()
+    u = d.cross(Vector((0, 0, 1)) if abs(d.z) < 0.9 else Vector((1, 0, 0))).normalized()
+    v = d.cross(u)
+    mb = ev._MB()
+    mb.face([tuple(Vector(p) + (u * math.cos(math.tau * k / n) + v * math.sin(math.tau * k / n)) * r) for k in range(n)],
+            tuple(d))
+    return mb.obj(mt or flat("bore", "#141414", 0.9), "bore")
+
+
 def cannon(x, y, a, z=0.0, s=1.0):
     """Field cannon pointing along angle a (around Z), scaled by s: a bronze barrel with a muzzle ring and cascabel
     on a wooden carriage with spoked wheels (dark felloe, a pale spoke cross, iron hub)."""
@@ -280,7 +300,7 @@ def cannon(x, y, a, z=0.0, s=1.0):
         cy(0.02, 0.014, (0.115, 0, 0.079), brz, 8, rot=(0, math.pi / 2 - 0.1, 0))
         cy(0.024, 0.014, (-0.02, 0, 0.066), brz, 8, rot=(0, math.pi / 2 - 0.1, 0))
         ico(0.011, (-0.04, 0, 0.064), brz)
-        cy(0.011, 0.003, (0.1225, 0, 0.0798), flat("bore", "#141414", 0.9), 6, rot=(0, math.pi / 2 - 0.1, 0))
+        bore((0.1228, 0, 0.0798), (math.cos(0.1), 0, math.sin(0.1)), 0.0115)
     build_at(b, x, y, a, s=s, z=z)
 
 
@@ -325,6 +345,34 @@ def quoins(corners, z0, z1, r_at, n=5, d=0.005, arm=(0.034, 0.022), mt=None, pol
     mb.obj(mt or stone(STONE, 0.8), "quoins")
 
 
+def port_frame(fa, wall, z, outer, inner, proud, mt, dark):
+    """A gun port on a wall facing bearing fa (its face at distance `wall` from the axis): a dressed stone frame
+    outer = (w, h) standing `proud` off the wall round an opening inner = (w, h), and the dark port set back in it
+    just off the wall face, so the opening reads as a recess (front ring, outer sides, inner reveals, dark back:
+    open shells, the buried faces left out)."""
+    c, s_ = math.cos(fa), math.sin(fa)
+    n, t = (c, s_, 0.0), (-s_, c, 0.0)
+
+    def P(d, u, v):
+        return (c * d + t[0] * u, s_ * d + t[1] * u, z + v)
+    fr, dk = ev._MB(), ev._MB()
+    (W, H), (w, h) = (outer[0] / 2, outer[1] / 2), (inner[0] / 2, inner[1] / 2)
+    d1, d0, db = wall + proud, wall + 0.0015, wall - 0.003
+    o4 = [(-W, -H), (W, -H), (W, H), (-W, H)]
+    i4 = [(-w, -h), (w, -h), (w, h), (-w, h)]
+    for k in range(4):
+        (ua, va), (ub, vb) = o4[k], o4[(k + 1) % 4]
+        (ia, ja), (ib, jb) = i4[k], i4[(k + 1) % 4]
+        fr.face([P(d1, ua, va), P(d1, ub, vb), P(d1, ib, jb), P(d1, ia, ja)], n)  # front ring
+        en = [(0, 0, -1), t, (0, 0, 1), (-t[0], -t[1], 0)][k]  # this edge's outward normal (bottom, right, top, left)
+        if k != 0:  # the outer bottom faces down: never seen from above
+            fr.face([P(db, ua, va), P(db, ub, vb), P(d1, ub, vb), P(d1, ua, va)], en)
+        fr.face([P(d0, ia, ja), P(d0, ib, jb), P(d1, ib, jb), P(d1, ia, ja)], tuple(-x for x in en))  # reveal
+    dk.face([P(d0, u, v) for u, v in i4], n)
+    fr.obj(mt, "port_frame")
+    dk.obj(dark, "port")
+
+
 def ladder(x0, x1, y0, y1, z1, mt, rungs=5):
     for x in (x0, x1):
         beam((x, y0, 0.0), (x, y1, z1), 0.016, mt)
@@ -367,20 +415,34 @@ def pennant(x, y, z, L, h, rz=0.0, band=True, t=0.006):
     return o
 
 
-def wall_banner(x, y, z, w, h, rz=0.0, t=0.006, lean=0.0):
-    """A neutral banner hung flat on a wall facing −Y (rotated rz), its top edge at z: off-white cloth with a
-    swallow-tailed foot, a slate-grey pale down the middle and a dark hanging rod (the facade banners of frames 3-4).
+BANNER_F = "#3f4958"  # the tower banners' field: a dark slate that stands out on the light grey courses
+
+
+def wall_banner(x, y, z, w, h, rz=0.0, t=0.006, lean=0.0, field=BANNER_F, charge=CLOTH):
+    """A neutral banner hung flat on a wall facing −Y (rotated rz), its top edge at z: a dark slate field with a
+    swallow-tailed foot, an off-white band across it, a lozenge and a hem at the foot, on a dark hanging rod (the
+    facade banners of frames 3-4; dark cloth with a light band reads as a flag on pale stone, at any size).
     lean: the foot stands out by this angle (to follow a battered wall)."""
-    pts = [(-w / 2, 0.0), (w / 2, 0.0), (w / 2, -h), (0.0, -h * 0.78), (-w / 2, -h)]
-    for pp, th, mt in ((pts, t, flat("pennant_cloth", CLOTH, 0.75)),
-                       ([(-w * 0.16, -0.004), (w * 0.16, -0.004), (w * 0.16, -h * 0.83), (0.0, -h * 0.76),
-                         (-w * 0.16, -h * 0.83)], t + 0.005, flat("pennant_band", CLOTH_BAND, 0.75))):
+    tail = 0.74
+    pts = [(-w / 2, 0.0), (w / 2, 0.0), (w / 2, -h), (0.0, -h * tail), (-w / 2, -h)]
+    hem = 0.06 * h  # the light hem follows the foot's two tails
+    for pp, th, mt in ((pts, t, flat("banner_field", field, 0.75)),
+                       ([(-w / 2 - 0.002, -h * 0.13), (w / 2 + 0.002, -h * 0.13), (w / 2 + 0.002, -h * 0.27),
+                         (-w / 2 - 0.002, -h * 0.27)], t + 0.005, flat("pennant_cloth", charge, 0.75)),
+                       ([(w / 2 + 0.002, -h + hem), (w / 2 + 0.002, -h - 0.002), (0.0, -h * tail - 0.002),
+                         (0.0, -h * tail + hem)], t + 0.005, flat("pennant_cloth", charge, 0.75)),
+                       ([(-w / 2 - 0.002, -h + hem), (0.0, -h * tail + hem), (0.0, -h * tail - 0.002),
+                         (-w / 2 - 0.002, -h - 0.002)], t + 0.005, flat("pennant_cloth", charge, 0.75)),
+                       ([(0.0, -h * 0.35), (w * 0.2, -h * 0.47), (0.0, -h * 0.59), (-w * 0.2, -h * 0.47)], t + 0.005,
+                        flat("pennant_cloth", charge, 0.75))):  # a lozenge for the emblem
         o = ev.extrude(pp, -th / 2, th / 2, mt)
         o.rotation_euler = (math.pi / 2 - lean, 0, rz)
         o.location = (x, y, z)
     c, s_ = math.cos(rz), math.sin(rz)
     rod((x - c * (w / 2 + 0.01), y - s_ * (w / 2 + 0.01), z + 0.004), (x + c * (w / 2 + 0.01), y + s_ * (w / 2 + 0.01), z + 0.004),
         0.0045, flat("iron", IRON, 0.6), n=4)
+    for sg in (-1, 1):  # finials on the rod ends
+        ico(0.006, (x + sg * c * (w / 2 + 0.012), y + sg * s_ * (w / 2 + 0.012), z + 0.004), flat("finial", GOLD, 0.35))
 
 
 def lash(p, r, mt, h=0.02):
@@ -413,28 +475,12 @@ def lantern(x, y, z, s=1.0, hang=0.0):
     build_at(b, x, y, s=s, z=z)
 
 
-def logs(x, y, rz, n=(3, 2), L=0.12, r=0.018, mt=None):
-    """A small stack of cut logs (pale end grain on the faces) lying along local X."""
-    mt = mt or tex("wood", "#7a5232", 2.5)
-    end = flat("endgrain", "#d8b07a", 0.8)
-
-    def b():
-        for row, cnt in enumerate(n):
-            for i in range(cnt):
-                yy = (i - (cnt - 1) / 2) * r * 2.05
-                zz = r + row * r * 1.75
-                cy(r, L, (0, yy, zz), mt, 6, rot=(0, math.pi / 2, 0))
-                for sx in (-1, 1):
-                    cy(r * 0.82, 0.004, (sx * (L / 2 + 0.001), yy, zz), end, 6, rot=(0, math.pi / 2, 0))
-    build_at(b, x, y, rz)
-
-
 def shield(x, y, z, rz, r=0.032, face="#8a5c36", rim=IRON):
     """A round wooden shield hung flat on a parapet facing −Y (rotated rz): plank face on an iron rim, iron boss."""
     def b():
         iron = flat("iron", rim, 0.6)
-        cy(r + 0.005, 0.006, (0, 0.002, 0), iron, 10, rot=(math.pi / 2, 0, 0))
-        cy(r, 0.006, (0, -0.002, 0), tex("wood", face, 4.0), 10, rot=(math.pi / 2, 0, 0))
+        cy(r + 0.005, 0.006, (0, 0.002, 0), iron, 8, rot=(math.pi / 2, 0, 0))
+        cy(r, 0.006, (0, -0.002, 0), tex("wood", face, 4.0), 8, rot=(math.pi / 2, 0, 0))
         cy(r * 0.3, 0.008, (0, -0.006, 0), iron, 6, rot=(math.pi / 2, 0, 0))
     build_at(b, x, y, rz, z=z)
 
@@ -478,9 +524,8 @@ def sandbag_ring(half, z0, courses, bag=(0.075, 0.046, 0.028), gap_front=(), see
             cs, sn = math.cos(a), math.sin(a)
             full = (k + c) % 2 == 0
             n = 4 if full else 3
-            off = (L / 2 if (c % 2 and full) else 0.0) * 0.0
             for i in range(n):
-                t = (i - (n - 1) / 2) * L + off
+                t = (i - (n - 1) / 2) * L
                 if k == 0 and c in gap_front and abs(t) < L * 0.6:
                     continue
                 px, py = cs * t + sn * half, sn * t - cs * half
@@ -581,7 +626,7 @@ def tower_l2():
     corners = [(sx, sy) for sx, sy in ((-1, -1), (1, -1), (1, 1), (-1, 1))]
     for sx, sy in corners:
         beam((sx * base, sy * base, 0.0), (sx * top, sy * top, H), 0.034, wd)
-        cy(0.026, 0.03, (sx * base, sy * base, 0.015), stone(STONE_D), 6)
+        cy(0.026, 0.03, (sx * base, sy * base, 0.015), stone(STONE_D), 5)
     for k in range(4):
         (ax, ay), (bx_, by) = corners[k], corners[(k + 1) % 4]
         zm = H * 0.5
@@ -613,7 +658,7 @@ def tower_l2():
         bx((0.024, 0.024, zr - H), (sx * 0.135, sy * 0.135, H + (zr - H) / 2), wd, bev=0)
     bx((0.31, 0.31, 0.02), (0, 0, zr - 0.005), wd, bev=0)
     rh = 0.15
-    ev.coursed_hip(0.3, 0.3, rh, (0, 0, zr + 0.004), shade(THATCH, 0.86), oh=0.035, n=5, ct=0.013, tone=0.84,
+    ev.coursed_hip(0.3, 0.3, rh, (0, 0, zr + 0.004), THATCH, oh=0.035, n=4, ct=0.013, tone=0.86,
                    kind="wood")
     cn(0.026, 0.045, (0, 0, zr + rh + 0.02), wd, 6)
     rod((0, 0, zr + rh), (0, 0, zr + rh + 0.09), 0.0055, flat("pole", "#d9d2c3", 0.5), n=4)
@@ -623,7 +668,7 @@ def tower_l2():
     ev.barrel(0.16, -0.2, 1.1)
     bx((0.05, 0.05, 0.045), (-0.19, -0.13, 0.0225), tex("wood", "#a77b48", 5.0), 0.3, bev=0)
     bx((0.04, 0.04, 0.035), (-0.18, -0.13, 0.0625), tex("wood", "#8d6a3e", 5.0), 0.1, bev=0)
-    ladder(-0.04, 0.04, -0.25, -0.16, H, wl, 5)
+    ladder(-0.04, 0.04, -0.25, -0.16, H, wl, 4)
     # archer drawing a bow to the front
     Z = H + 0.013
     hands = build_at(lambda: man("#3f8a3a", "#5a4632", "bow", "hood", 1.2), 0.0, -0.085, z=Z)
@@ -720,17 +765,19 @@ def tower_l3():
                       (t[0] * sg, t[1] * sg, 0))
     corb.obj(sd, "corbels")
     cy(0.23, 0.044, (0, 0, 0.582), st, 12, rot=rq)
+    ta = math.radians(150)  # the stair turret's bearing
     for k in range(8):
         a = k * math.tau / 8 + math.tau / 16
+        if abs((a - ta + math.pi) % math.tau - math.pi) < math.radians(15):  # this merlon is inside the turret
+            continue
         bx((0.07, 0.05, 0.065), (math.cos(a) * 0.198, math.sin(a) * 0.198, 0.634), st, a + math.pi / 2, bev=0)
     cy(0.185, 0.012, (0, 0, 0.6), tex("wood", "#9a7046", 3.0), 12)
     # stair turret on the back-left, rising above the parapet under a slate cone
-    ta = math.radians(150)
     tx, ty = math.cos(ta) * 0.188, math.sin(ta) * 0.188
     cy(0.058, 0.66, (tx, ty, 0.33), st, 8)
     cy(0.066, 0.03, (tx, ty, 0.655), sd, 8)
-    slate_cone(tx, ty, 0.668, 0.074, 0.135, SLATE_T, 3, 8)
-    uvs(0.011, (tx, ty, 0.81), flat("finial", GOLD, 0.35), 6, 4)
+    slate_cone(tx, ty, 0.668, 0.074, 0.128, SLATE_T, 3, 8)
+    uvs(0.011, (tx, ty, 0.8), flat("finial", GOLD, 0.35), 6, 4)
     # door with an arched top and a stone surround, iron bands, a lantern, a lit window, arrow slits
     door = tex("wood", "#4a2f19", 2.0)
     yd = -0.205 * ap
@@ -746,7 +793,7 @@ def tower_l3():
     aw = -math.pi / 6  # the lit window on the front-right face, a neutral banner on the front
     rw = 0.1925 * ap + 0.002
     arch_window(math.cos(aw) * rw, math.sin(aw) * rw, 0.4, 0.03, 0.05, aw + math.pi / 2)
-    wall_banner(0.0, -0.1845, 0.49, 0.06, 0.14, 0.0, lean=0.045)
+    wall_banner(0.0, -0.1845, 0.49, 0.08, 0.158, 0.0, lean=0.045)
     slit = flat("slit", "#1e1a17", 0.9)
     for a, z in ((-math.pi / 2 - math.pi / 3, 0.38), (-math.pi / 2 + math.pi / 3, 0.2), (-math.pi / 2 - math.pi / 6, 0.22),
                  (math.pi / 2, 0.33), (math.pi / 6, 0.36)):
@@ -826,11 +873,14 @@ def tower_l4():
     for fa in (-math.pi / 2, -math.pi / 2 - math.pi / 4, -math.pi / 2 + math.pi / 4):
         apz = (0.2 - 0.005 * 0.43) * math.cos(math.pi / 8) - 0.003
         c, s_ = math.cos(fa), math.sin(fa)
-        bx((0.075, 0.02, 0.065), (c * apz, s_ * apz, 0.36), trim, fa + math.pi / 2, bev=0)
-        bx((0.05, 0.024, 0.045), (c * apz, s_ * apz, 0.36), flat("slit", "#1e1a17", 0.9), fa + math.pi / 2, bev=0)
-        cy(0.017, 0.07, (c * (apz + 0.03), s_ * (apz + 0.03), 0.358), brz, 8, r2=0.014, rot=(math.pi / 2 + 0.06, 0, fa + math.pi / 2))
-        if fa == -math.pi / 2:
-            cy(0.019, 0.012, (c * (apz + 0.062), s_ * (apz + 0.062), 0.356), brz, 8, rot=(math.pi / 2 + 0.06, 0, fa + math.pi / 2))
+        # a stone frame round a dark port set back in it: a recess, not a block
+        port_frame(fa, (0.2 - 0.005 * 0.43) * math.cos(math.pi / 8), 0.36, (0.075, 0.065), (0.05, 0.045), 0.012, trim,
+                   flat("slit", "#1e1a17", 0.9))
+        rr = (math.pi / 2 + 0.06, 0, fa + math.pi / 2)  # the barrel looks out of the face and a little down
+        cy(0.017, 0.07, (c * (apz + 0.03), s_ * (apz + 0.03), 0.358), brz, 8, r2=0.014, rot=rr)
+        cy(0.019, 0.012, (c * (apz + 0.062), s_ * (apz + 0.062), 0.356), brz, 8, rot=rr)  # muzzle ring
+        dn = math.sin(0.06)
+        bore((c * (apz + 0.069), s_ * (apz + 0.069), 0.356 - 0.007 * dn), (c, s_, -dn), 0.011)
     # a door porch in the front of the plinth with a lantern, round shot and powder kegs on the deck, flag
     bx((0.1, 0.05, 0.13), (0, -0.222, 0.065), sb, bev=0)
     bx((0.112, 0.056, 0.022), (0, -0.223, 0.136), trim, bev=0)
@@ -882,22 +932,21 @@ def tower_l5():
     cn(0.012, 0.02, (0, -0.265, gz + 0.016), iron, 6, rot=(math.pi / 2, 0, 0))
     bx((0.045, 0.04, 0.035), (0.045, -0.045, gz + 0.0), flat("ammo", OLIVE, 0.7), bev=0)
     build_at(lambda: man(OLIVE, OLIVE_D, "gun", "helmet", 1.1), 0.0, 0.03, z=Z)
-    # ammo crates stacked by the gunner, a searchlight on the front-right corner, a radio whip at the back
+    # ammo crates stacked by the gunner, a searchlight on the front-right corner, a radio whip clear of the net
     crate(-0.075, -0.04, Z, 0.06, 0.045, 0.036, 0.15, OLIVE_D)
     crate(-0.07, -0.035, Z + 0.036, 0.05, 0.04, 0.03, -0.1, OLIVE_D)
-    # an observer with field glasses under the net
-    hands = build_at(lambda: man(OLIVE, OLIVE_D, "gun", "helmet", 1.05), -0.075, 0.075, -0.5, z=Z)
-    gx, gy = -0.075 + 0.0, 0.075 - 0.0
-    bx((0.03, 0.016, 0.014), (-0.066, 0.052, Z + 0.128), flat("gunbody", "#3d4147", 0.5), -0.5, bev=0)
+    # an observer leaning on the sandbags under the net
+    build_at(lambda: man(OLIVE, OLIVE_D, "gun", "helmet", 1.05), -0.075, 0.075, -0.5, z=Z)
     searchlight(0.118, -0.118, Z + 0.084, -0.5, 0.3)
-    bx((0.04, 0.03, 0.035), (0.085, 0.085, Z + 0.0175), flat("radio", OLIVE_D, 0.7), 0.2, bev=0)
-    rod((0.095, 0.09, Z + 0.035), (0.1, 0.095, 0.64), 0.0035, flat("steel", "#4c4f55", 0.5), n=4)
-    # camouflage net slung over the back half on two poles, draped over the back sandbags
+    bx((0.04, 0.03, 0.035), (0.088, -0.004, Z + 0.0175), flat("radio", OLIVE_D, 0.7), 0.2, bev=0)
+    rod((0.098, -0.004, Z + 0.035), (0.104, -0.01, 0.64), 0.0035, flat("steel", "#4c4f55", 0.5), n=4)
+    # camouflage net slung over the back half on two poles, draped over the back sandbags (high enough to clear
+    # the crew's helmets)
     for x in (-0.13, 0.13):
-        rod((x, 0.06, Z + 0.084), (x, 0.06, 0.6), 0.005, tex("wood", WOOD_D, 2.0), n=4)
+        rod((x, 0.06, Z + 0.084), (x, 0.06, 0.63), 0.005, tex("wood", WOOD_D, 2.0), n=4)
     rnd = random.Random(7)
     xs = [-0.175, -0.09, 0.0, 0.09, 0.175]
-    rows = [(0.035, 0.605), (0.095, 0.575), (0.15, 0.535), (0.185, 0.48), (0.198, 0.41)]
+    rows = [(0.035, 0.635), (0.095, 0.605), (0.15, 0.562), (0.185, 0.495), (0.198, 0.41)]
     verts = []
     for (y, z) in rows:
         for x in xs:
@@ -1007,7 +1056,7 @@ def tower_l7():
         for j in range(3):
             bx((0.094, 0.01, 0.004), (c * (ap6 + 0.001), s_ * (ap6 + 0.001), 0.024 + j * 0.012), sd, fa + math.pi / 2, bev=0)
     bx((0.07, 0.05, 0.05), (0.13, -0.14, 0.165), sd, 0.0, bev=0)
-    bx((0.056, 0.008, 0.03), (0.13, -0.166, 0.172), glow("screen", "#5ab4ff", 2.0), bev=0, rot=(-0.3, 0, 0))
+    bx((0.056, 0.008, 0.03), (0.13, -0.166, 0.172), cold, bev=0, rot=(-0.3, 0, 0))
 
     def head():
         cy(0.11, 0.04, (0, 0, 0.02), sw, 10)
@@ -1029,16 +1078,18 @@ def tower_l7():
                     cn(0.02, 0.05, (x, -0.18, z), nose, 8, rot=(math.pi / 2, 0, 0))
             bx((0.06, 0.03, 0.03), (0.06, 0.02, 0.085), sd, bev=0)
             bx((0.05, 0.012, 0.02), (0.06, 0.0, 0.088), glow("sensor", "#ff4a3a", 4.0), bev=0)
-            bx((0.228, 0.006, 0.01), (0, 0.101, 0.05), cold, bev=0)  # a cold strip along the pod's back
+            bx((0.2, 0.006, 0.01), (0, 0.101, 0.05), cold, bev=0)  # a cold strip along the pod's back
         build_at(pod, 0, 0.01, tilt=(-0.42, 0), z=0.12)
         cy(0.005, 0.12, (-0.085, 0.07, 0.24), sd, 4)
         ico(0.011, (-0.085, 0.07, 0.305), glow("sensor", "#ff4a3a", 4.0))
 
-        def dish():  # a small radar dish on a stalk, looking up and forward
-            cy(0.006, 0.05, (0, 0, 0.025), sd, 4)
-            cn(0.042, 0.016, (0, 0, 0.0), flat("dish", "#d9dde2", 0.45), 10, rot=(math.pi, 0, 0))
-            cy(0.003, 0.03, (0, 0, 0.012), sd, 4)
-        build_at(dish, 0.1, 0.085, 0.4, tilt=(0.0, 0.0), z=0.2)
+        def dish():  # a small radar dish looking up and forward, its feed horn on a spike
+            cn(0.04, 0.016, (0, 0, 0.0), flat("dish", "#d9dde2", 0.45), 10, rot=(math.pi, 0, 0))
+            cy(0.003, 0.034, (0, 0, 0.012), sd, 4)
+        # on a bracket off the right cheek of the head
+        beam((0.136, 0.03, 0.1), (0.168, 0.03, 0.1), 0.012, sd)
+        cy(0.006, 0.05, (0.168, 0.03, 0.12), sd, 4)
+        build_at(dish, 0.168, 0.03, tilt=(0.45, 0.0), z=0.15)
     build_at(head, 0, 0, z=0.57)
 
 
@@ -1105,8 +1156,10 @@ def tower_l8():
         ico(0.016, (0, -0.21, 0.06), glow("lens", "#9ff2ff", 5.0))
         cy(0.004, 0.08, (0.05, 0.06, 0.18), trim, 4)
         ico(0.009, (0.05, 0.06, 0.22), cyan)
-        for j in range(4):  # heat-sink fins across the back of the head
-            bx((0.12 - abs(j - 1.5) * 0.02, 0.008, 0.05), (0, 0.1 + j * 0.016, 0.085 - j * 0.008), trim, bev=0)
+        for sx in (-1, 1):  # heat-sink ribs stacked on the outside of each side fin (in the fin's tilted frame)
+            for zl in (-0.016, -0.005, 0.006):
+                bx((0.016, 0.09, 0.006), (sx * 0.143, 0.03 - zl * math.sin(0.2), 0.075 + zl * math.cos(0.2)), trim,
+                   bev=0, rot=(0.2, 0, 0))
     build_at(head, 0, 0.02, z=z1 + 0.03)
 
 
@@ -1117,7 +1170,9 @@ ASSETS = {f"tower_l{n + 1}": f for n, f in enumerate(TOWERS)}
 # ------------------------------------------------------------------ export
 
 
-ATLAS = set(os.environ.get("TOWER_ATLAS", "tower_l3,tower_l4").split(","))  # masonry: stone courses need the texels
+# the stone courses, rivets, formwork lines and panel seams need the texels (and the glowing parts give theirs back);
+# the timber towers keep the plain unwrap, whose thin beams carry their wood grain
+ATLAS = set(os.environ.get("TOWER_ATLAS", ",".join(f"tower_l{n}" for n in range(3, 9))).split(","))
 
 
 def export(name, out):

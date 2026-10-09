@@ -2956,68 +2956,210 @@ def lerp2(p0, p1, f):
     return (p0[0] + (p1[0] - p0[0]) * f, p0[1] + (p1[1] - p0[1]) * f)
 
 
+def ebox(p0, p1, u0, u1, v, t, z0, z1, mt):
+    """A plain box laid along the edge p0→p1: from u0 to u1 (distances from p0), centred v outward of the edge
+    line (negative = inside the hex), t thick, from z0 to z1."""
+    L, ang, mid, n = edge_frame(p0, p1)
+    c = lerp2(p0, p1, (u0 + u1) / 2 / L)
+    return bx((u1 - u0, t, z1 - z0), (c[0] + n[0] * v, c[1] + n[1] * v, (z0 + z1) / 2), mt, ang, 0)
+
+
+def merlon_row(p0, p1, u0, u1, v, t, z0, h, mw, pitch, mt, mb=None):
+    """Merlons along the edge p0→p1 between u0 and u1 (evenly spaced, mw wide, one every `pitch`), v outward and
+    t thick, standing on z0: five faces each (their bottoms sit on the wall top), all in one mesh."""
+    L, ang, mid, n = edge_frame(p0, p1)
+    e = ((p1[0] - p0[0]) / L, (p1[1] - p0[1]) / L)
+    k = max(1, int((u1 - u0 - mw) / pitch) + 1)
+    start = u0 + (u1 - u0 - (k - 1) * pitch - mw) / 2
+    own = mb is None
+    mb = mb or _MB()
+
+    def P(u, w, z):
+        return (p0[0] + e[0] * u + n[0] * w, p0[1] + e[1] * u + n[1] * w, z)
+    for i in range(k):
+        a, b = start + i * pitch, start + i * pitch + mw
+        lo, hi = v - t / 2, v + t / 2
+        z1 = z0 + h
+        mb.face([P(a, lo, z1), P(b, lo, z1), P(b, hi, z1), P(a, hi, z1)], (0, 0, 1))
+        mb.face([P(a, hi, z0), P(b, hi, z0), P(b, hi, z1), P(a, hi, z1)], (n[0], n[1], 0))
+        mb.face([P(a, lo, z0), P(b, lo, z0), P(b, lo, z1), P(a, lo, z1)], (-n[0], -n[1], 0))
+        mb.face([P(a, lo, z0), P(a, hi, z0), P(a, hi, z1), P(a, lo, z1)], (-e[0], -e[1], 0))
+        mb.face([P(b, lo, z0), P(b, hi, z0), P(b, hi, z1), P(b, lo, z1)], (e[0], e[1], 0))
+    if own:
+        mb.obj(mt, "merlons")
+    return k
+
+
+def hazard(period=0.035, c1="#f2c230", c2="#26272b"):
+    """Yellow-and-black hazard stripes running diagonally in world space (baked like every procedural colour)."""
+    key = ("hazard", period, c1, c2)
+    if key in kit._MATS:
+        return kit._MATS[key]
+    m = bpy.data.materials.new("hazard")
+    m.use_nodes = True
+    nt = m.node_tree
+    L = nt.links
+    geo = nt.nodes.new("ShaderNodeNewGeometry")
+    sp = nt.nodes.new("ShaderNodeSeparateXYZ")
+    L.new(geo.outputs["Position"], sp.inputs[0])
+    acc = None
+    for ax in range(3):
+        if acc is None:
+            acc = sp.outputs[ax]
+            continue
+        ad = nt.nodes.new("ShaderNodeMath")
+        ad.operation = "ADD"
+        L.new(acc, ad.inputs[0])
+        L.new(sp.outputs[ax], ad.inputs[1])
+        acc = ad.outputs[0]
+    dv = nt.nodes.new("ShaderNodeMath")
+    dv.operation = "DIVIDE"
+    L.new(acc, dv.inputs[0])
+    dv.inputs[1].default_value = period
+    fr = nt.nodes.new("ShaderNodeMath")
+    fr.operation = "FRACT"
+    L.new(dv.outputs[0], fr.inputs[0])
+    gt = nt.nodes.new("ShaderNodeMath")
+    gt.operation = "GREATER_THAN"
+    L.new(fr.outputs[0], gt.inputs[0])
+    gt.inputs[1].default_value = 0.5
+    mx = nt.nodes.new("ShaderNodeMix")
+    mx.data_type = "RGBA"
+    L.new(gt.outputs[0], _sock(mx, "Factor_Float"))
+    _sock(mx, "A_Color").default_value = (*kit.srgb(c1), 1)
+    _sock(mx, "B_Color").default_value = (*kit.srgb(c2), 1)
+    bs = nt.nodes["Principled BSDF"]
+    L.new(_sock(mx, "Result_Color", True), bs.inputs["Base Color"])
+    bs.inputs["Roughness"].default_value = 0.6
+    kit._MATS[key] = m
+    return m
+
+
+def zigzag_wire(p0, p1, u0, u1, v, z, amp, n_z, mt, w=0.006):
+    """Razor / barbed wire seen from afar: a zigzag ribbon along the edge (both faces), n_z teeth."""
+    L, ang, mid, nrm = edge_frame(p0, p1)
+    e = ((p1[0] - p0[0]) / L, (p1[1] - p0[1]) / L)
+    mb = _MB()
+    pts = []
+    for i in range(2 * n_z + 1):
+        u = u0 + (u1 - u0) * i / (2 * n_z)
+        zz = z + (amp if i % 2 else -amp)
+        pts.append((p0[0] + e[0] * u + nrm[0] * v, p0[1] + e[1] * u + nrm[1] * v, zz))
+    for a, b in zip(pts, pts[1:]):
+        for sd in (1, -1):
+            o = (nrm[0] * w * 0.5 * sd, nrm[1] * w * 0.5 * sd)
+            mb.face([(a[0] + o[0], a[1] + o[1], a[2] - w), (b[0] + o[0], b[1] + o[1], b[2] - w),
+                     (b[0] + o[0], b[1] + o[1], b[2] + w), (a[0] + o[0], a[1] + o[1], a[2] + w)], (nrm[0] * sd, nrm[1] * sd, 0))
+    mb.obj(mt, "wire")
+
+
+ROPE = "#c2a466"  # rope lashings: pale tan bindings that read on the dark logs
+FORT_SLATE = "#56657a"  # the neutral blue-grey slate of the fort towers (the forts carry no team colour)
+
+
 def f1_edge(p0, p1, gate=False):
+    """Wattle palisade: stakes with pale sharpened tips bound to the woven panel by rope lashings, and a row of
+    sharpened stakes leaning out (the camp fences of the early reference hexes)."""
     L, ang, mid, n = edge_frame(p0, p1)
     wd = tex("wood", WOOD_D)
     wick = tex("wood", "#b08850", 4.0)
+    tip = flat("stake_tip", "#d8b27a", 0.8)
+    rope = flat("rope", ROPE, 0.9)
     for i in range(1, 5):
         x, y = lerp2(p0, p1, i / 5)
-        cy(0.014, 0.22, (x, y, 0.11), wd, 6)
+        cy(0.014, 0.2, (x, y, 0.1), wd, 6)
+        cn(0.016, 0.04, (x, y, 0.22), tip, 6)
+        bx((0.032, 0.032, 0.018), (x, y, 0.14), rope, ang, 0)
     bx((L - 0.05, 0.014, 0.15), (mid[0], mid[1], 0.095), tex("wood", "#8f6a3c", 5.0), ang, 0)
     for j, z in enumerate((0.04, 0.075, 0.11, 0.145)):
         off = 0.009 if j % 2 else -0.009
         bx((L - 0.06, 0.016, 0.03), (mid[0] + n[0] * off, mid[1] + n[1] * off, z), wick, ang, 0)
-    # sharpened stakes leaning outwards
-    for f in (0.3, 0.42, 0.58, 0.7):
+    # sharpened stakes leaning outwards: dark shafts with pale cut points
+    shaft = tex("wood", "#7a5232")
+    for f in (0.3, 0.43, 0.57, 0.7):
         x, y = lerp2(p0, p1, f)
-        rod((x + n[0] * 0.03, y + n[1] * 0.03, -0.01), (x + n[0] * 0.17, y + n[1] * 0.17, 0.19), 0.016, tex("wood", "#9a6a3c"), 0.002)
+        a = (x + n[0] * 0.03, y + n[1] * 0.03, -0.01)
+        b = (x + n[0] * 0.17, y + n[1] * 0.17, 0.19)
+        m = tuple(a[i] + (b[i] - a[i]) * 0.78 for i in range(3))
+        rod(a, m, 0.016, shaft, 0.012)
+        rod(m, b, 0.012, tip, 0.001)
 
 
 def f1_post(p):
     cy(0.022, 0.27, (p[0], p[1], 0.135), tex("wood", WOOD_D), 6)
     cn(0.022, 0.05, (p[0], p[1], 0.295), flat("stake_tip", "#d8b27a", 0.8), 6)
+    bx((0.05, 0.05, 0.02), (p[0], p[1], 0.19), flat("rope", ROPE, 0.9), math.atan2(p[1], p[0]), 0)
 
 
 def f2_edge(p0, p1, gate=False):
+    """Timber stockade: logs in two tones with pale pointed tops, bound by two rope lashings on the outside, and a
+    plank fighting walk on trestles along the inside (the wall walks of reference frame 4)."""
     L, ang, mid, n = edge_frame(p0, p1)
-    wd = tex("wood", "#9a6a3c", 3.0)
+    woods = [tex("wood", "#9a6a3c", 3.0), tex("wood", "#86592f", 3.0)]
     tip = flat("stake_tip", "#d8b27a", 0.8)
     cnt = 11
     for i in range(1, cnt):
         x, y = lerp2(p0, p1, i / cnt)
         h = 0.3 + (0.03 if i % 2 else 0.0)
-        cy(0.036, h, (x, y, h / 2), wd, 6)
+        cy(0.036, h, (x, y, h / 2), woods[i % 2], 6)
         cn(0.036, 0.07, (x, y, h + 0.035), tip, 6)
-    bx((L - 0.06, 0.035, 0.035), (mid[0] - n[0] * 0.04, mid[1] - n[1] * 0.04, 0.2), tex("wood", WOOD_D), ang, 0)
+    rope = flat("rope", ROPE, 0.9)
+    for z in (0.11, 0.25):
+        ebox(p0, p1, 0.055, L - 0.055, 0.031, 0.012, z, z + 0.018, rope)
+    plank = tex("wood", "#a8743f", 4.0)
+    ebox(p0, p1, 0.06, L - 0.06, -0.07, 0.07, 0.19, 0.204, plank)
+    dk = tex("wood", WOOD_D)
+    for f in (0.22, 0.5, 0.78):
+        ebox(p0, p1, L * f - 0.009, L * f + 0.009, -0.095, 0.018, 0.0, 0.19, dk)
 
 
 def f2_post(p):
+    a = math.atan2(p[1], p[0])
     cy(0.055, 0.4, (p[0], p[1], 0.2), tex("wood", "#8a5e36", 3.0), 8)
     cn(0.055, 0.09, (p[0], p[1], 0.445), flat("stake_tip", "#d8b27a", 0.8), 8)
-    bx((0.12, 0.12, 0.02), (p[0], p[1], 0.3), tex("wood", WOOD_D), math.atan2(p[1], p[0]), 0)
+    bx((0.12, 0.12, 0.02), (p[0], p[1], 0.3), tex("wood", WOOD_D), a, 0)
+    for z in (0.12, 0.25):
+        bx((0.116, 0.116, 0.018), (p[0], p[1], z), flat("rope", ROPE, 0.9), a + math.pi / 4, 0)
 
 
 def f3_edge(p0, p1, gate=False):
+    """Stone curtain wall of reference frames 3 and 4: a battered plinth, coursed light-grey masonry with a string
+    course and arrow slits, a corbelled parapet of chunky merlons on the outer edge, a flagstone wall walk and a low
+    inner parapet."""
     L, ang, mid, n = edge_frame(p0, p1)
     st = stone(STONE, 1.4)
+    dk = stone(STONE_D)
+    walk = stone("#d4cec2", 2.4)
+    T, H = 0.09, 0.24
     a, b = 0.07, L - 0.07
     segs = [(a, b)] if not gate else [(a, L / 2 - 0.11), (L / 2 + 0.11, b)]
+    mb = _MB()
+    slit_items = []
+    e = ((p1[0] - p0[0]) / L, (p1[1] - p0[1]) / L)
     for (s0, s1) in segs:
-        f = (s0 + s1) / 2 / L
-        c = lerp2(p0, p1, f)
-        bx((s1 - s0, 0.085, 0.26), (c[0], c[1], 0.13), st, ang, 0.008)
-        bx((s1 - s0, 0.1, 0.05), (c[0], c[1], 0.025), stone(STONE_D), ang, 0.006)  # plinth
-        bx((s1 - s0, 0.093, 0.016), (c[0], c[1], 0.2), stone(STONE_D), ang, 0)  # string course
-        cnt = max(1, int((s1 - s0) / 0.085))
-        for i in range(0, cnt, 2):
-            g = (s0 + (i + 0.5) * (s1 - s0) / cnt) / L
-            q = lerp2(p0, p1, g)
-            bx(((s1 - s0) / cnt, 0.09, 0.06), (q[0], q[1], 0.29), st, ang, 0)
+        ebox(p0, p1, s0, s1, 0.0, T, 0.0, H, st)
+        ebox(p0, p1, s0, s1, 0.006, T + 0.03, 0.0, 0.05, dk)  # plinth
+        ebox(p0, p1, s0, s1, 0.0, T + 0.012, 0.15, 0.166, dk)  # string course
+        ebox(p0, p1, s0, s1, T / 2 + 0.004, 0.014, H - 0.032, H - 0.004, dk)  # corbel band under the parapet
+        # the flagstone walk: one quad over the wall top, between the parapets
+        q = [(p0[0] + e[0] * u + n[0] * w, p0[1] + e[1] * u + n[1] * w, H + 0.001) for (u, w) in
+             ((s0, -T / 2), (s1, -T / 2), (s1, T / 2), (s0, T / 2))]
+        wm = _MB()
+        wm.face(q, (0, 0, 1))
+        wm.obj(walk, "walk")
+        merlon_row(p0, p1, s0, s1, T / 2 - 0.012, 0.036, H, 0.058, 0.056, 0.093, st, mb)
+        ebox(p0, p1, s0, s1, -T / 2 + 0.008, 0.016, H, H + 0.026, st)  # inner parapet
+        k = max(1, int((s1 - s0) / 0.19))
+        for i in range(k):
+            c = lerp2(p0, p1, (s0 + (i + 0.5) * (s1 - s0) / k) / L)
+            slit_items.append((c[0], c[1], 0.1, ang, T + 0.004, 0.014, 0.05))
+    mb.obj(st, "merlons")
+    slits(slit_items, one_side=True)
     if gate:
         for sx in (-1, 1):
             q = lerp2(p0, p1, 0.5 + sx * 0.13)
-            bx((0.06, 0.13, 0.4), (q[0], q[1], 0.2), st, ang, 0.008)
-        bx((0.32, 0.13, 0.08), (mid[0], mid[1], 0.38), st, ang, 0.008)
+            bx((0.06, 0.13, 0.4), (q[0], q[1], 0.2), st, ang, 0)
+        bx((0.32, 0.13, 0.08), (mid[0], mid[1], 0.38), st, ang, 0)
         for i in (-2, 0, 2):
             q = lerp2(p0, p1, 0.5 + i * 0.045)
             bx((0.04, 0.13, 0.05), (q[0], q[1], 0.445), st, ang, 0)
@@ -3029,40 +3171,65 @@ def f3_edge(p0, p1, gate=False):
 
 
 def f3_post(p):
-    """Round stone tower: a dark plinth, two string courses, arrow slits, a merloned parapet, a slate cone with
-    a gilt finial — enough shapes to read as masonry at map zoom."""
+    """Round stone tower of reference frames 3 and 4: a dark plinth, coursed body with a string course, a lit
+    window towards the town and the field, arrow slits, a corbelled crenellated parapet, a cone roof laid in
+    blue-grey slate courses, a gilt finial and a pennant (its cloth marker lets the game paint the owner's flag)."""
+    x, y = p
+    r = 0.09
     st = stone(STONE, 1.4)
     dk = stone(STONE_D)
-    cy(0.102, 0.06, (p[0], p[1], 0.03), dk, 10)  # plinth
-    cy(0.09, 0.38, (p[0], p[1], 0.19), st, 10)
-    for z in (0.14, 0.27):  # string courses
-        cy(0.096, 0.016, (p[0], p[1], z), dk, 10)
-    slit = flat("slit", "#1e1c1a", 0.9)
-    for k in range(3):
-        a = math.radians(-90 + (k - 1) * 60)
-        bx((0.012, 0.012, 0.06), (p[0] + math.cos(a) * 0.088, p[1] + math.sin(a) * 0.088, 0.21), slit, a, 0)
-    cy(0.105, 0.03, (p[0], p[1], 0.375), dk, 10)
-    for k in range(8):  # merlons
-        a = math.tau * k / 8
-        bx((0.035, 0.03, 0.04), (p[0] + math.cos(a) * 0.092, p[1] + math.sin(a) * 0.092, 0.405), st, a, 0)
-    cn(0.115, 0.2, (p[0], p[1], 0.5), flat("slate", SLATE, 0.6), 10)
-    uvs(0.016, (p[0], p[1], 0.61), flat("finial", GOLD, 0.35), 6, 4)
+    a0 = math.atan2(y, x)
+    cy(r + 0.014, 0.05, (x, y, 0.025), dk, 10)  # plinth
+    cy(r, 0.36, (x, y, 0.18), st, 10)
+    cy(r + 0.006, 0.016, (x, y, 0.16), dk, 10)  # string course
+    cy(r + 0.003, 0.034, (x, y, 0.343), dk, 10, r2=r + 0.024)  # corbels flaring out under the parapet
+    cy(r + 0.024, 0.032, (x, y, 0.376), st, 10)  # parapet
+    mb = _MB()
+    for k in range(8):
+        a = math.tau * (k + 0.5) / 8
+        ca, sa = math.cos(a), math.sin(a)
+        ta, tb = (-sa, ca), (ca, sa)
+        rr = r + 0.012
+        cxk, cyk = x + ca * rr, y + sa * rr
+        hw, ht, z0, z1 = 0.019, 0.012, 0.392, 0.428
+        corners = [(cxk + ta[0] * u + tb[0] * w, cyk + ta[1] * u + tb[1] * w) for (u, w) in
+                   ((-hw, -ht), (hw, -ht), (hw, ht), (-hw, ht))]
+        c3 = lambda i, z: (corners[i][0], corners[i][1], z)  # noqa: E731
+        mb.face([c3(0, z1), c3(1, z1), c3(2, z1), c3(3, z1)], (0, 0, 1))
+        mb.face([c3(3, z0), c3(2, z0), c3(2, z1), c3(3, z1)], (tb[0], tb[1], 0))
+        mb.face([c3(0, z0), c3(1, z0), c3(1, z1), c3(0, z1)], (-tb[0], -tb[1], 0))
+        mb.face([c3(0, z0), c3(3, z0), c3(3, z1), c3(0, z1)], (-ta[0], -ta[1], 0))
+        mb.face([c3(1, z0), c3(2, z0), c3(2, z1), c3(1, z1)], (ta[0], ta[1], 0))
+    mb.obj(st, "merlons")
+    top = coursed_cone(x, y, 0.392, r + 0.034, 0.23, FORT_SLATE, rings=4, sides=10)
+    ico(0.013, (x, y, top + 0.004), flat("finial", GOLD, 0.35))
+    for aa in (a0, a0 + math.pi):  # lit windows: one towards the field, one towards the town
+        bx((0.022, 0.012, 0.036), (x + math.cos(aa) * (r - 0.002), y + math.sin(aa) * (r - 0.002), 0.27), win_lit(),
+           aa + math.pi / 2, 0)
+    slits([(x + math.cos(a0 + s_) * (r + 0.002), y + math.sin(a0 + s_) * (r + 0.002), 0.22, a0 + s_ + math.pi / 2,
+            0.0, 0.014, 0.04) for s_ in (-1.1, 1.1)], one_side=True)
+    rod((x, y, top), (x, y, top + 0.075), 0.004, flat("pole", "#d9d2c3", 0.5), n=4)
+    bx((0.05, 0.004, 0.028), (x + 0.026, y, top + 0.06), flat("pennant", "#d9b84a", 0.6), 0, 0)
+    flag_at("flagw", x + 0.026, y, top + 0.06, 0.054, 0.032)
 
 
 def f4_edge(p0, p1, gate=False):
+    """Bastioned rampart (16th-17th c.): a battered masonry face on a footing, a pale stone cordon, a parapet of
+    stone blocks with open embrasures, a timber gun walk and a turfed slope down the inside."""
     L, ang, mid, n = edge_frame(p0, p1)
     st = stone("#a39b8d", 1.4)
     taper_box((L - 0.2, 0.17, 0.2), (mid[0], mid[1], 0.1), st, (1.0, 0.6), ang)
-    bx((L - 0.2, 0.18, 0.03), (mid[0], mid[1], 0.015), stone(STONE_D), ang, 0.004)  # footing
-    bx((L - 0.19, 0.145, 0.014), (mid[0], mid[1], 0.13), stone(STONE_D), ang, 0)  # cordon
-    bx((L - 0.2, 0.03, 0.06), (mid[0] + n[0] * 0.035, mid[1] + n[1] * 0.035, 0.23), st, ang, 0)
-    slit = flat("slit", "#1e1c1a", 0.9)
-    cnt = max(2, int((L - 0.24) / 0.13))
-    for i in range(cnt):  # embrasures in the parapet
-        q = lerp2(p0, p1, 0.12 + (i + 0.5) * 0.76 / cnt)
-        bx((0.03, 0.034, 0.03), (q[0] + n[0] * 0.035, q[1] + n[1] * 0.035, 0.245), slit, ang, 0)
-    bx((L - 0.22, 0.07, 0.012), (mid[0] - n[0] * 0.015, mid[1] - n[1] * 0.015, 0.2), tex("wood", WOOD_L), ang, 0)
-    bx((L - 0.24, 0.05, 0.01), (mid[0] - n[0] * 0.06, mid[1] - n[1] * 0.06, 0.2), flat("grassy", "#6f9a45", 0.9), ang, 0)  # turfed walk
+    ebox(p0, p1, 0.1, L - 0.1, 0.0, 0.18, 0.0, 0.03, stone(STONE_D))  # footing
+    ebox(p0, p1, 0.095, L - 0.095, 0.0, 0.15, 0.124, 0.14, flat("cordon", "#e6dfd0", 0.7))  # the pale cordon
+    merlon_row(p0, p1, 0.11, L - 0.11, 0.035, 0.036, 0.2, 0.05, 0.1, 0.14, st)
+    ebox(p0, p1, 0.11, L - 0.11, -0.015, 0.07, 0.194, 0.206, tex("wood", WOOD_L))
+    # the turfed slope of the rampart down the inside of the wall
+    e = ((p1[0] - p0[0]) / L, (p1[1] - p0[1]) / L)
+    P = lambda u, w, z: (p0[0] + e[0] * u + n[0] * w, p0[1] + e[1] * u + n[1] * w, z)  # noqa: E731
+    gm = _MB()
+    u0, u1 = 0.13, L - 0.13
+    gm.face([P(u0, -0.05, 0.2), P(u1, -0.05, 0.2), P(u1 - 0.04, -0.17, 0.0), P(u0 + 0.04, -0.17, 0.0)], (-n[0], -n[1], 1))
+    gm.obj(tex("plaster", "#6f9a45", 2.0), "glacis")
 
 
 def cannon(x, y, a, z=0.0):
@@ -3079,17 +3246,28 @@ def cannon(x, y, a, z=0.0):
 
 
 def f4_post(p):
+    """Arrow-head bastion with a gun on its terreplein and a stone sentry turret (échauguette) corbelled out at its
+    point under a blue-grey slate cap."""
     a = math.atan2(p[1], p[0])
     pts = [(-0.14, -0.14), (0.02, -0.14), (0.12, 0.0), (0.02, 0.14), (-0.14, 0.14)]
-    pr = [(p[0] + x * math.cos(a) - y * math.sin(a), p[1] + x * math.sin(a) + y * math.cos(a)) for x, y in pts]
-    extrude(pr, 0.0, 0.24, stone("#a39b8d", 1.4))
-    extrude([(p[0] + (x * 1.06) * math.cos(a) - (y * 1.06) * math.sin(a), p[1] + (x * 1.06) * math.sin(a) + (y * 1.06) * math.cos(a)) for x, y in pts],
-            0.0, 0.035, stone(STONE_D))  # footing
-    extrude([(p[0] + (x * 1.03) * math.cos(a) - (y * 1.03) * math.sin(a), p[1] + (x * 1.03) * math.sin(a) + (y * 1.03) * math.cos(a)) for x, y in pts],
-            0.125, 0.14, stone(STONE_D))  # cordon
-    extrude([(p[0] + (x * 0.85) * math.cos(a) - (y * 0.85) * math.sin(a), p[1] + (x * 0.85) * math.sin(a) + (y * 0.85) * math.cos(a)) for x, y in pts],
-            0.24, 0.252, flat("grassy", "#6f9a45", 0.9))
+
+    def ring(k):
+        return [(p[0] + (x * k) * math.cos(a) - (y * k) * math.sin(a), p[1] + (x * k) * math.sin(a) + (y * k) * math.cos(a))
+                for x, y in pts]
+    extrude(ring(1.0), 0.0, 0.24, stone("#a39b8d", 1.4))
+    extrude(ring(1.06), 0.0, 0.035, stone(STONE_D))  # footing
+    extrude(ring(1.03), 0.125, 0.14, flat("cordon", "#e6dfd0", 0.7))  # cordon
+    extrude(ring(0.85), 0.24, 0.252, flat("grassy", "#6f9a45", 0.9))
     cannon(p[0] - math.cos(a) * 0.04, p[1] - math.sin(a) * 0.04, a, 0.252)
+    # the échauguette at the salient
+    tx, ty = p[0] + math.cos(a) * 0.118, p[1] + math.sin(a) * 0.118
+    st = stone("#bdb6a8", 1.4)
+    cn(0.032, 0.05, (tx, ty, 0.205), st, 8, rot=(math.pi, 0, 0))  # corbel cone under it
+    cy(0.032, 0.085, (tx, ty, 0.272), st, 8)
+    bx((0.012, 0.012, 0.03), (tx + math.cos(a) * 0.029, ty + math.sin(a) * 0.029, 0.28), flat("slit", "#1c1a19", 0.9),
+       a + math.pi / 2, 0)
+    cn(0.042, 0.07, (tx, ty, 0.35), tex("roof", FORT_SLATE, 1.6), 8)
+    ico(0.009, (tx, ty, 0.388), flat("finial", GOLD, 0.35))
 
 
 SANDBAG = "#b8a576"
@@ -3122,22 +3300,28 @@ def sandbag_ring(x, y, r, courses=3, gap=0.9, color=SANDBAG):
 
 
 def f5_edge(p0, p1, gate=False):
+    """Trench-war line: concrete dragon's teeth with hazard-striped bands, concertina wire on wooden X-pickets
+    in front, a sandbag parapet behind, ammunition boxes."""
     L, ang, mid, n = edge_frame(p0, p1)
     cm = tex("plaster", "#b9b5ad", 2.0)
+    hz = hazard(0.03)
     rnd = random.Random(int((p0[0] + 3) * 100))
     for i in range(5):
         f = (i + 0.5) / 5
         q = lerp2(p0, p1, 0.06 + f * 0.88)
-        taper_box((0.14, 0.09, 0.13), (q[0], q[1], 0.065), cm, (1.0, 0.45), ang + rnd.uniform(-0.12, 0.12), 0.006)
+        r_ = ang + rnd.uniform(-0.12, 0.12)
+        taper_box((0.14, 0.09, 0.13), (q[0], q[1], 0.065), cm, (1.0, 0.45), r_, 0.0)
+        if i % 2 == 0:  # a painted band round the tooth
+            taper_box((0.123, 0.08, 0.026), (q[0], q[1], 0.074), hz, (0.93, 0.9), r_, 0.0)
     steel = flat("wire", "#4c4f55", 0.5)
     for f in (0.1, 0.5, 0.9):
         q = lerp2(p0, p1, f)
         cy(0.007, 0.24, (q[0] + n[0] * 0.09, q[1] + n[1] * 0.09, 0.12), steel, 5)
     for z in (0.1, 0.2):
         bx((L - 0.1, 0.006, 0.006), (mid[0] + n[0] * 0.09, mid[1] + n[1] * 0.09, z), steel, ang, 0)
-    for i in range(6):
-        q = lerp2(p0, p1, 0.1 + i * 0.8 / 5)
-        torus(0.058, 0.006, (q[0] + n[0] * 0.09, q[1] + n[1] * 0.09, 0.12), steel, (math.pi / 2, 0.25, ang + math.pi / 2), 7, 3)
+    for i in range(5):
+        q = lerp2(p0, p1, 0.12 + i * 0.76 / 4)
+        torus(0.06, 0.006, (q[0] + n[0] * 0.09, q[1] + n[1] * 0.09, 0.12), steel, (math.pi / 2, 0.25, ang + math.pi / 2), 7, 3)
     pk = tex("wood", WOOD_D, 3.0)
     for f in (0.3, 0.7):  # X-shaped wooden pickets that carry the wire
         q = lerp2(p0, p1, f)
@@ -3145,14 +3329,28 @@ def f5_edge(p0, p1, gate=False):
         for s_ in (-1, 1):
             beam((c_[0] - n[0] * 0.05 * s_, c_[1] - n[1] * 0.05 * s_, 0.0), (c_[0] + n[0] * 0.05 * s_, c_[1] + n[1] * 0.05 * s_, 0.2), 0.012, pk)
     sandbags(p0, p1, -0.075, n, 2, f0=0.12, f1=0.88)
+    ammo = flat("ammo", "#5d6a3a", 0.7)
+    for (u, w) in ((0.3, -0.13), (0.34, -0.135), (0.62, -0.13)):
+        ebox(p0, p1, L * u - 0.02, L * u + 0.02, w, 0.028, 0.0, 0.026, ammo)
 
 
 def f5_post(p):
+    """Concrete pillbox with a dark firing slit, a yellow warning plate and a hazard-striped barrier boom, and a
+    sandbagged machine-gun nest on the inner side."""
     a = math.atan2(p[1], p[0])
     cm = tex("plaster", "#b9b5ad", 2.0)
-    bx((0.15, 0.15, 0.13), (p[0], p[1], 0.065), cm, a, 0.008)
-    bx((0.11, 0.11, 0.1), (p[0], p[1], 0.18), cm, a + 0.4, 0.008)
-    bx((0.07, 0.008, 0.05), (p[0] + math.cos(a) * 0.08, p[1] + math.sin(a) * 0.08, 0.1), flat("warn", "#f2c230", 0.6), a + math.pi / 2, 0)
+    bx((0.15, 0.15, 0.13), (p[0], p[1], 0.065), cm, a, 0)
+    bx((0.11, 0.11, 0.1), (p[0], p[1], 0.18), cm, a + 0.4, 0)
+    bx((0.13, 0.13, 0.012), (p[0], p[1], 0.236), flat("conc_cap", "#8b877f", 0.8), a + 0.4, 0)
+    slits([(p[0] + math.cos(a) * 0.077, p[1] + math.sin(a) * 0.077, 0.1, a + math.pi / 2, 0.0, 0.08, 0.016)],
+          one_side=True)
+    bx((0.07, 0.008, 0.05), (p[0] + math.cos(a + 0.6) * 0.078, p[1] + math.sin(a + 0.6) * 0.078, 0.06),
+       flat("warn", "#f2c230", 0.6), a + 0.6 + math.pi / 2, 0)
+    # the barrier boom across the line, striped
+    bx((0.024, 0.024, 0.07), (p[0] - math.sin(a) * 0.1, p[1] + math.cos(a) * 0.1, 0.035), flat("conc_cap", "#8b877f", 0.8), a, 0)
+    beam((p[0] - math.sin(a) * 0.1, p[1] + math.cos(a) * 0.1, 0.075),
+         (p[0] - math.sin(a) * 0.1 - math.cos(a) * 0.16, p[1] + math.cos(a) * 0.1 - math.sin(a) * 0.16, 0.075),
+         0.014, hazard(0.03, "#e8e2d6", "#c0302a"))
 
     def nest():  # machine-gun nest on the inner side: a sandbag ring and a water-cooled gun facing out
         sandbag_ring(0, 0, 0.075, 3)
@@ -3175,10 +3373,15 @@ def hedgehog(x, y, rz):
 
 
 def f6_edge(p0, p1, gate=False):
+    """Bunker line: an earth berm with a turfed crest and camouflage net, a log-lined trench behind with a sandbag
+    lip, steel hedgehogs and a low barbed-wire fence on stakes in front."""
     L, ang, mid, n = edge_frame(p0, p1)
     taper_box((L - 0.24, 0.13, 0.06), (mid[0], mid[1], 0.03), tex("plaster", "#8a6e4b", 1.5), (1.0, 0.5), ang)
     taper_box((L - 0.28, 0.075, 0.012), (mid[0], mid[1], 0.064), tex("plaster", "#5f7a3a", 2.0), (1.0, 0.7), ang)
-    # the trench on the inner side: a dark cut lined with a log revetment
+    # camouflage nets draped over the crest
+    camo = [flat("camo1", "#5d6b3c", 0.85), flat("camo2", "#7a6a48", 0.85)]
+    for k, (u0, u1) in enumerate(((0.2, 0.36), (0.5, 0.64))):
+        ebox(p0, p1, L * u0, L * u1, 0.0, 0.085, 0.064, 0.074, camo[k % 2])
     tr = (mid[0] - n[0] * 0.115, mid[1] - n[1] * 0.115)
     bx((L - 0.26, 0.06, 0.008), (tr[0], tr[1], 0.004), flat("trench", "#3a2c1e", 0.95), ang, 0)
     lg = tex("wood", "#7a5634", 3.0)
@@ -3188,9 +3391,16 @@ def f6_edge(p0, p1, gate=False):
     for f in (0.3, 0.5, 0.7):
         q = lerp2(p0, p1, f)
         hedgehog(q[0] + n[0] * 0.11, q[1] + n[1] * 0.11, ang + f * 2)
+    # a low barbed-wire fence on stakes in front of the hedgehogs
+    pk = tex("wood", WOOD_D, 3.0)
+    for f in (0.16, 0.38, 0.62, 0.84):
+        ebox(p0, p1, L * f - 0.006, L * f + 0.006, 0.17, 0.012, 0.0, 0.09, pk)
+    zigzag_wire(p0, p1, L * 0.16, L * 0.84, 0.17, 0.06, 0.018, 10, flat("wire", "#4c4f55", 0.5))
 
 
 def f6_post(p):
+    """Hexagonal concrete pillbox: dark firing slits round the front, a camouflage of turf and net, a steel door
+    in a hazard-striped frame at the back, a radio mast and a searchlight on the roof."""
     a = math.atan2(p[1], p[0])
     cm = tex("plaster", "#a9a59c", 2.0)
     cy(0.13, 0.13, (p[0], p[1], 0.065), cm, 6, r2=0.11, rot=(0, 0, a))
@@ -3200,74 +3410,113 @@ def f6_post(p):
     for k in range(5):
         q = a + k * 1.3 + 0.4
         ico(0.034, (p[0] + math.cos(q) * 0.1, p[1] + math.sin(q) * 0.1, 0.07 + (k % 2) * 0.04), camo[k % 2], (1.2, 1.2, 0.35))
-    bx((0.022, 0.1, 0.025), (p[0] + math.cos(a) * 0.12, p[1] + math.sin(a) * 0.12, 0.09), flat("slit", "#15171a", 0.9), a, 0)
-    # searchlight
-    def sl():
+    sl = []
+    for d_ in (-math.pi / 3, 0.0, math.pi / 3):  # firing slits on the three outer faces
+        q = a + d_
+        rr = 0.102  # the slanted face's distance at the slit height
+        sl.append((p[0] + math.cos(q) * rr, p[1] + math.sin(q) * rr, 0.095, q + math.pi / 2, 0.0, 0.07, 0.018))
+    slits(sl, one_side=True)
+    # the door at the back in a hazard-striped frame
+    qb = a + math.pi
+    for (rr, w_, h_, mt) in ((0.106, 0.06, 0.09, hazard(0.02)), (0.11, 0.04, 0.075, flat("door6", "#4a5048", 0.6))):
+        bx((w_, 0.012, h_), (p[0] + math.cos(qb) * rr, p[1] + math.sin(qb) * rr, h_ / 2), mt, qb + math.pi / 2, 0)
+    # radio mast
+    mx, my = p[0] + math.cos(a + 2.2) * 0.05, p[1] + math.sin(a + 2.2) * 0.05
+    rod((mx, my, 0.18), (mx, my, 0.29), 0.004, flat("mast", "#3b3d42", 0.6), r2=0.0015, n=4)
+    bx((0.03, 0.004, 0.004), (mx, my, 0.27), flat("mast", "#3b3d42", 0.6), a, 0)
+
+    def searchl():
         cy(0.012, 0.05, (0, 0, 0.025), flat("iron", "#3b3d42", 0.6), 6)
         cy(0.035, 0.06, (0.0, 0, 0.07), flat("lamp", "#5b636b", 0.5), 10, rot=(0, math.pi / 2 - 0.35, 0))
         cy(0.03, 0.01, (0.032, 0, 0.081), glow("lens", "#fff4c2", 5.0), 10, rot=(0, math.pi / 2 - 0.35, 0))
-    build_at(sl, p[0], p[1], a, z=0.16)
+    build_at(searchl, p[0], p[1], a, z=0.16)
 
 
 def f7_edge(p0, p1, gate=False):
+    """Steel wall: riveted plates with seams between buttress ribs, a hazard-striped coping, razor wire along the
+    top, warning lamps and a plinth."""
     L, ang, mid, n = edge_frame(p0, p1)
-    sm = flat("steelwall", "#7f8995", 0.45)
+    plates = facade("#7f8995", "#5c6570", 0.11, 0.11, 0.94, 0.9, lit="#5c6570", lit_p=0.0)
     rib = flat("steelrib", "#5c6570", 0.45)
-    bx((L - 0.16, 0.06, 0.34), (mid[0], mid[1], 0.17), sm, ang, 0.006)
+    ebox(p0, p1, 0.08, L - 0.08, 0.0, 0.06, 0.0, 0.33, plates)
     for i in range(5):
-        q = lerp2(p0, p1, 0.18 + i * 0.64 / 4)
-        bx((0.022, 0.075, 0.34), (q[0], q[1], 0.17), rib, ang, 0)
-    bx((L - 0.16, 0.07, 0.03), (mid[0], mid[1], 0.355), flat("warn", "#f2c230", 0.6), ang, 0)
-    bx((L - 0.16, 0.07, 0.02), (mid[0], mid[1], 0.03), rib, ang, 0)
+        u = L * (0.18 + i * 0.64 / 4)
+        ebox(p0, p1, u - 0.011, u + 0.011, 0.0, 0.075, 0.0, 0.33, rib)
+    ebox(p0, p1, 0.08, L - 0.08, 0.0, 0.074, 0.33, 0.36, hazard(0.035))
+    ebox(p0, p1, 0.08, L - 0.08, 0.0, 0.074, 0.0, 0.03, rib)
+    zigzag_wire(p0, p1, 0.1, L - 0.1, 0.0, 0.385, 0.016, 12, flat("wire", "#9aa1aa", 0.4))
+    for f in (0.34, 0.66):  # warning lamps on the coping
+        c = lerp2(p0, p1, f)
+        bx((0.016, 0.016, 0.016), (c[0] + n[0] * 0.03, c[1] + n[1] * 0.03, 0.368), glow("warnlamp", "#ffb02e", 3.0), ang, 0)
 
 
 def f7_post(p):
+    """Steel watchtower: a plated drum with a hazard-striped band, a twin-gun turret with a red sensor, a cold
+    floodlight on the inner side and a red beacon."""
     a = math.atan2(p[1], p[0])
     dm = flat("steelrib", "#5c6570", 0.45)
-    cy(0.1, 0.42, (p[0], p[1], 0.21), flat("steelwall", "#7f8995", 0.45), 8, rot=(0, 0, a))
-    cy(0.105, 0.03, (p[0], p[1], 0.405), flat("warn", "#f2c230", 0.6), 8)
+    plates = facade("#7f8995", "#5c6570", 0.08, 0.1, 0.92, 0.9, lit="#5c6570", lit_p=0.0)
+    cy(0.1, 0.42, (p[0], p[1], 0.21), plates, 8, rot=(0, 0, a))
+    cy(0.105, 0.03, (p[0], p[1], 0.405), hazard(0.03), 8)
+    cy(0.106, 0.03, (p[0], p[1], 0.03), dm, 8)
+    bx((0.03, 0.016, 0.02), (p[0] - math.cos(a) * 0.1, p[1] - math.sin(a) * 0.1, 0.36), glow("flood", "#d8f0ff", 3.0),
+       a + math.pi / 2, 0)
 
     def head():
         cy(0.065, 0.04, (0, 0, 0.02), dm, 10)
-        bx((0.13, 0.1, 0.07), (0.01, 0, 0.075), flat("steelwall", "#7f8995", 0.45), bev=0.008)
+        bx((0.13, 0.1, 0.07), (0.01, 0, 0.075), flat("steelwall", "#7f8995", 0.45), bev=0)
         for sy in (-1, 1):
             cy(0.012, 0.11, (0.1, sy * 0.025, 0.08), dm, 6, rot=(0, math.pi / 2, 0))
         bx((0.012, 0.04, 0.02), (0.075, 0, 0.1), glow("sensor", "#ff4a3a", 4.0), bev=0)
+        bx((0.012, 0.012, 0.016), (-0.04, 0.03, 0.118), glow("beacon", "#ff4a3a", 4.0), bev=0)
     build_at(head, p[0], p[1], a + math.pi / 6, z=0.42)
 
 
 def f8_edge(p0, p1, gate=False):
+    """Energy wall of the late era (reference frame 2's steel walls with cold light): composite plates with dark
+    seams on a steel base, glowing joints and a light line along the coping, a central emitter pylon, and an energy
+    curtain on a light lattice between the pylons."""
     L, ang, mid, n = edge_frame(p0, p1)
-    comp = flat("composite", "#e3e8ee", 0.4)
+    comp = facade("#c9cfd6", "#6d7682", 0.12, 0.08, 0.95, 0.88, lit="#6d7682", lit_p=0.0)
     trim = flat("comptrim", "#4a515c", 0.5)
     cyan = glow("cyan", CYAN, 2.5)
-    bx((L - 0.08, 0.07, 0.14), (mid[0], mid[1], 0.07), comp, ang, 0.008)
-    bx((L - 0.08, 0.075, 0.025), (mid[0], mid[1], 0.03), trim, ang, 0)
-    bx((L - 0.08, 0.075, 0.012), (mid[0], mid[1], 0.1), cyan, ang, 0)
-    # mid pylon
-    bx((0.06, 0.08, 0.46), (mid[0], mid[1], 0.23), comp, ang, 0.008)
-    bx((0.062, 0.03, 0.4), (mid[0] + n[0] * 0.03, mid[1] + n[1] * 0.03, 0.24), trim, ang, 0)
-    bx((0.014, 0.034, 0.36), (mid[0] + n[0] * 0.034, mid[1] + n[1] * 0.034, 0.24), cyan, ang, 0)
-    # energy mesh: lattice of glowing bars between the pylons
+    ebox(p0, p1, 0.04, L - 0.04, 0.0, 0.07, 0.0, 0.14, comp)
+    ebox(p0, p1, 0.04, L - 0.04, 0.0, 0.076, 0.0, 0.04, trim)
+    ebox(p0, p1, 0.04, L - 0.04, 0.0, 0.076, 0.14, 0.152, trim)
+    ebox(p0, p1, 0.04, L - 0.04, 0.0, 0.078, 0.094, 0.104, cyan)
+    for f in (0.17, 0.33, 0.67, 0.83):  # glowing joints between the plates
+        u = L * f
+        ebox(p0, p1, u - 0.005, u + 0.005, 0.0, 0.078, 0.04, 0.14, cyan)
+    # mid pylon with an emitter head
+    ebox(p0, p1, L / 2 - 0.03, L / 2 + 0.03, 0.0, 0.08, 0.0, 0.46, comp)
+    ebox(p0, p1, L / 2 - 0.031, L / 2 + 0.031, 0.024, 0.032, 0.04, 0.44, trim)
+    ebox(p0, p1, L / 2 - 0.007, L / 2 + 0.007, 0.041, 0.006, 0.06, 0.42, cyan)
+    ebox(p0, p1, L / 2 - 0.04, L / 2 + 0.04, 0.0, 0.09, 0.46, 0.475, trim)
+    ebox(p0, p1, L / 2 - 0.016, L / 2 + 0.016, 0.0, 0.03, 0.475, 0.5, cyan)
     for (fa, fb) in ((0.06, 0.47), (0.53, 0.94)):
         qa, qb = lerp2(p0, p1, fa), lerp2(p0, p1, fb)
-        for z in (0.24, 0.34, 0.44):
+        for z in (0.29, 0.44):
             beam((qa[0], qa[1], z), (qb[0], qb[1], z), 0.009, cyan)
-        beam((qa[0], qa[1], 0.15), (qb[0], qb[1], 0.44), 0.008, cyan)
         qm = lerp2(p0, p1, (fa + fb) / 2)
-        bx((math.dist(qa, qb), 0.006, 0.28), (qm[0], qm[1], 0.295), glow("curtain", "#1a8fd0", 0.7), ang, 0)
-        beam((qa[0], qa[1], 0.44), (qb[0], qb[1], 0.15), 0.008, cyan)
+        bx((math.dist(qa, qb), 0.006, 0.29), (qm[0], qm[1], 0.295), glow("curtain", "#1a8fd0", 0.7), ang, 0)
 
 
 def f8_post(p):
+    """Emitter pylon: a steel base, a composite shaft with cold light strips and three light rings, dark emitter
+    fins and a glowing orb on the cap."""
     a = math.atan2(p[1], p[0])
-    comp = flat("composite", "#e3e8ee", 0.4)
+    comp = facade("#c9cfd6", "#6d7682", 0.05, 0.1, 0.9, 0.9, lit="#6d7682", lit_p=0.0)
     trim = flat("comptrim", "#4a515c", 0.5)
     cyan = glow("cyan", CYAN, 2.5)
     cy(0.075, 0.08, (p[0], p[1], 0.04), trim, 6, rot=(0, 0, a))
-    bx((0.09, 0.09, 0.52), (p[0], p[1], 0.3), comp, a, 0.01)
+    bx((0.09, 0.09, 0.52), (p[0], p[1], 0.3), comp, a, 0)
     bx((0.016, 0.094, 0.44), (p[0], p[1], 0.3), cyan, a, 0)
     bx((0.094, 0.016, 0.44), (p[0], p[1], 0.3), cyan, a, 0)
+    for z in (0.2, 0.36, 0.5):
+        bx((0.104, 0.104, 0.012), (p[0], p[1], z), cyan, a, 0)
+    for s_ in (-1, 1):  # emitter fins along the wall lines
+        q = a + s_ * math.pi / 2
+        bx((0.012, 0.05, 0.2), (p[0] + math.cos(q) * 0.055, p[1] + math.sin(q) * 0.055, 0.42), trim, q, 0)
     cy(0.06, 0.04, (p[0], p[1], 0.58), trim, 6, rot=(0, 0, a))
     ico(0.04, (p[0], p[1], 0.63), cyan)
 
@@ -3701,7 +3950,7 @@ def export(name, out):
     bpy.context.view_layer.update()
     lowpoly(objs)
     smokes = [o for o in bpy.context.scene.objects if o.type == "EMPTY" and o.name.startswith(("smoke", "flag"))]
-    if name.rsplit("_", 1)[0] in SETTLED:
+    if name.rsplit("_", 1)[0] in SETTLED or name.startswith("fort_"):
         _drop_ground_faces(objs)
     # the hero model is seen up close, and the dense towns carry hundreds of thin beams and tile courses that need
     # the texels (at 512 they shrink below a pixel and sample the black gutter)
