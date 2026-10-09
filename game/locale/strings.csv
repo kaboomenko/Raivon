@@ -155,7 +155,8 @@ inbox.empty,Пока тихо. Здесь появятся донесения о
 time.just_now,только что,just now
 time.min_ago,%d мин назад,%d min ago
 time.h_ago,%d ч назад,%d h ago
-time.hm,%d ч %02d мин,%dh %02dm
+time.hm,%dч %02dм,%dh %02dm
+time.dh,%dд %dч,%dd %dh
 time.s,%d с,%ds
 ult.title,Ультиматум: %s,Ultimatum: %s
 ult.text,«Отдай нам «%s» — или заплати дань %d золота. Иначе — война.»\n\nНа ответ: %s. Без ответа — война.,"“Hand over ‘%s’ or pay a tribute of %d gold. Otherwise, it's war.”\n\nTime to answer: %s. No answer means war."

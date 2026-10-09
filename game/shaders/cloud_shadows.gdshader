@@ -1,7 +1,7 @@
 shader_type spatial;
 // Drifting cloud shadows (art direction: a sunny map that breathes): a plane just above the territory fills,
 // multiplied onto everything under it — ground, fills, water — while trees, buildings, armies and the
-// opaque neon borders stand above it and stay lit.
+// territory borders (drawn above it, docs/art_direction.md §6.6 layer order) stay lit.
 render_mode blend_mul, unshaded, depth_draw_never, cull_disabled, shadows_disabled, fog_disabled;
 
 uniform sampler2D cloud_noise : filter_linear_mipmap, repeat_enable;

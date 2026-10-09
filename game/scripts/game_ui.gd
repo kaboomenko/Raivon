@@ -32,6 +32,7 @@ const L := preload("res://scripts/l10n.gd")
 const CmdPortrait := preload("res://scripts/cmd_portrait.gd")
 const HudScript := preload("res://scripts/hud.gd")
 const FlagView := preload("res://scripts/flag_view.gd")
+const Kit := preload("res://scripts/ui_kit.gd")
 
 var font_bold: Font
 var root: Control
@@ -65,10 +66,7 @@ var _seal_prog: Panel
 
 func _ready() -> void:
 	layer = 2
-	var f := SystemFont.new()
-	f.font_names = PackedStringArray(["Noto Sans", "DejaVu Sans", "Roboto", "Arial"])
-	f.font_weight = 800
-	font_bold = f
+	font_bold = Kit.font("d900")  # Rubik 900 (docs/ui_style.md §3.3)
 	root = Control.new()
 	root.size = Vector2(VW, VH)
 	root.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -84,37 +82,26 @@ func _ready() -> void:
 
 # ------------------------------------------------------------------ helpers
 
+## The legacy palette mapped onto the kit (opaque slate / cream / role faces, INK contour, hard shadow, lip).
+## Callers may still mutate the result (shadow_size, corner radii).
 func _style(bg: Color, radius := 14, border := EDGE, bw := 2) -> StyleBoxFlat:
-	var s := StyleBoxFlat.new()
-	s.bg_color = bg
-	s.set_corner_radius_all(radius)
-	s.border_color = border
-	s.set_border_width_all(bw)
-	s.shadow_color = Color(0, 0, 0, 0.45)
-	s.shadow_size = 6
-	return s
+	return Kit.legacy_style(bg, radius, border, bw)
 
 
 func _label(text: String, size: int, color := TEXT, bold := true) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.add_theme_font_size_override("font_size", size)
-	l.add_theme_color_override("font_color", color)
-	l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.75))
-	l.add_theme_constant_override("outline_size", 5 if bold else 0)
-	if bold:
-		l.add_theme_font_override("font", font_bold)
-	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return l
+	return Kit.label(text, size, color, bold)
 
 
-## Shrinks the label's font from `base` (down to 12) until its one-line text fits `max_w` px: button captions
-## differ in length between languages (and some Russian ones never fit the 266 px button).
+## Shrinks the label's font from `base` down through the type scale (to 20, or to `base` when a legacy call
+## asks for less) until its one-line text fits `max_w` px: captions differ in length between languages.
 func _fit(l: Label, base: int, max_w: float) -> void:
 	var f := l.get_theme_font("font")
-	var s := base
-	while s > 12 and f.get_string_size(l.text, HORIZONTAL_ALIGNMENT_LEFT, -1, s).x > max_w:
-		s -= 1
+	var steps := Kit.fit_steps(base, mini(Kit.FIT_FLOOR, base))
+	var s: int = steps[-1]
+	for v in steps:
+		if f.get_string_size(l.text, HORIZONTAL_ALIGNMENT_LEFT, -1, v).x <= max_w:
+			s = v
+			break
 	l.add_theme_font_size_override("font_size", s)
 
 
@@ -124,6 +111,8 @@ func _panel(parent: Control, rect: Rect2, style: StyleBox, filter := Control.MOU
 	p.size = rect.size
 	p.add_theme_stylebox_override("panel", style)
 	p.mouse_filter = filter
+	if style is StyleBoxFlat and int(style.get_meta("kit_lip", 0)) > 0 and rect.size.y >= 40.0:
+		p.add_child(Kit.KitDecor.new())  # the lip / highlight line / gloss (child 0)
 	parent.add_child(p)
 	return p
 
@@ -136,13 +125,18 @@ func _at(l: Control, parent: Control, pos: Vector2, size := Vector2.ZERO) -> Con
 	return l
 
 
-## Emoji that are drawn as the rendered 3D icons (tools/blender/icon_assets.py) inside button captions and rows.
+## Pictographs that are drawn as the rendered 3D icons inside rows (paths kept for the call sites that use them;
+## the full mapping, vector chrome included, is Kit.PICTO / Kit.split_icons).
 const INLINE_ICONS := {"💎": "res://assets/ui/raivite.png", "🔒": "res://assets/ui/icons/lock.png", "🎬": "res://assets/ui/icons/ad.png"}
 
 
+## A rendered icon in a square box. `path` is a res:// path or a kit icon name (Kit.icon_tex, with stand-ins).
 func _icon_rect(path: String, side: float) -> TextureRect:
 	var ic := TextureRect.new()
-	ic.texture = load(path)
+	if path.begins_with("res://"):
+		ic.texture = load(path) if ResourceLoader.exists(path) else Kit.icon_tex(path.get_file().get_basename())
+	else:
+		ic.texture = Kit.icon_tex(path)
 	ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	ic.custom_minimum_size = Vector2(side, side)
@@ -152,16 +146,16 @@ func _icon_rect(path: String, side: float) -> TextureRect:
 	return ic
 
 
-## A window title with its rendered 3D icon (assets/ui/icons/<icon>.png) in front, as in the reference HUD.
+## A window title with its rendered 3D icon in front (1.4× the text size, 12 px before the text).
 func _title(parent: Control, text: String, size: int, color: Color, pos: Vector2, icon: String, bold := true, max_w := 0.0) -> Label:
-	var p := "res://assets/ui/icons/%s.png" % icon
-	if ResourceLoader.exists(p):
-		var side := roundf(size * 1.6)
-		var ic := _icon_rect(p, side)
-		ic.position = pos + Vector2(-6, size * 0.68 - side / 2.0)  # centred on the first text line
+	var tex := Kit.icon_tex(icon)
+	if tex != null:
+		var side := roundf(size * 1.4)
+		var ic := _icon_rect(icon, side)
+		ic.position = pos + Vector2(0, Kit.snap_size(size) * 0.7 - side / 2.0)  # centred on the first text line
 		parent.add_child(ic)
-		pos.x += side - 2.0
-		max_w -= side - 2.0
+		pos.x += side + 12.0
+		max_w -= side + 12.0
 	var l := _label(text, size, color, bold)
 	if max_w > 0.0:
 		_fit(l, size, max_w)
@@ -169,46 +163,42 @@ func _title(parent: Control, text: String, size: int, color: Color, pos: Vector2
 
 
 func _has_inline(text: String) -> bool:
-	for k in INLINE_ICONS:
-		if text.contains(k):
+	for p in Kit.split_icons(text):
+		if not (p as Dictionary).has("t"):
 			return true
 	return false
 
 
-## One line of text whose 💎 / 🔒 / 🎬 are drawn as the 3D icons; the font shrinks (down to 12) to fit max_w.
+## One line of text whose pictographs are drawn as the 3D icons / vector chrome; the font steps down the type
+## scale (to 20) to fit max_w.
 func _inline(text: String, size: int, color := TEXT, bold := true, max_w := 0.0) -> HBoxContainer:
-	var parts: Array[String] = []  # text pieces; an icon is its INLINE_ICONS key
-	var buf := ""
-	for i in text.length():
-		var ch := text[i]
-		if INLINE_ICONS.has(ch):
-			if buf.strip_edges() != "":
-				parts.append(buf.strip_edges())
-			parts.append(ch)
-			buf = ""
-		else:
-			buf += ch
-	if buf.strip_edges() != "":
-		parts.append(buf.strip_edges())
-	var probe := _label("", size, color, bold)
-	var f := probe.get_theme_font("font")
-	probe.free()
-	var s := size
-	while max_w > 0.0 and s > 12:
-		var w := 0.0
-		for p in parts:
-			w += (s * 1.3 if INLINE_ICONS.has(p) else f.get_string_size(p, HORIZONTAL_ALIGNMENT_LEFT, -1, s).x) + 6.0
-		if w <= max_w:
-			break
-		s -= 1
+	var parts := Kit.split_icons(text)
+	var kind := ("d900" if Kit.snap_size(size) >= 26 else "d800") if bold else "b800"
+	var s: int = Kit.snap_size(size) if size >= 21 else size
+	if max_w > 0.0:
+		var steps := Kit.fit_steps(size, mini(Kit.FIT_FLOOR, size))
+		s = steps[-1]
+		for v in steps:
+			var w := 0.0
+			for p in parts:
+				w += (Kit.text_w(String(p["t"]), v, kind, bold) if p.has("t") else v * 1.2) + 6.0
+			if w <= max_w:
+				s = v
+				break
 	var hb := HBoxContainer.new()
 	hb.add_theme_constant_override("separation", 6)
 	hb.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	for p in parts:
-		if INLINE_ICONS.has(p):
-			hb.add_child(_icon_rect(INLINE_ICONS[p], roundf(s * 1.3)))
+		if p.has("i"):
+			hb.add_child(_icon_rect(String(p["i"]), roundf(s * 1.2)))
+		elif p.has("v"):
+			var sh := Kit.KitShape.new(String(p["v"]))
+			sh.custom_minimum_size = Vector2(roundf(s * 1.1), roundf(s * 1.1))
+			sh.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			hb.add_child(sh)
 		else:
-			var l := _label(p, s, color, bold)
+			var l := _label(String(p["t"]), s, color, bold)
+			l.add_theme_font_size_override("font_size", s)
 			l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 			l.size_flags_vertical = Control.SIZE_FILL
 			hb.add_child(l)
@@ -548,43 +538,64 @@ func has_modal() -> bool:
 	return _modal != null
 
 
+var _closing: Control  # the window fading out
+var _closed_frame := -1
+
+
+## Closes the window at once for the game (`has_modal()` is false right away); the node fades out (120 ms).
 func close_modal() -> void:
-	if _modal:
-		_modal.queue_free()
-		_modal = null
+	var m := _modal
+	_modal = null
+	if m:
+		_closing = m
+		_closed_frame = Engine.get_process_frames()
+		Kit.close_fx(m)
 
 
-func _modal_box(rect: Rect2, parchment := false) -> Panel:
+## A cream window (docs/ui_style.md §4.3) over an INK dim; every modal is paper now (`parchment` is ignored).
+## title / icon / role: the hex title plate; closable: the round ✕ and a tap on the dim close it (not for
+## `blocking` decision windows). Returns the frame Panel; its children keep their local coordinates.
+func _modal_box(rect: Rect2, parchment := false, title := "", icon := "", role := "info", closable := false, blocking := false) -> Panel:
+	# a window replaced in the same frame (a screen re-rendering itself) swaps without the pop-in
+	var swap := _modal != null or _closed_frame == Engine.get_process_frames()
 	close_modal()
+	if swap and is_instance_valid(_closing):
+		_closing.queue_free()
 	_modal = Control.new()
-	_modal.size = Vector2(VW, VH)
+	var vis := get_viewport().get_visible_rect() if is_inside_tree() else Rect2(0, 0, VW, VH)
+	_modal.position = vis.position
+	_modal.size = Vector2(maxf(VW, vis.size.x), maxf(VH, vis.size.y))
 	_modal.mouse_filter = Control.MOUSE_FILTER_STOP
 	root.add_child(_modal)
 	var dim := ColorRect.new()
-	dim.color = Color(0, 0, 0, 0.0 if parchment else 0.35)
-	dim.size = Vector2(VW, VH)
+	dim.color = Color(Kit.INK, 0.0)
+	dim.size = _modal.size
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_modal.add_child(dim)
-	var bg := Color(0.95, 0.89, 0.74) if parchment else PANEL
-	return _panel(_modal, rect, _style(bg, 22, Color(0.55, 0.42, 0.2) if parchment else EDGE, 3))
-
-
-func _button(parent: Control, rect: Rect2, text: String, color: Color, cb: Callable) -> Panel:
-	var b := _panel(parent, rect, _style(color, 14, Color(1, 1, 1, 0.5), 2))
-	if _has_inline(text):
-		var hb := _inline(text, 22, TEXT, true, rect.size.x - 16.0)
-		hb.size = rect.size
-		hb.alignment = BoxContainer.ALIGNMENT_CENTER
-		b.add_child(hb)
+	if swap or DisplayServer.get_name() == "headless" or Kit.reduce_motion:
+		dim.color.a = Kit.DIM_A
 	else:
-		var l := _label(text, 22)
-		_fit(l, 22, rect.size.x - 16.0)
-		l.size = rect.size
-		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		b.add_child(l)
-	b.gui_input.connect(func(e): if _is_tap(e): cb.call())
-	return b
+		dim.create_tween().tween_property(dim, "color:a", Kit.DIM_A, 0.14)
+	var frame := _panel(_modal, Rect2(rect.position - _modal.position, rect.size), Kit.style(Kit.CREAM, 34, 5, Kit.INK, 10, 12))
+	frame.set_meta("paper", true)
+	if not swap:
+		Kit.pop_in(frame)
+	if title != "":
+		Kit.title_plate(frame, title, role, icon)
+	if closable and not blocking:
+		Kit.close_button(frame, close_modal)
+		var m := _modal
+		_modal.gui_input.connect(func(e): if _is_tap(e) and _modal == m: close_modal())
+	Kit.paperize.call_deferred(frame)
+	return frame
+
+
+## A kit button (§4.1) whose role follows the legacy colour; returns the KitButton (a Panel). A lone «✕» is a
+## close button: role war with the vector cross.
+func _button(parent: Control, rect: Rect2, text: String, color: Color, cb: Callable) -> Panel:
+	var close := text.strip_edges() == "✕"
+	return Kit.button(parent, rect, "war" if close else Kit.role_of(color), text,
+		{"cb": cb, "hit_pad": maxf(0.0, (96.0 - rect.size.y) * 0.5) if close else 0.0})
 
 
 func show_result(stars: int, captured: int, lost: int, score: float, control: int, reason: String, on_continue: Callable, on_peace: Callable) -> void:
@@ -1295,22 +1306,14 @@ func _icon(res: String) -> Texture2D:
 	return _icon_cache[k]
 
 
-## 12345 -> "12 345" (exact amounts on the Market).
+## 8 620 / 12,4K / 1,2M (docs/ui_style.md §3.7).
 static func fmt_num(n: int) -> String:
-	var t := str(absi(n))
-	var out := ""
-	while t.length() > 3:
-		out = " " + t.substr(t.length() - 3) + out
-		t = t.substr(0, t.length() - 3)
-	return ("-" if n < 0 else "") + t + out
+	return Kit.fmt_num(n)
 
 
+## 42 с / 1:06 / 2ч 57м / 3д 4ч
 static func fmt_time(sec: int) -> String:
-	if sec >= 3600:
-		return L.t("time.hm") % [sec / 3600, (sec % 3600) / 60]
-	if sec >= 60:
-		return "%d:%02d" % [sec / 60, sec % 60]
-	return L.t("time.s") % sec
+	return Kit.fmt_time(sec)
 
 
 ## items: [{id, name, level, max, busy, left, speed, cost: {res: n}, seconds, reason}]
@@ -2444,16 +2447,12 @@ func _market_card(it: Dictionary) -> Control:
 	return card
 
 
+## The XS button at the bottom of a tray card (PASS: a drag still scrolls the row). The legacy «can't» grey shows
+## the lock role but still runs `cb` (the callers explain the reason in a toast). `_enabled` stays unused as
+## before: the speed-up card passes false for its free speed-up.
 func _card_button(card: Control, text: String, color: Color, cb: Callable, _enabled: bool) -> void:
-	var b := _panel(card, Rect2(8, 134, 134, 38), _style(color, 10, Color(1, 1, 1, 0.45), 2))
-	b.mouse_filter = Control.MOUSE_FILTER_PASS
-	var l := _label(text, 17)
-	_fit(l, 17, 128.0)
-	l.size = Vector2(134, 38)
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	b.add_child(l)
-	b.gui_input.connect(func(e): if _is_tap(e): cb.call())
+	var role := "lock" if Kit.is_legacy_disabled(color) else Kit.role_of(color)
+	Kit.button(card, Rect2(8, 130, 134, 42), role, text, {"cb": cb, "size": "XS", "filter": Control.MOUSE_FILTER_PASS})
 
 
 # ------------------------------------------------------------------ coach (FTUE, canon §14.3)

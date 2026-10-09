@@ -1,8 +1,8 @@
 """Every 3D UI icon (docs/ui_style.md §3.5): resources for the top bar, HUD buttons, tabs, window titles, rewards.
 One camera, one key light (plus the cool rim light), the same chunky low-poly kit as the map models.
 
-Run: python3 tools/blender/icon_assets.py [game/assets/ui] [name ...] [--raw=DIR]
-- With no names, renders every icon in ICONS.
+Run: python3 tools/blender/icon_assets.py [game/assets/ui] [name ...] [--raw=DIR] [--samples=64]
+- With no names, renders every icon in ICONS (66 icons, about 4 minutes on 4 cores).
 - coin, food, metal, raivite, oil, builder go to <out>/<name>.png (the HUD loads res://assets/ui/<name>.png);
   every other icon goes to <out>/icons/<name>.png.
 
@@ -21,7 +21,6 @@ import sys
 import tempfile
 
 import bpy
-from mathutils import Vector
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import kit  # noqa: E402
@@ -325,7 +324,7 @@ def stall():
 
 def anchor():
     """Port: an iron anchor with a ring and a coil of rope."""
-    iron = mat("anchor_i", "#5d6672", 0.35, 0.8)
+    iron = mat("anchor_i", "#7d8796", 0.35, 0.8)
     cyl("shank", 0.05, 0.9, (0, 0, 0.0), iron, 12, 0.01)
     t = cyl("stock", 0.04, 0.5, (0, 0, 0.36), iron, 12, 0.01)
     t.rotation_euler.y = math.pi / 2
@@ -718,7 +717,7 @@ def swords():
     blade = mat("blade", "#d6dee8", 0.28, 0.75)
     edge = mat("blade_hi", "#f4f7fb", 0.2, 0.6)
     grip = mat("grip", "#7a3f26", 0.7)
-    for k, (ang, y) in enumerate(((40, -0.05), (-40, 0.05))):
+    for ang, y in ((40, -0.05), (-40, 0.05)):
         before = set(bpy.context.scene.objects)
         w = 0.085
         _extrude("blade", [(-w, -0.3), (w, -0.3), (w, 0.44), (0, 0.62), (-w, 0.44)], 0.07, blade, y=-0.035, bevel=0.016)
@@ -760,7 +759,7 @@ def dove():
     leaf = mat("olive_leaf", "#5f9e3c", 0.6)
     st = cyl("sprig", 0.013, 0.3, (0.52, -0.06, -0.02), mat("sprig", "#6b7a2a", 0.7), 6, 0.0)
     st.rotation_euler.y = 2.5
-    for k, (x, z, a) in enumerate(((0.5, 0.02, 0.8), (0.56, -0.06, -0.6), (0.6, -0.12, 0.9), (0.66, -0.17, -0.4))):
+    for (x, z, a) in ((0.5, 0.02, 0.8), (0.56, -0.06, -0.6), (0.6, -0.12, 0.9), (0.66, -0.17, -0.4)):
         lf = sphere("leaf", 0.075, (x, -0.08, z), leaf, (0.45, 0.25, 1.0), 2)
         lf.rotation_euler.y = a
     sphere("olive", 0.04, (0.56, -0.1, -0.16), mat("olive", "#4f6b22", 0.4), (1, 1, 1.2), 2)
@@ -790,7 +789,7 @@ def treaty():
     for k in range(9):
         a = k * math.tau / 9
         sphere("blob", 0.04, (0.14 + math.cos(a) * 0.12, -0.06, -0.2 + math.sin(a) * 0.12), wax, (1, 0.6, 1), 2)
-    h = _face_cyl("hex", 0.07, 0.03, (0.14, -0.088, -0.2), mat("wax_l", "#e05a46", 0.4), 6, 0.006)
+    _face_cyl("hex", 0.07, 0.03, (0.14, -0.088, -0.2), mat("wax_l", "#e05a46", 0.4), 6, 0.006)
     _tilt(rx=6, rz=-10)
 
 
@@ -864,8 +863,8 @@ def horn():
     end, dirx, dirz = pts[-1], math.cos(a1 + math.pi / 2), math.sin(a1 + math.pi / 2)
     tip = (end[0] + dirx * 0.16, 0, end[2] + dirz * 0.16)
     _along("bell", end, tip, 0.11, 0.25, brass(), 28)
-    inner = _along("bell_in", (tip[0] - dirx * 0.01, 0, tip[2] - dirz * 0.01), (tip[0] + dirx * 0.005, 0, tip[2] + dirz * 0.005),
-                   0.21, 0.21, mat("horn_in", "#5a3a12", 0.6), 24)
+    _along("bell_in", (tip[0] - dirx * 0.01, 0, tip[2] - dirz * 0.01), (tip[0] + dirx * 0.005, 0, tip[2] + dirz * 0.005),
+           0.21, 0.21, mat("horn_in", "#5a3a12", 0.6), 24)
     st = pts[0]
     bx, bz = math.sin(a0), -math.cos(a0)  # backwards from the first segment
     _along("mouth", st, (st[0] + bx * 0.1, 0, st[2] + bz * 0.1), 0.05, 0.035, band, 12)
@@ -930,12 +929,17 @@ def barrel():
         cyl("hoop", r_at(z) + 0.014, 0.05, (0, 0, z), brass(), 32, 0.01)
     cyl("lid", 0.285, 0.03, (0, 0, 0.42), lid, 32, 0.01)
     cyl("bung", 0.05, 0.04, (0.13, 0.06, 0.445), brass(), 12, 0.01)
-    sphere("pool", 0.12, (-0.08, -0.11, 0.44), oil_m, (1.35, 1.1, 0.12), 3)
-    sphere("drip_lip", 0.065, (-0.1, -0.285, 0.41), oil_m, (1.15, 0.7, 0.75), 2)
-    sphere("drip", 0.045, (-0.1, -0.315, 0.31), oil_m, (1.0, 0.55, 2.3), 2)
-    sphere("drop", 0.07, (-0.1, -0.33, 0.17), oil_m, (1, 0.75, 1.1), 2)
-    cone("drop_top", 0.05, 0.08, (-0.1, -0.33, 0.24), oil_m, 12, 0.0)
-    sphere("glint", 0.018, (-0.12, -0.39, 0.19), mat("oil_glint", "#9aa2bc", 0.2), (1, 0.6, 1.3), 2)
+    sphere("pool", 0.12, (-0.06, -0.1, 0.44), oil_m, (1.45, 1.15, 0.12), 3)
+    # oil spilling over the front of the rim in one wavy band with three rounded tongues (paint-drip style)
+    for k in range(11):
+        a = math.radians(-90 + (k - 5) * 7)
+        sphere("spill", 0.055, (math.cos(a) * 0.29, math.sin(a) * 0.29, 0.405 - 0.008 * (k % 2)), oil_m, (1.2, 0.8, 0.9), 2)
+    for (a_deg, L) in ((-112, 0.12), (-88, 0.22), (-68, 0.09)):
+        a = math.radians(a_deg)
+        x, y = math.cos(a) * 0.318, math.sin(a) * 0.318
+        cyl("run", 0.04, L, (x, y, 0.4 - L / 2), oil_m, 12, 0.0)
+        sphere("tip", 0.04, (x, y, 0.4 - L), oil_m, (1, 1, 1.15), 2)
+    sphere("glint", 0.014, (-0.02, -0.355, 0.24), mat("oil_glint", "#9aa2bc", 0.2), (1, 0.6, 1.5), 2)
     _tilt(rx=16, rz=-14)
 
 
@@ -965,9 +969,8 @@ def charter():
     ang = math.pi / 2 - 0.42
     r = cyl("roll", 0.17, 0.86, (0, 0.04, 0.12), paper, 32, 0.015)
     r.rotation_euler.y = ang
-    for s in (-1, 1):
-        e = cyl("end", 0.12, 0.88, (0, 0.04, 0.12), paper_d, 24, 0.0)
-        e.rotation_euler.y = ang
+    e = cyl("end", 0.12, 0.88, (0, 0.04, 0.12), paper_d, 24, 0.0)  # the rolled-up layers showing at both ends
+    e.rotation_euler.y = ang
     b = cyl("tie", 0.178, 0.08, (0, 0.04, 0.12), red, 32, 0.0)
     b.rotation_euler.y = ang
     for sx in (-1, 1):
@@ -1087,9 +1090,8 @@ def blueprint():
     for z, rr in ((0.27, 0.085), (-0.37, 0.06)):
         c = cyl("tube", rr, 0.72, (0, 0.0, z), blue_d, 24, 0.012)
         c.rotation_euler.y = math.pi / 2
-        for sx in (-1, 1):
-            e = cyl("tube_end", rr * 0.6, 0.73, (0, 0.0, z), mat("bp_end", "#a9cdef", 0.6), 16, 0.0)
-            e.rotation_euler.y = math.pi / 2
+        e = cyl("tube_end", rr * 0.6, 0.73, (0, 0.0, z), mat("bp_end", "#a9cdef", 0.6), 16, 0.0)  # the rolled layers
+        e.rotation_euler.y = math.pi / 2
     _tilt(rx=10, rz=-12)
 
 
@@ -1256,16 +1258,17 @@ def hex_tile():
 
 def food():
     """Food: an open burlap sack heaped with grain, three big wheat ears standing out of it (not a fan, not a purse)."""
-    sack = mat("sack", "#dcbb7c", 0.9)
+    sack = kit.noisy_mat("sack", "#cfac6c", "#e2c387", 40.0, 0.95)  # a fine mottle reads as burlap weave
     fold = mat("sack_d", "#c39d5e", 0.9)
     grain = mat("grain", "#f2c650", 0.55)
     stalk = mat("stalk", "#c99a3a", 0.7)
-    sphere("sack", 0.34, (0, 0, -0.2), sack, (1.15, 0.95, 0.9), 3)
-    cyl("shoulder", 0.33, 0.16, (0, 0, 0.04), sack, 28, 0.02, r2=0.25)
-    _torus("fold", 0.255, 0.065, (0, 0, 0.13), fold, seg=28)
-    sphere("grain_top", 0.25, (0, 0, 0.15), grain, (1.0, 1.0, 0.42), 3)
-    for k in range(3):  # stitched seam lines on the front
-        box("seam", (0.012, 0.01, 0.16), (-0.16 + k * 0.16, -0.32, -0.22 + (0.03 if k == 1 else 0)), fold, 0.0)
+    sphere("sack", 0.34, (0, 0, -0.18), sack, (1.08, 0.92, 1.0), 3)
+    sphere("base", 0.3, (0, 0.0, -0.36), sack, (1.2, 1.0, 0.5), 3)  # the bag settles on a flat bottom
+    cyl("shoulder", 0.3, 0.16, (0, 0, 0.06), sack, 28, 0.02, r2=0.24)
+    for k in range(9):  # the mouth rolled down in soft folds
+        a = k * math.tau / 9
+        sphere("fold", 0.075, (math.cos(a) * 0.245, math.sin(a) * 0.245, 0.15 + 0.012 * (k % 2)), fold, (1.25, 1.0, 0.75), 2)
+    sphere("grain_top", 0.24, (0, 0, 0.16), grain, (1.0, 1.0, 0.45), 3)
     for k, a in enumerate((-0.48, -0.04, 0.42)):
         x0, z0 = math.sin(a) * 0.08 + (k - 1) * 0.06, 0.2
         L = 0.4 if k != 1 else 0.48

@@ -323,24 +323,27 @@ const ERA_LIGHT_1 := {
 }
 
 
-## The sunny «Raivon Soft» grade (docs/art_direction.md §6.4): Filmic at exposure 1.0, a light sky-blue fill so the
-## shade side of things stays blue-lilac instead of black (light : shade on flat ground ≈ 2.3 : 1), gentle contrast and a
-## little extra saturation instead of the old dark, contrasty ACES grade. No SSAO: the Mobile renderer phones run has
-## none. Glow is kept for VFX and sci-fi lights only — a threshold above sunlit ground and no bloom, so the frame never
+## The sunny «Raivon Soft» grade (docs/art_direction.md §6.4) in place of the old dark, contrasty one (ACES at 0.72,
+## contrast 1.25, saturation 0.8, ambient 0.45 — §6.0): Filmic, gentle contrast and a little extra saturation, and a light
+## sky-blue fill so the shade side of things stays blue-lilac instead of black. No SSAO: the Mobile renderer phones run
+## has none. Glow is for VFX and sci-fi lights only — a threshold above sunlit ground and no bloom, so the frame never
 ## hazes and the borders never glow (§6.1 rule 4).
+## Tuned on the Mobile renderer (tools/soft_shots.sh): exposure 0.9 — the strategic frame's V p50 stays above 0.62 even
+## there, held up by the bright water. Fog 0.001 instead of §6.4's 0.006: the fog colour is emitted, not lit, so over the
+## sunlit ground it reads near-white, and 0.006 veiled the whole frame (mean S 0.59 -> 0.30, grass S 57 % -> 24 %).
 func _environment() -> void:
 	var we := WorldEnvironment.new()
 	var e := Environment.new()
 	e.background_mode = Environment.BG_COLOR
-	e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+	e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR  # a ProceduralSky ambient measured no better (G1)
 	e.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	e.tonemap_exposure = 1.0
-	e.glow_enabled = false  # TEMP G1 experiment
+	e.tonemap_exposure = 0.9
+	e.glow_enabled = true
 	e.glow_strength = 1.0
 	e.glow_bloom = 0.0
 	e.glow_hdr_threshold = 1.1
 	e.fog_enabled = true
-	e.fog_density = 0.006
+	e.fog_density = 0.001
 	e.adjustment_enabled = true
 	e.adjustment_brightness = 1.03
 	e.adjustment_contrast = 1.04
@@ -352,10 +355,10 @@ func _environment() -> void:
 	_add_tilt_shift()
 	var sun := DirectionalLight3D.new()
 	_sun = sun
-	sun.rotation_degrees = Vector3(-55, -35, 0)  # higher sun: shorter, softer shadows (§6.4)
+	sun.rotation_degrees = Vector3(-55, -35, 0)  # a higher sun: shorter, softer shadows (§6.4)
 	sun.shadow_enabled = true
-	sun.shadow_blur = 2.5  # soft edges; phones need soft_shadow_filter_quality.mobile = 2 (project.godot) to see it
-	sun.shadow_opacity = 0.7  # the shade keeps colour: blue-lilac, not black
+	sun.shadow_blur = 2.5  # soft edges; phones need soft_shadow_filter_quality.mobile = 2 (project.godot) to show them
+	sun.shadow_opacity = 0.7  # the shade keeps its colour: blue-lilac, not black
 	sun.directional_shadow_max_distance = 60
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS  # half the shadow passes of 4 splits
 	add_child(sun)

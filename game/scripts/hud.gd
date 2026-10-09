@@ -2,6 +2,7 @@ extends CanvasLayer
 ## HUD laid out exactly like the owner's reference frames (docs/art_direction.md §3).
 
 const CmdPortrait := preload("res://scripts/cmd_portrait.gd")
+const Kit := preload("res://scripts/ui_kit.gd")
 const PANEL := Color(0.055, 0.085, 0.14, 0.92)
 const PANEL_2 := Color(0.09, 0.13, 0.2, 0.95)
 const EDGE := Color(0.32, 0.42, 0.58, 0.55)
@@ -50,22 +51,13 @@ func set_flag(f: Dictionary) -> void:
 
 
 func _ready() -> void:
-	var f := SystemFont.new()
-	f.font_names = PackedStringArray(["Noto Sans", "DejaVu Sans", "Roboto", "Arial"])
-	f.font_weight = 800
-	font_bold = f
+	font_bold = Kit.font("d900")  # Rubik 900 (docs/ui_style.md §3.3)
 	_build()
 
 
+## The legacy palette mapped onto the kit (opaque slate surfaces, INK contour, hard shadow, lip).
 func _style(bg: Color, radius := 14, border := EDGE, bw := 2) -> StyleBoxFlat:
-	var s := StyleBoxFlat.new()
-	s.bg_color = bg
-	s.set_corner_radius_all(radius)
-	s.border_color = border
-	s.set_border_width_all(bw)
-	s.shadow_color = Color(0, 0, 0, 0.45)
-	s.shadow_size = 6
-	return s
+	return Kit.legacy_style(bg, radius, border, bw)
 
 
 ## The ruler's portrait follows the player's era like the commanders' (a crown, a bicorne coat, a field cap, armour).
@@ -80,15 +72,7 @@ func set_ruler_era(dl: int) -> void:
 
 
 func _label(text: String, size: int, color := TEXT, bold := true) -> Label:
-	var l := Label.new()
-	l.text = text
-	l.add_theme_font_size_override("font_size", size)
-	l.add_theme_color_override("font_color", color)
-	l.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.7))
-	l.add_theme_constant_override("outline_size", 4 if bold else 0)
-	if bold:
-		l.add_theme_font_override("font", font_bold)
-	return l
+	return Kit.label(text, size, color, bold)
 
 
 func _panel(rect: Rect2, style: StyleBox) -> Panel:
@@ -96,6 +80,8 @@ func _panel(rect: Rect2, style: StyleBox) -> Panel:
 	p.position = rect.position
 	p.size = rect.size
 	p.add_theme_stylebox_override("panel", style)
+	if style is StyleBoxFlat and int(style.get_meta("kit_lip", 0)) > 0 and rect.size.y >= 40.0:
+		p.add_child(Kit.KitDecor.new())  # the lip / highlight line / gloss (child 0)
 	add_child(p)
 	return p
 
@@ -372,13 +358,16 @@ func _build() -> void:
 	add_child(at)
 
 
-## Sets `text`, shrinking the font from `base` (down to 12) until it fits `max_w` px — long hex and state
-## names differ a lot between languages.
+## Sets `text`, shrinking the font from `base` down through the type scale (to 20, or to `base` when a legacy
+## call asks for less) until it fits `max_w` px — long hex and state names differ a lot between languages.
 func _fit(l: Label, text: String, max_w: float, base: int) -> void:
 	var f := l.get_theme_font("font")
-	var s := base
-	while s > 12 and f.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, s).x > max_w:
-		s -= 1
+	var steps := Kit.fit_steps(base, mini(Kit.FIT_FLOOR, base))
+	var s: int = steps[-1]
+	for v in steps:
+		if f.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, v).x <= max_w:
+			s = v
+			break
 	l.add_theme_font_size_override("font_size", s)
 	l.text = text
 
@@ -400,14 +389,9 @@ func _on_button_input(e: InputEvent, name: String) -> void:
 		button_pressed.emit(name)
 
 
+## 8 620 / 12,4K / 1,2M (docs/ui_style.md §3.7).
 static func fmt(v: int) -> String:
-	if absi(v) >= 1000000:
-		return "%.1fM" % (v / 1000000.0)
-	if absi(v) >= 10000:
-		return "%dK" % (v / 1000)
-	if absi(v) >= 1000:
-		return "%.1fK" % (v / 1000.0)
-	return str(v)
+	return Kit.fmt_num(v)
 
 
 ## Top bar: stored amounts (orange when the warehouse is full), net income per hour, free builders.
@@ -537,10 +521,10 @@ class Icon extends Control:
 		var h := size.y
 		var c := size / 2
 		if _tex != null:
-			var side := minf(w, h) * 1.15
+			var side := minf(w, h)  # exactly the box (docs/ui_style.md §3.5: no 1.15× overflow)
 			var tab := kind in ["castle_icon", "helmet", "hammer", "hands", "scales"]
 			draw_texture_rect(_tex, Rect2(c - Vector2(side, side) / 2.0, Vector2(side, side)), false,
-				Color(1, 1, 1) if lit or not tab else Color(0.62, 0.66, 0.74, 0.85))  # a tab icon dims until selected
+				Color(1, 1, 1) if lit or not tab else Color(0.86, 0.88, 0.95))  # an unselected tab is only a little quieter
 			return
 		match kind:
 			"coin":
