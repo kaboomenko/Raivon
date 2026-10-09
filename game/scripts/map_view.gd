@@ -121,6 +121,20 @@ func _build_water() -> void:
 			st.add_vertex(pts[k])
 			st.set_color(Color(cb, 0, 0))
 			st.add_vertex(pts[(k + 1) % 6])
+	# the rounded coast (soft_style_plan P4): a convex land corner is cut inside its hex, outside every water hex, so
+	# the water closes the gap between the corner and the arc (or the soil wall would show under the water line)
+	for key in _coast_corners:
+		var e: Dictionary = _coast_corners[key]
+		if not e["convex"] or not (_is_water(int(e["nb_in"])) or _is_water(int(e["nb_out"]))):
+			continue
+		var arc: PackedVector2Array = e["arc"]
+		var v: Vector2 = e["v"]
+		st.set_normal(Vector3.UP)
+		st.set_color(Color(1, 0, 0))
+		for j in COAST_SEG:  # the corner lies right of the arc: (V, arc[j+1], arc[j]) faces up
+			st.add_vertex(Vector3(v.x, -0.07, v.y))
+			st.add_vertex(Vector3(arc[j + 1].x, -0.07, arc[j + 1].y))
+			st.add_vertex(Vector3(arc[j].x, -0.07, arc[j].y))
 	if not any:
 		return
 	var mat := ShaderMaterial.new()
@@ -132,6 +146,10 @@ func _build_water() -> void:
 	_water_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_water_mi)
 	_build_waterfalls()
+
+
+func _is_water(id: int) -> bool:
+	return id >= 0 and sim.cells[id]["terrain"] == "water"
 
 
 var _falls_mi: MeshInstance3D
@@ -579,11 +597,16 @@ static func _mid_key(p: Vector2) -> Vector2i:
 ## each land top is a centre and an inner ring at 0.6 R in the hex's own colour, plus an outer ring of 6 corners
 ## (the mean colour of the ≤ 3 land hexes meeting there) and 6 edge midpoints (the mean of the ≤ 2 land hexes on
 ## that edge), 24 triangles. So the colour never steps on an edge. All land is at y = 0, so there are no walls between
-## land hexes: soil walls only face water (down to −0.4) and the world's edge (down to −1.4). Water beds (y −0.2)
-## stay one flat colour, walled only towards the world's edge.
+## land hexes. Water beds (y −0.2) stay one flat colour, walled only towards the world's edge.
+## The coastline is rounded with SOFT_R (soft_style_plan P4, _coastline): a convex coast corner (one land hex) is cut
+## by its arc inside that hex's top, a concave one (a bay corner: two land hexes) gets a flat patch at y = 0 out to
+## its arc over the water hex. Soil walls run along the rounded loops: down to −0.4 where water is outside, −1.4 at
+## the world's edge.
 func _build_terrain() -> void:
 	if _terrain_mi:
 		_terrain_mi.queue_free()
+	var coast := _coastline()
+	_coast_corners = coast["corners"]
 	# pass 1: each hex's colour, and the sums of the land colours at every corner and edge midpoint
 	var cols: Array = []
 	var corner_sum := {}  # _corner_key -> [colour sum, count]
@@ -609,9 +632,10 @@ func _build_terrain() -> void:
 			var mk: Vector2 = cv + (HEX_CORNERS[k] + HEX_CORNERS[(k + 1) % 6]) * 0.5
 			_acc(corner_sum, _corner_key(ck), col)
 			_acc(edge_sum, _mid_key(mk), col)
-	# pass 2: the tops and the visible walls
+	# pass 2: the tops (land tops cut or split at the coast corners), and the water beds' walls to the world's edge
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var corners: Dictionary = coast["corners"]
 	for i in sim.cells.size():
 		var c: Dictionary = sim.cells[i]
 		var col: Color = cols[i]
@@ -625,39 +649,114 @@ func _build_terrain() -> void:
 			st.set_color(col)
 			for k in 6:
 				st.add_vertex(center + Vector3(0, top, 0)); st.add_vertex(pts[k]); st.add_vertex(pts[(k + 1) % 6])
-		else:
-			var inner: Array = []
-			var cc: Array = []  # corner colours
-			var mids: Array = []
-			var mc: Array = []  # edge-midpoint colours
-			for k in 6:
+			for k in 6:  # water beds keep only their walls to the world's edge
 				var a: Vector3 = pts[k]
 				var b: Vector3 = pts[(k + 1) % 6]
-				inner.append(center.lerp(a, INNER_RING))
-				mids.append((a + b) * 0.5)
-				cc.append(_mean(corner_sum, _corner_key(cv + HEX_CORNERS[k]), col))
-				mc.append(_mean(edge_sum, _mid_key(cv + (HEX_CORNERS[k] + HEX_CORNERS[(k + 1) % 6]) * 0.5), col))
-			for k in 6:
-				var k1 := (k + 1) % 6
-				_vtx(st, center, col); _vtx(st, inner[k], col); _vtx(st, inner[k1], col)
-				_vtx(st, inner[k], col); _vtx(st, pts[k], cc[k]); _vtx(st, mids[k], mc[k])
-				_vtx(st, inner[k], col); _vtx(st, mids[k], mc[k]); _vtx(st, inner[k1], col)
-				_vtx(st, inner[k1], col); _vtx(st, mids[k], mc[k]); _vtx(st, pts[k1], cc[k1])
-		# walls only where they can be seen: land towards water (−0.4) or off-map (−1.4); water only off-map
+				var mid := (a + b) * 0.5
+				if id_at_world(center + 2.0 * (Vector3(mid.x, 0, mid.z) - center)) < 0:
+					var n := (Vector3(mid.x, 0, mid.z) - center).normalized()
+					_wall(st, a, b, n, n, top, -1.4, WALL_DEEP, WALL_DEEP)
+			continue
+		var h := int(c["id"])
+		var inner: Array = []
+		var cc: Array = []  # corner colours
+		var mids: Array = []
+		var mc: Array = []  # edge-midpoint colours
+		var ce: Array = []  # the coast corner at each hex corner ({} inland)
 		for k in 6:
 			var a: Vector3 = pts[k]
 			var b: Vector3 = pts[(k + 1) % 6]
-			var mid := (a + b) * 0.5
-			var nb := id_at_world(center + 2.0 * (Vector3(mid.x, 0, mid.z) - center))
-			var n := (Vector3(mid.x, 0, mid.z) - center).normalized()
-			if wet:
-				if nb < 0:
-					_wall(st, a, b, n, top, -1.4, WALL_DEEP, WALL_DEEP)
-			elif nb < 0:
-				_wall(st, a, b, n, 0.0, -0.4, WALL_TOP, WALL_MID)
-				_wall(st, a, b, n, -0.4, -1.4, WALL_MID, WALL_DEEP)
-			elif sim.cells[nb]["terrain"] == "water":
-				_wall(st, a, b, n, 0.0, -0.4, WALL_TOP, WALL_MID)
+			inner.append(center.lerp(a, INNER_RING))
+			mids.append((a + b) * 0.5)
+			cc.append(_mean(corner_sum, _corner_key(cv + HEX_CORNERS[k]), col))
+			mc.append(_mean(edge_sum, _mid_key(cv + (HEX_CORNERS[k] + HEX_CORNERS[(k + 1) % 6]) * 0.5), col))
+			ce.append(corners.get(_corner_key(cv + HEX_CORNERS[k]), {}))
+		for k in 6:
+			var k1 := (k + 1) % 6
+			var e0: Dictionary = ce[k]
+			var e1: Dictionary = ce[k1]
+			_vtx(st, center, col); _vtx(st, inner[k], col); _vtx(st, inner[k1], col)
+			# (inner_k, corner_k, mid_k), corner k leaving along edge k
+			if not e0.is_empty() and e0["convex"]:
+				# a convex coast corner: its arc replaces the corner (T2 on edge k), fanned from inner_k, which sits
+				# just past the arc's centre (0.4 vs 0.346 from the corner), so the fan stays convex
+				var arc: PackedVector2Array = e0["arc"]
+				_vtx(st, inner[k], col); _vtx(st, _v3(arc[COAST_SEG]), col); _vtx(st, mids[k], mc[k])
+				for j in COAST_SEG:
+					_vtx(st, inner[k], col); _vtx(st, _v3(arc[j]), col); _vtx(st, _v3(arc[j + 1]), col)
+			elif not e0.is_empty() and int(e0["hout"]) == h:
+				# a bay corner's tangent point T2 lies on edge k: split there, so the patch meets this top without
+				# a T-junction (a crack of the water below)
+				var t2 := _v3((e0["arc"] as PackedVector2Array)[COAST_SEG])
+				var c2: Color = cc[k].lerp(mc[k], _edge_frac(pts[k], t2))
+				_vtx(st, inner[k], col); _vtx(st, pts[k], cc[k]); _vtx(st, t2, c2)
+				_vtx(st, inner[k], col); _vtx(st, t2, c2); _vtx(st, mids[k], mc[k])
+			else:
+				_vtx(st, inner[k], col); _vtx(st, pts[k], cc[k]); _vtx(st, mids[k], mc[k])
+			_vtx(st, inner[k], col); _vtx(st, mids[k], mc[k]); _vtx(st, inner[k1], col)
+			# (inner_k+1, mid_k, corner_k+1), corner k+1 reached along edge k
+			if not e1.is_empty() and e1["convex"]:
+				var arc1: PackedVector2Array = e1["arc"]
+				_vtx(st, inner[k1], col); _vtx(st, mids[k], mc[k]); _vtx(st, _v3(arc1[0]), col)
+			elif not e1.is_empty() and int(e1["hin"]) == h:
+				var t1 := _v3((e1["arc"] as PackedVector2Array)[0])
+				var c1: Color = cc[k1].lerp(mc[k], _edge_frac(pts[k1], t1))
+				_vtx(st, inner[k1], col); _vtx(st, mids[k], mc[k]); _vtx(st, t1, c1)
+				_vtx(st, inner[k1], col); _vtx(st, t1, c1); _vtx(st, pts[k1], cc[k1])
+			else:
+				_vtx(st, inner[k1], col); _vtx(st, mids[k], mc[k]); _vtx(st, pts[k1], cc[k1])
+	# the bay corners: a flat patch at y 0 from the corner out to its arc, over the corner of the water hex (whose
+	# surface lies lower, at −0.07). Colours continue the two land tops: the corner's mean at V, the split points'
+	# colours at the arc's ends.
+	st.set_normal(Vector3.UP)
+	for key in corners:
+		var e: Dictionary = corners[key]
+		if e["convex"]:
+			continue
+		var arc: PackedVector2Array = e["arc"]
+		var v: Vector2 = e["v"]
+		var cv_: Color = _mean(corner_sum, key, cols[int(e["hin"])])
+		var c_in: Color = cv_.lerp(_mean(edge_sum, _mid_key(e["m_in"]), cols[int(e["hin"])]), _edge_frac(_v3(v), _v3(arc[0])))
+		var c_out: Color = cv_.lerp(_mean(edge_sum, _mid_key(e["m_out"]), cols[int(e["hout"])]), _edge_frac(_v3(v), _v3(arc[COAST_SEG])))
+		for j in COAST_SEG:
+			_vtx(st, _v3(v), cv_)
+			_vtx(st, _v3(arc[j]), c_in.lerp(c_out, float(j) / COAST_SEG))
+			_vtx(st, _v3(arc[j + 1]), c_in.lerp(c_out, float(j + 1) / COAST_SEG))
+	# soil walls along the rounded loops (§6.3 earth gradient), smooth-shaded round the arcs
+	for lp in coast["loops"]:
+		var fp: PackedVector2Array = lp["pts"]
+		var fe: PackedInt32Array = lp["edge"]
+		var nbs: PackedInt32Array = lp["nb"]
+		var m := fp.size()
+		var nrm: Array = []  # outward (the right of the direction of travel: the land lies on the left)
+		for k in m:
+			var tp := (fp[k] - fp[(k - 1 + m) % m]).normalized()
+			var tn := (fp[(k + 1) % m] - fp[k]).normalized()
+			var o := (Vector2(tp.y, -tp.x) + Vector2(tn.y, -tn.x)).normalized()
+			nrm.append(Vector3(o.x, 0.0, o.y))
+		for k in m:
+			var k1 := (k + 1) % m
+			var a := _v3(fp[k])
+			var b := _v3(fp[k1])
+			_wall(st, a, b, nrm[k], nrm[k1], 0.0, -0.4, WALL_TOP, WALL_MID)
+			if nbs[fe[k]] < 0 or nbs[fe[k1]] < 0:  # the world's edge: on down to the horizon
+				_wall(st, a, b, nrm[k], nrm[k1], -0.4, -1.4, WALL_MID, WALL_DEEP)
+	# a convex corner between a water hex and the world's edge (where a waterfall starts): the water that fills the
+	# cut corner (_build_water) would be open toward the edge, so the slate bed wall continues under it, from the
+	# corner to the arc's tangent point on the edge side
+	for key in corners:
+		var e: Dictionary = corners[key]
+		var wi := _is_water(int(e["nb_in"]))
+		var wo := _is_water(int(e["nb_out"]))
+		if not e["convex"] or not ((wi and int(e["nb_out"]) < 0) or (wo and int(e["nb_in"]) < 0)):
+			continue
+		var arc: PackedVector2Array = e["arc"]
+		var v := _v3(e["v"])
+		var a := _v3(arc[0]) if wo else v  # along the land's loop direction, so the land lies on the left
+		var b := v if wo else _v3(arc[COAST_SEG])
+		var d := (b - a).normalized()
+		var n := Vector3(d.z, 0.0, -d.x)  # the right of the direction: outward
+		_wall(st, a, b, n, n, -0.07, -1.4, WALL_DEEP, WALL_DEEP)
 	_terrain_mi = MeshInstance3D.new()
 	_terrain_mi.mesh = st.commit()
 	_terrain_mat = ShaderMaterial.new()
@@ -704,15 +803,64 @@ static func _vtx(st: SurfaceTool, p: Vector3, col: Color) -> void:
 	st.add_vertex(p)
 
 
-## A vertical soil wall under the edge a -> b, from y0 down to y1, coloured c0 at the top and c1 at the bottom.
-static func _wall(st: SurfaceTool, a: Vector3, b: Vector3, n: Vector3, y0: float, y1: float, c0: Color, c1: Color) -> void:
+## A vertical soil wall under the edge a -> b (the land, or the hex, on its left), from y0 down to y1, coloured c0 at
+## the top and c1 at the bottom; na / nb are the outward normals at a and b (equal on a straight edge, smooth round
+## a coast arc).
+static func _wall(st: SurfaceTool, a: Vector3, b: Vector3, na: Vector3, nb: Vector3, y0: float, y1: float, c0: Color,
+		c1: Color) -> void:
 	var at := Vector3(a.x, y0, a.z)
 	var bt := Vector3(b.x, y0, b.z)
 	var ab := Vector3(a.x, y1, a.z)
 	var bb := Vector3(b.x, y1, b.z)
-	st.set_normal(n)
-	_vtx(st, at, c0); _vtx(st, bb, c1); _vtx(st, bt, c0)
-	_vtx(st, at, c0); _vtx(st, ab, c1); _vtx(st, bb, c1)
+	for v in [[at, na, c0], [bb, nb, c1], [bt, nb, c0], [at, na, c0], [ab, na, c1], [bb, nb, c1]]:
+		st.set_normal(v[1])
+		_vtx(st, v[0], v[2])
+
+
+static func _v3(p: Vector2) -> Vector3:
+	return Vector3(p.x, 0.0, p.y)
+
+
+## How far p lies from the hex corner v toward the midpoint of its edge (0 at the corner, 1 at the midpoint, 0.5 away).
+static func _edge_frac(v: Vector3, p: Vector3) -> float:
+	return clampf(Vector2(p.x - v.x, p.z - v.z).length() / 0.5, 0.0, 1.0)
+
+
+const COAST_SEG := 4  # segments per rounded coast corner (60°: 15° each), as the ribbons' RIB_SEG
+var _coast_corners := {}  # _corner_key -> a coast corner of _coastline (read by _build_water)
+
+## The rounded coastline (soft_style_plan P4, docs/art_direction.md §6.7): the boundary loops of the land (water and
+## off-map outside, so the world's edge is rounded too), every corner filleted with SOFT_R — the radius of the border
+## ribbons, so a ribbon along a coast lies on the shoreline. Returns
+##   "loops": [{"pts": the filleted loop, "edge": the input edge of each point, "nb": the cell outside each edge}],
+##   "corners": _corner_key -> {"v": the hex corner, "convex": one land hex there (a left turn), else a bay corner
+##     of two, "arc": its COAST_SEG + 1 points from the tangent point on the incoming edge (T1) to the one on the
+##     outgoing edge (T2), "hin" / "hout": the land hex of the incoming / outgoing edge, "nb_in" / "nb_out": the
+##     cells outside them, "m_in" / "m_out": those edges' midpoints}.
+## A convex arc cuts into its hex by ≤ 0.046 (at the bisector; 0.173 along the edges), a bay arc reaches as far into
+## the water hex; picking (id_at_world) stays on the regular grid.
+func _coastline() -> Dictionary:
+	var corners := {}
+	var loops: Array = []
+	for lp in _loops(func(c): return c["terrain"] != "water"):
+		var cp: PackedVector2Array = lp["pts"]
+		var hx: PackedInt32Array = lp["hex"]
+		var nbs: PackedInt32Array = lp["nb"]
+		var n := cp.size()
+		if n < 3:
+			continue
+		var f := _fillet(cp, SoftPalette.SOFT_R, COAST_SEG)
+		var fp: PackedVector2Array = f["pts"]
+		for i in n:
+			var ip := (i - 1 + n) % n
+			var iq := (i + 1) % n
+			corners[_corner_key(cp[i])] = {
+				"v": cp[i], "convex": (cp[i] - cp[ip]).cross(cp[iq] - cp[i]) > 0.0,
+				"arc": fp.slice(i * (COAST_SEG + 1), (i + 1) * (COAST_SEG + 1)),
+				"hin": hx[ip], "hout": hx[i], "nb_in": nbs[ip], "nb_out": nbs[i],
+				"m_in": (cp[ip] + cp[i]) * 0.5, "m_out": (cp[i] + cp[iq]) * 0.5}
+		loops.append({"pts": fp, "edge": f["edge"], "nb": nbs})
+	return {"corners": corners, "loops": loops}
 
 
 ## The ground shader by zoom (§6.7): the fine speckle only up close, the seams full close up and faint from afar.

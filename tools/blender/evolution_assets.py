@@ -199,8 +199,59 @@ def facade(wall, win, col=0.07, floor=0.1, wf=0.5, hf=0.55, lit="#ffd27a", lit_p
 # ------------------------------------------------------------------ primitives
 
 
-def bx(size, loc, mt, rz=0.0, bev=0.012, rot=None):
+# «Raivon Soft» (art direction §6.2): only the few largest masses of a model get a round 3-segment bevel ("soft
+# boxes"); everything else keeps lowpoly()'s one-segment chamfer. The bevel is min(SOFT_W, 0.08 × the smallest side).
+SOFT_W = 0.015
+SOFT_MIN = 0.08  # a soft mass keeps its 3 segments only when its smallest side is at least this (lowpoly)
+SOFT_MAX = 6  # at most this many soft masses per model keep 3 segments (the largest by volume; lowpoly)
+
+
+def _soften(o, mode):
+    """Make o a soft mass (art direction §6.2): its BEVEL becomes round (3 segments, profile 0.5) and only bevels the
+    edges that show, picked by edge bevel weights; the other edges are marked sharp so the WEIGHTED_NORMAL after the
+    bevel (keep sharp) keeps the big faces flat and only the bevel strips shade round. Tags o["soft"] for lowpoly().
+    mode "v": the vertical edges only (walls whose top is under a roof, cornice or parapet, and whose foot stands on
+    the ground or a plinth); True: the vertical and the top edges of a box, the top rim of a cylinder (the bottom
+    edges never show: the camera and the sun are always above, and the feet stand on something)."""
+    me = o.data
+    if len(me.vertices) == 8:  # a box: its underside stands on the ground, a plinth or a lower storey — left out
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        zb = min(v.co.z for v in bm.verts)
+        bmesh.ops.delete(bm, geom=[f for f in bm.faces if all(abs(v.co.z - zb) < 1e-6 for v in f.verts)],
+                         context="FACES_ONLY")
+        bm.to_mesh(me)
+        bm.free()
+    bw = me.attributes.get("bevel_weight_edge") or me.attributes.new("bevel_weight_edge", "FLOAT", "EDGE")
+    sh = me.attributes.get("sharp_edge") or me.attributes.new("sharp_edge", "BOOLEAN", "EDGE")
+    zs = [v.co.z for v in me.vertices]
+    z0, z1 = min(zs), max(zs)
+    for e in me.edges:
+        a, b = (me.vertices[i].co for i in e.vertices)
+        vert = abs(a.x - b.x) < 1e-6 and abs(a.y - b.y) < 1e-6
+        top = abs(a.z - z1) < 1e-6 and abs(b.z - z1) < 1e-6
+        side = vert and len(me.vertices) > 8  # a cylinder's side edge: smooth, neither bevelled nor sharp
+        on = top if len(me.vertices) > 8 else (vert or (top and mode != "v"))
+        bw.data[e.index].value = 1.0 if on else 0.0
+        sh.data[e.index].value = not on and not side
+    for md in o.modifiers:
+        if md.type == "BEVEL":
+            md.limit_method = "WEIGHT"
+            md.segments = 3
+            md.profile = 0.5
+        elif md.type == "WEIGHTED_NORMAL":
+            md.keep_sharp = True
+    o["soft"] = True
+    return o
+
+
+def bx(size, loc, mt, rz=0.0, bev=0.012, rot=None, soft=False):
+    """Box; soft=True / "v": a soft mass (see _soften) with a round bevel of min(SOFT_W, 0.08 × its smallest side)."""
+    if soft:
+        bev = min(SOFT_W, 0.08 * min(size))
     o = kit.box("b", size, loc, mt, bev)
+    if soft:
+        _soften(o, soft)
     if rot:
         o.rotation_euler = rot
     elif rz:
@@ -208,8 +259,13 @@ def bx(size, loc, mt, rz=0.0, bev=0.012, rot=None):
     return o
 
 
-def cy(r, h, loc, mt, n=8, bev=0.0, r2=None, rot=None):
+def cy(r, h, loc, mt, n=8, bev=0.0, r2=None, rot=None, soft=False):
+    """Cylinder (or frustum with r2); soft=True: a soft mass with a round bevel on its top rim (see _soften)."""
+    if soft:
+        bev = min(SOFT_W, 0.08 * min(2 * r, h))
     o = kit.cyl("c", r, h, loc, mt, n, bev, r2)
+    if soft:
+        _soften(o, soft)
     if rot:
         o.rotation_euler = rot
     return o
@@ -277,16 +333,23 @@ def pad(r, mt, h=0.02, n=14, jitter=0.0, seed=0, sx=1.0, sy=1.0):
 
 
 # ridge caps, hip lines and eave boards keep a small roof readable at game size. «Raivon Soft» (§6.3): a deep shade of
-# the roof itself (roof colour × TRIM_K) where the roof colour is known, else warm timber — never the old near-black
-# #3e2f25
+# the roof itself where the roof colour is known, else warm timber — never the old near-black #3e2f25
 ROOF_TRIM = "#6B4A30"
 TRIM_K = 0.62
-TRIM_AUTO = "auto"  # gable_roof's default ridge: roof_trim(roof_c)
+TRIM_AUTO = "auto"  # gable_roof's default ridge / barge boards: derived from the roof colour
+# «Raivon Soft» roof trim (§6.8, plan step B1): a round ridge roll (a smooth 12-sided cylinder, r ≤ RIDGE_R) and round
+# hip rolls in roof × RIDGE_K instead of the dark ridge-cap boxes; eave and barge boards in roof × EAVE_K, and eave
+# boards thinner than EAVE_MIN are left out (a hair line at map distance)
+RIDGE_R = 0.018
+RIDGE_K = 0.75
+EAVE_K = 0.7
+EAVE_MIN = 0.02
 
 
-def roof_trim(roof_c=None):
-    """The trim colour of a roof of colour roof_c (an sRGB hex), or ROOF_TRIM when the roof colour is unknown."""
-    return shade(roof_c, TRIM_K) if isinstance(roof_c, str) and roof_c.startswith("#") else ROOF_TRIM
+def roof_trim(roof_c=None, k=TRIM_K):
+    """The trim colour of a roof of colour roof_c (an sRGB hex): roof × k, or ROOF_TRIM when the roof colour is
+    unknown."""
+    return shade(roof_c, k) if isinstance(roof_c, str) and roof_c.startswith("#") else ROOF_TRIM
 
 
 def _mat_color(mt):
@@ -305,43 +368,61 @@ def _rt(p, loc, rz):
     return (loc[0] + p[0] * c - p[1] * s_, loc[1] + p[0] * s_ + p[1] * c, loc[2] + p[2])
 
 
-def _trim_lines(lines, loc, rz, t, roof_c=None):
-    tm = flat("roof_trim", roof_trim(roof_c), 0.8)
-    for p0, p1 in lines:
-        beam(_rt(p0, loc, rz), _rt(p1, loc, rz), t, tm)
+def ridge_r(span):
+    """Radius of the ridge roll of a roof spanning `span` (its smaller side): RIDGE_R, thinner on a small roof."""
+    return min(RIDGE_R, 0.1 * span)
+
+
+def _round_trim(loc, rz, roof_c, span, ridges=(), hips=(), eaves=(), eave_t=0.0):
+    """The soft roof trim (local roof points, see _rt): round ridge rolls of ridge_r(span) with 12 sides and hip
+    rolls of 0.75 of that with 6 sides in roof × RIDGE_K (rolls thinner than 0.006 are left out); eave boards eave_t
+    thick in roof × EAVE_K, left out when thinner than EAVE_MIN."""
+    r = ridge_r(span)
+    if r >= 0.006 and (ridges or hips):
+        rm = flat("ridge", roof_trim(roof_c, RIDGE_K), 0.8)
+        for p0, p1 in ridges:
+            rod(_rt(p0, loc, rz), _rt(p1, loc, rz), r, rm, n=12)
+        for p0, p1 in hips:
+            rod(_rt(p0, loc, rz), _rt(p1, loc, rz), r * 0.75, rm, n=6)
+    if eave_t >= EAVE_MIN and eaves:
+        em = flat("eave", roof_trim(roof_c, EAVE_K), 0.8)
+        for p0, p1 in eaves:
+            beam(_rt(p0, loc, rz), _rt(p1, loc, rz), eave_t, em)
 
 
 def prism_roof(name, w, d, h, loc, material, overhang=0.08, rot_z=0.0):
-    """Gable roof (kit.prism_roof) with a ridge cap and eave boards."""
+    """Gable roof (kit.prism_roof) with a round ridge roll and (when thick enough) eave boards."""
     o = kit.prism_roof(name, w, d, h, loc, material, overhang, rot_z)
     L, D = w / 2 + overhang, d / 2 + overhang
     t = max(0.008, 0.05 * min(w, d))
-    _trim_lines([((-L, 0, h + t * 0.2), (L, 0, h + t * 0.2)),
-                 ((-L, -D, t * 0.3), (L, -D, t * 0.3)), ((-L, D, t * 0.3), (L, D, t * 0.3))], loc, rot_z, t,
-                _mat_color(material))
+    _round_trim(loc, rot_z, _mat_color(material), min(w, d), ridges=[((-L, 0, h + t * 0.2), (L, 0, h + t * 0.2))],
+                eaves=[((-L, -D, t * 0.3), (L, -D, t * 0.3)), ((-L, D, t * 0.3), (L, D, t * 0.3))], eave_t=t)
     return o
 
 
-def hip_roof(w, d, h, loc, mt, oh=0.03, rz=0.0):
-    """Hip roof (or a pyramid / tent roof when w == d), base at loc.z; ridge, hip lines and eave boards."""
-    o = _hip_roof(w, d, h, loc, mt, oh, rz)
+def _hip_lines(w, d, h, oh):
+    """The ridge, hip and eave lines of a hip roof (local points): ([ridge], [4 hips], [4 eaves])."""
     W, D = w / 2 + oh, d / 2 + oh
     rl = abs(w - d) / 2
-    t = max(0.007, 0.045 * min(w, d))
     if rl < 1e-4:
         tops = [(0, 0, h)] * 4
-        lines = []
+        ridges = []
     elif w > d:
         tops = [(-rl, 0, h), (rl, 0, h), (rl, 0, h), (-rl, 0, h)]
-        lines = [((-rl, 0, h), (rl, 0, h))]
+        ridges = [((-rl, 0, h), (rl, 0, h))]
     else:
         tops = [(0, -rl, h), (0, -rl, h), (0, rl, h), (0, rl, h)]
-        lines = [((0, -rl, h), (0, rl, h))]
+        ridges = [((0, -rl, h), (0, rl, h))]
     corners = [(-W, -D, 0), (W, -D, 0), (W, D, 0), (-W, D, 0)]
-    for i in range(4):
-        lines.append((corners[i], tops[i]))  # hip ridges
-        lines.append((corners[i], corners[(i + 1) % 4]))  # eaves
-    _trim_lines(lines, loc, rz, t, _mat_color(mt))
+    return ridges, [(corners[i], tops[i]) for i in range(4)], [(corners[i], corners[(i + 1) % 4]) for i in range(4)]
+
+
+def hip_roof(w, d, h, loc, mt, oh=0.03, rz=0.0):
+    """Hip roof (or a pyramid / tent roof when w == d), base at loc.z; round ridge and hip rolls, eave boards when
+    thick enough."""
+    o = _hip_roof(w, d, h, loc, mt, oh, rz)
+    ridges, hips, eaves = _hip_lines(w, d, h, oh)
+    _round_trim(loc, rz, _mat_color(mt), min(w, d), ridges, hips, eaves, max(0.007, 0.045 * min(w, d)))
     return o
 
 
@@ -455,23 +536,47 @@ def banner(x, y, h, team, w=0.17):
     ico(0.022, (x, y, h + 0.015), flat("gold", GOLD, 0.35))
 
 
-def window(x, y, z, rz, w=0.045, h=0.05, frame=None):
-    """Lit window (optionally framed) on a wall facing −Y rotated by rz about Z."""
+# «Raivon Soft» (§6.2, plan step B1): windows and doors are bigger than life (×1.3) and their frames lighter — a soft
+# shade of the wall (wall × FRAME_K) instead of dark timber, so a facade reads as a few big warm openings, not a
+# grid of dark outlines
+WIN_K = 1.3
+FRAME_K = 0.8
+WIN_MAX = 3  # windows per row on one face (front_windows)
+
+
+def frame_c(frame, wall=None):
+    """The frame colour of a window or door: a light frame (white carving, pale stone) stays; otherwise the wall
+    colour × FRAME_K when the wall is known, else the given frame lightened by 30 % (no near-black outlines)."""
+    if not frame:
+        return frame
+    h_ = frame.lstrip("#")
+    if sum(int(h_[i:i + 2], 16) for i in (0, 2, 4)) / 3 > 200:
+        return frame
+    return shade(wall, FRAME_K) if wall else shade(frame, 1.3)
+
+
+def window(x, y, z, rz, w=0.045, h=0.05, frame=None, wall=None):
+    """Lit window (optionally framed) on a wall facing −Y rotated by rz about Z; w and h are scaled by WIN_K, the
+    frame is lightened (frame_c)."""
+    w, h = w * WIN_K, h * WIN_K
     if frame:
-        bx((w + 0.022, 0.01, h + 0.022), (x, y, z), flat("frame" + frame, frame, 0.7), rz, 0)
+        fc = frame_c(frame, wall)
+        bx((w + 0.022, 0.01, h + 0.022), (x, y, z), flat("frame" + fc, fc, 0.7), rz, 0)
     bx((w, 0.014, h), (x, y, z), win_lit(), rz, 0)
 
 
-def front_windows(w, d, zs, n=2, frame=None, sides=True, ww=0.045, wh=0.05):
-    """Lit windows on the front (−Y) and back, plus the sides of a w×d box centred at the origin."""
+def front_windows(w, d, zs, n=2, frame=None, sides=True, ww=0.045, wh=0.05, wall=None):
+    """Lit windows on the front (−Y) and back, plus the sides of a w×d box centred at the origin (at most WIN_MAX
+    per row on a face)."""
+    n = min(n, WIN_MAX)
     for z in zs:
         for i in range(n):
             x = (i + 0.5) / n * w - w / 2
-            window(x, -d / 2 - 0.004, z, 0, ww, wh, frame)
-            window(x, d / 2 + 0.004, z, 0, ww, wh, frame)
+            window(x, -d / 2 - 0.004, z, 0, ww, wh, frame, wall)
+            window(x, d / 2 + 0.004, z, 0, ww, wh, frame, wall)
         if sides:
-            window(-w / 2 - 0.004, 0, z, math.pi / 2, ww, wh, frame)
-            window(w / 2 + 0.004, 0, z, math.pi / 2, ww, wh, frame)
+            window(-w / 2 - 0.004, 0, z, math.pi / 2, ww, wh, frame, wall)
+            window(w / 2 + 0.004, 0, z, math.pi / 2, ww, wh, frame, wall)
 
 
 def woodpile(n_rows=3):
@@ -649,8 +754,14 @@ def onion(x, y, z, r, mt, drum_mt=None):
 TIMBER = "#6B4A30"  # oak beams (§6.3), was the near-black #47301f
 SHUTTER_K = 0.62  # shutters: a deep shade of the team colour
 # the settlement roofs: course shadow bands a little lighter and narrower than gable_roof's defaults, and a lighter
-# slab edge, so the courses read as bright tile rows (reference frames 3 and 4) rather than dark seams or louvres
-SOFT_ROOF = dict(butt_k=0.68, slab_k=0.8, band=0.8)
+# slab edge, so the courses read as bright tile rows (reference frames 3 and 4) rather than dark seams or louvres.
+# «Raivon Soft» (§6.8, plan step B1): the roofs are 3 fat courses (COURSES) of 0.018 slabs and steps with a 0.05
+# overhang, and the course butts only a soft step darker (BUTT_K 0.82, was 0.68 / 0.75): a toy roof of three rounded
+# rows, not a louvre of thin dark seams
+COURSES = 3
+BUTT_K = 0.82
+ROOF_T = 0.018  # slab and course thickness of the gable and hip roofs (was 0.012 / 0.011)
+SOFT_ROOF = dict(butt_k=BUTT_K, slab_k=0.8, band=0.8)
 
 
 class _MB:
@@ -740,18 +851,23 @@ def _roof_mats(roof_c, tone=0.9, kind="roof", scale=1.6):
     return [tex(kind, roof_c, scale), tex(kind, shade(roof_c, tone), scale)]
 
 
-def gable_roof(w, d, h, loc, roof_c, gable_mt, rz=0.0, oh=0.035, ohx=0.03, n=5, tk=0.012, ct=0.012, tone=0.84,
-               kind="roof", barge=TIMBER, ridge=TRIM_AUTO, ridge_t=None, gable_timber=TIMBER, gable_win=False,
-               eave_z=None, butt_k=0.58, slab_k=0.72, band=0.72):
+def gable_roof(w, d, h, loc, roof_c, gable_mt, rz=0.0, oh=0.05, ohx=0.045, n=COURSES, tk=ROOF_T, ct=ROOF_T, tone=0.84,
+               kind="roof", barge=TRIM_AUTO, ridge=TRIM_AUTO, ridge_t=None, gable_timber=TIMBER, gable_win=False,
+               eave_z=None, butt_k=BUTT_K, slab_k=0.72, band=0.72):
     """Gable roof of the reference cottages, ridge along local X, loc = centre of the wall top (w × d):
     two slabs with eaves and verges, courses laid on them, gable walls in the house material under the verges
-    (not roof-coloured ends), dark barge boards, a ridge cap and a timbered gable with an optional lit window.
+    (not roof-coloured ends), barge boards, a ridge roll and a timbered gable with an optional lit window.
+    «Raivon Soft» (§6.8): 3 fat courses on 0.018 slabs with a 0.05 overhang; the barge boards are round rolls along
+    the verges (barge=TRIM_AUTO: roof × EAVE_K) and the ridge a smooth 12-sided roll of ridge_r(d) (ridge=TRIM_AUTO:
+    roof × RIDGE_K; ridge_t: its diameter) instead of the dark ridge-cap box.
     eave_z=None: the slopes run through the wall-top edges and the eaves drop below them; a number: the eaves sit
     at that height (relative to the wall top) and short knee walls close the gap under the slabs, so the walls and
     their windows stay in view. butt_k / slab_k: shades of the course shadow bands and the slab edge, band: where
     each band starts up its course (the settlement roofs pass SOFT_ROOF: lighter, narrower bands that read as tile
     rows rather than seams)."""
     from mathutils import Vector
+    if barge == TRIM_AUTO:
+        barge = roof_trim(roof_c, EAVE_K)
     hd = d / 2
     L = w / 2 + ohx
     ye = hd + oh
@@ -788,22 +904,24 @@ def gable_roof(w, d, h, loc, roof_c, gable_mt, rz=0.0, oh=0.035, ohx=0.03, n=5, 
         for sx in (-1, 1):
             slab.face([P(sx * L, *eb), P(sx * L, *et), P(sx * L, *rt), P(sx * L, *rb)], P(sx, 0, 0) - P(0, 0, 0))
         course_rows(MBs, P(-L, *et), P(L, *et), P(L, *rt), P(-L, *rt), n, ct, butt=BUTT, band=band)
-        if barge:
-            bt = tk + ct + 0.006
+        if barge:  # a round roll along each verge, as thick as the slab and its course (covers their ends)
+            br = (tk + ct) * 0.5 + 0.002
             for sx in (-1, 1):
                 mid_e = (eb[0] + ny * (tk + ct) * 0.5, eb[1] + nz * (tk + ct) * 0.5)
                 mid_r = (rb[0] + ny * (tk + ct) * 0.5, rb[1] + nz * (tk + ct) * 0.5)
-                beam(tuple(P(sx * (L - bt * 0.35), *mid_e)), tuple(P(sx * (L - bt * 0.35), *mid_r)), bt,
-                     flat("barge" + barge, barge, 0.8))
+                if br * 2 >= EAVE_MIN:
+                    rod(tuple(P(sx * (L - br * 0.6), *mid_e)), tuple(P(sx * (L - br * 0.6), *mid_r)), br,
+                        flat("barge" + barge, barge, 0.8), n=6)
     slab.obj(tex(kind, shade(roof_c, slab_k), 1.6), "roof_slab")
     for mb, mt in zip(MBs, _roof_mats(roof_c, tone, kind)):
         mb.obj(mt, "roof_courses")
     BUTT.obj(tex(kind, shade(roof_c, butt_k), 1.6), "roof_butts")
     if ridge == TRIM_AUTO:
-        ridge = roof_trim(roof_c)
-    if ridge:
-        rt_ = ridge_t or (tk + ct + 0.008)
-        beam(tuple(P(-L - 0.006, 0, h + tk * 0.9)), tuple(P(L + 0.006, 0, h + tk * 0.9)), rt_, flat("ridge" + ridge, ridge, 0.8))
+        ridge = roof_trim(roof_c, RIDGE_K)
+    rr = ridge_t / 2 if ridge_t else ridge_r(d)
+    if ridge and rr >= 0.006:  # a smooth round ridge roll over the meeting slabs
+        rod(tuple(P(-L - 0.006, 0, h + tk * 0.9)), tuple(P(L + 0.006, 0, h + tk * 0.9)), rr,
+            flat("ridge" + ridge, ridge, 0.8), n=12)
     if gable_timber:
         g = _MB()
         tt = max(0.009, 0.05 * d)
@@ -822,7 +940,7 @@ def gable_roof(w, d, h, loc, roof_c, gable_mt, rz=0.0, oh=0.035, ohx=0.03, n=5, 
     return h
 
 
-def roof_surface(u, half, h, oh=0.035, eave_z=None, tk=0.012, ct=0.012):
+def roof_surface(u, half, h, oh=0.05, eave_z=None, tk=ROOF_T, ct=ROOF_T):
     """Height above the wall top of the course tops of a gable_roof (half-span half, rise h, eave overhang oh) at
     horizontal distance u from the ridge: where a chimney or a flue comes out of the roof."""
     ze = -oh * h / half if eave_z is None else eave_z
@@ -830,62 +948,95 @@ def roof_surface(u, half, h, oh=0.035, eave_z=None, tk=0.012, ct=0.012):
     return h - k * u + (tk + ct) * math.sqrt(1 + k * k)
 
 
-def coursed_hip(w, d, h, loc, roof_c, oh=0.03, rz=0.0, n=5, ct=0.011, tone=0.84, kind="roof", trim=True, butt_k=0.68,
-                band=0.8):
-    """hip_roof with the courses of the reference roofs laid on its four faces; the ridge, hip and eave lines sit
-    on top of the courses so they stay visible."""
-    from mathutils import Vector
+def coursed_hip(w, d, h, loc, roof_c, oh=0.045, rz=0.0, n=COURSES, ct=ROOF_T, tone=0.84, kind="roof", trim=True,
+                butt_k=BUTT_K, band=0.8):
+    """hip_roof with the courses of the reference roofs laid on its four faces; the ridge and hip rolls (round, roof ×
+    RIDGE_K) sit on top of the courses so they stay visible; eave boards only where at least EAVE_MIN thick."""
     _hip_roof(w, d, h, loc, tex(kind, shade(roof_c, 0.8), 1.6), oh, rz)
-    W, D = w / 2 + oh, d / 2 + oh
-    rl = abs(w - d) / 2
-    if rl < 1e-4:
-        tops = [(0, 0, h)] * 4
-        lines = []
-    elif w > d:
-        tops = [(-rl, 0, h), (rl, 0, h), (rl, 0, h), (-rl, 0, h)]
-        lines = [((-rl, 0, h), (rl, 0, h))]
-    else:
-        tops = [(0, -rl, h), (0, -rl, h), (0, rl, h), (0, rl, h)]
-        lines = [((0, -rl, h), (0, rl, h))]
-    corners = [(-W, -D, 0), (W, -D, 0), (W, D, 0), (-W, D, 0)]
+    ridges, hips, eaves = _hip_lines(w, d, h, oh)
     MBs = [_MB(), _MB()]
     BUTT = _MB()
-    for i in range(4):
-        a, b = corners[i], corners[(i + 1) % 4]
-        ta, tb = tops[i], tops[(i + 1) % 4]
+    for (a, ta), (_, tb), (_, b) in zip(hips, hips[1:] + hips[:1], eaves):
         course_rows(MBs, _rt(a, loc, rz), _rt(b, loc, rz), _rt(tb, loc, rz), _rt(ta, loc, rz), n, ct, butt=BUTT,
                     band=band)
     for mb, mt in zip(MBs, _roof_mats(roof_c, tone, kind)):
         mb.obj(mt, "roof_courses")
     BUTT.obj(tex(kind, shade(roof_c, butt_k), 1.6), "roof_butts")
     if trim:
-        for i in range(4):
-            lines.append((corners[i], tops[i]))
-            lines.append((corners[i], corners[(i + 1) % 4]))
-        lift = lambda p: (p[0], p[1], p[2] + ct * 1.1)  # noqa: E731
-        t = max(0.0095, 0.05 * min(w, d))  # thin hip lines bake below a texel (and read too faint at map size)
-        _trim_lines([(lift(p0), lift(p1)) for p0, p1 in lines], loc, rz, t, roof_c)
+        lift = lambda ls: [((p0[0], p0[1], p0[2] + ct * 1.1), (p1[0], p1[1], p1[2] + ct * 1.1)) for p0, p1 in ls]  # noqa: E731
+        _round_trim(loc, rz, roof_c, min(w, d), lift(ridges), lift(hips), lift(eaves), max(0.0095, 0.05 * min(w, d)))
+
+
+def round_cap(r, h, loc, mt, n=10, bev=0.004, segs=1):
+    """A short cylinder (r, h, centred at loc) whose top rim is rounded in the mesh itself (a bevel built with bmesh:
+    lowpoly() strips the bevel modifiers of parts this small; smooth shading rounds the chamfer). Its underside is
+    left out (it sits on a stack: never seen from the camera above)."""
+    o = kit.cyl("c", r, h, loc, mt, n, 0.0)
+    bm = bmesh.new()
+    bm.from_mesh(o.data)
+    z0, z1 = min(v.co.z for v in bm.verts), max(v.co.z for v in bm.verts)
+    bmesh.ops.delete(bm, geom=[f for f in bm.faces if all(abs(v.co.z - z0) < 1e-6 for v in f.verts)],
+                     context="FACES_ONLY")
+    rim = [e for e in bm.edges if all(abs(v.co.z - z1) < 1e-6 for v in e.verts)]
+    bmesh.ops.bevel(bm, geom=rim, offset=min(bev, r * 0.4, h * 0.6), segments=segs, profile=0.5, affect="EDGES")
+    bm.to_mesh(o.data)
+    bm.free()
+    for p_ in o.data.polygons:
+        p_.use_smooth = True
+    return o
+
+
+def disc(r, loc, mt, n=10):
+    """A flat round disc facing up (one n-gon: a flue mouth, a water surface)."""
+    return mesh_obj([(r * math.cos(math.tau * i / n), r * math.sin(math.tau * i / n), 0.0) for i in range(n)],
+                    [tuple(range(n))], mt, loc)
 
 
 def chimney(x, y, z0, z1, w=0.044, mt=None, cap=STONE_D):
-    """A square chimney stack with a projecting cap and a dark flue mouth (the brick chimneys of reference frame 3).
-    Returns the mouth height (for the smoke marker)."""
+    """A square chimney stack with a projecting cap and a flue mouth (the brick chimneys of reference frame 3).
+    «Raivon Soft» (plan step B1): the cap is round (10 sides, rounded rim) and the flue a dark warm disc, not a
+    near-black square. Returns the mouth height (for the smoke marker)."""
     mt = mt or stone(BRICK, 1.4)
     bx((w, w, z1 - z0), (x, y, (z0 + z1) / 2), mt, bev=0)
-    bx((w + 0.014, w + 0.014, 0.014), (x, y, z1 + 0.007), flat("cap" + cap, cap, 0.8), bev=0)
-    bx((w - 0.014, w - 0.014, 0.004), (x, y, z1 + 0.0145), flat("flue", "#1f1a17", 0.9), bev=0)
+    rc = (w + 0.016) / 2 * 1.06  # the round cap still overhangs the square stack's corners a little
+    round_cap(rc, 0.016, (x, y, z1 + 0.008), flat("cap" + cap, cap, 0.8))
+    disc((w - 0.014) / 2, (x, y, z1 + 0.0162), flat("flue", "#3a302b", 0.9))
     return z1 + 0.016
 
 
 chimney_stack = chimney  # for builders whose `chimney` flag shadows the helper
 
 
-def doorway(x, y, rz, w=0.05, h=0.085, door_c=WOOD_D, hood_c=None, step=STONE_D, frame=TIMBER):
-    """A plank door in a dark frame on a wall facing −Y (rotated rz), a stone step and, with hood_c, a little gabled
-    hood over it (the cottage porches of reference frame 3)."""
+DOOR_K = 1.15  # doors ×1.15 wider, under a round arch (plan step B1)
+
+
+def arch_slab(w, h, y0, y1, mt, n=8, x=0.0, sides=True):
+    """A slab w wide and h tall standing on z = 0 on a wall facing −Y, its face at y0 and its back at y1 (on the wall,
+    left open), centred at x, whose top is a half-round of radius w / 2 in n segments (an arched door). sides=False:
+    only the front face (a frame plate flat on the wall)."""
+    a = w / 2
+    hr = max(1e-3, h - a)
+    prof = [(a, 0.0)] + [(a * math.cos(math.pi * i / n), hr + a * math.sin(math.pi * i / n)) for i in range(n + 1)]
+    prof.append((-a, 0.0))  # counter-clockwise in x, z: up the right side, over the arch, down the left side
+    mb = _MB()
+    mb.face([(x + px, y0, pz) for px, pz in prof], (0, -1, 0))
+    if sides:
+        for (px0, pz0), (px1, pz1) in zip(prof, prof[1:]):
+            mb.face([(x + px0, y0, pz0), (x + px1, y0, pz1), (x + px1, y1, pz1), (x + px0, y1, pz0)],
+                    (pz1 - pz0, 0.0, px0 - px1))
+    return mb.obj(mt, "arch")
+
+
+def doorway(x, y, rz, w=0.05, h=0.085, door_c=WOOD_D, hood_c=None, step=STONE_D, frame=TIMBER, wall=None):
+    """A plank door in a frame on a wall facing −Y (rotated rz), a stone step and, with hood_c, a little gabled hood
+    over it (the cottage porches of reference frame 3). «Raivon Soft»: the door is DOOR_K wider with a round arched
+    top (a half-round of 8 segments), its frame lighter (frame_c: wall × FRAME_K when the wall is known)."""
+    w = w * DOOR_K
+    fc = frame_c(frame, wall)
+
     def b():
-        bx((w + 0.018, 0.008, h + 0.008), (0, -0.002, h / 2 + 0.004), flat("frame" + frame, frame, 0.85), bev=0)
-        bx((w, 0.012, h), (0, -0.004, h / 2), tex("wood", door_c, 3.0), bev=0)
+        arch_slab(w + 0.018, h + 0.009, -0.006, 0.002, flat("frame" + fc, fc, 0.85), sides=False)
+        arch_slab(w, h, -0.010, 0.002, tex("wood", door_c, 3.0))
         if step:
             bx((w + 0.04, 0.04, 0.016), (0, -0.026, 0.008), stone(step, 1.4), bev=0)
         if hood_c:
@@ -903,9 +1054,14 @@ def doorway(x, y, rz, w=0.05, h=0.085, door_c=WOOD_D, hood_c=None, step=STONE_D,
     build_at(b, x, y, rz)
 
 
-def shutter_window(x, y, z, rz, team, w=0.036, h=0.044, shutters=True, flowers=False, frame=TIMBER, crown=False):
-    """A lit window on a wall facing −Y (rotated rz) in a dark frame, with shutters in a deep shade of the team
-    colour and an optional flower box (reference frames 1 and 3)."""
+def shutter_window(x, y, z, rz, team, w=0.036, h=0.044, shutters=True, flowers=False, frame=TIMBER, crown=False,
+                   wall=None):
+    """A lit window on a wall facing −Y (rotated rz) in a frame, with shutters in a deep shade of the team colour and
+    an optional flower box (reference frames 1 and 3). «Raivon Soft»: w and h × WIN_K, the frame lighter (frame_c:
+    wall × FRAME_K when the wall is known, white carving stays white)."""
+    w, h = w * WIN_K, h * WIN_K
+    frame = frame_c(frame, wall)
+
     def b():
         bx((w + 0.012, 0.008, h + 0.012), (0, -0.002, 0), flat("frame" + frame, frame, 0.85), bev=0)
         bx((w, 0.012, h), (0, -0.004, 0), win_lit(), bev=0)
@@ -951,6 +1107,7 @@ def timber_walls(w, d, z0, z1, wins=None, door=None, t=0.011, bay=0.042, rail=0.
         dr = door if (f == 0 and door) else None
         if dr:
             du, dw_, dh = dr
+            dw_ *= DOOR_K  # (doorway() widens the door)
             g0, g1 = du - dw_ / 2 - t, du + dw_ / 2 + t
             mb.strip(p(-hl, zm), p(g0, zm), n, t)
             mb.strip(p(g1, zm), p(hl, zm), n, t)
@@ -965,9 +1122,9 @@ def timber_walls(w, d, z0, z1, wins=None, door=None, t=0.011, bay=0.042, rail=0.
             mb.strip(p(ui, z0), p(ui, z1), n, t)
             mb.strip(p(ui, zm), p(sx * hl, z0 + t * 0.5), n, t * 0.9)  # the "Mann" braces of the end bays
             mb.strip(p(ui, zm), p(sx * hl, z1 - t * 0.5), n, t * 0.9)
-        for u in wins.get(f, []):
+        for u in wins.get(f, []):  # studs either side of a window (spaced for the WIN_K-bigger windows)
             for sx in (-1, 1):
-                mb.strip(p(u + sx * 0.03, zm), p(u + sx * 0.03, z1), n, t * 0.85)
+                mb.strip(p(u + sx * 0.03 * WIN_K, zm), p(u + sx * 0.03 * WIN_K, z1), n, t * 0.85)
     mb.obj(mt or flat("timber", TIMBER, 0.85), "timber")
     if posts is True:
         pm = mt or flat("timber", TIMBER, 0.85)
@@ -977,7 +1134,7 @@ def timber_walls(w, d, z0, z1, wins=None, door=None, t=0.011, bay=0.042, rail=0.
     return zw
 
 
-def cottage(w, d, h, team, wall=PLASTER, pitch=1.15, smoke=False, chim=1, plinth=0.035, n_courses=5,
+def cottage(w, d, h, team, wall=PLASTER, pitch=1.15, smoke=False, chim=1, plinth=0.035, n_courses=COURSES,
             flowers=True, side_win=True, back_win=True, door_u=-0.24, gable_win=True, gable_front=True, eave_z=None,
             plain=False):
     """The half-timbered cottage of reference frame 3 (the homesteads and the small houses of the towns): a stone
@@ -988,7 +1145,7 @@ def cottage(w, d, h, team, wall=PLASTER, pitch=1.15, smoke=False, chim=1, plinth
     roof_c = slate(team, 1.0)
     pm = tex("plaster", wall, 1.5)
     bx((w + 0.018, d + 0.018, plinth), (0, 0, plinth / 2), stone(STONE_D, 1.4), bev=0)
-    bx((w, d, h), (0, 0, h / 2), pm, bev=0)
+    bx((w, d, h), (0, 0, h / 2), pm, soft="v")  # a soft mass: round corners (its top is under the roof)
     du = door_u * w
     wins = {0: [-du * 0.95]}
     if back_win:
@@ -1000,14 +1157,15 @@ def cottage(w, d, h, team, wall=PLASTER, pitch=1.15, smoke=False, chim=1, plinth
         wins = {}
     else:
         zw = timber_walls(w, d, plinth, h, wins, (du, 0.05, 0.085))
-    doorway(du, -d / 2 - 0.004, 0.0, 0.05, 0.085, hood_c=None if plain else roof_c)
+    doorway(du, -d / 2 - 0.004, 0.0, 0.05, 0.085, hood_c=None if plain else roof_c, wall=wall)
     for f, us in wins.items():
         a = f * math.pi / 2
         dist = (d if f % 2 == 0 else w) / 2 + 0.006
         for u in us:
             x = math.sin(a) * dist + math.cos(a) * u
             y = -math.cos(a) * dist + math.sin(a) * u
-            shutter_window(x, y, zw, a, team, flowers=(flowers and f == 0), shutters=(f == 0 or not gable_front or f == 2))
+            shutter_window(x, y, zw, a, team, flowers=(flowers and f == 0), shutters=(f == 0 or not gable_front or f == 2),
+                           wall=wall)
     span = w if gable_front else d
     rh = span / 2 * pitch
     gt = None if plain else TIMBER
@@ -1031,20 +1189,21 @@ def cottage(w, d, h, team, wall=PLASTER, pitch=1.15, smoke=False, chim=1, plinth
 
 
 def town_house(w, d, h0, h1, team, wall0=STONE, plaster=PLASTER, gable_front=True, smoke=False, jetty=0.014,
-               shop=None, pitch=1.15, n_courses=5, chim=1, side_win=True, gable_win=True, h2=0.0):
+               shop=None, pitch=1.15, n_courses=COURSES, chim=1, side_win=True, gable_win=True, h2=0.0):
     """A town house of the reference towns: a stone ground floor with a door and a lit shop window (with an awning
     in the shop colour), a jettied half-timbered upper storey with team shutters, a coursed team-slate roof with
     its gable to the street and a brick chimney."""
     roof_c = slate(team, 1.0)
-    bx((w, d, h0), (0, 0, h0 / 2), stone(wall0, 1.4), bev=0)
-    doorway(-w * 0.24, -d / 2 - 0.004, 0.0, 0.046, min(0.08, h0 - 0.02), hood_c=None)
+    bx((w, d, h0), (0, 0, h0 / 2), stone(wall0, 1.4), soft="v")  # soft mass (the jetty beam covers its top)
+    doorway(-w * 0.24, -d / 2 - 0.004, 0.0, 0.046, min(0.08, h0 - 0.02), hood_c=None, wall=wall0)
     if shop:
         bx((w * 0.36, 0.012, h0 * 0.42), (w * 0.17, -d / 2 - 0.004, h0 * 0.42), win_lit(), bev=0)
-        bx((w * 0.4, 0.008, h0 * 0.5), (w * 0.17, -d / 2 - 0.001, h0 * 0.42), flat("frame" + TIMBER, TIMBER, 0.85), bev=0)
+        fc = frame_c(TIMBER, wall0)
+        bx((w * 0.4, 0.008, h0 * 0.5), (w * 0.17, -d / 2 - 0.001, h0 * 0.42), flat("frame" + fc, fc, 0.85), bev=0)
         bx((w * 0.44, 0.05, 0.008), (w * 0.17, -d / 2 - 0.026, h0 * 0.78), flat("awn" + shop, shop, 0.7), bev=0,
            rot=(0.35, 0, 0))
     else:
-        shutter_window(w * 0.2, -d / 2 - 0.006, h0 * 0.55, 0, team, shutters=False)
+        shutter_window(w * 0.2, -d / 2 - 0.006, h0 * 0.55, 0, team, shutters=False, wall=wall0)
     W1, D1, z1 = w, d, h0
     for k, hk in enumerate((h1, h2)):  # one or two jettied timber storeys
         if hk <= 0:
@@ -1053,7 +1212,7 @@ def town_house(w, d, h0, h1, team, wall0=STONE, plaster=PLASTER, gable_front=Tru
         bx((W1 + 0.01, D1 + 0.01, 0.018), (0, 0, z1 + 0.009), flat("timber", TIMBER, 0.85), bev=0)  # jetty beam
         pm = tex("plaster", plaster, 1.5)
         z0, z1 = z1 + 0.018, z1 + 0.018 + hk
-        bx((W1, D1, hk), (0, 0, (z0 + z1) / 2), pm, bev=0)
+        bx((W1, D1, hk), (0, 0, (z0 + z1) / 2), pm, soft="v")
         fw = [-W1 * 0.22, W1 * 0.22] if W1 > 0.2 else [0.0]
         sides = side_win and k == 0
         wins = {0: fw, 2: fw, 1: [0.0], 3: [0.0]} if sides else {0: fw, 2: fw}
@@ -1064,7 +1223,7 @@ def town_house(w, d, h0, h1, team, wall0=STONE, plaster=PLASTER, gable_front=Tru
             for u in us:
                 x = math.sin(a) * dist + math.cos(a) * u
                 y = -math.cos(a) * dist + math.sin(a) * u
-                shutter_window(x, y, zw, a, team, shutters=(f == 0), flowers=(f == 0 and k == 1))
+                shutter_window(x, y, zw, a, team, shutters=(f == 0), flowers=(f == 0 and k == 1), wall=plaster)
     span = W1 if gable_front else D1
     rh = span / 2 * pitch
     if gable_front:
@@ -1092,7 +1251,7 @@ def hut(w, d, h, team, smoke=False):
     """DL1 халупа: wattle and daub between rough dark posts and braces, a shaggy thatch laid in thick stepped
     courses with a team-coloured ridge, a team door in a plank frame, a clay flue."""
     dm = tex("plaster", DAUB, 1.5)
-    bx((w, d, h + 0.04), (0, 0, (h - 0.04) / 2), dm, bev=0.015)
+    bx((w, d, h + 0.04), (0, 0, (h - 0.04) / 2), dm, soft="v")  # soft mass (its top is under the thatch)
     for sx in (-1, 1):
         for sy in (-1, 1):
             cy(0.014, h + 0.04, (sx * w / 2, sy * d / 2, (h - 0.04) / 2), tex("wood", WOOD_D), 6)
@@ -1101,11 +1260,13 @@ def hut(w, d, h, team, smoke=False):
     rh = w / 2 * 1.2  # the gable faces the front: the door and window stay out from under the low thatch eaves
     gable_roof(d, w, rh, (0, 0, h - 0.01), THATCH, dm, rz=math.pi / 2, oh=0.04, ohx=0.04, n=3, tk=0.02, ct=0.022,
                tone=0.86, kind="wood", barge=None, ridge=None, gable_timber="#5a3d26", **SOFT_ROOF)
-    bx((0.055, d + 0.11, 0.04), (0, 0, h + rh + 0.008), flat("ridge" + team, shade(team, 0.85)), bev=0.01)
-    for sy in (-1, 1):  # withy ties holding the ridge bundle
-        bx((0.062, 0.014, 0.046), (0, sy * d * 0.3, h + rh + 0.008), flat("withy", "#8c6a42", 0.9), bev=0)
-    bx((0.07, 0.014, 0.11), (-w * 0.18, -d / 2 - 0.004, 0.055), flat("door" + team, shade(team, 0.7)), bev=0)
-    window(w * 0.22, -d / 2 - 0.004, h * 0.62, 0, 0.04, 0.035, WOOD_D)
+    # a round team-painted ridge bundle (a smooth roll, not a box) held by two withy ties
+    zr = h - 0.01 + rh + 0.022
+    rod((0, -(d + 0.11) / 2, zr), (0, (d + 0.11) / 2, zr), 0.024, flat("ridge" + team, shade(team, 0.85)), n=12)
+    for sy in (-1, 1):
+        rod((0, sy * d * 0.3 - 0.008, zr), (0, sy * d * 0.3 + 0.008, zr), 0.027, flat("withy", "#8c6a42", 0.9), n=12)
+    arch_slab(0.07 * DOOR_K, 0.11, -d / 2 - 0.011, -d / 2 + 0.003, flat("door" + team, shade(team, 0.7)), x=-w * 0.18)
+    window(w * 0.22, -d / 2 - 0.004, h * 0.62, 0, 0.04, 0.035, WOOD_D, wall=DAUB)
     if smoke:  # a clay flue standing 7 cm out of the thatch, a quarter of the width from the ridge
         zt = h - 0.01 + roof_surface(w * 0.25, w / 2, rh, 0.04, None, 0.02, 0.022)
         cy(0.022, 0.11, (w * 0.25, d * 0.08, zt + 0.015), tex("plaster", "#b08a62", 2.0), 7)
@@ -1151,7 +1312,9 @@ def log_house(w, d, h, team, gable_front=False, roof_k=0.85, logc=LOG, chimney=T
     # gable, white carved window frames (наличники) with team shutters, a brick chimney with a cap
     roof_c = shade(team, 0.85)
     plank = tex("wood", shade(logc, 0.9), 3.0)
-    nc = max(6, round(math.hypot(rh, (w if gable_front else d) / 2 + 0.07) / 0.034))  # shingle rows of a fixed size
+    # plank courses: 3 fat rows on a cottage roof, 4 on the long roof of the residence's big izba («Raivon Soft»: was
+    # shingle rows of 0.034, 6 and more)
+    nc = max(COURSES, round(math.hypot(rh, (w if gable_front else d) / 2 + 0.07) / 0.09))
     if gable_front:
         gable_roof(d + 2 * r, w + 2 * r, rh, (0, 0, top - 0.01), roof_c, plank, rz=math.pi / 2, oh=0.045, ohx=0.045,
                    n=nc, tone=0.84, kind="wood", barge=WHITE, gable_timber=None, gable_win=True, eave_z=0.0,
@@ -1183,10 +1346,10 @@ def log_house(w, d, h, team, gable_front=False, roof_k=0.85, logc=LOG, chimney=T
 
 def barn(team, coursed=False):
     w, d, h = 0.4, 0.28, 0.22
-    bx((w, d, h), (0, 0, h / 2), tex("wood", "#7a5232", 1.6), bev=0.012)
+    bx((w, d, h), (0, 0, h / 2), tex("wood", "#7a5232", 1.6), soft="v")  # soft mass (its top is under the roof)
     if coursed:  # the DL2 village and terem: plank courses like the izbas, planked gables
-        gable_roof(w, d, 0.2, (0, 0, h - 0.005), shade(team, 0.75), tex("wood", "#7a5232", 1.6), oh=0.05, ohx=0.04,
-                   n=6, kind="wood", gable_timber=None, eave_z=0.0, **SOFT_ROOF)
+        gable_roof(w, d, 0.2, (0, 0, h - 0.005), shade(team, 0.75), tex("wood", "#7a5232", 1.6), oh=0.05, ohx=0.045,
+                   kind="wood", gable_timber=None, eave_z=0.0, **SOFT_ROOF)
         for sx in (-1, 1):  # hay loft door in each gable
             bx((0.014, 0.08, 0.07), (sx * (w / 2 + 0.004), 0, h + 0.05), tex("wood", WOOD_D, 3.0), bev=0)
     else:
@@ -1199,7 +1362,7 @@ def barn(team, coursed=False):
 
 
 def stone_house(w, d, h, team, wall=STONE, roof_k=0.8, smoke=False):
-    bx((w, d, h), (0, 0, h / 2), stone(wall, 1.6), bev=0.012)
+    bx((w, d, h), (0, 0, h / 2), stone(wall, 1.6), soft="v")
     bx((w + 0.02, d + 0.02, 0.035), (0, 0, 0.0175), stone(STONE_D), bev=0)
     prism_roof("roof", w, d, d * roof_k, (0, 0, h - 0.005), tex("roof", slate(team, 1.00)), overhang=0.045)
     cy(0.028, 0.15, (w * 0.25, d * 0.15, h + d * roof_k * 0.55), stone(STONE_D), 8)
@@ -1207,22 +1370,24 @@ def stone_house(w, d, h, team, wall=STONE, roof_k=0.8, smoke=False):
         smoke_at(w * 0.25, d * 0.15, h + d * roof_k * 0.55 + 0.09)
     bx((0.065, 0.014, 0.11), (0, -d / 2 - 0.004, 0.055), tex("wood", WOOD_D), bev=0)
     for sx in (-1, 1):
-        window(sx * w * 0.3, -d / 2 - 0.004, h * 0.62, 0, 0.04, 0.05, WOOD_D)
-        window(sx * w * 0.3, d / 2 + 0.004, h * 0.62, 0, 0.04, 0.05, WOOD_D)
-    window(w / 2 + 0.004, 0, h * 0.62, math.pi / 2, 0.04, 0.05, WOOD_D)
-    window(-w / 2 - 0.004, 0, h * 0.62, math.pi / 2, 0.04, 0.05, WOOD_D)
+        window(sx * w * 0.3, -d / 2 - 0.004, h * 0.62, 0, 0.04, 0.05, WOOD_D, wall)
+        window(sx * w * 0.3, d / 2 + 0.004, h * 0.62, 0, 0.04, 0.05, WOOD_D, wall)
+    window(w / 2 + 0.004, 0, h * 0.62, math.pi / 2, 0.04, 0.05, WOOD_D, wall)
+    window(-w / 2 - 0.004, 0, h * 0.62, math.pi / 2, 0.04, 0.05, WOOD_D, wall)
 
 
 def terem_block(w, d, h_stone, h_wood, team, roof_h, dome=True, dome_team=False, rich=False):
     """Terem: white stone ground floor, timber upper storey, carved team band, tall tent roof, onion.
     rich (the residence): carved white window frames with team shutters, an arched lit window in the stone storey,
     white carved corner boards on the timber storey."""
-    bx((w, d, h_stone), (0, 0, h_stone / 2), stone("#ece4d4", 1.4), bev=0.012)
+    # soft masses: the stone storey rounds its corners and the ledge round the timber storey; the timber storey only
+    # its corners (the carved band covers its top)
+    bx((w, d, h_stone), (0, 0, h_stone / 2), stone("#ece4d4", 1.4), soft=True)
     w2, d2 = w * 0.92, d * 0.92
     z1 = h_stone + h_wood
-    bx((w2, d2, h_wood), (0, 0, h_stone + h_wood / 2), tex("wood", "#c98d4a", 2.5), bev=0.01)
+    bx((w2, d2, h_wood), (0, 0, h_stone + h_wood / 2), tex("wood", "#c98d4a", 2.5), soft="v")
     bx((w + 0.03, d + 0.03, 0.03), (0, 0, z1), flat("band" + team, shade(team, 0.9)), bev=0.006)
-    coursed_hip(w, d, roof_h, (0, 0, z1 + 0.015), slate(team, 1.00), oh=0.035, n=5 if w > 0.3 else 4)
+    coursed_hip(w, d, roof_h, (0, 0, z1 + 0.015), slate(team, 1.00))
     nwin = 2 if w > 0.22 else 1
     for i in range(nwin):
         x = (i + 0.5) / nwin * w2 - w2 / 2
@@ -1233,7 +1398,7 @@ def terem_block(w, d, h_stone, h_wood, team, roof_h, dome=True, dome_team=False,
         window(x, d2 / 2 + 0.004, h_stone + h_wood * 0.5, 0, 0.04, 0.06, WHITE)
     window(-w2 / 2 - 0.004, 0, h_stone + h_wood * 0.5, math.pi / 2, 0.04, 0.06, WHITE)
     window(w2 / 2 + 0.004, 0, h_stone + h_wood * 0.5, math.pi / 2, 0.04, 0.06, WHITE)
-    window(0, -d / 2 - 0.004, h_stone * 0.55, 0, 0.035, 0.045, None)
+    window(0, -d / 2 - 0.004, h_stone * 0.55, 0, 0.035, 0.045, None, "#ece4d4")
     if rich:
         cb = _MB()
         for f in range(4):  # carved white corner boards on the timber storey
@@ -1255,12 +1420,12 @@ def terem_block(w, d, h_stone, h_wood, team, roof_h, dome=True, dome_team=False,
 def mansion(w, d, floors, wall, team, fh=0.11):
     H = floors * fh + 0.02
     bx((w + 0.02, d + 0.02, 0.04), (0, 0, 0.02), stone(STONE_D), bev=0)
-    bx((w, d, H), (0, 0, H / 2), facade(wall, WIN_D, 0.07, fh, 0.42, 0.5, lit_p=0.3), bev=0.01)
+    bx((w, d, H), (0, 0, H / 2), facade(wall, WIN_D, 0.07, fh, 0.42, 0.5, lit_p=0.3), soft="v")  # (cornice on top)
     bx((w + 0.03, d + 0.03, 0.025), (0, 0, H), flat("cornice", WHITE, 0.6), bev=0.006)
-    coursed_hip(w, d, 0.14, (0, 0, H + 0.0125), slate(team, 1.00), oh=0.02, n=4)
+    coursed_hip(w, d, 0.14, (0, 0, H + 0.0125), slate(team, 1.00), oh=0.03)
     for sx in (-1, 1):
         chimney(sx * w * 0.3, d * 0.15, H + 0.04, H + 0.15, 0.036, stone("#b0a594", 1.4))
-    bx((0.07, 0.016, 0.1), (0, -d / 2 - 0.004, 0.05), tex("wood", WOOD_D), bev=0)
+    arch_slab(0.07 * DOOR_K, 0.1, -d / 2 - 0.012, -d / 2 + 0.004, tex("wood", WOOD_D))  # an arched door
     prism_roof("pedi", 0.03, 0.1, 0.035, (0, -d / 2 - 0.012, 0.105), flat("cornice", WHITE, 0.6), overhang=0.0, rot_z=math.pi / 2)
     return H
 
@@ -1427,9 +1592,9 @@ def city_dl3(team):
     tree(0.36, 0.56, 0.8)
     flagpole(0.05, -0.12, 0.55, team, 0.14)
     # denser like the town of reference frame 3: two more houses at the back, a market on the square, goods in heaps
-    build_at(lambda: town_house(0.2, 0.16, 0.1, 0.09, team, "#cfc6b4", "#efe3c8", shop="#e8b84a", n_courses=4,
+    build_at(lambda: town_house(0.2, 0.16, 0.1, 0.09, team, "#cfc6b4", "#efe3c8", shop="#e8b84a",
                                 side_win=False, gable_win=False), -0.46, 0.42, 0.5)
-    build_at(lambda: town_house(0.2, 0.15, 0.1, 0.09, team, "#d8cdb6", "#f1e6d2", smoke=True, gable_front=False, n_courses=4,
+    build_at(lambda: town_house(0.2, 0.15, 0.1, 0.09, team, "#d8cdb6", "#f1e6d2", smoke=True, gable_front=False,
                                 side_win=False, gable_win=False), 0.52, 0.38, -0.5)
     for (x, y, rz, c) in ((-0.17, -0.14, 0.2, "#c0392b"), (0.2, -0.16, -0.2, "#2f62c8"), (-0.02, -0.26, 0.0, "#e8b84a")):
         build_at(lambda c=c: market_stall(team, c), x, y, rz)
@@ -1441,19 +1606,19 @@ def city_dl4(team):
 
     def town_hall():
         st = facade("#ddc9a0", WIN_D, 0.07, 0.12, 0.42, 0.5, lit_p=0.35)
-        bx((0.58, 0.26, 0.28), (0, 0, 0.14), st, bev=0.01)
+        bx((0.58, 0.26, 0.28), (0, 0, 0.14), st, soft="v")  # soft masses (cornices on their tops)
         bx((0.6, 0.28, 0.025), (0, 0, 0.28), flat("cornice", WHITE, 0.6), bev=0.006)
-        coursed_hip(0.58, 0.26, 0.13, (0, 0, 0.29), slate(team, 1.00), oh=0.02, n=4)
+        coursed_hip(0.58, 0.26, 0.13, (0, 0, 0.29), slate(team, 1.00), oh=0.03)
         tw = stone("#e6dcc4", 1.5)
-        bx((0.15, 0.15, 0.66), (0, 0.0, 0.33), tw, bev=0.01)
+        bx((0.15, 0.15, 0.66), (0, 0.0, 0.33), tw, soft="v")
         bx((0.18, 0.18, 0.025), (0, 0, 0.66), flat("cornice", WHITE, 0.6), bev=0.005)
-        bx((0.13, 0.13, 0.12), (0, 0, 0.73), tw, bev=0.008)
+        bx((0.13, 0.13, 0.12), (0, 0, 0.73), tw, soft="v")
         for k in range(4):
             a = k * math.pi / 2
             clock_face(math.sin(a) * 0.076, -math.cos(a) * 0.076, 0.56, a)
-            window(math.sin(a) * 0.066, -math.cos(a) * 0.066, 0.74, a, 0.04, 0.07)
-        coursed_hip(0.13, 0.13, 0.3, (0, 0, 0.79), slate(team, 1.00), oh=0.025, n=5, ct=0.009)
-        ico(0.02, (0, 0, 1.11), flat("gold", GOLD, 0.35))
+            window(math.sin(a) * 0.066, -math.cos(a) * 0.066, 0.74, a, 0.04, 0.062)
+        coursed_hip(0.13, 0.13, 0.3, (0, 0, 0.79), slate(team, 1.00), oh=0.03, ct=0.014)
+        ico(0.02, (0, 0, 1.11), flat("gold", GOLD, 0.35), sub=2)  # a round gilt ball on the spire
         for x in (-0.09, -0.03, 0.03, 0.09):
             cy(0.014, 0.18, (x, -0.165, 0.09), flat("cornice", WHITE, 0.6), 8)
         bx((0.24, 0.07, 0.02), (0, -0.165, 0.19), flat("cornice", WHITE, 0.6), bev=0)
@@ -1481,8 +1646,8 @@ def city_dl4(team):
     for (x, y, rz, c) in ((-0.05, -0.39, 0.1, "#c0392b"), (0.08, -0.29, -0.12, "#2f62c8")):
         build_at(lambda c=c: market_stall(team, c), x, y, rz)
     # back-row houses: only their roofs and chimneys show over the mansions and the town hall
-    build_at(lambda: cottage(0.2, 0.16, 0.15, team, "#efe3c8", smoke=True, n_courses=4, plain=True), -0.5, 0.42, 0.45)
-    build_at(lambda: cottage(0.18, 0.15, 0.14, team, "#f1e6d2", n_courses=4, gable_front=False, eave_z=0.0, plain=True),
+    build_at(lambda: cottage(0.2, 0.16, 0.15, team, "#efe3c8", smoke=True, plain=True), -0.5, 0.42, 0.45)
+    build_at(lambda: cottage(0.18, 0.15, 0.14, team, "#f1e6d2", gable_front=False, eave_z=0.0, plain=True),
              0.52, 0.4, -0.45)
     town_props(team, [(-0.64, -0.24), (0.64, -0.26)])
 
@@ -1510,10 +1675,10 @@ def car(x, y, rz, color):
     build_at(b, x, y, rz)
 
 
-def mansard(w, d, h, loc, roof_c, inset=0.045, n=3, oh=0.012, ct=0.009):
+def mansard(w, d, h, loc, roof_c, inset=0.045, n=COURSES, oh=0.012, ct=0.014):
     """A mansard roof over a w × d block (loc = centre of the wall top): four steep slopes laid in slate courses
-    like the gable roofs (course_rows), dark hip lines, and a flat lead top behind a pale zinc rim (the Paris and
-    Petersburg tenements of the industrial age). Returns the height of the flat top."""
+    like the gable roofs (course_rows), round hip rolls (roof × RIDGE_K), and a flat lead top behind a pale zinc rim
+    (the Paris and Petersburg tenements of the industrial age). Returns the height of the flat top."""
     x0, y0, z0 = loc
     W, D = w / 2 + oh, d / 2 + oh
     Wi, Di = w / 2 - inset, d / 2 - inset
@@ -1525,11 +1690,11 @@ def mansard(w, d, h, loc, roof_c, inset=0.045, n=3, oh=0.012, ct=0.009):
         course_rows(MBs, b[i], b[(i + 1) % 4], t[(i + 1) % 4], t[i], n, ct, butt=BUTT, band=0.8)
     for mb, mt in zip(MBs, _roof_mats(roof_c, 0.84)):
         mb.obj(mt, "mansard_courses")
-    BUTT.obj(tex("roof", shade(roof_c, 0.68), 1.6), "mansard_butts")
+    BUTT.obj(tex("roof", shade(roof_c, BUTT_K), 1.6), "mansard_butts")
     lift = lambda p: (p[0], p[1], p[2] + ct * 1.1)  # noqa: E731
-    tm = flat("roof_trim", roof_trim(roof_c), 0.8)
+    tm = flat("ridge", roof_trim(roof_c, RIDGE_K), 0.8)
     for i in range(4):
-        beam(lift(b[i]), lift(t[i]), 0.0095, tm)
+        rod(lift(b[i]), lift(t[i]), 0.01, tm, n=8)
     bx((2 * Wi + 0.012, 2 * Di + 0.012, 0.012), (x0, y0, z0 + h + 0.004), flat("zinc", "#aeb3b8", 0.5), bev=0)
     bx((2 * Wi - 0.01, 2 * Di - 0.01, 0.006), (x0, y0, z0 + h + 0.0115), flat("tar", "#4a4b50", 0.9), bev=0)
     return z0 + h + 0.0145
@@ -2187,7 +2352,7 @@ def residence_dl3(team):
         bx((0.16, 0.05, 0.04), (0, -0.0 - i * 0.045, 0.13 - i * 0.04), stone("#ece4d4"), bev=0)
     for sx in (-1, 1):
         cy(0.014, 0.28, (sx * 0.07, -0.08, 0.14 + 0.05), gm, 6)
-    coursed_hip(0.16, 0.12, 0.12, (0, -0.05, 0.33), slate(team, 1.00), oh=0.02, n=3, ct=0.009)
+    coursed_hip(0.16, 0.12, 0.12, (0, -0.05, 0.33), slate(team, 1.00), oh=0.02, ct=0.012)
     # the white-stone enclosure of an early stone keep (кремль): a crenellated wall round the back of the court
     # with tent-roofed corner turrets
     ws, wd_ = stone("#e6dece", 1.2), stone("#c9bfae", 1.2)
@@ -2205,20 +2370,22 @@ def residence_dl3(team):
     for (x, y) in (pts[0], pts[-1]):
         cy(0.068, 0.25, (x, y, 0.125), ws, 8)
         cn(0.085, 0.21, (x, y, 0.355), tex("roof", slate(team, 1.0), 1.6), 8)
-        ico(0.014, (x, y, 0.465), flat("gold", GOLD, 0.35))
+        ico(0.014, (x, y, 0.465), flat("gold", GOLD, 0.35), sub=2)  # a round ball on the turret tip
     banner(-0.3, -0.45, 0.8, team, 0.15)
     banner(0.3, -0.45, 0.8, team, 0.15)
     tree(0.56, -0.2, 0.85)
     tree(-0.6, -0.3, 0.8)
 
 
-def coursed_cone(x, y, z0, r, h, roof_c, rings=5, sides=12, lip=0.003, band=0.78, butt_k=0.75, eave=0.007):
+def coursed_cone(x, y, z0, r, h, roof_c, rings=COURSES, sides=16, lip=0.006, band=0.78, butt_k=BUTT_K, eave=0.007,
+                 finial=GOLD):
     """A tower's cone roof laid in courses of slates (the steep tower roofs of reference frame 4): the lower edge of
-    each course stands a small lip proud of the one below, the courses alternate two tones and the top of each
-    darkens a little just under the next course's edge (the shadow line the high game camera reads, as course_rows
-    does on the flat roofs). Many thin courses with a soft shadow keep the cone one smooth steep shape that reads as
-    shingled, not as stacked tiers. The eave course flares out by `eave` (it also covers the merlon tops).
-    Open at the bottom: the tower top closes it."""
+    each course stands a lip proud of the one below, the courses alternate two tones and the top of each darkens a
+    little just under the next course's edge (the shadow line the high game camera reads, as course_rows does on the
+    flat roofs). The eave course flares out by `eave` (it also covers the merlon tops). Open at the bottom: the tower
+    top closes it. «Raivon Soft» (§6.8, plan step B1): 3 fat courses on a smooth 16-sided cone and, with finial (a
+    colour), a round ball of 0.12 r (an ico sphere, subdivision 2) on the tip instead of the needle point.
+    Returns the height of the cone's tip."""
     mbs, butt = [_MB(), _MB()], _MB()
 
     def P(rr, z, a):
@@ -2243,10 +2410,18 @@ def coursed_cone(x, y, z0, r, h, roof_c, rings=5, sides=12, lip=0.003, band=0.78
     for mb, mt in zip(mbs, _roof_mats(roof_c, 0.86)):
         mb.obj(mt, "cone_courses")
     butt.obj(tex("roof", shade(roof_c, butt_k), 1.6), "cone_butts")
+    if finial:
+        ball(x, y, z0 + h, 0.12 * r, finial)
     return z0 + h
 
 
-def castle_tower(x, y, r, h, roof, team, flag=True, roof_c=None, rings=5):
+def ball(x, y, z_tip, rf, color=GOLD):
+    """A round gilt ball finial (ico sphere, subdivision 2) of radius rf sitting on a tip at z_tip (it swallows the
+    point: «Raivon Soft» towers end in balls, not needles)."""
+    return ico(rf, (x, y, z_tip + rf * 0.55), flat("gold", color, 0.35), sub=2)
+
+
+def castle_tower(x, y, r, h, roof, team, flag=True, roof_c=None, rings=COURSES):
     """A round castle tower as in the concept art: plinth, body, a string course, merlons, a tall cone roof
     with a gilt finial and a pennant in the team colour. roof_c: lay the cone in slate rings of that colour."""
     st = stone(WSTONE, 0.6)
@@ -2273,11 +2448,11 @@ def castle_tower(x, y, r, h, roof, team, flag=True, roof_c=None, rings=5):
     if slit_list:
         slits(slit_list, one_side=True)
     if roof_c:
-        coursed_cone(x, y, h + 0.02, r + 0.03, r * 3.4, roof_c, rings)
+        coursed_cone(x, y, h + 0.02, r + 0.03, r * 3.4, roof_c, rings)  # (ends in a gilt ball)
     else:
         cn(r + 0.03, r * 3.4, (x, y, h + r * 1.7 + 0.02), roof, 12)
-    top = h + r * 3.4 + 0.02
-    uvs(0.012, (x, y, top + 0.01), flat("finial", GOLD, 0.35), 6, 4)
+        ball(x, y, h + r * 3.4 + 0.02, 0.12 * (r + 0.03))
+    top = h + r * 3.4 + 0.02 + 0.12 * (r + 0.03)
     if flag:
         rod((x, y, top), (x, y, top + 0.13), 0.004, flat("pole", "#d9d2c3", 0.5), n=4)
         bx((0.07, 0.004, 0.04), (x + 0.036, y, top + 0.11), flat("pennant_" + team, team, 0.6), 0, 0)
@@ -2290,7 +2465,7 @@ def square_tower(x, y, w, h, roof, team, flag=True, roofed=True, roof_c=None):
     st = stone(WSTONE, 0.6)
     dk = stone(WSTONE_D, 0.6)
     bx((w + 0.024, w + 0.024, 0.05), (x, y, 0.025), dk, bev=0.004)
-    bx((w, w, h), (x, y, h / 2), st, bev=0.006)
+    bx((w, w, h), (x, y, h / 2), st, soft="v")  # a soft mass: round corners (plinth and parapet cover its ends)
     bx((w + 0.01, w + 0.01, 0.014), (x, y, h * 0.55), dk, bev=0)
     bx((w + 0.03, w + 0.03, 0.04), (x, y, h - 0.005), dk, bev=0.003)  # corbelled parapet
     n = 3
@@ -2310,11 +2485,13 @@ def square_tower(x, y, w, h, roof, team, flag=True, roofed=True, roof_c=None):
     top = h + 0.02
     if roofed:
         if roof_c:
-            coursed_hip(w - 0.01, w - 0.01, w * 1.6, (x, y, h + 0.012), roof_c, oh=0.008, n=5, ct=0.009)
+            coursed_hip(w - 0.01, w - 0.01, w * 1.6, (x, y, h + 0.012), roof_c, oh=0.008, ct=0.014)
         else:
             hip_roof(w - 0.01, w - 0.01, w * 1.6, (x, y, h + 0.012), roof, oh=0.008)
         top = h + 0.012 + w * 1.6
-        uvs(0.011, (x, y, top + 0.008), flat("finial", GOLD, 0.35), 6, 4)
+        rf = max(0.012, 0.085 * w)
+        ball(x, y, top + 0.014, rf)  # (on top of the hip rolls' meeting point)
+        top += 0.014 + rf
     if flag:
         rod((x, y, top), (x, y, top + 0.13), 0.004, flat("pole", "#d9d2c3", 0.5), n=4)
         bx((0.07, 0.004, 0.04), (x + 0.036, y, top + 0.11), flat("pennant_" + team, team, 0.6), 0, 0)
@@ -2344,7 +2521,7 @@ def slits(items, mt=None, one_side=False):
     mb.obj(mt or flat("slit", "#1c1a19", 0.9), "slits")
 
 
-def lean_to(A, B, C, D, roof_c, n=3, kind="roof", tk=0.01, ct=0.009):
+def lean_to(A, B, C, D, roof_c, n=COURSES, kind="roof", tk=0.015, ct=0.015):
     """A mono-pitch roof laid in courses like the gable roofs: eave edge A→B (low), top edge D→C (high), a slab
     under the courses with its eave and verge edges showing."""
     from mathutils import Vector
@@ -2365,7 +2542,7 @@ def lean_to(A, B, C, D, roof_c, n=3, kind="roof", tk=0.01, ct=0.009):
     course_rows(MBs, At, Bt, Ct, Dt, n, ct, butt=BUTT, band=0.8)
     for mb, mt in zip(MBs, _roof_mats(roof_c, 0.84, kind)):
         mb.obj(mt, "lean_courses")
-    BUTT.obj(tex(kind, shade(roof_c, 0.68), 1.6), "lean_butts")
+    BUTT.obj(tex(kind, shade(roof_c, BUTT_K), 1.6), "lean_butts")
 
 
 def hoarding(x0, y0, x1, y1, out, team, z_top=0.28, wall_t=0.08):
@@ -2488,9 +2665,9 @@ def residence_dl4(team):
     for (x, y) in ((-H, 0.0), (H, 0.0), (0.0, H)):
         square_tower(x, y, 0.14, 0.4, roof, team, flag=False, roofed=False)
     for sx in (-1, 1):
-        castle_tower(sx * 0.17, -H - 0.02, 0.06, 0.5, roof, team, flag=False, roof_c=roof_c, rings=3)
+        castle_tower(sx * 0.17, -H - 0.02, 0.06, 0.5, roof, team, flag=False, roof_c=roof_c)
     # gatehouse: an arched gate with a lit passage and steps up to it
-    bx((0.26, 0.16, 0.4), (0, -H, 0.2), st, bev=0.01)
+    bx((0.26, 0.16, 0.4), (0, -H, 0.2), st, soft="v")  # soft masses: the gatehouse, the keep, the hall
     sur = flat("arch_sur", "#6e6152", 0.85)
     bx((0.13, 0.012, 0.17), (0, -H - 0.081, 0.095), sur, bev=0)
     cy(0.065, 0.012, (0, -H - 0.081, 0.18), sur, 12, rot=(math.pi / 2, 0, 0))
@@ -2506,15 +2683,16 @@ def residence_dl4(team):
         bx((0.18 - k * 0.02, 0.04, 0.012 + k * 0.012), (0, -H - 0.13 + k * 0.03, 0.006 + k * 0.006),
            stone(WSTONE_D, 0.6), bev=0.002)
     win_arch(0, -H - 0.082, 0.3, 0.03, 0.04)
-    gable_roof(0.26, 0.16, 0.15, (0, -H, 0.4), roof_c, st, oh=0.055, ohx=0.03, n=4, gable_timber=None, eave_z=0.0,
+    gable_roof(0.26, 0.16, 0.15, (0, -H, 0.4), roof_c, st, oh=0.055, ohx=0.03, gable_timber=None, eave_z=0.0,
                **SOFT_ROOF)
     # keep with two turrets and a hall under a big coursed slate roof with lit dormers (reference frame 4)
-    bx((0.4, 0.32, 0.66), (0.04, 0.12, 0.33), st, bev=0.012)
-    gable_roof(0.4, 0.32, 0.32, (0.04, 0.12, 0.66), roof_c, st, oh=0.065, ohx=0.04, n=6, gable_timber=None, eave_z=0.0,
+    bx((0.4, 0.32, 0.66), (0.04, 0.12, 0.33), st, soft="v")
+    gable_roof(0.4, 0.32, 0.32, (0.04, 0.12, 0.66), roof_c, st, oh=0.065, ohx=0.045, tk=0.02, ct=0.02,
+               gable_timber=None, eave_z=0.0,
                **SOFT_ROOF)
     for x in (-0.03, 0.11):  # dormers on the front slope, each with a lit window
         bx((0.06, 0.1, 0.11), (x, 0.0, 0.815), st, bev=0)
-        window(x, -0.054, 0.83, 0, 0.026, 0.04, "#6e6152")
+        window(x, -0.054, 0.83, 0, 0.026, 0.04, "#6e6152", WSTONE)
         gable_roof(0.1, 0.06, 0.045, (x, 0.0, 0.87), roof_c, st, rz=math.pi / 2, oh=0.012, ohx=0.01, n=2,
                    tk=0.008, ct=0.008, gable_timber=None, eave_z=0.0, barge=None, **SOFT_ROOF)
     chimney(0.19, 0.2, 0.85, 1.02, 0.05, stone(WSTONE_D, 0.8))
@@ -2523,18 +2701,18 @@ def residence_dl4(team):
         window(-0.11 + i * 0.1, -0.044, 0.28, 0, 0.026, 0.05)
     for (x, y, h) in ((-0.16, -0.04, 0.86), (0.24, -0.04, 0.78)):
         castle_tower(x, y, 0.08, h, roof, team, flag=False, roof_c=roof_c)
-    castle_tower(0.04, 0.24, 0.085, 1.08, roof, team, roof_c=roof_c, rings=6)  # the tall central tower
+    castle_tower(0.04, 0.24, 0.085, 1.08, roof, team, roof_c=roof_c)  # the tall central tower
     # the great hall behind the keep: warm stone under a coursed slate roof, lit windows
     def hall():
         w, d, h = 0.3, 0.22, 0.28
-        bx((w, d, h), (0, 0, h / 2), stone(WSTONE, 1.0), bev=0.012)
+        bx((w, d, h), (0, 0, h / 2), stone(WSTONE, 1.0), soft="v")
         bx((w + 0.02, d + 0.02, 0.035), (0, 0, 0.0175), stone(STONE_D), bev=0)
-        gable_roof(w, d, 0.17, (0, 0, h), roof_c, stone(WSTONE, 1.0), oh=0.03, ohx=0.02, n=4, gable_timber=None,
+        gable_roof(w, d, 0.17, (0, 0, h), roof_c, stone(WSTONE, 1.0), oh=0.03, ohx=0.02, gable_timber=None,
                    **SOFT_ROOF)
-        bx((0.065, 0.014, 0.11), (0, -d / 2 - 0.004, 0.055), tex("wood", WOOD_D), bev=0)
+        arch_slab(0.065 * DOOR_K, 0.11, -d / 2 - 0.011, -d / 2 + 0.003, tex("wood", WOOD_D))
         for sx in (-1, 1):
-            window(sx * w * 0.3, -d / 2 - 0.004, h * 0.62, 0, 0.04, 0.05, WOOD_D)
-        window(-w / 2 - 0.004, 0, h * 0.62, math.pi / 2, 0.04, 0.05, WOOD_D)
+            window(sx * w * 0.3, -d / 2 - 0.004, h * 0.62, 0, 0.04, 0.05, WOOD_D, WSTONE)
+        window(-w / 2 - 0.004, 0, h * 0.62, math.pi / 2, 0.04, 0.05, WOOD_D, WSTONE)
     build_at(hall, -0.26, 0.3)
     # the busy outer bailey (the keep fills the inner yard): a forge against the west curtain, a hay cart, a
     # haystack, casks and crates by the gate, pines at the back corners (reference frames 3 and 4)
@@ -3320,7 +3498,8 @@ def f3_post(p):
         mb.face([c3(1, z0), c3(2, z0), c3(2, z1), c3(1, z1)], (ta[0], ta[1], 0))
     mb.obj(st, "merlons")
     # the cone stands inside the crenellated parapet (reference frame 4's tower roofs), its eave behind the merlons
-    top = coursed_cone(x, y, 0.392, r + 0.002, 0.23, FORT_SLATE, rings=4, sides=10, eave=0.0)
+    top = coursed_cone(x, y, 0.392, r + 0.002, 0.23, FORT_SLATE, rings=4, sides=10, lip=0.003, butt_k=0.75, eave=0.0,
+                       finial=None)  # (the forts keep their look: not part of the soft pass yet)
     ico(0.013, (x, y, top + 0.004), flat("finial", GOLD, 0.35))
     for aa in (a0, a0 + math.pi):  # lit windows: one towards the field, one towards the town
         bx((0.022, 0.012, 0.036), (x + math.cos(aa) * (r - 0.002), y + math.sin(aa) * (r - 0.002), 0.27), win_lit(),
@@ -3718,9 +3897,13 @@ def lr_bands(key, axis, period, c1, c2):
     return _stripe_mat(("lr_bands", key, axis, period, c1, c2), s_of, c1, c2)
 
 
-def lr_window(x, y, z, rz, w=0.032, h=0.036, lit=True, frame="#33373d"):
-    """A window on a wall facing −Y (rotated rz), all flat plates (a mobile homestead has a dozen of them): a dark
-    frame, warm lit (or dark) glass, a mullion and a pale sill."""
+def lr_window(x, y, z, rz, w=0.032, h=0.036, lit=True, frame="#33373d", wall=None):
+    """A window on a wall facing −Y (rotated rz), all flat plates (a mobile homestead has a dozen of them): a frame,
+    warm lit (or dark) glass, a mullion and a pale sill. «Raivon Soft»: w and h × WIN_K, the frame lighter
+    (frame_c)."""
+    w, h = w * WIN_K, h * WIN_K
+    frame = frame_c(frame, wall)
+
     def b():
         fm, gl, sl = _MB(), _MB(), _MB()
         fm.face([(-w / 2 - 0.005, -0.003, -h / 2 - 0.005), (w / 2 + 0.005, -0.003, -h / 2 - 0.005),
@@ -5526,13 +5709,32 @@ for _n in range(1, 9):
     ASSETS[f"fort_l{_n}_post"] = (lambda n: (lambda: fort_post(n)))(_n)
 
 
+def _soft_keep(objs):
+    """The soft masses (bx / cy soft=...) that keep their round 3-segment bevel: those whose smallest side is at least
+    SOFT_MIN, at most SOFT_MAX of them, the largest by volume (a group of equal ones at the cut is left out whole, so
+    twin towers stay alike)."""
+    vol = lambda o: round(o.dimensions[0] * o.dimensions[1] * o.dimensions[2], 6)  # noqa: E731
+    cand = sorted((o for o in objs if o.get("soft") and min(o.dimensions) >= SOFT_MIN), key=vol, reverse=True)
+    if len(cand) > SOFT_MAX:
+        cut = vol(cand[SOFT_MAX])
+        cand = [o for o in cand[:SOFT_MAX] if vol(o) > cut]
+    return {o.name for o in cand}
+
+
 def lowpoly(objs):
-    """Mobile budget: one-segment chamfers, no bevel on tiny parts, smooth-by-angle shading."""
+    """Mobile budget: one-segment chamfers, no bevel on tiny parts, smooth-by-angle shading. «Raivon Soft» (§6.2):
+    the few largest soft masses (_soft_keep) keep their round 3-segment bevel, followed by a WEIGHTED_NORMAL that
+    keeps the sharp edges (_soften), so their big faces stay flat and only the bevels shade round."""
+    keep = _soft_keep(objs)
     plain = []
     for o in objs:
         dims = min(o.dimensions) if o.dimensions else 0
         bevels = [md for md in o.modifiers if md.type == "BEVEL"]
         for md in bevels:
+            if o.name in keep:
+                md.segments = 3
+                md.width = min(md.width, dims * 0.2)
+                break
             md.segments = 1
             if dims < 0.03 or md.width < 0.004:
                 for x in list(o.modifiers):
@@ -5541,6 +5743,8 @@ def lowpoly(objs):
             md.width = min(md.width, dims * 0.2)
         if not any(md.type == "BEVEL" for md in o.modifiers):
             plain.append(o)
+    if keep:
+        print(f"soft masses: {len(keep)} keep a round 3-segment bevel", flush=True)
     if plain:
         bpy.ops.object.select_all(action="DESELECT")
         for o in plain:

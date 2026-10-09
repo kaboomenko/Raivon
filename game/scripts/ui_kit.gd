@@ -69,6 +69,23 @@ const FIT_FLOOR := 20  ## legacy _fit floor; new screens stop at 22 (24 for regu
 const SHADOW_A := 0.35
 const DIM_A := 0.6
 const LOCK_MOD := Color(0.55, 0.57, 0.62)  ## a closed item's icon (§3.5)
+## How far a finger may travel on the screen and still tap (≈ 7 dp): past it a press inside a scrolling row is a
+## swipe, and a swipe never spends (§2: «иначе при прокрутке возможны случайные траты»).
+const TAP_SLOP := 16.0
+
+
+## Where a pointer event (in `c`'s local coordinates) is on the screen. A control inside a scroll moves under the
+## finger, so only screen positions tell a swipe from a tap.
+static func screen_pos(c: Control, e: InputEvent) -> Vector2:
+	var p := Vector2.ZERO
+	if e is InputEventMouse:
+		p = (e as InputEventMouse).position
+	elif e is InputEventScreenTouch:
+		p = (e as InputEventScreenTouch).position
+	elif e is InputEventScreenDrag:
+		p = (e as InputEventScreenDrag).position
+	return c.get_global_transform_with_canvas() * p
+
 
 static func gloss(face: Color) -> Color:
 	return face.lerp(WHITE, 0.38)
@@ -883,6 +900,10 @@ class KitButton extends Panel:
 	var _parts: Array = []  # [{node, kind, base, text}]
 	var _down := false
 	var _fired_frame := -1
+	var _press_g := Vector2.ZERO  # where the finger went down, on the screen
+	var _travel := 0.0  # how far it has moved since, at most
+	var _scrolled := false  # a scroll around the button began to move during this press
+	var _void := false  # the press turned into a swipe: its release does nothing
 	var _hold_t := -1.0
 	var _built := false
 	var _in_rebuild := false
@@ -1343,6 +1364,23 @@ class KitButton extends Panel:
 			if cb.is_valid():
 				cb.call()
 
+	## A scroll container around the button began to scroll (it tells every descendant, like BaseButton hears it):
+	## once the finger has also left the tap slop, the press is a swipe and its release must not act — a CTA in the
+	## card row would otherwise spend while the player only scrolls (§2). Jitter inside the slop still taps.
+	func _notification(what: int) -> void:
+		if what == NOTIFICATION_SCROLL_BEGIN and _down:
+			_scrolled = true
+			_check_swipe()
+
+	func _check_swipe() -> void:
+		if _void or not _scrolled or _travel <= SELF.TAP_SLOP:
+			return
+		_void = true
+		_hold_t = -1.0
+		set_process(false)
+		queue_redraw()
+		SELF.press_out(self)
+
 	func _on_input(e: InputEvent) -> void:
 		var is_press := false
 		var is_release := false
@@ -1355,6 +1393,11 @@ class KitButton extends Panel:
 			is_press = e.pressed
 			is_release = not e.pressed
 			pos = (e as InputEventScreenTouch).position
+		elif e is InputEventMouseMotion or e is InputEventScreenDrag:
+			if _down:
+				_travel = maxf(_travel, SELF.screen_pos(self, e).distance_to(_press_g))
+				_check_swipe()
+			return
 		else:
 			return
 		var frame := Engine.get_process_frames()
@@ -1362,6 +1405,10 @@ class KitButton extends Panel:
 			if _down:
 				return  # the emulated mouse twin of a touch
 			_down = true
+			_press_g = SELF.screen_pos(self, e)
+			_travel = 0.0
+			_scrolled = false
+			_void = false
 			SELF.press_in(self)
 			if hold and enabled:
 				_hold_t = 0.0
@@ -1370,7 +1417,10 @@ class KitButton extends Panel:
 			if _fired_frame == frame:
 				return
 			_fired_frame = frame
+			var was_down := _down
 			_down = false
+			if was_down and _ends_swipe(e):
+				return
 			SELF.press_out(self)
 			var inside := _has_point(pos)
 			if hold:

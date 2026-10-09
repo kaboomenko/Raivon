@@ -531,10 +531,12 @@ def soft_trunk(x, y, rings, mt, n=6):
 def tall_pine(x=0.0, y=0.0, s=1.0, seed=0, mt=None, bark=None):
     """«Raivon Soft» conifer (§6.8): three fat scalloped tiers (radii 0.24 / 0.19 / 0.13) with rolled rims, a ball
     on top and the trunk showing at the foot — stout, height ≈ 2.3× the bottom radius (was 3.2×), ~0.565·s tall.
-    The bottom tier starts high (rim 0.225) and the tiers are packed tight above it, so a stub of brown trunk shows
-    under the skirt down to the close-zoom pitch of 40° (camera_rig.gd): the front rim has to clear
-    (0.24 − 0.05)·tan 40° ≈ 0.16, and the lowest crest of the rolled lip hangs at ≈ 0.19. Droop and lip shrink with the
-    tier radius, so every upper rim still hangs clear of the tier below (a deep-green band under each). 284
+    The bottom tier starts high (rim 0.25, droop 0.01, lip 0.015) and the tiers are packed tight above it, so a stub
+    of brown trunk (r 0.055) shows under the skirt at the close-zoom pitch of 40° (camera_rig.gd) and in the upper
+    half of the z03 frame: the front rim has to clear (0.24 − 0.055)·tan 40° ≈ 0.16, and the lowest crest of the
+    rolled lip hangs at 0.225 (≈ 0.05 of trunk under a crest, ≈ 0.1 under a trough); below the middle of a close
+    frame the perspective looks down at ≈ 45° and only the troughs show it. Droop and lip shrink with the tier
+    radius, so every upper rim still hangs clear of the tier below (a deep-green band under each). 284
     triangles (three 84-triangle tiers, the 20-triangle ball that plugs the top apex ring, a 12-triangle trunk), one
     material besides the bark."""
     rnd = random.Random(seed)
