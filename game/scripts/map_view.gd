@@ -1300,7 +1300,9 @@ func refresh_hex(id: int, neighbours := true) -> void:
 
 
 ## Capture and build «pop» (§6.10, soft_style_plan P8): the hex's buildings squash and stretch — (1.2, 0.6, 1.2) →
-## (0.95, 1.15, 0.95) → 1 over 0.35 s — and a small soft ring of dust (#E8DCC8) spreads from their feet.
+## (0.95, 1.15, 0.95) → 1 over 0.35 s — and a small soft ring of dust spreads from their feet: §6.10's #E8DCC8 on
+## screen, fed in as #D6C6AC at alpha 0.55 because the sunny grade lifts light unshaded colours (fed #E8DCC8, the
+## dust read as a milky white halo in the ceremony frame).
 func pop_hex(id: int) -> void:
 	var holder: Node3D = _hex_props.get(id)
 	if holder == null:
@@ -1312,7 +1314,7 @@ func pop_hex(id: int) -> void:
 	tw.tween_property(holder, "scale", Vector3(0.95, 1.15, 0.95), 0.14).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tw.tween_property(holder, "scale", Vector3.ONE, 0.21).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	holder.set_meta("pop", tw)
-	burst_at(cell_world(id), Color("#E8DCC8"), false, 0.7)
+	burst_at(cell_world(id), Color("#D6C6AC"), false, 0.55)
 
 
 ## A pillar of light from the sci-fi capital's spire into the sky (reference frame 2), in the state's colour,
@@ -3760,15 +3762,20 @@ var _carts := {}  # convoy id -> Node3D
 ## deposits: [{hex, res, ...}], convoys: [{id, hex, ...} + "phase": {phase, progress, left}].
 func set_deposits(deposits: Array, convoys: Array) -> void:
 	var seen := {}
+	var changed := false
 	for d in deposits:
 		var h: int = d["hex"]
 		seen[h] = true
 		if not _dep_nodes.has(h):
 			_dep_nodes[h] = _make_deposit(h, String(d["res"]))
+			changed = true
 	for h in _dep_nodes.keys():
 		if not seen.has(h):
 			_dep_nodes[h].queue_free()
 			_dep_nodes.erase(h)
+			changed = true
+	if changed:
+		_sync_deposit_marks()
 	var cap := cell_world(sim.states[Types.PLAYER]["capital_id"])
 	var live := {}
 	for cv in convoys:
@@ -3834,23 +3841,16 @@ static func _fmt_left(sec: int) -> String:
 var _dep_disc: QuadMesh  # the deposit's soft gold disc (its material on the mesh), shared by every deposit
 var _dep_ring: ArrayMesh  # the deposit's dashed round ribbon, shared
 var _dep_ring_mat: ShaderMaterial
+var _dep_marks: Array = []  # [discs, rings]: one MultiMeshInstance3D each over every deposit (_sync_deposit_marks)
 
 
 ## A deposit on the map (canon §5.2; §6.7, soft_style_plan P8): a soft gold disc on the ground inside a dashed round
-## candy ribbon, the resource icon bobbing over it (_process). It replaced the hard yellow hex strip.
+## candy ribbon (both drawn for all deposits at once, _sync_deposit_marks), the resource icon bobbing over it
+## (_process). They replaced the hard yellow hex strip.
 func _make_deposit(hex: int, res: String) -> Node3D:
 	var node := Node3D.new()
 	add_child(node)
 	var center := cell_world(hex) + Vector3(0, 0.05, 0)
-	if _dep_disc == null:
-		_build_deposit_marks()
-	for part in [[_dep_disc, null, 0.035], [_dep_ring, _dep_ring_mat, 0.048]]:
-		var mi := MeshInstance3D.new()
-		mi.mesh = part[0]
-		mi.material_override = part[1]
-		mi.position = cell_world(hex) + Vector3(0, part[2], 0)
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		node.add_child(mi)
 	var sp := Sprite3D.new()
 	sp.name = "icon"
 	sp.texture = _tex({"gold": "coin", "food": "food", "metal": "metal"}.get(res, "coin"))
@@ -3903,6 +3903,31 @@ func _build_deposit_marks() -> void:
 	_dep_ring_mat.set_shader_parameter("w", 0.06)
 	_dep_ring_mat.set_shader_parameter("dash", per / roundf(per / 0.25))
 	_dep_ring_mat.render_priority = 2
+
+
+## The deposits' discs (y 0.035) and rings (y 0.048) as two MultiMeshes over the hexes in _dep_nodes: two draw calls
+## for any number of deposits (one strip each before P8; a disc and a ring each would have been two).
+func _sync_deposit_marks() -> void:
+	if _dep_marks.is_empty():
+		_build_deposit_marks()
+		for part in [[_dep_disc, null], [_dep_ring, _dep_ring_mat]]:
+			var mm := MultiMesh.new()
+			mm.transform_format = MultiMesh.TRANSFORM_3D
+			mm.mesh = part[0]
+			var mmi := MultiMeshInstance3D.new()
+			mmi.multimesh = mm
+			mmi.material_override = part[1]
+			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			add_child(mmi)
+			_dep_marks.append(mmi)
+	var hexes: Array = _dep_nodes.keys()
+	for i in 2:
+		var mmi: MultiMeshInstance3D = _dep_marks[i]
+		var mm := mmi.multimesh
+		mm.instance_count = hexes.size()
+		for k in hexes.size():
+			mm.set_instance_transform(k, Transform3D(Basis.IDENTITY, cell_world(int(hexes[k])) + Vector3(0, 0.035 if i == 0 else 0.048, 0)))
+		mmi.visible = not hexes.is_empty()
 
 
 func _make_cart() -> Node3D:

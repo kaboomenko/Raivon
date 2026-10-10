@@ -144,15 +144,22 @@ def cached(key, fn):
     return _PAINT[key]
 
 
-# «Raivon Soft» stone (§6.3): warm grey rock, a pale sunlit top, lilac shade (never a darker grey), spring-green moss
-STONE_C = {"base": "#BDB3A3", "top": "#D8CFBF", "shade": "#8C86A0", "moss": "#8DBA4E"}
+# «Raivon Soft» stone (§6.3): warm grey rock, a pale sunlit top, lilac shade (never a darker grey), spring-green moss.
+# Under the M1 sun a face turned to the sky shows ×1.25 lighter than its albedo: §6.3's pale top #D8CFBF clipped to
+# «white-hot» (V > 0.92, S < 0.18: 8.5 % of a rock pile's pixels in game), and even #BDB3A3 sat at V 0.93 there. So
+# the top only turns warm (sunlit sand) at the base's value, the light makes it the brightest face, and the base sits
+# a hair under §6.3's #BDB3A3 (L* 72 instead of 73).
+STONE_C = {"base": "#B9AF9F", "top": "#BCAF98", "shade": "#8C86A0", "moss": "#8DBA4E"}
 MOSS_C = ("#7AA845", STONE_C["moss"])  # moss mottle: a slightly deeper green and the §6.3 moss
-MOUNTAIN_C = {"base": "#9E9586", "warm": "#AAA090"}  # the massif's stone: the warm grey a step deeper (L* ≈ 62)
+# the massif's stone: the same warm grey, deeper. A mountain is mostly sunlit slope, so its albedo shows ×1.5 lighter
+# on screen: #BDB3A3 read L* 85 (a pale ghost whose snow caps vanished), #80786B ≈ 75 — still a pale mound at the
+# world zoom; #776F62 keeps a mid-value massif under snow caps at L* ≈ 92
+MOUNTAIN_C = {"base": "#776F62", "warm": "#82796B", "top": "#938A7B"}
 
 
-def rock_paint(c1=STONE_C["base"], c2="#C6BCAC", moss=MOSS_C, moss_at=0.62, scale=7.0, top=STONE_C["top"],
+def rock_paint(c1=STONE_C["base"], c2="#BFB5A5", moss=MOSS_C, moss_at=0.62, scale=7.0, top=STONE_C["top"],
                shade_c=STONE_C["shade"], speck=0.1):
-    """Loose stones and boulders. «Raivon Soft» (§6.3, §6.8): warm grey c1 with big soft patches of c2, the pale
+    """Loose stones and boulders. «Raivon Soft» (§6.3, §6.8): warm grey c1 with big soft patches of c2, the warm
     `top` colour on the up-facing faces, the lilac `shade_c` on the faces that turn down (a shade hue, never a darker
     grey), a faint speckle (0.1, was 0.35: nothing finer than the eye holds at map zoom) and moss on the up-facing
     faces. top=None and shade_c=None give the old faceted-stone paint (speckle and underside in shade(c1)), which the
@@ -164,7 +171,7 @@ def rock_paint(c1=STONE_C["base"], c2="#C6BCAC", moss=MOSS_C, moss_at=0.62, scal
         col = p.mix(p.math("MULTIPLY", p.step(p.noise(scale * 5, 2.0), 0.55, 0.75), speck), col,
                     shade(c1, 0.7) if shade_c is None else shade_c)
         if top:
-            col = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.45, 0.85), 0.8), col, top)
+            col = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.6, 0.95), 0.7), col, top)
         col = p.mix(p.step(p.nz, 0.1, -0.5), col, under)
         if moss:
             mf = p.math("ADD", p.nz, p.math("MULTIPLY", p.math("SUBTRACT", p.noise(6.0, 3.0), 0.5), 0.7))
@@ -175,13 +182,13 @@ def rock_paint(c1=STONE_C["base"], c2="#C6BCAC", moss=MOSS_C, moss_at=0.62, scal
 
 
 def granite_paint(base=STONE_C["base"], top=STONE_C["top"], shade_c=STONE_C["shade"], moss=MOSS_C, moss_at=0.8,
-                  scale=4.0, cracks=0.1, moss_z=0.08, cover=0.3, warm="#C9BFAE"):
+                  scale=4.0, cracks=0.1, moss_z=0.08, cover=0.3, warm="#BEB3A2"):
     """The big rounded stone blocks of «Raivon Soft» (§6.3, §6.8: «тёплый серый, лиловая тень, мох»), for soft_block:
-    - warm grey `base` (#BDB3A3) in a few big soft patches of `warm`, and a very faint horizontal banding;
-    - the pale `top` (#D8CFBF) on the faces turned to the sky (the broad slanted top of every block), so the masses
-      read lit from above like painted toys;
+    - warm grey `base` (STONE_C, ≈ §6.3 #BDB3A3) in a few big soft patches of `warm`, a very faint banding;
+    - a warm cream `top` on the faces turned to the sky (the broad slanted top of every block; see STONE_C);
     - lilac `shade_c` (#8C86A0) on the steep and down-turned faces and a little at the foot — the shade side leans to
-      the §6.3 shade hue instead of going grey (§6.1 rule 3); the AO bake darkens the creases on top of it;
+      the §6.3 shade hue instead of going grey (§6.1 rule 3), so a block reads as a lit top over lilac flanks; the
+      AO bake darkens the creases on top of it;
     - joints between upright blocks only as a hint (cracks 0.1, was 0.4, and in the lilac shade, not near-black);
     - soft patches of spring-green moss on the flattest high tops (about `cover` of them; none below moss_z)."""
     def build():
@@ -189,9 +196,9 @@ def granite_paint(base=STONE_C["base"], top=STONE_C["top"], shade_c=STONE_C["sha
         col = p.mix(p.math("MULTIPLY", p.step(p.noise(scale, 2.0), 0.35, 0.65), 0.7), base, warm)
         band = p.noise(scale * 0.5, 2.0, stretch=(1.0, 1.0, 8.0))
         col = p.mix(p.math("MULTIPLY", p.step(band, 0.5, 0.68), 0.15), col, shade(base, 0.9))
-        col = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.55, 0.9), 0.8), col, top)
-        col = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.45, -0.1), 0.55), col, shade_c)
-        col = p.mix(p.math("MULTIPLY", p.step(p.nz, -0.15, -0.7), 0.5), col, shade_c)
+        col = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.6, 0.95), 0.7), col, top)
+        col = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.55, -0.05), 0.75), col, shade_c)
+        col = p.mix(p.math("MULTIPLY", p.step(p.nz, -0.15, -0.7), 0.6), col, shade_c)
         col = p.mix(p.math("MULTIPLY", p.step(p.z, 0.05, 0.0), 0.3), col, shade_c)  # grounded foot
         if cracks:  # a hint of jointing: upright blocks of a slightly different tone, parted by soft lilac lines
             vs = (1.0, 1.0, 0.15)
@@ -310,12 +317,13 @@ def cull_hidden(objs, margin=0.003):
 
 def mountain_paint(grass_line=0.15, snow_edge=0.24):
     """«Raivon Soft» massif (§6.3, §6.8: «горы — 3 мягких массива, снег мягкими шапками»): a meadow-green foot
-    (≈ the §6.3 plain #74A645) → a band of warm mountain soil (#A39A86) → the warm grey stone of the rocks (#BDB3A3
-    in big soft patches, the pale top colour on the sky-facing slopes, the lilac shade on the steep ones; no fine
-    strata or speckle) → a soft snow cap on each mass. The caps follow the "cap" point attribute that mountain()
-    writes (1 at a mass's summit, 0 at its cap's rim, below 0 lower down), broken by a broad noise and leaning
-    onto the flatter slopes; their edge is a smoothstep `snow_edge` wide (the old snow line: 0.05 of height). Snow
-    is blue-white, not white (#EEF2F8 lit, #C8D2EA in the shade): pure white tops clip to «white-hot» (§6.12)."""
+    (a step under the §6.3 plain #74A645) whose rim climbs the slopes in broad soft tongues → warm grey stone
+    (MOUNTAIN_C, in big soft patches, a lighter tone on the flattest shoulders, a lilac lean on the steepest flanks;
+    no fine strata, speckle or scree band — they read as haze at map size) → a soft snow cap on the two big masses.
+    The caps follow
+    the "cap" point attribute that mountain() writes (1 at a mass's summit, 0 at its cap's rim, below 0 lower down),
+    broken by a broad noise and leaning onto the flatter slopes; their edge is a smoothstep `snow_edge` wide. Snow
+    is blue-white (#E8EDF7 lit, #C6D0E8 in the shade), not pure white."""
     def build():
         p = Paint("mountain")
         jit = p.math("MULTIPLY", p.math("SUBTRACT", p.noise(2.5, 2.0), 0.5), 0.22)  # broad tongues, no speckle
@@ -328,17 +336,17 @@ def mountain_paint(grass_line=0.15, snow_edge=0.24):
         rock = p.mix(p.math("MULTIPLY", p.step(band, 0.5, 0.7), 0.15), rock, shade(MOUNTAIN_C["base"], 0.9))
         # most of a massif faces the sky (nz 0.5–0.8): the pale top colour only on its flattest shoulders, a lilac
         # lean on the steepest flanks
-        rock = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.8, 0.95), 0.6), rock, STONE_C["base"])
+        rock = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.8, 0.95), 0.6), rock, MOUNTAIN_C["top"])
         rock = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.6, 0.25), 0.5), rock, STONE_C["shade"])
-        scree = p.mix(p.math("MULTIPLY", p.step(p.noise(8.0, 2.0), 0.4, 0.6), 0.5), "#A39A86", "#AFA690")
-        col = p.mix(p.step(zz, grass_line + 0.08, grass_line + 0.04), rock, scree)
-        grass = p.mix(p.step(p.noise(6.0, 2.0), 0.35, 0.65), "#6A9C42", "#7DAE4A")
-        col = p.mix(p.step(zz, grass_line + 0.045, grass_line + 0.015), col, grass)
+        # a step under the plain #74A645: the foot is lit by the wrap light and tilts to the sun, and a brighter apron
+        # read as a lime disc round the mountains on the slate of the unexplored land
+        grass = p.mix(p.step(p.noise(6.0, 2.0), 0.35, 0.65), "#5E9040", "#6C9E44")
+        col = p.mix(p.step(zz, grass_line + 0.045, grass_line + 0.015), rock, grass)
         at = p.nt.nodes.new("ShaderNodeAttribute")
         at.attribute_name = "cap"
         sf = p.math("ADD", at.outputs["Fac"], p.math("MULTIPLY", p.math("SUBTRACT", p.noise(3.0, 2.0), 0.5), 0.5))
         sf = p.math("ADD", sf, p.math("MULTIPLY", p.math("SUBTRACT", p.nz, 0.6), 0.4))
-        snow = p.mix(p.step(p.nz, 0.2, 0.8), "#CBD5EC", "#F1F4FA")
+        snow = p.mix(p.step(p.nz, 0.2, 0.8), "#C6D0E8", "#E8EDF7")
         col = p.mix(p.step(sf, 0.0, snow_edge), col, snow)
         return p.done(col, 0.9)
     return cached(("mountain", grass_line, snow_edge), build)
@@ -862,7 +870,7 @@ def crag():
     triangles: the blocks ≈ 1000, two pines of 18-segment tiers (221 each; four 284-triangle B5 pines alone would
     take 1136)."""
     mt = granite_paint(moss_at=0.75, moss_z=0.1, cover=0.4)
-    deep = granite_paint(base="#B0A697", top="#CEC4B3", moss=None, warm="#BBB1A1")
+    deep = granite_paint(base="#AFA596", top="#B2A58F", moss=None, warm="#B6AC9C")
     big = dict(cuts=(4, 6), sharp=60.0, ground=0.05)  # 4–6 cuts and the sharpest edges only: ≈ 120 triangles a block
     blocks = [
         # the main ridge: broad rounded blocks rising toward the back, the summit block stacked on them
@@ -887,7 +895,7 @@ def crag():
 
 # the massif's three broad masses, in units of the model radius / k: (x, y, height, radius, lobe phase, snow cap
 # depth — the top share of the mass's profile under snow)
-MASSES = [(-0.06, 0.12, 1.05, 0.82, 0.0, 0.2), (0.38, -0.12, 0.78, 0.6, 1.7, 0.14), (-0.36, -0.3, 0.6, 0.54, 3.1, 0.0)]
+MASSES = [(-0.06, 0.12, 1.05, 0.82, 0.0, 0.17), (0.38, -0.12, 0.78, 0.6, 1.7, 0.12), (-0.36, -0.3, 0.6, 0.54, 3.1, 0.0)]
 
 
 def _smax(a, b, k):
@@ -896,11 +904,17 @@ def _smax(a, b, k):
     return max(a, b) + h * h * k * 0.25
 
 
+def _soft_abs(n, e=0.08):
+    """|n| with a rounded bottom: the ridged noise keeps its crests, but a smooth-shaded crest no longer draws a
+    hairline down the slope (§6.1 rule 1)."""
+    return math.sqrt(n * n + e * e) - e
+
+
 def _mountain(x, y, k=0.84):
     """Height and snow-cap factor of the massif at (x, y). «Raivon Soft» (§6.8): three broad masses with smoothstep
     shoulders (a rounded dome, no spire; was four sharp peaks with a t^1.3 profile), joined by smooth maxima, a
-    lobed footprint, faint ridging (0.03, was 0.1) and fine noise (0.015, was 0.045). The cap factor is 1 at a
-    mass's summit, 0 at the rim of its cap and negative below (mountain_paint reads it)."""
+    lobed footprint, faint rounded ridging (0.03, was 0.1) and fine noise (0.015, was 0.045). The cap factor is 1
+    at a mass's summit, 0 at the rim of its cap and negative below (mountain_paint reads it)."""
     x, y = x / k, y / k
     h, cap = 0.0, -1.0
     for px, py, H, R, ph, cd in MASSES:
@@ -913,8 +927,8 @@ def _mountain(x, y, k=0.84):
         if cd:
             cap = max(cap, (s - (1 - cd)) / cd)
     v = Vector((x * 3.5, y * 3.5, 0.7))
-    h += 0.07 * mnoise.noise(v) * (0.35 + h) + 0.015 * abs(mnoise.noise(v * 2.7))
-    h += 0.03 * h * (1.0 - abs(mnoise.noise(v * 1.6 + Vector((3.1, 0.0, 0.0)))))  # faint crests and gullies
+    h += 0.07 * mnoise.noise(v) * (0.35 + h) + 0.015 * _soft_abs(mnoise.noise(v * 2.7))
+    h += 0.03 * h * (1.0 - _soft_abs(mnoise.noise(v * 1.6 + Vector((3.1, 0.0, 0.0)))))  # faint crests and gullies
     r = math.hypot(x, y)
     apron = 0.17 * max(0.0, 1 - r / 0.95) ** 1.1
     h = _smax(h, apron, 0.08)
@@ -928,9 +942,9 @@ def _mountain_height(x, y, k=0.84):
 
 def mountain():
     """«Raivon Soft» mountain (§6.8): a friendly massif of three broad rounded masses with soft snow caps, smooth
-    shaded (was faceted spires), on a meadow foot with a few rounded boulders and the soft pines of the forests
-    climbing its lower slopes. Fewer triangles than the old massif (2378): a 15 × 32 ring mesh, six 221-triangle
-    pines, three small blocks."""
+    shaded (was faceted spires), on a meadow foot with three rounded stones and the soft pines of the forests
+    climbing its lower slopes. Fewer triangles than the old massif (2378): a 15 × 30 ring mesh (930), six
+    221-triangle pines, three pebble blocks."""
     mt = mountain_paint()
     rings, segs, R = 15, 30, 0.8
     rnd = random.Random(21)

@@ -406,7 +406,11 @@ func _set_era_light(l: Dictionary) -> void:
 
 ## The selection's looks [ribbon body, ribbon rim, inner glow] (docs/art_direction.md §6.7): cream with a golden rim
 ## on a tapped hex; the UI's "yes" green / "attack" red (§6.3) while a card is dragged over a hex it can / cannot take.
-const SEL_LOOK := [Color("#FFF1B8"), Color("#D29A2E"), Color("#FFE27A")]
+## The cream is fed in darker than §6.7's #FFF1B8 (and the light band, SEL_HI, is a pale cream, not #FFFFFF): the
+## sunny grade (G1) lifts light unshaded colours, and #FFF1B8 came out on screen as #FFFFD6 — a white-hot hoop
+## (V 1, S 0.16; §6.12 allows white-hot only to foam and clouds). These read on screen as ≈ #FFF1B8 / #FFF8DC.
+const SEL_LOOK := [Color("#EBDCA0"), Color("#D29A2E"), Color("#FFE27A")]
+const SEL_HI := Color("#F7EDC8")
 const SEL_OK := [Color("#8FE070"), Color("#2A7A1E"), Color("#6BD13C")]
 const SEL_NO := [Color("#FF7A6E"), Color("#9E1F22"), Color("#FF5A4E")]
 
@@ -437,7 +441,7 @@ func _make_selection() -> void:
 	rib.mesh = map_view.rounded_hex_ribbon(0.94, 0.09)
 	_sel_ribbon = ShaderMaterial.new()
 	_sel_ribbon.shader = MapView.RIBBON_SHADER
-	_sel_ribbon.set_shader_parameter("hi", Color("#FFFFFF"))
+	_sel_ribbon.set_shader_parameter("hi", SEL_HI)
 	_sel_ribbon.set_shader_parameter("w", 0.09)
 	_sel_ribbon.set_shader_parameter("pulse", 1.0)
 	_sel_ribbon.render_priority = MapView.SEL_PRIO
