@@ -3897,8 +3897,9 @@ class KitTip extends Control:
 static var _tip: Node
 
 
-## A cream bubble above (or under) `source`, never covering it, 16 px from the screen edges.
-static func tooltip(source: Control, title: String, text := "") -> Control:
+## A cream bubble above (or under) `source`, never covering it, 16 px from the screen edges. `below`: under it when
+## there is room (a source at a window's top: above, the tip would cover the title plate and ✕).
+static func tooltip(source: Control, title: String, text := "", below := false) -> Control:
 	if is_instance_valid(_tip):
 		_tip.queue_free()
 	var tree := source.get_tree()
@@ -3953,7 +3954,7 @@ static func tooltip(source: Control, title: String, text := "") -> Control:
 	box.move_child(dec, 0)
 	var vp := source.get_viewport_rect()
 	var src := source.get_global_rect()
-	var above := src.position.y - bh - 28.0 >= 16.0
+	var above := src.position.y - bh - 28.0 >= 16.0 and not (below and src.end.y + 26.0 + bh <= vp.size.y - 16.0)
 	var by := src.position.y - bh - 26.0 if above else src.end.y + 26.0
 	var bx := clampf(src.get_center().x - bw * 0.5, 16.0, vp.size.x - 16.0 - bw)
 	box.position = Vector2(bx, by)

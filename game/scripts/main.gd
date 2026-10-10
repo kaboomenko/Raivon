@@ -143,6 +143,7 @@ var training := {}  # new army being formed: {end, slots}
 var stats := {}  # chapter counters for the stars: peaces, goals, pockets, colonized, forts, convoys, defenses
 var stars_claimed := {}
 var chapter_done := false
+var _legacy_got: Array = []  # the last legacy's rewards as tiles (Kit.tile opts) for the expansion window
 var chapter := 1  # open chapter: 1 «Долина», 2 «Речной край»
 var stats_base := {}  # stats at the opening of chapter II (its stars count from there)
 var ai_dl_at := {}  # AI state -> unix time of its last DL step (canon §9.16: +1 every 6 days)
@@ -1053,7 +1054,7 @@ func _ally_asks(ally: int, attacker: int) -> void:
 	], [
 		[tr("ally_ask.support2"), "go", support, {"price": [["coin", GameUI.fmt_num(cost), gold < cost]],
 			"short_reason": tr("ult.no_gold") % GameUI.fmt_num(cost - gold) if gold < cost else ""}],
-		[tr("ally_ask.refuse2"), "war", refuse],
+		[tr("ally_ask.refuse2"), "war", refuse, {"size": "M"}],  # the quiet secondary: one loud thing (§1 rule 1)
 	], "war", "shield", {"id": _leader_portrait(ally), "plate": map_view.team_look(ally)["body"], "name": _state_short(ally),
 		"say": tr("ally_ask.say"), "chips": [{"kind": "owner", "icon": "swords", "text": _state_short(attacker),
 			"fill": map_view.team_look(attacker)["body"]}]})
@@ -1505,7 +1506,7 @@ func _show_separate_offer(s: int, asked := true) -> void:
 	var back := func(): ui.close_modal()
 	var buttons: Array = [[tr("separate.accept" if asked else "separate.sign"), "go", sign, {"icon": "dove"}]]
 	if asked:  # the member's own offer is a decision: peace or the war goes on
-		buttons.append([tr("separate.decline"), "war", back, {"icon": "swords"}])
+		buttons.append([tr("separate.decline"), "war", back, {"size": "M"}])  # quiet M: the green peace is the loud one
 	else:  # the player's own request: ✕ takes it back
 		buttons.append([tr("ui.cancel"), "info", back, {"cancel": true}])
 	ui.show_choice(tr("separate.title"), lines, buttons, "go", "dove", {"id": _leader_portrait(s),
@@ -1716,16 +1717,32 @@ func _swap_pick(id: int) -> void:
 		map_view.burst(id, map_view.state_color(s))
 		_swap_tag(id, false, s)
 	else:
-		ui.toast(tr("swap.bad_hex"))
+		ui.toast(tr(_swap_why(id, s)))
 		return
 	sfx.play("tap")
 	if give.is_empty():
 		ui.toast(tr("swap.pick_give"))
 		return
 	if get_l.is_empty():
-		ui.toast(tr("swap.pick_get") % _state_name(s))
+		ui.toast(tr("swap.pick_get"))
 		return
 	_swap_offer()
+
+
+## Why a tapped hex cannot go into the swap with state `s`, as a string key: the capital, the core, a hex being
+## settled — or a hex that is neither ours nor the neighbour's.
+func _swap_why(id: int, s: int) -> String:
+	var c: Dictionary = sim.cells[id]
+	var side: int = c["owner"]
+	if (side != Types.PLAYER and side != s) or c["controller"] != side or not Types.is_passable(c):
+		return "swap.why_other"
+	if c["kind"] == "capital":
+		return "swap.why_capital"
+	if MapGen.core_of(sim, side).has(id):
+		return "swap.why_core"
+	if colonizing.has(id):
+		return "swap.why_colony"
+	return "swap.why_other"
 
 
 ## A hex of a swap package tagged on the map: «отдаём» in a ring of the player's colour, «берём» in the state's.
@@ -4453,25 +4470,48 @@ func _grant_legacy(ch: int) -> String:
 	if lg.is_empty():
 		return ""
 	var parts: Array = []
+	_legacy_got = []
 	var cmd: String = lg["cmd"]
 	var rarity: String = Cases.commander(cmd).get("rarity", "rare")
 	var need: int = int(Cases.data().get("commander_unlock_shards", {}).get(rarity, 20))
 	cases.shards[cmd] = int(cases.shards.get(cmd, 0)) + need
 	parts.append(Cases.commander_name(cmd))
+	# the rewards as tiles on their rarity's tinted face (as an opening shows them): the commander's portrait, …
+	var tint := func(r: String) -> Color:  # common stays paper: a grey face would read as «unavailable» (§1 rule 7)
+		return Kit.CREAM_ROW if not Kit.RARITY.has(r) or r == "common" else (Kit.RARITY[r] as Color).lerp(Kit.CREAM_ROW, 0.55)
+	var face := "res://assets/ui/portraits/%s.png" % cmd
+	var ct := {"title": Cases.commander_name(cmd), "wrap_title": true, "face": tint.call(rarity)}
+	if ResourceLoader.exists(face):
+		ct["tex"] = load(face)
+		ct["icon_side"] = 100.0
+	else:
+		ct["icon"] = "frame"
+	_legacy_got.append(ct)
 	var rv: int = lg.get("raivite", 0)
 	if lg.has("builder"):
 		if econ.builders < 4:
 			econ.builders += 1
 			parts.append(tr("legacy.builder"))
+			_legacy_got.append({"icon": "builder", "title": tr("legacy.builder"), "wrap_title": true})
 		else:
 			rv += 600
 	if lg.has("cosmetic"):
-		cases.owned_cosmetics[String(lg["cosmetic"])] = true
-		var co: Dictionary = Cases.cosmetic(String(lg["cosmetic"]))
-		parts.append("%s «%s»" % [Cases.category_name(String(co.get("category", ""))), String(co.get("name_en" if Cases.is_english() else "name", ""))])
+		var cid := String(lg["cosmetic"])
+		cases.owned_cosmetics[cid] = true
+		var co: Dictionary = Cases.cosmetic(cid)
+		var cat := String(co.get("category", ""))
+		var cname := String(co.get("name_en" if Cases.is_english() else "name", ""))
+		parts.append("%s «%s»" % [Cases.category_name(cat), cname])
+		var t := {"title": cname, "caption": Cases.category_name(cat), "face": tint.call(String(co.get("rarity", "rare")))}
+		if cat == "cos_border_ink":  # the ink itself, as in the Atelier
+			t["swatch"] = cid
+		else:
+			t["icon"] = String(Kit.COSMETIC_ICON.get(cat, "frame"))
+		_legacy_got.append(t)
 	if rv > 0:
 		econ.res["raivite"] = int(econ.res["raivite"]) + rv
 		parts.append(tr("legacy.raivite") % rv)
+		_legacy_got.append({"icon": "raivite", "value": GameUI.fmt_num(rv)})
 	return tr("legacy.line") % [ch, ", ".join(parts)]
 
 
@@ -4908,10 +4948,6 @@ func _world_expansion() -> void:
 	for q in STORY_OPENING.get(next_ch, []):
 		greet[int(q[0])] = tr(String(q[1]))
 	var rows: Array = []
-	if legacy != "":
-		var cut := legacy.find(": ")
-		rows.append({"icon": "gift", "title": legacy.substr(0, cut) if cut > 0 else legacy,
-			"sub": legacy.substr(cut + 2) if cut > 0 else ""})
 	for s in fresh:
 		var row := {"portrait": _leader_portrait(s), "plate": map_view.team_look(s)["body"], "title": _state_name(s),
 			"badge": int(sim.states[s]["dev_level"])}
@@ -4920,8 +4956,14 @@ func _world_expansion() -> void:
 		else:
 			row["sub"] = tr(String(LEADERS[s][1])) if LEADERS.has(s) else ""
 		rows.append(row)
-	var lines: Array = [tr("expansion.world2") % [hexes_after, hexes_after - hexes_before], {"rows": rows},
-		tr("expansion.goal" + sfx_key) % [_chapter_goal(), _player_hexes()]]
+	var lines: Array = [tr("expansion.world2") % [hexes_after, hexes_after - hexes_before]]
+	if legacy != "":  # what the chapter left: reward tiles (the commander, the builder, the cosmetic, raivites)
+		lines.append({"tiles": _legacy_got.duplicate(), "head": tr("legacy.head") % (next_ch - 1), "tile_h": 168.0})
+	lines.append({"rows": rows})
+	var goal := _chapter_goal()
+	lines.append(tr("expansion.goal" + sfx_key))  # the goal as a bar: hexes held of the chapter's goal
+	lines.append({"bar": {"frac": clampf(float(_player_hexes()) / maxf(1.0, goal), 0.0, 1.0), "icon": "hex_tile",
+		"text": "%d/%d" % [_player_hexes(), goal], "role": "info"}})
 	var go_on := func():
 		ui.close_modal()
 		rig.focus(map_view.cell_world(sim.states[Types.PLAYER]["capital_id"]), 0.6)
@@ -5120,7 +5162,7 @@ func _on_diplomacy_action(s: int, kind: String) -> void:
 			_swap = {"state": s, "give": [], "get": []}
 			ui.close_modal()
 			_open_tab("")
-			ui.toast(tr("swap.pick") % _state_name(s))
+			ui.toast(tr("swap.pick"))
 		"call":
 			if not _can_call(s):
 				ui.toast(tr("call.cant"))
@@ -6071,6 +6113,9 @@ func _open_market() -> void:
 		var why: String = market.can_buy(econ, i)
 		lot["ok"] = why == ""
 		lot["why"] = L.t(why) if why != "" else ""
+		if why == "market.not_enough":  # how much is missing, of what (§4.1 «Не хватает 120 [coin]»)
+			var miss := int(lot["give_amt"]) - int(econ.res.get(String(lot["give"]), 0))
+			lot["why"] = tr("market.short_res") % [GameUI.fmt_num(miss), tr("res.gen." + String(lot["give"]))]
 		lots.append(lot)
 	var lvl: int = Market.market_level(econ)
 	var info := {"level": lvl, "rate": Market.rate_milli(lvl), "res": econ.res.duplicate(), "cap": econ.storage_cap(),

@@ -2652,6 +2652,23 @@ func _line_h(text: String, w := 717.0, size := 28) -> float:
 	return ceilf(n * lh + (n - 1) * DLG_LS)
 
 
+## The narrowest width (down to half of `w`) at which `text` still takes as many lines as at `w`: a centred paragraph
+## laid at it has even lines (CSS «text-wrap: balance») instead of a long line and an orphan («…говорить о» / «мире.»).
+func _balanced_w(text: String, w: float, size := 28) -> float:
+	var h := _line_h(text, w, size)
+	if h <= _line_h("A", w, size) + 1.0:
+		return w
+	var lo := w * 0.5
+	var hi := w
+	for _i in 10:
+		var mid := (lo + hi) * 0.5
+		if _line_h(text, mid, size) > h + 1.0:
+			lo = mid
+		else:
+			hi = mid
+	return minf(w, ceilf(hi) + 4.0)
+
+
 ## A line said in a bubble loses its own quotation marks: the bubble already says it is speech.
 static func _unquote(t: String) -> String:
 	t = t.strip_edges()
@@ -2750,13 +2767,23 @@ func _mini_face(id: String, plate: Color, mood: String, side: float) -> Control:
 	return fr
 
 
-## A list row's height: a two-line quote under the title (Nunito 26) makes it taller than DLG_ROW_H.
+## A list row's height: a quote under the title (Nunito 26, at most two lines: §4.9 gives a row one subline) makes it
+## taller than DLG_ROW_H.
 func _dlg_row_h(o: Dictionary, w: float) -> float:
 	var q := String(o.get("quote", ""))
 	if q == "":
 		return DLG_ROW_H
-	var tw := w - 16.0 - DLG_FACE - 16.0 - 16.0 - (52.0 + 16.0 if o.has("badge") else 0.0)
-	return maxf(DLG_ROW_H, 14.0 + 40.0 + _line_h(q, tw, 26) + 14.0 + 5.0)
+	var qs: int = o.get("quote_size", _quote_size(q, _quote_w(o, w)))
+	return maxf(DLG_ROW_H, 14.0 + 40.0 + minf(_line_h(q, _quote_w(o, w), qs), _line_h("A\nA", 999.0, qs)) + 14.0 + 5.0)
+
+
+func _quote_w(o: Dictionary, w: float) -> float:
+	return w - 16.0 - DLG_FACE - 16.0 - 16.0 - (52.0 + 16.0 if o.has("badge") else 0.0)
+
+
+## A row quote's type: BODY_S 26, or 24 when that keeps it to two lines (past two it is cut with «…»).
+func _quote_size(q: String, tw: float) -> int:
+	return 24 if _line_h(q, tw, 26) > _line_h("A\nA", 999.0, 26) + 1.0 and _line_h(q, tw, 24) <= _line_h("A\nA", 999.0, 24) + 1.0 else 26
 
 
 ## A list row of a dialog: Kit.row, with `portrait` (+ plate, mood) a leader's face at the left, `quote` a line wrapped
@@ -2771,12 +2798,15 @@ func _dlg_row(host: Control, r: Rect2, o: Dictionary) -> Kit.KitRow:
 	if quote != "":
 		opts["sub"] = quote
 	var row := Kit.row(host, r, opts)
-	if quote != "":  # the title at the top, the quote wrapped under it
+	if quote != "":  # the title at the top, the quote wrapped under it (two lines at most)
 		var sl := row.get_node_or_null("sub") as Label
 		if sl != null:
 			sl.clip_text = false
 			sl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			sl.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+			sl.max_lines_visible = 2
+			sl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+			sl.add_theme_font_size_override("font_size", int(o.get("quote_size", _quote_size(quote, _quote_w(o, r.size.x)))))
 			sl.position.y = 14.0 + 40.0
 			sl.size.y = r.size.y - 5.0 - 14.0 - 40.0 - 8.0
 		row.title_label.position.y = 12.0
@@ -2812,13 +2842,14 @@ func _dlg_body(box: Control, w: float, y: float, p: Dictionary, lines: Array) ->
 			var t := String(ln)
 			var h := _line_h(t, iw)
 			if box:
+				var bw := _balanced_w(t, iw)  # a wrapped paragraph's lines evened out: no word left alone on the last
 				var l := Kit.label(t, 28, Kit.SOFT_CREAM, false)
 				l.name = "line"
 				l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 				l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 				l.add_theme_constant_override("line_spacing", int(DLG_LS))
-				l.position = Vector2(DLG_PAD, y)
-				l.size = Vector2(iw, h)
+				l.position = Vector2(DLG_PAD + roundf((iw - bw) * 0.5), y)
+				l.size = Vector2(bw, h)
 				box.add_child(l)
 			y += h + DLG_GAP
 		elif ln is Dictionary and (ln as Dictionary).has("chips"):
@@ -2827,10 +2858,21 @@ func _dlg_body(box: Control, w: float, y: float, p: Dictionary, lines: Array) ->
 			y += PAPER_CHIP_H + DLG_GAP
 		elif ln is Dictionary and (ln as Dictionary).has("tiles"):
 			var tiles: Array = ln["tiles"]
-			var wh := 16.0 + DLG_TILE_H + 16.0
+			var head := String(ln.get("head", ""))  # what the tiles are, in a caption over them (as the swap's «Отдаём»)
+			var th := float(ln.get("tile_h", DLG_TILE_H))
+			var ty := (12.0 + 30.0 + 6.0) if head != "" else 16.0
+			var wh := ty + th + 16.0
 			if box:
 				var well := Kit.well(box, Rect2(DLG_PAD, y, iw, wh))
 				well.name = "tiles"
+				if head != "":
+					var hl := Kit.label(head, 24, Kit.MUTED_CREAM, true)
+					hl.name = "head"
+					hl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+					hl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+					hl.position = Vector2(16, 12)
+					hl.size = Vector2(iw - 32.0, 30)
+					well.add_child(hl)
 				var n := maxi(1, tiles.size())
 				var tw := minf(250.0, (iw - 32.0 - 12.0 * (n - 1)) / n)
 				var x0 := (iw - (n * tw + (n - 1) * 12.0)) * 0.5
@@ -2838,11 +2880,32 @@ func _dlg_body(box: Control, w: float, y: float, p: Dictionary, lines: Array) ->
 					var o: Dictionary = (tiles[i] as Dictionary).duplicate()
 					if not o.has("icon_side"):
 						o["icon_side"] = 72.0
-					Kit.tile(well, Rect2(x0 + i * (tw + 12.0), 16, tw, DLG_TILE_H), o)
+					if o.has("swatch"):  # a border ink shows the ink itself (as in the Atelier)
+						o["pic_node"] = Kit.ink_swatch(String(o["swatch"]), float(o["icon_side"]))
+					Kit.tile(well, Rect2(x0 + i * (tw + 12.0), ty, tw, th), o)
 			y += wh + DLG_GAP
+		elif ln is Dictionary and (ln as Dictionary).has("bar"):  # progress: an icon and a bar L with «7/56» inside
+			var bd: Dictionary = ln["bar"]
+			if box:
+				var bw := 420.0
+				var ic := _icon_rect(String(bd.get("icon", "hex_tile")), 48)
+				ic.name = "bar_icon"
+				var x := (w - (48.0 + 12.0 + bw)) * 0.5
+				ic.position = Vector2(x, y)
+				box.add_child(ic)
+				var b := Kit.bar(box, Rect2(x + 60.0, y + 4.0, bw, 40), float(bd.get("frac", 0.0)), String(bd.get("role", "info")),
+					String(bd.get("text", "")), true)
+				b.name = "bar"
+			y += 48.0 + DLG_GAP
 		elif ln is Dictionary and (ln as Dictionary).has("rows"):
-			var rows: Array = ln["rows"]
 			var rw := iw - 32.0
+			var qs := 26  # one type for the well's quotes: the smallest any of them needs
+			for o in ln["rows"]:
+				if String((o as Dictionary).get("quote", "")) != "":
+					qs = mini(qs, _quote_size(String(o["quote"]), _quote_w(o, rw)))
+			var rows: Array = []
+			for o in ln["rows"]:
+				rows.append((o as Dictionary).merged({"quote_size": qs}))
 			var wh := 16.0
 			for o in rows:
 				wh += _dlg_row_h(o, rw) + 12.0
@@ -2991,12 +3054,15 @@ func show_info(title: String, lines: Array, button: String, on_button: Callable,
 ##
 ## `buttons`: [[text, role (go / info / war / gold) or a legacy Color, callable, opts?], …] — see _dlg_buttons.
 ## `lines` entries:
-##   String — a paragraph (Nunito 28 SOFT_CREAM, centred, word-wrapped; keep it to 3 lines);
+##   String — a paragraph (Nunito 28 SOFT_CREAM, centred, word-wrapped to even lines; keep it to 3 lines);
 ##   {chips: [{icon, text, kind, fill, color}]} — a centred row of chips (paper chips by default, owner chips of a
 ##     state's colour);
-##   {tiles: [Kit.tile opts]} — a well with tiles in one row (an icon, a value «+10%», a caption: what a choice gives);
+##   {tiles: [Kit.tile opts], head, tile_h} — a well with tiles in one row (an icon, a value «+10%», a caption: what a
+##     choice gives; `swatch`: a border ink's id, drawn as its swatch); `head` a caption over them («Наследие главы
+##     2»), `tile_h` their height (182 by default);
 ##   {rows: [Kit.row opts + portrait/plate/mood (a leader's face for the icon), quote (two lines under the title),
-##     badge (a DL hex at the right)]} — a well with list rows.
+##     badge (a DL hex at the right)]} — a well with list rows;
+##   {bar: {frac, text, icon, role}} — progress: an icon 48 and a bar L with «7/56» inside (a chapter's goal).
 ## `portrait`: "" | a portrait id | {id, plate (the backdrop: a state's colour; the sky by default), mood, name (an
 ## owner chip on the frame), say (the bubble; without it the first String line is said), chips (under the bubble)}.
 func show_choice(title: String, lines: Array, buttons: Array, role := "info", icon := "", portrait: Variant = "", blocking := true, dock_bottom := false) -> void:
@@ -3352,9 +3418,9 @@ func _lot_card(host: Control, r: Rect2, lot: Dictionary, idx: int, on_lot: Calla
 	b.name = "buy"
 	if not ok:  # not enough (or no room): the role stays, the tap shakes and says why (§4.1)
 		var why := String(lot.get("why", tr("market.not_enough")))
-		b.cb = func():
+		b.cb = func():  # the tip below the card: above, the top row's would cover the title plate and ✕
 			Kit.shake(b)
-			Kit.tooltip(card, cap, why)
+			Kit.tooltip(card, cap, why, true)
 
 
 # ------------------------------------------------------------------ territory swap (canon §10.9, 06 §15)
@@ -3367,9 +3433,11 @@ const SWAP_TILE := Vector2(190, 190)  # a hex of the package; two a side share t
 ## (go). The leader's face says how they take it (`mood`: smile — agreed / a fair trade, cunning — wants a top-up),
 ## their line in a bubble, the state's name in a chip on the frame; under the bubble a timer chip (an AI offer: how
 ## long it stands, `left`) and the border chip «Граница 4 → 7» (the arrow drawn; the new length green when shorter,
-## red when longer). The well: «Отдаём» tiles ⇄ «Получаем» tiles (the hex's render, its name, a gold value hex; more
+## red when longer). The well: «Отдаём» tiles ⇄ «Получаем» tiles (the hex's render, its name, an info value hex; more
 ## than 2 a side — the first and «+N»), then «Вы доплачиваете [coin] 272» (red when the gold is short) or «Без
-## доплаты». The footer takes the buttons as show_choice does (a cancel entry is the ✕; none — a decision).
+## доплаты». A tap on a hex tile says its value («Ценность 2», the info hex in its corner); the «+N» tile carries the
+## rest's value together and names them. The footer takes the buttons as show_choice does (a cancel entry is the ✕;
+## none — a decision).
 ## info: {state, color, portrait, mood, say, left, give: [{name, tile, value}], get: [...], border: [before, after],
 ## gold, short}. Returns the window's top edge on the canvas (the caller frames the hexes above it).
 func show_swap(info: Dictionary, buttons: Array) -> float:
@@ -3417,9 +3485,18 @@ func show_swap(info: Dictionary, buttons: Array) -> float:
 			var hx: Dictionary = shown[i]
 			var r := Rect2(tx + i * (tw + 12.0), 12.0 + 30.0 + 6.0, tw, SWAP_TILE.y)
 			var t: Kit.KitTile
-			if hx.has("more"):
+			if hx.has("more"):  # the rest of the side: how many, their value together; a tap names them
+				var names: Array = []
+				var sum := 0
+				for rest in hexes.slice(1):
+					names.append(String((rest as Dictionary).get("name", "")))
+					sum += int((rest as Dictionary).get("value", 1))
 				t = Kit.tile(well, r, {"icon": "hex_tile", "icon_side": 72.0, "value": "+%d" % int(hx["more"]),
 					"caption": L.plural(int(hx["more"]), "plural.hexes").trim_prefix(str(int(hx["more"]))).strip_edges()})
+				var mb := Kit.hex_badge(t, Vector2(tw - 10.0, 12.0), 22, "info", str(sum))
+				mb.name = "value"
+				var mt := t
+				t.cb = func(): Kit.tooltip(mt, tr("swap.value") % sum, ", ".join(names))
 			else:
 				var tex := _tile_tex(String(hx.get("tile", "")))
 				var o := {"title": String(hx.get("name", "")), "wrap_title": true}
@@ -3431,8 +3508,12 @@ func show_swap(info: Dictionary, buttons: Array) -> float:
 					o["icon"] = "hex_tile"
 					o["icon_side"] = 84.0
 				t = Kit.tile(well, r, o)
-				var vb := Kit.hex_badge(t, Vector2(tw - 10.0, 12.0), 22, "gold", str(int(hx.get("value", 1))))
+				var val := int(hx.get("value", 1))
+				var vb := Kit.hex_badge(t, Vector2(tw - 10.0, 12.0), 22, "info", str(val))  # not gold: it is no price
 				vb.name = "value"
+				var vt := t
+				var nm := String(hx.get("name", ""))
+				t.cb = func(): Kit.tooltip(vt, nm, tr("swap.value") % val)
 			t.name = "%s_%d" % [key, i]
 	Kit.chrome(well, "swap", Rect2(16.0 + half + 12.0, 12.0 + 30.0 + 6.0 + (SWAP_TILE.y - 72.0) * 0.5, 72, 72))
 	var gold := int(info.get("gold", 0))

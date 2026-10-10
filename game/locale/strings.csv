@@ -471,6 +471,7 @@ market.open,Обмен,Trade
 market.tip,Курс %s : 1 — столько отдаёте за единицу другого ресурса,Rate %s : 1 — what you give for one unit of another resource
 market.done,"Обмен: −%s %s, +%s %s","Exchanged: −%s %s, +%s %s"
 market.not_enough,Не хватает ресурса для этого лота,Not enough resources for this lot
+market.short_res,Не хватает %s %s,%s more %s needed
 market.no_space,На складе нет места,No room in the warehouse
 market.locked,Рынок открывается на УР2,The Market opens at DL2
 market.no_lot,Лот недоступен,Lot unavailable
@@ -550,7 +551,7 @@ cell.ch2_port_salt,Соляная пристань,Salt Wharf
 cell.ch2_base,Речная застава,River Outpost
 expansion.title,Мир расширяется!,The world expands!
 expansion.world2,Мир вырос до %d гексов (+%d),The world grew to %d hexes (+%d)
-expansion.goal,Цель главы II «Речной край»: %d гексов (у вас %d),Chapter II “River Country” goal: %d hexes (you have %d)
+expansion.goal,Цель главы II «Речной край»,Chapter II “River Country” goal
 expansion.advisor,«Долина признала наш флаг. Но за холмами слышен шум рек и чужих барабанов».,“The valley has accepted our banner. But beyond the hills we hear rivers and foreign drums.”
 inbox.expansion.title,Мир расширяется,The world expands
 inbox.expansion.text,"Открыт «Речной край»: мир вырос с %d до %d гексов, у нас новые соседи — Речная Лига и Орден Камня. Цель главы II — %d гексов.","“River Country” is open: the world grew from %d to %d hexes, and we have new neighbours, the River League and the Order of Stone. Chapter II goal: %d hexes."
@@ -561,7 +562,7 @@ inbox.defense_lost.title,Оборона прорвана,Defence broken
 inbox.defense_lost.text,%s прорвали оборону: занято гексов — %d. Верните их наступлением.,%s broke through: %d hexes occupied. Win them back with an offensive.
 inbox.counter.title,Готовится контрудар,A counter-strike is coming
 inbox.counter.text,"%s готовят удар по «%s» через %d мин. Усильте оборону: армия, укрепление, башня.","%s will strike “%s” in %d min. Strengthen it: an army, a fort, a tower."
-peace_offer.quote,Довольно крови. Назовите ваши условия,Enough blood. Name your terms
+peace_offer.quote,Довольно крови. Назовите ваши условия.,Enough blood. Name your terms.
 peace_offer.go,К переговорам,To the talks
 peace_offer.title2,Предложение мира,Peace offer
 peace_offer.text2,Вы держите %d%% фронта — враг готов говорить о мире.,You hold %d%% of the front — the enemy is ready to talk peace.
@@ -668,7 +669,7 @@ cell.ch3_base_steppe,Степной форт,Steppe Fort
 cell.ch3_base_taiga,Таёжный кордон,Taiga Cordon
 cell.ch3_vein,Кристалл континента,Continental Crystal
 kind.factory,Завод,Factory
-expansion.goal3,Цель главы III «Континент»: %d гексов (у вас %d),Chapter III “Continent” goal: %d hexes (you have %d)
+expansion.goal3,Цель главы III «Континент»,Chapter III “Continent” goal
 expansion.advisor3,«Реки наши. За устьем лежит континент — и правит там Альвария».,“The rivers are ours. Past the river mouth lies the continent — and Alvaria rules it.”
 inbox.expansion3.text,"Открыт «Континент»: мир вырос с %d до %d гексов, новые соседи — Альвария, Сарен и Серая Стая. Цель главы III — %d гексов.","“Continent” is open: the world grew from %d to %d hexes, and our new neighbours are Alvaria, Saren and the Grey Pack. Chapter III goal: %d hexes."
 star.c3_factory,Индустрия: присоедините завод,Industry: annex a factory
@@ -731,7 +732,7 @@ cell.ch4_base_canyon,Каньонная база,Canyon Base
 cell.ch4_base_rail,Бронепоездное депо,Armoured Train Depot
 cell.ch4_base_lake,Озёрная база,Lake Base
 cell.ch4_vein,Кристалл пояса,Belt Crystal
-expansion.goal4,Цель главы IV «Индустриальный пояс»: %d гексов (у вас %d),Chapter IV “Industrial Belt” goal: %d hexes (you have %d)
+expansion.goal4,Цель главы IV «Индустриальный пояс»,Chapter IV “Industrial Belt” goal
 expansion.advisor4,«Континент склонил знамёна. Дым на горизонте — это заводы Индустриального пояса».,“The continent has lowered its banners. The smoke on the horizon is the factories of the Industrial Belt.”
 inbox.expansion4.text,"Открыт «Индустриальный пояс»: мир вырос с %d до %d гексов, новые соседи — Стальной Конклав, Вейлмарк и Республика Озёр. Цель главы IV — %d гексов.","“Industrial Belt” is open: the world grew from %d to %d hexes, and our new neighbours are the Steel Conclave, Veilmark and the Lake Republic. Chapter IV goal: %d hexes."
 star.c4_conclave,Сталь против стали: победный мир с Конклавом,Steel against steel: a victorious peace with the Conclave
@@ -766,14 +767,15 @@ inbox.coalition_war.text,"%s ведёт коалицию из %d государ�
 ceremony.triumph,Триумф! Трофейный сундук: %d золота и 30 Райвитов,Triumph! Trophy chest: %d gold and 30 Raivites
 star.c3_triumph,Триумф: выиграйте войну с коалицией,Triumph: win a war against a coalition
 legacy.line,Наследие главы %d: %s,Chapter %d legacy: %s
-legacy.builder,4-й строитель,the 4th builder
+legacy.builder,4-й строитель,4th builder
 legacy.raivite,%d Райвитов,%d Raivites
-story.ch2_league,"Лига приветствует нового соседа. Надеюсь, вы умеете не только воевать.",The League welcomes a new neighbour. I hope you can do more than fight.
-story.ch2_order,"Мы строили стены сто лет. Посмотрим, сколько строили вы.",We built our walls for a hundred years. Let us see how long you built yours.
+legacy.head,Наследие главы %d,Chapter %d legacy
+story.ch2_league,"Лига приветствует нового соседа. Надеюсь, вы умеете не только воевать.","The League welcomes you, neighbour. Can you do more than fight?"
+story.ch2_order,"Мы строили стены сто лет. Посмотрим, сколько строили вы.",Our walls took a hundred years. Let us see how long yours took.
 story.ch3_alvaria,Альвария не просит. Альвария напоминает: дань до заката.,Alvaria does not ask. Alvaria reminds: tribute by sunset.
 story.ch3_saren,"Торговать выгоднее, чем воевать. Но мы умеем и то и другое.",Trade pays better than war. But we are good at both.
-story.ch4_conclave,"Конклав не воюет. Конклав ждёт, пока вы разобьёте лоб о наши стены.",The Conclave does not wage war. It waits for you to break your head on our walls.
-story.ch4_lakes,"Республика ценит сильных соседей — особенно тех, кто умеет остановиться.",The Republic values strong neighbours — especially those who know when to stop.
+story.ch4_conclave,"Конклав не воюет. Конклав ждёт, пока вы разобьёте лоб о наши стены.",The Conclave does not fight. It waits for you to break on our walls.
+story.ch4_lakes,"Республика ценит сильных соседей — особенно тех, кто умеет остановиться.",The Republic values strong neighbours who know when to stop.
 inbox.advisor.title,Советник,The advisor
 story.dl4,«За туманом есть другие державы. Их правители испытывают друг друга на Рубежах. Хотите попробовать?»,“Beyond the fog there are other realms. Their rulers test one another on the Frontiers. Shall we try?”
 story.dl5,«Тёмные озёра закипели. Это нефть — и теперь за неё будут воевать все».,“The dark lakes are boiling. That is oil — and now everyone will fight for it.”
@@ -788,10 +790,14 @@ swap.chapter,Обмен откроется в главе II,Swaps open in chapte
 swap.war,Сначала мир,Make peace first
 swap.opinion,Мнение %d/0 — обмен не обсуждают,Opinion %d/0 — no swaps
 swap.cooldown,Новый обмен через %s,Next swap in %s
-swap.pick,Обмен с «%s»: тапайте свои и его гексы (до 5 с каждой стороны),Swap with “%s”: tap your hexes and theirs (up to 5 a side)
+swap.pick,Тапайте свои гексы и гексы соседа — до 5 с каждой стороны,Tap your hexes and your neighbour’s — up to 5 a side
 swap.pick_give,Теперь тапните свой гекс — что отдаёте,Now tap your hex — what you give
-swap.pick_get,Теперь тапните гекс «%s» — что получаете,Now tap a hex of “%s” — what you get
-swap.bad_hex,"Этот гекс не обменять (Ядро, столица, колонизация или чужой)","This hex can't be swapped (core, capital, colonization or someone else's)"
+swap.pick_get,Теперь тапните гекс соседа — что получаете,Now tap a neighbour’s hex — what you get
+swap.why_capital,Столицу не обменять,The capital can’t be swapped
+swap.why_core,Ядро державы не обменять,Core hexes can’t be swapped
+swap.why_colony,Гекс ещё осваивается,This hex is still being settled
+swap.why_other,Тапайте свои гексы и гексы соседа,Tap your hexes or your neighbour’s
+swap.value,Ценность %d,Value %d
 swap.offer,Предложить,Propose
 toast.swap,+%d гекс. — обмен с «%s» заключён,+%d hexes — the swap with “%s” is done
 inbox.swap.title,Обмен территориями,Territory swap
@@ -1177,7 +1183,7 @@ cmdr.rarity.legendary,Легендарный,Legendary
 cmdr.in_army,в %d-й армии,in army %d
 cmdr.pick_title,Командир %d-й армии,Commander of army %d
 cmdr.move_title,Перевести: %s,Transfer %s
-cmdr.move_text,Командир сейчас ведёт %d-ю армию. Перевести его в %d-ю?,This commander leads army %d now. Move them to army %d?
+cmdr.move_text,Сейчас ведёт %d-ю армию. Перевести в %d-ю?,Leads army %d now. Move to army %d?
 cmdr.move_yes,Перевести,Transfer
 cmdr.assigned,%s ведёт армию,%s leads the army
 cmdr.recommend,Рекомендуем,Recommended
