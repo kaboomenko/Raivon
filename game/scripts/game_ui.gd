@@ -50,12 +50,9 @@ var _energy_segs: Array = []
 var _cards := {}
 var _card_names := {}  # card -> name Label (re-translated on a language switch)
 var _timer_lbl: Label
-var _action: Control
-var _action_lbl: Label
-var _action_sub: Label
+var _action: Control  # the status slot: the status button or the battle timer plate (visible while its kind is not "")
 var _action_kind := ""
-var _action2: Control
-var _action2_lbl: Label
+var _action2: Control  # the big button (Kit.KitButton)
 var _action2_kind := ""
 var _modal: Control
 var _bottom: Control  # the bottom group (card row, battle hand, status / big buttons): moved to VB − 1672 (§3.1)
@@ -431,7 +428,7 @@ func set_battle(visible_hand: bool, energy_units: int, unit: int, cooldowns: Dic
 			continue
 		p.modulate = Color(1, 1, 1, 0.45 if (pts < _card_cost(c) or cd > 0) else 1.0)
 		(p.get_node("cd") as Label).text = str(int(ceil(cd / 10.0))) if cd > 0 else ""
-	set_action("timer", "%d:%02d" % [seconds_left / 60, seconds_left % 60], tr("ui.final_rush") if rush else tr("ui.offensive_left"), Color(0.5, 0.2, 0.2) if rush else Color(0.2, 0.25, 0.4))
+	set_action("timer", "%d:%02d" % [seconds_left / 60, seconds_left % 60], tr("ui.final_rush") if rush else tr("ui.offensive_left"), "war" if rush else "slate")
 
 
 func _on_card_input(event: InputEvent, card: String) -> void:
@@ -457,6 +454,7 @@ func _input(event: InputEvent) -> void:
 		_finger_down = (event as InputEventScreenTouch).pressed
 	elif event is InputEventMouseButton and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
 		_finger_down = (event as InputEventMouseButton).pressed
+	_track_travel(event)
 	if _drag_card != "":
 		var pos := Vector2.ZERO
 		var released := false
@@ -485,28 +483,72 @@ func _input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 
-# ------------------------------------------------------------------ action buttons (bottom-right)
+# ------------------------------------------------------------------ action buttons (bottom-right, §5)
+
+## The big button's look by kind (docs/ui_style.md §6 HUD): [role, icon]. It wins over the caller's colour; a kind
+## not listed keeps the caller's role and icon. «colonize_now» is gold only while it costs Raivites (free: go); the
+## lock kinds are the disabled ones (their reason is in the tooltip).
+const PRIMARY_LOOK := {
+	"pick_target": ["war", "target"], "declare": ["war", "swords"], "offensive": ["war", "swords"], "camp": ["war", "swords"],
+	"upgrade": ["go", "arrow_up"], "colonize": ["go", "orders"], "colonize_now": ["gold", "lightning"], "convoy": ["go", "cart"],
+	"repair": ["go", "hammer"], "march": ["info", "orders"], "march_cancel": ["info", "x"], "march_stop": ["info", "hourglass"],
+	"retreat": ["info", "white_flag"],
+	"truce": ["lock", "hourglass"], "core": ["lock", "lock"], "camp_far": ["lock", "lock"], "camp_wait": ["lock", "hourglass"],
+	"wait": ["lock", "hourglass"], "repairing": ["lock", "hourglass"], "convoy_status": ["lock", "hourglass"],
+}
+## The status button's look by kind: [role, icon].
+const STATUS_LOOK := {"peace": ["go", "dove"], "repair_ad": ["go", "ad"], "ruin_halve": ["go", "ad"]}
+const BIG_RECT := Rect2(652, 1536, 277, 124)  # the big button: L, the one loud thing on the map (§1.1)
+const RETREAT_RECT := Rect2(652, 1564, 277, 96)  # «Отступить» in battle: M, a secondary action
+const STATUS_RECT := Rect2(652, 1438, 277, 88)  # the status button: M, in the hex panel's slot
+const TIMER_RECT := Rect2(652, 1374, 277, 162)  # the battle timer plate, in the hex panel's slot
+
+var _status_btn: Panel  # the status button (Kit.KitButton) inside _action
+var _timer_plate: Panel  # the battle timer plate inside _action
+var _timer_num: Label
+var _timer_sub: Label
+var _timer_tw: Tween  # the «final push» pulse
+var _primary_args: Array = []  # the last set_primary / set_action arguments: both run every frame in battle
+var _status_args: Array = []
+var _primary_reason := ""  # the tooltip of a disabled big button
+
 
 func _build_action() -> void:
-	_action = _panel(_bottom, Rect2(652, VH - 276, 280, 140), _style(PANEL, 16))
-	_action2 = _panel(_bottom, Rect2(660, VH - 122, 266, 92), _style(Color(0.13, 0.4, 0.9), 16, Color(0.55, 0.75, 1.0), 3))
-	_action_lbl = _label("", 34)
-	_action_lbl.position = Vector2(0, 22)
-	_action_lbl.size = Vector2(280, 50)
-	_action_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_action.add_child(_action_lbl)
-	_action_sub = _label("", 18, MUTED, false)
-	_action_sub.position = Vector2(0, 80)
-	_action_sub.size = Vector2(280, 40)
-	_action_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_action.add_child(_action_sub)
-	_action2_lbl = _label("", 26)
-	_action2_lbl.position = Vector2(0, 26)
-	_action2_lbl.size = Vector2(266, 40)
-	_action2_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_action2.add_child(_action2_lbl)
-	_action.gui_input.connect(func(e): if _is_tap(e): action_pressed.emit(_action_kind))
-	_action2.gui_input.connect(func(e): if _is_tap(e): action_pressed.emit(_action2_kind))
+	# _action: the status slot — the status button or the battle timer plate; visible while its kind is not ""
+	_action = Control.new()
+	_action.name = "status"
+	_action.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_action.size = Vector2(VW, VH)
+	_bottom.add_child(_action)
+	_status_btn = Kit.button(_action, STATUS_RECT, "go", "", {"size": "M", "cb": func(): action_pressed.emit(_action_kind)})
+	_status_btn.name = "status_button"
+	_timer_plate = _panel(_action, TIMER_RECT, Kit.style(Kit.SLATE, 24, 4, Kit.INK, 6, 6), Control.MOUSE_FILTER_STOP)
+	_timer_plate.name = "timer"
+	var hg := TextureRect.new()
+	hg.texture = Kit.icon_tex("hourglass")
+	hg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	hg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	hg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	hg.position = Vector2(16, 22)
+	hg.size = Vector2(64, 64)
+	_timer_plate.add_child(hg)
+	_timer_num = _label("", 60)  # TIMER 60
+	_timer_num.position = Vector2(88, 14)
+	_timer_num.size = Vector2(TIMER_RECT.size.x - 88.0 - 12.0, 80)
+	_timer_num.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_timer_num.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_timer_num.pivot_offset = _timer_num.size * 0.5
+	_timer_plate.add_child(_timer_num)
+	_timer_sub = _label("", 24, Kit.SOFT)  # LABEL 24, SOFT
+	_timer_sub.position = Vector2(12, 104)
+	_timer_sub.size = Vector2(TIMER_RECT.size.x - 24.0, 34)
+	_timer_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_timer_sub.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_timer_plate.add_child(_timer_sub)
+	# _action2: the big button
+	_action2 = Kit.button(_bottom, BIG_RECT, "info", "", {"size": "L", "cb": _on_primary})
+	_action2.name = "big_button"
+	(_action2 as Kit.KitButton).denied.connect(_on_primary_denied)
 	_action.visible = false
 	_action2.visible = false
 
@@ -515,39 +557,128 @@ func _is_tap(e: InputEvent) -> bool:
 	return (e is InputEventScreenTouch and not e.pressed) or (e is InputEventMouseButton and not e.pressed and e.button_index == MOUSE_BUTTON_LEFT)
 
 
-## Upper box (status/secondary) — kind "" hides it.
-func set_action(kind: String, title: String, sub := "", bg := PANEL) -> void:
+var _down_at := Vector2(-1, -1)  # where the finger went down (canvas px)
+var _travel := 0.0  # how far it has moved since, at most
+
+
+## Follows the finger from _input (before the GUI sees the event), so a release handler knows the whole travel.
+func _track_travel(e: InputEvent) -> void:
+	var pos := Vector2.ZERO
+	if e is InputEventScreenTouch or (e is InputEventMouseButton and (e as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT):
+		pos = (e as InputEventScreenTouch).position if e is InputEventScreenTouch else (e as InputEventMouseButton).position
+		if e.is_pressed():
+			_down_at = pos  # the emulated mouse twin of a touch comes at the same spot
+			_travel = 0.0
+			return
+	elif e is InputEventScreenDrag:
+		pos = (e as InputEventScreenDrag).position
+	elif e is InputEventMouseMotion:
+		pos = (e as InputEventMouseMotion).position
+	else:
+		return
+	if _down_at.x >= 0.0:
+		_travel = maxf(_travel, pos.distance_to(_down_at))
+
+
+## A tap on a button of a legacy card in the scrolling card row: a release that ends a swipe of the row is not one
+## (§2: a swipe must never spend). Kit buttons and cards tell swipes apart themselves.
+func _row_tap(e: InputEvent) -> bool:
+	return _is_tap(e) and _travel <= Kit.TAP_SLOP
+
+
+## The status slot (§5, §6 HUD) — kind "" hides it. Kind «timer»: the battle timer plate (hourglass, the time in
+## TIMER 60, `sub` under it; bg "war" is the final push: the number turns red and pulses every second). Any other
+## kind: a button M in the hex panel's slot («peace»: go + dove, `sub` the war score in a chip; «repair_ad»: go + the
+## ad icon; «ruin_halve»: go + the ad icon, `sub` the ruin's time left in a chip). `bg` is a role name or, from older
+## callers, a colour (Kit.role_of); STATUS_LOOK wins over it.
+func set_action(kind: String, title: String, sub := "", bg: Variant = "go") -> void:
 	_action_kind = kind
 	_action.visible = kind != ""
-	_action_lbl.text = title
-	_action_sub.text = sub
-	_fit(_action_lbl, 34, 264.0)
-	_fit(_action_sub, 18, 264.0)
-	_action.add_theme_stylebox_override("panel", _style(bg, 16))
+	var role := String(bg) if bg is String else Kit.role_of(bg)
+	var args := [kind, title, sub, role]
+	if args == _status_args:
+		return
+	var was_timer := _status_args.size() > 0 and String(_status_args[0]) == "timer"
+	_status_args = args
+	_timer_plate.visible = kind == "timer"
+	_status_btn.visible = kind != "timer" and kind != ""
+	if kind == "timer":
+		_timer_num.text = title
+		_timer_sub.text = sub
+		var rush := role == "war"
+		_timer_num.add_theme_color_override("font_color", Kit.NEG if rush else Kit.TEXT)
+		Kit.fit_label(_timer_sub, 24, _timer_sub.size.x)
+		if rush and (_timer_tw == null or not _timer_tw.is_valid()):
+			_timer_tw = _timer_num.create_tween().set_loops()  # one beat a second
+			_timer_tw.tween_property(_timer_num, "scale", Vector2(1.08, 1.08), 0.15).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+			_timer_tw.tween_property(_timer_num, "scale", Vector2.ONE, 0.25).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+			_timer_tw.tween_interval(0.6)
+		elif not rush and _timer_tw != null:
+			_timer_tw.kill()
+			_timer_tw = null
+			_timer_num.scale = Vector2.ONE
+		if not was_timer:
+			Kit.fade_in(_timer_plate)
+		return
+	if kind == "":
+		return
+	var look: Array = STATUS_LOOK.get(kind, [role, ""])
+	var b := _status_btn as Kit.KitButton
+	b.role = String(look[0]) if Kit.ROLE.has(String(look[0])) else "go"
+	b.icon = String(look[1])
+	b.caption = title
+	b.price = [["", sub, sub.begins_with(Kit.MINUS)]] if sub != "" else []  # a negative war score reads red
+	b.enabled = true
+	b.rebuild()
 
 
-## Big blue button — kind "" hides it (the HUD's own «Атаковать» shows through).
-func set_primary(kind: String, title: String, color := Color(0.13, 0.4, 0.9), enabled := true) -> void:
+## The big button (§5, §6 HUD) — kind "" hides it. The only primary renderer on the map: a Kit button L (M for
+## «retreat») whose role and icon come from PRIMARY_LOOK by kind (`color` — a role name or a legacy colour — and
+## `icon` only for kinds it does not list). `price`: the plate's items [[icon, text, short], …] — a cost (two at
+## most; `short` paints a missing amount red) or a time ([["", "2:57"]]). Disabled, it is grey and a tap shakes it
+## and shows `reason` in a tooltip; disabled only for want of a resource (a `short` item), it keeps its role and the
+## red number instead (§4.1 «Не хватает»). `_action2_kind` is the kind only while enabled (the tests read it).
+func set_primary(kind: String, title: String, color: Variant = "info", enabled := true, icon := "", price: Array = [], reason := "") -> void:
 	_action2_kind = kind if enabled else ""
 	_action2.visible = kind != ""
-	_action2_lbl.text = title
-	if title.contains("\n"):  # two lines (e.g. «Наступление / на «Кремнёвые Бароны»»): each fitted to the width
-		var f := _action2_lbl.get_theme_font("font")
-		var fs := 22
-		for line in title.split("\n"):
-			while fs > 14 and f.get_string_size(line, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x > 250.0:
-				fs -= 1
-		_action2_lbl.add_theme_font_size_override("font_size", fs)
-		_action2_lbl.position = Vector2(0, 10)
-		_action2_lbl.size = Vector2(266, 72)
-		_action2_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	else:
-		_action2_lbl.position = Vector2(0, 26)
-		_action2_lbl.size = Vector2(266, 40)
-		_action2_lbl.vertical_alignment = VERTICAL_ALIGNMENT_TOP
-		_fit(_action2_lbl, 26, 250.0)
-	_action2.add_theme_stylebox_override("panel", _style(color, 16, Color(1, 1, 1, 0.6), 3))
-	_action2.modulate = Color(1, 1, 1, 1) if enabled else Color(0.72, 0.72, 0.72, 1)  # opaque: the HUD button below must not show through
+	var args := [kind, title, color, enabled, icon, price, reason]
+	if args == _primary_args:
+		return
+	_primary_args = args
+	_primary_reason = reason if reason != "" else title
+	if kind == "":
+		return
+	var role := String(color) if color is String else Kit.role_of(color)
+	var look: Array = PRIMARY_LOOK.get(kind, [role, icon])
+	role = String(look[0])
+	if kind == "colonize_now" and price.is_empty():  # finishing for free is no spending: not gold (§3.2)
+		role = "go"
+	var short := false
+	for p in price:
+		short = short or ((p as Array).size() > 2 and bool(p[2]))
+	var b := _action2 as Kit.KitButton
+	var r := RETREAT_RECT if kind == "retreat" else BIG_RECT
+	b.size_class = "M" if kind == "retreat" else "L"
+	b.position = r.position
+	b.size = r.size
+	b.role = role
+	b.icon = String(look[1]) if String(look[1]) != "" else icon
+	b.caption = title
+	b.price = price
+	b.enabled = enabled or (short and role != "lock")
+	b.rebuild()
+
+
+func _on_primary() -> void:
+	if _action2_kind == "":  # shown as available but short of a resource: shake and say what is missing
+		Kit.shake(_action2)
+		_on_primary_denied()
+		return
+	action_pressed.emit(_action2_kind)
+
+
+func _on_primary_denied() -> void:
+	Kit.tooltip(_action2, (_action2 as Kit.KitButton).caption.replace("\n", " "), _primary_reason if _primary_reason != (_action2 as Kit.KitButton).caption else "")
 
 
 # ------------------------------------------------------------------ modals
@@ -1383,12 +1514,13 @@ func _ensure_panel() -> void:
 	hb.changed.connect(_update_fade.bind(0.0))
 
 
-## The right-edge fade shows only while cards are hidden past the right edge.
+## The right-edge fade shows only while at least its own width of cards is hidden past the right edge: a row a few
+## px too wide (two 304 px diplomacy cards) would otherwise dim the last card's buttons for nothing to scroll to.
 func _update_fade(_v := 0.0) -> void:
 	if _bfade == null:
 		return
 	var hb := _bscroll.get_h_scroll_bar()
-	_bfade.visible = hb.max_value - hb.page - hb.value > 4.0
+	_bfade.visible = hb.max_value - hb.page - hb.value >= _bfade.size.x
 
 
 ## Rebuilds the card row only when its content changed, and never under a finger (a rebuild between
@@ -1461,13 +1593,15 @@ func _army_card(it: Dictionary) -> Control:
 		return _new_army_card(it)
 	var pic := "res://assets/ui/cards/unit_dl%d.png" % clampi(int(it.get("dl", 1)), 1, 8)
 	var tex: Texture2D = load(pic) if ResourceLoader.exists(pic) else Kit.icon_tex("helmet")
-	var ready := clampf(float(it["str"]) / maxf(1.0, float(it["max"])), 0.0, 1.0)
+	# the readiness: the exact share when the item carries one («ready»), else from «str» / «max», which come rounded
+	# to thousands — so a refilling army never reads 100 %
+	var ready := clampf(float(it["ready"]) if it.has("ready") else float(it["str"]) / maxf(1.0, float(it["max"])), 0.0, 1.0)
 	var pct := roundi(ready * 100.0)
-	if it["refilling"]:  # «str» / «max» come rounded to thousands: a refilling army never reads 100 %
+	if it["refilling"]:
 		pct = mini(pct, 99)
 		ready = minf(ready, 0.99)
-	var tip := PackedStringArray([tr("army.tip.str") % [int(it["str"]), int(it["max"])], tr("army.tip.squads") % int(it["slots"]),
-		tr("army.tip.ready") % pct])
+	# the tooltip keeps to 4 lines (§4.11): strength, squads, upkeep, the refill; the readiness is the bar's
+	var tip := PackedStringArray([tr("army.tip.str") % [int(it["str"]), int(it["max"])], tr("army.tip.squads") % int(it["slots"])])
 	if int(it.get("upkeep", 0)) > 0:
 		tip.append(tr("army.tip.upkeep") % int(it["upkeep"]))
 	var opts := {"badge": str(int(it.get("num", 1))), "details": "\n".join(tip),
@@ -1505,7 +1639,8 @@ func _new_army_card(it: Dictionary) -> Control:
 		opts["reason"] = tr("army.locked_dl") % need
 		opts["details"] = opts["reason"]
 	else:
-		opts["cta"] = {"role": "go", "caption": tr("army.train"), "price": [["food", fmt_num(int(it["food"]))]],
+		# «food_short» (not enough food, when the item says so) paints the price NEG (§4.1 «Не хватает»)
+		opts["cta"] = {"role": "go", "caption": tr("army.train"), "price": [["food", fmt_num(int(it["food"])), bool(it.get("food_short", false))]],
 			"cb": func(): army_action.emit(-1, "train")}
 	return Kit.card(Kit.icon_tex("helmet"), String(it["name"]), opts)
 
@@ -1533,15 +1668,22 @@ func _hand_card(it: Dictionary) -> Control:
 		"cta": {"role": "info", "caption": tr("hand.deck"), "cb": func(): army_action.emit(-2, "hand")}})
 
 
-## The Army tab's «Командиры» card: a fan of three faces, «7/12», a green dot when a level can be bought.
+## The Army tab's «Командиры» card: a fan of three faces, «7/12», a green dot when a level can be bought. Only as
+## many faces are lit as the player owns commanders, the rest are silhouettes. «faces» ([[id, rarity]], the owned
+## ones), when the item carries it, picks the faces; else the order most players meet them in: Bram (the tutorial),
+## Lira (calendar day 1), Rai (day 4).
 func _commanders_card(it: Dictionary) -> Control:
-	var faces := [["cmd_lira", "common"], ["cmd_rai", "legendary"], ["cmd_vega", "rare"]]
-	var pics: Array = []
-	for f in faces:
-		pics.append(CmdPortrait.new(f[0], f[1]))
 	var n: Array = it["commanders"]
+	var faces: Array = (it.get("faces", []) as Array).slice(0, 3)
+	for f in [["cmd_bram", "common"], ["cmd_lira", "common"], ["cmd_rai", "legendary"]]:
+		if faces.size() < 3 and not faces.any(func(x): return String(x[0]) == f[0]):
+			faces.append(f)
+	var pics: Array = [null, null, null]
+	var slot := [1, 0, 2]  # the middle face is drawn on top (_fan): it is lit first, then the left, then the right
+	for r in 3:
+		pics[slot[r]] = CmdPortrait.new(String(faces[r][0]), String(faces[r][1]), r >= int(n[0]))
 	var up := bool(it.get("dot", false))
-	var opts := {"art_node": _fan(pics), "tag": "%d/%d" % [int(n[0]), int(n[1])],
+	var opts := {"art_node": _fan(pics, 12.0), "tag": "%d/%d" % [int(n[0]), int(n[1])],
 		"details": tr("cmdr.collection") % [int(n[0]), int(n[1])] + ("\n" + tr("cmdr.tip_up") if up else ""),
 		"cta": {"role": "info", "caption": tr("cmdr.open"), "cb": func(): army_action.emit(-3, "commanders")}}
 	if up:
@@ -1550,8 +1692,8 @@ func _commanders_card(it: Dictionary) -> Control:
 
 
 ## Three small framed pictures (the hand's cards, the collection's faces) fanned out at −8 / 0 / +8° in a card's
-## art window (172×104); the middle one on top.
-func _fan(pics: Array) -> Control:
+## art window (172×104); the middle one on top. `dy` lowers the fan (below a counter pill in the corner).
+func _fan(pics: Array, dy := 0.0) -> Control:
 	var fan := Control.new()
 	fan.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	fan.size = Vector2(172, 104)
@@ -1563,7 +1705,7 @@ func _fan(pics: Array) -> Control:
 		fr.add_theme_stylebox_override("panel", Kit.style(Kit.INK, 8, 0, Kit.INK, 3, 0))
 		fr.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		fr.size = Vector2(64, 76)
-		fr.position = Vector2(86.0 + k * 42.0 - 32.0, 8.0 + absf(k) * 6.0)
+		fr.position = Vector2(86.0 + k * 42.0 - 32.0, 8.0 + dy + absf(k) * 6.0)
 		fr.pivot_offset = Vector2(32, 76)
 		fr.rotation_degrees = k * 8.0
 		# the picture 3 px inside the frame (not clipped round: the art window already clips its children, and
@@ -2140,7 +2282,7 @@ func _diplomacy_card(it: Dictionary) -> Control:
 		lsp.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		lsp.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		bsp.add_child(lsp)
-		bsp.gui_input.connect(func(e): if _is_tap(e): diplomacy_action.emit(id, "separate"))
+		bsp.gui_input.connect(func(e): if _row_tap(e): diplomacy_action.emit(id, "separate"))
 	elif it.get("can_call", false):
 		var bc := _panel(card, Rect2(196, 78, 98, 36), _style(Color(0.85, 0.55, 0.1), 10, Color(1, 1, 1, 0.45), 2))
 		bc.mouse_filter = Control.MOUSE_FILTER_PASS
@@ -2149,7 +2291,7 @@ func _diplomacy_card(it: Dictionary) -> Control:
 		lc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		lc.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		bc.add_child(lc)
-		bc.gui_input.connect(func(e): if _is_tap(e): diplomacy_action.emit(id, "call"))
+		bc.gui_input.connect(func(e): if _row_tap(e): diplomacy_action.emit(id, "call"))
 	elif it.get("ally", false):
 		var al := _label(tr("dipl.ally"), 16, Color(0.5, 1.0, 0.6))
 		al.position = Vector2(190, 82)
@@ -2165,7 +2307,7 @@ func _diplomacy_card(it: Dictionary) -> Control:
 		la.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		la.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		ba.add_child(la)
-		ba.gui_input.connect(func(e): if _is_tap(e):
+		ba.gui_input.connect(func(e): if _row_tap(e):
 			if why == "":
 				diplomacy_action.emit(id, "ally")
 			else:
@@ -2178,7 +2320,7 @@ func _diplomacy_card(it: Dictionary) -> Control:
 	lw.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	bw.add_child(lw)
 	var can_war: bool = it["can_war"]
-	bw.gui_input.connect(func(e): if _is_tap(e):
+	bw.gui_input.connect(func(e): if _row_tap(e):
 		if can_war:
 			diplomacy_action.emit(id, "war")
 		else:
@@ -2194,7 +2336,7 @@ func _diplomacy_card(it: Dictionary) -> Control:
 		lp.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		lp.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		bp.add_child(lp)
-		bp.gui_input.connect(func(e): if _is_tap(e):
+		bp.gui_input.connect(func(e): if _row_tap(e):
 			if why_p == "":
 				diplomacy_action.emit(id, "pact")
 			else:
@@ -2209,7 +2351,7 @@ func _diplomacy_card(it: Dictionary) -> Control:
 		ls.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		ls.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		bs.add_child(ls)
-		bs.gui_input.connect(func(e): if _is_tap(e):
+		bs.gui_input.connect(func(e): if _row_tap(e):
 			if why_s == "":
 				diplomacy_action.emit(id, "swap")
 			else:
@@ -2222,7 +2364,7 @@ func _diplomacy_card(it: Dictionary) -> Control:
 	lg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	lg.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	bg.add_child(lg)
-	bg.gui_input.connect(func(e): if _is_tap(e): diplomacy_action.emit(id, "gift"))
+	bg.gui_input.connect(func(e): if _row_tap(e): diplomacy_action.emit(id, "gift"))
 	return _legacy_card(card)
 
 
@@ -2286,7 +2428,7 @@ func _chapter_card(it: Dictionary) -> Control:
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		b.add_child(l)
-		b.gui_input.connect(func(e): if _is_tap(e): world_action.emit("expand"))
+		b.gui_input.connect(func(e): if _row_tap(e): world_action.emit("expand"))
 	else:
 		var hint := _label(tr("world.hint"), 14, MUTED, false)
 		hint.position = Vector2(12, 96)
@@ -2323,7 +2465,7 @@ func _star_card(it: Dictionary) -> Control:
 		sl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		sl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		sw.add_child(sl)
-		sw.gui_input.connect(func(e): if _is_tap(e): world_action.emit("swap:" + id))
+		sw.gui_input.connect(func(e): if _row_tap(e): world_action.emit("swap:" + id))
 	if it.get("ready", false):  # something waits inside (the calendar's day)
 		var dot := _panel(card, Rect2(124, 8, 18, 18), _style(Color(0.9, 0.2, 0.15), 9, Color(1, 1, 1, 0.9), 2), Control.MOUSE_FILTER_IGNORE)
 		dot.name = "ReadyDot"
@@ -2419,7 +2561,7 @@ func _building_card(it: Dictionary) -> Control:
 			bpl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 			bpl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			bpb.add_child(bpl)
-			bpb.gui_input.connect(func(e): if _is_tap(e): research_speedup.emit("bp:" + line_s))
+			bpb.gui_input.connect(func(e): if _row_tap(e): research_speedup.emit("bp:" + line_s))
 		_card_button(card, txt, Color(0.85, 0.55, 0.1), func():
 			if line_s != "":
 				research_speedup.emit(line_s)
@@ -2516,8 +2658,9 @@ var _ghost_from := Vector2(-1, -1)
 var _ghost_to := Vector2(-1, -1)
 var _ghost_dot: Panel
 var _coach_t := 0.0
-## Screen rects of the buttons the coach points at (the big action button of hud.gd): framed instead of circled.
-const COACH_FRAMES := [Rect2(660, VH - 122, 266, 92)]
+## Rects (on the 1672 canvas) of the buttons the coach points at — the big button, the status button: framed
+## instead of circled.
+const COACH_FRAMES := [BIG_RECT, STATUS_RECT]
 
 
 func _build_coach() -> void:
