@@ -2479,7 +2479,7 @@ func show_hand_picker(cards: Array, chosen: Array, slots: int, on_toggle: Callab
 		var col := Color(0.2, 0.42, 0.28) if on else Color(0.14, 0.18, 0.27)
 		var pic := "res://assets/ui/cards/%s.png" % c
 		var has_pic := ResourceLoader.exists(pic)
-		var label := "%s%s" % [_card_name(c), "  ✓" if on else ""] if has_pic else "%s  %s%s" % [String(CARD_ART.get(c, "?")), _card_name(c), "  ✓" if on else ""]
+		var label := "%s%s" % [_card_name(c), "  ✓" if on else ""]  # (s09 rebuilds this picker; no glyph art)
 		var b := _button(box, r, label, col, func(): on_toggle.call(c))
 		if has_pic:  # the card's painted scene on the left, the name beside it
 			var tr_ := TextureRect.new()
