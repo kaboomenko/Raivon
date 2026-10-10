@@ -2506,10 +2506,10 @@ static func bubble(parent: Node, rect: Rect2, text: String, tail := "left") -> P
 	var inner := rect.size.x - 40.0
 	var f := font("b800")
 	var fs := 28
-	for s in [28, 26]:
+	for s: int in [28, 26]:
 		fs = s
-		var lines := f.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, inner, s).y / (s * 1.36)
-		if lines <= 2.2 or (s == 26):
+		var lines: float = f.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, inner, s).y / (s * 1.36)
+		if lines <= 2.2:
 			break
 	var l := label(text, fs, INK_TEXT, false)
 	l.name = "text"
@@ -2659,10 +2659,11 @@ class KitTile extends Panel:
 ## A tile on paper (§4.9: a reward, a demand, a statistic): face CREAM_ROW (or opts.face), R 20, lip 5, no contour.
 ## Top to bottom, centred: the picture, then a title, then a big value and its caption; the amount pill sits on the
 ## bottom edge. opts:
-##   icon: a kit icon name | tex: a Texture2D (a hex render); icon_side (default: by what else the tile holds)
+##   icon: a kit icon name | tex: a Texture2D (a hex render); icon_side (default: by what else the tile holds);
+##   pic_overlap: how far the lines under it may rise into the picture's box (a render's transparent margin)
 ##   title: the name (Rubik 900 26 INK_TEXT, fit to 22, cut at the floor)
 ##   value: a big number (NUM_L 44; value_color, INK_TEXT by default) and caption: a muted line under it (Rubik 800 24)
-##   pill: [[icon, text, short], …] — the INK amount pill on the bottom edge (NUM_S 26)
+##   pill: [[icon, text, short], …] — the INK amount pill on the bottom edge (NUM_S 26); pill_inside: above the lip
 ##   count: a «×N» info hex on the top-left corner when > 1
 ##   selected: a go outline 5 + a check badge; claimable: a gold outline 4 (+ breathe); locked: a lock, the picture
 ##   dimmed; dim: the picture dimmed (it cannot be taken now)
@@ -2693,11 +2694,13 @@ static func tile(parent: Node, rect: Rect2, opts := {}) -> KitTile:
 	if tex == null:
 		tex = icon_tex(String(opts.get("icon", "")))
 	var ph := 36.0
-	var bottom := h - 5.0 - (ph * 0.5 + 2.0 if not pill.is_empty() else 4.0)
+	var inside := bool(opts.get("pill_inside", false))  # a demand's cost sits inside, a reward's amount on the edge
+	var bottom := h - 5.0 - (4.0 if pill.is_empty() else (ph + 10.0 if inside else ph * 0.5 + 2.0))
 	var side := float(opts.get("icon_side", 0.0))
 	if side <= 0.0:
 		side = minf(w * 0.5, h * 0.44) if (title != "" or value != "") else minf(w, h) * 0.6
-	var parts_h := (side if tex != null else 0.0) + (34.0 if title != "" else 0.0) + (50.0 if value != "" else 0.0) \
+	var overlap := float(opts.get("pic_overlap", 0.0)) if tex != null else 0.0  # a render's empty margin under the art
+	var parts_h := (side - overlap if tex != null else 0.0) + (34.0 if title != "" else 0.0) + (50.0 if value != "" else 0.0) \
 		+ (30.0 if caption != "" else 0.0)
 	var y := maxf(6.0, (bottom - parts_h) * 0.5 + 2.0)
 	if tex != null:
@@ -2711,7 +2714,7 @@ static func tile(parent: Node, rect: Rect2, opts := {}) -> KitTile:
 			var lk := _card_rect(icon_tex("lock"), Rect2(w * 0.5 + side * 0.18, y + side * 0.42, side * 0.5, side * 0.5))
 			lk.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 			t.add_child(lk)
-		y += side
+		y += side - overlap
 	if title != "":
 		var s := fit_size(title, 26, w - 20.0, "d900", 22, false)
 		var tl := label(title, s, INK_TEXT, true)
@@ -2737,26 +2740,26 @@ static func tile(parent: Node, rect: Rect2, opts := {}) -> KitTile:
 		t.add_child(vl)
 		y += 50.0
 	if caption != "":
-		var cs := fit_size(caption, 24, w - 16.0, "d800", 22, false)
+		var cs := fit_size(caption, 24, w - 14.0, "d800", 22, false)
 		var cl := label(caption, cs, MUTED_CREAM, true)
 		cl.name = "caption"
 		cl.add_theme_font_override("font", font("d800"))
 		cl.add_theme_font_size_override("font_size", cs)
 		cl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		cl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		cl.clip_text = true
+		cl.clip_text = text_w(caption, cs, "d800", false) > w - 14.0  # cut only when even 22 does not fit
 		cl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		cl.position = Vector2(8, y - 2.0)
-		cl.size = Vector2(w - 16.0, 30)
+		cl.position = Vector2(4, y - 2.0)
+		cl.size = Vector2(w - 8.0, 30)
 		t.add_child(cl)
 	if not pill.is_empty():
 		var pp := price_plate(pill, ph)
 		pp.name = "pill"
-		pp.position = Vector2(roundf((w - pp.size.x) * 0.5), h - ph * 0.5 - 2.0)
+		pp.position = Vector2(roundf((w - pp.size.x) * 0.5), h - 5.0 - 10.0 - ph if inside else h - ph * 0.5 - 2.0)
 		t.add_child(pp)
 	var n := int(opts.get("count", 0))
-	if n > 1:
-		var hb := hex_badge(t, Vector2(14, 14), 24, "info", "×%d" % n)
+	if n > 1:  # inside the corner: on the edge it would crowd the neighbour's check badge
+		var hb := hex_badge(t, Vector2(30, 32), 24, "info", "×%d" % n)
 		hb.name = "count"
 	if sel:
 		check_badge(t, Vector2(w - 6.0, 6.0))

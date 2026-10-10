@@ -155,7 +155,12 @@ var map_view: Node3D
 var rig: Node3D
 var hud: CanvasLayer
 var ui: CanvasLayer
-var selection: MeshInstance3D
+var selection: Node3D  # the selection marker (_make_selection): children "ribbon" and "glow"
+var _sel_ribbon: ShaderMaterial  # its border_ribbon material (body / rim follow the card-drag verdict)
+var _sel_glow: ShaderMaterial  # its inner glow (territory_fill)
+var _sel_hex := -1  # the hex the selection last sprang in on
+var _sel_spring := 1.0  # the spring-in scale (§6.10), tweened by _show_selection
+var _sel_tween: Tween
 var sfx: Node
 var selected := -1
 
@@ -399,22 +404,69 @@ func _set_era_light(l: Dictionary) -> void:
 	_env.glow_intensity = l.glow
 
 
+## The selection's looks [ribbon body, ribbon rim, inner glow] (docs/art_direction.md §6.7): cream with a golden rim
+## on a tapped hex; the UI's "yes" green / "attack" red (§6.3) while a card is dragged over a hex it can / cannot take.
+const SEL_LOOK := [Color("#FFF1B8"), Color("#D29A2E"), Color("#FFE27A")]
+const SEL_OK := [Color("#8FE070"), Color("#2A7A1E"), Color("#6BD13C")]
+const SEL_NO := [Color("#FF7A6E"), Color("#9E1F22"), Color("#FF5A4E")]
+
+
+## The selection marker (§6.7, soft_style_plan P8): a rounded cream ribbon (MapView.rounded_hex_ribbon, corner radius
+## SOFT_R) with a white light band and a soft golden glow inside it, both flat on the hex (no more hexagonal hoop).
+## It springs in on every new hex (_show_selection) and breathes: the ribbon's alpha 0.75–1.0 every 1.2 s
+## (border_ribbon pulse) and its scale ±3 % (_process). Over the border ribbons, under the clouds (MapView.SEL_PRIO).
 func _make_selection() -> void:
-	selection = MeshInstance3D.new()
-	var tm := TorusMesh.new()
-	tm.inner_radius = 0.86
-	tm.outer_radius = 0.96
-	tm.rings = 6
-	tm.ring_segments = 6
-	selection.mesh = tm
-	selection.rotation.y = PI / 6.0
-	var m := StandardMaterial3D.new()
-	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.albedo_color = Color(1.0, 0.95, 0.7)
-	selection.material_override = m
-	selection.scale = Vector3(1, 0.15, 1)
+	selection = Node3D.new()
 	selection.visible = false
 	add_child(selection)
+	var glow := MeshInstance3D.new()
+	glow.name = "glow"
+	glow.mesh = map_view.hex_glow_mesh(0.94)
+	glow.position.y = -0.004  # just under the ribbon
+	_sel_glow = ShaderMaterial.new()
+	_sel_glow.shader = MapView.FILL_SHADER
+	_sel_glow.set_shader_parameter("a_rim", 0.25)
+	_sel_glow.set_shader_parameter("a_in", 0.0)
+	_sel_glow.set_shader_parameter("fade", 0.45)
+	_sel_glow.render_priority = MapView.SEL_PRIO
+	glow.material_override = _sel_glow
+	glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	selection.add_child(glow)
+	var rib := MeshInstance3D.new()
+	rib.name = "ribbon"
+	rib.mesh = map_view.rounded_hex_ribbon(0.94, 0.09)
+	_sel_ribbon = ShaderMaterial.new()
+	_sel_ribbon.shader = MapView.RIBBON_SHADER
+	_sel_ribbon.set_shader_parameter("hi", Color("#FFFFFF"))
+	_sel_ribbon.set_shader_parameter("w", 0.09)
+	_sel_ribbon.set_shader_parameter("pulse", 1.0)
+	_sel_ribbon.render_priority = MapView.SEL_PRIO
+	rib.material_override = _sel_ribbon
+	rib.sorting_offset = 1.0  # the same priority as its glow: drawn after it
+	rib.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	selection.add_child(rib)
+	_tint_selection(SEL_LOOK)
+
+
+## Colours the selection: look = [ribbon body, ribbon rim, glow] (SEL_LOOK, SEL_OK, SEL_NO).
+func _tint_selection(look: Array) -> void:
+	_sel_ribbon.set_shader_parameter("body", look[0])
+	_sel_ribbon.set_shader_parameter("rim", look[1])
+	_sel_glow.set_shader_parameter("team", look[2])
+
+
+## Puts the selection on hex id; on a hex it was not showing on, it springs in 0.92 → 1.05 → 1.0 over 0.3 s (§6.10).
+func _show_selection(id: int) -> void:
+	if not selection.visible or id != _sel_hex:
+		if _sel_tween != null and _sel_tween.is_valid():
+			_sel_tween.kill()
+		_sel_spring = 0.92
+		_sel_tween = create_tween()
+		_sel_tween.tween_property(self, "_sel_spring", 1.05, 0.12).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		_sel_tween.tween_property(self, "_sel_spring", 1.0, 0.18).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_sel_hex = id
+	selection.position = map_view.cell_world(id) + Vector3(0, 0.06, 0)
+	selection.visible = true
 
 
 func _make_drag_marker() -> void:
@@ -504,7 +556,8 @@ func _refresh_ui() -> void:
 	map_view.at_war_with = enemy
 	var ws := War.war_score(sim, war) if not war.is_empty() else {}
 	ui.set_control(ws.get("score", 0.0), ws.get("control", 50), _state_name(enemy), not war.is_empty() and mode in [Mode.WAR, Mode.BATTLE, Mode.RESULT],
-		[map_view.state_flag(Types.PLAYER), map_view.state_flag(enemy)])
+		[map_view.state_flag(Types.PLAYER), map_view.state_flag(enemy)],
+		[map_view.team_look(Types.PLAYER)["body"], map_view.team_look(enemy)["body"]])
 	ui.set_battle(mode == Mode.BATTLE and battle != null, battle.energy[Types.PLAYER] if battle else 0, Battle.ENERGY_UNIT, _cooldowns(), battle.seconds_left() if battle else 0, battle != null and battle.is_rush())
 	ui.set_corps(battle != null and (battle.opts.get("cards", []) as Array).has("corps") and not battle._corps_used.has(Types.PLAYER))
 	if mode not in [Mode.MAP, Mode.WAR]:
@@ -2098,8 +2151,7 @@ func _select(id: int) -> void:
 		selection.visible = false
 		_refresh_ui()
 		return
-	selection.position = map_view.cell_world(id) + Vector3(0, 0.06, 0)
-	selection.visible = true
+	_show_selection(id)
 	sfx.play("tap")
 	_refresh_ui()  # shows the hex panel (_sync_tile)
 	if mode == Mode.WAR:
@@ -2822,7 +2874,8 @@ func _end_offensive() -> void:
 	var reason: String = tr(String({"retreat": "result.retreat", "wiped": "result.wiped"}.get(res["reason"], "result.timeout")))
 	ui.show_result(stars, res["captured"].size(), res["lost"].size(), ws["score"], ws["control"], reason,
 		func(): ui.close_modal(); _set_mode(Mode.WAR),
-		func(): ui.close_modal(); _open_peace())
+		func(): ui.close_modal(); _open_peace(),
+		String({"retreat": "white_flag", "wiped": "swords"}.get(res["reason"], "hourglass")))
 
 
 func _order_filter(screen: Vector2) -> bool:
@@ -2928,10 +2981,9 @@ func _battle_tap(id: int) -> void:
 ## Card drag preview: the hex under the finger turns green/red by whether the card can be played there,
 ## with the attack forecast (×1.4) for cards that strike an enemy hex.
 func _on_card_drag(card: String, screen: Vector2, active: bool) -> void:
-	var sel_mat := selection.material_override as StandardMaterial3D
-	if not active or screen.y > GameUI.VH - 280 or battle == null:
+	if not active or screen.y > ui.drop_y() or battle == null:
 		selection.visible = false
-		sel_mat.albedo_color = Color(1.0, 0.95, 0.7)
+		_tint_selection(SEL_LOOK)
 		_drag_lbl.visible = false
 		return
 	var id: int = map_view.id_at_world(rig.ground_at(screen))
@@ -2939,10 +2991,9 @@ func _on_card_drag(card: String, screen: Vector2, active: bool) -> void:
 		selection.visible = false
 		_drag_lbl.visible = false
 		return
-	selection.position = map_view.cell_world(id) + Vector3(0, 0.06, 0)
-	selection.visible = true
+	_show_selection(id)
 	var ok: bool = battle.validate(Types.PLAYER, {"t": "card", "card": card, "target": id})
-	sel_mat.albedo_color = Color(0.45, 1.0, 0.5) if ok else Color(1.0, 0.35, 0.3)
+	_tint_selection(SEL_OK if ok else SEL_NO)
 	_drag_lbl.visible = false
 	if ok and card in ["attack", "breakthrough", "encircle"]:
 		var ids: Array = []
@@ -2959,7 +3010,7 @@ func _on_card_drag(card: String, screen: Vector2, active: bool) -> void:
 func _on_card_drop(card: String, screen: Vector2) -> void:
 	selection.visible = false
 	_drag_lbl.visible = false
-	(selection.material_override as StandardMaterial3D).albedo_color = Color(1.0, 0.95, 0.7)
+	_tint_selection(SEL_LOOK)
 	if battle == null:
 		return
 	var id: int = map_view.id_at_world(rig.ground_at(screen))
@@ -2991,7 +3042,11 @@ func _open_peace() -> void:
 			d["cost"] = Types.round1(float(d["cost"]) / _cmd_v("cmd_kort", 0))  # Marshal Kort: pockets give up faster
 		if d["kind"] == "annex":
 			var h: int = d["hexes"][0]
-			d["label"] = tr("peace.annex") % [_cell_name(h), sim.cells[h]["value"]] + (" 🚩" if h == war["goal"] else "")
+			var desc := _describe(h)
+			d["label"] = _cell_name(h)
+			d["tile"] = String(desc["tile"]) if ResourceLoader.exists("res://assets/ui/cards/tile_%s.png" % String(desc["tile"]).get_slice("_dl", 0)) \
+				else String(desc["tile_alt"])
+			d["goal"] = h == war["goal"]
 		else:
 			d["label"] = L.t(String(d["label"]))
 	_chosen = {}
@@ -3007,8 +3062,8 @@ func _open_peace() -> void:
 
 func _show_peace() -> void:
 	var ws := War.war_score(sim, war)
-	ui.show_peace(_state_name(war["enemy"]), ws["score"], ws["control"], _demands, _chosen, plunder_level,
-		_leader_portrait(int(war["enemy"])), map_view.state_color(int(war["enemy"])))
+	ui.show_peace(_state_short(int(war["enemy"])), ws["score"], ws["control"], _demands, _chosen, plunder_level,
+		_leader_portrait(int(war["enemy"])), map_view.team_look(int(war["enemy"]))["body"])
 	_highlight_demands()
 
 
@@ -3144,10 +3199,18 @@ func _sign_peace() -> void:
 	if annexed.size() > 0:
 		land = tr("ceremony.hex") if annexed.size() == 1 else tr("ceremony.hexes") % annexed.size()
 		if cities > 0:
-			land += " · " + (tr("ceremony.city") if cities == 1 else tr("ceremony.cities") % cities)
+			land += ", " + (tr("ceremony.city") if cities == 1 else tr("ceremony.cities") % cities)
 	lines.append(land)
 	lines.append(tr("ceremony.realm") % [before, MapGen.official_value(sim, Types.PLAYER)])
 	lines.append(tr("ceremony.chapter") % [hexes_before, _player_hexes(), _chapter_goal()])
+	# the ceremony window's items (ui.show_ceremony_counters; the lines stay as its fallback): the realm's value
+	# counting up, the chapter bar, then one reward tile per kind — the gold of plunder, triumph and indemnity in one
+	var items: Array = [
+		{"kind": "hero", "icon": "crown", "from": before, "to": MapGen.official_value(sim, Types.PLAYER), "text": tr("ceremony.realm_cap")},
+		{"kind": "bar", "icon": "hex_tile", "from": hexes_before, "to": _player_hexes(), "max": _chapter_goal(), "text": tr("ceremony.chapter_cap")},
+	]
+	var got := {"gold": 0, "food": 0, "metal": 0, "raivite": 0}
+	var extra: Array = []
 	# plunder (canon §9.14): % of the loser's exposed treasury; the AI economy is not simulated yet, so its
 	# treasury is taken as 8 h of comparable production with the 40% protected share; 12 h loss cap for all
 	var gross: Dictionary = econ.gross_per_hour(sim)
@@ -3163,10 +3226,13 @@ func _sign_peace() -> void:
 			loot[r] = maxi(0, mini(int(exposed * PLUNDER_PCT[plunder_level]), cap_left))
 		econ.add_resources(loot)
 		lines.append(tr("ceremony.plunder") % [int(loot["gold"]), int(loot["food"]), int(loot["metal"])])
+		for r in loot:
+			got[r] = int(got.get(r, 0)) + int(loot[r])
 		# trophy blueprints: +1 / +2 / +3 (canon §9.14), kept up to 5 — the rest burn
 		var burned: int = research.add_blueprints(plunder_level)
 		stats["blueprints"] = int(stats.get("blueprints", 0)) + plunder_level
 		lines.append(tr("ceremony.blueprints") % [plunder_level, research.blueprints] + (tr("ceremony.blueprints_burned") % burned if burned > 0 else ""))
+		extra.append({"kind": "tile", "icon": "blueprint", "text": "+%d" % plunder_level})
 	_opinion_add(enemy, PLUNDER_OPINION[plunder_level])
 	# «Угроза» (canon §10.8): the value of every annexed hex (a city +4 more), plunder +5 / +10 / +15
 	var annexed_threat := 0.0
@@ -3179,20 +3245,36 @@ func _sign_peace() -> void:
 		econ.add_resources({"gold": chest})
 		econ.res["raivite"] = int(econ.res["raivite"]) + 30
 		lines.append(tr("ceremony.triumph") % chest)
+		got["gold"] = int(got["gold"]) + chest
+		got["raivite"] = int(got["raivite"]) + 30
 		_stat("coalition_wins")
 	if res.get("gold_packs", 0) > 0:
 		# a package = 4 h of the enemy's gold production (canon §10.1); the enemy economy is not modelled yet
 		var gold := int(res["gold_packs"]) * 4 * maxi(60, int(econ.gross_per_hour(sim).get("gold", 0)))
-		var got: Dictionary = econ.add_resources({"gold": gold})
-		lines.append(tr("ceremony.indemnity") % int(got.get("gold", 0)))
+		var paid: Dictionary = econ.add_resources({"gold": gold})
+		lines.append(tr("ceremony.indemnity") % int(paid.get("gold", 0)))
+		got["gold"] = int(got["gold"]) + int(paid.get("gold", 0))
 	if res.get("reparations", false):
 		lines.append(tr("ceremony.reparations"))
+		extra.append({"kind": "tile", "icon": "treaty", "pill": [["", "10%"], ["hourglass", tr("ceremony.rep_hours")]],
+			"name": tr("demand.reparations")})
 	# trophy chest for a victorious peace: bronze < 30, silver < 60, gold ≥ 60 war score (canon §15.4)
 	var score: float = _last_score  # war score at signing (the war dict is cleared below)
 	var chest := "case_trophy_gold" if score >= 60.0 else ("case_trophy_silver" if score >= 30.0 else "case_trophy_bronze")
 	var opened: Dictionary = cases.open(chest, _case_ctx(), now_s())
 	_apply_case_rewards([opened])
-	lines.append("🎁 %s: %s" % [Cases.case_name(chest), ShopUI.describe(opened["rewards"][0]) if opened["rewards"].size() > 0 else "—"])
+	lines.append("%s: %s" % [Cases.case_name(chest), ShopUI.describe(opened["rewards"][0]) if opened["rewards"].size() > 0 else "—"])
+	if annexed.size() > 0:
+		items.append({"kind": "tile", "icon": "hex_tile", "text": "+%d" % annexed.size()})
+	if cities > 0:
+		items.append({"kind": "tile", "icon": "houses", "text": "+%d" % cities})
+	for r in ["gold", "food", "metal", "raivite"]:
+		if int(got[r]) > 0:
+			items.append({"kind": "tile", "icon": String(Hud.RES_ICON[r]), "text": "+" + Kit.fmt_num(int(got[r])), "name": tr("res.name." + r)})
+	items.append_array(extra)
+	if opened["rewards"].size() > 0:
+		items.append({"kind": "tile", "icon": {"case_trophy_gold": "chest_royal", "case_trophy_silver": "chest_silver"}.get(chest, "chest_wood"),
+			"pill": _reward_pill(opened["rewards"][0]), "name": Cases.case_name(chest)})
 	truce[enemy] = Time.get_unix_time_from_system() + TRUCE_SEC
 	if ultimatum_at == 0:
 		ultimatum_at = now_s() + 2 * 3600  # scripted Barons ultimatum ~2 h later (canon §14.3)
@@ -3209,7 +3291,7 @@ func _sign_peace() -> void:
 	var last_flip := 1.6
 	for id in flip:
 		last_flip = maxf(last_flip, flip[id])
-	_ceremony = {"t": 0.0, "lines": lines, "popped": {}, "counters": false, "zoom0": rig.zoom_target, "zoom1": zoom_out,
+	_ceremony = {"t": 0.0, "lines": lines, "items": items, "popped": {}, "counters": false, "zoom0": rig.zoom_target, "zoom1": zoom_out,
 		"center": center, "counters_at": maxf(4.0, last_flip + 0.5), "goal_taken": annexed.has(war["goal"]),
 		"gold_packs": int(res.get("gold_packs", 0)), "loot": loot}
 	war = {}
@@ -3251,7 +3333,30 @@ func _step_ceremony(delta: float) -> void:
 		for i in volleys:
 			get_tree().create_timer(0.45 * i + 0.3).timeout.connect(sfx.play.bind("firework", 0, -8.0))
 		var active_after := maxf(0.5, 7.0 - t)
-		ui.show_ceremony_counters(_ceremony["lines"], _end_ceremony, _double_trophies if int(_ceremony["gold_packs"]) > 0 or not _ceremony.get("loot", {}).is_empty() else Callable(), active_after)
+		ui.show_ceremony_counters(_ceremony["lines"], _end_ceremony, _double_trophies if int(_ceremony["gold_packs"]) > 0 or not _ceremony.get("loot", {}).is_empty() else Callable(), active_after,
+			_ceremony.get("items", []))
+
+
+## A case reward as the ceremony tile's pill: [[icon, text], …] (at most two items).
+func _reward_pill(rw: Dictionary) -> Array:
+	match String(rw.get("kind", "")):
+		"res":
+			var out: Array = []
+			var res: Dictionary = rw["res"]
+			for k in res:
+				if int(res[k]) > 0 and out.size() < 2:
+					out.append([String(Hud.RES_ICON.get(String(k), "crate")), "+" + Kit.fmt_num(int(res[k]))])
+			if not out.is_empty():
+				return out
+		"speedup":
+			return [["lightning", GameUI.fmt_time(int(rw["minutes"]) * 60)]]
+		"shards":
+			return [["shard", "+%d" % int(rw["n"])]]
+		"glitter":
+			return [["gift", "+%d" % int(rw["n"])]]
+		"cosmetic":
+			return [["gift", tr("ceremony.cosmetic")]]
+	return [["", "+1"]]
 
 
 ## Rewarded ad «×2 трофеи» — SDK stub until monetization lands (canon §14.10).
@@ -3291,12 +3396,12 @@ func _open_defeat_or_white(score: float) -> void:
 			func():
 				War.white_peace(sim)
 				_opinion_add(enemy, 25.0)
-				_finish_war(enemy, tr("toast.white_peace_signed")))
+				_finish_war(enemy, tr("toast.white_peace_signed")), "dove")
 		return
 	var lost := _defeat_losses(enemy)
-	ui.show_result(0, 0, lost.size(), score, War.war_score(sim, war)["control"], tr("result.defeat") % lost.size(),
+	ui.show_result(0, 0, lost.size(), score, War.war_score(sim, war)["control"], tr("result.defeat"),
 		func(): ui.close_modal(); _set_mode(Mode.WAR),
-		func(): _apply_defeat(enemy, lost))
+		func(): _apply_defeat(enemy, lost), "coins")
 
 
 ## Defeat (canon §9.14): the AI annexes what it occupies, ≤20% of value, ≤1 city, never the core.
@@ -5929,10 +6034,11 @@ func _issue_ultimatum(now: int, state: int = MapGen.BARONS) -> void:
 
 
 func _show_ultimatum() -> void:
-	ui.show_ultimatum(_state_name(int(ultimatum["state"])), _cell_name(int(ultimatum["hex"])), int(ultimatum["tribute"]),
+	ui.show_ultimatum(_state_short(int(ultimatum["state"])), _cell_name(int(ultimatum["hex"])), int(ultimatum["tribute"]),
 		econ.res["gold"] >= int(ultimatum["tribute"]), int(ultimatum["deadline"]) - now_s(),
 		_answer_ultimatum.bind("accept"), _answer_ultimatum.bind("pay"), _answer_ultimatum.bind("refuse"),
-		_leader_portrait(int(ultimatum["state"])), map_view.state_color(int(ultimatum["state"])))
+		_leader_portrait(int(ultimatum["state"])), map_view.team_look(int(ultimatum["state"]))["body"],
+		String(_describe(int(ultimatum["hex"]))["tile"]))
 
 
 func _answer_ultimatum(kind: String) -> void:
@@ -6278,9 +6384,9 @@ func _ftue_tick(delta: float) -> void:
 		4:
 			target = Vector2(70, GameUI.VH - 124)
 		5:
-			target = Vector2(655, 998)
+			target = ui.result_peace_center()
 		6:
-			target = Vector2(470, 1488)
+			target = ui.peace_seal_center()
 		7:
 			if econ.dev_level() >= 2 or _residence_busy():
 				ftue = 8
@@ -6312,9 +6418,9 @@ func _ftue_tick(delta: float) -> void:
 		12:
 			target = Vector2(445, GameUI.VH - 124)
 		14:
-			target = Vector2(655, 998) if mode == Mode.RESULT else Vector2(793, GameUI.VH - 200)
+			target = ui.result_peace_center() if mode == Mode.RESULT else Vector2(793, GameUI.VH - 200)
 		15:
-			target = Vector2(274, 1380)
+			target = ui.peace_plunder_center()
 	if _ftue_shown != ftue:
 		_ftue_shown = ftue
 		_ftue_t = 0.0
@@ -6348,8 +6454,8 @@ func _ftue_tick(delta: float) -> void:
 func _process(delta: float) -> void:
 	map_view.set_zoom(rig.zoom)
 	if selection.visible:
-		var k := 1.0 + 0.03 * sin(Time.get_ticks_msec() / 160.0)
-		selection.scale = Vector3(k, 0.15, k)
+		var k := (1.0 + 0.03 * sin(Time.get_ticks_msec() / 160.0)) * _sel_spring
+		selection.scale = Vector3(k, 1.0, k)  # flat on the hex: no y squash any more
 	if mode == Mode.BATTLE and battle != null:
 		_acc += delta
 		var steps := 0

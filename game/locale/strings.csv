@@ -81,15 +81,15 @@ err.convoys_busy,Все обозы в пути,All convoys are out
 card.attack,Атака,Attack
 card.breakthrough,Прорыв,Breach
 card.airstrike,Авиаудар,Airstrike
-card.encircle,Окружение,Encircle
+card.encircle,Котёл,Encircle
 card.defense,Оборона,Defense
 form.wedge,Клин +20%,Wedge +20%
 form.encircle,Окружение +30%,Encirclement +30%
 form.corridor,Коридор,Corridor
 form.salient,Выступ −15%,Salient −15%
-demand.pocket,Котёл целиком (%d гекс.),Whole pocket (%d hexes)
-demand.contribution,Контрибуция (4 ч золота),Indemnity (4 h of gold)
-demand.reparations,"Репарации (10% производства, 24 ч)","Reparations (10% of output, 24 h)"
+demand.pocket,Котёл из %d,Pocket of %d
+demand.contribution,Контрибуция,Indemnity
+demand.reparations,Репарации,Reparations
 tile.hex,Гекс,Hex
 state.wild,Дикие земли,Wildlands
 state.wild.short,Дикие,Wilds
@@ -132,31 +132,38 @@ hud.tip.full,Склад полон: улучшите Склад,Storage full: up
 hud.tip.src,Приносят ваши гексы,Produced by your hexes
 hud.tip.raivite,"Награды, райвитовые жилы и Лавка","Rewards, raivite veins and the Shop"
 res.name.raivite,Райвиты,Raivites
-ui.war_score_zero,Военный счёт: 0,War score: 0
-ui.last_stand,ВЫ НА ГРАНИ ПОРАЖЕНИЯ! Последний рубеж +25%,ON THE BRINK OF DEFEAT! Last stand +25%
-ui.war_status,Война: %s · счёт %+.1f,War: %s · score %+.1f
+ui.last_stand,Последний рубеж +25%,Last stand +25%
 ui.final_rush,Финальный рывок!,Final push!
 ui.offensive_left,до конца боя,until the battle ends
-result.title,Итоги наступления,Offensive Results
-result.reason,Причина,Reason
-result.captured,Захвачено гексов,Hexes captured
-result.lost,Потеряно своих,Hexes lost
-result.score,Военный счёт,War score
-result.control,Контроль фронта,Front control
-result.note,Захваченное оккупировано. Граница сдвинется после мира.,Captured hexes are occupied. Borders move after peace.
-result.continue,Продолжить войну,Keep fighting
-result.peace,🕊 Мир (%.1f),🕊 Peace (%.1f)
-plunder.spare,Пощадить,Spare
-plunder.light,Лёгкое 30%,Light 30%
-plunder.medium,Среднее 45%,Medium 45%
-plunder.heavy,Тяжёлое 60%,Heavy 60%
-peace.title,Мирный договор: %s,Peace Treaty: %s
-peace.points,Очки: %.1f / %.1f · Контроль фронта %d%%,Points: %.1f / %.1f · Front control %d%%
-peace.hint,"ИИ согласится, если сумма не больше счёта. Ядро врага требовать нельзя.",The AI agrees if the total fits your score. The enemy core is off-limits.
-peace.plunder,Разграбление:,Plunder:
-peace.seal,🔏 Удерживайте печать — подписать мир,🔏 Hold the seal to sign the peace
-peace.back,Назад к войне,Back to the war
-ceremony.double,🎬 ×2 трофеи (реклама),🎬 ×2 spoils (ad)
+result.captured,Захвачено,Captured
+result.lost,Потеряно,Lost
+result.score,Очки мира,Peace points
+result.control,Фронт,Front
+result.note,Граница сдвинется после мира.,Borders move after peace.
+result.continue,Ещё бой,Fight on
+result.win,Успех!,Success!
+result.draw,Ничья,Draw
+result.defeat_title,Поражение,Defeat
+result.peace,К миру,To peace
+plunder.spare,Нет,None
+plunder.light,30%,30%
+plunder.medium,45%,45%
+plunder.heavy,60%,60%
+peace.title,Мирный договор,Peace Treaty
+peace.plunder,Грабёж,Plunder
+peace.seal,Подписать мир,Sign peace
+peace.back,К войне,Back to war
+peace.offer,"Подпишу, если не больше %s",I'll sign for %s at most
+peace.demands,Требования,Demands
+peace.hold_hint,"Удерживайте, чтобы подписать",Hold to sign
+peace.over,Требования дороже ваших очков мира,The demands cost more than your peace points
+ceremony.double,×2,×2
+ceremony.title,Победа!,Victory!
+ceremony.claim,Забрать,Claim
+ceremony.realm_cap,Держава,Realm
+ceremony.chapter_cap,Глава I,Chapter I
+ceremony.rep_hours,24ч,24h
+ceremony.cosmetic,Косметика,Cosmetic
 ui.continue,Продолжить,Continue
 ui.close,Закрыть,Close
 ui.claim,Забрать,Claim
@@ -169,12 +176,14 @@ time.h_ago,%d ч назад,%d h ago
 time.hm,%dч %02dм,%dh %02dm
 time.dh,%dд %dч,%dd %dh
 time.s,%d с,%ds
-ult.title,Ультиматум: %s,Ultimatum: %s
-ult.text,«Отдай нам «%s» — или заплати дань %d золота. Иначе — война.»\n\nНа ответ: %s. Без ответа — война.,"“Hand over ‘%s’ or pay a tribute of %d gold. Otherwise, it's war.”\n\nTime to answer: %s. No answer means war."
-ult.accept,Принять: отдать «%s» (перемирие 24 ч),Accept: cede “%s” (24 h truce)
-ult.pay,Откупиться: %d золота,Pay them off: %d gold
-ult.refuse,⚔ Отказать — война!,⚔ Refuse: war!
-ult.later,Подумать (ответ позже),Think it over (answer later)
+ult.title,Ультиматум,Ultimatum
+ult.text,Отдай нам «%s» — или будет война!,"Hand over “%s”, or it's war!"
+ult.accept,Отдать,Give up
+ult.pay,Откупиться,Pay off
+ult.refuse,Война,War
+ult.truce,мир 24ч,24h peace
+ult.refuse_title,Отказ,Refuse
+ult.no_gold,Не хватает золота на дань,Not enough gold for the tribute
 settings.title,Настройки,Settings
 settings.sound_on,🔊 Звук: вкл,🔊 Sound: on
 settings.sound_off,🔇 Звук: выкл,🔇 Sound: off
@@ -314,24 +323,23 @@ toast.card_cooldown,Карта перезаряжается,Card is recharging
 toast.cant_target,Сюда нельзя: %s,Can't play here: %s
 card.need_own,нужен свой гекс,needs your own hex
 card.need_enemy,нужен вражеский гекс рядом с армией,needs an enemy hex next to an army
-peace.annex,%s (ценн. %d),%s (value %d)
 toast.no_score,Не хватает военного счёта,Not enough war score
 toast.tutorial_done,Обучение пройдено! Дальше держава ваша.,Tutorial complete! The realm is yours now.
 ceremony.no_land,Земли не присоединены,No land annexed
-ceremony.hex,+1 гекс.,+1 hex
-ceremony.hexes,+%d гекс.,+%d hexes
+ceremony.hex,+1 гекс,+1 hex
+ceremony.hexes,Земли: +%d,Land: +%d
 ceremony.city,+1 город,+1 city
 ceremony.cities,+%d город,+%d cities
-ceremony.realm,Держава %d → %d,Realm %d → %d
-ceremony.chapter,Глава I: %d → %d из %d,Chapter I: %d → %d of %d
-ceremony.plunder,"⚒ Разграблено: %d золота, %d еды, %d металла","⚒ Plundered: %d gold, %d food, %d metal"
-ceremony.indemnity,💰 Контрибуция: +%d золота,💰 Indemnity: +%d gold
-ceremony.reparations,📜 Репарации: 10% производства на 24 ч,📜 Reparations: 10% of output for 24 h
+ceremony.realm,Держава: с %d до %d,Realm: %d to %d
+ceremony.chapter,Глава I: с %d до %d из %d,Chapter I: %d to %d of %d
+ceremony.plunder,"Разграблено: %d золота, %d еды, %d металла","Plundered: %d gold, %d food, %d metal"
+ceremony.indemnity,Контрибуция: +%d золота,Indemnity: +%d gold
+ceremony.reparations,Репарации: 10% производства на 24ч,Reparations: 10% of output for 24h
 toast.test_ad_double,Тестовая сборка: реклама не подключена — трофеи удвоены,Test build: ads aren't connected. Spoils doubled
 toast.chapter_goal,🌍 Цель главы выполнена — вкладка «Мир»,🌍 Chapter goal reached: open the World tab
 result.white_peace,Белый мир: всё вернётся владельцам,White peace: everything returns to its owners
 toast.white_peace_signed,🕊 Белый мир подписан,🕊 White peace signed
-result.defeat,"Поражение: −%d гекс., грабёж 60%%","Defeat: −%d hexes, 60%% plundered"
+result.defeat,Грабёж 60%,60% plundered
 inbox.defeat.title,Поражение в войне,Defeat in war
 inbox.defeat.text,"Мир с потерями: −%d гекс., разграблено %d золота, %d еды, %d металла. Щит 24 ч и «Реванш» +15%%","Peace with losses: −%d hexes; %d gold, %d food and %d metal plundered. 24 h shield and “Revenge” +15%%"
 toast.convoy_back,Обоз привёз: +%d %s,Convoy brought back: +%d %s
@@ -423,16 +431,16 @@ ftue.2,Начните наступление: у вас 60 секунд.,Launch 
 ftue.3,Тяните от своей армии на вражеский гекс — армия пойдёт в атаку.,Drag from your army onto an enemy hex to attack.
 ftue.4,Отлично! Карта «Атака» бросает в бой все армии рядом. Захватите ещё!,Great! The “Attack” card throws every nearby army into battle. Take more!
 ftue.5,Захваченное пока лишь оккупировано. Подпишите мир — и граница сдвинется.,Captured land is only occupied for now. Sign a peace and the border will move.
-ftue.6,"Удерживайте печать, чтобы подписать договор.",Hold the seal to sign the treaty.
+ftue.6,"Удерживайте «Подписать мир», чтобы заключить договор.",Hold “Sign peace” to sign the treaty.
 ftue.7,Держава растёт! Откройте «Здания» и улучшите Резиденцию — халупы станут избами.,Your realm is growing! Open “Buildings” and upgrade the Residence: huts will become cottages.
 ftue.8,Жёлтый контур — бесплатные ресурсы. Коснитесь жилы и отправьте обоз.,A yellow outline means free resources. Tap the vein and send a convoy.
 ftue.9,Укрепите границу: выберите свой гекс у Баронов и нажмите кнопку «форт» справа.,Fortify the border: select your hex next to the Barons and tap the “fort” button on the right.
 ftue.10,Вольные Хутора заняли шахту у нашей границы. Объявите им войну!,The Free Hamlets seized a mine on our border. Declare war on them!
 ftue.11,Начните наступление.,Launch an offensive.
-ftue.12,Карта «Окружение» ◎ режет снабжение: перетащите её на вражеский гекс у ваших армий.,The “Encircle” card ◎ cuts supply: drag it onto an enemy hex next to your armies.
+ftue.12,Карта «Котёл» режет снабжение: перетащите её на вражеский гекс у ваших армий.,The “Encircle” card cuts supply: drag it onto an enemy hex next to your armies.
 ftue.13,Отлично! Окружённые гексы сдаются быстрее. Захватите шахту!,Great! Encircled hexes fall faster. Capture the mine!
 ftue.14,Подпишите мир с Хуторами.,Sign a peace with the Hamlets.
-ftue.15,Пощадить Хутора (+20 к мнению) или разграбить? Выберите и удерживайте печать.,"Spare the Hamlets (+20 opinion) or plunder them? Choose, then hold the seal."
+ftue.15,Пощадить Хутора (+20 к мнению) или разграбить? Выберите и удерживайте «Подписать мир».,"Spare the Hamlets (+20 opinion) or plunder them? Choose, then hold “Sign peace”."
 toast.cloud_loaded,Загружено облачное сохранение,Cloud save restored
 res.name.gold,Золото,Gold
 res.name.food,Еда,Food

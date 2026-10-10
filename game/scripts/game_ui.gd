@@ -228,6 +228,7 @@ const BAR_RECT := Rect2(176, 106, 492, 44)  # the war bar: INK R 22, inside it a
 const BAR_IN := 484.0
 const BAR_X0 := 180.0  # where the player's fill starts (the bar's left + 4)
 const FLAG_CHIPS := [Vector2(152, 128), Vector2(692, 128)]  # round SLATE Ø64 chips with the two flags
+const FLAG_D := 64.0
 
 
 ## The war bar (§5): the two flags in round chips at the ends, the INK bar between them — the player's colour from
@@ -244,7 +245,7 @@ func _build_control_bar() -> void:
 	_control_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_top.add_child(_control_bar)
 	var body := Panel.new()
-	var bsb := Kit.style(Kit.INK, 22, 0, Kit.INK, 4, 0)
+	var bsb := Kit.style(Kit.INK, int(BAR_RECT.size.y * 0.5), 0, Kit.INK, 4, 0)  # a pill (h/2)
 	bsb.set_meta("kit_kind", "")
 	body.add_theme_stylebox_override("panel", bsb)
 	body.position = BAR_RECT.position
@@ -275,10 +276,10 @@ func _build_control_bar() -> void:
 	_control_bar.add_child(_war_swords)
 	for c in FLAG_CHIPS:
 		var chip := Panel.new()
-		var csb := Kit.style(Kit.SLATE, 32, 4, Kit.INK, 4, 0)
+		var csb := Kit.style(Kit.SLATE, int(FLAG_D * 0.5), 4, Kit.INK, 4, 0)  # round
 		csb.set_meta("kit_kind", "")
 		chip.add_theme_stylebox_override("panel", csb)
-		chip.size = Vector2(64, 64)
+		chip.size = Vector2(FLAG_D, FLAG_D)
 		chip.position = (c as Vector2) - chip.size * 0.5
 		chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_control_bar.add_child(chip)
@@ -352,9 +353,9 @@ func set_control(score: float, control: int, enemy: String, visible_bar: bool, f
 			fv.queue_redraw()
 	_control_lbl.text = "%d%%" % control
 	_control_lbl2.text = "%d%%" % (100 - control)
-	# the percentages give way to the swords when the junction comes close to an end
-	_control_lbl.visible = jx > BAR_X0 + 120.0
-	_control_lbl2.visible = jx < BAR_X0 + BAR_IN - 120.0
+	# a percentage gives way to the swords (56 wide on the junction) when they would touch it
+	_control_lbl.visible = jx - 30.0 > _control_lbl.position.x + Kit.text_w(_control_lbl.text, 26, "d900")
+	_control_lbl2.visible = jx + 30.0 < _control_lbl2.position.x + _control_lbl2.size.x - Kit.text_w(_control_lbl2.text, 26, "d900")
 	var txt := "" if absf(score) < 0.05 else ("+" if score > 0.0 else "") + Kit.fmt_dec(score, 1)
 	if txt != _score_txt:
 		_score_txt = txt
@@ -481,14 +482,15 @@ func _battle_card(card: String, r: Rect2, two_lines := false) -> Panel:
 	nm.add_theme_font_override("font", Kit.font("d900"))  # MICRO: Rubik 900
 	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	nm.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
-	nm.position = Vector2(3, art.size.y - 66.0)
-	nm.size = Vector2(art.size.x - 6.0, 60)
+	nm.position = Vector2(2, art.position.y + art.size.y - 64.0)  # on the card, over the scrim: the full width
+	nm.size = Vector2(w - 4.0, 60)
 	if two_lines:
 		nm.autowrap_mode = TextServer.AUTOWRAP_WORD
 		nm.max_lines_visible = 2
 		nm.add_theme_constant_override("line_spacing", -5)
-	art.add_child(nm)
-	_fit_card_name(nm, art.size.x - 6.0)
+	p.add_child(nm)
+	nm.set_meta("box", Vector2(2, w - 4.0))  # the room the name may take: x, width
+	_fit_card_name(nm)
 	_card_names[card] = nm
 	var lk := TextureRect.new()
 	lk.name = "lock"
@@ -521,16 +523,32 @@ func _card_art(card: String) -> Texture2D:
 
 
 ## A card name: MICRO 22, down to 20 (§3.3: only the hand's names may), then cut with an ellipsis.
-func _fit_card_name(nm: Label, max_w: float) -> void:
+## Six cards (DL6+) leave a card 95 px: a long one-word name («Авиаудар») is condensed up to 16 % rather than cut.
+## The label's meta «box» (x, width) is the room it may take.
+func _fit_card_name(nm: Label) -> void:
+	var box: Vector2 = nm.get_meta("box", Vector2(nm.position.x, nm.size.x))
+	var max_w := box.y
 	var probe := nm.text
 	if nm.autowrap_mode != TextServer.AUTOWRAP_OFF:  # two lines: the widest word must fit
 		probe = ""
 		for wd in nm.text.split(" "):
-			if Kit.text_w(wd, 22, "d900") > Kit.text_w(probe, 22, "d900"):
+			if Kit.text_w(wd, 22, "d900", false) > Kit.text_w(probe, 22, "d900", false):
 				probe = wd
-	var s := Kit.fit_size(probe, 22, max_w, "d900", 20)
+	var s := 20
+	var tw := 0.0
+	for v: int in [22, 20]:  # the outline may run into the 2 px margins: one outline counted, not two
+		s = v
+		tw = Kit.text_w(probe, v, "d900", false) + Kit.outline_for(v)
+		if tw <= max_w:
+			break
 	nm.add_theme_font_size_override("font_size", s)
-	var cut := nm.autowrap_mode == TextServer.AUTOWRAP_OFF and Kit.text_w(nm.text, s, "d900") > max_w
+	var sx := clampf(max_w / tw, 0.84, 1.0) if tw > max_w else 1.0
+	var lw := tw if sx < 1.0 else max_w  # condensed: the label holds the whole line, squeezed about its centre
+	nm.size.x = lw
+	nm.position.x = box.x + (max_w - lw) * 0.5
+	nm.pivot_offset = Vector2(lw * 0.5, nm.size.y)
+	nm.scale = Vector2(sx, 1.0)
+	var cut := nm.autowrap_mode == TextServer.AUTOWRAP_OFF and tw * sx > max_w + 0.5
 	nm.clip_text = cut
 	nm.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS if cut else TextServer.OVERRUN_NO_TRIMMING
 
@@ -593,7 +611,7 @@ func retranslate() -> void:
 	for c in _card_names:
 		var nm: Label = _card_names[c]
 		nm.text = _card_name(c)
-		_fit_card_name(nm, nm.size.x)
+		_fit_card_name(nm)
 
 
 var cost_discount := {}  # card -> energy off its price in this battle (Admiral Seir: «Десант» −1)
@@ -683,6 +701,7 @@ func _build_ghost() -> void:
 	_ghost_name.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
 	_ghost_name.position = Vector2(2, art.size.y - 56.0)
 	_ghost_name.size = Vector2(art.size.x - 4.0, 50)
+	_ghost_name.set_meta("box", Vector2(2, art.size.x - 4.0))
 	art.add_child(_ghost_name)
 
 
@@ -705,7 +724,7 @@ func _on_card_input(event: InputEvent, card: String) -> void:
 			_drag_card = card
 			_ghost_art.texture = _card_art(card)
 			_ghost_name.text = _card_name(card)
-			_fit_card_name(_ghost_name, _ghost_name.size.x)
+			_fit_card_name(_ghost_name)
 			_place_ghost(pos)
 			_ghost.visible = true
 			var src := _cards[card] as Control
@@ -981,7 +1000,7 @@ func close_modal() -> void:
 ## A cream window (docs/ui_style.md §4.3) over an INK dim; every modal is paper now (`parchment` is ignored).
 ## title / icon / role: the hex title plate; closable: the round ✕ and a tap on the dim close it (not for
 ## `blocking` decision windows). Returns the frame Panel; its children keep their local coordinates.
-func _modal_box(rect: Rect2, parchment := false, title := "", icon := "", role := "info", closable := false, blocking := false) -> Panel:
+func _modal_box(rect: Rect2, parchment := false, title := "", icon := "", role := "info", closable := false, blocking := false, dim_a := -1.0) -> Panel:
 	# a window replaced in the same frame (a screen re-rendering itself) swaps without the pop-in
 	var swap := _modal != null or _closed_frame == Engine.get_process_frames()
 	close_modal()
@@ -998,10 +1017,11 @@ func _modal_box(rect: Rect2, parchment := false, title := "", icon := "", role :
 	dim.size = _modal.size
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_modal.add_child(dim)
+	var da := Kit.DIM_A if dim_a < 0.0 else dim_a  # the ceremony dims deeper (α 0.75)
 	if swap or DisplayServer.get_name() == "headless" or Kit.reduce_motion:
-		dim.color.a = Kit.DIM_A
+		dim.color.a = da
 	else:
-		dim.create_tween().tween_property(dim, "color:a", Kit.DIM_A, 0.14)
+		dim.create_tween().tween_property(dim, "color:a", da, 0.14)
 	var frame := _panel(_modal, Rect2(rect.position - _modal.position, rect.size), Kit.style(Kit.CREAM, 34, 5, Kit.INK, 10, 12))
 	frame.set_meta("paper", true)
 	if not swap:
@@ -1024,141 +1044,457 @@ func _button(parent: Control, rect: Rect2, text: String, color: Color, cb: Calla
 		{"cb": cb, "hit_pad": maxf(0.0, (96.0 - rect.size.y) * 0.5) if close else 0.0})
 
 
-func show_result(stars: int, captured: int, lost: int, score: float, control: int, reason: String, on_continue: Callable, on_peace: Callable) -> void:
-	var box := _modal_box(Rect2(70, 420, 800, 640))
-	var t := _label(tr("result.title"), 36)
-	_at(t, box, Vector2(40, 30))
-	var st := ""
+## A window's rect by width class (§4.3: L 893 at x 24, M 781 at x 80, S 661 at x 140), `h` tall (at most the band),
+## centred in the band y 150 … VB − 24.
+func _win_rect(cls: String, h: float) -> Rect2:
+	var w: float = {"L": 893.0, "M": 781.0, "S": 661.0}.get(cls, 781.0)
+	var top := 150.0
+	var bot := Kit.vb(self) - 24.0
+	h = minf(h, bot - top)
+	return Rect2((VW - w) * 0.5, top + (bot - top - h) * 0.5, w, h)
+
+
+const PAPER_CHIP_H := 44.0
+
+
+## A chip on paper: CREAM_DEEP pill h 44, an icon 34 and Rubik 800 26 INK_TEXT (fit to 22, then cut), centred at
+## `center` (the result's reason, an option's «мир 24ч»).
+func _paper_chip(parent: Control, center: Vector2, icon: String, text: String, max_w := 600.0) -> Panel:
+	var p := Panel.new()
+	p.name = "chip"
+	var sb := Kit.style(Kit.CREAM_DEEP, int(PAPER_CHIP_H * 0.5), 0, Kit.INK, 0, 0)  # a pill (h/2)
+	sb.set_meta("kit_kind", "")
+	p.add_theme_stylebox_override("panel", sb)
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var x := 14.0
+	var tex := Kit.icon_tex(icon)
+	if tex != null:
+		var ic := _icon_rect(icon, 34)
+		ic.position = Vector2(10, 5)
+		p.add_child(ic)
+		x = 50.0
+	var room := max_w - x - 16.0
+	var s := Kit.fit_size(text, 26, room, "d800", 22, false)
+	var l := Kit.label(text, s, Kit.INK_TEXT, true)
+	l.add_theme_font_override("font", Kit.font("d800"))
+	l.add_theme_font_size_override("font_size", s)
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	var tw := minf(Kit.text_w(text, s, "d800", false) + 2.0, room)
+	l.clip_text = true
+	l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	l.position = Vector2(x, -1)
+	l.size = Vector2(tw, 44)
+	p.add_child(l)
+	p.size = Vector2(x + tw + 16.0, 44)
+	p.position = center - p.size * 0.5
+	parent.add_child(p)
+	return p
+
+
+## A node pops in after `delay` s (0 → 1.15 → 1, BADGE_POP); at once when headless or with reduced motion.
+func _pop_later(node: Control, delay: float) -> void:
+	node.pivot_offset = node.size * 0.5
+	if Kit._dur(0.24) <= 0.0:
+		return
+	node.scale = Vector2.ZERO
+	var tw := node.create_tween()
+	tw.tween_interval(delay)
+	tw.tween_property(node, "scale", Vector2(1.15, 1.15), 0.14).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tw.tween_property(node, "scale", Vector2.ONE, 0.1)
+
+
+var _result_peace: Control  # the result's «К миру» (the FTUE points at it)
+
+
+## Offensive results (§6 «Итоги наступления»): a decision window M without ✕. The plate: gold «Успех!» (a star and land
+## taken), war «Поражение» (more lost than taken), info «Ничья» otherwise; three vector stars (the middle one bigger and
+## raised); the reason in a chip (`reason_icon`: hourglass — time is up, white_flag — retreat, …); a well with the tiles [captured] [front] [peace points] (+ [lost] when not 0); the
+## border note when land was taken; «Ещё бой» (info) and «К миру» (go).
+func show_result(stars: int, captured: int, lost: int, score: float, control: int, reason: String, on_continue: Callable, on_peace: Callable, reason_icon := "hourglass") -> void:
+	var defeat := lost > captured
+	var won := stars >= 1 and captured > 0 and not defeat
+	var role := "gold" if won else ("war" if defeat else "info")
+	var title := tr("result.win") if won else (tr("result.defeat_title") if defeat else tr("result.draw"))
+	var note := captured > 0
+	var h := 776.0 if note else 736.0
+	var box := _modal_box(_win_rect("M", h), false, title, "", role, false, true)
+	box.set_meta("kit_native", true)
+	var w := box.size.x
 	for i in 3:
-		st += "★" if i < stars else "☆"
-	var sl := _label(st, 90, Color(1.0, 0.82, 0.25))
-	sl.size = Vector2(800, 110)
-	sl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_at(sl, box, Vector2(0, 90))
-	var rows := [[tr("result.reason"), reason], [tr("result.captured"), str(captured)], [tr("result.lost"), str(lost)], [tr("result.score"), "%+.1f" % score], [tr("result.control"), "%d%%" % control]]
-	for i in rows.size():
-		_at(_label(rows[i][0], 24, MUTED, false), box, Vector2(60, 230 + i * 50))
-		var v := _label(rows[i][1], 24)
-		v.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		_at(v, box, Vector2(440, 230 + i * 50), Vector2(300, 34))
-	_at(_label(tr("result.note"), 19, MUTED, false), box, Vector2(60, 490))
-	_button(box, Rect2(40, 540, 350, 76), tr("result.continue"), Color(0.25, 0.3, 0.42), on_continue)
-	_button(box, Rect2(410, 540, 350, 76), tr("result.peace") % score, Color(0.2, 0.6, 0.3), on_peace)
+		var big := i == 1
+		var st := Kit.star(box, Vector2(w * 0.5 + (i - 1) * 165.0, 176.0 - (28.0 if big else 0.0)), 85.0 if big else 70.0, i < stars)
+		st.name = "star_%d" % i
+		_pop_later(st, 0.18 + 0.12 * i)
+	_paper_chip(box, Vector2(w * 0.5, 284), reason_icon, reason, w - 64.0)
+	var tiles: Array = [
+		{"icon": "hex_tile", "value": ("+%d" % captured) if captured > 0 else "0", "caption": tr("result.captured")},
+		{"icon": "orders", "value": "%d%%" % control, "caption": tr("result.control")},
+		{"icon": "treaty", "value": ("+" if score > 0.05 else "") + Kit.fmt_dec(score, 1), "caption": tr("result.score"),
+			"value_color": Kit.NEG_CREAM if score < -0.05 else Kit.INK_TEXT},
+	]
+	if lost > 0:
+		tiles.append({"icon": "hex_tile", "value": Kit.MINUS + str(lost), "caption": tr("result.lost"), "value_color": Kit.NEG_CREAM})
+	var well := Kit.well(box, Rect2(32, 326, w - 64.0, 214))
+	var n := tiles.size()
+	var tw := (well.size.x - 32.0 - 12.0 * (n - 1)) / n
+	for i in n:
+		var o: Dictionary = tiles[i]
+		o["icon_side"] = 72.0 if n <= 3 else 64.0
+		Kit.tile(well, Rect2(16.0 + i * (tw + 12.0), 16, tw, 182), o)
+	if note:
+		var nl := Kit.label(tr("result.note"), 28, Kit.SOFT_CREAM, false)
+		nl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		nl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		nl.position = Vector2(32, 554)
+		nl.size = Vector2(w - 64.0, 44)
+		box.add_child(nl)
+	var fy := h - 32.0 - 116.0
+	Kit.button(box, Rect2(32, fy, 280, 116), "info", tr("result.continue"), {"icon": "swords", "size": "L", "cb": on_continue})
+	_result_peace = Kit.button(box, Rect2(328, fy, w - 360.0, 116), "go", tr("result.peace"), {"icon": "treaty", "size": "L", "cb": on_peace})
+
+
+## The centre of the result's «К миру» on the screen (where the FTUE points); the old spot when it is not shown.
+func result_peace_center() -> Vector2:
+	if is_instance_valid(_result_peace) and _result_peace.is_inside_tree():
+		return _coach_point(_result_peace.get_global_rect().get_center())
+	return Vector2(655, 998)
 
 
 const PLUNDER_NAMES := ["plunder.spare", "plunder.light", "plunder.medium", "plunder.heavy"]
+static var _hold_hints := 0  # the treaties opened so far: «Удерживайте, чтобы подписать» shows for the first 3
+var _seal_btn: Control  # «Подписать мир» (the FTUE points at it)
+var _plunder_seg: Control
+var _sealed := false  # seal_done fires once per treaty
 
 
-func show_peace(enemy: String, budget: float, control: int, demands: Array, chosen: Dictionary, plunder := 1, portrait := "", plate := Color(0, 0, 0, 0)) -> void:
-	var box := _modal_box(Rect2(30, 640, 881, 1010), true)
-	var ink := Color(0.24, 0.16, 0.07)
-	if portrait != "":
-		_leader_seal(box, portrait, plate, Rect2(881 - 120, 14, 96, 116), "tired")  # the loser, worn out by the war
-	_title(box, tr("peace.title") % enemy, 32, ink, Vector2(30, 24), "hands", false, 700.0 if portrait != "" else 820.0)
+## The peace treaty (§6 «Мирный договор»): a decision window L that hugs its content. The enemy leader (cunning) with
+## the line «Подпишу, если не больше 54,6», the budget bar L (used / budget, red when over), «Требования» — a grid of
+## 3 tiles per row (render or icon, name, cost; chosen: a green rim and a check; the indemnity packages collapse into
+## one tile «×N»), «Грабёж» in segments, «К войне» (info S) and «Подписать мир» (go L, hold 0.8 s → seal_done; lock
+## while the demands cost more than the budget). Rows that do not fit the screen scroll inside the well.
+func show_peace(enemy: String, budget: float, control: int, demands: Array, chosen: Dictionary, plunder := 1, portrait := "", plate := Kit.CLEAR) -> void:
+	var fresh := not (_modal != null and _modal.has_meta("peace"))
+	if fresh:
+		_hold_hints += 1
+		_sealed = false
 	var used := 0.0
 	for d in demands:
 		if chosen.has(d["id"]):
-			used += d["cost"]
-	_at(_label(tr("peace.points") % [used, budget, control], 22, ink, false), box, Vector2(30, 78))
-	var ph := _label(tr("peace.hint"), 17, Color(0.42, 0.32, 0.18), false)
-	_fit(ph, 17, 700.0 if portrait != "" else 820.0)
-	_at(ph, box, Vector2(30, 112))
-	var scroll := ScrollContainer.new()
-	scroll.position = Vector2(26, 150)
-	scroll.size = Vector2(829, 548)
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	box.add_child(scroll)
-	var list := VBoxContainer.new()
-	list.custom_minimum_size = Vector2(820, 0)
-	list.add_theme_constant_override("separation", 6)
-	scroll.add_child(list)
+			used += float(d["cost"])
+	var over := used > budget + 0.0001
+	# one tile per demand; the repeated indemnity packages share one («×N» chosen)
+	var groups: Array = []
+	var by_key := {}
 	for d in demands:
-		var on: bool = chosen.has(d["id"])
-		var fits: bool = on or used + float(d["cost"]) <= budget + 0.0001
-		var row := Panel.new()
-		row.custom_minimum_size = Vector2(820, 58)
-		row.add_theme_stylebox_override("panel", _style(Color(0.3, 0.55, 0.3, 0.25) if on else Color(0.3, 0.2, 0.1, 0.08), 12, Color(0.25, 0.5, 0.25) if on else Color(0, 0, 0, 0), 3))
-		row.mouse_filter = Control.MOUSE_FILTER_PASS
-		row.modulate = Color(1, 1, 1, 1.0 if fits else 0.45)
-		if d["kind"] == "pocket" or d["kind"] == "annex":
-			_at(_label(("⭕" if d["kind"] == "pocket" else "⬢") + "  " + str(d["label"]), 21, ink, false), row, Vector2(16, 14))
-		else:  # gold or a share of production: the 3D coin / the treaty scroll
-			_at(_icon_rect("res://assets/ui/coin.png" if d["kind"] == "contribution" else "res://assets/ui/icons/hands.png", 34.0), row, Vector2(10, 10))
-			_at(_label(str(d["label"]), 21, ink, false), row, Vector2(52, 14))
-		var c := _label("%.1f" % d["cost"], 23, ink)
-		c.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		_at(c, row, Vector2(590, 12), Vector2(210, 34))
-		var id: String = d["id"]
-		row.gui_input.connect(func(e): if _is_tap(e): demand_toggled.emit(id))
-		list.add_child(row)
-	# plunder: the winner's free right, level chosen by the player (canon §9.14)
-	_at(_label(tr("peace.plunder"), 20, ink, false), box, Vector2(30, 722))
-	for i in 4:
-		var on := i == plunder
-		var pb := _panel(box, Rect2(190 + i * 168, 712, 160, 56), _style(Color(0.55, 0.25, 0.12) if on and i > 0 else (Color(0.25, 0.5, 0.3) if on else Color(0.3, 0.2, 0.1, 0.12)), 12, Color(0.4, 0.25, 0.1, 0.6), 2))
-		var pl := _label(tr(PLUNDER_NAMES[i]), 16, Color.WHITE if on else ink, on)
-		pl.size = Vector2(160, 56)
-		pl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		pl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		pb.add_child(pl)
-		var lvl := i
-		pb.gui_input.connect(func(e): if _is_tap(e): plunder_selected.emit(lvl))
-	var seal := _panel(box, Rect2(26, 800, 829, 96), _style(Color(0.2, 0.55, 0.28), 16, Color(1, 1, 1, 0.6), 3))
-	_seal_prog = _panel(seal, Rect2(0, 0, 0, 96), _style(Color(1, 1, 1, 0.3), 16, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
-	var sl := _label(tr("peace.seal"), 26)
-	sl.size = Vector2(829, 96)
-	sl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	sl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	seal.add_child(sl)
-	seal.gui_input.connect(func(e):
-		if e is InputEventScreenTouch or e is InputEventMouseButton:
-			_seal_t = 0.0 if e.pressed else -1.0)
-	_button(box, Rect2(26, 908, 829, 70), tr("peace.back"), Color(0.45, 0.35, 0.2), func(): action_pressed.emit("back_to_war"))
+		var key := "contribution" if d["kind"] == "contribution" else String(d["id"])
+		if not by_key.has(key):
+			by_key[key] = {"d": d, "ids": [], "on": []}
+			groups.append(by_key[key])
+		(by_key[key]["ids"] as Array).append(d["id"])
+		if chosen.has(d["id"]):
+			(by_key[key]["on"] as Array).append(d["id"])
+	var hint := _hold_hints <= 3
+	var rows := maxi(1, ceili(groups.size() / 3.0))
+	var row_h := 212.0
+	var head := 258.0  # leader, bubble, budget
+	var tail := 24.0 + 48.0 + 12.0 + 80.0 + (52.0 if hint else 0.0) + 24.0 + 116.0 + 32.0  # plunder, hint, footer
+	var max_h := Kit.vb(self) - 24.0 - 150.0
+	var vis := clampi(floori((max_h - head - 60.0 - tail - 32.0 + 12.0) / row_h), 1, rows)
+	var well_h := 32.0 + vis * row_h - 12.0
+	var h := head + 60.0 + well_h + tail
+	var box := _modal_box(_win_rect("L", h), false, tr("peace.title"), "", "go", false, true)
+	_modal.set_meta("peace", true)
+	box.set_meta("kit_native", true)
+	var w := box.size.x
+	_leader_seal(box, portrait, plate, Rect2(32, 64, 156, 170), "cunning", enemy)
+	var bx := 32.0 + 156.0 + 28.0
+	Kit.bubble(box, Rect2(bx, 70, w - 32.0 - bx, 96), tr("peace.offer") % Kit.fmt_dec(budget, 1), "left")
+	var ti := _icon_rect("treaty", 52)
+	ti.position = Vector2(bx, 180)
+	box.add_child(ti)
+	var frac := used / budget if budget > 0.0 else 0.0
+	var bud := Kit.bar(box, Rect2(bx + 60.0, 186, w - 32.0 - bx - 60.0, 40), minf(frac, 1.0), "war" if over else "go",
+		"%s / %s" % [Kit.fmt_dec(used, 1), Kit.fmt_dec(budget, 1)], true)
+	bud.name = "budget"
+	# the demands
+	Kit.section(box, Vector2(32, head), w - 64.0, tr("peace.demands"))
+	var well := Kit.well(box, Rect2(32, head + 60.0, w - 64.0, well_h))
+	var grid: Control = well
+	if vis < rows:  # more rows than the screen holds: they scroll inside the well
+		var sc := ScrollContainer.new()
+		sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		sc.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+		sc.position = Vector2(0, 4)
+		sc.size = Vector2(well.size.x, well_h - 8.0)
+		well.add_child(sc)
+		var inner := Control.new()
+		inner.custom_minimum_size = Vector2(well.size.x, 24.0 + rows * row_h)
+		inner.mouse_filter = Control.MOUSE_FILTER_PASS
+		sc.add_child(inner)
+		grid = inner
+	var tw := (well.size.x - 32.0 - 24.0) / 3.0
+	for i in groups.size():
+		var g: Dictionary = groups[i]
+		var d: Dictionary = g["d"]
+		var ids: Array = g["ids"]
+		var on: Array = g["on"]
+		var cost := float(d["cost"])
+		var fits := used + cost <= budget + 0.0001
+		var o := {"title": String(d["label"]), "icon_side": 100.0, "pill_inside": true,
+			"pill": [["treaty", Kit.fmt_dec(cost, 1), on.is_empty() and not fits]],
+			"selected": not on.is_empty(), "count": on.size() if ids.size() > 1 else 0, "dim": on.is_empty() and not fits}
+		var tex := _tile_tex(String(d.get("tile", "")))
+		if tex != null:
+			o["tex"] = tex
+			o["icon_side"] = 124.0  # a hex render has a wide transparent margin: drawn larger, the name rises into it
+			o["pic_overlap"] = 16.0
+		else:
+			o["icon"] = String(d.get("icon", {"pocket": "hex_tile", "contribution": "coins", "reparations": "treaty"}.get(String(d["kind"]), "hex_tile")))
+		o["cb"] = func():
+			if ids.size() == 1:
+				demand_toggled.emit(String(ids[0]))
+			elif on.size() < ids.size() and (fits or on.is_empty()):  # one more package while the points allow
+				for id in ids:
+					if not on.has(id):
+						demand_toggled.emit(String(id))
+						break
+			else:  # all taken, or no points for another: take them back
+				for id in on:
+					demand_toggled.emit(String(id))
+		var t := Kit.tile(grid, Rect2(16.0 + (i % 3) * (tw + 12.0), 16.0 + (i / 3) * row_h, tw, 200), o)
+		t.name = "demand_%d" % i
+		if bool(d.get("goal", false)):  # the war's goal: a pin on the corner
+			var pin := _icon_rect("pin", 48)
+			pin.position = Vector2(4, 2)
+			t.add_child(pin)
+	# plunder (canon §9.14): the winner's free right, its level chosen by the player
+	var y := head + 60.0 + well_h + 24.0
+	Kit.section(box, Vector2(32, y), w - 64.0, tr("peace.plunder"))
+	var names: Array = []
+	for k in PLUNDER_NAMES:
+		names.append(tr(k))
+	_plunder_seg = Kit.segmented(box, Rect2(32, y + 60.0, w - 64.0, 80), names, plunder, func(i: int):
+		if i != plunder:
+			plunder_selected.emit(i))
+	y += 60.0 + 80.0
+	if hint:
+		var hl := Kit.label(tr("peace.hold_hint"), 26, Kit.MUTED_CREAM, false)
+		hl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		hl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		hl.position = Vector2(32, y + 14.0)
+		hl.size = Vector2(w - 64.0, 36)
+		box.add_child(hl)
+	var fy := h - 32.0 - 116.0
+	# «К войне»: secondary, a step quieter than the L beside it, still a full thumb target (§1.4: ≥ 84 standalone)
+	Kit.button(box, Rect2(32, fy + 14.0, 240, 88), "info", tr("peace.back"), {"size": "M", "hit_pad": 6.0,
+		"cb": func(): action_pressed.emit("back_to_war")})
+	var sb := Kit.button(box, Rect2(288, fy, w - 320.0, 116), "go", tr("peace.seal"), {"icon": "treaty", "size": "L",
+		"hold": true, "hold_sec": 0.8, "enabled": not over, "cb": _on_seal})
+	sb.name = "seal"
+	sb.denied.connect(func(): Kit.tooltip(sb, tr("peace.seal"), tr("peace.over")))
+	_seal_btn = sb
 
 
-## Ceremony counters and rewards (canon §10.3 steps 4–5). Buttons appear early but accept taps only
-## after `active_after` seconds (no ad may start before the ceremony ends, §14.10).
-func show_ceremony_counters(lines: Array, on_done: Callable, on_double := Callable(), active_after := 3.0) -> void:
-	close_modal()
-	_modal = Control.new()
-	_modal.size = Vector2(VW, VH)
-	_modal.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(_modal)
-	var back := _panel(_modal, Rect2(40, 200, VW - 80, 60 + lines.size() * 64), _style(Color(0.04, 0.07, 0.13, 0.82), 22, Color(0.45, 0.65, 1.0, 0.8), 3), Control.MOUSE_FILTER_IGNORE)
-	back.modulate.a = 0.0
-	create_tween().tween_property(back, "modulate:a", 1.0, 0.3)
-	for i in lines.size():
-		var l := _label(lines[i], 40)
-		l.size = Vector2(VW - 100, 60)
-		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		l.position = Vector2(50, 230 + i * 64)
-		_fit(l, 40 if i == 0 else 30, VW - 110.0)  # long lines (a chest's contents) shrink inside the panel
-		l.modulate.a = 0.0
-		l.scale = Vector2(1.0, 1.0)
-		_modal.add_child(l)
-		var tw := create_tween()
-		tw.tween_interval(i * 0.25)
-		tw.tween_property(l, "modulate:a", 1.0, 0.35)
-	var shade := _panel(_modal, Rect2(0, VH - 290 if on_double.is_valid() else VH - 175, VW, 290), _style(Color(0.03, 0.05, 0.1, 0.9), 0, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
-	shade.modulate.a = 0.0
-	var tw0 := create_tween()
-	tw0.tween_interval(1.0)
-	tw0.tween_property(shade, "modulate:a", 1.0, 0.3)
-	var buttons: Array = []
+func _on_seal() -> void:
+	if _sealed:
+		return
+	_sealed = true
+	seal_done.emit()
+
+
+## The centre of «Подписать мир» / of the plunder segments on the screen (where the FTUE points).
+func peace_seal_center() -> Vector2:
+	if is_instance_valid(_seal_btn) and _seal_btn.is_inside_tree():
+		return _coach_point(_seal_btn.get_global_rect().get_center())
+	return Vector2(470, 1488)
+
+
+func peace_plunder_center() -> Vector2:
+	if is_instance_valid(_plunder_seg) and _plunder_seg.is_inside_tree():
+		var r := _plunder_seg.get_global_rect()
+		return _coach_point(Vector2(r.position.x + r.size.x * 0.125, r.get_center().y))  # «Нет»: sparing is the choice taught
+	return Vector2(274, 1380)
+
+
+## A point on the screen as the coach takes its targets: on the 1672 canvas inside the bottom band (the coach adds
+## the bottom group's offset back there, _process_coach).
+func _coach_point(p: Vector2) -> Vector2:
+	var dy := _bottom.position.y
+	return p - Vector2(0, dy) if p.y - dy >= VH - 332.0 else p
+
+
+## A tile's render (tools/blender/card_art.py tile_*) by its key; an era tile («capital_dl4_red») falls back to the
+## kind's own picture; null when there is none.
+func _tile_tex(key: String) -> Texture2D:
+	if key == "":
+		return null
+	for k in [key, key.get_slice("_dl", 0)]:
+		var p := "res://assets/ui/cards/tile_%s.png" % k
+		if ResourceLoader.exists(p):
+			return load(p)
+	return null
+
+
+## Ceremony counters and rewards (canon §10.3 steps 4–5, §6 «Церемония»): a window L over a dim α 0.75 (the currency
+## plates stay above it), the gold plate «Победа!» (HERO 64), the realm's value counting up (crown, HERO 64, a «+14»
+## chip), the chapter bar L and the reward tiles — 3 a row, popping in one after another, at most 6 (then «+N»).
+## `items`: [{kind: hero | bar | tile, icon, text, from, to, max, frac, pill}] (main builds them with the lines);
+## without items the lines are listed. «Забрать» (go L) and «×2» with the ad icon (info M) accept taps only after
+## `active_after` s (no ad may start before the ceremony ends, §14.10): grey until then.
+func show_ceremony_counters(lines: Array, on_done: Callable, on_double := Callable(), active_after := 3.0, items: Array = []) -> void:
+	var hero: Dictionary = {}
+	var bar: Dictionary = {}
+	var tiles: Array = []
+	for it in items:
+		match String((it as Dictionary).get("kind", "tile")):
+			"hero":
+				hero = it
+			"bar":
+				bar = it
+			_:
+				tiles.append(it)
+	if tiles.size() > 6:  # 6 tiles at most; the rest are counted on one more («+2», §6 «Церемония»)
+		var more := tiles.size() - 6
+		var rest: Array = []
+		for it in tiles.slice(6):
+			var pill: Array = (it as Dictionary).get("pill", [["", String((it as Dictionary).get("text", ""))]])
+			var parts: Array = []
+			for pi in pill:
+				parts.append(String((pi as Array)[1]))
+			rest.append(String((it as Dictionary).get("name", "")) + " " + " ".join(parts) if (it as Dictionary).has("name") else " ".join(parts))
+		var icons: Array = []
+		for it in tiles.slice(6):
+			icons.append(String((it as Dictionary).get("icon", "")))
+		tiles = tiles.slice(0, 6)
+		tiles.append({"kind": "more", "text": "+%d" % more, "rest": rest, "icons": icons})
+	var listed: Array = lines if items.is_empty() else []
+	var rows := ceili(tiles.size() / 3.0)
+	var y := 76.0
+	var hero_y := y
+	if not hero.is_empty():
+		y += 120.0
+	var bar_y := y
+	if not bar.is_empty():
+		y += 64.0
+	var well_y := y + 8.0
+	var well_h := 0.0
+	if rows > 0:
+		well_h = 16.0 + rows * 150.0 + (rows - 1) * 32.0 + 32.0
+	elif not listed.is_empty():
+		well_h = 24.0 + listed.size() * 44.0
+	var h := well_y + well_h + 32.0 + 116.0 + 32.0
+	var box := _modal_box(_win_rect("L", h), false, "", "", "gold", false, true, 0.75)
+	box.set_meta("kit_native", true)
+	var w := box.size.x
+	Kit.title_plate(box, tr("ceremony.title"), "gold", "", true, 64)
+	if not hero.is_empty():
+		var from := int(hero.get("from", 0))
+		var to := int(hero.get("to", 0))
+		var num := Kit.label(Kit.fmt_num(to), 64, Kit.INK_TEXT, true)  # HERO 64
+		num.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		var nw := Kit.text_w(Kit.fmt_num(maxi(from, to)), 64, "d900", false) + 8.0
+		var gain := to - from
+		var chip_w := 0.0
+		var chip: Panel = null
+		if gain != 0:
+			chip = Kit.caption_pill(null, ("+" if gain > 0 else Kit.MINUS) + Kit.fmt_num(absi(gain)), 40.0, Kit.face_of("go" if gain > 0 else "war"), 28, 3)
+			chip_w = chip.size.x + 16.0
+		var gw := 80.0 + 12.0 + nw + chip_w
+		var x0 := (w - gw) * 0.5
+		var ic := _icon_rect(String(hero.get("icon", "crown")), 80)
+		ic.position = Vector2(x0, hero_y)
+		box.add_child(ic)
+		num.position = Vector2(x0 + 92.0, hero_y - 2.0)
+		num.size = Vector2(nw, 84)
+		box.add_child(num)
+		Kit.count_up(num, from, to, 900)
+		if chip != null:
+			chip.position = Vector2(x0 + 92.0 + nw + 16.0, hero_y + 20.0)
+			box.add_child(chip)
+			_pop_later(chip, 0.9)
+		var cap := Kit.label(String(hero.get("text", "")), 26, Kit.MUTED_CREAM, true)
+		cap.add_theme_font_override("font", Kit.font("d800"))
+		cap.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		cap.position = Vector2(32, hero_y + 80.0)
+		cap.size = Vector2(w - 64.0, 34)
+		box.add_child(cap)
+	if not bar.is_empty():
+		var bl := Kit.label(String(bar.get("text", "")), 28, Kit.INK_TEXT, true)
+		bl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		var lw := Kit.text_w(bl.text, 28, "d900", false) + 8.0
+		var bic := _icon_rect(String(bar.get("icon", "hex_tile")), 52)
+		bic.position = Vector2(40, bar_y - 6.0)
+		box.add_child(bic)
+		bl.position = Vector2(100, bar_y - 2.0)
+		bl.size = Vector2(lw, 44)
+		box.add_child(bl)
+		var bx := 100.0 + lw + 16.0
+		var to_v := int(bar.get("to", 0))
+		var mx := maxi(1, int(bar.get("max", 1)))
+		var kb := Kit.bar(box, Rect2(bx, bar_y, w - 40.0 - bx, 40), clampf(float(bar.get("frac", float(to_v) / mx)), 0.0, 1.0), "gold",
+			"%d/%d" % [to_v, mx], true)
+		kb.name = "chapter"
+	if rows > 0:
+		var well := Kit.well(box, Rect2(32, well_y, w - 64.0, well_h))
+		var tw := (well.size.x - 32.0 - 24.0) / 3.0
+		for i in tiles.size():
+			var it: Dictionary = tiles[i]
+			var in_row := mini(3, tiles.size() - (i / 3) * 3)  # a short last row is centred
+			var x0 := 16.0 + (3 - in_row) * (tw + 12.0) * 0.5
+			var r := Rect2(x0 + (i % 3) * (tw + 12.0), 16.0 + (i / 3) * 182.0, tw, 150)
+			var t: Control
+			if String(it.get("kind", "")) == "more":  # the hidden rewards' icons fanned, «+N» on the edge; a tap lists them
+				t = Kit.tile(well, r, {"pill": [["", String(it["text"])]]})
+				var icons: Array = it.get("icons", [])
+				var n := mini(3, icons.size())
+				for k in n:
+					var fi := _icon_rect(String(icons[k]), 76)
+					fi.position = Vector2(r.size.x * 0.5 - 38.0 + (k - (n - 1) * 0.5) * 50.0, 22.0 + absf(k - (n - 1) * 0.5) * 6.0)
+					fi.rotation_degrees = (k - (n - 1) * 0.5) * 10.0
+					fi.pivot_offset = Vector2(38, 60)
+					t.add_child(fi)
+				var rest: Array = it.get("rest", [])
+				var tt := t
+				(t as Kit.KitTile).cb = func(): Kit.tooltip(tt, "", "\n".join(rest))
+			else:
+				var pill: Array = it.get("pill", [["", String(it.get("text", ""))]])
+				t = Kit.tile(well, r, {"icon": String(it.get("icon", "")), "icon_side": 92.0, "pill": pill})
+			t.name = "reward_%d" % i
+			_pop_later(t, 0.35 + 0.08 * i)
+	elif not listed.is_empty():
+		var well := Kit.well(box, Rect2(32, well_y, w - 64.0, well_h))
+		for i in listed.size():
+			var l := Kit.label(String(listed[i]), 28, Kit.INK_TEXT, false)
+			l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			l.position = Vector2(16, 12.0 + i * 44.0)
+			l.size = Vector2(well.size.x - 32.0, 44)
+			_fit(l, 28, well.size.x - 32.0)
+			well.add_child(l)
 	var gate := {"open": false}
-	var done := func(): if gate["open"]: on_done.call()
+	var fy := h - 32.0 - 116.0
+	var buttons: Array = []
+	var dbl: Kit.KitButton = null
 	if on_double.is_valid():
-		var dbl := func(): if gate["open"]: on_double.call()
-		buttons.append(_button(_modal, Rect2(60, VH - 262, 821, 92), tr("ceremony.double"), Color(0.85, 0.55, 0.1), dbl))
-	buttons.append(_button(_modal, Rect2(60, VH - 150, 821, 96), tr("ui.continue"), Color(0.13, 0.4, 0.9), done))
-	for b in buttons:
-		b.modulate.a = 0.0
-		var tw2 := create_tween()
-		tw2.tween_interval(1.2)
-		tw2.tween_property(b, "modulate:a", 0.5, 0.3)
-		tw2.tween_interval(maxf(0.0, active_after - 1.5))
-		tw2.tween_property(b, "modulate:a", 1.0, 0.2)
-	get_tree().create_timer(active_after).timeout.connect(func(): gate["open"] = true)
+		dbl = Kit.button(box, Rect2(32, fy + 12.0, 280, 92), "info", tr("ceremony.double"), {"icon": "ad", "size": "M", "enabled": false,
+			"cb": func(): if gate["open"]: on_double.call()})
+		dbl.name = "double"
+		buttons.append(dbl)
+	var main_r := Rect2(328, fy, w - 360.0, 116) if dbl != null else Rect2((w - 480.0) * 0.5, fy, 480, 116)
+	var done := Kit.button(box, main_r, "go", tr("ceremony.claim"), {"size": "L", "enabled": false,
+		"cb": func(): if gate["open"]: on_done.call()})
+	done.name = "claim"
+	buttons.append(done)
+	var open := func():
+		gate["open"] = true
+		for b in buttons:
+			if is_instance_valid(b):
+				(b as Kit.KitButton).enabled = true
+				(b as Kit.KitButton).rebuild()
+	if active_after <= 0.0:
+		open.call()
+	else:
+		get_tree().create_timer(active_after).timeout.connect(open)
 
 
 ## Inbox (mail button): reports of raids, defenses, ultimatums. items: [{title, text, t (unix), read}];
@@ -1460,35 +1796,113 @@ func show_chronicle(info: Dictionary, on_claim: Callable) -> void:
 		col.add_child(row)
 
 
-## AI ultimatum (canon §9.1): accept (cede the hex), pay tribute, or refuse (war).
-func show_ultimatum(enemy: String, hex_name: String, tribute: int, can_pay: bool, left_sec: int, on_accept: Callable, on_pay: Callable, on_refuse: Callable, portrait := "", plate := Color(0, 0, 0, 0)) -> void:
-	var box := _modal_box(Rect2(50, 380, 841, 860), true)
-	var ink := Color(0.3, 0.08, 0.05)
-	var text_w := 780.0
+## AI ultimatum (canon §9.1, §6 «Ультиматум»): a window L with the war plate; ✕ is «later». The angry leader says it in
+## one sentence, a red timer chip counts the time left; three equal choices as option cards in a well — give the hex
+## (24 h of peace), pay the tribute (grey when the gold is short: a tap says why), or refuse (war). `hex_tile`: the
+## hex's render key (the card shows the hex itself).
+func show_ultimatum(enemy: String, hex_name: String, tribute: int, can_pay: bool, left_sec: int, on_accept: Callable, on_pay: Callable, on_refuse: Callable, portrait := "", plate := Kit.CLEAR, hex_tile := "") -> void:
+	var h := 64.0 + 170.0 + 40.0 + 332.0 + 32.0
+	var box := _modal_box(_win_rect("L", h), false, tr("ult.title"), "", "war", true, false)
+	box.set_meta("kit_native", true)
+	var w := box.size.x
+	_leader_seal(box, portrait, plate, Rect2(32, 64, 156, 170), "angry", enemy)
+	var bx := 32.0 + 156.0 + 28.0
+	Kit.bubble(box, Rect2(bx, 72, w - 32.0 - bx, 100), tr("ult.text") % hex_name, "left")
+	var tc := Kit.chip(box, Vector2(bx, 190), "hourglass", Kit.fmt_time(left_sec), "timer_war")
+	tc.name = "timer"
+	var well := Kit.well(box, Rect2(32, 274, w - 64.0, 332))
+	var cw := 255.0
+	var gap := (well.size.x - 32.0 - 3.0 * cw) / 2.0
+	var hex_tex := _tile_tex(hex_tile)
+	var opts := [
+		{"tex": hex_tex, "icon": "hex_tile", "title": hex_name, "chip": ["dove", tr("ult.truce")], "role": "go", "cap": tr("ult.accept"),
+			"cb": on_accept, "enabled": true},
+		{"icon": "coins", "title": Kit.fmt_num(tribute), "role": "go", "cap": tr("ult.pay"), "cb": on_pay, "enabled": can_pay,
+			"reason": tr("ult.no_gold")},
+		{"icon": "swords", "title": tr("ult.refuse_title"), "role": "war", "cap": tr("ult.refuse"), "cb": on_refuse, "enabled": true},
+	]
+	for i in 3:
+		var o: Dictionary = opts[i]
+		var card := Kit.tile(well, Rect2(16.0 + i * (cw + gap), 16, cw, 300), {})
+		card.name = "option_%d" % i
+		var tex: Texture2D = o.get("tex") if o.get("tex") != null else Kit.icon_tex(String(o["icon"]))
+		var pic := TextureRect.new()
+		pic.texture = tex
+		pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		pic.position = Vector2((cw - 116.0) * 0.5, 14)
+		pic.size = Vector2(116, 116)
+		if not bool(o["enabled"]):
+			pic.modulate = Kit.LOCK_MOD
+		card.add_child(pic)
+		var title := String(o["title"])
+		var s := Kit.fit_size(title, 30, cw - 24.0, "d900", 22, false)
+		var tl := Kit.label(title, s, Kit.INK_TEXT, true)
+		tl.add_theme_font_size_override("font_size", s)
+		tl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		tl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		tl.clip_text = true
+		tl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		tl.position = Vector2(12, 134)
+		tl.size = Vector2(cw - 24.0, 40)
+		card.add_child(tl)
+		if o.has("chip"):
+			_paper_chip(card, Vector2(cw * 0.5, 196), String(o["chip"][0]), String(o["chip"][1]), cw - 24.0)
+		var b := Kit.button(card, Rect2(14, 300 - 5.0 - 14.0 - 64.0, cw - 28.0, 64), String(o["role"]), String(o["cap"]),
+			{"size": "S", "cb": o["cb"], "enabled": bool(o["enabled"])})
+		b.name = "choice"
+		if not bool(o["enabled"]):
+			var why := String(o.get("reason", ""))
+			b.denied.connect(func(): Kit.tooltip(b, String(o["cap"]), why))
+
+
+## An enemy leader's portrait (ultimatum, peace): the face on the state's colour in a TRIM frame (brass DL1–4, steel
+## DL5–8; R 20, INK 4, lip 6) and, when given, the state's name in an owner chip on its bottom edge.
+func _leader_seal(box: Control, portrait: String, plate: Color, r: Rect2, mood := "", enemy := "") -> void:
+	var team: Color = plate if plate.a > 0.0 else Kit.face_of("war")
+	var fr := Panel.new()
+	fr.name = "leader"
+	var sb := Kit.style(Kit.face_of(_trim), 20, 4, Kit.INK, 6, 6)
+	sb.set_meta("kit_kind", "")  # a frame, not a button: the lip without the gloss
+	fr.add_theme_stylebox_override("panel", sb)
+	fr.position = r.position
+	fr.size = r.size
+	fr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(fr)
+	fr.add_child(Kit.KitDecor.new())
+	var well := Panel.new()
+	var wsb := Kit.style(team, 14, 0, Kit.INK, 0, 0)
+	wsb.set_meta("kit_kind", "")
+	well.add_theme_stylebox_override("panel", wsb)
+	well.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
+	well.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	well.position = Vector2(9, 9)
+	well.size = r.size - Vector2(18, 24)
+	fr.add_child(well)
 	if portrait != "":
-		_leader_seal(box, portrait, plate, Rect2(841 - 166, 22, 136, 162), "angry")
-		text_w = 620.0
-	_title(box, tr("ult.title") % enemy, 32, ink, Vector2(30, 26), "target", false, text_w)
-	var t := _label(tr("ult.text") % [hex_name, tribute, fmt_time(left_sec)], 23, Color(0.25, 0.16, 0.08), false)
-	t.autowrap_mode = TextServer.AUTOWRAP_WORD
-	_at(t, box, Vector2(30, 90), Vector2(text_w, 260))
-	_button(box, Rect2(30, 380, 780, 96), tr("ult.accept") % hex_name, Color(0.45, 0.35, 0.2), on_accept)
-	var pay := _button(box, Rect2(30, 494, 780, 96), tr("ult.pay") % tribute, Color(0.75, 0.55, 0.12), on_pay)
-	pay.modulate.a = 1.0 if can_pay else 0.45
-	_button(box, Rect2(30, 608, 780, 96), tr("ult.refuse"), Color(0.75, 0.16, 0.12), on_refuse)
-	_button(box, Rect2(30, 722, 780, 84), tr("ult.later"), Color(0.3, 0.33, 0.42), close_modal)
-
-
-## The enemy leader's portrait on a parchment (ultimatum, peace conference): the face on the state's colour in a
-## dark wooden frame.
-func _leader_seal(box: Control, portrait: String, plate: Color, r: Rect2, mood := "") -> void:
-	_panel(box, r.grow(6), _style(Color(0.35, 0.22, 0.1), 10, Color(0.75, 0.55, 0.25), 3), Control.MOUSE_FILTER_IGNORE)
-	var lp := CmdPortrait.new(portrait)
-	lp.plate = plate
-	lp.mood = mood
-	lp.position = r.position
-	lp.size = r.size
-	box.add_child(lp)
+		var lp := CmdPortrait.new(portrait)
+		lp.plate = team
+		lp.mood = mood
+		lp.size = well.size
+		well.add_child(lp)
+	else:
+		var ic := _icon_rect("crown", well.size.x * 0.6)
+		ic.position = (well.size - ic.size) * 0.5
+		well.add_child(ic)
+	var rim := Panel.new()  # an INK line between the art and the trim
+	var rsb := Kit.style(Kit.alpha(Kit.INK, 0.0), 14, 3, Kit.INK, 0, 0)
+	rsb.draw_center = false
+	rsb.set_meta("kit_kind", "")
+	rim.add_theme_stylebox_override("panel", rsb)
+	rim.position = well.position
+	rim.size = well.size
+	rim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fr.add_child(rim)
+	if enemy != "":
+		var oc := Kit.chip(box, Vector2.ZERO, "", enemy, "owner", team, {"max_w": r.size.x + 56.0})
+		oc.name = "enemy"
+		oc.position = Vector2(r.position.x + (r.size.x - oc.size.x) * 0.5, r.end.y - 20.0)
 
 
 ## Simple announcement: title, lines of text, one button (world expansion, chapter cards).
@@ -2088,6 +2502,7 @@ var _flag_tab := "div"
 ## The commander portraits follow the player's DL era (04 §15.4).
 func set_portrait_era(dl: int) -> void:
 	CmdPortrait.era = CmdPortrait.era_of(dl)
+	_trim = "steel" if dl >= 5 else "brass"  # the leader frames switch with the era too (§3.2)
 
 
 ## The flag constructor (10 §4.23): the preview on top; tabs «Деление» (12), «Цвета» (2 field colours of 16, the
@@ -3051,9 +3466,3 @@ func toast(text: String) -> void:
 
 func _process(delta: float) -> void:
 	_process_coach(delta)
-	if _seal_t >= 0.0 and _seal_prog:
-		_seal_t += delta
-		_seal_prog.size.x = 829.0 * clampf(_seal_t / 0.8, 0.0, 1.0)
-		if _seal_t >= 0.8:
-			_seal_t = -1.0
-			seal_done.emit()

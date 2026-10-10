@@ -13,6 +13,8 @@ const RIBBON_SHADER := preload("res://shaders/border_ribbon.gdshader")
 const FILL_SHADER := preload("res://shaders/territory_fill.gdshader")
 const SCORCH_SHADER := preload("res://shaders/territory_scorch.gdshader")
 const HATCH_SHADER := preload("res://shaders/occupation_hatch.gdshader")
+const CLOUD_SHADER := preload("res://shaders/cloud_puff.gdshader")
+const PILL_SHADER := preload("res://shaders/pill.gdshader")
 
 const SQ3 := 1.7320508
 const DIRS := [Vector2i(1, 0), Vector2i(1, -1), Vector2i(0, -1), Vector2i(-1, 0), Vector2i(-1, 1), Vector2i(0, 1)]
@@ -1297,14 +1299,20 @@ func refresh_hex(id: int, neighbours := true) -> void:
 		_flush_decor()  # once for the hex and its neighbours
 
 
-## Ceremony «pop»: the hex's buildings jump to 1.08 and settle back.
+## Capture and build «pop» (§6.10, soft_style_plan P8): the hex's buildings squash and stretch — (1.2, 0.6, 1.2) →
+## (0.95, 1.15, 0.95) → 1 over 0.35 s — and a small soft ring of dust (#E8DCC8) spreads from their feet.
 func pop_hex(id: int) -> void:
 	var holder: Node3D = _hex_props.get(id)
 	if holder == null:
 		return
-	holder.scale = Vector3.ONE * 1.12
+	if holder.has_meta("pop") and (holder.get_meta("pop") as Tween).is_valid():
+		(holder.get_meta("pop") as Tween).kill()  # a second pop restarts the squash instead of fighting the first
+	holder.scale = Vector3(1.2, 0.6, 1.2)
 	var tw := create_tween()
-	tw.tween_property(holder, "scale", Vector3.ONE, 0.35).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(holder, "scale", Vector3(0.95, 1.15, 0.95), 0.14).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(holder, "scale", Vector3.ONE, 0.21).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	holder.set_meta("pop", tw)
+	burst_at(cell_world(id), Color("#E8DCC8"), false, 0.7)
 
 
 ## A pillar of light from the sci-fi capital's spire into the sky (reference frame 2), in the state's colour,
@@ -1331,6 +1339,7 @@ func _sky_beam(holder: Node3D, owner: int) -> void:
 		m.distance_fade_mode = BaseMaterial3D.DISTANCE_FADE_PIXEL_ALPHA  # a marker for the far view (frame 2): up close
 		m.distance_fade_min_distance = 3.0  # (frame 5) it washed out the top of the screen, so it thins out there
 		m.distance_fade_max_distance = 14.0
+		m.render_priority = BEAM_PRIO  # light: over the clouds behind it (they draw after the map's layers)
 		mi.material_override = m
 		mi.position = Vector3(0, 2.2 + 7.0, 0)
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -1645,6 +1654,7 @@ func _camp_icon(hex: int, holder: Node3D) -> void:
 	icon.pixel_size = 0.0035
 	icon.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	icon.no_depth_test = true
+	icon.render_priority = MARK_PRIO + 1  # a marker: over the ribbons and the clouds
 	icon.position = Vector3(0, 1.05, 0)
 	holder.add_child(icon)
 
@@ -1977,12 +1987,12 @@ func _place_biome_props(c: Dictionary, holder: Node3D, p: Vector3, biome: String
 
 
 ## The edge of the world (reference frame 1, docs/art_direction.md §6.7, soft_style_plan P7): the unexplored land
-## next to the open world as sunken slate "cookies" (rounded hexes, corner radius FOG_RHO) over a slate underlay, so
+## next to the open world as sunken slate "cookies" (rounded hexes, corner radius FOG_RHO) in a slate grout ring, so
 ## the rounded gaps between them read as slate and not as the sea below; the wooded rim beyond as green cookie
 ## bases under the trees; puffy two-tone clouds drifting low over it all.
 func _build_horizon() -> void:
 	_bay_spots = []
-	var tiles: Array = []  # fog cookies (+ their underlay) and forest bases, drawn as three MultiMeshes (one draw each)
+	var tiles: Array = []  # fog cookies (+ their grout rings) and forest bases, drawn as three MultiMeshes (one draw each)
 	var bases: Array = []
 	var clouds: Array = []  # [position, size] of the low clouds, one billboard MultiMesh
 	var zmax := -1e9  # the open world's near edge (toward the camera): the bay starts beyond it
@@ -2006,8 +2016,9 @@ func _build_horizon() -> void:
 					continue
 				# the unexplored land next to the open world (reference frame 1): slate cookies a step below the open
 				# world (its cliffs and waterfalls show), drifting low clouds and a peak here and there. The cookie's
-				# top is its origin; it sits FOG_Y .. FOG_Y − FOG_JITTER, always over the underlay (FOG_UNDER_Y).
-				tiles.append(Transform3D(Basis.IDENTITY, p + Vector3(0, FOG_Y - rng.randf() * FOG_JITTER, 0)))
+				# top is its origin, at FOG_Y, over the slate grout ring (FOG_UNDER_Y).
+				rng.randf()  # was the cookie's height jitter: still drawn, so the rest of the horizon keeps its layout
+				tiles.append(Transform3D(Basis.IDENTITY, p + Vector3(0, FOG_Y, 0)))
 				if d == rr + 2 and roll < 0.3:
 					spawn("mountain", _horizon_root, p + Vector3(0, -0.2, 0), rng.randf() * TAU, rng.randf_range(1.5, 2.4))
 				elif rng.randf() < 0.3:
@@ -2027,10 +2038,14 @@ func _build_horizon() -> void:
 	var under: Array = []
 	for xf: Transform3D in tiles:
 		under.append(Transform3D(Basis.IDENTITY, Vector3(xf.origin.x, FOG_UNDER_Y, xf.origin.z)))
-	# fog cookies; their underlay; forest bases at ×1.16 (they overlap, or the sky shows through between them)
-	for set in [[tiles, _rounded_hex_prism(FOG_R, FOG_RHO, 0.05, 1.0, Color("#7D89A6"), Color("#5D6883"))],
-			[under, _hex_prism(1.0, 1.0, Color("#4A5468"))],
-			[bases, _rounded_hex_prism(FOG_R * 1.16, FOG_RHO * 1.16, 0.05, 1.0, Color("#4F7F45"), Color("#7E5A45"))]]:
+	# fog cookies; their grout ring; forest bases at ×1.16 (they overlap, or the sky shows through between them).
+	# The cookie top is #6F7A96, ~11 % under §6.3's #7D89A6 (P7 review): lit, #7D89A6 came out at L* ≈ 67, as light as
+	# the sunlit grass (L* ≈ 71), so the open world stood apart by hue alone, and the lattice of light cookies on dark
+	# grout was all hex grid. The forest base's side is a dark green: the soil brown drew a red-brown hairline along
+	# the step down to the cookies (§6.1 rule 1).
+	for set in [[tiles, _rounded_hex_prism(FOG_R, FOG_RHO, FOG_BEVEL, 1.0, Color("#6F7A96"), Color("#5D6883"))],
+			[under, _hex_ring(1.0, FOG_R, FOG_RHO, FOG_HOLE_INSET, 0.3, Color("#4A5468"))],
+			[bases, _rounded_hex_prism(FOG_R * 1.16, FOG_RHO * 1.16, FOG_BEVEL, 1.0, Color("#4F7F45"), Color("#3E6A3A"))]]:
 		var xfs: Array = set[0]
 		if xfs.is_empty():
 			continue
@@ -2046,21 +2061,23 @@ func _build_horizon() -> void:
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF  # below the world's edge: nothing to shade
 		_horizon_root.add_child(mmi)
 	if not clouds.is_empty():
-		var cmat: StandardMaterial3D = _cloud_material().duplicate()
-		cmat.billboard_keep_scale = true  # each instance keeps its own size
-		cmat.distance_fade_mode = BaseMaterial3D.DISTANCE_FADE_PIXEL_ALPHA  # up close they were blurry white blobs
-		cmat.distance_fade_min_distance = 9.0  # gone when the camera is this near
-		cmat.distance_fade_max_distance = 15.0  # fully there from the middle zoom out (camera 7.5–34 away)
+		var cmat: ShaderMaterial = _cloud_material().duplicate()  # each instance keeps its own size (the shader)
+		cmat.set_shader_parameter("fade_min", 9.0)  # up close they were blurry white blobs: gone this near
+		cmat.set_shader_parameter("fade_max", 15.0)  # fully there from the middle zoom out (camera 7.5–34 away)
 		var q := QuadMesh.new()
 		q.size = Vector2(1.0, 0.6)
 		q.material = cmat
 		var cmm := MultiMesh.new()
 		cmm.transform_format = MultiMesh.TRANSFORM_3D
+		cmm.use_custom_data = true  # per cloud: its atlas cell and whether it is mirrored (cloud_puff.gdshader)
 		cmm.mesh = q
 		cmm.instance_count = clouds.size()
+		var vr := RandomNumberGenerator.new()  # its own stream: `rng` keeps the scene's layout
+		vr.seed = 23
 		for i in clouds.size():
 			var sz: float = clouds[i][1]
 			cmm.set_instance_transform(i, Transform3D(Basis.IDENTITY.scaled(Vector3.ONE * sz), clouds[i][0]))
+			cmm.set_instance_custom_data(i, Color(vr.randi() % CLOUD_CELLS, vr.randi() % 2, 0.0, 0.0))
 		var cmi := MultiMeshInstance3D.new()
 		cmi.multimesh = cmm
 		cmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -2071,12 +2088,16 @@ func _build_horizon() -> void:
 ## FOG_R 0.94 leaves a rounded slate gap of ≥ 0.10 between neighbours.
 const FOG_R := 0.94
 const FOG_RHO := 0.24
-## Cookie tops lie FOG_Y .. FOG_Y − FOG_JITTER, over the slate underlay at FOG_UNDER_Y, which must stay over the open-sea
-## plane (−0.25, bobbing up to −0.238, water.gdshader): under it, the gaps showed the sea. Hence a jitter of 0.02, not
-## the old 0.04 (a cookie top at −0.24 would sink under the underlay).
-const FOG_Y := -0.2
-const FOG_JITTER := 0.02
-const FOG_UNDER_Y := -0.232
+const FOG_BEVEL := 0.05
+## Depth margins (P7 review): the far ceremony pull-backs put the camera up to ~166 away (zoom 6, near 0.05), where a
+## 24-bit depth buffer, the phones' usual one, resolves only ~0.03. So every cookie top lies at FOG_Y (no height
+## jitter) and the slate grout is a ring round each cookie (_hex_ring), not a hex under it: no two near-coplanar
+## surfaces overlap there. The grout (FOG_UNDER_Y) keeps 0.038 over the open-sea plane's crest (−0.25 + 0.012 bob,
+## water.gdshader; under it, the gaps showed the sea) and 0.02 under the cookie top; its hole is inset by
+## FOG_HOLE_INSET, past where the cookie's bevel crosses its plane (0.01 in), so the ring tucks under the bevel.
+const FOG_Y := -0.18
+const FOG_UNDER_Y := -0.2
+const FOG_HOLE_INSET := 0.018
 
 
 ## A soft hex "cookie" (soft_style_plan P7): the top is a fan over the hex of corner radius r (corner k at 60°·k, the
@@ -2084,15 +2105,10 @@ const FOG_UNDER_Y := -0.232
 ## that outline (2 rings, the normal turning from up to out); then a wall down to −depth. The top is at y = 0.
 ## Vertex colours: top_col on the top and the upper bevel, side_col from the bevel's foot down. No bottom face.
 func _rounded_hex_prism(r: float, rho: float, bevel: float, depth: float, top_col: Color, side_col: Color) -> ArrayMesh:
-	var corners := PackedVector2Array()
-	for k in 6:
-		corners.append(HEX_CORNERS[k] * r)
-	var pts: PackedVector2Array = _fillet(corners, rho, RIB_SEG)["pts"]
+	var outline := _cookie_outline(r, rho)
+	var pts: PackedVector2Array = outline[0]
+	var out: PackedVector2Array = outline[1]
 	var n := pts.size()
-	var ctr := r - rho / sin(PI / 3.0)  # each corner's arc is centred this far out along the corner's ray
-	var out := PackedVector2Array()  # the outline's outward normal per point
-	for i in n:
-		out.append((pts[i] - HEX_CORNERS[i / (RIB_SEG + 1)] * ctr).normalized())
 	var verts := PackedVector3Array([Vector3.ZERO])
 	var norms := PackedVector3Array([Vector3.UP])
 	var cols := PackedColorArray([top_col])
@@ -2116,36 +2132,67 @@ func _rounded_hex_prism(r: float, rho: float, bevel: float, depth: float, top_co
 			var a := 1 + row * n
 			var b := a + n
 			idx.append_array([a + i, b + j, a + j, a + i, b + i, b + j])
-	var arrays := []
-	arrays.resize(Mesh.ARRAY_MAX)
-	arrays[Mesh.ARRAY_VERTEX] = verts
-	arrays[Mesh.ARRAY_NORMAL] = norms
-	arrays[Mesh.ARRAY_COLOR] = cols
-	arrays[Mesh.ARRAY_INDEX] = idx
-	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-	return mesh
+	return _color_mesh(verts, norms, cols, idx)
 
 
-## A plain hex prism of corner radius r (corner k at 60°·k), top at y = 0, wall down to −depth, one vertex colour: the
-## slate underlay under the fog cookies. 18 triangles.
-func _hex_prism(r: float, depth: float, col: Color) -> ArrayMesh:
-	var verts := PackedVector3Array([Vector3.ZERO])
-	var norms := PackedVector3Array([Vector3.UP])
+## The outline of a hex of corner radius r (corner k at 60°·k) with its corners rounded to rho: [points, the
+## outward normal at each]. The points come in groups of RIB_SEG + 1 per corner, corner 0 first, counter-clockwise.
+func _cookie_outline(r: float, rho: float) -> Array:
+	var corners := PackedVector2Array()
 	for k in 6:
-		verts.append(Vector3(HEX_CORNERS[k].x * r, 0.0, HEX_CORNERS[k].y * r))
+		corners.append(HEX_CORNERS[k] * r)
+	var pts: PackedVector2Array = _fillet(corners, rho, RIB_SEG)["pts"]
+	var ctr := r - rho / sin(PI / 3.0)  # each corner's arc is centred this far out along the corner's ray
+	var out := PackedVector2Array()
+	for i in pts.size():
+		out.append((pts[i] - HEX_CORNERS[i / (RIB_SEG + 1)] * ctr).normalized())
+	return [pts, out]
+
+
+## The slate grout round a fog cookie (P7 review): a flat hex ring, outer corner radius r_out + 0.01 (it laps 0.01
+## over its neighbours': same colour, same height, so no seam can open to the sea), with a hole of the cookie's outline
+## (corner radius r, corners rounded to rho) inset by `inset`, so it tucks under the cookie's bevel and never lies
+## under the cookie's top. A wall at r_out runs from just under the top (the lap overhangs it) down to −depth. Top at
+## y = 0, one vertex colour. 48 triangles.
+func _hex_ring(r_out: float, r: float, rho: float, inset: float, depth: float, col: Color) -> ArrayMesh:
+	var outline := _cookie_outline(r, rho)
+	var pts: PackedVector2Array = outline[0]
+	var out: PackedVector2Array = outline[1]
+	var n := pts.size()
+	var verts := PackedVector3Array()
+	var norms := PackedVector3Array()
+	for k in 6:  # 0..5: the outer corners
+		verts.append(Vector3(HEX_CORNERS[k].x, 0.0, HEX_CORNERS[k].y) * (r_out + 0.01))
+	for i in n:  # 6..: the hole
+		var p := pts[i] - out[i] * inset
+		verts.append(Vector3(p.x, 0.0, p.y))
+	for i in verts.size():
 		norms.append(Vector3.UP)
-	for y in [0.0, -depth]:
-		for k in 6:
-			verts.append(Vector3(HEX_CORNERS[k].x * r, y, HEX_CORNERS[k].y * r))
-			norms.append(Vector3(HEX_CORNERS[k].x, 0.0, HEX_CORNERS[k].y))
 	var idx := PackedInt32Array()
 	for k in 6:
-		var j := (k + 1) % 6
-		idx.append_array([0, 1 + k, 1 + j, 7 + k, 13 + j, 7 + j, 7 + k, 13 + k, 13 + j])
+		var k2 := (k + 1) % 6
+		var i0 := k * (RIB_SEG + 1)
+		for s in RIB_SEG:  # a fan from the outer corner over its rounded corner of the hole
+			idx.append_array([k, 6 + i0 + s + 1, 6 + i0 + s])  # clockwise seen from above: Godot's front face
+		var i := i0 + RIB_SEG  # the hole's straight side toward the next corner
+		var j := (i + 1) % n
+		idx.append_array([k, 6 + j, 6 + i, k, k2, 6 + j])
+		var nrm := Vector3(HEX_CORNERS[k].x + HEX_CORNERS[k2].x, 0.0, HEX_CORNERS[k].y + HEX_CORNERS[k2].y).normalized()
+		var a := verts.size()
+		for c: Vector2 in [HEX_CORNERS[k], HEX_CORNERS[k2]]:  # a = top k, a + 1 = top k2, a + 2 = foot k, a + 3 = foot k2
+			verts.append(Vector3(c.x * r_out, -0.002, c.y * r_out))
+			norms.append(nrm)
+		for c: Vector2 in [HEX_CORNERS[k], HEX_CORNERS[k2]]:
+			verts.append(Vector3(c.x * r_out, -depth, c.y * r_out))
+			norms.append(nrm)
+		idx.append_array([a, a + 3, a + 1, a, a + 2, a + 3])
 	var cols := PackedColorArray()
 	cols.resize(verts.size())
 	cols.fill(col)
+	return _color_mesh(verts, norms, cols, idx)
+
+
+func _color_mesh(verts: PackedVector3Array, norms: PackedVector3Array, cols: PackedColorArray, idx: PackedInt32Array) -> ArrayMesh:
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = verts
@@ -2205,8 +2252,9 @@ func _horizon_ship(q: int, r: int, p: Vector3, lr: RandomNumberGenerator) -> voi
 var _fog_mat: StandardMaterial3D
 
 
-## The horizon's cookie material (P7): matte, its colours from the vertex colours (sRGB, §6.3: fog top #7D89A6, side
-## #5D6883, underlay #4A5468, forest bases #4F7F45), wrapped light for a soft terminator on the bevels.
+## The horizon's cookie material (P7): matte, its colours from the vertex colours (sRGB, §6.3; see _build_horizon:
+## fog top #6F7A96, side #5D6883, grout #4A5468, forest bases #4F7F45 / #3E6A3A), wrapped light for a soft terminator
+## on the bevels.
 func _fog_hex_mat() -> StandardMaterial3D:
 	if _fog_mat == null:
 		_fog_mat = StandardMaterial3D.new()
@@ -2217,7 +2265,19 @@ func _fog_hex_mat() -> StandardMaterial3D:
 	return _fog_mat
 
 
-var _cloud_mat: StandardMaterial3D
+## The transparent layers' draw order (render_priority: higher draws later, over the rest, whatever the depth sort):
+## scorch −1; fills, smoke and waterfalls 0; hatch, cloud shadows, flames and the deposit disc 1; ribbons and the
+## deposit ring 2; the selection (SEL_PRIO, main.gd: over the ribbons, still depth-tested); then the clouds
+## (CLOUD_PRIO). The clouds write no depth, so a layer drawn after them showed through: the veil of a new ring was
+## crossed by crisp ribbons and waterfall strips (P7 review). Over the clouds: the sci-fi capital's sky beam (light),
+## then the markers that ignore depth (MARK_PRIO up: strength bars, labels, icons, march paths, the strike arrow,
+## income bubbles), so neither a ribbon nor a cloud ever covers one.
+const SEL_PRIO := 3
+const CLOUD_PRIO := 4
+const BEAM_PRIO := 5
+const MARK_PRIO := 6
+
+var _cloud_mat: ShaderMaterial
 var _cloud_puff: ImageTexture
 
 ## World expansion (02 §17.1): every new hex starts under a cloud; `part_clouds` blows them away from the
@@ -2229,8 +2289,13 @@ func veil_hexes(ids: Array) -> void:
 	for h in ids:
 		var p := cell_world(int(h))
 		var mi := _cloud(p + Vector3(0, 0.9, 0), 3.2, false)
-		mi.material_override = _cloud_material().duplicate()  # its own alpha for the tween in part_clouds
-		(mi.material_override as StandardMaterial3D).albedo_color = Color(1, 1, 1, 1)  # opaque: the new land stays hidden
+		var m: ShaderMaterial = _cloud_material().duplicate()  # its own alpha for the tween in part_clouds
+		m.set_shader_parameter("alpha", 1.0)  # opaque: the new land stays hidden
+		var vr := RandomNumberGenerator.new()  # its own silhouette, the same for the hex every time
+		vr.seed = int(h) * 7919 + 3
+		m.set_shader_parameter("cell", float(vr.randi() % CLOUD_CELLS))
+		m.set_shader_parameter("mirror", vr.randi() % 2 == 1)
+		mi.material_override = m
 		_veil[int(h)] = mi
 
 
@@ -2245,52 +2310,76 @@ func part_clouds(order: Array, seconds: float) -> void:
 		tw.tween_interval(seconds * float(i) / float(n))
 		var out := (mi.position - Vector3(0, mi.position.y, 0)).normalized() * 1.6
 		tw.tween_property(mi, "position", mi.position + out + Vector3(0, 0.8, 0), 0.6).set_ease(Tween.EASE_IN)
-		tw.parallel().tween_property(mi.material_override, "albedo_color:a", 0.0, 0.6)
+		tw.parallel().tween_property(mi.material_override, "shader_parameter/alpha", 0.0, 0.6)
 		tw.tween_callback(mi.queue_free)
 
 
-## The shared cloud material (the horizon's clouds and the veil): unshaded billboards of the puff (_cloud_puff_tex).
-func _cloud_material() -> StandardMaterial3D:
+## The shared cloud material (the horizon's clouds and the veil): unshaded billboards of the puff atlas
+## (_cloud_puff_tex, cloud_puff.gdshader), alpha 0.95, drawn after every map layer (CLOUD_PRIO).
+func _cloud_material() -> ShaderMaterial:
 	if _cloud_mat == null:
-		_cloud_mat = StandardMaterial3D.new()
-		_cloud_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		_cloud_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		_cloud_mat.albedo_texture = _cloud_puff_tex()
-		_cloud_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-		_cloud_mat.albedo_color = Color(1, 1, 1, 0.95)
+		_cloud_mat = ShaderMaterial.new()
+		_cloud_mat.shader = CLOUD_SHADER
+		_cloud_mat.set_shader_parameter("puff", _cloud_puff_tex())
+		_cloud_mat.set_shader_parameter("cells", float(CLOUD_CELLS))
+		_cloud_mat.render_priority = CLOUD_PRIO
 	return _cloud_mat
 
 
-## A puffy cloud (§6.7, soft_style_plan P7): the union of five round lobes (UV centre and radius; the radius in
-## heights, so the lobes stay round on the 256×160 image and the 1.0×0.6 quad: a big dome, two shoulders and a
-## scalloped underside, clear of the image's edges), its edge anti-aliased over 3 px; white on top, lilac-blue
-## underneath (§6.3 #FFFFFF / #C9CFF0). RGB is filled everywhere, so the filtered edge has no dark fringe. Built once.
+## The puff atlas's lobe layouts, one 256×160 cell each (UV centre x, y and radius; the radius in cell heights, so the
+## lobes stay round on the cell and the 1.0×0.6 quad). Cell 0 is the plan's (a big dome, two shoulders, a scalloped
+## underside); 1 is a long low bank with two domes; 2 a tall cumulus with a small tail puff. Mirrored too
+## (cloud_puff.gdshader), they give six silhouettes (P7 review: one puff at sixty sizes read as copy-paste).
+const CLOUD_LOBES := [
+	[Vector3(0.30, 0.58, 0.22), Vector3(0.50, 0.45, 0.28), Vector3(0.70, 0.58, 0.22), Vector3(0.42, 0.66, 0.20),
+			Vector3(0.60, 0.68, 0.20)],
+	[Vector3(0.22, 0.64, 0.17), Vector3(0.38, 0.52, 0.23), Vector3(0.58, 0.48, 0.25), Vector3(0.76, 0.60, 0.19),
+			Vector3(0.52, 0.66, 0.18)],
+	[Vector3(0.34, 0.64, 0.19), Vector3(0.52, 0.46, 0.30), Vector3(0.68, 0.62, 0.21), Vector3(0.48, 0.67, 0.18),
+			Vector3(0.80, 0.69, 0.12)],
+]
+const CLOUD_CELLS := 3
+
+
+## The puffy clouds (§6.7, soft_style_plan P7): CLOUD_CELLS cells side by side, each the union of its round lobes
+## (CLOUD_LOBES, clear of the cell's edges, so the mip levels the clouds use do not bleed across cells), the edge
+## anti-aliased over 3 px; white on top, lilac-blue underneath (§6.3 #FFFFFF / #C9CFF0). RGB is filled everywhere, so
+## the filtered edge has no dark fringe. Built once.
 func _cloud_puff_tex() -> ImageTexture:
 	if _cloud_puff != null:
 		return _cloud_puff
-	var w := 256
+	var cw := 256
 	var h := 160
+	var w := cw * CLOUD_CELLS
 	var inside := PackedFloat32Array()  # px inside the union's edge (the max over the lobes), -1 outside all of them
 	inside.resize(w * h)
 	inside.fill(-1.0)
-	for l: Vector3 in [Vector3(0.30, 0.58, 0.22), Vector3(0.50, 0.45, 0.28), Vector3(0.70, 0.58, 0.22),
-			Vector3(0.42, 0.66, 0.20), Vector3(0.60, 0.68, 0.20)]:
-		var c := Vector2(l.x * w, l.y * h)
-		var rad := l.z * h
-		for y in range(maxi(0, int(c.y - rad)), mini(h, int(c.y + rad) + 1)):
-			for x in range(maxi(0, int(c.x - rad)), mini(w, int(c.x + rad) + 1)):
-				var k := y * w + x
-				inside[k] = maxf(inside[k], rad - c.distance_to(Vector2(x + 0.5, y + 0.5)))
+	for ci in CLOUD_CELLS:
+		for l: Vector3 in CLOUD_LOBES[ci]:
+			var c := Vector2(ci * cw + l.x * cw, l.y * h)
+			var rad := l.z * h
+			for y in range(maxi(0, int(c.y - rad)), mini(h, int(c.y + rad) + 1)):
+				for x in range(maxi(ci * cw, int(c.x - rad)), mini((ci + 1) * cw, int(c.x + rad) + 1)):
+					var k := y * w + x
+					inside[k] = maxf(inside[k], rad - c.distance_to(Vector2(x + 0.5, y + 0.5)))
 	var top := Color("#FFFFFF")
 	var under := Color("#C9CFF0")
-	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	var data := PackedByteArray()
+	data.resize(w * h * 4)
 	for y in h:
 		var t := clampf(((y + 0.5) / h - 0.75) / (0.35 - 0.75), 0.0, 1.0)  # smoothstep(0.75, 0.35, v)
 		var col := under.lerp(top, t * t * (3.0 - 2.0 * t))
+		var r8 := col.r8
+		var g8 := col.g8
+		var b8 := col.b8
 		for x in w:
 			var a := clampf(inside[y * w + x] / 3.0, 0.0, 1.0)
-			col.a = a * a * (3.0 - 2.0 * a)
-			img.set_pixel(x, y, col)
+			var o := (y * w + x) * 4
+			data[o] = r8
+			data[o + 1] = g8
+			data[o + 2] = b8
+			data[o + 3] = roundi(a * a * (3.0 - 2.0 * a) * 255.0)
+	var img := Image.create_from_data(w, h, false, Image.FORMAT_RGBA8, data)
 	img.generate_mipmaps()
 	_cloud_puff = ImageTexture.create_from_image(img)
 	return _cloud_puff
@@ -2747,19 +2836,6 @@ func _st(dict: Dictionary, key: int) -> SurfaceTool:
 	return st
 
 
-func _strip(st: SurfaceTool, a: Vector3, b: Vector3, w: float, y: float) -> void:
-	if a.distance_to(b) < 0.001:
-		return
-	var dir := (b - a).normalized()
-	var n := Vector3(-dir.z, 0, dir.x) * w * 0.5
-	a.y = y
-	b.y = y
-	var a0 := a - dir * w * 0.5
-	var b0 := b + dir * w * 0.5
-	st.add_vertex(a0 - n); st.add_vertex(b0 - n); st.add_vertex(b0 + n)
-	st.add_vertex(a0 - n); st.add_vertex(b0 + n); st.add_vertex(a0 + n)
-
-
 ## An overlay layer (unshaded, its normals set by _hex_fan) as one MeshInstance3D under _overlay_root.
 func _add(st: SurfaceTool, m: Material) -> void:
 	var mi := MeshInstance3D.new()
@@ -2785,18 +2861,6 @@ func _hex_fan(st: SurfaceTool, center: Vector3, y: float, data: Vector2) -> void
 			st.set_uv(p)
 			st.set_uv2(data)
 			st.add_vertex(Vector3(center.x + p.x, y, center.z + p.y))
-
-
-## A plain coloured, unlit material (the deposit ring and the strike arrow until P8). No emission: the old black
-## albedo plus emission darkened the ground before it glowed (§6.0). `energy` is ignored, kept for those callers.
-func _glow_mat(c: Color, _energy: float, alpha: float) -> StandardMaterial3D:
-	var m := StandardMaterial3D.new()
-	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.albedo_color = Color(c.r, c.g, c.b, alpha)
-	if alpha < 1.0:
-		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	m.cull_mode = BaseMaterial3D.CULL_DISABLED
-	return m
 
 
 # ------------------------------------------------------------------ border ribbons (docs/art_direction.md §6.6)
@@ -3011,6 +3075,54 @@ func _ribbon_mesh(loops: Array, o: int) -> ArrayMesh:
 	return st.commit()
 
 
+## A closed rounded-hex ribbon for border_ribbon.gdshader (soft_style_plan P8: the selection, main._make_selection):
+## the outline of a hex of corner radius `radius` (corner k at 60°·k) with its corners rounded to rho, `width` wide
+## inward plus 45 % for the soft inner shadow, built round the origin at y = 0. Kind 0, no skirt, always drawn, the
+## outer edge anti-aliased all round (ground shows beyond it everywhere).
+func rounded_hex_ribbon(radius: float, width: float, rho := SoftPalette.SOFT_R) -> ArrayMesh:
+	var corners := PackedVector2Array()
+	for k in 6:
+		corners.append(HEX_CORNERS[k] * radius)
+	return _marker_ribbon(_fillet(corners, rho, RIB_SEG)["pts"], width)
+
+
+## A closed marker ribbon along pts (counter-clockwise in (x, z), so it runs inward), y = 0, `width` visible plus the
+## inner shadow, with constant per-point data: kind 0, wild 0, t 0, born −1000, aa 1 (_emit_ribbon).
+func _marker_ribbon(pts: PackedVector2Array, width: float) -> ArrayMesh:
+	var n := pts.size()
+	var kind := PackedInt32Array()
+	kind.resize(n)
+	kind.fill(0)
+	var zero := PackedFloat32Array()
+	zero.resize(n)
+	zero.fill(0.0)
+	var born := PackedFloat32Array()
+	born.resize(n)
+	born.fill(-1000.0)
+	var aa := PackedFloat32Array()
+	aa.resize(n)
+	aa.fill(1.0)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	_emit_ribbon(st, pts, kind, zero, zero, born, width * 1.45, 0.0, 0.0, true, aa)
+	return st.commit()
+
+
+## A flat hex fan of corner radius `radius` round the origin at y = 0 for territory_fill.gdshader (P8: the selection's
+## inner glow): UV is the offset from the hex centre, UV2 = (mask 63: every side counts as foreign, so the glow rims
+## the whole hex; born −1000: always shown).
+func hex_glow_mesh(radius: float) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for k in 6:
+		for p: Vector2 in [Vector2.ZERO, HEX_CORNERS[k] * radius, HEX_CORNERS[(k + 1) % 6] * radius]:
+			st.set_normal(Vector3.UP)
+			st.set_uv(p)
+			st.set_uv2(Vector2(63.0, -1000.0))
+			st.add_vertex(Vector3(p.x, 0.0, p.y))
+	return st.commit()
+
+
 ## The side a cell nb belongs to for the ribbons: its owner, or NOBODY for off-map, impassable and no-man's land.
 func _side_of(nb: int) -> int:
 	if nb < 0 or not Types.is_passable(sim.cells[nb]):
@@ -3115,9 +3227,7 @@ func sync_armies(armies: Array, battle) -> void:
 		bar.visible = battle != null and not a["routed"]
 		if cam:
 			bar.global_basis = cam.global_basis
-		var fill: MeshInstance3D = bar.get_node("fill")
-		fill.scale.x = maxf(0.02, ready)
-		fill.position.x = -0.32 * (1.0 - fill.scale.x)
+		(bar.get_node("fill") as GeometryInstance3D).set_instance_shader_parameter("k", ready)  # pill.gdshader
 		model.scale = Vector3.ONE * (0.8 if a["routed"] else 1.0)
 		node.modulate_alpha = 0.45 if a["routed"] else 1.0
 		# face the enemy (the clash target, or the enemy-controlled neighbours)
@@ -3398,6 +3508,8 @@ func _make_army(a: Dictionary) -> Node3D:
 	lbl.name = "label"
 	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	lbl.no_depth_test = true
+	lbl.render_priority = MARK_PRIO + 1  # a marker: over the ribbons and the clouds (see CLOUD_PRIO)
+	lbl.outline_render_priority = MARK_PRIO
 	lbl.font_size = 64
 	lbl.outline_size = 14
 	lbl.pixel_size = 0.00024  # a small tag over the bar: the reference frames show bars, not big numbers
@@ -3410,24 +3522,40 @@ func _make_army(a: Dictionary) -> Node3D:
 	bar.name = "bar"
 	bar.position = Vector3(0, 0.92, 0)
 	node.add_child(bar)
-	var team := Color(0.3, 0.62, 1.0) if side == "blue" else (Color(0.3, 0.8, 0.35) if side == "green" else Color(1.0, 0.25, 0.2))
-	for part in [["bg", Color(0.03, 0.05, 0.1, 0.85), Vector2(0.7, 0.1), 0.0], ["fill", team, Vector2(0.64, 0.06), 0.002]]:
+	# the strength "pill" (§6.7, pill.gdshader): a navy track with a 1 px outline and the side's body colour filled to
+	# the army's strength (instance uniform k, sync_armies); the quads keep their size, so the ends stay round
+	var team: Color = SoftPalette.PLAYER["body"] if side == "blue" else (PILL_GREEN if side == "green" else SoftPalette.ENEMY["body"])
+	for part in [["bg", PILL_TRACK, Vector2(0.7, 0.1), 0.0], ["fill", team, Vector2(0.66, 0.06), 0.002]]:
 		var q := QuadMesh.new()
 		q.size = part[2]
 		var mi := MeshInstance3D.new()
 		mi.name = part[0]
 		mi.mesh = q
 		mi.position.z = part[3]
-		var m := StandardMaterial3D.new()
-		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		m.albedo_color = part[1]
-		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		m.no_depth_test = true
-		m.render_priority = 2 if part[0] == "fill" else 1
-		mi.material_override = m
+		mi.material_override = _pill_mat(part[1], part[2], part[0] == "fill")
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		bar.add_child(mi)
 	return node
+
+
+const PILL_TRACK := Color(0.11, 0.17, 0.29, 0.9)  # the strength pill's track: the UI's navy family (§6.3)
+const PILL_GREEN := Color("#6BD13C")  # the green side's strength: the UI's "yes" green (§6.3)
+var _pill_mats := {}  # "fill:colour:size" -> ShaderMaterial (pill.gdshader); the fill level is per instance (k)
+
+
+## A shared strength-pill material (pill.gdshader): drawn over everything without a depth test (MARK_PRIO), the
+## fill over its track.
+func _pill_mat(col: Color, size: Vector2, fill: bool) -> ShaderMaterial:
+	var key := "%s:%s:%s" % [fill, col.to_html(), size]
+	if not _pill_mats.has(key):
+		var m := ShaderMaterial.new()
+		m.shader = PILL_SHADER
+		m.set_shader_parameter("col", col)
+		m.set_shader_parameter("size", size)
+		m.set_shader_parameter("fill", fill)
+		m.render_priority = MARK_PRIO + 1 if fill else MARK_PRIO
+		_pill_mats[key] = m
+	return _pill_mats[key]
 
 
 # ------------------------------------------------------------------ FX
@@ -3436,26 +3564,33 @@ func burst(hex: int, color: Color, big := false) -> void:
 	burst_at(cell_world(hex), color, big)
 
 
-func burst_at(pos: Vector3, color: Color, big := false) -> void:
+## An expanding ring that fades out (captures, builds, hits; §6.10): round, unshaded, in the soft body colour of the
+## side (the player's and the war enemy's raw marker colours map to their §6.3 bodies), no emission — the Mobile
+## renderer clipped the old ×6 glow at ≈ 2 anyway, a white-hot hoop. `alpha` < 1 for soft rings (the dust of a pop).
+func burst_at(pos: Vector3, color: Color, big := false, alpha := 1.0) -> void:
 	var p := pos + Vector3(0, 0.1, 0)
 	var mi := MeshInstance3D.new()
 	var tm := TorusMesh.new()
 	tm.inner_radius = 0.8
 	tm.outer_radius = 0.95
-	tm.ring_segments = 6
-	tm.rings = 24
+	tm.rings = 24  # the slices round the ring (already round); ring_segments is the tube's cross-section
+	tm.ring_segments = 12  # a round tube (was 6, a hexagonal one)
 	mi.mesh = tm
-	mi.rotation.y = PI / 6
+	var col := color
+	if color == C_PLAYER:
+		col = SoftPalette.PLAYER["body"]
+	elif color == C_WAR:
+		col = SoftPalette.ENEMY["body"]
 	var m := StandardMaterial3D.new()
-	m.albedo_color = Color(0, 0, 0, 1)
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.albedo_color = Color(col.r, col.g, col.b, alpha)
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	m.emission_enabled = true
-	m.emission = color
-	m.emission_energy_multiplier = 6.0
+	m.render_priority = SEL_PRIO  # over the border ribbons it crosses, under the clouds
 	mi.material_override = m
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mi.position = p
 	add_child(mi)
-	_fx.append({"node": mi, "t": 0.0, "dur": 0.9 if big else 0.6, "big": big})
+	_fx.append({"node": mi, "t": 0.0, "dur": 0.9 if big else 0.6, "big": big, "a0": alpha})
 
 
 # ------------------------------------------------------------------ resource bubbles & hex labels
@@ -3491,14 +3626,15 @@ func set_bubbles(data: Dictionary) -> void:
 				sp.pixel_size = part[2]
 				sp.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 				sp.no_depth_test = true
-				sp.render_priority = 3 + part[3]
+				sp.render_priority = MARK_PRIO + 2 + part[3]
 				sp.shaded = false
 				node.add_child(sp)
 			var lbl := Label3D.new()
 			lbl.name = "amount"
 			lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 			lbl.no_depth_test = true
-			lbl.render_priority = 5
+			lbl.render_priority = MARK_PRIO + 4
+			lbl.outline_render_priority = MARK_PRIO + 3
 			lbl.font_size = 44
 			lbl.outline_size = 12
 			lbl.pixel_size = 0.005
@@ -3564,6 +3700,7 @@ func set_march_paths(paths: Dictionary) -> void:
 		mat.albedo_color = Color(0.75, 0.9, 1.0, 0.9)
 		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		mat.no_depth_test = true
+		mat.render_priority = MARK_PRIO
 		var dot := CylinderMesh.new()
 		dot.top_radius = 0.06
 		dot.bottom_radius = 0.06
@@ -3601,6 +3738,8 @@ func hex_label(hex: int, text: String, color := Color(1, 0.9, 0.5)) -> void:
 		l = Label3D.new()
 		l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		l.no_depth_test = true
+		l.render_priority = MARK_PRIO + 1
+		l.outline_render_priority = MARK_PRIO
 		l.font_size = 52
 		l.outline_size = 14
 		l.pixel_size = 0.005
@@ -3692,20 +3831,26 @@ static func _fmt_left(sec: int) -> String:
 	return "%d:%02d" % [sec / 60, sec % 60]
 
 
+var _dep_disc: QuadMesh  # the deposit's soft gold disc (its material on the mesh), shared by every deposit
+var _dep_ring: ArrayMesh  # the deposit's dashed round ribbon, shared
+var _dep_ring_mat: ShaderMaterial
+
+
+## A deposit on the map (canon §5.2; §6.7, soft_style_plan P8): a soft gold disc on the ground inside a dashed round
+## candy ribbon, the resource icon bobbing over it (_process). It replaced the hard yellow hex strip.
 func _make_deposit(hex: int, res: String) -> Node3D:
 	var node := Node3D.new()
 	add_child(node)
 	var center := cell_world(hex) + Vector3(0, 0.05, 0)
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var pts := _hex_pts(center, 0.86)
-	for k in 6:
-		_strip(st, pts[k], pts[(k + 1) % 6], 0.065, center.y + 0.02)
-	var mi := MeshInstance3D.new()
-	mi.mesh = st.commit()
-	mi.material_override = _glow_mat(C_DEPOSIT, 1.0, 0.9)
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	node.add_child(mi)
+	if _dep_disc == null:
+		_build_deposit_marks()
+	for part in [[_dep_disc, null, 0.035], [_dep_ring, _dep_ring_mat, 0.048]]:
+		var mi := MeshInstance3D.new()
+		mi.mesh = part[0]
+		mi.material_override = part[1]
+		mi.position = cell_world(hex) + Vector3(0, part[2], 0)
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		node.add_child(mi)
 	var sp := Sprite3D.new()
 	sp.name = "icon"
 	sp.texture = _tex({"gold": "coin", "food": "food", "metal": "metal"}.get(res, "coin"))
@@ -3715,6 +3860,49 @@ func _make_deposit(hex: int, res: String) -> Node3D:
 	sp.position = center + Vector3(0, 0.75, 0)
 	node.add_child(sp)
 	return node
+
+
+## The deposit marks, built once (§6.7, P8):
+## - the disc: a flat 1.2 × 1.2 quad, unshaded, a radial gradient of #FFD24A from alpha 0.45 in the middle to 0 at
+##   r 0.6, over the fills and under the ribbons (render_priority 1);
+## - the ring: a border_ribbon over a 32-point circle of r 0.62, 0.06 wide (body #FFD24A, rim #A87A12, band #FFF3B0),
+##   dashed with a period ≈ 0.25 that divides the circle (16 dashes), with the border ribbons (render_priority 2).
+func _build_deposit_marks() -> void:
+	var gold := Color("#FFD24A")
+	var g := Gradient.new()
+	g.offsets = PackedFloat32Array([0.0, 0.5, 0.82, 1.0])
+	g.colors = PackedColorArray([Color(gold, 0.45), Color(gold, 0.36), Color(gold, 0.12), Color(gold, 0.0)])
+	var gt := GradientTexture2D.new()
+	gt.gradient = g
+	gt.width = 64
+	gt.height = 64
+	gt.fill = GradientTexture2D.FILL_RADIAL
+	gt.fill_from = Vector2(0.5, 0.5)
+	gt.fill_to = Vector2(1.0, 0.5)
+	var dm := StandardMaterial3D.new()
+	dm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	dm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	dm.albedo_texture = gt
+	dm.render_priority = 1
+	_dep_disc = QuadMesh.new()
+	_dep_disc.orientation = PlaneMesh.FACE_Y
+	_dep_disc.size = Vector2(1.2, 1.2)
+	_dep_disc.material = dm
+	var pts := PackedVector2Array()
+	for i in 32:
+		pts.append(Vector2.from_angle(TAU * i / 32.0) * 0.62)
+	var per := 0.0
+	for i in 32:
+		per += pts[i].distance_to(pts[(i + 1) % 32])
+	_dep_ring = _marker_ribbon(pts, 0.06)
+	_dep_ring_mat = ShaderMaterial.new()
+	_dep_ring_mat.shader = RIBBON_SHADER
+	_dep_ring_mat.set_shader_parameter("body", gold)
+	_dep_ring_mat.set_shader_parameter("rim", Color("#A87A12"))
+	_dep_ring_mat.set_shader_parameter("hi", Color("#FFF3B0"))
+	_dep_ring_mat.set_shader_parameter("w", 0.06)
+	_dep_ring_mat.set_shader_parameter("dash", per / roundf(per / 0.25))
+	_dep_ring_mat.render_priority = 2
 
 
 func _make_cart() -> Node3D:
@@ -3759,6 +3947,8 @@ func _make_cart() -> Node3D:
 	lbl.name = "label"
 	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	lbl.no_depth_test = true
+	lbl.render_priority = MARK_PRIO + 1
+	lbl.outline_render_priority = MARK_PRIO
 	lbl.font_size = 40
 	lbl.outline_size = 10
 	lbl.pixel_size = 0.005
@@ -3773,7 +3963,9 @@ func _make_cart() -> Node3D:
 var _strike: Node3D
 
 
-## Red arrow from the attacker's hex to the target with a countdown; from < 0 removes it.
+## Red arrow from the attacker's hex to the target with a countdown; from < 0 removes it. Soft (§6.7, soft_style_plan
+## P8): a shaft with a round tail and a head with every corner rounded (_arrow_outline), in the war enemy's body
+## colour #DD3A30 over a copy 0.03 wider in its rim colour #8E1D17; unshaded and over everything (no depth test).
 func strike_arrow(from: int, to: int, text: String) -> void:
 	if from < 0:
 		if _strike:
@@ -3786,24 +3978,39 @@ func strike_arrow(from: int, to: int, text: String) -> void:
 		var a := cell_world(from) + Vector3(0, 0.7, 0)
 		var b := cell_world(to) + Vector3(0, 0.7, 0)
 		var dir := (b - a).normalized()
-		var side := dir.cross(Vector3.UP) * 0.22
-		var tip := b - dir * 0.45
-		var st := SurfaceTool.new()
-		st.begin(Mesh.PRIMITIVE_TRIANGLES)
-		for v in [a + side, tip + side, tip - side, a + side, tip - side, a - side, tip + side * 2.4, b - dir * 0.05, tip - side * 2.4]:
-			st.add_vertex(v)
-		var mi := MeshInstance3D.new()
-		mi.mesh = st.commit()
-		var am := _glow_mat(C_WAR, 1.4, 0.95)
-		am.no_depth_test = true
-		am.render_priority = 4
-		mi.material_override = am
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		_strike.add_child(mi)
+		var across := dir.cross(Vector3.UP)
+		var outline := _arrow_outline(a.distance_to(b))
+		var rim := outline
+		var grown := Geometry2D.offset_polygon(outline, 0.03, Geometry2D.JOIN_ROUND)
+		if not grown.is_empty():
+			rim = grown[0]
+		for part in [[rim, SoftPalette.ENEMY["rim"], MARK_PRIO + 2], [outline, SoftPalette.ENEMY["body"], MARK_PRIO + 3]]:
+			var poly: PackedVector2Array = part[0]
+			var tris := Geometry2D.triangulate_polygon(poly)
+			if tris.is_empty():
+				continue
+			var st := SurfaceTool.new()
+			st.begin(Mesh.PRIMITIVE_TRIANGLES)
+			for i in tris:
+				st.add_vertex(a + dir * poly[i].x + across * poly[i].y)
+			var mi := MeshInstance3D.new()
+			mi.mesh = st.commit()
+			var am := StandardMaterial3D.new()
+			am.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			am.albedo_color = part[1]
+			am.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA  # in the sorted pass, so render_priority orders them
+			am.cull_mode = BaseMaterial3D.CULL_DISABLED
+			am.no_depth_test = true
+			am.render_priority = part[2]  # the body over its rim
+			mi.material_override = am
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			_strike.add_child(mi)
 		var l := Label3D.new()
 		l.name = "label"
 		l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		l.no_depth_test = true
+		l.render_priority = MARK_PRIO + 1
+		l.outline_render_priority = MARK_PRIO
 		l.font_size = 56
 		l.outline_size = 14
 		l.pixel_size = 0.006
@@ -3811,6 +4018,24 @@ func strike_arrow(from: int, to: int, text: String) -> void:
 		l.position = a.lerp(b, 0.5) + Vector3(0, 1.2, 0)
 		_strike.add_child(l)
 	(_strike.get_node("label") as Label3D).text = text
+
+
+## The strike arrow's outline in its own frame (x from the attacker's hex toward the target, y across), counter-
+## clockwise: a shaft 0.44 wide with a round tail cap (8 segments) round the attacker's centre, and a head from 0.55
+## short of the target to its tip 0.05 short of it. Every corner is rounded by 0.08 (_fillet): the head's three, the
+## two notches where it meets the shaft, and (barely) the cap's facets. §6.2: a danger triangle, its tip rounded.
+## The head is drawn 1.28 wide and 0.5 long (the old sharp one: 1.06 × 0.4): rounding its sharp back corners trims
+## them by ≈ 0.15, so it still reads ≈ 0.97 wide; and the base edge must hold both that corner's fillet (0.23) and
+## the notch's (0.08), which the old 0.31 could not.
+func _arrow_outline(length: float) -> PackedVector2Array:
+	var hw := 0.22
+	var xt := length - 0.55
+	var hh := 0.64
+	var pts := PackedVector2Array([Vector2(xt, -hw), Vector2(xt, -hh), Vector2(length - 0.05, 0.0), Vector2(xt, hh),
+			Vector2(xt, hw)])
+	for i in 9:  # the tail cap: a half circle from (0, hw) round the back to (0, −hw)
+		pts.append(Vector2.from_angle(PI * 0.5 + PI * i / 8.0) * hw)
+	return _fillet(pts, 0.08, 3)["pts"]
 
 
 var _smoke_mat: StandardMaterial3D
@@ -4423,6 +4648,8 @@ func floater(hex: int, text: String, color := Color.WHITE) -> void:
 	lbl.text = text
 	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	lbl.no_depth_test = true
+	lbl.render_priority = MARK_PRIO + 1
+	lbl.outline_render_priority = MARK_PRIO
 	lbl.font_size = 56
 	lbl.outline_size = 12
 	lbl.modulate = color
@@ -4480,5 +4707,4 @@ func _process(delta: float) -> void:
 		else:
 			var s := 0.6 + k * (1.6 if f["big"] else 0.7)
 			n.scale = Vector3(s, 0.3, s)
-			((n as MeshInstance3D).material_override as StandardMaterial3D).albedo_color.a = 1.0 - k
-			((n as MeshInstance3D).material_override as StandardMaterial3D).emission_energy_multiplier = 6.0 * (1.0 - k)
+			((n as MeshInstance3D).material_override as StandardMaterial3D).albedo_color.a = float(f.get("a0", 1.0)) * (1.0 - k)

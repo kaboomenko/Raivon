@@ -37,7 +37,6 @@ from evolution_assets import bx, cy, shade, tex, flat, glow  # noqa: E402
 WOOD = "#7d5130"
 WOOD_L = "#a8743f"
 WOOD_D = "#5a3a22"
-BARK = "#6a4327"
 BARK_SOFT = "#7b5536"  # the soft trees' trunks (§6.3: warm, never near-black)
 ROOF_BLUE = "#2d55b8"
 STONE = "#cbc3b4"
@@ -145,110 +144,204 @@ def cached(key, fn):
     return _PAINT[key]
 
 
-def foliage(dark, mid, light, z0=0.0, z1=0.6, hl=0.75, scale=11.0):
-    """Leaves: mottled dark/mid, sun-lit light tops, dark undersides, darker towards the ground."""
-    def build():
-        p = Paint("foliage")
-        n = p.noise(scale, 4.0)
-        col = p.mix(p.step(n, 0.3, 0.6), dark, mid)
-        top = p.math("MULTIPLY", p.step(p.nz, 0.35, 0.9), p.step(p.noise(scale * 0.6, 2.0), 0.3, 0.55))
-        col = p.mix(p.math("MULTIPLY", top, hl), col, light)
-        col = p.mix(p.step(p.nz, -0.05, -0.6), col, shade(dark, 0.62))
-        col = p.mix(p.math("MULTIPLY", p.step(p.z, z1, z0), 0.45), col, shade(dark, 0.7))
-        return p.done(col, 0.9)
-    return cached(("foliage", dark, mid, light, z0, z1, hl, scale), build)
+# «Raivon Soft» stone (§6.3): warm grey rock, a pale sunlit top, lilac shade (never a darker grey), spring-green moss
+STONE_C = {"base": "#BDB3A3", "top": "#D8CFBF", "shade": "#8C86A0", "moss": "#8DBA4E"}
+MOSS_C = ("#7AA845", STONE_C["moss"])  # moss mottle: a slightly deeper green and the §6.3 moss
+MOUNTAIN_C = {"base": "#9E9586", "warm": "#AAA090"}  # the massif's stone: the warm grey a step deeper (L* ≈ 62)
 
 
-def rock_paint(c1, c2, moss=("#4f7f2c", "#77a83a"), moss_at=0.62, scale=7.0):
-    """Faceted stone: mottled grey, fine speckles, moss on up-facing faces."""
+def rock_paint(c1=STONE_C["base"], c2="#C6BCAC", moss=MOSS_C, moss_at=0.62, scale=7.0, top=STONE_C["top"],
+               shade_c=STONE_C["shade"], speck=0.1):
+    """Loose stones and boulders. «Raivon Soft» (§6.3, §6.8): warm grey c1 with big soft patches of c2, the pale
+    `top` colour on the up-facing faces, the lilac `shade_c` on the faces that turn down (a shade hue, never a darker
+    grey), a faint speckle (0.1, was 0.35: nothing finer than the eye holds at map zoom) and moss on the up-facing
+    faces. top=None and shade_c=None give the old faceted-stone paint (speckle and underside in shade(c1)), which the
+    mine keeps."""
     def build():
         p = Paint("rockpaint")
-        col = p.mix(p.step(p.noise(scale, 4.0), 0.3, 0.7), c1, c2)
-        col = p.mix(p.math("MULTIPLY", p.step(p.noise(scale * 5, 2.0), 0.55, 0.75), 0.35), col, shade(c1, 0.7))
-        col = p.mix(p.step(p.nz, 0.1, -0.5), col, shade(c1, 0.72))
+        under = shade_c or shade(c1, 0.72)
+        col = p.mix(p.step(p.noise(scale, 4.0 if top is None else 2.0), 0.3, 0.7), c1, c2)
+        col = p.mix(p.math("MULTIPLY", p.step(p.noise(scale * 5, 2.0), 0.55, 0.75), speck), col,
+                    shade(c1, 0.7) if shade_c is None else shade_c)
+        if top:
+            col = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.45, 0.85), 0.8), col, top)
+        col = p.mix(p.step(p.nz, 0.1, -0.5), col, under)
         if moss:
             mf = p.math("ADD", p.nz, p.math("MULTIPLY", p.math("SUBTRACT", p.noise(6.0, 3.0), 0.5), 0.7))
             mcol = p.mix(p.step(p.noise(14.0), 0.35, 0.65), moss[0], moss[1])
             col = p.mix(p.step(mf, moss_at, moss_at + 0.12), col, mcol)
         return p.done(col, 0.9)
-    return cached(("rock", c1, c2, moss, moss_at, scale), build)
+    return cached(("rock", c1, c2, moss, moss_at, scale, top, shade_c, speck), build)
 
 
-def granite_paint(c1, c2, moss=("#34481f", "#4a6328"), moss_at=0.86, scale=6.0, cracks=0.4, moss_z=0.08, cover=0.3):
-    """Mid-grey granite of reference frames 1 and 3: horizontal strata, dark shadowed fissures down the steep faces
-    (joints, not marble veins), lighter sunlit top facets, darker steep faces and foot, and a few solid patches of dark
-    moss on the flattest high tops only (about `cover` of them; none on small stones below moss_z)."""
+def granite_paint(base=STONE_C["base"], top=STONE_C["top"], shade_c=STONE_C["shade"], moss=MOSS_C, moss_at=0.8,
+                  scale=4.0, cracks=0.1, moss_z=0.08, cover=0.3, warm="#C9BFAE"):
+    """The big rounded stone blocks of «Raivon Soft» (§6.3, §6.8: «тёплый серый, лиловая тень, мох»), for soft_block:
+    - warm grey `base` (#BDB3A3) in a few big soft patches of `warm`, and a very faint horizontal banding;
+    - the pale `top` (#D8CFBF) on the faces turned to the sky (the broad slanted top of every block), so the masses
+      read lit from above like painted toys;
+    - lilac `shade_c` (#8C86A0) on the steep and down-turned faces and a little at the foot — the shade side leans to
+      the §6.3 shade hue instead of going grey (§6.1 rule 3); the AO bake darkens the creases on top of it;
+    - joints between upright blocks only as a hint (cracks 0.1, was 0.4, and in the lilac shade, not near-black);
+    - soft patches of spring-green moss on the flattest high tops (about `cover` of them; none below moss_z)."""
     def build():
         p = Paint("granite")
-        col = p.mix(p.step(p.noise(scale, 4.0), 0.3, 0.7), c1, c2)
-        strata = p.noise(scale * 0.5, 3.0, stretch=(1.0, 1.0, 10.0))
-        col = p.mix(p.math("MULTIPLY", p.step(strata, 0.48, 0.66), 0.45), col, shade(c1, 0.78))
-        col = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.55, 0.9), 0.4), col, shade(c2, 1.12))
-        col = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.35, -0.2), 0.45), col, shade(c1, 0.68))
-        col = p.mix(p.math("MULTIPLY", p.step(p.z, 0.05, 0.0), 0.35), col, shade(c1, 0.6))  # grounded foot
-        if cracks:  # granite jointing (reference frames 1, 3): tall blocks of slightly different tone parted by dark,
-            # straight-edged joints that read as shadowed crevices — not as the meandering veins of marble
-            vs = (1.0, 1.0, 0.15)  # nearly vertical joint planes: upright blocks on the steep faces
-            _, cell = p.voronoi(scale * 1.4, "F1", vs)
-            col = p.mix(p.math("MULTIPLY", p.step(cell, 0.45, 0.1), 0.45), col, shade(c1, 0.8))
-            col = p.mix(p.math("MULTIPLY", p.step(cell, 0.6, 0.95), 0.35), col, shade(c2, 1.08))
-            edge, _ = p.voronoi(scale * 1.4, "DISTANCE_TO_EDGE", vs)
-            steep = p.math("ADD", 0.45, p.math("MULTIPLY", p.step(p.nz, 0.7, 0.35), 0.55))
-            fis = p.math("MULTIPLY", p.step(edge, 0.05, 0.018), steep)
-            col = p.mix(p.math("MULTIPLY", fis, cracks), col, shade(c1, 0.3))
-        if moss:  # solid patches (so no strata show through), flattest high tops only
+        col = p.mix(p.math("MULTIPLY", p.step(p.noise(scale, 2.0), 0.35, 0.65), 0.7), base, warm)
+        band = p.noise(scale * 0.5, 2.0, stretch=(1.0, 1.0, 8.0))
+        col = p.mix(p.math("MULTIPLY", p.step(band, 0.5, 0.68), 0.15), col, shade(base, 0.9))
+        col = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.55, 0.9), 0.8), col, top)
+        col = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.45, -0.1), 0.55), col, shade_c)
+        col = p.mix(p.math("MULTIPLY", p.step(p.nz, -0.15, -0.7), 0.5), col, shade_c)
+        col = p.mix(p.math("MULTIPLY", p.step(p.z, 0.05, 0.0), 0.3), col, shade_c)  # grounded foot
+        if cracks:  # a hint of jointing: upright blocks of a slightly different tone, parted by soft lilac lines
+            vs = (1.0, 1.0, 0.15)
+            _, cell = p.voronoi(scale * 2.0, "F1", vs)
+            col = p.mix(p.math("MULTIPLY", p.step(cell, 0.4, 0.1), 0.15), col, shade(base, 0.92))
+            edge, _ = p.voronoi(scale * 2.0, "DISTANCE_TO_EDGE", vs)
+            steep = p.step(p.nz, 0.7, 0.35)
+            fis = p.math("MULTIPLY", p.step(edge, 0.06, 0.02), steep)
+            col = p.mix(p.math("MULTIPLY", fis, cracks), col, shade_c)
+        if moss:  # soft solid patches, flattest high tops only
             lo = 0.5 + (0.5 - cover) * 0.26  # noise Fac ≈ N(0.5, 0.1): P(Fac > lo) ≈ cover
-            patch = p.step(p.noise(scale * 1.6, 2.0), lo, lo + 0.03)
-            mf = p.math("MULTIPLY", p.math("MULTIPLY", p.step(p.nz, moss_at, moss_at + 0.04), patch),
-                        p.step(p.z, moss_z, moss_z + 0.02))
-            mcol = p.mix(p.step(p.noise(14.0), 0.35, 0.65), moss[0], moss[1])
+            patch = p.step(p.noise(scale * 2.4, 2.0), lo - 0.02, lo + 0.05)
+            mf = p.math("MULTIPLY", p.math("MULTIPLY", p.step(p.nz, moss_at, moss_at + 0.1), patch),
+                        p.step(p.z, moss_z, moss_z + 0.03))
+            mcol = p.mix(p.step(p.noise(10.0, 2.0), 0.35, 0.65), moss[0], moss[1])
             col = p.mix(mf, col, mcol)
         return p.done(col, 0.9)
-    return cached(("granite", c1, c2, moss, moss_at, scale, cracks, moss_z, cover), build)
+    return cached(("granite", base, top, shade_c, moss, moss_at, scale, cracks, moss_z, cover, warm), build)
 
 
-def tor(cx, cy_, w, d, h, mt, seed, z0=-0.02, slant=0.25, rz=0.0, k=0.2):
-    """Angular block of stone (a granite tor): a jittered box hull with a slanted, broken top — sharp facets and
-    flat ledges instead of a round boulder."""
+def soft_block(cx, cy_, w, d, h, mt, seed, z0=-0.02, rz=0.0, cuts=(6, 10), sub=2, bevel=0.1, segs=2, top=0.62,
+               ground=0.15, sharp=50.0, min_bevel=0.08):
+    """A big rounded block of stone of «Raivon Soft» (§6.8: «крупные скруглённые глыбы, фаска 10 %, 2 сегмента») —
+    it replaces the old sharp convex-hull tors.
+    - An icosphere (sub 2) is cut by 6–10 random planes, each hole filled with one flat face: a chunky pebble whose
+      flat faces meet in what is left of the sphere, so its corners are round. The first cut is a broad slanted top
+      (normal 60–77° up), the face the paint lights with the «top» colour; the others go round the flanks.
+    - It is stretched to the block's real footprint w × d (as the tors') with its top at z0 + h and its equator
+      ground·h above z0 (the widest part near the grass: the stone sits in the ground, never on a point), turned rz,
+      moved to (cx, cy_), and its part under the ground is dropped (never seen, no triangles spent).
+    - The edges sharper than `sharp`° get a round bevel of `bevel` × the smallest size in `segs` segments — only on
+      blocks whose smallest size is at least min_bevel (§6.2: bevels only where they show, on masses ≥ 0.08).
+    - Normals: WEIGHTED_NORMAL (face area), so each big face stays one calm plane and the bevels and the round
+      corners shade softly into it — a soft toy stone instead of a faceted gem. Applied by bake_asset's convert.
+    Edges between 24° and 50° (a flat face meeting the sphere's rest) already shade soft under the weighted normals,
+    so the bevel goes to the face-to-face edges that read as sharp: ≈ 90 triangles a block before the bevel and
+    ≈ 60–110 for it (beveling every edge over 24° cost 400–500 a block). sub=1 with bevel=0 is for pebbles (scree,
+    loose stones): about 30–45 triangles where nobody sees more."""
     rnd = random.Random(seed)
-    pts = []
+    bm = bmesh.new()
+    bmesh.ops.create_icosphere(bm, subdivisions=sub, radius=1.0)
+    # turn the sphere at random first, so no two blocks share the icosphere's vertex pattern
+    bmesh.ops.rotate(bm, verts=bm.verts, cent=(0, 0, 0), matrix=Matrix.Rotation(rnd.uniform(0, math.tau), 3, "Z")
+                     @ Matrix.Rotation(rnd.uniform(-0.4, 0.4), 3, "X"))
+    n_cuts = rnd.randint(*cuts)
+    az0 = rnd.uniform(0, math.tau)
+    for k in range(n_cuts):
+        if k == 0:  # the broad top face, slanted a little
+            el, off, az = rnd.uniform(1.05, 1.35), rnd.uniform(top, top + 0.1), rnd.uniform(0, math.tau)
+        else:  # flanks all round (spread evenly with jitter), a few tilted up or down
+            az = az0 + k / max(1, n_cuts - 1) * math.tau + rnd.uniform(-0.35, 0.35)
+            el, off = rnd.uniform(-0.2, 0.55), rnd.uniform(0.68, 0.86)
+        nrm = Vector((math.cos(el) * math.cos(az), math.cos(el) * math.sin(az), math.sin(el)))
+        res = bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], plane_co=nrm * off,
+                                     plane_no=nrm, clear_outer=True)
+        rim = [e for e in res["geom_cut"] if isinstance(e, bmesh.types.BMEdge) and e.is_boundary]
+        if rim:
+            bmesh.ops.holes_fill(bm, edges=rim, sides=0)
+    xs, ys = [v.co.x for v in bm.verts], [v.co.y for v in bm.verts]
+    mx, my = (max(xs) + min(xs)) / 2, (max(ys) + min(ys)) / 2
+    sx, sy = w / (max(xs) - min(xs)), d / (max(ys) - min(ys))
+    sz = h * (1.0 - ground) / max(v.co.z for v in bm.verts)
     c, s_ = math.cos(rz), math.sin(rz)
-    for sx in (-1, 1):
-        for sy in (-1, 1):
-            for zz, kk in ((z0, 1.0), (z0 + h * rnd.uniform(0.35, 0.55), 1.0 - k * 0.3)):
-                pts.append((sx * w / 2 * kk * rnd.uniform(0.85, 1.05), sy * d / 2 * kk * rnd.uniform(0.85, 1.05), zz))
-            ztop = z0 + h * (1.0 - slant * (0.5 - 0.5 * sy) * rnd.uniform(0.6, 1.0)) * rnd.uniform(0.86, 1.0)
-            pts.append((sx * w / 2 * (1 - k) * rnd.uniform(0.7, 1.0), sy * d / 2 * (1 - k) * rnd.uniform(0.7, 1.0), ztop))
-    for _ in range(4):  # a broken crest
-        pts.append((rnd.uniform(-w, w) * 0.32, rnd.uniform(-d, d) * 0.32, z0 + h * rnd.uniform(0.84, 1.04)))
-    for (ux, uy) in ((1, 0), (-1, 0), (0, 1), (0, -1)):  # bulging / pinched flanks: no two faces alike
-        b = rnd.uniform(0.95, 1.18)
-        pts.append((ux * w / 2 * b + uy * rnd.uniform(-0.2, 0.2) * w, uy * d / 2 * b + ux * rnd.uniform(-0.2, 0.2) * d,
-                    z0 + h * rnd.uniform(0.25, 0.6)))
-    pts = [(cx + x * c - y * s_, cy_ + x * s_ + y * c, z) for x, y, z in pts]
-    return hull(pts, mt)
+    for v in bm.verts:
+        x, y, z = (v.co.x - mx) * sx, (v.co.y - my) * sy, z0 + ground * h + v.co.z * sz
+        v.co = Vector((cx + x * c - y * s_, cy_ + x * s_ + y * c, z))
+    bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], plane_co=(0, 0, z0), plane_no=(0, 0, 1),
+                           clear_inner=True)
+    if bevel and segs and min(w, d, h) >= min_bevel:
+        edges = [e for e in bm.edges if not e.is_boundary and len(e.link_faces) == 2
+                 and e.calc_face_angle(0.0) > math.radians(sharp)]
+        if edges:
+            bmesh.ops.bevel(bm, geom=edges, offset=bevel * min(w, d, h), segments=segs, profile=0.5,
+                            affect="EDGES", clamp_overlap=True)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    me = bpy.data.meshes.new("block")
+    bm.to_mesh(me)
+    bm.free()
+    o = bpy.data.objects.new("block", me)
+    bpy.context.collection.objects.link(o)
+    o.data.materials.append(mt)
+    for p in o.data.polygons:
+        p.use_smooth = True
+    wn = o.modifiers.new("soft", "WEIGHTED_NORMAL")
+    wn.mode = "FACE_AREA"
+    wn.weight = 50
+    wn.keep_sharp = False
+    o["flat"] = True  # ev.lowpoly leaves it alone (no smooth-by-angle over the weighted normals)
+    o["block"] = True  # convex: cull_hidden may test points against it
+    return o
 
 
-def mountain_paint(grass_line=0.13, snow_line=0.78):
-    """Grassy foot → scree → stratified rock (darker on steep faces) → snow on high / flat faces."""
+def cull_hidden(objs, margin=0.003):
+    """Drop the faces of stacked soft blocks that lie wholly inside another block (built in world coordinates,
+    convex: an icosphere cut by planes, beveled; open at the ground). The crag's ridge blocks interpenetrate deeply,
+    so a good share of their triangles was never visible — and invisible faces still cost overdraw and texels."""
+    planes = {}
+    for o in objs:
+        me = o.data
+        planes[o.name] = [(Vector(p.normal), Vector(p.center)) for p in me.polygons]
+    dropped = 0
+    for o in objs:
+        others = [planes[x.name] for x in objs if x is not o]
+        me = o.data
+        bm = bmesh.new()
+        bm.from_mesh(me)
+        dead = [f for f in bm.faces if any(all(all(n.dot(v.co - c) < -margin for n, c in pl) for v in f.verts)
+                                            for pl in others)]
+        if dead:
+            dropped += sum(len(f.verts) - 2 for f in dead)
+            bmesh.ops.delete(bm, geom=dead, context="FACES")
+            bm.to_mesh(me)
+        bm.free()
+    return dropped
+
+
+def mountain_paint(grass_line=0.15, snow_edge=0.24):
+    """«Raivon Soft» massif (§6.3, §6.8: «горы — 3 мягких массива, снег мягкими шапками»): a meadow-green foot
+    (≈ the §6.3 plain #74A645) → a band of warm mountain soil (#A39A86) → the warm grey stone of the rocks (#BDB3A3
+    in big soft patches, the pale top colour on the sky-facing slopes, the lilac shade on the steep ones; no fine
+    strata or speckle) → a soft snow cap on each mass. The caps follow the "cap" point attribute that mountain()
+    writes (1 at a mass's summit, 0 at its cap's rim, below 0 lower down), broken by a broad noise and leaning
+    onto the flatter slopes; their edge is a smoothstep `snow_edge` wide (the old snow line: 0.05 of height). Snow
+    is blue-white, not white (#EEF2F8 lit, #C8D2EA in the shade): pure white tops clip to «white-hot» (§6.12)."""
     def build():
         p = Paint("mountain")
-        jit = p.math("MULTIPLY", p.math("SUBTRACT", p.noise(5.0, 3.0), 0.5), 0.16)
+        jit = p.math("MULTIPLY", p.math("SUBTRACT", p.noise(2.5, 2.0), 0.5), 0.22)  # broad tongues, no speckle
         zz = p.math("ADD", p.z, jit)
-        strata = p.noise(2.2, 3.0, stretch=(1.0, 1.0, 9.0))
-        rock = p.mix(p.step(strata, 0.35, 0.68), "#6c6a67", "#97938d")  # cool grey granite (reference frame 1)
-        rock = p.mix(p.math("MULTIPLY", p.step(p.noise(30.0, 2.0), 0.55, 0.75), 0.3), rock, "#4f4d4b")
-        rock = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.75, 0.25), 0.55), rock, "#4a4846")
-        rock = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.55, 0.9), 0.5), rock, "#b0aca5")
-        scree = p.mix(p.step(p.noise(18.0), 0.4, 0.6), "#7d7870", "#958f84")
-        col = p.mix(p.step(zz, grass_line + 0.16, grass_line + 0.04), rock, scree)
-        grass = p.mix(p.step(p.noise(9.0, 3.0), 0.35, 0.65), "#3f5f2a", "#526f33")  # ≈ map plain grass (muted, 2026-10-08)
-        col = p.mix(p.step(zz, grass_line + 0.03, grass_line - 0.03), col, grass)
-        sf = p.math("ADD", zz, p.math("MULTIPLY", p.math("SUBTRACT", p.nz, 0.55), 0.35))
-        snow = p.mix(p.step(p.nz, 0.2, 0.8), "#c9d6e6", "#fbfdff")
-        col = p.mix(p.step(sf, snow_line, snow_line + 0.05), col, snow)
+        # the massif's stone is the rocks' warm grey a step deeper (MOUNTAIN_C): a whole mountain of #BDB3A3 read as
+        # a pale ghost under the soft light and lost its snow caps; mid-value stone keeps the sun's form shading
+        rock = p.mix(p.math("MULTIPLY", p.step(p.noise(2.5, 2.0), 0.35, 0.65), 0.7), MOUNTAIN_C["base"],
+                     MOUNTAIN_C["warm"])
+        band = p.noise(1.6, 2.0, stretch=(1.0, 1.0, 6.0))
+        rock = p.mix(p.math("MULTIPLY", p.step(band, 0.5, 0.7), 0.15), rock, shade(MOUNTAIN_C["base"], 0.9))
+        # most of a massif faces the sky (nz 0.5–0.8): the pale top colour only on its flattest shoulders, a lilac
+        # lean on the steepest flanks
+        rock = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.8, 0.95), 0.6), rock, STONE_C["base"])
+        rock = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.6, 0.25), 0.5), rock, STONE_C["shade"])
+        scree = p.mix(p.math("MULTIPLY", p.step(p.noise(8.0, 2.0), 0.4, 0.6), 0.5), "#A39A86", "#AFA690")
+        col = p.mix(p.step(zz, grass_line + 0.08, grass_line + 0.04), rock, scree)
+        grass = p.mix(p.step(p.noise(6.0, 2.0), 0.35, 0.65), "#6A9C42", "#7DAE4A")
+        col = p.mix(p.step(zz, grass_line + 0.045, grass_line + 0.015), col, grass)
+        at = p.nt.nodes.new("ShaderNodeAttribute")
+        at.attribute_name = "cap"
+        sf = p.math("ADD", at.outputs["Fac"], p.math("MULTIPLY", p.math("SUBTRACT", p.noise(3.0, 2.0), 0.5), 0.5))
+        sf = p.math("ADD", sf, p.math("MULTIPLY", p.math("SUBTRACT", p.nz, 0.6), 0.4))
+        snow = p.mix(p.step(p.nz, 0.2, 0.8), "#CBD5EC", "#F1F4FA")
+        col = p.mix(p.step(sf, 0.0, snow_edge), col, snow)
         return p.done(col, 0.9)
-    return cached(("mountain", grass_line, snow_line), build)
+    return cached(("mountain", grass_line, snow_edge), build)
 
 
 def zgrad(c0, c1, c2, z0, z1, scale=20.0, rough=0.8):
@@ -370,48 +463,6 @@ def blob(r, loc, mt, scale=(1, 1, 1), sub=2, seed=0, jitter=0.12):
     return o
 
 
-def star_tier(cx, cy_, z0, z1, r, n, rot, mt, mt_under, droop=0.035, inner=0.8, seed=0):
-    """One pine tier: star-shaped skirt (drooping branch tips), apex at z1, concave dark underside."""
-    rnd = random.Random(seed)
-    verts = [(cx, cy_, z1)]
-    for k in range(2 * n):
-        a = rot + math.pi * k / n
-        if k % 2 == 0:
-            rr = r * rnd.uniform(0.9, 1.08)
-            z = z0 - droop * rnd.uniform(0.7, 1.2)
-        else:
-            rr = r * inner
-            z = z0 + (z1 - z0) * 0.12
-        verts.append((cx + rr * math.cos(a), cy_ + rr * math.sin(a), z))
-    verts.append((cx, cy_, z0 + (z1 - z0) * 0.22))
-    c = len(verts) - 1
-    faces, fm = [], []
-    for k in range(2 * n):
-        a, b = 1 + k, 1 + (k + 1) % (2 * n)
-        faces.append((0, a, b))
-        fm.append(0)
-        faces.append((c, b, a))
-        fm.append(1)
-    return poly(verts, faces, [mt, mt_under], fm, flat_shade=False, name="tier")
-
-
-def pine_tree(x=0.0, y=0.0, s=1.0, n=9, tiers=4, seed=0, mats=None):
-    """Layered stylised pine, ~0.62·s tall."""
-    rnd = random.Random(seed)
-    if mats is None:
-        mats = pine_mats()
-    ma, mb, mu, bark = mats
-    cy(0.032 * s, 0.17 * s, (x, y, 0.085 * s), bark, 6, 0.0, r2=0.024 * s)
-    radii = [0.25, 0.205, 0.16, 0.11, 0.08][:tiers]
-    zstep = 0.47 / tiers
-    for i, r in enumerate(radii):
-        z0 = (0.11 + i * zstep) * s
-        z1 = z0 + (0.25 if i < tiers - 1 else 0.24) * s * (1.0 if tiers >= 4 else 1.15)
-        ox, oy = rnd.uniform(-0.012, 0.012) * s, rnd.uniform(-0.012, 0.012) * s
-        star_tier(x + ox, y + oy, z0, z1, r * s, n, rnd.uniform(0, 1), ma if i % 2 == 0 else mb, mu,
-                  droop=0.028 * s, seed=seed * 10 + i)
-
-
 def pine_paint(dark="#2E6B3E", mid="#3F8A47", light="#8CC152", deep="#24563A", seed=0.0):
     """Conifer tiers of «Raivon Soft» (art direction §6.3, §6.8): on every tier deep green up under the tier above,
     then the dark green with big soft mid-green mottles, a mid-green band and sunlit yellow-green rims — the value
@@ -528,7 +579,7 @@ def soft_trunk(x, y, rings, mt, n=6):
     return soft_normals(o, _radial((x, y)))
 
 
-def tall_pine(x=0.0, y=0.0, s=1.0, seed=0, mt=None, bark=None):
+def tall_pine(x=0.0, y=0.0, s=1.0, seed=0, mt=None, bark=None, n=24, na=12, z=0.0):
     """«Raivon Soft» conifer (§6.8): three fat scalloped tiers (radii 0.24 / 0.19 / 0.13) with rolled rims, a ball
     on top and the trunk showing at the foot — stout, height ≈ 2.3× the bottom radius (was 3.2×), ~0.565·s tall.
     The bottom tier starts high (rim 0.25, droop 0.01, lip 0.015) and the tiers are packed tight above it, so a stub
@@ -538,22 +589,25 @@ def tall_pine(x=0.0, y=0.0, s=1.0, seed=0, mt=None, bark=None):
     frame the perspective looks down at ≈ 45° and only the troughs show it. Droop and lip shrink with the tier
     radius, so every upper rim still hangs clear of the tier below (a deep-green band under each). 284
     triangles (three 84-triangle tiers, the 20-triangle ball that plugs the top apex ring, a 12-triangle trunk), one
-    material besides the bark."""
+    material besides the bark. n / na: the tiers' rim and apex segments; the small pines that cling to the crag and
+    the mountain slopes use 18 / 9 (63-triangle tiers, 221 triangles a tree, still three rim points a scallop).
+    z: the ground height under the trunk (a slope). Build the tree there rather than move it up afterwards:
+    pine_paint reads the tiers' tip lines in model-space height, so a tree lifted after the build paints wrong."""
     rnd = random.Random(seed)
     mt = mt or pine_paint()
     bark = bark or tex("wood", BARK_SOFT)
-    soft_trunk(x, y, [(-0.02 * s, 0.055 * s), (0.34 * s, 0.036 * s)], bark)
+    soft_trunk(x, y, [(z - 0.02 * s, 0.055 * s), (z + 0.34 * s, 0.036 * s)], bark)
     # (radius, rim z0, apex z1, droop, lip); the apex of a lower tier sits inside the tier above
     tiers = [(0.24, 0.25, 0.40, 0.01, 0.015), (0.19, 0.325, 0.475, 0.016, 0.016), (0.13, 0.41, 0.525, 0.011, 0.011)]
     for i, (r, z0, z1, droop, lip) in enumerate(tiers):
         ox, oy = rnd.uniform(-0.008, 0.008) * s, rnd.uniform(-0.008, 0.008) * s
         top = i == len(tiers) - 1
         # the top tier's apex ring is smaller (0.15·r ≈ 0.02) so the ball below covers it: no cap needed
-        soft_tier(x + ox, y + oy, z0 * s, z1 * s, r * s, mt, seed * 10 + i, droop=droop * s, lip=lip * s,
-                  apex=0.15 if top else 0.2)
+        soft_tier(x + ox, y + oy, z + z0 * s, z + z1 * s, r * s, mt, seed * 10 + i, droop=droop * s, lip=lip * s,
+                  apex=0.15 if top else 0.2, n=n, na=na)
     # the ball on the apex (tip 0.9: it catches the light like the rims); 0.01 above the apex ring, its section there
     # (≥ 0.021 even between the icosahedron's vertices) is wider than the ring (0.0195)
-    c = Vector((x + ox, y + oy, (tiers[-1][2] + 0.01) * s))
+    c = Vector((x + ox, y + oy, z + (tiers[-1][2] + 0.01) * s))
     ball = soft_ball(0.03 * s, c, mt, sub=1)
     tip_attrs(ball, [0.9] * len(ball.data.vertices), 0.9, 0.0)
 
@@ -586,13 +640,6 @@ def _ico(sub):
         _ICO[sub] = ([v.co.normalized() for v in bm.verts], [tuple(v.index for v in f.verts) for f in bm.faces])
         bm.free()
     return _ICO[sub]
-
-
-def pine_mats():
-    return (foliage("#1a3f22", "#29592b", "#5a8236", 0.1, 0.62, 0.45, 7.0),
-            foliage("#1d4425", "#2d5f2e", "#62893a", 0.1, 0.62, 0.45, 7.0),
-            flat("pine_under", "#25502b", 0.9),
-            tex("wood", BARK))
 
 
 # ------------------------------------------------------------------ assets
@@ -795,70 +842,97 @@ def flowers():
 
 
 def rock():
-    """A granite outcrop (reference frames 1 and 3): a leaning angular block, a second block and a flat slab at its
-    foot, two loose stones — sharp facets, strata and cracks, pale tops."""
-    mt = granite_paint("#69645c", "#8a8479", moss_at=0.74, scale=9.0, cracks=0.4, moss_z=0.1, cover=0.4)
-    tor(0.0, 0.02, 0.24, 0.19, 0.2, mt, 11, slant=0.3, rz=0.3)
-    tor(0.15, -0.07, 0.13, 0.11, 0.115, mt, 12, slant=0.2, rz=-0.4)
-    tor(-0.13, 0.07, 0.13, 0.12, 0.06, mt, 13, slant=0.1, rz=0.8, k=0.1)
-    boulder(0.05, -0.16, 0.045, 0.04, 0.04, mt, 14, 9)
-    boulder(-0.11, -0.1, 0.036, 0.032, 0.032, mt, 15, 8)
+    """«Raivon Soft» outcrop (§6.8: «крупные скруглённые глыбы»): three big rounded blocks — a leaning main block, a
+    second one and a low slab at its foot — and two loose stones, in warm grey with pale tops, lilac shade and a
+    little moss (granite_paint). The faces hidden inside a neighbour are dropped. ≤ 500 triangles."""
+    mt = granite_paint(moss_at=0.72, scale=6.0, moss_z=0.1, cover=0.4)
+    blocks = [soft_block(0.0, 0.02, 0.25, 0.2, 0.19, mt, 11, rz=0.3),
+              soft_block(0.15, -0.07, 0.14, 0.12, 0.11, mt, 12, rz=-0.4, sharp=55.0),
+              soft_block(-0.13, 0.07, 0.15, 0.13, 0.07, mt, 13, rz=0.8, cuts=(4, 6)),  # the slab (no bevel: < 0.08)
+              soft_block(0.05, -0.16, 0.09, 0.08, 0.07, mt, 14, sub=1, cuts=(2, 3), bevel=0),  # two loose stones
+              soft_block(-0.11, -0.1, 0.075, 0.065, 0.06, mt, 15, sub=1, cuts=(2, 3), bevel=0)]
+    cull_hidden(blocks)
 
 
 def crag():
-    """Hills hex (the rocky outcrops of the reference frames): a grey stone ridge of stacked faceted blocks with
-    ledges, a scree apron, moss on the tops and a few pines clinging to it."""
-    mt = granite_paint("#625d56", "#837d73", moss_at=0.72, cracks=0.5, moss_z=0.1, cover=0.4)
-    dark = granite_paint("#544f49", "#716b63", moss=None, cracks=0.55)
-    # the main ridge (reference frame 3's grey crags): stacked angular tors with ledges, rising toward the back
-    tor(-0.1, 0.18, 0.36, 0.28, 0.42, mt, 41, slant=0.15, rz=0.15)
-    tor(-0.05, 0.25, 0.26, 0.2, 0.6, dark, 49, slant=0.3, rz=-0.2, k=0.5)  # the summit
-    tor(0.2, 0.12, 0.3, 0.24, 0.3, mt, 42, slant=0.25, rz=-0.35)
-    tor(0.24, 0.2, 0.2, 0.16, 0.44, dark, 50, slant=0.3, rz=0.4, k=0.45)
-    tor(-0.33, 0.0, 0.22, 0.2, 0.24, dark, 43, slant=0.3, rz=0.5)
-    tor(0.38, -0.1, 0.18, 0.15, 0.16, mt, 44, slant=0.3, rz=-0.6)
-    # ledges and broken blocks in front
-    tor(0.02, -0.08, 0.3, 0.14, 0.13, mt, 45, slant=0.15, rz=0.05, k=0.12)
-    tor(-0.18, -0.27, 0.12, 0.1, 0.08, dark, 46, slant=0.2, rz=0.9)
-    tor(0.24, -0.32, 0.1, 0.09, 0.06, mt, 47, slant=0.2, rz=-0.3)
-    # scree: little stones spilling down the front
+    """Hills hex (the rocky outcrops of the reference frames), «Raivon Soft» (§6.8): a ridge of five big rounded
+    blocks rising toward the back, two broad ledges in front, four round stones at their foot (the scree, 12 → 4)
+    and pines clinging to it. Two tones of warm grey stone (the summit and back blocks a step deeper) with pale tops,
+    lilac shade and moss on the flattest tops; the faces buried in a neighbouring block are dropped. ≤ 1500
+    triangles: the blocks ≈ 1000, two pines of 18-segment tiers (221 each; four 284-triangle B5 pines alone would
+    take 1136)."""
+    mt = granite_paint(moss_at=0.75, moss_z=0.1, cover=0.4)
+    deep = granite_paint(base="#B0A697", top="#CEC4B3", moss=None, warm="#BBB1A1")
+    big = dict(cuts=(4, 6), sharp=60.0, ground=0.05)  # 4–6 cuts and the sharpest edges only: ≈ 120 triangles a block
+    blocks = [
+        # the main ridge: broad rounded blocks rising toward the back, the summit block stacked on them
+        soft_block(-0.12, 0.15, 0.42, 0.34, 0.34, mt, 41, rz=0.15, **big),
+        soft_block(0.2, 0.13, 0.36, 0.3, 0.28, mt, 42, rz=-0.35, **big),
+        soft_block(0.05, 0.3, 0.42, 0.3, 0.32, deep, 50, rz=0.4, **big),
+        soft_block(-0.03, 0.22, 0.32, 0.27, 0.27, deep, 49, z0=0.22, rz=-0.2, **big),  # the summit, on top
+        soft_block(-0.38, 0.0, 0.26, 0.22, 0.2, deep, 43, rz=0.5, **big),
+        # two broad ledges in front
+        soft_block(0.03, -0.1, 0.32, 0.18, 0.12, mt, 45, rz=0.05, **big),
+        soft_block(0.38, -0.08, 0.2, 0.17, 0.14, mt, 44, rz=-0.6, **big),
+    ]
     rnd = random.Random(48)
-    for k in range(12):
-        x, y = rnd.uniform(-0.45, 0.45), rnd.uniform(-0.48, -0.17)
-        r = rnd.uniform(0.02, 0.04)
-        boulder(x, y, r, r * 0.9, r * 0.75, dark if k % 3 else mt, 60 + k, 8)
-    for (x, y, sc) in ((0.44, 0.3, 0.78), (-0.45, 0.33, 0.82), (0.08, 0.47, 0.72), (-0.52, -0.22, 0.62)):
-        tall_pine(x, y, sc, seed=int(abs(x) * 100 + abs(y) * 10))
+    for k, (x, y) in enumerate(((-0.3, -0.26), (-0.12, -0.33), (0.2, -0.3), (0.42, -0.3))):  # the scree
+        r = rnd.uniform(0.032, 0.045)
+        blocks.append(soft_block(x + rnd.uniform(-0.03, 0.03), y + rnd.uniform(-0.03, 0.03), 2.1 * r, 1.8 * r,
+                                 1.5 * r, deep if k % 2 else mt, 60 + k, sub=1, cuts=(1, 2), bevel=0))
+    cull_hidden(blocks)
+    for (x, y, sc) in ((0.47, 0.3, 0.84), (-0.5, 0.3, 0.88)):
+        tall_pine(x, y, sc, seed=int(abs(x) * 100 + abs(y) * 10), n=18, na=9)
+
+
+# the massif's three broad masses, in units of the model radius / k: (x, y, height, radius, lobe phase, snow cap
+# depth — the top share of the mass's profile under snow)
+MASSES = [(-0.06, 0.12, 1.05, 0.82, 0.0, 0.2), (0.38, -0.12, 0.78, 0.6, 1.7, 0.14), (-0.36, -0.3, 0.6, 0.54, 3.1, 0.0)]
+
+
+def _smax(a, b, k):
+    """Polynomial smooth maximum (Inigo Quilez's smin, mirrored): a soft saddle instead of a crease."""
+    h = max(k - abs(a - b), 0.0) / k
+    return max(a, b) + h * h * k * 0.25
+
+
+def _mountain(x, y, k=0.84):
+    """Height and snow-cap factor of the massif at (x, y). «Raivon Soft» (§6.8): three broad masses with smoothstep
+    shoulders (a rounded dome, no spire; was four sharp peaks with a t^1.3 profile), joined by smooth maxima, a
+    lobed footprint, faint ridging (0.03, was 0.1) and fine noise (0.015, was 0.045). The cap factor is 1 at a
+    mass's summit, 0 at the rim of its cap and negative below (mountain_paint reads it)."""
+    x, y = x / k, y / k
+    h, cap = 0.0, -1.0
+    for px, py, H, R, ph, cd in MASSES:
+        dx, dy = x - px, y - py
+        th = math.atan2(dy, dx)
+        Rm = R * (1 + 0.16 * math.sin(3 * th + ph) + 0.03 * math.sin(7 * th + 2 * ph))
+        t = min(1.0, max(0.0, 1 - math.hypot(dx, dy) / Rm))
+        s = t * t * (3 - 2 * t)
+        h = _smax(h, H * s, 0.25)
+        if cd:
+            cap = max(cap, (s - (1 - cd)) / cd)
+    v = Vector((x * 3.5, y * 3.5, 0.7))
+    h += 0.07 * mnoise.noise(v) * (0.35 + h) + 0.015 * abs(mnoise.noise(v * 2.7))
+    h += 0.03 * h * (1.0 - abs(mnoise.noise(v * 1.6 + Vector((3.1, 0.0, 0.0)))))  # faint crests and gullies
+    r = math.hypot(x, y)
+    apron = 0.17 * max(0.0, 1 - r / 0.95) ** 1.1
+    h = _smax(h, apron, 0.08)
+    h -= 0.03 * min(1.0, max(0.0, (r - 0.78) / 0.17))
+    return h, min(1.0, max(-1.0, cap))
 
 
 def _mountain_height(x, y, k=0.84):
-    x, y = x / k, y / k
-    # a massif of comparable sharp peaks (reference frame 1), not one cone
-    peaks = [(-0.1, 0.14, 1.2, 0.62, 0.0), (0.36, -0.08, 1.02, 0.5, 1.7), (-0.4, -0.22, 0.88, 0.46, 3.1),
-             (0.22, 0.44, 0.84, 0.42, 4.4)]
-    hs = []
-    for px, py, H, R, ph in peaks:
-        dx, dy = x - px, y - py
-        d = math.hypot(dx, dy)
-        th = math.atan2(dy, dx)
-        Rm = R * (1 + 0.2 * math.sin(3 * th + ph) + 0.08 * math.sin(7 * th + 2 * ph))
-        t = max(0.0, 1 - d / Rm)
-        hs.append(H * t ** 1.3)
-    hs.sort(reverse=True)
-    h = hs[0] + 0.18 * hs[1]
-    v = Vector((x * 3.5, y * 3.5, 0.7))
-    h += 0.07 * mnoise.noise(v) * (0.35 + h) + 0.045 * abs(mnoise.noise(v * 2.7))
-    h += 0.1 * h * (1.0 - abs(mnoise.noise(v * 1.6 + Vector((3.1, 0.0, 0.0)))))  # ridged crests and gullies
-    r = math.hypot(x, y)
-    apron = 0.17 * max(0.0, 1 - r / 0.95) ** 1.1
-    h = max(h, apron)
-    h -= 0.03 * min(1.0, max(0.0, (r - 0.78) / 0.17))
-    return h
+    return _mountain(x, y, k)[0]
 
 
 def mountain():
+    """«Raivon Soft» mountain (§6.8): a friendly massif of three broad rounded masses with soft snow caps, smooth
+    shaded (was faceted spires), on a meadow foot with a few rounded boulders and the soft pines of the forests
+    climbing its lower slopes. Fewer triangles than the old massif (2378): a 15 × 32 ring mesh, six 221-triangle
+    pines, three small blocks."""
     mt = mountain_paint()
-    rings, segs, R = 17, 34, 0.8
+    rings, segs, R = 15, 30, 0.8
     rnd = random.Random(21)
     verts = [(0.0, 0.0, 0.0)]
     for i in range(1, rings + 1):
@@ -866,12 +940,14 @@ def mountain():
             a = (j + (0.5 if i % 2 else 0.0)) / segs * math.tau
             r = R * i / rings
             if i < rings:
-                r += rnd.uniform(-0.25, 0.25) * R / rings
-                a += rnd.uniform(-0.2, 0.2) / segs * math.tau
+                r += rnd.uniform(-0.2, 0.2) * R / rings
+                a += rnd.uniform(-0.15, 0.15) / segs * math.tau
             else:
                 r -= rnd.uniform(0.0, 0.03)
             verts.append([r * math.cos(a), r * math.sin(a), 0.0])
-    verts = [(x, y, _mountain_height(x, y)) for x, y, _ in verts]
+    hc = [_mountain(x, y) for x, y, _ in verts]
+    verts = [(x, y, h) for (x, y, _), (h, _) in zip(verts, hc)]
+    caps = [c for _, c in hc]
 
     def vid(i, j):
         return 1 + (i - 1) * segs + (j % segs)
@@ -891,28 +967,35 @@ def mountain():
     for j in range(segs):
         vx, vy, _ = verts[vid(rings, j)]
         verts.append((vx * 0.98, vy * 0.98, -0.12))
+        caps.append(-1.0)
     for j in range(segs):
         a, b = vid(rings, j), vid(rings, j + 1)
         faces.append((a, base + j, base + (j + 1) % segs, b))
-    poly(verts, faces, [mt])
-    # boulders and pines on the grassy foot
-    rk = rock_paint("#857f77", "#a39b8f", moss_at=0.55)
+    o = poly(verts, faces, [mt], flat_shade=False)  # smooth shaded (ev.lowpoly: smooth by angle, the skirt stays crisp)
+    at = o.data.attributes.new("cap", "FLOAT", "POINT")
+    at.data.foreach_set("value", caps)
+
+    def ground(x, y, rr):  # the lowest ground under a footprint of radius rr: nothing hangs over the slope
+        return min(_mountain_height(x + rr * math.cos(a), y + rr * math.sin(a)) for a in (0, 2.1, 4.2)) - 0.012
+
+    # rounded boulders on the grassy foot
+    rk = granite_paint(moss_at=0.7, scale=6.0, moss_z=0.0, cover=0.4)
     for k, (a, r, s) in enumerate([(4.4, 0.68, 0.06), (1.2, 0.7, 0.05), (2.6, 0.66, 0.055)]):
         x, y = r * math.cos(a), r * math.sin(a)
-        boulder(x, y, s * 1.2, s, s * 1.1, rk, 70 + k, 12, z0=_mountain_height(x, y) - 0.03)
-    mats = pine_mats()
+        soft_block(x, y, s * 2.3, s * 1.9, s * 1.2, rk, 70 + k, z0=ground(x, y, s), rz=a, sub=1, cuts=(2, 3), bevel=0)
+    # the soft pines of the forests climb the lower slopes (reference frame 1), not only the grassy foot
     placed = []
-    cand = [(a, r) for a in [i * 0.37 for i in range(17)] for r in (0.48, 0.56, 0.62, 0.7)]
+    cand = [(a, r) for a in [i * 0.37 for i in range(17)] for r in (0.5, 0.58, 0.64, 0.7)]
     random.Random(5).shuffle(cand)
-    for a, r in cand:  # pines climb the lower slopes (reference frame 1), not only the grassy foot
+    pine_mt, bark = pine_paint(), tex("wood", BARK_SOFT)
+    for a, r in cand:
         x, y = r * math.cos(a), r * math.sin(a)
-        h = _mountain_height(x, y)
-        if h > 0.34 or any(math.dist((x, y), p) < 0.16 for p in placed):
+        if _mountain_height(x, y) > 0.36 or any(math.dist((x, y), p) < 0.2 for p in placed):
             continue
         placed.append((x, y))
-        build = (lambda s_, sd: (lambda: pine_tree(0, 0, s_, n=6, tiers=3, seed=sd, mats=mats)))(random.Random(len(placed)).uniform(0.38, 0.5), 30 + len(placed))
-        ev.build_at(build, x, y, 0.0, 1.0, z=h - 0.02)
-        if len(placed) >= 12:
+        s_ = random.Random(len(placed)).uniform(0.46, 0.56)
+        tall_pine(x, y, s_, 30 + len(placed), pine_mt, bark, n=18, na=9, z=ground(x, y, 0.05 * s_))
+        if len(placed) >= 6:
             break
 
 
@@ -1236,14 +1319,14 @@ def windmill():
 
 
 def mine():
-    rk = rock_paint("#7f786e", "#a0978a", moss_at=0.82)
+    rk = rock_paint("#7f786e", "#a0978a", moss=("#4f7f2c", "#77a83a"), moss_at=0.82, top=None, shade_c=None, speck=0.35)
     dirt = ev.pad(0.6, ev.stone("#9a8f7f", 1.4), 0.012, 14, 0.12, 4, 1.0, 0.85)  # a flagged yard (reference frame 4)
     dirt.location.y = -0.12
     # the quarried cliff of reference frame 4: three stepped tiers of cut grey blocks, highest at the back, with
     # ledges a man could stand on — not a smooth mossy boulder
     rnd = random.Random(9)
-    cut = rock_paint("#7d776e", "#a39b8f", moss=None, scale=9.0)
-    cut_d = rock_paint("#6a645c", "#8a8278", moss=None, scale=9.0)
+    cut = rock_paint("#7d776e", "#a39b8f", moss=None, scale=9.0, top=None, shade_c=None, speck=0.35)
+    cut_d = rock_paint("#6a645c", "#8a8278", moss=None, scale=9.0, top=None, shade_c=None, speck=0.35)
     for t, (y0, y1, zmax, xr) in enumerate(((0.0, 0.2, 0.3, 0.56), (0.17, 0.36, 0.48, 0.5), (0.33, 0.5, 0.66, 0.38))):
         x = -xr
         while x < xr - 0.04:
@@ -1254,7 +1337,7 @@ def mine():
             bx((w * 0.98, d, h), (x + w / 2, (y0 + y1) / 2 + rnd.uniform(-0.015, 0.015), h / 2),
                cut if (t + int(x * 10)) % 3 else cut_d, rnd.uniform(-0.08, 0.08), 0.008)
             x += w
-    rk = rock_paint("#7f786e", "#a0978a", moss_at=0.82)
+    rk = rock_paint("#7f786e", "#a0978a", moss=("#4f7f2c", "#77a83a"), moss_at=0.82, top=None, shade_c=None, speck=0.35)
     boulder(-0.48, 0.0, 0.1, 0.09, 0.12, rk, 31, 12)
     boulder(0.5, 0.04, 0.09, 0.08, 0.1, rk, 32, 12)
     boulder(-0.33, -0.2, 0.06, 0.05, 0.06, rk, 34, 10)
@@ -1282,7 +1365,7 @@ def mine():
     for dx in (-0.045, 0.045):
         for dy in (-0.045, 0.045):
             cy(0.026, 0.016, (dx * 1.25, -0.4 + dy, 0.035), band, 8, 0.0, rot=(0, math.pi / 2, 0))
-    ore = rock_paint("#5d5852", "#7a736a", moss=None)
+    ore = rock_paint("#5d5852", "#7a736a", moss=None, top=None, shade_c=None, speck=0.35)
     gold = flat("ore_gold", "#f2b632", 0.45)
     for k in range(7):
         a = k / 7 * math.tau

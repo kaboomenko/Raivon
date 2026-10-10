@@ -21,8 +21,8 @@ uniform float skirt = 0.10;  // the outer skirt width (map_view.RIB_SKIRT)
 uniform float skirt_a = 0.3;  // skirt alpha, by zoom 0.2 … 0.32
 uniform float now = 1000000.0;  // the ceremony clock (map_view.ceremony_t), 1e6 outside a ceremony
 uniform float glow_k = 0.0;  // DL8 0.6: the band turns to mix(hi, body, 0.85 k) + body * k (max channel <= 1.6)
-uniform float pulse = 0.0;  // 0..1 alpha pulse (P8 markers)
-uniform float dash = 0.0;  // > 0: dashed along UV.x with this period (P8 markers)
+uniform float pulse = 0.0;  // 0..1 alpha pulse, 0.75–1.0 every 1.2 s (P8 markers: the selection, §6.10)
+uniform float dash = 0.0;  // > 0: dashed along UV.x with this period, round-ended (P8 markers: the deposit ring)
 
 void fragment() {
 	float prog = clamp((now - UV2.x) / 0.3, 0.0, 1.0);
@@ -66,7 +66,15 @@ void fragment() {
 		}
 	}
 	if (dash > 0.0) {
-		a *= step(fract(UV.x / dash), 0.6);
+		// dashes 60 % of the period, round-ended: each a capsule as wide as the visible band (§6.1: no square ends),
+		// anti-aliased over a pixel; its inner shadow follows the capsule's straight part. The gap is centred on the
+		// period's wrap, so the pattern has no seam there (map_view picks a period that divides the loop).
+		float s = (fract(UV.x / dash + 0.2) - 0.5) * dash;  // along: the distance from this dash's centre
+		float rc = 0.5 * w;
+		float flat_hl = max(0.3 * dash - rc, 0.0);
+		float px = max(fwidth(UV.x), 1e-5);
+		float dd = y <= w ? length(vec2(max(abs(s) - flat_hl, 0.0), y - rc)) - rc : abs(s) - flat_hl - 0.4 * rc;
+		a *= 1.0 - smoothstep(-px, px, dd);
 	}
 	a *= mix(1.0, 0.75 + 0.25 * (0.5 + 0.5 * sin(TIME * 5.236)), pulse);
 	ALBEDO = c;
