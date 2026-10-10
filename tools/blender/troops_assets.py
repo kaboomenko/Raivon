@@ -485,6 +485,10 @@ CH_HAND_R = 0.018  # mitten hands (the arms used to end in a 0.012 stub)
 CH_SHAFT_R = 0.0095  # weapon shafts ×1.5 (0.0062): never thinner than 0.012 on screen (§6.1)
 CH_WOOD = "#8a6038"
 CH_STEEL = "#b8bfc7"  # soft painted steel (§6.5): a light toy steel, not the near-black of real iron
+CH_BLADE = "#aab3bf"  # sword and sabre blades: darker and bluer, ×1.5 thick blades in #c9cfd6 rendered white-hot
+DL4_DARK = "#403e48"  # the musketeer's tricorn and boots: soft charcoal, not black (§6.1: no albedo below ≈ #2A2A30);
+# a near-neutral grey, as a navy #3a3a4e read blue-violet in game (saturation ×1.15, sky ambient): blue hats on red men
+DL4_GAITER = "#4a4852"
 
 
 def tube(p0, p1, r, mt, r2=None, n=5):
@@ -620,14 +624,16 @@ def flat_shield(outline, k_rim, k_face, eagle, loc, rim_mt, face_mt, depth=0.012
 
 
 ROUND10 = [(math.cos(math.tau * k / 10), math.sin(math.tau * k / 10)) for k in range(10)]
-SHIELD_BACK = None  # TEST
+# the shield's back: wooden boards (seen when the army faces away), so a turned shield reads as a shield beside the
+# team-coloured back of the man, not as one more grey plate beside the steel hat and pauldrons
+SHIELD_BACK = CH_WOOD
 
 
 def _c_round_shield(Z, face, rim, x=-0.024, y=-0.066, z=0.2, r=0.07):
     """Round shield ×1.2 held before the left of the chest (kept within the figure's place): a bright rim, the team
-    face and the white eagle (reference frames 3–4), one flat surface (flat_shield)."""
+    face and the white eagle (reference frames 3–4), one flat surface (flat_shield) with a wooden back."""
     flat_shield(ROUND10, r, r * 0.82, (r * 1.02, r * 1.02, 0.0, 0.0), (x, y - 0.007, Z + z), F(rim, 0.4),
-                F(face, 0.7), 0.012, F(SHIELD_BACK, 0.8) if SHIELD_BACK else None)
+                F(face, 0.7), 0.012, F(SHIELD_BACK, 0.8))
 
 
 # a militia axe blade in (x, z), the round edge towards −X (inwards, across the man's front)
@@ -640,9 +646,9 @@ HEATER_SOFT = [(-0.034, 0.05), (0.034, 0.05), (0.038, 0.045), (0.038, 0.0), (0.0
 
 def _c_heater(Z, team, x=-0.03, y=-0.06, z=0.2, rim=STEEL, field=None, k=1.2):
     """Heater shield ×1.2 (reference frame 3): a steel border, the team field, the white eagle — one flat surface
-    (flat_shield)."""
+    (flat_shield) with a wooden back."""
     flat_shield(HEATER_SOFT, 1.16 * k, k, (0.05 * k, 0.056 * k, 0.0, -0.004 * k), (x, y - 0.006, Z + z),
-                F(rim, 0.35), F(field or team, 0.7), 0.01, F(SHIELD_BACK, 0.8) if SHIELD_BACK else None)
+                F(rim, 0.35), F(field or team, 0.7), 0.01, F(SHIELD_BACK, 0.8))
 
 
 def _c_surcoat(Z, team, hem=0.085, waist=0.18, r=0.06, flare=0.07, k=0.78, eagle=True):
@@ -725,7 +731,7 @@ def figure(dl, team, v=0, seated=False):
         iron = F(CH_STEEL, 0.4)  # kettle hat: a round dome with a knob over a soft brim, the face shows beneath
         uvs(0.057, (0, 0.002, HZ + 0.014), iron, 8, 4, (1, 1, 0.85))
         uvs(0.08, (0, 0.002, HZ + 0.016), iron, 10, 3, (1, 1, 0.15))
-        uvs(0.013, (0, 0.002, HZ + 0.064), iron, 6, 3)
+        uvs(0.013, (0, 0.002, HZ + 0.064), iron, 5, 3)  # 5 sides pay for the shield's back (DL2 stays ≤ +15 %)
         for sx in (-1, 1):  # iron spaulders
             uvs(0.032, (sx * 0.056, 0, Z + 0.272), F("#a7aeb6", 0.4), 6, 3, (1.05, 1.15, 0.72))
         hx, hy = DL2_SPEAR
@@ -752,12 +758,12 @@ def figure(dl, team, v=0, seated=False):
         uvs(0.013, (0, 0.008, HZ + 0.068), helm, 6, 3)  # knob
         _c_arm(Z, 1, (0.074, -0.05, 0.35), mail, skin=steel)
         _c_arm(Z, -1, (-0.05, -0.04, 0.2), mail, skin=steel)  # behind the shield
-        beam((0.074, -0.054, Z + 0.36), (0.07, -0.062, Z + 0.6), 0.0165, F("#c9cfd6", 0.3))  # sword ×1.3 long, ×1.5 thick
+        beam((0.074, -0.054, Z + 0.36), (0.07, -0.062, Z + 0.6), 0.0165, F(CH_BLADE, 0.3))  # sword ×1.3 long, ×1.5 thick
         bx((0.044, 0.014, 0.014), (0.074, -0.054, Z + 0.37), F(GOLD, 0.4), bev=0)  # cross guard
         _c_heater(Z, team, rim="#8a939e", field=team)
     elif dl == 4:  # musketeers: long coat, white cross belts, gold knots, a soft tricorn; shouldered musket
         coat = team
-        _c_legs(Z, seated, "#ece6d6", "#2e2a2a", gaiter="#3a3434")
+        _c_legs(Z, seated, "#ece6d6", DL4_DARK, gaiter=DL4_GAITER)
         _c_torso(Z, coat, skirt=shade(team, 0.82), skirt_len=0.125, skirt_r=0.066)
         w = F(WHITE, 0.6)
         for s in (-1, 1):  # the second belt 2 mm proud: coplanar, the two fought where they cross (a dark diamond)
@@ -770,7 +776,7 @@ def figure(dl, team, v=0, seated=False):
             # are gone)
             bx((0.074, 0.022, 0.07), (0, 0.062, Z + 0.215), F("#7a5434", 0.8), bev=0)
         _c_head(Z)
-        dk = F("#2a2626", 0.8)
+        dk = F(DL4_DARK, 0.8)
         o = extrude(rounded_ngon(0.09, 3, 0.024), 0, 0.024, dk)  # soft tricorn: a rounded-triangle brim, its flat
         o.location = (0, 0.006, HZ + 0.034)  # sides (inradius R/2) clear of the head at this height
         o = extrude(rounded_ngon(0.094, 3, 0.026), 0, 0.007, F(GOLD, 0.5))  # gold lace under its edge
@@ -1159,7 +1165,7 @@ def assault_dl4(team):
         bx((0.012, 0.012, 0.04), (sx * 0.05, 0.105, 0.37), F(LEATHER, 0.7), bev=0)  # straps
     Z = SEAT
     HZ = Z + CH_HEAD_Z
-    _c_legs(Z, True, "#ece6d6", "#2e2a2a", gaiter="#3a3434")
+    _c_legs(Z, True, "#ece6d6", DL4_DARK, gaiter=DL4_GAITER)
     _c_torso(Z, team)
     w = F(WHITE, 0.6)
     for s in (-1, 1):  # the second belt 2 mm proud: coplanar, the two fought where they cross (a dark diamond)
@@ -1169,15 +1175,16 @@ def assault_dl4(team):
     for sx in (-1, 1):  # gold epaulettes
         uvs(0.029, (sx * 0.056, 0, Z + 0.276), F(GOLD, 0.4), 6, 3, (1.1, 1.15, 0.6))
     _c_head(Z)
-    brass = F("#d6a640", 0.4)  # brass helmet: a round dome over a soft brim, a black horsehair crest and tail
+    brass = F("#d6a640", 0.4)  # brass helmet: a round dome over a soft brim, a dark horsehair crest and tail
     uvs(0.057, (0, 0.004, HZ + 0.012), brass, 8, 4, (1, 1.04, 0.9))
     uvs(0.066, (0, 0.002, HZ + 0.012), brass, 10, 3, (1, 1, 0.14))
-    hair = F("#2e2624", 0.9)  # a soft caterpillar crest front to back and the tail down the back
+    hair = F("#3e3644", 0.9)  # charcoal-violet horsehair (§6.1 floor): a soft caterpillar crest front to back and
+    # the tail down the back
     uvs(0.03, (0, 0.012, HZ + 0.058), hair, 8, 3, (0.45, 1.6, 0.7))
     rod((0, 0.055, HZ + 0.045), (0, 0.088, HZ - 0.06), 0.016, hair, r2=0.006, n=5)
     _c_arm(Z, 1, (0.075, -0.05, 0.39), team)
     _c_arm(Z, -1, (-0.06, -0.06, 0.2), team)
-    beam((0.077, -0.055, Z + 0.4), (0.105, -0.115, Z + 0.62), 0.015, F("#c9cfd6", 0.3))  # sabre ×1.3 long, ×1.5 thick
+    beam((0.077, -0.055, Z + 0.4), (0.105, -0.115, Z + 0.62), 0.015, F(CH_BLADE, 0.3))  # sabre ×1.3 long, ×1.5 thick
     bx((0.036, 0.014, 0.014), (0.076, -0.053, Z + 0.405), F(GOLD, 0.4), bev=0)
     rod((-0.07 - SPREAD, 0.04, Z + 0.07), (-0.08 - SPREAD * 0.5, -0.02, Z + 0.36), 0.012, F("#7a4c2c", 0.8), n=5)  # carbine
     cy(0.02, 0.07, (0.08 + SPREAD * 0.6, 0.11, Z + 0.1), F("#d6a640", 0.4), 6, rot=(0.3, 0, 0))  # holster
