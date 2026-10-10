@@ -6,7 +6,7 @@ shader_type spatial;
 // (+y up), and `px_k` turns a design pixel into world units at depth 1 (2·tan(fov/2) / canvas height).
 //   kind 0, the army plate: a pointy-top rounded hex (R hex_r, corners 0.22R) — an INK contour 4, the team face raised
 //     over its lip by 0.14R, a gloss on the top 42 % — with the strength bar under it (bar_size, INK contour 3, a dark
-//     track, the team colour filled to k with round ends; k < 0 hides the bar). As Kit's hex badge and Kit.bar.
+//     track, the team colour filled to bar_k with round ends; bar_k < 0 hides the bar). As Kit's hex badge and Kit.bar.
 //   kind 1, the chip: a pill of the quad's size less 2 px a side, `face` (INK α 0.85 for a status chip) inside an
 //     optional contour `edge` edge_w wide.
 // Colours come in already through SoftPalette.scene(), so the tonemapped view shows the UI's own colours.
@@ -30,7 +30,7 @@ uniform vec2 bar_size = vec2(64.0, 12.0);
 
 instance uniform vec2 box = vec2(72.0, 68.0);
 instance uniform vec2 shift = vec2(0.0, 31.0);
-instance uniform float k = 1.0;
+instance uniform float bar_k = 1.0;  // (not `k`: the hex include uses k for its own locals)
 instance uniform float fade = 1.0;
 
 varying vec2 pa;  // the fragment in design pixels from the node's origin, +y up
@@ -84,15 +84,15 @@ void fragment() {
 		float gy = top - (top - bottom) * 0.42;
 		float dg = max(d0 + out_w + 0.12 * hex_r, gy - p.y);
 		o = over(o, gloss.rgb, cover(dg, px));
-		if (k >= 0.0) {
+		if (bar_k >= 0.0) {
 			vec2 b = pa - bar_c;
 			vec2 hs = bar_size * 0.5;
 			float db = sd_box(b, hs, hs.y);
 			o = over(o, ink.rgb, cover(db, px));
 			vec2 ih = hs - 3.0;
 			o = over(o, track.rgb, cover(sd_box(b, ih, ih.y), px));
-			if (k > 0.0) {
-				float fw = max(ih.y * 2.0, ih.x * 2.0 * clamp(k, 0.0, 1.0));
+			if (bar_k > 0.0) {
+				float fw = max(ih.y * 2.0, ih.x * 2.0 * clamp(bar_k, 0.0, 1.0));
 				vec2 fc = vec2(-ih.x + fw * 0.5, 0.0);
 				float dfill = sd_box(b - fc, vec2(fw * 0.5, ih.y), ih.y);
 				o = over(o, face.rgb, cover(dfill, px));
@@ -103,9 +103,10 @@ void fragment() {
 	} else {
 		vec2 hs = box * 0.5 - 2.0;
 		float d = sd_box(pa - shift, hs, hs.y);
-		if (edge_w > 0.0) {
-			o = over(o, edge.rgb, cover(d, px) * edge.a);
-			o = over(o, face.rgb, cover(d + edge_w, px) * face.a);
+		if (edge_w > 0.0) {  // the face over the ground, the contour only round it (not under a see-through face)
+			float inner = cover(d + edge_w, px);
+			o = over(o, face.rgb, inner * face.a);
+			o = over(o, edge.rgb, cover(d, px) * (1.0 - inner) * edge.a);
 		} else {
 			o = over(o, face.rgb, cover(d, px) * face.a);
 		}

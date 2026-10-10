@@ -6738,8 +6738,8 @@ func _demo(spec: String) -> void:
 			_open_tab("army")
 			_open_cmd_picker(int(pa[1]["id"]))
 			return
-		if parts.size() > 1 and parts[1] == "card":
-			_open_commander("cmd_vega")
+		if parts.size() > 1 and parts[1] == "card":  # commanders:card:<DL>:<id> — another commander's card
+			_open_commander(String(parts[3]) if parts.size() > 3 else "cmd_vega")
 			return
 		if parts.size() > 1 and parts[1] == "locked":  # a locked commander's card (Emperor Rai, 20/80 shards)
 			_open_commander("cmd_rai")

@@ -1659,7 +1659,7 @@ const INBOX_ICON := {"raid": "swords", "defense": "shield", "defense_lost": "shi
 const INBOX_ROW := 104.0
 const INBOX_PAD := Vector2(20, 16)
 var _inbox_open := -1  # the report opened in the list (its index in items)
-var _inbox_unread := {}  # index -> true: unread when the inbox opened (they keep that look while it re-renders)
+var _inbox_unread := {}  # index -> true: unread when the inbox opened (kept across re-renders until the row is opened)
 var _inbox_scroll := 0
 
 
@@ -1740,6 +1740,7 @@ func _inbox_row(host: Control, r: Rect2, it: Dictionary, now: int, idx: int, ite
 	t.size = r.size
 	t.cb = func():
 		_inbox_open = -1 if open else idx
+		_inbox_unread.erase(idx)  # opened once — read: the dot goes, the row takes the well's colour
 		show_inbox(items, now)
 	host.add_child(t)
 	var title_key := String(it["title"]).split("|")[0]
@@ -2077,9 +2078,9 @@ func _pass_look(text: String) -> Dictionary:
 ## The 28-day login calendar (08 §8.8, docs/ui_style.md §6 «Календарь»): a window L with the gold plate. A header line
 ## with the day chip and the «i» that holds the rules; a well of 7 × 4 tiles — the day in a hex, the reward's icon 64 and
 ## its amount in a pill. Days 7/14/21/28 are gold-backed with the ribbon «Приз»; today glows in a gold outline (and
-## breathes), a taken day has a check and fades to 55 %. A tap on a tile tells the reward. The footer: «Забрать» (go)
-## and, where allowed, «×2» (info, with the ad icon — or the Patent's) on the left; when nothing waits, when the next one
-## comes.
+## breathes), a taken day fades to 55 % under a crisp check inside its top-right corner. A tap on a tile tells the
+## reward. The footer: «Забрать» (go) and, where allowed, «×2» (info, with the ad icon — or the Patent's) on the left;
+## when nothing waits, when the next one comes.
 ## info: {cycle, days: [{day, text, state: claimed|today|future, key, rw?}], pending, can_double, patent}
 const CAL_TILE := Vector2(109, 132)
 const CAL_ROW_GAP := 22.0
@@ -2118,7 +2119,7 @@ func show_calendar(info: Dictionary, on_claim: Callable) -> void:
 		var key := day % 7 == 0
 		var look := _cal_look(d.get("rw", []), String(d.get("text", "")))
 		var o := {"icon_side": 64.0, "pill_inside": true, "face": Kit.PREMIUM_WELL if key else Kit.CREAM_ROW,
-			"claimable": st == "today" and pending, "taken": st == "claimed"}
+			"claimable": st == "today" and pending}  # a taken day draws its own check (below), inside the tile
 		if look.has("face"):
 			var fid := String(look["face"])
 			o["pic_node"] = _cmd_face(fid, String(CasesSim.commander(fid).get("rarity", "common")), 64.0)
@@ -2133,8 +2134,6 @@ func show_calendar(info: Dictionary, on_claim: Callable) -> void:
 		var r := Rect2(12.0 + (i % 7) * (CAL_TILE.x + gx), 12.0 + (i / 7) * (CAL_TILE.y + CAL_ROW_GAP), CAL_TILE.x, CAL_TILE.y)
 		var t := Kit.tile(well, r, o)
 		t.name = "day_%d" % day
-		if st == "claimed":
-			t.modulate.a = CAL_TAKEN_A
 		var role := "gold" if key else ("info" if st != "future" else "")
 		var hb := Kit.hex_badge(t, Vector2(14, 14), 18, role if role != "" else "info", str(day), Kit.CLEAR if role != "" else Kit.CREAM_DEEP.darkened(0.2))
 		hb.name = "num"
@@ -2147,6 +2146,12 @@ func show_calendar(info: Dictionary, on_claim: Callable) -> void:
 		if key:
 			var rb := Kit.ribbon(t, Vector2(CAL_TILE.x * 0.5, CAL_TILE.y + 2.0), tr("cal.prize"), "war")
 			rb.name = "prize"
+		if st == "claimed":  # taken: the tile and all it holds fade to 55 %, the check stays crisp inside the corner
+			t.self_modulate.a = CAL_TAKEN_A  # (on the edge it ran into the next day's hex across the 7 px gap)
+			for ch in t.get_children():
+				(ch as CanvasItem).modulate.a = CAL_TAKEN_A
+			var ck := Kit.check_badge(t, Vector2(CAL_TILE.x - 20.0, 20.0), 36.0)
+			ck.name = "taken"
 		var tip_t := tr("cal.day_n") % day
 		var tip := String(d.get("text", ""))
 		t.cb = func(): Kit.tooltip(t, tip_t, tip)
@@ -2204,8 +2209,9 @@ func _cal_look(rw: Array, text: String) -> Dictionary:
 
 
 ## «15 осколков на выбор» (08 §8.8.2, the calendar's day 26): a decision window L with the gold plate — no ✕, the shards
-## must go to someone. One option card per common and rare commander: the portrait with its level, the name, the
-## shards it has in a chip, «Выбрать» (go S) → on_pick(id).
+## must go to someone. One option card per common and rare commander: the portrait with its level (a lock hex while not
+## open), the name (one size on every card), the shards it has in a chip, «Выбрать» (go S) → on_pick(id); a tap
+## anywhere on the card picks too.
 ## rows: [{id, name, rarity, have, level}]
 func show_shard_pick(n: int, rows: Array, on_pick: Callable) -> void:
 	var cols := 4
@@ -2225,18 +2231,27 @@ func show_shard_pick(n: int, rows: Array, on_pick: Callable) -> void:
 	box.add_child(q)
 	var well := Kit.well(box, Rect2(32, 72.0 + 44.0 + 16.0, w - 64.0, grid_h))
 	var cw := (well.size.x - 32.0 - (cols - 1) * 12.0) / cols
+	var fs := 26  # one name size on every card: the smallest that fits (a name too long even at 22 takes two lines)
+	for r in rows:
+		fs = mini(fs, Kit.fit_size(String(r["name"]), 26, cw - 16.0, "d900", 22, false))
 	for i in rows.size():
 		var r: Dictionary = rows[i]
 		var id := String(r["id"])
 		var cr := Rect2(16.0 + (i % cols) * (cw + 12.0), 16.0 + (i / cols) * (ch + 16.0), cw, ch)
-		var card := Kit.tile(well, cr, {})
+		var card := Kit.tile(well, cr, {"cb": func(): on_pick.call(id)})  # the whole card picks, as its button does
 		card.name = id
-		var face := _cmd_face(id, String(r["rarity"]), 120.0, int(r.get("level", 0)))
+		var lvl := int(r.get("level", 0))
+		var face := _cmd_face(id, String(r["rarity"]), 120.0, lvl)
 		face.position = Vector2((cw - 120.0) * 0.5, 12)
 		card.add_child(face)
+		if lvl <= 0:  # not open yet: the face shows (the calendar shows its rewards' faces too), a lock hex says so
+			var lb := Kit.hex_badge(face, Vector2(120.0 - 6.0, 120.0 - 6.0), 20, "lock", "")
+			lb.name = "locked"
+			var li := _icon_rect("lock", 26)
+			li.position = Vector2(7, 6)
+			lb.add_child(li)
 		var nm := String(r["name"])
-		var two := Kit.text_w(nm, 22, "d900", false) > cw - 16.0
-		var fs := 22 if two else Kit.fit_size(nm, 26, cw - 16.0, "d900", 22, false)
+		var two := Kit.text_w(nm, fs, "d900", false) > cw - 16.0
 		var nl := Kit.label(nm, fs, Kit.INK_TEXT, true)
 		nl.name = "name"
 		nl.add_theme_font_size_override("font_size", fs)
@@ -3562,8 +3577,8 @@ func _flag_tile(parent: Control, r: Rect2, f: Dictionary, sel: bool, locked: boo
 
 ## The commander picker of an army (04 §15.6, docs/ui_style.md §6): a window M with a row per open commander —
 ## the portrait 72 with its level, the name, the skill in a chip, «Назначить» go XS at the right; the commander who
-## leads this army is the selected row (a go outline and a check); the best free one wears the ribbon «Рекомендуем»,
-## one of another army a chip with its number. «Снять» (info S) under the list while one leads it; ✕ closes.
+## leads this army is the selected row (a go outline and a check); the best free one wears the ribbon «Рекомендуем»;
+## one who leads another army has «Перевести» (info XS) with that army in a chip under it. «Снять» (info S) under the list while one leads it; ✕ closes.
 ## rows: [{id, name, rarity, level, lines, skills?, busy, here, best?}]
 const PICK_ROW := 112.0
 
@@ -3586,12 +3601,15 @@ func show_cmd_picker(title: String, rows: Array, on_pick: Callable, on_remove: C
 	for r in rows:
 		var here := bool(r["here"])
 		var id := String(r["id"])
+		var busy := String(r.get("busy", ""))  # «в 1-й армии»: the button moves them over (the caller asks first)
 		var pic := _cmd_face(id, String(r["rarity"]), 72.0, int(r["level"]))
 		var o := {"icon_node": pic, "title": String(r["name"]), "sub": " "}
+		var b: Kit.KitButton = null
 		if here:
 			o["state"] = "selected"
 		else:
-			var b := Kit.button(null, Rect2(0, 0, 196, 48), "go", tr("cmdr.assign"), {"size": "XS", "filter": Control.MOUSE_FILTER_PASS,
+			b = Kit.button(null, Rect2(0, 0, 196, 48), "info" if busy != "" else "go",
+				tr("cmdr.move_yes") if busy != "" else tr("cmdr.assign"), {"size": "XS", "filter": Control.MOUSE_FILTER_PASS,
 				"cb": func(): on_pick.call(id)})
 			b.name = "assign"
 			o["right"] = b
@@ -3608,11 +3626,11 @@ func show_cmd_picker(title: String, rows: Array, on_pick: Callable, on_remove: C
 			chip.position = Vector2(row.title_label.position.x, roundf((PICK_ROW - 5.0) * 0.5 + 2.0))
 		if not here:
 			row.cb = func(): on_pick.call(id)
-		var busy := String(r.get("busy", ""))
-		if busy != "":
+		if busy != "" and b != null:  # the army they lead now, in a chip under the button — inside this row
+			b.position.y = 10.0
 			var bc := Kit.chip(row, Vector2.ZERO, "", busy, "status")
 			bc.name = "busy"
-			bc.position = Vector2(rw - 24.0 - bc.size.x, -17)
+			bc.position = Vector2(roundf(b.position.x + (b.size.x - bc.size.x) * 0.5), b.position.y + b.size.y + 6.0)
 		elif bool(r.get("best", false)) and not here:
 			var rb := Kit.ribbon(row, Vector2.ZERO, tr("cmdr.recommend"), "gold")
 			rb.position = Vector2(rw - 24.0 - rb.size.x, -17)
@@ -3838,8 +3856,7 @@ func _commander_tile(c: Dictionary, on_pick: Callable) -> Control:
 		var sh: Array = c["shards"]
 		var need := maxi(1, int(sh[1]))
 		var have := mini(int(sh[0]), need)  # «4/4», never «29/4»
-		var full := int(sh[0]) >= need
-		var bar := Kit.bar(t, br, float(have) / need, "go" if full else "info", "%d/%d" % [have, need])
+		var bar := Kit.bar(t, br, float(have) / need, "go" if can else "info", "%d/%d" % [have, need])  # go: can level up (§4.7)
 		bar.name = "shards"
 	elif not locked:
 		var bar := Kit.bar(t, br, 1.0, "gold", tr("cmdr.max_short"))
@@ -3855,11 +3872,12 @@ func _commander_tile(c: Dictionary, on_pick: Callable) -> Control:
 ## level hex R 40 with the cap, the shard bar L and the skill chips («Клин +5,8%»; a tap tells the whole skill). The
 ## biography; a track of 8 level nodes (2…16, the reached ones filled, those past the era's cap locked; a tap tells
 ## the value there); «Где взять» as source chips. The footer: go L «Повысить» with its price [shard N][coin G] →
-## on_upgrade (the short number red; grey with the reason when the era caps it or the commander is locked), and the
-## Royal case target as info L on the left (epic, legendary; on_target).
+## on_upgrade (the short number red; greyed, with the lock and the reason in its tooltip, when the era caps it, the
+## commander is locked or at the top), and the Royal case target as info L on the left (epic, legendary; on_target).
 ## info: {id, name, rarity, rarity_name, level, cap, bio, album, mood, can, block, cost [shards, gold], need_dl,
 ##   shards [have, need]?, unlock, skills [{icon, name, value, full}], track [[level, text]], target?}
 const TRACK_LEVELS: Array[int] = [2, 4, 6, 8, 10, 12, 14, 16]
+const BIO_LS := 3  # the biography's line spacing (Label's default, set explicitly so its height is measured right)
 
 
 func show_commander(info: Dictionary, on_upgrade: Callable, on_target: Callable, on_back: Callable) -> void:
@@ -3872,9 +3890,10 @@ func show_commander(info: Dictionary, on_upgrade: Callable, on_target: Callable,
 	var srcs: Array = CMD_SRC.get(id, [])
 	var bio := String(info.get("bio", ""))
 	var bio_h := 0.0
-	if bio != "":
+	if bio != "":  # as many lines as the text takes (at most 3, §3.3), each the font's own height + BIO_LS
 		var f := Kit.font("b800")
-		bio_h = minf(3.0, ceilf(f.get_multiline_string_size(bio, HORIZONTAL_ALIGNMENT_LEFT, 829.0, 26).y / (26.0 * 1.36))) * 36.0 + 20.0
+		var lines := clampi(roundi(f.get_multiline_string_size(bio, HORIZONTAL_ALIGNMENT_LEFT, 829.0, 26).y / f.get_height(26)), 1, 3)
+		bio_h = lines * f.get_height(26) + (lines - 1) * BIO_LS + 20.0
 	# the source chips' rows (they wrap)
 	var src_rows := 1
 	var sxw := 0.0
@@ -3949,8 +3968,8 @@ func show_commander(info: Dictionary, on_upgrade: Callable, on_target: Callable,
 		var sh: Array = info["shards"]
 		var need := maxi(1, int(sh[1]))
 		var have := mini(int(sh[0]), need)
-		var full := int(sh[0]) >= need
-		var bar := Kit.bar(box, Rect2(x0 + 26.0, 276, cw0 - 26.0, 40), float(have) / need, "go" if full else "info", "%d/%d" % [have, need], true)
+		var bar := Kit.bar(box, Rect2(x0 + 26.0, 276, cw0 - 26.0, 40), float(have) / need, "go" if block == "" else "info",
+			"%d/%d" % [have, need], true)  # go only when the level can be bought now (§4.7)
 		bar.name = "shards"
 		var si := _icon_rect("shard", 56)
 		si.position = Vector2(x0 - 6.0, 268)
@@ -3974,7 +3993,9 @@ func show_commander(info: Dictionary, on_upgrade: Callable, on_target: Callable,
 		var bl := Kit.label(bio, 26, Kit.SOFT_CREAM, false)
 		bl.name = "bio"
 		bl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		bl.add_theme_constant_override("line_spacing", BIO_LS)
 		bl.max_lines_visible = 3
+		bl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS  # a bio past 3 lines ends in «…», never cut silently
 		bl.position = Vector2(32, y_bio)
 		bl.size = Vector2(w - 64.0, bio_h - 20.0)
 		box.add_child(bl)
@@ -4063,19 +4084,21 @@ func show_commander(info: Dictionary, on_upgrade: Callable, on_target: Callable,
 		"", "shards", "gold":
 			b = Kit.button(box, main_r, "go", tr("cmdr.upgrade_btn"), {"size": "L", "icon": "arrow_up", "price": price,
 				"cb": on_upgrade})
+		# not possible: still «Повысить», greyed (§4.1) — the lock replaces the arrow when the reason is a level or
+		# the commander is not open yet; the reason is in the tooltip, not in the caption
 		"dl":
-			b = Kit.button(box, main_r, "go", tr("cmdr.upgrade_btn"), {"size": "L", "icon": "arrow_up", "price": price,
+			b = Kit.button(box, main_r, "go", tr("cmdr.upgrade_btn"), {"size": "L", "icon": "lock", "price": price,
 				"enabled": false})
 			var why := tr("cmdr.need_dl") % int(info.get("need_dl", ceili((lvl + 1) / 2.0)))
 			b.denied.connect(func(): Kit.tooltip(b, tr("cmdr.upgrade_btn"), why))
 		"locked":
 			var left := maxi(0, int(info.get("unlock", 10)) - (int((info["shards"] as Array)[0]) if info.has("shards") else 0))
-			b = Kit.button(box, main_r, "go", tr("cmdr.locked_short"), {"size": "L", "icon": "lock", "enabled": false})
+			b = Kit.button(box, main_r, "go", tr("cmdr.upgrade_btn"), {"size": "L", "icon": "lock", "enabled": false})
 			var why2 := tr("cmdr.unlock_left") % L.plural(left, "plural.shards")
 			b.denied.connect(func(): Kit.tooltip(b, tr("cmdr.locked_short"), why2))
 		_:
-			b = Kit.button(box, main_r, "go", tr("cmdr.max_btn"), {"size": "L", "icon": "medal_gold", "enabled": false})
-			b.denied.connect(func(): Kit.tooltip(b, tr("cmdr.max_short"), ""))
+			b = Kit.button(box, main_r, "go", tr("cmdr.upgrade_btn"), {"size": "L", "icon": "arrow_up", "enabled": false})
+			b.denied.connect(func(): Kit.tooltip(b, tr("cmdr.upgrade_btn"), tr("cmdr.max_short")))
 	b.name = "upgrade"
 
 
@@ -4087,8 +4110,9 @@ func _paper_chip_w(icon: String, text: String) -> float:
 
 ## Hand picker (03 §5.2, docs/ui_style.md §6 «Выбор руки»): a window L with the info plate «Рука» and the chip
 ## «chosen/slots». On top a well of sockets 116×150 — «Атака» pinned in the first with a lock badge, the chosen cards in
-## the next ones, the free ones empty with their number in a hex; under it a well with every other open card (180×230,
-## its energy cost in a hex), the chosen ones with a go check. A tap on a card calls on_toggle(card) (the caller shows
+## the next ones (`slots` of them: 4, from DL6 5), the free ones empty with their slot number in a hex (1…slots, as
+## the chip counts — «Атака» is not a slot); under it a well with every other open card (180×230, its energy cost in
+## a hex), the chosen ones with a go check. A tap on a card calls on_toggle(card) (the caller shows
 ## the picker again; the card that moved pops in for 160 ms); a tap on «Атака» lets the caller say it is fixed.
 ## The sockets explain the rule — no paragraph; «Готово» (go) closes it.
 const HAND_SOCKET := Vector2(116, 150)
@@ -4133,8 +4157,8 @@ func show_hand_picker(cards: Array, chosen: Array, slots: int, on_toggle: Callab
 		sock.size = r.size
 		sw.add_child(sock)
 		var card := "attack" if i == 0 else (String(chosen[i - 1]) if i - 1 < chosen.size() else "")
-		if card == "":
-			var hb := Kit.hex_badge(sock, r.size * 0.5, 26, "info", str(i + 1), Kit.CREAM_DEEP.darkened(0.2))
+		if card == "":  # the slots count without «Атака» (it has its lock): the free one is «5» beside the chip «4/5»
+			var hb := Kit.hex_badge(sock, r.size * 0.5, 26, "info", str(i), Kit.CREAM_DEEP.darkened(0.2))
 			hb.name = "num"
 			continue
 		var t := _hand_tile(sock, Rect2(Vector2.ZERO, r.size), card, func(): tap.call(card))

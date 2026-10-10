@@ -2287,10 +2287,11 @@ const CLOUD_PRIO := 4
 const BEAM_PRIO := 5
 const MARK_PRIO := 6
 
-## Every 3D text of the map (army strengths, hex labels, the strike countdown, floaters, income amounts, convoys and
-## main.gd's drag forecast) shares one look (soft_style_plan F1, docs/ui_style.md §3.3/§4.14): the HUD's bold display
-## font (Rubik 900, Kit d900) with an INK navy outline 0.22 of the font size: thick enough to stay a soft body over the
-## sunny ground and the ribbons at a small pixel size. A billboard over everything (no depth test, over the clouds).
+## The free 3D texts of the map (income amounts, main.gd's drag forecast) share one look (soft_style_plan F1,
+## docs/ui_style.md §3.3): the HUD's bold display font (Rubik 900, Kit d900) with an INK navy outline 0.22 of the font
+## size: thick enough to stay a soft body over the sunny ground and the ribbons at a small pixel size. A billboard over
+## everything (no depth test, over the clouds). Texts on a plate (army strengths, hex labels, the strike countdown,
+## convoys) and floaters are drawn at a fixed size on screen by _plate_text, with the §3.3 outline (s13, §4.14).
 const LABEL_OUTLINE_K := 0.22
 
 
@@ -2310,8 +2311,8 @@ static func soft_label(size: int, prio := MARK_PRIO + 1) -> Label3D:
 ## Pictographs of map texts → 3D icons (game/assets/ui/icons), as escapes for tools/ui_lint.py R4: ⚔ swords, ⇢ the
 ## march's destination pin, ⛳ a colonist's flag, ⇄ the kit's swap arrows, ✖ a routed army's white flag, ★ ⭐ the
 ## gold star (xp), ⛏ the convoy's hammer. Other pictographs map through Kit.PICTO or are dropped.
-const MAP_PICTO := {"⚔": "swords", "⇢": "pin", "⛳": "orders", "⇄": "@swap", "✖": "white_flag",
-	"★": "xp", "⭐": "xp", "⛏": "hammer"}
+const MAP_PICTO := {"\u2694": "swords", "\u21E2": "pin", "\u26F3": "orders", "\u21C4": "@swap", "\u2716": "white_flag",
+	"\u2605": "xp", "\u2B50": "xp", "\u26CF": "hammer"}
 
 
 ## A map text (soft_label) that never draws a pictograph glyph. Rubik has no ★ ⚔ ⇢ ⛳ ⇄ ✖ ⛏: they fell back to a
@@ -3915,13 +3916,13 @@ func _sync_plate(node: Node3D, a: Dictionary, ready: float, hidden: bool, in_bat
 	var num := "" if sym != "" else str(int(round(a["str"] / 1000.0)))
 	var show_bar := not hidden and not routed and (in_battle or ready < 0.995)
 	var k := snappedf(clampf(ready, 0.0, 1.0), 0.005) if show_bar else -1.0
-	var fade := 0.6 if routed else 1.0
+	var fade := 0.85 if routed else 1.0  # the white flag on the team hex still says whose army runs
 	var state := "%s|%s|%s|%s|%s" % [look, sym, num, k, fade]
 	if String(plate.get_meta("state", "")) == state:
 		return
 	plate.set_meta("state", state)
 	quad.material_override = _plate_mat("army:" + look)
-	quad.set_instance_shader_parameter("k", k)
+	quad.set_instance_shader_parameter("bar_k", k)
 	quad.set_instance_shader_parameter("fade", fade)
 	if lbl.text != num:
 		_text_size(lbl, 26 if num.length() <= 2 else 22)  # three digits stay inside the hex at the MICRO size

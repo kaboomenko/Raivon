@@ -1116,7 +1116,7 @@ cmdr.shards,Осколки: %d/%d,Shards: %d/%d
 cmdr.by_level,Пассивка по уровням,Passive by level
 cmdr.where,Где взять осколки: %s,Where to get shards: %s
 cmdr.target,Поставить Целью Королевского кейса,Set as the Royal case Target
-cmdr.target_on,Цель Королевского кейса ✓,Royal case Target ✓
+cmdr.target_on,Цель Королевского кейса,Royal case Target
 cmdr.target_set,Цель Королевского кейса: %s,Royal case Target: %s
 cmdr.leveled,%s — уровень %d!,%s reached level %d!
 cmdr.why.shards,Не хватает осколков,Not enough shards
@@ -1157,7 +1157,7 @@ cmdr.src.cmd_irma,"календарь (день 7), Королевский ке�
 cmdr.src.cmd_hawk,"награда главы III, Королевский кейс","the chapter III reward, the Royal case"
 cmdr.src.cmd_vance,"«Набор новобранца», события, Королевский кейс","the «Recruit pack», events, the Royal case"
 cmdr.src.cmd_rai,"награда главы IV, календарь (день 28), пропуск, кейсы","the chapter IV reward, the calendar (day 28), the pass, cases"
-cmdr.bio.cmd_bram,"Мельник с пограничья. В первый день Кремнёвые Бароны сожгли его мельницу — он собрал соседей с вилами и первым пошёл её отбивать. Речей не любит, верит в плотный строй и горячую похлёбку.",A miller from the borderlands. On the first day the Flint Barons burned his mill — he gathered his neighbours with pitchforks and led them to take it back. No speeches: a tight line and a hot stew.
+cmdr.bio.cmd_bram,"Мельник с пограничья. В первый день Кремнёвые Бароны сожгли его мельницу — он собрал соседей с вилами и отбил её. Верит в плотный строй и горячую похлёбку.",A miller from the borderlands. On the first day the Flint Barons burned his mill — he gathered his neighbours with pitchforks and led them to take it back. No speeches: a tight line and a hot stew.
 cmdr.bio.cmd_lira,"Деревенская лекарка, ставшая капитаном, когда в Долине не осталось офицеров. Устроила первый лазарет в амбаре и вернула в строй больше солдат, чем потеряла.",A village healer who became a captain when the Valley ran out of officers. She set up the first infirmary in a barn and sent back more soldiers than she ever lost.
 cmdr.bio.cmd_olm,"Сапёр-самоучка, разбирающий любую стену «по кирпичику». Слабое место забора он находит раньше, чем забор успевают достроить.",A self-taught sapper who takes any wall apart «brick by brick». He finds the weak spot of a fence before it is even finished.
 cmdr.bio.cmd_vik,"Охотник из лесов Вольных Хуторов, видит дым костра за три холма. Водит армии тропами, которых нет на картах.",A hunter from the Free Farmsteads' woods who spots campfire smoke three hills away. He leads armies down paths no map shows.
@@ -1301,4 +1301,4 @@ cal.pick_title2,%s на выбор,%s to give
 cal.pick_q,Кому отдать осколки?,Who gets the shards?
 cal.has,есть %d,has %d
 cal.pick_btn2,Выбрать,Choose
-profile.dl_short,Развитие,Development
+profile.dl_short,Уровень развития,Development level
