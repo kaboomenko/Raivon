@@ -6717,7 +6717,7 @@ func _demo(spec: String) -> void:
 		_chronicle_tick()
 		_open_profile()
 		return
-	if what == "commanders":  # the collection mid-game (commanders:card — Vega's card; commanders:tab — the Army tab)
+	if what == "commanders":  # the collection mid-game (commanders:card — Vega's card; commanders:tab — the Army tab; commanders:locked — a locked card)
 		econ.res["gold"] = 40000
 		econ._find_type("residence")["level"] = int(parts[2]) if parts.size() > 2 else 4  # commanders:<view>:<DL>
 		for id in ["cmd_lira", "cmd_vega", "cmd_frey", "cmd_seir", "cmd_irma", "cmd_bram", "cmd_vik"]:
@@ -6740,6 +6740,9 @@ func _demo(spec: String) -> void:
 			return
 		if parts.size() > 1 and parts[1] == "card":
 			_open_commander("cmd_vega")
+			return
+		if parts.size() > 1 and parts[1] == "locked":  # a locked commander's card (Emperor Rai, 20/80 shards)
+			_open_commander("cmd_rai")
 			return
 		_open_commanders()
 		return

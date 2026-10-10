@@ -2511,7 +2511,7 @@ func _rebuild_overlay() -> void:
 		if mesh == null:
 			continue
 		# the §6.3 colours are what the screen must show: scene() undoes the grade on the unshaded ribbon (F1; fed as
-		# they were, #4FA8FF read as a light cyan #4FC5FF, the water's hue, and the light band as near-white)
+		# they were at exposure 0.9, #4FA8FF read as a light cyan #5CCFFF, the water's hue, and the band as near-white)
 		var look := SoftPalette.scene_look(team_look(o))
 		var rm := ShaderMaterial.new()
 		rm.shader = RIBBON_SHADER

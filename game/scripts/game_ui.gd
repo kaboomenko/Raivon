@@ -1774,17 +1774,19 @@ func _inbox_row(host: Control, r: Rect2, it: Dictionary, now: int, idx: int, ite
 	tl.size = Vector2(tw, 40)
 	t.add_child(tl)
 	var body := L.t(String(it["text"]))
-	var bl := Kit.label(body, 28 if open else 26, Kit.SOFT_CREAM if open else Kit.MUTED_CREAM, false)
+	# the text goes in last: a label given a long text first grows to it, and a later size cannot shrink it
+	var bl := Kit.label("", 28 if open else 26, Kit.SOFT_CREAM if open else Kit.MUTED_CREAM, false)
 	bl.name = "body" if open else "preview"
 	bl.position = Vector2(x, INBOX_PAD.y + 40.0 + 2.0)
 	if open:
 		bl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		bl.size = Vector2(r.size.x - INBOX_PAD.x - x, r.size.y - bl.position.y - INBOX_PAD.y - 5.0)
+		bl.text = body
 	else:
-		bl.text = body.replace("\n", " ")
 		bl.clip_text = true
 		bl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		bl.size = Vector2(r.size.x - INBOX_PAD.x - x, 36)
+		bl.text = body.replace("\n", " ")
 	t.add_child(bl)
 
 
@@ -2081,6 +2083,7 @@ func _pass_look(text: String) -> Dictionary:
 ## info: {cycle, days: [{day, text, state: claimed|today|future, key, rw?}], pending, can_double, patent}
 const CAL_TILE := Vector2(109, 132)
 const CAL_ROW_GAP := 22.0
+const CAL_TAKEN_A := 0.55  ## a taken day (§6 «Календарь»: a check and α 0.55)
 
 
 func show_calendar(info: Dictionary, on_claim: Callable) -> void:
@@ -2116,7 +2119,12 @@ func show_calendar(info: Dictionary, on_claim: Callable) -> void:
 		var look := _cal_look(d.get("rw", []), String(d.get("text", "")))
 		var o := {"icon_side": 64.0, "pill_inside": true, "face": Kit.PREMIUM_WELL if key else Kit.CREAM_ROW,
 			"claimable": st == "today" and pending, "taken": st == "claimed"}
-		if look.has("tex"):
+		if look.has("face"):
+			var fid := String(look["face"])
+			o["pic_node"] = _cmd_face(fid, String(CasesSim.commander(fid).get("rarity", "common")), 64.0)
+		elif look.has("swatch"):
+			o["pic_node"] = Kit.ink_swatch(String(look["swatch"]), 64.0)
+		elif look.has("tex"):
 			o["tex"] = look["tex"]
 		else:
 			o["icon"] = String(look.get("icon", "gift"))
@@ -2126,15 +2134,15 @@ func show_calendar(info: Dictionary, on_claim: Callable) -> void:
 		var t := Kit.tile(well, r, o)
 		t.name = "day_%d" % day
 		if st == "claimed":
-			t.modulate.a = 0.55
+			t.modulate.a = CAL_TAKEN_A
 		var role := "gold" if key else ("info" if st != "future" else "")
 		var hb := Kit.hex_badge(t, Vector2(14, 14), 18, role if role != "" else "info", str(day), Kit.CLEAR if role != "" else Kit.CREAM_DEEP.darkened(0.2))
 		hb.name = "num"
 		var second := String(look.get("second", ""))
 		if second != "":
-			var si := _icon_rect(second, 40)
+			var si := _icon_rect(second, 38)  # the second reward leans on the first, clear of the corner's check
 			si.name = "second"
-			si.position = Vector2(CAL_TILE.x - 42.0, 2)
+			si.position = Vector2(CAL_TILE.x - 44.0, 40)
 			t.add_child(si)
 		if key:
 			var rb := Kit.ribbon(t, Vector2(CAL_TILE.x * 0.5, CAL_TILE.y + 2.0), tr("cal.prize"), "war")
@@ -2173,13 +2181,19 @@ func _cal_look(rw: Array, text: String) -> Dictionary:
 			o = {"icon": "lightning", "pill": tr("time.h") % int(r[1]) + (" ×%d" % cnt if cnt > 1 else "")}
 		"builder":
 			o = {"icon": "mason", "pill": "+1"}
-		"cmd":
-			var p := "res://assets/ui/portraits/%s.png" % String(r[1])
-			o = {"tex": load(p)} if ResourceLoader.exists(p) else {"icon": "frame"}
+		"cmd":  # a new commander: the face in its rarity frame
+			o = {"face": String(r[1])}
+		"shards":
+			o = {"face": String(r[1]), "pill": "×%d" % int(r[2])}
 		"shards_pick", "shards_choice":
 			o = {"icon": "shard", "pill": "×%d" % int(r[1])}
 		"season_cosmetic":
 			o = {"icon": "frame"}
+		"cosmetic":
+			if String(r[1]).begins_with("cos_border_ink"):  # a border ink shows the ink itself (as in the Atelier)
+				o = {"swatch": String(r[1])}
+			else:
+				o = _pass_look_rw(r)
 		_:
 			o = _pass_look_rw(r)
 	if rw.size() > 1:
@@ -3191,7 +3205,7 @@ func show_profile(info: Dictionary, cb: Dictionary) -> void:
 		var cr := _icon_rect("crown", 72)
 		cr.position = Vector2(16, 16)
 		sky.add_child(cr)
-	var lv := Kit.hex_badge(box, Vector2(176 + 10, 80 + 130 - 6), 24, "info", str(int(info.get("dl", 1))))
+	var lv := Kit.hex_badge(box, Vector2(176 + 120 - 8, 80 + 130 - 8), 24, "info", str(int(info.get("dl", 1))))
 	lv.name = "dl"
 	var nx := 176.0 + 120.0 + 28.0
 	var nw := w - 32.0 - nx - (64.0 if cb.has("name") else 0.0)
@@ -3299,9 +3313,24 @@ const FLAG_TILE := Vector2(120, 150)
 
 
 func show_flag_editor(flag: Dictionary, owned: Dictionary, on_change: Callable, on_random: Callable, on_done: Callable) -> void:
-	var area_h := 16.0 + 5.0 * 120.0 + 4.0 * 12.0 + 16.0  # the tallest tab: 27 emblems, 6 in a row
-	var h := 72.0 + 196.0 + 20.0 + 80.0 + 20.0 + area_h + 32.0 + 112.0 + 32.0
-	var box := _modal_box(_win_rect("L", h), false, tr("flag.title"), "", "info", true, false)
+	# the well fits the tab's options; the window keeps the top of the tallest tab (27 emblems, 6 in a row), so the
+	# preview and the segments stay put when the tab changes and only the footer moves
+	var em_h := 16.0 + ceilf((FlagView.EMBLEMS.size() + FlagView.PREMIUM.size()) / 6.0) * 132.0 - 12.0 + 16.0
+	var col_h := 12.0 + 3.0 * (52.0 + 2.0 * 84.0 + 8.0) - 20.0 + 16.0  # 3 groups: a header, 2 rows of 9 swatches
+	var area_max := maxf(em_h, col_h)
+	var area_h := area_max
+	match _flag_tab:
+		"div":
+			area_h = 16.0 + 2.0 * FLAG_TILE.y + 16.0 + 16.0
+		"frame":
+			area_h = 16.0 + ceilf(FlagView.FRAMES.size() / 6.0) * (FLAG_TILE.y + 16.0) + 16.0
+		"colors":
+			area_h = col_h
+		"em":
+			area_h = em_h
+	var rest := 72.0 + 196.0 + 20.0 + 80.0 + 20.0 + 32.0 + 112.0 + 32.0
+	var full := _win_rect("L", rest + area_max)
+	var box := _modal_box(Rect2(full.position, Vector2(full.size.x, minf(full.size.y, rest + area_h))), false, tr("flag.title"), "", "info", true, false)
 	box.set_meta("kit_native", true)
 	var w := box.size.x
 	var prev := FlagView.new(flag)
@@ -3471,7 +3500,7 @@ func show_flag_wizard(step: int, opts: Array, on_pick: Callable, on_random: Call
 	var w := box.size.x
 	# the steps: three hexes on a line
 	var line := Panel.new()
-	var lsb := Kit.style(Kit.CREAM_DEEP, 4, 0, Kit.INK, 0, 0)
+	var lsb := Kit.style(Kit.CREAM_DEEP, 40, 0, Kit.INK, 0, 0)  # a pill (the radius clamps to h/2)
 	lsb.set_meta("kit_kind", "")
 	line.add_theme_stylebox_override("panel", lsb)
 	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -3748,7 +3777,7 @@ func _commander_tile(c: Dictionary, on_pick: Callable) -> Control:
 	p.size = Vector2(w - 8.0, h - 8.0)
 	t.add_child(p)
 	var clip := Panel.new()  # the scrim follows the frame's inner corners
-	var csb := Kit.style(Kit.INK, 16, 0, Kit.INK, 0, 0)
+	var csb := Kit.style(Kit.INK, 14, 0, Kit.INK, 0, 0)
 	csb.set_meta("kit_kind", "")
 	clip.add_theme_stylebox_override("panel", csb)
 	clip.clip_children = CanvasItem.CLIP_CHILDREN_ONLY
@@ -3962,7 +3991,7 @@ func show_commander(info: Dictionary, on_upgrade: Callable, on_target: Callable,
 	var step := (x_b - x_a) / (TRACK_LEVELS.size() - 1)
 	var line_y := 56.0
 	var line := Panel.new()
-	var lsb := Kit.style(Kit.CREAM_DEEP, 6, 0, Kit.INK, 0, 0)
+	var lsb := Kit.style(Kit.CREAM_DEEP, 40, 0, Kit.INK, 0, 0)  # a pill (the radius clamps to h/2)
 	lsb.set_meta("kit_kind", "")
 	line.add_theme_stylebox_override("panel", lsb)
 	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -3977,7 +4006,7 @@ func show_commander(info: Dictionary, on_upgrade: Callable, on_target: Callable,
 		reach += 0.5
 	if lvl >= TRACK_LEVELS[0]:
 		var fill := Panel.new()
-		var fsb := Kit.style(Kit.face_of("info"), 6, 0, Kit.INK, 0, 0)
+		var fsb := Kit.style(Kit.face_of("info"), 40, 0, Kit.INK, 0, 0)
 		fsb.set_meta("kit_kind", "")
 		fill.add_theme_stylebox_override("panel", fsb)
 		fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -4156,6 +4185,7 @@ func _hand_tile(parent: Control, r: Rect2, card: String, cb: Callable) -> Kit.Ki
 	t.size = r.size
 	t.cb = cb
 	t.add_child(Kit.KitDecor.new())
+	parent.add_child(t)
 	var art := Panel.new()
 	art.name = "art"
 	var asb := Kit.style(Kit.SKY_LOW, 14, 0, Kit.INK, 0, 0)
