@@ -17,6 +17,7 @@ const MapView := preload("res://scripts/map_view.gd")
 const Hud := preload("res://scripts/hud.gd")
 const CameraRig := preload("res://scripts/camera_rig.gd")
 const GameUI := preload("res://scripts/game_ui.gd")
+const Kit := preload("res://scripts/ui_kit.gd")
 const Sfx := preload("res://scripts/sfx.gd")
 const Save := preload("res://scripts/save.gd")
 const Economy := preload("res://scripts/sim/economy.gd")
@@ -523,80 +524,129 @@ func _refresh_ui() -> void:
 			ui.set_action("", "")
 			_primary_for_selection()
 		Mode.WAR:
-			ui.set_action("peace", tr("ui.peace_btn"), tr("ui.score") % ws.get("score", 0.0), Color(0.12, 0.36, 0.2))
+			ui.set_action("peace", tr("ui.peace_btn"), _score_text(ws.get("score", 0.0)), "go")
 			if not _march_primary():
 				_offensive_primary()
 		Mode.BATTLE:
-			ui.set_primary("retreat", tr("ui.retreat"), Color(0.32, 0.36, 0.46))
+			ui.set_primary("retreat", tr("ui.retreat"), "info")
 		_:
 			ui.set_action("", "")
 			ui.set_primary("", "")
+	_sync_tile()
 
 
+## The hex panel shows the selected hex on the map (MAP / WAR) unless its slot is taken: the status button or the
+## battle timer sits there then (docs/ui_style.md §5). Refreshed with the UI, so its timers and chips stay current.
+func _sync_tile() -> void:
+	if selected >= 0 and mode in [Mode.MAP, Mode.WAR] and ui._action_kind == "":
+		hud.show_tile(_describe(selected))
+	else:
+		hud.hide_tile()
+
+
+## The war score in the «Мир» button's chip: «+10,7» / «−3,2» (a real minus, the locale's decimal separator).
+func _score_text(score: float) -> String:
+	return ("+" if score >= 0.05 else "") + Kit.fmt_dec(score, 1)
+
+
+## A cost as the big button's price plate: [[icon, amount, short], …], gold first; `short` (not enough in store)
+## paints the amount red.
+func _price_items(cost: Dictionary) -> Array:
+	var out: Array = []
+	for r in ["gold", "food", "metal", "oil"]:
+		var v := int(cost.get(r, 0))
+		if v > 0:
+			out.append([String(Hud.RES_ICON[r]), GameUI.fmt_num(v), int(econ.res.get(r, 0)) < v])
+	return out
+
+
+## «Улучшить» on an own hex opens the Buildings tab; its plate shows what the hex's building's next level costs,
+## when that building can still grow (nothing for a bare hex or a building at its cap).
+func _upgrade_price(hex: int) -> Array:
+	var b: Dictionary = econ.building_at(hex)
+	if b.is_empty():
+		return []
+	var why: String = econ.can_upgrade(b, now_s())
+	if why != "" and not why.begins_with("err.not_enough") and why != "err.builders_busy":
+		return []
+	return _price_items(econ.upgrade_cost(b))
+
+
+## The big button for the selected hex on the map (docs/ui_style.md §6 HUD: short captions, the cost or the time in
+## the plate, the long reason of a disabled one in its tooltip).
 func _primary_for_selection() -> void:
 	ui.set_action("", "")
 	if selected < 0:
-		ui.set_primary("pick_target", tr("ui.pick_target"), Color(0.8, 0.22, 0.16))
+		ui.set_primary("pick_target", tr("ui.pick_target"), "war")
 		return
 	var c: Dictionary = sim.cells[selected]
 	if c["owner"] == Types.PLAYER and econ.damaged.has(selected):
 		var re: int = econ.damaged[selected]
 		if re > now_s():
-			ui.set_primary("repairing", tr("ui.repairing") % GameUI.fmt_time(re - now_s()), Color(0.3, 0.35, 0.45), false)
+			var t := GameUI.fmt_time(re - now_s())
+			ui.set_primary("repairing", tr("ui.repairing"), "lock", false, "", [["", t]], tr("ui.repairing_tip") % t)
 		else:
-			var cost: Dictionary = econ.repair_cost(sim, selected)
-			var parts := PackedStringArray()
-			for r in cost:
-				parts.append("%d %s" % [int(cost[r]), tr("res.short." + String(r))])
-			ui.set_primary("repair", tr("ui.repair") % ", ".join(parts), Color(0.85, 0.55, 0.1), econ.can_repair(sim, selected) == "")
-			ui.set_action("repair_ad", tr("ui.repair_ad"), tr("ui.ad_sub"), Color(0.2, 0.4, 0.25))
+			var why: String = econ.can_repair(sim, selected)
+			ui.set_primary("repair", tr("ui.repair"), "go", why == "", "", _price_items(econ.repair_cost(sim, selected)),
+				L.t(why) if why != "" else "")
+			ui.set_action("repair_ad", tr("ui.repair_ad"), "", "go")
 		return
 	var dep: Dictionary = deposits.at(selected)
 	if not dep.is_empty():
 		var cv: Dictionary = deposits.convoy_for(selected)
 		if not cv.is_empty():
-			ui.set_primary("", tr("ui.convoy_status") % GameUI.fmt_time(int(cv["back"]) - now_s()), Color(0.3, 0.33, 0.42), false)
+			var t := GameUI.fmt_time(int(cv["back"]) - now_s())
+			ui.set_primary("convoy_status", tr("ui.send_convoy"), "lock", false, "", [["", t]], tr("ui.convoy_status") % t)
 		else:
 			var reason: String = deposits.can_send(sim, selected, econ.dev_level())
-			ui.set_primary("convoy", tr("ui.send_convoy") if reason == "" else L.t(reason), Color(0.8, 0.6, 0.1), reason == "")
+			ui.set_primary("convoy", tr("ui.send_convoy"), "go", reason == "", "", [], L.t(reason) if reason != "" else "")
 		return
 	if not Types.is_passable(c):
 		ui.set_primary("", "")
 	elif not camps.at(selected).is_empty():
 		if not war.is_empty():
-			ui.set_primary("camp_wait", tr("camp.after_war"), Color(0.3, 0.35, 0.45), false)
+			ui.set_primary("camp_wait", tr("ui.camp_wait"), "lock", false, "", [], tr("camp.after_war"))
 		elif not Camps.attackable(sim, selected):
-			ui.set_primary("camp_far", tr("camp.approach"), Color(0.3, 0.35, 0.45), false)
+			ui.set_primary("camp_far", tr("ui.camp_far"), "lock", false, "", [], tr("camp.approach"))
 		else:
-			ui.set_primary("camp", tr("ui.attack_camp"), Color(0.8, 0.22, 0.16))
+			ui.set_primary("camp", tr("ui.attack_camp"), "war")
 	elif colonizing.has(selected):
 		var left: int = int(colonizing[selected]) - now_s()
 		var price := Economy.speedup_price(left)
-		ui.set_primary("colonize_now", tr("ui.finish") if price == 0 else tr("ui.speedup") % price, Color(0.85, 0.55, 0.1))
+		if price == 0:
+			ui.set_primary("colonize_now", tr("ui.finish"), "go")
+		else:
+			ui.set_primary("colonize_now", tr("ui.speedup"), "gold", true, "", [["raivite", GameUI.fmt_num(price), int(econ.res["raivite"]) < price]])
 	elif c["owner"] == Types.NOBODY and _touches_player(selected):
 		var cost := _colonize_cost()
-		ui.set_primary("colonize", tr("ui.colonize") % [cost, GameUI.fmt_time(_colonize_seconds())], Color(0.2, 0.55, 0.3), econ.res["gold"] >= cost and colonizing.is_empty())
+		var gold_ok: bool = econ.res["gold"] >= cost
+		var why := "" if gold_ok and colonizing.is_empty() else (tr("toast.no_gold") if not gold_ok else tr("toast.colonizing"))
+		ui.set_primary("colonize", tr("ui.colonize"), "go", econ.res["gold"] >= cost and colonizing.is_empty(), "",
+			[["coin", GameUI.fmt_num(cost), not gold_ok]], why)
 	elif c["owner"] != Types.PLAYER and c["owner"] != Types.NOBODY:
 		var left := _truce_left(c["owner"])
 		if left > 0:
-			ui.set_primary("truce", tr("ui.truce_timer") % [left / 60, left % 60], Color(0.3, 0.35, 0.45), false)
+			var t := GameUI.fmt_time(left)
+			ui.set_primary("truce", tr("ui.truce"), "lock", false, "", [["", t]], tr("ui.truce_timer") % t)
 		elif _pact_left(c["owner"]) > 0:  # a pact is unbreakable for both sides (06 D5)
-			ui.set_primary("truce", tr("dipl.pact") % GameUI.fmt_time(_pact_left(c["owner"])), Color(0.3, 0.35, 0.45), false)
+			var t := GameUI.fmt_time(_pact_left(c["owner"]))
+			ui.set_primary("truce", tr("ui.pact_short"), "lock", false, "", [["", t]], tr("dipl.pact") % t)
 		elif MapGen.core_of(sim, c["owner"]).has(selected):
-			ui.set_primary("core", tr("ui.core_protected"), Color(0.3, 0.35, 0.45), false)
+			ui.set_primary("core", tr("ui.core"), "lock", false, "", [], tr("ui.core_protected"))
 		else:
-			ui.set_primary("declare", tr("ui.declare_war"), Color(0.8, 0.22, 0.16))
+			ui.set_primary("declare", tr("ui.declare_war"), "war")
 	elif _march_primary():
 		pass
 	elif c["owner"] == Types.PLAYER:
-		ui.set_primary("upgrade", tr("ui.upgrade"), Color(0.13, 0.4, 0.9))
+		ui.set_primary("upgrade", tr("ui.upgrade"), "go", true, "", _upgrade_price(selected))
 	else:
 		ui.set_primary("", "")
 	if c["owner"] == Types.PLAYER and econ.ruin_left(now_s()) > 0:
-		ui.set_action("ruin_halve", tr("ui.ruin_halve"), tr("ui.ruin_left") % [econ.ruin_pct, GameUI.fmt_time(econ.ruin_left(now_s()))], Color(0.35, 0.22, 0.12))
+		ui.set_action("ruin_halve", tr("ui.ruin_halve"), GameUI.fmt_time(econ.ruin_left(now_s())), "go")
 
 
-## «Наступление», or a march timer while every army is still on its way to the front (none touches the enemy).
+## «В атаку!», or a march timer while every army is still on its way to the front (none touches the enemy). The
+## enemy of the next offensive is the one on the war bar.
 func _offensive_primary() -> void:
 	var enemy: int = _front()
 	var wait := 0
@@ -608,11 +658,10 @@ func _offensive_primary() -> void:
 			var left := March.seconds_left(sim, a, now_s())
 			wait = left if wait == 0 else mini(wait, left)
 	if wait > 0:
-		ui.set_primary("wait", tr("ui.armies_marching") % GameUI.fmt_time(wait), Color(0.3, 0.35, 0.45), false)
-	elif war.has("coalition"):
-		ui.set_primary("offensive", "%s\n%s" % [tr("ui.offensive"), tr("ui.offensive_on") % _state_name(enemy)], Color(0.8, 0.22, 0.16))
+		var t := GameUI.fmt_time(wait)
+		ui.set_primary("wait", tr("ui.wait"), "lock", false, "", [["", t]], tr("ui.armies_marching") % t)
 	else:
-		ui.set_primary("offensive", tr("ui.offensive"), Color(0.8, 0.22, 0.16))
+		ui.set_primary("offensive", tr("ui.offensive"), "war")
 
 
 ## March button for an own army on the selected hex (MAP and WAR). True when it took the primary slot.
@@ -621,11 +670,11 @@ func _march_primary() -> bool:
 	if a.is_empty():
 		return false
 	if _march_pick == int(a["id"]):
-		ui.set_primary("march_cancel", tr("march.pick"), Color(0.3, 0.35, 0.45))
+		ui.set_primary("march_cancel", tr("ui.march_cancel"), "info")
 	elif March.is_marching(a):
-		ui.set_primary("march_stop", tr("ui.marching") % GameUI.fmt_time(March.seconds_left(sim, a, now_s())), Color(0.3, 0.35, 0.45))
+		ui.set_primary("march_stop", tr("ui.march_stop"), "info", true, "", [["", GameUI.fmt_time(March.seconds_left(sim, a, now_s()))]])
 	else:
-		ui.set_primary("march", tr("ui.march"), Color(0.16, 0.42, 0.95))
+		ui.set_primary("march", tr("ui.march"), "info")
 	return true
 
 
@@ -2048,63 +2097,118 @@ func _select(id: int) -> void:
 	selection.position = map_view.cell_world(id) + Vector3(0, 0.06, 0)
 	selection.visible = true
 	sfx.play("tap")
-	hud.show_tile(_describe(id))
-	_refresh_ui()
+	_refresh_ui()  # shows the hex panel (_sync_tile)
 	if mode == Mode.WAR:
 		var c: Dictionary = sim.cells[id]
 		if c["controller"] != c["owner"]:
 			ui.toast(tr("toast.occupied_hex") % [_cell_name(id), _state_name(c["controller"])])
 
 
+## What the hex panel shows for a hex (hud.show_tile): the name, the tile's render, the owner chip (owner, its
+## colour in owner_fill), the stat chips ([[icon, text, tone], …], the first two fit) and the tooltip's lines
+## (details, at most 4). The older keys (owner_color, bonus, attackable) stay for any other reader.
 func _describe(id: int) -> Dictionary:
 	var c: Dictionary = sim.cells[id]
 	var own: int = c["owner"]
-	var owner_text: String = tr("tile.your_territory") if own == Types.PLAYER else _state_name(own)
-	if c["controller"] != own:
-		owner_text = tr("tile.occupied") % owner_text
-	var bonus: String = tr("tile.value") % c["value"]
+	var ctrl: int = c["controller"]
 	var tile_key: String = c["kind"] if String(c["kind"]) != "plain" else String(c["terrain"])
 	if tile_key in ["capital", "city"] and own > Types.NOBODY and own < sim.states.size():  # the owner's era and colour
 		tile_key = "%s_dl%d_%s" % [tile_key, clampi(int(sim.states[own]["dev_level"]), 1, 8), map_view.faction_suffix(own)]
-	if c["terrain"] == "forest":
-		bonus += " · " + tr("tile.forest_def")
-	elif c["terrain"] == "hills":
-		bonus += " · " + tr("tile.hills_def")
-	if c["fort"] > 0:
-		bonus += " · " + tr("tile.fort") % c["fort"]
-	if not Types.is_passable(c):
-		bonus = tr("tile.impassable")
-	elif c["controller"] == Types.PLAYER:
+	var owner_text: String = tr("tile.owner_you") if own == Types.PLAYER else (tr("tile.owner_none") if own == Types.NOBODY else _state_short(own))
+	var fill: Color = map_view.state_color(own) if own == Types.NOBODY else map_view.team_look(own)["body"]
+	var chips: Array = []
+	var lines := PackedStringArray()
+	var title := _cell_name(id)
+	if ctrl != own:
+		lines.append(tr("tile.occupied") % _state_name(ctrl))
+	var cm: Dictionary = camps.at(id) if camps != null else {}
+	var dep: Dictionary = deposits.at(id) if deposits != null else {}
+	if not cm.is_empty():
+		title = tr("tile.camp")
+		chips.append(["coins", "%d/3" % camps.rewards_left(now_s())])
+		lines.append(tr("tile.camp_loot") % [tr("res.name." + String(cm["res"])), camps.rewards_left(now_s())])
+	elif not dep.is_empty():
+		title = "%s (%s)" % [tr(String(Deposits.NAMES.get(String(dep["res"]), "tile.deposit_name"))), dep["size"]]
+		chips.append([String(Hud.RES_ICON.get(String(dep["res"]), "crate")), GameUI.fmt_num(int(dep["amount"]))])
+		chips.append(["hourglass", GameUI.fmt_time(int(dep["gather_sec"]))])
+		lines.append(tr("tile.deposit") % [int(dep["amount"]), tr("res.gen." + String(dep["res"])), GameUI.fmt_time(int(dep["gather_sec"]))])
+	elif not Types.is_passable(c):
+		lines.append(tr("tile.impassable"))
+	elif ctrl == Types.PLAYER:
+		# the player's hex: what it brings (gold first, two at most on the panel), the vein's store, the damage
 		var inc: Dictionary = econ.hex_income(sim, id)
 		var parts := PackedStringArray()
-		for r in inc:
-			if int(inc[r]) > 0:
-				parts.append(tr("tile.income") % [inc[r], tr("res.short." + String(r))])
+		for r in ["gold", "food", "metal", "oil"]:
+			if int(inc.get(r, 0)) > 0:
+				chips.append([String(Hud.RES_ICON[r]), "+" + GameUI.fmt_num(int(inc[r])), "pos"])
+				parts.append(tr("tile.income") % [int(inc[r]), tr("res.gen." + r)])
 		if parts.size() > 0:
-			bonus = " · ".join(parts)
+			lines.append(tr("hud.tip.rate") % ", ".join(parts))
 		if c["kind"] == "raivite_vein":
-			bonus = tr("tile.vein") % econ.vein_amount(id)
+			chips.append(["raivite", "%d/4" % econ.vein_amount(id)])
+			lines.append(tr("tile.vein") % econ.vein_amount(id))
 		if own == Types.PLAYER and econ.damaged.has(id):
-			bonus += " · " + tr("tile.damaged")
+			chips.append(["hammer", tr("tile.repair"), "neg"])
+			lines.append(tr("tile.damaged"))
 		if own == Types.PLAYER and econ.ruin_left(now_s()) > 0:
-			bonus += " · " + tr("tile.ruin") % [econ.ruin_pct, GameUI.fmt_time(econ.ruin_left(now_s()))]
-	var cm: Dictionary = camps.at(id) if camps != null else {}
-	if not cm.is_empty():
-		return {"title": tr("tile.camp"), "owner": owner_text, "owner_color": Color(0.75, 0.72, 0.68),
-			"bonus": tr("tile.camp_loot") % [tr("res.name." + String(cm["res"])), camps.rewards_left(now_s())], "attackable": false, "tile": String(c["terrain"])}
-	var dep: Dictionary = deposits.at(id) if deposits != null else {}
-	if not dep.is_empty():
-		bonus = tr("tile.deposit") % [int(dep["amount"]), tr("res.gen." + String(dep["res"])), GameUI.fmt_time(int(dep["gather_sec"]))]
-		return {"title": "%s (%s)" % [tr(String(Deposits.NAMES.get(String(dep["res"]), "tile.deposit_name"))), dep["size"]], "owner": owner_text,
-			"owner_color": Color(1.0, 0.85, 0.3), "bonus": bonus, "attackable": false, "tile": String(c["terrain"])}
+			lines.append(tr("tile.ruin") % [econ.ruin_pct, GameUI.fmt_time(econ.ruin_left(now_s()))])
+	else:
+		# someone else's or nobody's hex: the time to settle it (next to the player), its value, its defence
+		if colonizing.has(id):
+			var left: int = maxi(0, int(colonizing[id]) - now_s())
+			chips.append(["hourglass", GameUI.fmt_time(left)])
+			lines.append(tr("tile.settling") % GameUI.fmt_time(left))
+		elif own == Types.NOBODY and _touches_player(id):
+			chips.append(["hourglass", GameUI.fmt_time(_colonize_seconds())])
+			lines.append(tr("tile.settle_time") % GameUI.fmt_time(_colonize_seconds()))
+		chips.append(["crown", str(int(c["value"]))])
+		lines.append(tr("tile.value") % int(c["value"]))
+		var def := _defense_pct(c)
+		if def > 0:
+			chips.append(["fort", "+%d%%" % def])
+			lines.append(tr("tile.def") % def)
+	if c["kind"] == "capital" and not chips.any(func(ch): return String(ch[0]) == "crown"):
+		chips.append(["crown", ""])  # an own capital: after what it brings
+	if String(c["kind"]) in ["oil", "dark_lake"]:
+		if econ.dev_level() < Economy.OIL_DL:  # oil flows from DL5 (canon §4): a closed [barrel] chip
+			chips.push_front(["barrel", tr("dl.short") % Economy.OIL_DL, "lock"])
+			lines.append(tr("tile.oil_dl") % Economy.OIL_DL)
+		elif ctrl != Types.PLAYER:
+			chips.push_front(["barrel", ""])
+	var details := "\n".join(lines.slice(0, 4))
 	return {
-		"title": _cell_name(id),
+		"title": title,
 		"owner": owner_text,
+		"owner_fill": fill,
 		"owner_color": map_view.state_color(own).lightened(0.25),
-		"bonus": bonus,
+		"chips": chips,
+		"details": details,
+		"bonus": lines[0] if lines.size() > 0 else "",
 		"attackable": own != Types.PLAYER and own != Types.NOBODY,
-		"tile": tile_key,
+		"tile": tile_key if cm.is_empty() and dep.is_empty() else String(c["terrain"]),
 	}
+
+
+## A state's name for a tight chip: its short form (state.barons.short «Бароны») when the language has one.
+func _state_short(s: int) -> String:
+	var k := _state_key(s)
+	if k == "" or s == Types.PLAYER:
+		return _state_name(s)
+	var t := tr(k + ".short")
+	return t if t != k + ".short" else tr(k)
+
+
+## The hex's standing defence bonus in % for the [fort] chip — the static part of battle.gd _def_mult: forest or
+## hills +25, a fort +15 a level, a city +25, a capital +50.
+func _defense_pct(c: Dictionary) -> int:
+	var p := 15 * int(c["fort"])
+	if c["terrain"] == "forest" or c["terrain"] == "hills":
+		p += 25
+	if c["kind"] == "city":
+		p += 25
+	elif c["kind"] == "capital":
+		p += 50
+	return p
 
 
 ## Translation key of a hex name (stored in reports so they follow a later language switch).
@@ -3368,6 +3472,7 @@ func _econ_tick() -> void:
 		_primary_for_selection()
 	elif mode == Mode.WAR and not _march_primary():
 		_offensive_primary()
+	_sync_tile()
 
 
 func _econ_event(ev: Dictionary) -> void:

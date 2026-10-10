@@ -28,9 +28,12 @@ const TOOLS := [["target", "swords", 356.0, "hud.tool.front"], ["pin", "pin", 46
 const TABS := [["buildings", "tab.buildings", "castle_icon"], ["army", "tab.army", "helmet"],
 	["development", "tab.development", "flask"], ["diplomacy", "tab.diplomacy", "handshake"], ["world", "tab.world", "globe"]]
 const TRAY := Rect2(12, 1464, 628, 196)
-## The hex panel (§5): right of the tray, above the big button; the stat chips' column right of the tile's render.
+## The hex panel (§5): right of the tray, above the big button. The owner chip sits on its top edge like a label
+## (§4.8 «ярлык»), the name under it, the tile's render at the left and two rows of stat chips right of it: 165 px is
+## too narrow for two chips side by side ([coin +150] alone is ~120 px), so they stack.
 const TILE_RECT := Rect2(652, 1374, 277, 152)
-const TILE_COL := Rect2(102, 52, 165, 86)  # owner chip at its top, the stat chips at y 96
+const TILE_OWNER := Vector2(14, -17)  # the owner chip (h 34) straddles the top contour
+const TILE_COL := Rect2(102, 58, 165, 80)  # the stat chips: rows at y 58 and 100 (h 38)
 
 var world: Node3D
 var font_bold: Font
@@ -474,12 +477,12 @@ func _build_bottom() -> void:
 	tile_box.mouse_filter = Control.MOUSE_FILTER_STOP  # a tap on the panel never reaches the map under it
 	tile_box.gui_input.connect(_on_tile_input)
 	tile_title = _label("", 30)  # H2 30, down to 24, then cut
-	tile_title.position = Vector2(16, 8)
-	tile_title.size = Vector2(245, 42)
+	tile_title.position = Vector2(16, 18)
+	tile_title.size = Vector2(245, 40)
 	tile_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	tile_box.add_child(tile_title)
 	tile_pic = TextureRect.new()  # the rendered hex of that land (tools/blender/card_art.py tile_*)
-	tile_pic.position = Vector2(10, 56)
+	tile_pic.position = Vector2(10, 61)
 	tile_pic.size = Vector2(84, 74)
 	tile_pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	tile_pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -715,13 +718,13 @@ func show_tile(info: Dictionary) -> void:
 		c.free()
 	# the owner: the state's colour as the fill, white text (§3.2: a state's colour is never a text colour)
 	var fill: Color = info.get("owner_fill", Kit.face_of("lock"))
-	var oc := Kit.chip(_tile_chips, TILE_COL.position, "", String(info.get("owner", "")), "owner", fill, {"max_w": TILE_COL.size.x})
+	var oc := Kit.chip(_tile_chips, TILE_OWNER, "", String(info.get("owner", "")), "owner", fill, {"max_w": TILE_RECT.size.x - 2.0 * TILE_OWNER.x})
 	oc.name = "owner"
 	if info.has("chips"):
 		_lay_stat_chips(info["chips"])
 	elif String(info.get("bonus", "")) != "":
 		var l := _label("", 24)
-		l.position = Vector2(TILE_COL.position.x, 96)
+		l.position = TILE_COL.position
 		l.size = Vector2(TILE_COL.size.x, 38)
 		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		_tile_chips.add_child(l)
@@ -738,41 +741,20 @@ func tile_rect() -> Rect2:
 	return tile_box.get_global_rect() if tile_box.visible else Rect2()
 
 
-## The stat chips in the column right of the render (y 96, gap 6): both at the largest size that fits (26 → 22),
-## else the first one with a «+N» pill (the rest is in the tooltip), else the first one alone, cut to the column.
+## The stat chips in the column right of the render, one a row (y 58, y 100): each at NUM_S 26, stepped down to 22
+## and then cut to the column when long. More than two: the second row also takes a «+N» pill when it fits
+## (everything is in the tooltip).
 func _lay_stat_chips(chips: Array) -> void:
-	if chips.is_empty():
-		return
-	var y := 96.0
 	var room := TILE_COL.size.x
-	var gap := 6.0
-	var tries: Array = []  # [count, size, with «+N»]
-	for s in [26, 24, 22]:
-		if chips.size() >= 2:
-			tries.append([2, s, chips.size() > 2])
-	for s in [26, 24, 22]:
-		if chips.size() >= 2:
-			tries.append([1, s, true])
-	tries.append([1, 26, false])  # the last resort: the first chip alone, its text stepped down / cut to the column
-	for k in tries.size():
-		var t: Array = tries[k]
-		var last := k == tries.size() - 1
-		var n: int = t[0]
-		var made: Array = []
-		var x := TILE_COL.position.x
-		for i in n:
-			var p := _stat_chip(chips[i], Vector2(x, y), int(t[1]), room if last else 0.0)
-			made.append(p)
-			x += p.size.x + gap
-		if t[2]:
-			var more := Kit.chip(_tile_chips, Vector2(x, y), "", "+%d" % (chips.size() - n), "stat", Color(0, 0, 0, 0), {"size": 22})
+	for i in mini(2, chips.size()):
+		var pos := TILE_COL.position + Vector2(0, 42.0 * i)
+		var p := _stat_chip(chips[i], pos, 26, room)
+		if i == 1 and chips.size() > 2:
+			var more := Kit.chip(_tile_chips, Vector2(pos.x + p.size.x + 6.0, pos.y), "", "+%d" % (chips.size() - 2), "stat",
+				Kit.CLEAR, {"size": 22})
 			more.name = "more"
-			made.append(more)
-			x += more.size.x + gap
-		if last or x - gap <= TILE_COL.end.x + 0.5:
-			return
-		for p in made:
-			p.free()
+			if more.position.x + more.size.x > TILE_COL.end.x:
+				more.free()
 
 
 ## One stat chip: [icon, text, tone] (tone: pos — a plus in green, neg — a shortfall in red, lock — a closed item:
@@ -786,7 +768,7 @@ func _stat_chip(ch: Array, pos: Vector2, num: int, max_w := 0.0) -> Panel:
 		opts["color"] = Kit.NEG
 	if max_w > 0.0:
 		opts["max_w"] = max_w
-	var p := Kit.chip(_tile_chips, pos, String(ch[0]), String(ch[1]) if ch.size() > 1 else "", "stat", Color(0, 0, 0, 0), opts)
+	var p := Kit.chip(_tile_chips, pos, String(ch[0]), String(ch[1]) if ch.size() > 1 else "", "stat", Kit.CLEAR, opts)
 	p.name = "stat_%s" % String(ch[0])
 	return p
 

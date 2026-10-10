@@ -29,6 +29,7 @@ const SEA_WELL := Color("2a6596")
 const FULL := Color("8c5a1f")
 const MAP_ROCK := Color("a9aebb")  ## minimap mountains (the land is in the states' colours, water shows the well)
 const WHITE := Color(1, 1, 1)
+const CLEAR := Color(0, 0, 0, 0)  ## "no colour" for an optional colour argument (a chip's fill, a badge's face)
 
 # ------------------------------------------------------------------ tokens: text
 

@@ -496,8 +496,9 @@ const PRIMARY_LOOK := {
 	"truce": ["lock", "hourglass"], "core": ["lock", "lock"], "camp_far": ["lock", "lock"], "camp_wait": ["lock", "hourglass"],
 	"wait": ["lock", "hourglass"], "repairing": ["lock", "hourglass"], "convoy_status": ["lock", "hourglass"],
 }
-## The status button's look by kind: [role, icon].
-const STATUS_LOOK := {"peace": ["go", "dove"], "repair_ad": ["go", "ad"], "ruin_halve": ["go", "ad"]}
+## The status button's look by kind: [role, icon]. The free repair for an ad is secondary (info, §2: an ad button is
+## the secondary one when a main action stands beside it — here the paid repair on the big button).
+const STATUS_LOOK := {"peace": ["go", "dove"], "repair_ad": ["info", "ad"], "ruin_halve": ["go", "ad"]}
 const BIG_RECT := Rect2(652, 1536, 277, 124)  # the big button: L, the one loud thing on the map (§1.1)
 const RETREAT_RECT := Rect2(652, 1564, 277, 96)  # «Отступить» in battle: M, a secondary action
 const STATUS_RECT := Rect2(652, 1438, 277, 88)  # the status button: M, in the hex panel's slot
@@ -588,7 +589,7 @@ func _row_tap(e: InputEvent) -> bool:
 
 ## The status slot (§5, §6 HUD) — kind "" hides it. Kind «timer»: the battle timer plate (hourglass, the time in
 ## TIMER 60, `sub` under it; bg "war" is the final push: the number turns red and pulses every second). Any other
-## kind: a button M in the hex panel's slot («peace»: go + dove, `sub` the war score in a chip; «repair_ad»: go + the
+## kind: a button M in the hex panel's slot («peace»: go + dove, `sub` the war score in a chip; «repair_ad»: info + the
 ## ad icon; «ruin_halve»: go + the ad icon, `sub` the ruin's time left in a chip). `bg` is a role name or, from older
 ## callers, a colour (Kit.role_of); STATUS_LOOK wins over it.
 func set_action(kind: String, title: String, sub := "", bg: Variant = "go") -> void:
@@ -602,12 +603,19 @@ func set_action(kind: String, title: String, sub := "", bg: Variant = "go") -> v
 	_status_args = args
 	_timer_plate.visible = kind == "timer"
 	_status_btn.visible = kind != "timer" and kind != ""
+	if kind != "timer" and _timer_tw != null:  # the pulse stops with the plate
+		_timer_tw.kill()
+		_timer_tw = null
+		_timer_num.scale = Vector2.ONE
 	if kind == "timer":
 		_timer_num.text = title
 		_timer_sub.text = sub
 		var rush := role == "war"
 		_timer_num.add_theme_color_override("font_color", Kit.NEG if rush else Kit.TEXT)
-		Kit.fit_label(_timer_sub, 24, _timer_sub.size.x)
+		var ss := Kit.fit_size(sub, 24, _timer_sub.size.x, "d800", 22)  # LABEL 24, down to 22, then cut
+		_timer_sub.add_theme_font_size_override("font_size", ss)
+		_timer_sub.clip_text = Kit.text_w(sub, ss, "d800") > _timer_sub.size.x
+		_timer_sub.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		if rush and (_timer_tw == null or not _timer_tw.is_valid()):
 			_timer_tw = _timer_num.create_tween().set_loops()  # one beat a second
 			_timer_tw.tween_property(_timer_num, "scale", Vector2(1.08, 1.08), 0.15).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)

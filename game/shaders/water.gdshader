@@ -1,12 +1,26 @@
 shader_type spatial;
-// Water hexes: deep-to-shallow colour, scrolling ripples with a soft glint, and foam along the edges that
-// meet land (COLOR.r = 1 at a shore corner, 0 in open water), breathing slowly.
+// «Raivon Soft» cartoon water (docs/art_direction.md §6.7, soft_style_plan P5): turquoise shallows at the shore, a
+// clear blue middle and a deeper blue further out, soft ripples with glints, a solid white foam lip along the shore
+// and one slow foam ring that leaves the shore every ≈ 8 s. All of it is drawn from d, the distance to the land,
+// rounded with SOFT_R like the coastline (map_view._coastline), so the foam follows the curves of the coast.
+// Per water hex (map_view._build_water): UV = the vertex minus the hex centre (x, z), UV2.x = the land mask (bit k:
+// neighbour k, in DIRS order, is land). The field only knows the six neighbours: land further away is >= 1.0 from
+// any point of the hex, so the deep ramp ends at 1.0 (not 1.2) and the colours agree across every hex edge.
+// The foam lip starts under the beach rim (0.08 wide) and hides small mismatches between the field and the rim.
 render_mode cull_back;
 
+#include "res://shaders/hex_sdf.gdshaderinc"
+
 uniform sampler2D noise_tex : filter_linear_mipmap, repeat_enable;
-uniform vec3 deep : source_color = vec3(0.13, 0.33, 0.5);  // measured: the reference seas are (27, 80, 126) on screen
-uniform vec3 shallow : source_color = vec3(0.17, 0.48, 0.56);
-uniform float shore_k = 1.0;  // 0 for the open sea around the world (a plane without vertex colours)
+uniform vec3 shallow : source_color = vec3(0.373, 0.816, 0.855);  // #5FD0DA
+uniform vec3 mid : source_color = vec3(0.212, 0.639, 0.847);  // #36A3D8
+uniform vec3 deep : source_color = vec3(0.165, 0.482, 0.749);  // #2A7BBF
+uniform vec3 foam : source_color = vec3(0.949, 0.980, 1.0);  // #F2FAFF
+uniform bool open_sea = false;  // the plane round the world: no land mask, all deep water
+// The colours above are what the screen should show (§6.3). Lit by the sun (1.1) and the sky ambient (0.8), an
+// albedo comes out ≈ 2× brighter in linear terms (P5: the open sea read #31A5F7, L* 65, for #2A7BBF, the shallows
+// clipped at #6DE3FF), so the albedo takes this factor, as the ground's vertex colours take map_view.GROUND_K.
+uniform float light_k = 0.5;
 
 varying vec3 wpos;
 
@@ -19,16 +33,28 @@ void fragment() {
 	vec2 uv1 = wpos.xz * 0.35 + vec2(TIME * 0.025, TIME * 0.018);
 	vec2 uv2 = wpos.xz * 0.8 - vec2(TIME * 0.03, -TIME * 0.022);
 	float n = texture(noise_tex, uv1).r * 0.6 + texture(noise_tex, uv2).r * 0.4;
-	float shore = COLOR.r * shore_k;
-	vec3 c = mix(deep, shallow, clamp(pow(shore, 2.0) * 0.8 + n * 0.25, 0.0, 1.0));
-	// glints on the ripples
-	float glint = smoothstep(0.68, 0.78, n);
-	c += vec3(0.14, 0.2, 0.22) * glint * mix(0.15, 1.0, shore_k);  // the open sea glints softly: far away, it read as snow
-	// foam band on the shore, wobbling with the noise and the time
-	float band = shore - 0.93 + (n - 0.5) * 0.16 + sin(TIME * 1.6 + wpos.x * 3.0) * 0.025;
-	float foam = smoothstep(0.0, 0.06, band);
-	c = mix(c, vec3(0.86, 0.92, 0.95), foam * 0.6);  // a thin lace of surf, not a white rim
-	ALBEDO = c;
-	ROUGHNESS = mix(0.08, 0.6, foam);
-	SPECULAR = 0.6;
+	// the distance to the land: the rounded neighbour hexes, their meeting corners filled by smin
+	float d = 9.0;
+	if (!open_sea) {
+		int mask = int(UV2.x + 0.5);
+		for (int k = 0; k < 6; k++) {
+			if (((mask >> k) & 1) == 1) {
+				d = smin(d, sd_round_hex(UV - nb_off(k), HEX_IN, SOFT_R), 0.28);
+			}
+		}
+	}
+	vec3 c = mix(shallow, mid, smoothstep(0.08, 0.45, d));
+	c = mix(c, deep, smoothstep(0.45, 1.0, d));
+	// soft ripples and glints
+	c *= 0.97 + 0.06 * n;
+	c += vec3(0.25) * smoothstep(0.74, 0.78, n);
+	// the foam lip at the shore, and the slow ring
+	float lip = 1.0 - smoothstep(0.10, 0.15, d);
+	float ph = fract(TIME * 0.12);
+	float rr = 0.16 + ph * 0.5;
+	float ring = (1.0 - smoothstep(0.02, 0.045, abs(d - rr))) * 0.7 * (1.0 - ph);
+	c = mix(c, foam, max(lip, ring));
+	ALBEDO = c * light_k;
+	ROUGHNESS = 0.35;
+	SPECULAR = 0.3;
 }

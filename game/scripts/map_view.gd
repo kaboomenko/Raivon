@@ -91,7 +91,14 @@ var _river_mi: MeshInstance3D
 var _water_mi: MeshInstance3D
 
 
-## Water surface over water hexes (animated ripples, foam where an edge meets land).
+## Water surface over water hexes (soft_style_plan P5, docs/art_direction.md §6.7). water.gdshader draws the shallows,
+## the white foam at the shore and the slow foam ring from a distance field to the land, so each hex carries only
+## UV = the vertex minus the hex centre (x, z) and UV2.x = its land mask (bit k: neighbour DIRS[k] is land).
+## The corners the rounded coast cuts out of the land hexes (P4) need no water: the beach rim (_rim_loop) covers them.
+## The bay (the open sea below the world's near edge, _build_horizon) gets the same shore: the off-map hexes there
+## that touch land are drawn as sea hexes just above the open-sea plane (BAY_Y), so the sandy near shore has its
+## turquoise shallows, foam lip and foam ring too. Their far edges lie >= 1.0 from the land, where the shader's
+## colour is the plane's deep blue with the same ripples, so they melt into the open sea.
 func _build_water() -> void:
 	if _water_mi:
 		_water_mi.queue_free()
@@ -99,53 +106,60 @@ func _build_water() -> void:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var any := false
+	var zmax := -1e9  # the world's near edge (toward the camera), as _build_horizon: the bay lies beyond it
+	var bay := {}  # off-map axial position -> true
 	for c in sim.cells:
+		zmax = maxf(zmax, cell_world(int(c["id"])).z)
+		var nbs: PackedInt32Array = sim.neighbors[c["id"]]
 		if c["terrain"] != "water":
+			for d in 6:
+				if nbs[d] < 0:
+					bay[Vector2i(int(c["q"]), int(c["r"])) + DIRS[d]] = true
 			continue
 		any = true
-		var center := axial_to_world(c["q"], c["r"]) + Vector3(0, -0.07, 0)
-		var pts := _hex_pts(center, 1.0)
-		# land on each edge k (between corners k and k+1)
-		var land: Array = []
-		for k in 6:
-			var mid: Vector3 = (pts[k] + pts[(k + 1) % 6]) / 2.0
-			var other := id_at_world(center + 2.0 * (mid - center))
-			land.append(other < 0 or sim.cells[other]["terrain"] != "water")
-		for k in 6:
-			var ca := 1.0 if (land[k] or land[(k + 5) % 6]) else 0.0  # corner k touches edges k−1 and k
-			var cb := 1.0 if (land[k] or land[(k + 1) % 6]) else 0.0
-			st.set_normal(Vector3.UP)
-			st.set_color(Color(0, 0, 0))
-			st.add_vertex(center)
-			st.set_color(Color(ca, 0, 0))
-			st.add_vertex(pts[k])
-			st.set_color(Color(cb, 0, 0))
-			st.add_vertex(pts[(k + 1) % 6])
-	# the rounded coast (soft_style_plan P4): a convex land corner is cut inside its hex, outside every water hex, so
-	# the water closes the gap between the corner and the arc (or the soil wall would show under the water line)
-	for key in _coast_corners:
-		var e: Dictionary = _coast_corners[key]
-		if not e["convex"] or not (_is_water(int(e["nb_in"])) or _is_water(int(e["nb_out"]))):
-			continue
-		var arc: PackedVector2Array = e["arc"]
-		var v: Vector2 = e["v"]
-		st.set_normal(Vector3.UP)
-		st.set_color(Color(1, 0, 0))
-		for j in COAST_SEG:  # the corner lies right of the arc: (V, arc[j+1], arc[j]) faces up
-			st.add_vertex(Vector3(v.x, -0.07, v.y))
-			st.add_vertex(Vector3(arc[j + 1].x, -0.07, arc[j + 1].y))
-			st.add_vertex(Vector3(arc[j].x, -0.07, arc[j].y))
-	if not any:
-		return
-	var mat := ShaderMaterial.new()
-	mat.shader = load("res://shaders/water.gdshader")
-	mat.set_shader_parameter("noise_tex", _noise_tex(2.0, 3, 303))
-	_water_mi = MeshInstance3D.new()
-	_water_mi.mesh = st.commit()
-	_water_mi.material_override = mat
-	_water_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	add_child(_water_mi)
+		var mask := 0
+		for d in 6:
+			if nbs[d] >= 0 and not _is_water(nbs[d]):
+				mask |= 1 << d
+		_water_hex(st, axial_to_world(c["q"], c["r"]) + Vector3(0, -0.07, 0), mask)
+	for a in bay:
+		var p := axial_to_world(a.x, a.y)
+		if p.z <= zmax - 0.5:
+			continue  # not the bay: slate hexes of the unexplored land lie there (_build_horizon)
+		var mask := 0
+		for d in 6:
+			var nb: int = sim.id_at(a.x + DIRS[d].x, a.y + DIRS[d].y)
+			if nb >= 0 and not _is_water(nb):
+				mask |= 1 << d
+		_water_hex(st, p + Vector3(0, BAY_Y, 0), mask)
+		any = true
+	if any:
+		var mat := ShaderMaterial.new()
+		mat.shader = load("res://shaders/water.gdshader")
+		mat.set_shader_parameter("noise_tex", _noise_tex(2.0, 3, 303))
+		_water_mi = MeshInstance3D.new()
+		_water_mi.mesh = st.commit()
+		_water_mi.material_override = mat
+		_water_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(_water_mi)
 	_build_waterfalls()
+
+
+## The bay's shore hexes: 0.025 over the open-sea plane (−0.25), clear of it however the two surfaces bob (±0.012
+## each), and under the slate hexes of the unexplored land (−0.2).
+const BAY_Y := -0.225
+
+
+## One water hex at `center` for water.gdshader: UV = the vertex minus the centre (x, z), UV2.x = the land mask.
+static func _water_hex(st: SurfaceTool, center: Vector3, mask: int) -> void:
+	var pts := [center + Vector3(1, 0, 0), center + Vector3(0.5, 0, SQ3 * 0.5), center + Vector3(-0.5, 0, SQ3 * 0.5),
+			center + Vector3(-1, 0, 0), center + Vector3(-0.5, 0, -SQ3 * 0.5), center + Vector3(0.5, 0, -SQ3 * 0.5)]
+	st.set_normal(Vector3.UP)
+	st.set_uv2(Vector2(mask, 0))
+	for k in 6:
+		for p in [center, pts[k], pts[(k + 1) % 6]]:
+			st.set_uv(Vector2((p as Vector3).x - center.x, (p as Vector3).z - center.z))
+			st.add_vertex(p)
 
 
 func _is_water(id: int) -> bool:
@@ -176,25 +190,12 @@ func _build_waterfalls() -> void:
 				continue
 			any = true
 			var out := Vector3(mid.x - center.x, 0, mid.z - center.z).normalized()
-			# the rounded coast (P4): where a land corner ends this edge, the water filling its cut corner pours
-			# too, over the land hex's edge from the corner to the arc's tangent point. One curtain with mitred
-			# joins; its UV runs on across the corner pieces, so only the curtain's outer ends fade.
-			var fa := _fall_corner(_coast_corners.get(_corner_key(Vector2(a.x, a.z)), {}))
-			var fb := _fall_corner(_coast_corners.get(_corner_key(Vector2(b.x, b.z)), {}))
-			var la := 0.0 if fa.is_empty() else ((fa["t"] as Vector3) - (fa["v"] as Vector3)).length()
-			var lb := 0.0 if fb.is_empty() else ((fb["t"] as Vector3) - (fb["v"] as Vector3)).length()
-			var ua := la / (la + 1.0 + lb)
-			var ub := (la + 1.0) / (la + 1.0 + lb)
-			var oa := out if fa.is_empty() else _miter(out, fa["n"])
-			var ob := out if fb.is_empty() else _miter(out, fb["n"])
-			_curtain(st, a, b, oa, ob, ua, ub, out)
-			if not fa.is_empty():
-				_curtain(st, (fa["t"] as Vector3) + Vector3(0, -0.07, 0), a, fa["n"], oa, 0.0, ua, fa["n"])
-			if not fb.is_empty():
-				_curtain(st, b, (fb["t"] as Vector3) + Vector3(0, -0.07, 0), ob, fb["n"], ub, 1.0, fb["n"])
-			# the mist keeps 0.2 off an end with a corner piece: its billboards would cut into the cliff there
-			var lo := 0.1 if fa.is_empty() else 0.2
-			var hi := 0.9 if fb.is_empty() else 0.8
+			# the curtain covers the water hex's own edge only: where a land corner ends the edge, the corner the
+			# rounded coast cut out of the land hex lies under the beach rim (soft_style_plan P5), whose cliff
+			# closes it
+			_curtain(st, a, b, out, out, 0.0, 1.0, out)
+			var lo := 0.1
+			var hi := 0.9
 			if _smoke_mat == null:
 				_smoke_mat = _fx_mat(_puff_tex(), false)
 			var mist := CPUParticles3D.new()  # spray where the fall hits the fog below
@@ -230,7 +231,7 @@ func _build_waterfalls() -> void:
 
 
 ## One waterfall quad under the edge p -> q at the water line: it leans out 0.12 over 0.27 down (op / oq: the
-## outward offset at each end, a mitred one at a join), UV.x up -> uq across, UV.y 0 at the top -> 1 at the foot.
+## outward offset at each end), UV.x up -> uq across, UV.y 0 at the top -> 1 at the foot.
 static func _curtain(st: SurfaceTool, p: Vector3, q: Vector3, op: Vector3, oq: Vector3, up: float, uq: float,
 		n: Vector3) -> void:
 	var pt := p + op * 0.01
@@ -244,12 +245,8 @@ static func _curtain(st: SurfaceTool, p: Vector3, q: Vector3, op: Vector3, oq: V
 		st.add_vertex(v[0])
 
 
-## The offset at a join of two curtains with outward normals n1, n2: it lies 1 out from both edge lines.
-static func _miter(n1: Vector3, n2: Vector3) -> Vector3:
-	return (n1 + n2) / (1.0 + n1.dot(n2))
-
-
-## Rivers run along hex edges (canon §5.1): a blue ribbon on every river edge with round joints.
+## Rivers run along hex edges (canon §5.1): a blue ribbon on every river edge with round joints, which already round
+## the bends (§6.7: 0.13 wide each side of the edge, a solid foam bank).
 func _build_rivers() -> void:
 	if _river_mi:
 		_river_mi.queue_free()
@@ -259,7 +256,7 @@ func _build_rivers() -> void:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var y := 0.05
-	var w := 0.11
+	var w := 0.13
 	for e in sim.rivers:
 		var ab: PackedStringArray = String(e).split(":")
 		var ca := cell_world(int(ab[0]))
@@ -633,13 +630,12 @@ static func _mid_key(p: Vector2) -> Vector2i:
 ## land hexes. Water beds (y −0.2) stay one flat colour, walled only towards the world's edge.
 ## The coastline is rounded with SOFT_R (soft_style_plan P4, _coastline): a convex coast corner (one land hex) is cut
 ## by its arc inside that hex's top, a concave one (a bay corner: two land hexes) gets a flat patch at y = 0 out to
-## its arc over the water hex. Soil walls run along the rounded loops: down to −0.4 where water is outside, −1.4 at
-## the world's edge.
+## its arc over the water hex. A beach rim runs along the rounded loops, outside the shoreline (P5, _rim_loop), with
+## soil walls under it down to −1.4 at the world's edge.
 func _build_terrain() -> void:
 	if _terrain_mi:
 		_terrain_mi.queue_free()
 	var coast := _coastline()
-	_coast_corners = coast["corners"]
 	# pass 1: each hex's colour, and the sums of the land colours at every corner and edge midpoint
 	var cols: Array = []
 	var corner_sum := {}  # _corner_key -> [colour sum, count]
@@ -755,49 +751,9 @@ func _build_terrain() -> void:
 			_vtx(st, _v3(v), cv_)
 			_vtx(st, _v3(arc[j]), c_in.lerp(c_out, float(j) / COAST_SEG))
 			_vtx(st, _v3(arc[j + 1]), c_in.lerp(c_out, float(j + 1) / COAST_SEG))
-	# soil walls along the rounded loops (§6.3 earth gradient), smooth-shaded round the arcs
+	# the beach rim along the rounded loops, the world's edge included, and the soil walls under it
 	for lp in coast["loops"]:
-		var fp: PackedVector2Array = lp["pts"]
-		var fe: PackedInt32Array = lp["edge"]
-		var nbs: PackedInt32Array = lp["nb"]
-		var m := fp.size()
-		var nrm: Array = []  # outward (the right of the direction of travel: the land lies on the left)
-		for k in m:
-			var tp := (fp[k] - fp[(k - 1 + m) % m]).normalized()
-			var tn := (fp[(k + 1) % m] - fp[k]).normalized()
-			var o := (Vector2(tp.y, -tp.x) + Vector2(tn.y, -tn.x)).normalized()
-			nrm.append(Vector3(o.x, 0.0, o.y))
-		for k in m:
-			var k1 := (k + 1) % m
-			var a := _v3(fp[k])
-			var b := _v3(fp[k1])
-			var deep := nbs[fe[k]] < 0 or nbs[fe[k1]] < 0  # the world's edge: on down to the horizon
-			if k % (COAST_SEG + 1) == COAST_SEG:
-				# a straight run T2 -> T1: split at the edge midpoint like the land top, so the crease has no
-				# T-junction
-				var mid := (a + b) * 0.5
-				var nm: Vector3 = ((nrm[k] as Vector3) + (nrm[k1] as Vector3)).normalized()
-				for half in [[a, mid, nrm[k], nm], [mid, b, nm, nrm[k1]]]:
-					_wall(st, half[0], half[1], half[2], half[3], 0.0, -0.4, WALL_TOP, WALL_MID)
-					if deep:
-						_wall(st, half[0], half[1], half[2], half[3], -0.4, -1.4, WALL_MID, WALL_DEEP)
-				continue
-			_wall(st, a, b, nrm[k], nrm[k1], 0.0, -0.4, WALL_TOP, WALL_MID)
-			if deep:
-				_wall(st, a, b, nrm[k], nrm[k1], -0.4, -1.4, WALL_MID, WALL_DEEP)
-	# a convex corner between a water hex and the world's edge (where a waterfall starts): the water that fills the
-	# cut corner (_build_water) would be open toward the edge, so the cliff goes on under it from the arc's tangent
-	# point T to the corner, in line with the straight cliff before T and in its colours (the §6.3 earth gradient
-	# from the water line down); the waterfall pours over its top (_build_waterfalls)
-	var c_wet: Color = WALL_TOP.lerp(WALL_MID, 0.07 / 0.4)  # the cliff's colour at the water line
-	for key in corners:
-		var f := _fall_corner(corners[key])
-		if f.is_empty():
-			continue
-		var na: Vector3 = f["na"]
-		var nb: Vector3 = f["nb"]
-		_wall(st, f["a"], f["b"], na, nb, -0.07, -0.4, c_wet, WALL_MID)
-		_wall(st, f["a"], f["b"], na, nb, -0.4, -1.4, WALL_MID, WALL_DEEP)
+		_rim_loop(st, lp, cols, corner_sum, edge_sum)
 	_terrain_mi = MeshInstance3D.new()
 	_terrain_mi.mesh = st.commit()
 	_terrain_mat = ShaderMaterial.new()
@@ -817,7 +773,7 @@ func _build_terrain() -> void:
 	var wm := ShaderMaterial.new()  # the open sea round the world (reference frame 1: ships on rippling water)
 	wm.shader = load("res://shaders/water.gdshader")
 	wm.set_shader_parameter("noise_tex", _noise_tex(2.0, 3, 303))
-	wm.set_shader_parameter("shore_k", 0.0)
+	wm.set_shader_parameter("open_sea", true)  # no land mask on the plane: all deep water
 	water.material_override = wm
 	add_child(water)
 
@@ -868,12 +824,12 @@ static func _edge_frac(v: Vector3, p: Vector3) -> float:
 
 
 const COAST_SEG := 4  # segments per rounded coast corner (60°: 15° each), as the ribbons' RIB_SEG
-var _coast_corners := {}  # _corner_key -> a coast corner of _coastline (read by _build_water)
 
 ## The rounded coastline (soft_style_plan P4, docs/art_direction.md §6.7): the boundary loops of the land (water and
 ## off-map outside, so the world's edge is rounded too), every corner filleted with SOFT_R — the radius of the border
 ## ribbons, so a ribbon along a coast lies on the shoreline. Returns
-##   "loops": [{"pts": the filleted loop, "edge": the input edge of each point, "nb": the cell outside each edge}],
+##   "loops": [{"pts": the filleted loop, "edge": the input edge of each point, "nb": the cell outside each edge,
+##     "cp": the loop's hex corners (edge i runs cp[i] -> cp[i + 1]), "hex": the land hex of each edge}],
 ##   "corners": _corner_key -> {"v": the hex corner, "convex": one land hex there (a left turn), else a bay corner
 ##     of two, "arc": its COAST_SEG + 1 points from the tangent point on the incoming edge (T1) to the one on the
 ##     outgoing edge (T2), "hin" / "hout": the land hex of the incoming / outgoing edge, "nb_in" / "nb_out": the
@@ -900,41 +856,125 @@ func _coastline() -> Dictionary:
 				"arc": fp.slice(i * (COAST_SEG + 1), (i + 1) * (COAST_SEG + 1)),
 				"hin": hx[ip], "hout": hx[i], "nb_in": nbs[ip], "nb_out": nbs[i],
 				"m_in": (cp[ip] + cp[i]) * 0.5, "m_out": (cp[i] + cp[iq]) * 0.5}
-		loops.append({"pts": fp, "edge": f["edge"], "nb": nbs})
+		loops.append({"pts": fp, "edge": f["edge"], "nb": nbs, "cp": cp, "hex": hx})
 	return {"corners": corners, "loops": loops}
 
 
-## A waterfall corner of the rounded coast (P4 review): a convex corner whose two outside cells are a water hex and
-## the world's edge. The water filling its cut corner (_build_water) meets the edge along the land hex's edge, from
-## the corner V to the arc's tangent point T there. Returns {} for any other corner, else (y 0)
-##   "v", "t", "water": the water hex, "n": that edge's outward normal,
-##   "a", "b": V and T in the land loop's direction (the land on the left), "na", "nb": the normals there — at T the
-##   cliff's own smooth normal (between the straight edge and the arc), so the cliff goes on past T without a crease.
-func _fall_corner(e: Dictionary) -> Dictionary:
-	if e.is_empty() or not e["convex"]:
-		return {}
-	var arc: PackedVector2Array = e["arc"]
-	var v := _v3(e["v"])
-	var t: Vector3
-	var arc_dir: Vector2  # the arc's segment at T, in the loop's direction
-	var water: int
-	if _is_water(int(e["nb_in"])) and int(e["nb_out"]) < 0:
-		water = int(e["nb_in"])
-		t = _v3(arc[COAST_SEG])  # T2 on the outgoing edge: the loop runs V -> T2
-		arc_dir = arc[COAST_SEG] - arc[COAST_SEG - 1]
-	elif _is_water(int(e["nb_out"])) and int(e["nb_in"]) < 0:
-		water = int(e["nb_out"])
-		t = _v3(arc[0])  # T1 on the incoming edge: the loop runs T1 -> V
-		arc_dir = arc[1] - arc[0]
-	else:
-		return {}
-	var d := (t - v).normalized() if int(e["nb_out"]) < 0 else (v - t).normalized()
-	var n := Vector3(d.z, 0.0, -d.x)  # the right of the direction of travel: outward
-	var ad := arc_dir.normalized()
-	var nt := (n + Vector3(ad.y, 0.0, -ad.x)).normalized()
-	if int(e["nb_out"]) < 0:
-		return {"v": v, "t": t, "water": water, "n": n, "a": v, "b": t, "na": n, "nb": nt}
-	return {"v": v, "t": t, "water": water, "n": n, "a": t, "b": v, "na": nt, "nb": n}
+const RIM_W := 0.08  # the beach rim: a quarter round 0.08 out over the water and 0.08 down (§6.7)
+const RIM_PHI := [0.0, PI / 6.0, PI / 3.0, PI / 2.0]  # its rings
+const TURF_K := 1.08  # the turf lip: the land colour there ×1.08 (§6.3)
+## Sand and wet sand (§6.3) through GROUND_K like every ground colour: at full strength the lit sand read #FFF6CE,
+## white rather than golden
+const SAND := Color("e8d39a") * GROUND_K
+const WET_SAND := Color("c9b27a") * GROUND_K
+
+
+## The beach rim along one rounded land loop (soft_style_plan P5, docs/art_direction.md §6.7) and the soil walls
+## under it. The rim is a quarter round outside the shoreline: rings at φ = 0°, 30°, 60°, 90° at p + n·0.08·sin φ,
+## y −0.08·(1 − cos φ), the normal (n.x·sin φ, cos φ, n.z·sin φ) turning from up to outward, smooth along the loop so
+## the arcs shade round (n: the outward normal of the C1 loop, exact at the tangent points). So the rim sticks 0.08
+## out over the water hex with its foot just under the water surface (−0.07): the waves lap at wet sand, never at a
+## soil wall. It lies outside the shoreline, along which the border ribbons run, so they never float over a bevel.
+## Colours: the turf lip (the land top's colour there ×1.08), sand, sand, wet sand. At the world's edge the rim is
+## sand only where it faces the camera and the bay (n.z > 0.3, blended over 0.2–0.4, so it never steps), else turf
+## -> earth. Under it at the world's edge, the §6.3 earth gradient down to −1.4. Water edges get no wall: the opaque
+## water surface covers the whole water hex, the rim's foot included, so it would never show.
+func _rim_loop(st: SurfaceTool, lp: Dictionary, cols: Array, corner_sum: Dictionary, edge_sum: Dictionary) -> void:
+	var fp: PackedVector2Array = lp["pts"]
+	var fe: PackedInt32Array = lp["edge"]
+	var nbs: PackedInt32Array = lp["nb"]
+	var cp: PackedVector2Array = lp["cp"]
+	var hx: PackedInt32Array = lp["hex"]
+	var m := fp.size()
+	var nc := cp.size()
+	# the points with their outward normals; a straight run T2 -> T1 is split at its edge midpoint like the land
+	# top, so the turf lip meets it without a T-junction
+	var pts := PackedVector2Array()
+	var nrm := PackedVector2Array()
+	var edg := PackedInt32Array()
+	for k in m:
+		var i := floori(float(k) / (COAST_SEG + 1))  # the corner whose arc holds point k
+		var j := k % (COAST_SEG + 1)
+		var o: Vector2
+		if j == 0:  # T1, on the incoming edge
+			o = _out(cp[(i - 1 + nc) % nc], cp[i])
+		elif j == COAST_SEG:  # T2, on the outgoing edge
+			o = _out(cp[i], cp[(i + 1) % nc])
+		else:  # inside an arc: the mean of the two segments' normals is the arc's radial direction
+			o = (_out(fp[(k - 1 + m) % m], fp[k]) + _out(fp[k], fp[(k + 1) % m])).normalized()
+		pts.append(fp[k])
+		nrm.append(o)
+		edg.append(fe[k])
+		if j == COAST_SEG:
+			pts.append((fp[k] + fp[(k + 1) % m]) * 0.5)
+			nrm.append(o)
+			edg.append(fe[k])
+	# per point: the four rings' positions, normals and colours, and the wall's top
+	var n := pts.size()
+	var rp: Array = []
+	var rn: Array = []
+	var rc: Array = []
+	for k in n:
+		var p := pts[k]
+		var o := nrm[k]
+		var e := edg[k]
+		var h := hx[e]
+		var turf: Color = _shore_col(p, cp[e], cp[(e + 1) % nc], cols[h], corner_sum, edge_sum) * TURF_K
+		turf = Color(minf(turf.r, 1.0), minf(turf.g, 1.0), minf(turf.b, 1.0))
+		var sand := 1.0 if nbs[e] >= 0 else smoothstep(0.2, 0.4, o.y)
+		var pos: Array = []
+		var nor: Array = []
+		for phi in RIM_PHI:
+			var s := sin(phi)
+			var c := cos(phi)
+			pos.append(Vector3(p.x + o.x * RIM_W * s, -RIM_W * (1.0 - c), p.y + o.y * RIM_W * s))
+			nor.append(Vector3(o.x * s, c, o.y * s))
+		rp.append(pos)
+		rn.append(nor)
+		rc.append([turf, turf.lerp(WALL_TOP, 0.5).lerp(SAND, sand), WALL_TOP.lerp(SAND, sand), WALL_TOP.lerp(WET_SAND, sand)])
+	for k in n:
+		var k1 := (k + 1) % n
+		for r in RIM_PHI.size() - 1:
+			_quad(st, rp[k][r], rp[k1][r], rp[k][r + 1], rp[k1][r + 1], rn[k][r], rn[k1][r], rn[k][r + 1], rn[k1][r + 1],
+					rc[k][r], rc[k1][r], rc[k][r + 1], rc[k1][r + 1])
+		if nbs[edg[k]] >= 0 and nbs[edg[k1]] >= 0:
+			continue  # under water
+		# the world's edge: the cliff from the rim's foot on down to the horizon
+		var a: Vector3 = rp[k][3]
+		var b: Vector3 = rp[k1][3]
+		var na: Vector3 = rn[k][3]
+		var nb: Vector3 = rn[k1][3]
+		var a4 := Vector3(a.x, -0.4, a.z)
+		var b4 := Vector3(b.x, -0.4, b.z)
+		_quad(st, a, b, a4, b4, na, nb, na, nb, rc[k][3], rc[k1][3], WALL_MID, WALL_MID)
+		_quad(st, a4, b4, Vector3(a.x, -1.4, a.z), Vector3(b.x, -1.4, b.z), na, nb, na, nb, WALL_MID, WALL_MID, WALL_DEEP,
+				WALL_DEEP)
+
+
+## The outward normal of the loop edge a -> b (the right of the direction of travel: the land lies on the left).
+static func _out(a: Vector2, b: Vector2) -> Vector2:
+	var d := (b - a).normalized()
+	return Vector2(d.y, -d.x)
+
+
+## The land top's colour at the shoreline point p of the loop edge a -> b of a land hex coloured `own`, as
+## _build_terrain blends it: the corner means at a and b, the edge mean at the midpoint, linear between (arc points
+## project onto the edge, which matches the arcs' colours).
+static func _shore_col(p: Vector2, a: Vector2, b: Vector2, own: Color, corner_sum: Dictionary, edge_sum: Dictionary) -> Color:
+	var t := clampf((p - a).dot(b - a) / (b - a).length_squared(), 0.0, 1.0)
+	var cm := _mean(edge_sum, _mid_key((a + b) * 0.5), own)
+	if t < 0.5:
+		return _mean(corner_sum, _corner_key(a), own).lerp(cm, t * 2.0)
+	return cm.lerp(_mean(corner_sum, _corner_key(b), own), t * 2.0 - 1.0)
+
+
+## One quad between an upper row u0 -> u1 and a lower row l0 -> l1 (the land on the left of u0 -> u1, facing away
+## from it), with per-vertex normals and colours: the winding of _wall.
+static func _quad(st: SurfaceTool, u0: Vector3, u1: Vector3, l0: Vector3, l1: Vector3, nu0: Vector3, nu1: Vector3,
+		nl0: Vector3, nl1: Vector3, cu0: Color, cu1: Color, cl0: Color, cl1: Color) -> void:
+	for v in [[u0, nu0, cu0], [l1, nl1, cl1], [u1, nu1, cu1], [u0, nu0, cu0], [l0, nl0, cl0], [l1, nl1, cl1]]:
+		st.set_normal(v[1])
+		_vtx(st, v[0], v[2])
 
 
 ## The ground shader by zoom (§6.7): the fine speckle only up close, the seams full close up and faint from afar.
@@ -1954,7 +1994,8 @@ func _horizon_ship(q: int, r: int, p: Vector3, lr: RandomNumberGenerator) -> voi
 		var name := _ship_model(own)
 		if name == "":
 			return
-		var ship := spawn(name, _bay_root, p + Vector3(lr.randf_range(-0.3, 0.3), -0.26, lr.randf_range(-0.2, 0.2)), (PI / 2.0 if lr.randf() < 0.5 else -PI / 2.0) + lr.randf_range(-0.6, 0.6), 1.75)
+		# afloat 0.01 deep on the bay's shore hexes (BAY_Y, _build_water): a ship's hex always touches land
+		var ship := spawn(name, _bay_root, p + Vector3(lr.randf_range(-0.3, 0.3), BAY_Y - 0.01, lr.randf_range(-0.2, 0.2)), (PI / 2.0 if lr.randf() < 0.5 else -PI / 2.0) + lr.randf_range(-0.6, 0.6), 1.75)
 		if ship:
 			var tw := ship.create_tween().set_loops()
 			var r0 := ship.rotation
@@ -2222,7 +2263,10 @@ func _sync_war_scars() -> void:
 		root.add_child(fl)
 
 
-const ROAD_W := 0.1
+const ROAD_W := 0.12  # §6.7: a broad, friendly dirt road
+## Road colours by era (§6.7): warm light dirt (DL1–5), light blue-grey asphalt with its dashed line (DL6–7), the
+## dark glowing road of reference frame 2 (DL8+).
+const ROAD_COL := [Color("d9b07a"), Color("8c93a3"), Color(0.12, 0.14, 0.18)]
 var bridge_spots: Array = []  # world positions of the bridges (screenshots, tests)
 
 ## Dirt roads (the close reference frames: carts on country roads): from every building hex to its owner's capital
@@ -2311,7 +2355,7 @@ func _build_roads() -> void:
 		var mi := MeshInstance3D.new()
 		mi.mesh = (tools[era] as SurfaceTool).commit()
 		var m := StandardMaterial3D.new()
-		m.albedo_color = [Color(0.64, 0.5, 0.32), Color(0.42, 0.43, 0.45), Color(0.12, 0.14, 0.18)][era]
+		m.albedo_color = ROAD_COL[era]
 		m.roughness = 1.0 if era == 0 else 0.6
 		if era == 2:  # the glowing roads of reference frame 2
 			m.emission_enabled = true

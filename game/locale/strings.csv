@@ -92,9 +92,12 @@ demand.contribution,Контрибуция (4 ч золота),Indemnity (4 h of
 demand.reparations,"Репарации (10% производства, 24 ч)","Reparations (10% of output, 24 h)"
 tile.hex,Гекс,Hex
 state.wild,Дикие земли,Wildlands
+state.wild.short,Дикие,Wilds
 state.player,Ваша держава,Your Realm
 state.barons,Кремнёвые Бароны,Flint Barons
+state.barons.short,Бароны,Barons
 state.hamlets,Вольные Хутора,Free Hamlets
+state.hamlets.short,Хутора,Hamlets
 cell.player_capital,Столица,Capital
 cell.barons_capital,Кремнёвый замок,Flint Castle
 cell.hamlets_capital,Хуторской двор,Hamlet Court
@@ -116,9 +119,8 @@ tab.army,Армия,Army
 tab.development,Развитие,Research
 tab.diplomacy,Соседи,Realms
 tab.world,Мир,World
-tile.your_territory,Ваша территория,Your territory
-hud.tile_bonus,+25% к защите,+25% defense
-hud.attack,Атаковать,Attack
+tile.owner_you,Вы,You
+tile.owner_none,Ничья,Unclaimed
 hud.per_hour,%s%s/ч,%s%s/h
 hud.tool.front,Фронт,Front
 hud.tool.capital,Столица,Capital
@@ -134,7 +136,7 @@ ui.war_score_zero,Военный счёт: 0,War score: 0
 ui.last_stand,ВЫ НА ГРАНИ ПОРАЖЕНИЯ! Последний рубеж +25%,ON THE BRINK OF DEFEAT! Last stand +25%
 ui.war_status,Война: %s · счёт %+.1f,War: %s · score %+.1f
 ui.final_rush,Финальный рывок!,Final push!
-ui.offensive_left,до конца наступления,until the offensive ends
+ui.offensive_left,до конца боя,until the battle ends
 result.title,Итоги наступления,Offensive Results
 result.reason,Причина,Reason
 result.captured,Захвачено гексов,Hexes captured
@@ -158,7 +160,7 @@ ceremony.double,🎬 ×2 трофеи (реклама),🎬 ×2 spoils (ad)
 ui.continue,Продолжить,Continue
 ui.close,Закрыть,Close
 ui.claim,Забрать,Claim
-ui.upgrade,⬆ Улучшить,⬆ Upgrade
+ui.upgrade,Улучшить,Upgrade
 inbox.title,Донесения,Reports
 inbox.empty,Пока тихо. Здесь появятся донесения о набегах и обороне.,All quiet. Reports on raids and defenses will show up here.
 time.just_now,только что,just now
@@ -253,30 +255,33 @@ terrain.hills,Холмы,Hills
 terrain.water,Озеро,Lake
 terrain.mountain,Горы,Mountains
 toast.welcome_back,С возвращением! Доход ждёт на гексах — коснитесь монеты,Welcome back! Income is waiting on your hexes. Tap a coin
-ui.peace_btn,🕊 Мир,🕊 Peace
-ui.score,счёт %+.1f,score %+.1f
-ui.offensive,⚔ Наступление,⚔ Offensive
-ui.retreat,↩ Отступить,↩ Retreat
-ui.pick_target,⚔ Выбрать цель,⚔ Pick a target
-ui.convoy_status,🐴 Обоз · %s,🐴 Convoy · %s
-ui.send_convoy,🐴 Отправить обоз,🐴 Send convoy
-ui.finish,⚡ Завершить,⚡ Finish
-ui.speedup,⚡ Ускорить · %d,⚡ Speed up · %d
-ui.colonize,⛳ %d зол. · %s,⛳ %d gold · %s
-ui.truce_timer,🕊 Перемирие %d:%02d,🕊 Truce %d:%02d
+ui.peace_btn,Мир,Peace
+ui.offensive,В атаку!,Attack!
+ui.retreat,Отступить,Retreat
+ui.pick_target,Выбрать цель,Pick target
+ui.convoy_status,Обоз вернётся через %s,The convoy is back in %s
+ui.send_convoy,Обоз,Convoy
+ui.finish,Готово,Finish
+ui.speedup,Ускорить,Speed up
+ui.colonize,Занять,Settle
+ui.truce_timer,Перемирие: войну можно объявить через %s,Truce: you can declare war in %s
+ui.truce,Перемирие,Truce
+ui.pact_short,Пакт,Pact
 ui.core_protected,Ядро неприкосновенно,Core is off-limits
-ui.declare_war,⚔ Объявить войну,⚔ Declare war
+ui.core,Ядро,Core
+ui.declare_war,Война!,War!
 toast.chapter_progress,Глава I «Долина»: %d / %d гексов,Chapter I “The Valley”: %d / %d hexes
 toast.chronicle_locked,Летопись откроется после главы I,The Chronicle opens after Chapter I
 toast.occupied_hex,%s: оккупирован (%s). Станет вашим только по мирному договору.,%s: occupied (%s). It becomes yours only by a peace treaty.
-tile.occupied,%s · оккупирован,%s · occupied
+tile.occupied,Оккупирован: %s,Occupied by %s
 tile.value,Ценность %d,Value %d
-tile.forest_def,+25% защ.,+25% def.
-tile.hills_def,+50% защ.,+50% def.
-tile.fort,форт %d,fort %d
+tile.def,Защита +%d%%,Defence +%d%%
+tile.settle_time,Заселение займёт %s,Settling takes %s
+tile.settling,Заселение: ещё %s,Settling: %s left
+tile.oil_dl,Нефть добывается с %d-го уровня развития,Oil flows from development level %d
 tile.impassable,Непроходимо,Impassable
 tile.income,+%d %s/ч,+%d %s/h
-tile.deposit,Залежь: %d %s · сбор %s,Deposit: %d %s · gather %s
+tile.deposit,"Залежь: %d %s, сбор за %s","Deposit: %d %s, gathered in %s"
 tile.deposit_name,Залежь,Deposit
 toast.no_targets,Пока целей нет — дождитесь конца перемирия,No targets yet. Wait for the truce to end
 toast.colonizing,Уже идёт колонизация,A colonization is already under way
@@ -454,35 +459,39 @@ market.full_hint,Склад: %s почти полон · обменяй на Р�
 trader.needed,Нужное,Needed
 trader.common,Ходовой,Popular
 trader.generous,Щедрый,Generous
-ui.march,⇢ Марш армии,⇢ March
-ui.marching,Армия в пути · %s,Army marching · %s
+ui.march,Марш,March
+ui.march_cancel,Отмена,Cancel
+ui.march_stop,Стоп,Stop
 march.pick,Выберите гекс — куда идти армии,Pick a hex for the army to march to
 march.started,Армия выступила · в пути %s,The army sets out · %s on the road
 march.no_route,Туда армии не пройти,The army can't get there
 march.busy,Там уже стоит армия,Another army is already there
 march.arrived,Армия прибыла на место,The army has arrived
 toast.armies_marching,Армии выступили к фронту · %s в пути,Armies march to the front · %s on the road
-ui.armies_marching,Армии идут к фронту · %s,Armies marching to the front · %s
+ui.armies_marching,Армии дойдут до фронта через %s,The armies reach the front in %s
+ui.wait,Марш,Marching
 err.not_damaged,Здание не повреждено,The building isn't damaged
 err.repairing,Ремонт уже идёт,Repair already under way
 inbox.ruin.title,Разорение,Ruin
 inbox.ruin.text,"Грабёж разорил державу: −%d%% производства на %d ч, повреждено зданий: %d. Выберите гекс с дымом, чтобы починить здание.","The plunder ruined the realm: −%d%% production for %d h, %d buildings damaged. Pick a smoking hex to repair a building."
-ui.repair,Починить · %s,Repair · %s
-ui.repairing,Ремонт · %s,Repairing · %s
-ui.repair_ad,▶ Починить сразу,▶ Repair now
+ui.repair,Починить,Repair
+ui.repairing,Ремонт,Repairing
+ui.repairing_tip,Ремонт закончится через %s,Repair done in %s
+ui.repair_ad,Починить сразу,Repair now
 toast.repair_started,Ремонт начат · %s,Repair started · %s
 toast.repaired,Здание отремонтировано,Building repaired
-tile.damaged,здание повреждено (−50%),building damaged (−50%)
-tile.ruin,разорение −%d%% · %s,ruin −%d%% · %s
-ui.ad_sub,реклама · бесплатно,ad · free
+tile.damaged,Здание повреждено: доход −50%,Building damaged: income −50%
+tile.repair,Ремонт,Repair
+tile.ruin,Разорение −%d%%: ещё %s,Ruin −%d%%: %s left
 toast.tower_building,Башня строится: %s,Tower under construction: %s
 toast.tower_upgrade,Башня → ур. %d,Tower → Lv %d
 toast.tower_aa,"Башня → ур. %d: теперь и ПВО, авиаудары рядом с ней вдвое слабее","Tower → Lv %d: now also air defence, airstrikes around it deal half damage"
-ui.ruin_halve,▶ Сократить разорение вдвое,▶ Halve the ruin
-ui.ruin_left,разорение −%d%% · %s,ruin −%d%% · %s
-ui.attack_camp,⚔ Разбить лагерь,⚔ Raid the camp
+ui.ruin_halve,−50%,−50%
+ui.attack_camp,Разбить лагерь,Raid camp
 camp.approach,Подойдите границей к лагерю,Bring your border next to the camp
 camp.after_war,Лагерь — после войны,Camp: after the war
+ui.camp_far,Далеко,Too far
+ui.camp_wait,После войны,After the war
 camp.need_army,Подведите армию к лагерю (⇢ Марш),Bring an army next to the camp (⇢ March)
 camp.fight,Мародёры! Сломите их за 60 секунд,Marauders! Break them within 60 seconds
 camp.won,Лагерь разбит: +%d %s,Camp destroyed: +%d %s
@@ -490,9 +499,11 @@ camp.won_no_loot,Лагерь разбит — награды на сегодн�
 camp.lost,Мародёры отбились — лагерь стоит,The marauders held. The camp still stands
 camp.blocks,Сначала разбейте лагерь мародёров,Destroy the marauder camp first
 tile.camp,Лагерь мародёров,Marauder camp
-tile.camp_loot,добыча: %s · наград сегодня %d/3,loot: %s · rewards today %d/3
+tile.camp_loot,"Добыча: %s, наград сегодня %d/3","Loot: %s, rewards today %d/3"
 state.league,Речная Лига,River League
+state.league.short,Лига,League
 state.order,Орден Камня,Order of Stone
+state.order.short,Орден,Order
 leader.league,Канцлер Ивета Мудрая,Chancellor Iveta the Wise
 leader.league.desc,"Дипломат, ищет союзников, держит порт",A diplomat who seeks allies and holds a port
 leader.order,Магистр Торвальд Терпеливый,Magister Torvald the Patient
@@ -548,7 +559,7 @@ cell.ch2_vein,Речной кристалл,River Crystal
 cell.ch2_dark_lake,Чёрная заводь,Black Backwater
 kind.raivite_vein,Райвитовая жила,Raivite vein
 kind.dark_lake,Тёмное озеро,Dark Lake
-tile.vein,2 Райвита / 12 ч · накоплено %d/4,2 Raivites / 12 h · stored %d/4
+tile.vein,"2 райвита за 12 ч, накоплено %d/4","2 Raivites per 12 h, stored %d/4"
 star.c2_river,Форсирование: возьмите гекс атакой через реку,River crossing: take a hex attacking across a river
 kind.oil,Нефть,Oil
 res.name.oil,Нефть,Oil
@@ -587,6 +598,7 @@ card.corps,Союзный корпус,Allied Corps
 state.alvaria,Альвария,Alvaria
 state.saren,Сарен,Saren
 state.pack,Серая Стая,Grey Pack
+state.pack.short,Стая,Pack
 archetype.raven,Ворон,Raven
 archetype.hegemon,Волк-гегемон,Wolf hegemon
 leader.alvaria,Владычица Сайрин Железная,Sovereign Sairin the Iron
@@ -639,8 +651,10 @@ star.c3_colonize,Освойте 6 диких гексов в главе III,Sett
 star.c3_camps,Разбейте 5 лагерей мародёров в главе III,Destroy 5 marauder camps in chapter III
 star.c3_dl7,Доведите державу до УР7,Bring the realm to DL7
 state.conclave,Стальной Конклав,Steel Conclave
+state.conclave.short,Конклав,Conclave
 state.veilmark,Вейлмарк,Veilmark
 state.lakes,Республика Озёр,Lake Republic
+state.lakes.short,Озёра,Lakes
 archetype.hegemon_turtle,Черепаха-гегемон,Turtle hegemon
 leader.conclave,Архимастер Ормдек Каменный,Archmaster Ormdek the Stone
 leader.conclave.desc,"Гегемон: ультразаборы, редко нападает сам, требует дань","Hegemon: ultra-fences, rarely attacks itself, demands tribute"
@@ -870,7 +884,6 @@ separate.accept,Принять мир,Accept the peace
 separate.decline,Воевать дальше,Fight on
 dipl.share,Доля в счёте: %.1f,Score share: %.1f
 toast.front,Следующее наступление — на «%s»,The next offensive goes against “%s”
-ui.offensive_on,на «%s»,vs “%s”
 toast.separate_land,"«%s» вышли из коалиции: гексов отошло %d, контрибуция %d золота","“%s” left the coalition: %d hexes ceded, %d gold of contribution"
 separate.terms_land,"Условия: занятые вами гексы (%d) отходят вам, контрибуция %d золота","Terms: the hexes you hold (%d) become yours, %d gold of contribution"
 toast.separate_lost,"«%s» вышли из коалиции: сепаратный мир-поражение, отдано гексов: %d","“%s” left the coalition: a losing separate peace, %d hexes ceded"
