@@ -225,6 +225,7 @@ func _ready() -> void:
 	ui = GameUI.new()
 	add_child(ui)
 	ui.pill_of = func(r: String) -> Control: return hud.res_pills.get(r)  # the ceremony's rewards fly into these plates
+	ui.on_dock = func(on: bool): hud._bottom.visible = not on  # a docked window (a swap) hides the tabs and the tray
 	ui.action_pressed.connect(_on_action)
 	ui.card_drop.connect(_on_card_drop)
 	ui.card_drag.connect(_on_card_drag)
@@ -1757,24 +1758,112 @@ func _swap_info(s: int, give: Array, get_l: Array, t: Dictionary, ai := false) -
 		"gold": gold, "short": int(econ.res["gold"]) < gold}
 
 
-## Frames a swap's hexes above its window docked at the bottom (the window's top edge at `top_y` on the canvas): the
-## camera aims so their middle shows halfway between the HUD's top band (y 150) and the window. The geometry is
-## camera_rig._apply's: the look-at point is the screen's middle, `dist` and `pitch` by zoom.
-func _frame_above(ids: Array, top_y: float, z := -1.0) -> void:
-	if ids.is_empty():
-		return
-	var mid := Vector3.ZERO
-	for h in ids:
-		mid += map_view.cell_world(h)
-	mid /= float(ids.size())
-	var zoom: float = rig.zoom_target if z < 0.0 else z
-	var vis := get_viewport().get_visible_rect()
-	var half := vis.size.y * 0.5
-	var sy := clampf((150.0 + top_y) * 0.5 - vis.position.y, 0.0, half)
-	var a := atan((half - sy) / half * tan(deg_to_rad(rig.cam.fov * 0.5)))  # how far above the middle, as an angle
+## The map's room above a docked window (docs/ui_style.md §5; the canvas at VB 1672, the top group moved down by the
+## safe top inset): under the top band, right of the left column and its caption plates, left of the map tools' caption
+## pills and out of the minimap's corner — each wall as [x0, x1, bottom y].
+const FRAME_TOP := 150.0
+const FRAME_WALLS := [[0.0, 116.0, 872.0], [725.0, 1.0e4, 300.0], [780.0, 1.0e4, 772.0]]
+const FRAME_X := Vector2(116.0, 780.0)  # the free column the package is centred in
+
+
+## A world point on the canvas with the camera aimed at `aim` at `zoom`: camera_rig._apply's geometry (the look-at
+## point in the screen's middle, `dist` and `pitch` by zoom). Camera3D keeps the height: the fov is vertical and the
+## view's width follows the viewport's aspect, so a taller phone sees a narrower strip of the world.
+func _canvas_at(p: Vector3, aim: Vector3, zoom: float, vis: Rect2) -> Vector2:
 	var dist := lerpf(7.5, 34.0, zoom)
 	var pitch := deg_to_rad(minf(70.0, lerpf(40.0, 56.0, zoom)))
-	rig.focus(mid + Vector3(0, 0, dist * sin(a) / sin(pitch - a)), z)
+	var r := p - aim - Vector3(0, sin(pitch), cos(pitch)) * dist
+	var depth := maxf(0.1, -r.y * sin(pitch) - r.z * cos(pitch))
+	var up := r.y * cos(pitch) - r.z * sin(pitch)
+	var t := tan(deg_to_rad(rig.cam.fov * 0.5)) * depth
+	return vis.position + vis.size * Vector2(0.5 + 0.5 * r.x / (t * vis.size.x / vis.size.y), 0.5 - 0.5 * up / t)
+
+
+## What a package covers on the canvas: each hex's body and its tag (an S chip 34 tall on the hex's anchor 0.9 up),
+## the tags stacked as map_view._declutter stacks them (from the bottom of the screen up, a tag over a placed one rises
+## above it).
+func _frame_rects(ids: Array, aim: Vector3, zoom: float, vis: Rect2, tag_hw: Dictionary) -> Array:
+	var out: Array = []
+	var tags: Array = []
+	for h in ids:
+		var c: Vector3 = map_view.cell_world(h)
+		var box := Rect2(_canvas_at(c + Vector3(-0.8, 0, -0.7), aim, zoom, vis), Vector2.ZERO)
+		for d in [Vector3(0.8, 0, -0.7), Vector3(-0.8, 0, 0.7), Vector3(0.8, 0, 0.7)]:
+			box = box.expand(_canvas_at(c + d, aim, zoom, vis))
+		out.append(box)
+		var hw: float = tag_hw.get(h, 75.0)
+		tags.append(Rect2(_canvas_at(c + Vector3(0, 0.9, 0), aim, zoom, vis) - Vector2(hw, 17.0), Vector2(2.0 * hw, 34.0)))
+	tags.sort_custom(func(a: Rect2, b: Rect2) -> bool: return a.position.y > b.position.y)
+	var placed: Array = []
+	for r0 in tags:
+		var r: Rect2 = r0
+		for _n in 12:
+			var hit := false
+			for q in placed:
+				var g := (q as Rect2).grow(4.0)
+				if r.intersects(g):
+					r.position.y -= r.end.y - g.position.y
+					hit = true
+			if not hit:
+				break
+		placed.append(r)
+	return out + placed
+
+
+## Frames a swap's hexes above its window docked at the bottom (the window's top edge at `top_y` on the canvas):
+## every hex and its tag lands in the map's free room — under the top band, clear of the HUD's columns and the minimap
+## (FRAME_WALLS), above the window's title plate — with the package's middle in the middle of that room. The zoom is
+## the closest from `z_min` (the current one by default) at which the package fits; a wide package or a tall phone
+## (a narrower view) pulls the camera back.
+func _frame_above(ids: Array, top_y: float, z_min := -1.0) -> void:
+	if ids.is_empty():
+		return
+	var vis := get_viewport().get_visible_rect()
+	var st := Kit.top_inset(ui)
+	var band := Rect2(vis.position.x + 12.0, FRAME_TOP + st, vis.size.x - 24.0, top_y - 42.0 - 12.0 - FRAME_TOP - st)
+	var mid_c := Vector2((FRAME_X.x + FRAME_X.y) * 0.5, band.get_center().y)
+	var tag_hw := {}
+	var centre := Vector3.ZERO
+	for h in ids:
+		var tag := tr("swap.tag_give" if (_swap.get("give", []) as Array).has(h) or (swap_offer.get("give", []) as Array).has(h) else "swap.tag_get")
+		tag_hw[h] = (8.0 + 28.0 + 6.0 + Kit.text_w(tag, 24, "d800", false) + 14.0) * 0.5
+		centre += map_view.cell_world(h)
+	centre /= float(ids.size())
+	var z := clampf(rig.zoom_target if z_min < 0.0 else z_min, 0.0, 1.0)
+	var aim := Vector3(centre.x, 0, centre.z)
+	while true:
+		for _i in 4:  # aim so the package's box sits in the room's middle (nearly linear: a few steps converge)
+			var box := _rects_union(_frame_rects(ids, aim, z, vis, tag_hw))
+			var off := mid_c - box.get_center()
+			var p0 := _canvas_at(centre, aim, z, vis)
+			var kx := _canvas_at(centre + Vector3(1, 0, 0), aim, z, vis).x - p0.x
+			var kz := _canvas_at(centre + Vector3(0, 0, 1), aim, z, vis).y - p0.y
+			aim -= Vector3(off.x / maxf(kx, 1.0), 0, off.y / maxf(kz, 1.0))
+		aim.x = clampf(aim.x, rig.bounds.position.x, rig.bounds.end.x)
+		aim.z = clampf(aim.z, rig.bounds.position.y, rig.bounds.end.y)
+		if z >= 1.0 or _frame_fits(_frame_rects(ids, aim, z, vis, tag_hw), band, st):
+			break
+		z = minf(1.0, z + 0.025)
+	rig.focus(aim, z)
+
+
+static func _rects_union(rects: Array) -> Rect2:
+	var u: Rect2 = rects[0]
+	for r in rects:
+		u = u.merge(r)
+	return u
+
+
+## Every rect inside the band and clear of the HUD's walls (moved down by the safe top inset `st`).
+static func _frame_fits(rects: Array, band: Rect2, st: float) -> bool:
+	for r0 in rects:
+		var r: Rect2 = r0
+		if not band.encloses(r):
+			return false
+		for w in FRAME_WALLS:
+			if r.position.x < float(w[1]) and r.end.x > float(w[0]) and r.position.y < float(w[2]) + st:
+				return false
+	return true
 
 
 func _swap_clear_labels() -> void:

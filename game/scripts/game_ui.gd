@@ -964,12 +964,16 @@ func has_modal() -> bool:
 
 var _closing: Control  # the window fading out
 var _closed_frame := -1
+var _docked := false  # a window docked to the bottom is open: the bottom groups are hidden under it
+var on_dock := Callable()  # (docked: bool) — main hides the HUD's bottom group (tabs, tray, hex panel) with ours
 
 
 ## Closes the window at once for the game (`has_modal()` is false right away); the node fades out (120 ms).
 func close_modal() -> void:
 	var m := _modal
 	_modal = null
+	if _docked:
+		_set_docked(false)
 	if m:
 		_closing = m
 		_closed_frame = Engine.get_process_frames()
@@ -2943,12 +2947,24 @@ func _dlg_box(h: float, title: String, role: String, icon: String, cancel: Calla
 	var box := _modal_box(r, false, title, icon, role, not blocking and not cancel.is_valid(), false,
 		DOCK_DIM if dock_bottom else -1.0)
 	box.set_meta("kit_native", true)
+	if dock_bottom:  # under the light dim the tray, the tabs and the big button would peek out at the window's sides
+		_set_docked(true)
 	if cancel.is_valid():
 		Kit.close_button(box, cancel)
 		if not dock_bottom:  # a tap on the dim cancels too (§4.3); docked, the map above stays out of reach
 			var m := _modal
 			_modal.gui_input.connect(func(e): if _is_tap(e) and _modal == m: cancel.call())
 	return box
+
+
+## The bottom groups (ours: the card row, the big button; the HUD's through `on_dock`) hide while a docked window is
+## open and come back when it closes.
+func _set_docked(on: bool) -> void:
+	_docked = on
+	if _bottom:
+		_bottom.visible = not on
+	if on_dock.is_valid():
+		on_dock.call(on)
 
 
 ## Simple announcement (§6 «Общие show_info / show_choice»: world expansion, a peace offer): a window M with the
