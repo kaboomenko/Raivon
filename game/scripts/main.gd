@@ -1027,23 +1027,35 @@ func _ally_asks(ally: int, attacker: int) -> void:
 	_post(L.pack("inbox.ally_asks.title", [_state_key(ally)]), L.pack("inbox.ally_asks.text", [_state_key(ally), _state_key(attacker)]))
 	if mode != Mode.MAP or ui.has_modal():
 		return
-	ui.show_choice(tr("ally_ask.title") % _state_name(ally), [tr("ally_ask.text") % [_state_name(attacker), _state_name(ally)]], [
-		[tr("ally_ask.support") % cost, Color(0.2, 0.55, 0.3), func():
-			if econ.res["gold"] < cost:
-				ui.toast(tr("toast.no_gold"))
-				return
-			econ.res["gold"] -= cost
-			for w in ai_wars:
-				if int(w["b"]) == ally or int(w["a"]) == ally:
-					w["boost"] = ally
-			_opinion_add(ally, 15.0)
-			ui.close_modal()
-			ui.toast(tr("toast.ally_supported") % _state_name(ally))
-			_autosave()],
-		[tr("ally_ask.refuse"), Color(0.45, 0.2, 0.18), func():
-			_opinion_add(ally, -15.0)
-			ui.close_modal()],
-	])
+	var gold: int = econ.res["gold"]
+	var support := func():
+		if econ.res["gold"] < cost:
+			ui.toast(tr("toast.no_gold"))
+			return
+		econ.res["gold"] -= cost
+		for w in ai_wars:
+			if int(w["b"]) == ally or int(w["a"]) == ally:
+				w["boost"] = ally
+		_opinion_add(ally, 15.0)
+		ui.close_modal()
+		ui.toast(tr("toast.ally_supported") % _state_name(ally))
+		_autosave()
+	var refuse := func():
+		_opinion_add(ally, -15.0)
+		ui.close_modal()
+	# the ally speaks (its face, its name on the frame), the attacker in a chip; what the gold buys as tiles; the refusal
+	# costs opinion; «Поддержать» (go) carries the price — short: the number red, the tap says how much is missing
+	ui.show_choice(tr("ally_ask.title2"), [
+		{"tiles": [{"icon": "swords", "value": "+10%", "caption": tr("ally_ask.t_power")},
+			{"icon": "handshake", "value": "+15", "caption": tr("ally_ask.t_opinion")}]},
+		tr("ally_ask.refuse_note"),
+	], [
+		[tr("ally_ask.support2"), "go", support, {"price": [["coin", GameUI.fmt_num(cost), gold < cost]],
+			"short_reason": tr("ult.no_gold") % GameUI.fmt_num(cost - gold) if gold < cost else ""}],
+		[tr("ally_ask.refuse2"), "war", refuse],
+	], "war", "shield", {"id": _leader_portrait(ally), "plate": map_view.team_look(ally)["body"], "name": _state_short(ally),
+		"say": tr("ally_ask.say"), "chips": [{"kind": "owner", "icon": "swords", "text": _state_short(attacker),
+			"fill": map_view.team_look(attacker)["body"]}]})
 
 
 func _ai_peace(w: Dictionary) -> void:
@@ -1472,23 +1484,34 @@ func _show_separate_offer(s: int, asked := true) -> void:
 	var plan := _separate_plan(s)
 	var gold: int = plan["gold"]
 	var n: int = (plan["annex"] as Array).size()
-	var terms: String = tr("separate.terms_white")
+	var lose: int = (plan["lose"] as Array).size()
+	# the terms as tiles (what the treaty gives or takes) and the 24 h truce; a losing peace says it is a defeat
+	var tiles: Array = []
 	if n > 0:
-		terms = tr("separate.terms_land") % [n, gold]
-	elif gold > 0:
-		terms = tr("separate.terms") % gold
-	elif not (plan["lose"] as Array).is_empty():
-		terms = tr("separate.terms_lose") % (plan["lose"] as Array).size()
-	ui.show_choice(tr("separate.offer_title" if asked else "separate.ask_title") % _state_name(s), [
-		tr("separate.offer_line") % [_state_name(s), _state_name(int(war["enemy"]))],
-		tr("separate.share" if asked else "separate.share_own") % [_member_share(s), _state_name(s)],
-		terms,
-	], [
-		[tr("separate.accept" if asked else "separate.sign"), Color(0.16, 0.55, 0.3), func():
-			ui.close_modal()
-			_separate_peace(s)],
-		[tr("separate.decline" if asked else "ui.cancel"), Color(0.3, 0.33, 0.4), func(): ui.close_modal()],
-	])
+		tiles.append({"icon": "hex_tile", "value": "+%d" % n, "caption": tr("separate.t_hexes")})
+	if gold > 0:
+		tiles.append({"icon": "coins", "value": "+" + GameUI.fmt_num(gold), "caption": tr("separate.t_gold")})
+	if n == 0 and gold == 0:
+		if lose > 0:
+			tiles.append({"icon": "hex_tile", "value": Kit.MINUS + str(lose), "caption": tr("separate.t_lose"), "value_color": Kit.NEG_CREAM})
+		else:
+			tiles.append({"icon": "white_flag", "caption": tr("separate.t_white"), "icon_side": 96.0})
+	tiles.append({"icon": "dove", "value": tr("time.h") % 24, "caption": tr("separate.t_truce")})
+	var lines: Array = [{"tiles": tiles}, tr("separate.lose_note") if lose > 0 and n == 0 and gold == 0 else tr("separate.effect")]
+	var sign := func():
+		ui.close_modal()
+		_separate_peace(s)
+	var back := func(): ui.close_modal()
+	var buttons: Array = [[tr("separate.accept" if asked else "separate.sign"), "go", sign, {"icon": "dove"}]]
+	if asked:  # the member's own offer is a decision: peace or the war goes on
+		buttons.append([tr("separate.decline"), "war", back, {"icon": "swords"}])
+	else:  # the player's own request: ✕ takes it back
+		buttons.append([tr("ui.cancel"), "info", back, {"cancel": true}])
+	ui.show_choice(tr("separate.title"), lines, buttons, "go", "dove", {"id": _leader_portrait(s),
+		"plate": map_view.team_look(s)["body"], "name": _state_short(s),
+		"mood": "cunning" if lose > 0 else ("tired" if asked else _leader_mood(s, _opinion_of(s))),
+		"say": tr("separate.say_ask" if asked else "separate.say_own"),
+		"chips": [{"icon": "treaty", "text": tr("dipl.share") % Kit.fmt_dec(_member_share(s), 1), "name": "share"}]})
 
 
 ## Subsidies (canon §10.8): with the alarm at 50%+, a neighbour with opinion ≤ −25 may fund the state at war with
@@ -1666,15 +1689,6 @@ func _swap_terms(s: int, give: Array, get_l: Array) -> Dictionary:
 	return {"v_in": v_in, "v_out": v_out, "pay": pay_units, "gold": gold, "overpay": v_in + pay_units - k * v_out}
 
 
-func _hex_list(ids: Array) -> String:
-	var names := PackedStringArray()
-	var v := 0
-	for h in ids:
-		names.append(_cell_name(h))
-		v += int(sim.cells[h]["value"])
-	return "%s (%s %d)" % [", ".join(names), tr("swap.value"), v]
-
-
 ## A tap in swap mode toggles the hex in the package: ours → «give», theirs → «get», up to 5 a side (06 §15.1).
 func _swap_pick(id: int) -> void:
 	var s: int = _swap["state"]
@@ -1692,14 +1706,14 @@ func _swap_pick(id: int) -> void:
 			return
 		give.append(id)
 		map_view.burst(id, MapView.C_PLAYER)
-		map_view.hex_label(id, "⇄ " + tr("swap.tag_give"))
+		_swap_tag(id, true, s)
 	elif _swappable(id, s):
 		if get_l.size() >= SWAP_MAX:
 			ui.toast(tr("swap.max") % SWAP_MAX)
 			return
 		get_l.append(id)
 		map_view.burst(id, map_view.state_color(s))
-		map_view.hex_label(id, "⇄ " + tr("swap.tag_get"))
+		_swap_tag(id, false, s)
 	else:
 		ui.toast(tr("swap.bad_hex"))
 		return
@@ -1713,14 +1727,54 @@ func _swap_pick(id: int) -> void:
 	_swap_offer()
 
 
-func _swap_lines(s: int, give: Array, get_l: Array, t: Dictionary) -> Array:
-	return [
-		tr("swap.give") % _hex_list(give),
-		tr("swap.get") % _hex_list(get_l),
-		tr("swap.border") % [_state_name(s), _border_len(s), _border_len(s, _swap_over(s, give, get_l))],
-		tr("swap.ai_view") % [_state_name(s), float(t["v_in"]), float(t["v_out"])],
-		tr("swap.pay") % int(t["gold"]) if int(t["gold"]) > 0 else tr("swap.fair"),
-	]
+## A hex of a swap package tagged on the map: «отдаём» in a ring of the player's colour, «берём» in the state's.
+func _swap_tag(id: int, giving: bool, s: int) -> void:
+	map_view.hex_label(id, tr("swap.tag_give" if giving else "swap.tag_get"), MapView.C_PLAYER if giving else map_view.state_color(s), "@swap")
+
+
+## What the swap window shows of a package's hexes: [{name, tile (the render's key), value}].
+func _swap_hexes(ids: Array) -> Array:
+	var out: Array = []
+	for h in ids:
+		var desc := _describe(h)
+		var key := String(desc["tile"])
+		if not ResourceLoader.exists("res://assets/ui/cards/tile_%s.png" % key.get_slice("_dl", 0)):
+			key = String(desc["tile_alt"])
+		out.append({"name": _cell_name(h), "tile": key, "value": int(sim.cells[h]["value"])})
+	return out
+
+
+## The swap window's content (ui.show_swap): the leader's face is the answer — smiling at a fair trade (and at its own
+## offer), cunning while it wants a top-up — their line, the border before and after, both sides' hexes, the top-up.
+func _swap_info(s: int, give: Array, get_l: Array, t: Dictionary, ai := false) -> Dictionary:
+	var gold := int(t["gold"])
+	return {"state": _state_short(s), "color": map_view.team_look(s)["body"], "portrait": _leader_portrait(s),
+		"mood": "smile" if ai or gold == 0 else "cunning",
+		"say": tr("swap.ai_say") if ai else tr("swap.say_fair" if gold == 0 else "swap.say_pay"),
+		"left": maxi(0, int(swap_offer.get("until", 0)) - now_s()) if ai else 0,
+		"give": _swap_hexes(give), "get": _swap_hexes(get_l),
+		"border": [_border_len(s), _border_len(s, _swap_over(s, give, get_l))],
+		"gold": gold, "short": int(econ.res["gold"]) < gold}
+
+
+## Frames a swap's hexes above its window docked at the bottom (the window's top edge at `top_y` on the canvas): the
+## camera aims so their middle shows halfway between the HUD's top band (y 150) and the window. The geometry is
+## camera_rig._apply's: the look-at point is the screen's middle, `dist` and `pitch` by zoom.
+func _frame_above(ids: Array, top_y: float, z := -1.0) -> void:
+	if ids.is_empty():
+		return
+	var mid := Vector3.ZERO
+	for h in ids:
+		mid += map_view.cell_world(h)
+	mid /= float(ids.size())
+	var zoom: float = rig.zoom_target if z < 0.0 else z
+	var vis := get_viewport().get_visible_rect()
+	var half := vis.size.y * 0.5
+	var sy := clampf((150.0 + top_y) * 0.5 - vis.position.y, 0.0, half)
+	var a := atan((half - sy) / half * tan(deg_to_rad(rig.cam.fov * 0.5)))  # how far above the middle, as an angle
+	var dist := lerpf(7.5, 34.0, zoom)
+	var pitch := deg_to_rad(minf(70.0, lerpf(40.0, 56.0, zoom)))
+	rig.focus(mid + Vector3(0, 0, dist * sin(a) / sin(pitch - a)), z)
 
 
 func _swap_clear_labels() -> void:
@@ -1730,25 +1784,35 @@ func _swap_clear_labels() -> void:
 		map_view.hex_label(h, "")
 
 
+## The player's package (06 §15.1): the window docked at the bottom with the hexes framed above it; «Изменить» goes back
+## to tapping hexes, «Предложить» (go) makes the swap — short of the top-up, it shakes and says how much is missing;
+## ✕ drops the package.
 func _swap_offer() -> void:
 	var s: int = _swap["state"]
 	var give: Array = _swap["give"]
 	var get_l: Array = _swap["get"]
 	var t := _swap_terms(s, give, get_l)
-	var buttons: Array = [[tr("swap.offer"), Color(0.16, 0.42, 0.95), func():
+	var gold := int(t["gold"])
+	var cash: int = econ.res["gold"]
+	var propose := func():
 		ui.close_modal()
 		_swap_clear_labels()
 		_swap = {}
-		_swap_execute(s, give, get_l, int(t["gold"]), float(t["overpay"]))]]
-	if give.size() < SWAP_MAX or get_l.size() < SWAP_MAX:
-		buttons.append([tr("swap.more"), Color(0.2, 0.45, 0.35), func():
-			ui.close_modal()
-			ui.toast(tr("swap.more_hint"))])
-	buttons.append([tr("ui.cancel"), Color(0.3, 0.33, 0.4), func():
+		_swap_execute(s, give, get_l, gold, float(t["overpay"]))
+	var edit := func():
+		ui.close_modal()
+		ui.toast(tr("swap.more_hint"))
+	var cancel := func():
 		ui.close_modal()
 		_swap_clear_labels()
-		_swap = {}])
-	ui.show_choice(tr("swap.title"), _swap_lines(s, give, get_l, t), buttons)
+		_swap = {}
+	var top: float = ui.show_swap(_swap_info(s, give, get_l, t), [
+		[tr("swap.edit"), "info", edit, {"size": "M", "icon": "pencil", "name": "edit"}],
+		[tr("swap.offer"), "go", propose, {"icon": "handshake", "name": "propose",
+			"short_reason": tr("ult.no_gold") % GameUI.fmt_num(gold - cash) if cash < gold else ""}],
+		[tr("ui.cancel"), "info", cancel, {"cancel": true}],
+	])
+	_frame_above(give + get_l, top)
 
 
 func _swap_execute(s: int, give: Array, get_l: Array, gold: int, overpay: float) -> bool:
@@ -1876,21 +1940,32 @@ func _show_swap_offer() -> void:
 		swap_offer = {}
 		return
 	var t := _swap_terms(s, give, get_l)
-	var lines: Array = [tr("swap.ai_offer_line")]
-	var sl := _swap_lines(s, give, get_l, t)
-	lines.append_array(sl.slice(0, 3))
-	lines.append(sl[4])
-	rig.focus(map_view.cell_world(get_l[0]), 0.5)
-	ui.show_choice(tr("swap.ai_offer_title") % _state_name(s), lines, [
-		[tr("swap.accept"), Color(0.16, 0.55, 0.3), func():
-			ui.close_modal()
-			swap_offer = {}
-			_swap_execute(s, give, get_l, int(t["gold"]), float(t["overpay"]))],
-		[tr("swap.decline"), Color(0.3, 0.33, 0.4), func():
-			ui.close_modal()
-			swap_offer = {}
-			_autosave()],
+	var gold := int(t["gold"])
+	var cash: int = econ.res["gold"]
+	var untag := func():
+		for h in give + get_l:
+			map_view.hex_label(h, "")
+	var accept := func():
+		ui.close_modal()
+		swap_offer = {}
+		untag.call()
+		_swap_execute(s, give, get_l, gold, float(t["overpay"]))
+	var decline := func():
+		ui.close_modal()
+		swap_offer = {}
+		untag.call()
+		_autosave()
+	for h in give:
+		_swap_tag(h, true, s)
+	for h in get_l:
+		_swap_tag(h, false, s)
+	# a decision (no ✕): the hexes tagged and framed above the window, the offer's time left in a chip
+	var top: float = ui.show_swap(_swap_info(s, give, get_l, t, true), [
+		[tr("swap.decline"), "info", decline, {"name": "decline"}],
+		[tr("swap.accept"), "go", accept, {"icon": "handshake", "name": "accept",
+			"short_reason": tr("ult.no_gold") % GameUI.fmt_num(gold - cash) if cash < gold else ""}],
 	])
+	_frame_above(give + get_l, top, 0.5)
 
 
 func _ally_reason(s: int) -> String:
@@ -4737,17 +4812,32 @@ func _world_expansion() -> void:
 	await get_tree().create_timer(t + 1.4).timeout
 	var sfx_key := "" if next_ch == 2 else str(next_ch)
 	_post("inbox.expansion.title", L.pack("inbox.expansion%s.text" % sfx_key, [hexes_before, hexes_after, _chapter_goal()]))
-	var lines: Array = [tr("expansion.world") % [hexes_before, hexes_after], tr("expansion.states" + sfx_key)]
-	for s in fresh:
-		lines.append("· %s — %s, %s" % [_state_name(s), tr(String(LEADERS[s][1])), tr("dl.short") % int(sim.states[s]["dev_level"])])
-	lines.append(tr("expansion.goal" + sfx_key) % [_chapter_goal(), _player_hexes()])
-	lines.append(legacy)
+	# the advisor says it (his face, the line in a bubble); the world's growth in a line; the legacy and the new
+	# neighbours as rows — each leader's face in the state's colour, the state, their greeting, the DL in a hex; the
+	# chapter's goal under them
+	var greet := {}
 	for q in STORY_OPENING.get(next_ch, []):
-		lines.append("%s: «%s»" % [tr(String(LEADERS[int(q[0])][0])), tr(String(q[1]))])
-	lines.append(tr("expansion.advisor" + sfx_key))
-	ui.show_info(tr("expansion.title"), lines, tr("ui.continue"), func():
+		greet[int(q[0])] = tr(String(q[1]))
+	var rows: Array = []
+	if legacy != "":
+		var cut := legacy.find(": ")
+		rows.append({"icon": "gift", "title": legacy.substr(0, cut) if cut > 0 else legacy,
+			"sub": legacy.substr(cut + 2) if cut > 0 else ""})
+	for s in fresh:
+		var row := {"portrait": _leader_portrait(s), "plate": map_view.team_look(s)["body"], "title": _state_name(s),
+			"badge": int(sim.states[s]["dev_level"])}
+		if greet.has(s):
+			row["quote"] = greet[s]
+		else:
+			row["sub"] = tr(String(LEADERS[s][1])) if LEADERS.has(s) else ""
+		rows.append(row)
+	var lines: Array = [tr("expansion.world2") % [hexes_after, hexes_after - hexes_before], {"rows": rows},
+		tr("expansion.goal" + sfx_key) % [_chapter_goal(), _player_hexes()]]
+	var go_on := func():
 		ui.close_modal()
-		rig.focus(map_view.cell_world(sim.states[Types.PLAYER]["capital_id"]), 0.6))
+		rig.focus(map_view.cell_world(sim.states[Types.PLAYER]["capital_id"]), 0.6)
+	ui.show_info(tr("expansion.title"), lines, tr("ui.continue"), go_on, "gold", "globe",
+		{"id": "cmd_bram", "mood": "smile", "say": tr("expansion.advisor" + sfx_key)})
 	_autosave()
 
 
@@ -5514,9 +5604,12 @@ func _assign_commander(army_id: int, id: String) -> void:
 		var pa := _player_armies()
 		for i in pa.size():
 			nums[int(pa[i]["id"])] = i + 1
+		var move := func(): _do_assign(army_id, id)
+		var back := func(): _open_cmd_picker(army_id)
+		# one action and the ✕ (back to the picker)
 		ui.show_choice(tr("cmdr.move_title") % Cases.commander_name(id), [tr("cmdr.move_text") % [int(nums.get(other, 0)), int(nums.get(army_id, 0))]], [
-			[tr("cmdr.move_yes"), Color(0.2, 0.55, 0.3), func(): _do_assign(army_id, id)],
-			[tr("ui.cancel"), Color(0.3, 0.33, 0.42), func(): _open_cmd_picker(army_id)]])
+			[tr("cmdr.move_yes"), "go", move],
+			[tr("ui.cancel"), "info", back, {"cancel": true}]], "info", "frame")
 		return
 	_do_assign(army_id, id)
 
@@ -5795,10 +5888,13 @@ func _intro_offer_check(day: int) -> void:
 
 
 func _show_intro_offer() -> void:
-	ui.show_choice(tr("patent.offer_title"), [tr("patent.offer_line") % "$1.99", tr("patent.trial") % ["$1.99", "$7.99"]], [
-		[tr("patent.offer_more"), Color(0.75, 0.55, 0.12), func(): _open_patent()],
-		[tr("patent.offer_later"), Color(0.3, 0.33, 0.4), func(): ui.close_modal()],
-	])
+	var more := func(): _open_patent()
+	var later := func(): ui.close_modal()
+	# «Подробнее» opens the patent (nothing is bought here: info, not gold); ✕ is «Не сейчас»
+	ui.show_choice(tr("patent.offer_title"), [tr("patent.offer_line2"), tr("patent.trial") % ["$1.99", "$7.99"]], [
+		[tr("patent.offer_more"), "info", more],
+		[tr("patent.offer_later"), "info", later, {"cancel": true}],
+	], "gold", "charter")
 
 
 func _army_items(now: int) -> Array:
@@ -5883,7 +5979,9 @@ func _open_market() -> void:
 	var lots: Array = []
 	for i in market.lots.size():
 		var lot: Dictionary = market.lots[i].duplicate()
-		lot["ok"] = market.can_buy(econ, i) == ""
+		var why: String = market.can_buy(econ, i)
+		lot["ok"] = why == ""
+		lot["why"] = L.t(why) if why != "" else ""
 		lots.append(lot)
 	var lvl: int = Market.market_level(econ)
 	var info := {"level": lvl, "rate": Market.rate_milli(lvl), "res": econ.res.duplicate(), "cap": econ.storage_cap(),
@@ -6201,12 +6299,13 @@ func _peace_offer() -> void:
 	war["offered"] = 1
 	sfx.play("seal")
 	_post(L.pack("inbox.peace_offer.title", [_state_key(enemy)]), L.pack("inbox.peace_offer.text", [_state_key(enemy), int(ws["control"])]))
-	ui.show_info(tr("peace_offer.title") % _state_name(enemy), [
-		tr("peace_offer.text") % [_state_name(enemy), int(ws["control"])],
-		"%s — «%s»" % [tr(String(LEADERS.get(enemy, ["", "", ""])[0])) if LEADERS.has(enemy) else _state_name(enemy), tr("peace_offer.quote")],
-	], tr("peace_offer.go"), func():
+	var talks := func():
 		ui.close_modal()
-		_open_peace())
+		_open_peace()
+	# the enemy's leader asks it (its face, the state on the frame, the line in a bubble); how much of the front is ours
+	ui.show_info(tr("peace_offer.title2"), [tr("peace_offer.text2") % int(ws["control"])], tr("peace_offer.go"), talks, "go", "dove",
+		{"id": _leader_portrait(enemy), "plate": map_view.team_look(enemy)["body"], "name": _state_short(enemy), "mood": "tired",
+			"say": tr("peace_offer.quote")})
 
 
 ## Auto-defense (canon §9.11): the AI's 90 s offensive is played out at once on the same engine; the player's
@@ -6838,14 +6937,14 @@ func _demo(spec: String) -> void:
 		for c in sim.cells:
 			if get_h < 0 and _swappable(c["id"], MapGen.BARONS) and _touches_player(c["id"]):
 				get_h = c["id"]
-		for c in sim.cells:
-			if give < 0 and _swappable(c["id"], Types.PLAYER):
+		for c in sim.cells:  # the player's swappable hex nearest to it: both show above the docked window
+			if _swappable(c["id"], Types.PLAYER) and get_h >= 0 and (give < 0 or _hex_dist(c["id"], get_h) < _hex_dist(give, get_h)):
 				give = c["id"]
 		if give >= 0 and get_h >= 0:
+			rig.zoom_target = 0.5
 			_swap = {"state": MapGen.BARONS, "give": [], "get": []}
 			_swap_pick(give)
-			_swap_pick(get_h)
-			rig.focus(map_view.cell_world(get_h), 0.5)
+			_swap_pick(get_h)  # the window opens and frames both hexes above it
 		return
 	if what == "swap_ai":  # a neighbour (Fox, Owl or Turtle) proposes a swap that straightens the border
 		await _world_expansion()

@@ -460,26 +460,27 @@ toast.cloud_loaded,Загружено облачное сохранение,Clou
 res.name.gold,Золото,Gold
 res.name.food,Еда,Food
 res.name.metal,Металл,Metal
-market.title,Рынок · ур. %d,Market · level %d
 market.rate,курс %s : 1,rate %s : 1
 market.give,Отдаю,You give
 market.get,Получаю,You get
-market.stock,на складе %s,stored %s
-market.free,свободно %s,free %s
-market.max,Всё,All
 market.fits,Поместится только %s — склад почти полон,Only %s fits — the warehouse is almost full
 market.exchange,Обменять,Exchange
-market.trader,Торговец · новые лоты через %s,Trader · new lots in %s
 market.buy,Купить,Buy
 market.bought,Куплено,Bought
 market.open,Обмен,Trade
 market.tip,Курс %s : 1 — столько отдаёте за единицу другого ресурса,Rate %s : 1 — what you give for one unit of another resource
-market.done,Обмен: −%s %s → +%s %s,Exchanged: −%s %s → +%s %s
+market.done,"Обмен: −%s %s, +%s %s","Exchanged: −%s %s, +%s %s"
 market.not_enough,Не хватает ресурса для этого лота,Not enough resources for this lot
 market.no_space,На складе нет места,No room in the warehouse
 market.locked,Рынок открывается на УР2,The Market opens at DL2
 market.no_lot,Лот недоступен,Lot unavailable
-market.full_hint,Склад: %s почти полон · обменяй на Рынке,Warehouse: %s almost full · trade it at the Market
+market.full_hint,Почти нет места для %s — обменяйте на Рынке,Almost no room for %s — trade it at the Market
+market.title2,Рынок,Market
+market.give_sub,На складе,In stock
+market.get_sub,Свободно,Free space
+market.trader2,Торговец,Trader
+market.tip_title,"Рынок, ур. %d","Market, level %d"
+market.nothing,Нечего обменять,Nothing to trade
 trader.needed,Нужное,Needed
 trader.common,Ходовой,Popular
 trader.generous,Щедрый,Generous
@@ -548,8 +549,7 @@ cell.ch2_port_fish,Рыбный порт,Fishing Port
 cell.ch2_port_salt,Соляная пристань,Salt Wharf
 cell.ch2_base,Речная застава,River Outpost
 expansion.title,Мир расширяется!,The world expands!
-expansion.world,Мир: %d → %d гексов,World: %d → %d hexes
-expansion.states,+2 государства:,+2 states:
+expansion.world2,Мир вырос до %d гексов (+%d),The world grew to %d hexes (+%d)
 expansion.goal,Цель главы II «Речной край»: %d гексов (у вас %d),Chapter II “River Country” goal: %d hexes (you have %d)
 expansion.advisor,«Долина признала наш флаг. Но за холмами слышен шум рек и чужих барабанов».,“The valley has accepted our banner. But beyond the hills we hear rivers and foreign drums.”
 inbox.expansion.title,Мир расширяется,The world expands
@@ -561,10 +561,10 @@ inbox.defense_lost.title,Оборона прорвана,Defence broken
 inbox.defense_lost.text,%s прорвали оборону: занято гексов — %d. Верните их наступлением.,%s broke through: %d hexes occupied. Win them back with an offensive.
 inbox.counter.title,Готовится контрудар,A counter-strike is coming
 inbox.counter.text,"%s готовят удар по «%s» через %d мин. Усильте оборону: армия, укрепление, башня.","%s will strike “%s” in %d min. Strengthen it: an army, a fort, a tower."
-peace_offer.title,%s просят мира,%s ask for peace
-peace_offer.text,%s готовы говорить о мире: вы держите %d%% фронта.,%s are ready to talk peace: you hold %d%% of the front.
 peace_offer.quote,Довольно крови. Назовите ваши условия,Enough blood. Name your terms
-peace_offer.go,К мирной конференции,To the peace conference
+peace_offer.go,К переговорам,To the talks
+peace_offer.title2,Предложение мира,Peace offer
+peace_offer.text2,Вы держите %d%% фронта — враг готов говорить о мире.,You hold %d%% of the front — the enemy is ready to talk peace.
 inbox.peace_offer.title,%s предлагают мир,%s offer peace
 inbox.peace_offer.text,%s предлагают мир: вы держите %d%% фронта.,%s offer peace: you hold %d%% of the front.
 toast.ai_claimed,Этот гекс уже осваивают %s,%s are already settling this hex
@@ -609,10 +609,13 @@ inbox.ally_joins.text,Союзник %s выступил против %s и бу
 star.c2_alliance,Рукопожатие: заключите союз с ИИ,Handshake: ally with an AI state
 inbox.ally_asks.title,%s просят помощи,%s ask for help
 inbox.ally_asks.text,На нашего союзника %s напали %s.,Our ally %s was attacked by %s.
-ally_ask.title,Союзник в беде: %s,An ally in trouble: %s
-ally_ask.text,"%s напали на %s. Поддержим золотом — армии союзника станут сильнее на 10%%, и он запомнит нашу помощь.","%s attacked %s. Back them with gold: the ally's armies get 10%% stronger, and they will remember it."
-ally_ask.support,Поддержать (%d зол.),Support (%d gold)
-ally_ask.refuse,Отказать (мнение −15),Refuse (opinion −15)
+ally_ask.title2,Союзник в беде,Ally in trouble
+ally_ask.say,На нас напали! Поддержите золотом — мы этого не забудем.,We have been attacked! Back us with gold and we won't forget it.
+ally_ask.t_power,Сила союзника,Ally's strength
+ally_ask.t_opinion,Мнение,Opinion
+ally_ask.refuse_note,Откажете — мнение упадёт на 15.,Refuse and their opinion drops by 15.
+ally_ask.support2,Поддержать,Support
+ally_ask.refuse2,Отказать,Refuse
 toast.ally_supported,«%s» получили нашу поддержку,“%s” received our support
 dipl.call,Призыв,Call in
 dipl.ai_ally,Союз с «%s»,Allied with “%s”
@@ -665,7 +668,6 @@ cell.ch3_base_steppe,Степной форт,Steppe Fort
 cell.ch3_base_taiga,Таёжный кордон,Taiga Cordon
 cell.ch3_vein,Кристалл континента,Continental Crystal
 kind.factory,Завод,Factory
-expansion.states3,+3 государства:,+3 states:
 expansion.goal3,Цель главы III «Континент»: %d гексов (у вас %d),Chapter III “Continent” goal: %d hexes (you have %d)
 expansion.advisor3,«Реки наши. За устьем лежит континент — и правит там Альвария».,“The rivers are ours. Past the river mouth lies the continent — and Alvaria rules it.”
 inbox.expansion3.text,"Открыт «Континент»: мир вырос с %d до %d гексов, новые соседи — Альвария, Сарен и Серая Стая. Цель главы III — %d гексов.","“Continent” is open: the world grew from %d to %d hexes, and our new neighbours are Alvaria, Saren and the Grey Pack. Chapter III goal: %d hexes."
@@ -729,7 +731,6 @@ cell.ch4_base_canyon,Каньонная база,Canyon Base
 cell.ch4_base_rail,Бронепоездное депо,Armoured Train Depot
 cell.ch4_base_lake,Озёрная база,Lake Base
 cell.ch4_vein,Кристалл пояса,Belt Crystal
-expansion.states4,+3 государства:,+3 states:
 expansion.goal4,Цель главы IV «Индустриальный пояс»: %d гексов (у вас %d),Chapter IV “Industrial Belt” goal: %d hexes (you have %d)
 expansion.advisor4,«Континент склонил знамёна. Дым на горизонте — это заводы Индустриального пояса».,“The continent has lowered its banners. The smoke on the horizon is the factories of the Industrial Belt.”
 inbox.expansion4.text,"Открыт «Индустриальный пояс»: мир вырос с %d до %d гексов, новые соседи — Стальной Конклав, Вейлмарк и Республика Озёр. Цель главы IV — %d гексов.","“Industrial Belt” is open: the world grew from %d to %d hexes, and our new neighbours are the Steel Conclave, Veilmark and the Lake Republic. Chapter IV goal: %d hexes."
@@ -791,15 +792,10 @@ swap.pick,Обмен с «%s»: тапайте свои и его гексы (д
 swap.pick_give,Теперь тапните свой гекс — что отдаёте,Now tap your hex — what you give
 swap.pick_get,Теперь тапните гекс «%s» — что получаете,Now tap a hex of “%s” — what you get
 swap.bad_hex,"Этот гекс не обменять (Ядро, столица, колонизация или чужой)","This hex can't be swapped (core, capital, colonization or someone else's)"
-swap.give,Отдаёте: %s,You give: %s
-swap.get,Получаете: %s,You get: %s
-swap.ai_view,"Оценка «%s»: получает %.1f, отдаёт %.1f","“%s” values it: gets %.1f, gives %.1f"
-swap.pay,Доплата: %d золота,Top-up: %d gold
-swap.fair,Обмен равноценный — без доплаты,A fair swap — no top-up
 swap.offer,Предложить,Propose
 toast.swap,+%d гекс. — обмен с «%s» заключён,+%d hexes — the swap with “%s” is done
 inbox.swap.title,Обмен территориями,Territory swap
-inbox.swap.text,"Обмен с «%s»: отдали %s, получили %s (гексов: %d → %d).","Swap with “%s”: gave %s, got %s (hexes: %d → %d)."
+inbox.swap.text,"Обмен с «%s»: отдали %s, получили %s (гексов отдано: %d, получено: %d).","Swap with “%s”: gave %s, got %s (hexes given: %d, received: %d)."
 star.c3_swap,Выгодная сделка: завершите обмен территориями,A good deal: complete a territory swap
 dipl.pact_btn,Пакт,Pact
 dipl.pact,Пакт о ненападении: %s,Non-aggression pact: %s
@@ -914,38 +910,43 @@ pack.pass,Военный пропуск,War Pass
 pack.pass.desc,"Премиум-ветка сезона: 40 наград сверх бесплатных — ящики, Райвиты, осколки и косметика.","The season's premium track: 40 rewards on top of the free ones — crates, Raivites, shards and cosmetics."
 pack.pass.short,40 наград премиум-ветки,40 premium-track rewards
 pack.period_season,/сезон,/season
-swap.value,ценность,value
 swap.max,Не больше %d гексов с каждой стороны,No more than %d hexes a side
 swap.tag_give,отдаём,give
 swap.tag_get,берём,get
-swap.border,Граница с «%s»: %d → %d рёбер,Border with “%s”: %d → %d edges
-swap.more,Добавить гексы,Add hexes
 swap.more_hint,Тапайте ещё гексы; повторный тап убирает гекс из обмена,Tap more hexes; tap again to drop a hex from the swap
-swap.ai_offer_title,«%s» предлагает обмен,“%s” proposes a swap
-swap.ai_offer_line,Выпрямим границу — обоим проще её держать. Предложение действует сутки.,Let's straighten the border — easier for both of us to hold. The offer stands for a day.
-swap.accept,Согласиться,Accept
-swap.decline,Отказаться,Decline
+swap.accept,Принять,Accept
+swap.decline,Отказать,Decline
+swap.say_fair,Честный обмен. Мы согласны!,A fair trade. We agree!
+swap.say_pay,Доплатите — и по рукам.,Add the top-up and it's a deal.
+swap.ai_say,Выпрямим границу — обоим проще её держать.,Let's straighten the border — it's easier for both of us to hold.
+swap.give_h,Отдаём,We give
+swap.get_h,Получаем,We get
+swap.border2,Граница,Border
+swap.you_pay,Вы доплачиваете,You pay extra
+swap.no_pay,Без доплаты,No top-up
+swap.edit,Изменить,Edit
 inbox.swap_offer.title,«%s» предлагает обмен,“%s” proposes a swap
 inbox.swap_offer.text,"«%s» предлагает обменять гексы, чтобы выпрямить общую границу. Ответить можно в течение суток.",“%s” offers to swap hexes to straighten the common border. You can answer within a day.
 toast.separate_gold,«%s» вышли из коалиции: сепаратный мир и %d золота контрибуции,“%s” left the coalition: a separate peace and %d gold of contribution
 inbox.separate_offer.title,«%s» просят сепаратного мира,“%s” ask for a separate peace
 inbox.separate_offer.text,«%s» устали от войны и готовы выйти из коалиции. Ответить можно на вкладке «Дипломатия».,“%s” are tired of the war and ready to leave the coalition. You can answer on the Diplomacy tab.
-separate.offer_title,«%s» просят сепаратного мира,“%s” ask for a separate peace
-separate.offer_line,«%s» выйдут из войны против вас; армии «%s» потеряют их силу. Перемирие 24 ч.,“%s” will leave the war against you; the armies of “%s” lose their strength. A 24 h truce.
-separate.share,Их доля в счёте войны: %.1f — «%s» уже проигрывают,Their share of the war score: %.1f — “%s” are already losing
-separate.terms,Условия: %d золота контрибуции,Terms: %d gold of contribution
-separate.terms_white,Условия: белый мир,Terms: a white peace
 separate.accept,Принять мир,Accept the peace
 separate.decline,Воевать дальше,Fight on
 dipl.share,Доля: %s очка,Share: %s points
 toast.front,Следующее наступление — на «%s»,The next offensive goes against “%s”
 toast.separate_land,"«%s» вышли из коалиции: гексов отошло %d, контрибуция %d золота","“%s” left the coalition: %d hexes ceded, %d gold of contribution"
-separate.terms_land,"Условия: занятые вами гексы (%d) отходят вам, контрибуция %d золота","Terms: the hexes you hold (%d) become yours, %d gold of contribution"
 toast.separate_lost,"«%s» вышли из коалиции: сепаратный мир-поражение, отдано гексов: %d","“%s” left the coalition: a losing separate peace, %d hexes ceded"
-separate.terms_lose,"Условия: вы отдаёте занятые ими гексы (%d) — это поражение, «Триумфа» не будет","Terms: you cede the hexes they hold (%d) — a defeat, no «Triumph»"
-separate.ask_title,Сепаратный мир с «%s»,Separate peace with “%s”
-separate.share_own,Их доля в счёте войны: %.1f · «%s»,Their share of the war score: %.1f · “%s”
 separate.sign,Заключить мир,Sign the peace
+separate.title,Сепаратный мир,Separate peace
+separate.say_ask,Хватит с нас этой войны. Мы выходим из неё.,We have had enough of this war. We are leaving it.
+separate.say_own,"Мир? Что ж, обсудим условия.","Peace? Well, let's discuss the terms."
+separate.effect,Они выйдут из войны — враг станет слабее.,They leave the war — the enemy grows weaker.
+separate.lose_note,Это поражение — «Триумфа» не будет.,It is a defeat — no “Triumph”.
+separate.t_hexes,Гексы,Hexes
+separate.t_gold,Контрибуция,Contribution
+separate.t_lose,Вы отдаёте,You cede
+separate.t_white,Белый мир,White peace
+separate.t_truce,Перемирие,Truce
 hand.title,Рука карт,Card hand
 hand.title_full,Рука на наступление,Offensive hand
 hand.deck,Колода,Deck
@@ -1001,8 +1002,8 @@ pack.period_month,/мес,/mo
 cal.double_patent,×2 · Патент,×2 · Patent
 settings.manage_sub,Управление подпиской,Manage subscription
 settings.manage_soon,Откроется экран подписок App Store / Google Play,Opens the App Store / Google Play subscriptions screen
-patent.offer_title,Награды роликов — сразу,Video rewards — at once
-patent.offer_line,Получайте награды роликов без просмотра — 7 дней за %s.,Get video rewards without watching — 7 days for %s.
+patent.offer_title,Награды сразу,Rewards at once
+patent.offer_line2,Получайте награды роликов без просмотра.,Get video rewards without watching.
 patent.offer_more,Подробнее,Details
 patent.offer_later,Не сейчас,Not now
 chr.toast,Летопись: %s,Chronicle: %s
@@ -1253,6 +1254,11 @@ plural.shards.one,%d осколок,%d shard
 plural.shards.few,%d осколка,%d shards
 plural.shards.many,%d осколков,%d shards
 plural.shards.other,%d осколков,%d shards
+plural.hexes,%d гексов,%d hexes
+plural.hexes.one,%d гекс,%d hex
+plural.hexes.few,%d гекса,%d hexes
+plural.hexes.many,%d гексов,%d hexes
+plural.hexes.other,%d гексов,%d hexes
 pass.rw_shards_n,%s: %s,%s: %s
 time.d,%dд,%dd
 cmdr.assign,Назначить,Assign

@@ -2626,59 +2626,373 @@ func _leader_seal(box: Control, portrait: String, plate: Color, r: Rect2, mood :
 		oc.position = Vector2(r.position.x + (r.size.x - oc.size.x) * 0.5, r.end.y - 20.0)
 
 
-## Simple announcement: title, lines of text, one button (world expansion, chapter cards).
-## Height of a wrapped 22 px line block, so long lines (leaders' quotes) push the next ones down.
-func _line_h(text: String) -> float:
-	var probe := _label(text, 22, TEXT, false)
-	var f := probe.get_theme_font("font")
-	var sz := f.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, 741.0, 22, -1, TextServer.BREAK_MANDATORY | TextServer.BREAK_WORD_BOUND)
-	probe.free()
-	return maxf(52.0, sz.y + 22.0)
+# ------------------------------------------------------------------ generic dialogs (§6 «Общие show_info / show_choice»)
+
+const DLG_PAD := 32.0  # the window's side margin (§3.1)
+const DLG_GAP := 16.0
+const DLG_SEAL := Vector2(156, 170)  # a leader's (or the advisor's) portrait beside the bubble
+const DLG_TILE_H := 182.0
+const DLG_ROW_H := 112.0
+const DLG_FACE := 80.0  # a leader's face in a list row
+const DLG_LS := 3.0  # Label's default line spacing: a wrapped block's height counts it
+const DOCK_DIM := 0.25  # a window docked to the bottom dims the map lightly: what it is about stays in sight
 
 
-func show_info(title: String, lines: Array, button: String, on_button: Callable) -> void:
-	var text_h := 0.0
-	for ln in lines:
-		text_h += _line_h(String(ln))
-	var h := 230.0 + text_h
-	var box := _modal_box(Rect2(60, maxf(120.0, (VH - h) / 2.0 - 80.0), 821, h))
-	var t := _label(title, 36, Color(1.0, 0.85, 0.4))
-	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_at(t, box, Vector2(0, 28), Vector2(821, 48))
-	var y := 100.0
-	for ln in lines:
-		var l := _label(String(ln), 22, TEXT, false)
-		l.autowrap_mode = TextServer.AUTOWRAP_WORD
-		l.custom_minimum_size = Vector2(741, 0)
-		l.position = Vector2(40, y)
-		box.add_child(l)
-		y += _line_h(String(ln))
-	_button(box, Rect2(40, h - 110, 741, 84), button, Color(0.13, 0.4, 0.9), on_button)
+## Height of a paragraph of Nunito 800 `size` word-wrapped to `w` (BODY 28 by default).
+func _line_h(text: String, w := 717.0, size := 28) -> float:
+	var f := Kit.font("b800")
+	var lh := f.get_height(size)
+	var sz := f.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, w, size, -1,
+		TextServer.BREAK_MANDATORY | TextServer.BREAK_WORD_BOUND | TextServer.BREAK_ADAPTIVE)
+	var n := maxi(1, roundi(sz.y / lh))
+	return ceilf(n * lh + (n - 1) * DLG_LS)
 
 
-## A choice: title, lines, several buttons [[text, color, callable], …] stacked under the text.
-func show_choice(title: String, lines: Array, buttons: Array) -> void:
-	var text_h := 0.0
+## A line said in a bubble loses its own quotation marks: the bubble already says it is speech.
+static func _unquote(t: String) -> String:
+	t = t.strip_edges()
+	for q in [["«", "»"], ["“", "”"], ["\"", "\""]]:
+		if t.length() <= 2 or not t.begins_with(q[0]) or (q[0] != q[1] and t.count(q[0]) > 1):
+			continue  # «A» and «B» is not one quotation
+		if t.ends_with(q[1]):
+			return t.substr(1, t.length() - 2)
+		for p in [".", "!", "?"]:  # «…». — the full stop after the quote goes inside
+			if t.ends_with(q[1] + p):
+				return t.substr(1, t.length() - 3) + p
+	return t
+
+
+## The portrait spec as {id, plate, mood, name, say, chips} (see show_choice) and the body lines left once the said
+## line is taken out: [portrait or {}, lines].
+func _dlg_split(portrait: Variant, lines: Array) -> Array:
+	var p: Dictionary = {}
+	if portrait is Dictionary:
+		p = (portrait as Dictionary).duplicate()
+	elif portrait is String and String(portrait) != "":
+		p = {"id": String(portrait)}
+	var rest := lines.duplicate()
+	if not p.is_empty() and not p.has("say"):
+		for i in rest.size():
+			if rest[i] is String:
+				p["say"] = rest[i]
+				rest.remove_at(i)
+				break
+	return [p, rest]
+
+
+## A row of chips. spec: {icon, text, kind: paper (CREAM_DEEP pill h 44, the default) | owner (a state's colour, `fill`)
+## | status | timer | timer_war, color}. Centred in `r` (or from its left when `center` is false); a long row shares the
+## width out (each chip's text steps down, then is cut).
+func _dlg_chips(host: Control, r: Rect2, chips: Array, center := true) -> void:
+	var made: Array = []
+	var room := (r.size.x - 12.0 * (chips.size() - 1)) / maxf(1.0, chips.size())
+	for c in chips:
+		var d: Dictionary = c
+		var kind := String(d.get("kind", "paper"))
+		var p: Control
+		if d.has("node"):  # a chip the caller drew (one with vector chrome inside)
+			p = d["node"]
+			host.add_child(p)
+		elif kind == "paper":
+			p = _paper_chip(host, Vector2.ZERO, String(d.get("icon", "")), String(d.get("text", "")), room)
+		else:
+			var opts := {"max_w": room}
+			if d.has("color"):
+				opts["color"] = d["color"]
+			p = Kit.chip(host, Vector2.ZERO, String(d.get("icon", "")), String(d.get("text", "")), kind, d.get("fill", Kit.CLEAR), opts)
+		if not d.has("node"):
+			p.name = String(d.get("name", "chip"))
+		made.append(p)
+	var total := 0.0
+	for p in made:
+		total += (p as Control).size.x
+	total += 12.0 * (made.size() - 1)
+	var x := r.position.x + (maxf(0.0, (r.size.x - total) * 0.5) if center else 0.0)
+	for p in made:
+		var pc := p as Control
+		pc.position = Vector2(roundf(x), roundf(r.position.y + (r.size.y - pc.size.y) * 0.5))
+		x += pc.size.x + 12.0
+
+
+## A leader's face for a list row: the bust on the state's colour, R 14, an INK 3 rim.
+func _mini_face(id: String, plate: Color, mood: String, side: float) -> Control:
+	var fr := Panel.new()
+	fr.name = "face"
+	var sb := Kit.style(plate, 14, 0, Kit.INK, 0, 0)
+	sb.set_meta("kit_kind", "")
+	fr.add_theme_stylebox_override("panel", sb)
+	fr.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
+	fr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fr.size = Vector2(side, side)
+	var tex: Texture2D = CmdPortrait._render(id, mood) if id != "" else null
+	var t := _icon_rect("crown", side * 0.6) if tex == null else TextureRect.new()
+	if tex != null:
+		t.texture = tex
+		t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		t.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		t.size = fr.size
+	else:
+		t.position = (fr.size - t.size) * 0.5
+	fr.add_child(t)
+	var rim := Panel.new()  # over the picture: clipping would hide a contour drawn by the frame itself
+	var rsb := Kit.style(Kit.CLEAR, 14, 3, Kit.INK, 0, 0)
+	rsb.draw_center = false
+	rsb.set_meta("kit_kind", "")
+	rim.add_theme_stylebox_override("panel", rsb)
+	rim.size = fr.size
+	rim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fr.add_child(rim)
+	return fr
+
+
+## A list row's height: a two-line quote under the title (Nunito 26) makes it taller than DLG_ROW_H.
+func _dlg_row_h(o: Dictionary, w: float) -> float:
+	var q := String(o.get("quote", ""))
+	if q == "":
+		return DLG_ROW_H
+	var tw := w - 16.0 - DLG_FACE - 16.0 - 16.0 - (52.0 + 16.0 if o.has("badge") else 0.0)
+	return maxf(DLG_ROW_H, 14.0 + 40.0 + _line_h(q, tw, 26) + 14.0 + 5.0)
+
+
+## A list row of a dialog: Kit.row, with `portrait` (+ plate, mood) a leader's face at the left, `quote` a line wrapped
+## to two under the title, `badge` a DL hex at the right.
+func _dlg_row(host: Control, r: Rect2, o: Dictionary) -> Kit.KitRow:
+	var opts: Dictionary = o.duplicate()
+	if opts.has("portrait"):
+		opts["icon_node"] = _mini_face(String(opts["portrait"]), opts.get("plate", Kit.SKY_TOP), String(opts.get("mood", "")), DLG_FACE)
+	if opts.has("badge"):
+		opts["right"] = Kit.hex_badge(null, Vector2(26, 26), 26, "info", str(opts["badge"]))
+	var quote := String(opts.get("quote", ""))
+	if quote != "":
+		opts["sub"] = quote
+	var row := Kit.row(host, r, opts)
+	if quote != "":  # the title at the top, the quote wrapped under it
+		var sl := row.get_node_or_null("sub") as Label
+		if sl != null:
+			sl.clip_text = false
+			sl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			sl.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+			sl.position.y = 14.0 + 40.0
+			sl.size.y = r.size.y - 5.0 - 14.0 - 40.0 - 8.0
+		row.title_label.position.y = 12.0
+	return row
+
+
+## Lays a dialog's body from `y` on `box` (null: measures only) and returns the y under it. `p`: the portrait spec,
+## `lines`: the body entries (see show_choice).
+func _dlg_body(box: Control, w: float, y: float, p: Dictionary, lines: Array) -> float:
+	var iw := w - 2.0 * DLG_PAD
+	if not p.is_empty():
+		var bx := DLG_PAD + DLG_SEAL.x + 28.0
+		var bw := w - DLG_PAD - bx
+		var say := _unquote(String(p.get("say", "")))
+		var chips: Array = p.get("chips", [])
+		var bh := clampf(_line_h(say, bw - 40.0) + 30.0, 88.0, 150.0) if say != "" else 0.0
+		var ch := 44.0 if not chips.is_empty() else 0.0
+		var col_h := bh + ch + (16.0 if bh > 0.0 and ch > 0.0 else 0.0)
+		if box:
+			var plate: Color = p.get("plate", Kit.SKY_TOP)
+			_leader_seal(box, String(p.get("id", "")), plate, Rect2(Vector2(DLG_PAD, y), DLG_SEAL), String(p.get("mood", "")),
+				String(p.get("name", "")))
+			var top := y + maxf(0.0, (DLG_SEAL.y - col_h) * 0.5)
+			if say != "":  # a short line: the bubble hugs it (a wide empty bubble reads as a missing word)
+				var one := Kit.font("b800").get_string_size(say, HORIZONTAL_ALIGNMENT_LEFT, -1, 28).x
+				var sw := clampf(one + 56.0, 300.0, bw) if one + 40.0 <= bw - 40.0 else bw
+				Kit.bubble(box, Rect2(bx, top, sw, bh), say, "left")
+			if ch > 0.0:
+				_dlg_chips(box, Rect2(bx, top + col_h - ch, bw, ch), chips, false)
+		y += maxf(DLG_SEAL.y, col_h) + (38.0 if String(p.get("name", "")) != "" else 24.0)
 	for ln in lines:
-		text_h += _line_h(String(ln))
-	var h := 150.0 + text_h + 96.0 * buttons.size()
-	var box := _modal_box(Rect2(60, maxf(200.0, (VH - h) / 2.0 - 80.0), 821, h))
-	var t := _label(title, 34, Color(1.0, 0.85, 0.4))
-	_fit(t, 34, 780.0)
-	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_at(t, box, Vector2(0, 28), Vector2(821, 46))
-	var y := 96.0
-	for ln in lines:
-		var l := _label(String(ln), 22, TEXT, false)
-		l.autowrap_mode = TextServer.AUTOWRAP_WORD
-		l.custom_minimum_size = Vector2(741, 0)
-		l.position = Vector2(40, y)
-		box.add_child(l)
-		y += _line_h(String(ln))
-	y += 16.0
+		if ln is String:
+			var t := String(ln)
+			var h := _line_h(t, iw)
+			if box:
+				var l := Kit.label(t, 28, Kit.SOFT_CREAM, false)
+				l.name = "line"
+				l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+				l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+				l.add_theme_constant_override("line_spacing", int(DLG_LS))
+				l.position = Vector2(DLG_PAD, y)
+				l.size = Vector2(iw, h)
+				box.add_child(l)
+			y += h + DLG_GAP
+		elif ln is Dictionary and (ln as Dictionary).has("chips"):
+			if box:
+				_dlg_chips(box, Rect2(DLG_PAD, y, iw, PAPER_CHIP_H), ln["chips"], true)
+			y += PAPER_CHIP_H + DLG_GAP
+		elif ln is Dictionary and (ln as Dictionary).has("tiles"):
+			var tiles: Array = ln["tiles"]
+			var wh := 16.0 + DLG_TILE_H + 16.0
+			if box:
+				var well := Kit.well(box, Rect2(DLG_PAD, y, iw, wh))
+				well.name = "tiles"
+				var n := maxi(1, tiles.size())
+				var tw := minf(250.0, (iw - 32.0 - 12.0 * (n - 1)) / n)
+				var x0 := (iw - (n * tw + (n - 1) * 12.0)) * 0.5
+				for i in tiles.size():
+					var o: Dictionary = (tiles[i] as Dictionary).duplicate()
+					if not o.has("icon_side"):
+						o["icon_side"] = 72.0
+					Kit.tile(well, Rect2(x0 + i * (tw + 12.0), 16, tw, DLG_TILE_H), o)
+			y += wh + DLG_GAP
+		elif ln is Dictionary and (ln as Dictionary).has("rows"):
+			var rows: Array = ln["rows"]
+			var rw := iw - 32.0
+			var wh := 16.0
+			for o in rows:
+				wh += _dlg_row_h(o, rw) + 12.0
+			wh += 4.0
+			if box:
+				var well := Kit.well(box, Rect2(DLG_PAD, y, iw, wh))
+				well.name = "rows"
+				var ry := 16.0
+				for o in rows:
+					var rh := _dlg_row_h(o, rw)
+					_dlg_row(well, Rect2(16, ry, rw, rh), o)
+					ry += rh + 12.0
+			y += wh + DLG_GAP
+	return y
+
+
+## The buttons of a choice as {items: [{text, role, cb, opts}], cancel: Callable}. An entry is [text, role or legacy
+## Color, callable, opts?]; opts: icon, price, size ("M" for a quieter secondary), enabled, reason (a disabled one's tip),
+## short_reason (not enough: the role stays, the tap shakes and says it), cancel. A cancel / later entry (opts.cancel,
+## or an info entry captioned «Отмена» / «Не сейчас») is not a footer button: the round ✕ does it.
+func _dlg_buttons(buttons: Array) -> Dictionary:
+	var items: Array = []
+	var cancel := Callable()
+	var later_caps := [tr("ui.cancel"), tr("patent.offer_later")]
 	for b in buttons:
-		_button(box, Rect2(40, y, 741, 80), String(b[0]), b[1], b[2])
-		y += 96.0
+		var e: Array = b
+		var role: String = e[1] if e[1] is String else Kit.role_of(e[1])
+		var opts: Dictionary = e[3] if e.size() > 3 and e[3] is Dictionary else {}
+		var is_cancel := bool(opts.get("cancel", false)) or (role in ["info", "lock", "slate"] and later_caps.has(String(e[0])))
+		if is_cancel and not cancel.is_valid():
+			cancel = e[2]
+			continue
+		items.append({"text": String(e[0]), "role": role, "cb": e[2], "opts": opts})
+	if items.is_empty() and cancel.is_valid():  # a lone «later» stays a button: there must be a way on
+		items.append({"text": String(buttons[0][0]), "role": "info", "cb": cancel, "opts": {}})
+		cancel = Callable()
+	return {"items": items, "cancel": cancel}
+
+
+## The footer's height for these items: one row of L buttons for 1–2, else a stack of M buttons (gap 12).
+func _dlg_footer_h(items: Array) -> float:
+	if items.size() <= 2:
+		return 116.0 if not items.is_empty() else 0.0
+	return items.size() * 88.0 + (items.size() - 1) * 12.0
+
+
+## The footer (§4.3): one action centred (480); two — the secondary at the left (~40 %), the primary at the right
+## (~60 %: the go / gold entry, else war, else the last), both L (a secondary with size "M" is a quieter M centred on
+## the L's height); three or more — a stack of M buttons the content's width.
+func _dlg_footer(box: Control, w: float, y: float, items: Array) -> void:
+	var iw := w - 2.0 * DLG_PAD
+	var rects: Array = []
+	var sizes: Array = []
+	var order: Array = range(items.size())
+	if items.size() == 1:
+		rects = [Rect2((w - 480.0) * 0.5, y, 480, 116)]
+		sizes = ["L"]
+	elif items.size() == 2:
+		var pi := -1
+		for i in 2:
+			if pi < 0 and String(items[i]["role"]) in ["go", "gold"]:
+				pi = i
+		for i in 2:
+			if pi < 0 and String(items[i]["role"]) == "war":
+				pi = i
+		if pi < 0:
+			pi = 1
+		order = [1 - pi, pi]
+		var sw := roundf((iw - 16.0) * 0.4)
+		var quiet := String((items[1 - pi]["opts"] as Dictionary).get("size", "")) == "M"
+		rects = [Rect2(DLG_PAD, y + (14.0 if quiet else 0.0), sw, 88.0 if quiet else 116.0),
+			Rect2(DLG_PAD + sw + 16.0, y, iw - sw - 16.0, 116)]
+		sizes = ["M" if quiet else "L", "L"]
+	else:
+		for i in items.size():
+			rects.append(Rect2(DLG_PAD, y + i * 100.0, iw, 88))
+			sizes.append("M")
+	for k in order.size():
+		var it: Dictionary = items[order[k]]
+		var o: Dictionary = it["opts"]
+		var cap := String(it["text"])
+		var b := Kit.button(box, rects[k], String(it["role"]), cap, {"icon": String(o.get("icon", "")),
+			"price": o.get("price", []), "size": sizes[k], "enabled": bool(o.get("enabled", true)), "cb": it["cb"]})
+		b.name = String(o.get("name", "btn_%d" % order[k]))
+		var why := String(o.get("reason", ""))
+		if why != "":
+			b.denied.connect(func(): Kit.tooltip(b, cap, why))
+		var short_why := String(o.get("short_reason", ""))
+		if short_why != "":
+			b.cb = func():
+				Kit.shake(b)
+				Kit.tooltip(b, cap, short_why)
+
+
+## The window of a dialog: M (L when docked) sized to its content, centred in the band — or docked to the bottom
+## (its bottom at VB − 24) over a light dim, so what it is about stays in sight on the map. ✕: the cancel entry's
+## callable, else (not blocking) it closes; a decision has none.
+func _dlg_box(h: float, title: String, role: String, icon: String, cancel: Callable, blocking: bool, dock_bottom: bool) -> Panel:
+	var r := _win_rect("L" if dock_bottom else "M", h)
+	if dock_bottom:
+		r.position.y = Kit.vb(self) - 24.0 - r.size.y
+	var box := _modal_box(r, false, title, icon, role, not blocking and not cancel.is_valid(), false,
+		DOCK_DIM if dock_bottom else -1.0)
+	box.set_meta("kit_native", true)
+	if cancel.is_valid():
+		Kit.close_button(box, cancel)
+	return box
+
+
+## Simple announcement (§6 «Общие show_info / show_choice»: world expansion, a peace offer): a window M with the
+## title plate (`role`, `icon`), an optional portrait with its line in a bubble, the body (at most 3 short lines of
+## BODY 28, or the richer entries of show_choice) and one centred L button (go when the plate is go, else info).
+func show_info(title: String, lines: Array, button: String, on_button: Callable, role := "info", icon := "", portrait: Variant = "") -> void:
+	var sp := _dlg_split(portrait, lines)
+	var p: Dictionary = sp[0]
+	var body: Array = sp[1]
+	var w := 781.0
+	var y := _dlg_body(null, w, 72.0, p, body)
+	var h := y - DLG_GAP + 24.0 + 116.0 + 32.0
+	var box := _dlg_box(h, title, role, icon, Callable(), true, false)
+	var by := _dlg_body(box, box.size.x, 72.0, p, body)
+	var b := Kit.button(box, Rect2((box.size.x - 480.0) * 0.5, by - DLG_GAP + 24.0, 480, 116), "go" if role == "go" else "info", button,
+		{"size": "L", "cb": on_button})
+	b.name = "ok"
+
+
+## A choice (§6 «Общие show_info / show_choice»): a window M with the title plate (`role`, `icon`), an optional
+## portrait with its line, the body, and the buttons — 1–2 in the footer (the secondary at the left, the primary at the
+## right), more as a stack of M buttons. `blocking`: a decision, no ✕ — unless one entry is a cancel / later one, which
+## becomes the ✕. `dock_bottom`: an L window docked to the bottom over a light dim (the map stays in sight).
+##
+## `buttons`: [[text, role (go / info / war / gold) or a legacy Color, callable, opts?], …] — see _dlg_buttons.
+## `lines` entries:
+##   String — a paragraph (Nunito 28 SOFT_CREAM, centred, word-wrapped; keep it to 3 lines);
+##   {chips: [{icon, text, kind, fill, color}]} — a centred row of chips (paper chips by default, owner chips of a
+##     state's colour);
+##   {tiles: [Kit.tile opts]} — a well with tiles in one row (an icon, a value «+10%», a caption: what a choice gives);
+##   {rows: [Kit.row opts + portrait/plate/mood (a leader's face for the icon), quote (two lines under the title),
+##     badge (a DL hex at the right)]} — a well with list rows.
+## `portrait`: "" | a portrait id | {id, plate (the backdrop: a state's colour; the sky by default), mood, name (an
+## owner chip on the frame), say (the bubble; without it the first String line is said), chips (under the bubble)}.
+func show_choice(title: String, lines: Array, buttons: Array, role := "info", icon := "", portrait: Variant = "", blocking := true, dock_bottom := false) -> void:
+	var sp := _dlg_split(portrait, lines)
+	var p: Dictionary = sp[0]
+	var body: Array = sp[1]
+	var bt := _dlg_buttons(buttons)
+	var items: Array = bt["items"]
+	var w := 893.0 if dock_bottom else 781.0
+	var y := _dlg_body(null, w, 72.0, p, body)
+	var fh := _dlg_footer_h(items)
+	var h := y - DLG_GAP + (24.0 + fh if fh > 0.0 else 0.0) + 32.0
+	var box := _dlg_box(h, title, role, icon, bt["cancel"], blocking, dock_bottom)
+	var by := _dlg_body(box, box.size.x, 72.0, p, body)
+	_dlg_footer(box, box.size.x, by - DLG_GAP + 24.0, items)
 
 
 ## Settings (docs/ui_style.md §6 «Настройки»): a window M with the info plate; changes apply at once and ✕ closes it.
@@ -2768,6 +3082,10 @@ func show_settings(sound_on: bool, on_sound: Callable, on_new_game: Callable, on
 
 const MARKET_RES: Array[String] = ["gold", "food", "metal"]
 const MARKET_PCT: Array[int] = [10, 25, 50, 100]
+const MARKET_DISC := 88.0  # a resource toggle: round Ø88, the chosen one a raised info button (§6 «Рынок»)
+const MARKET_ROW_H := 132.0  # a toggle row: the disc and its amount under it
+const MARKET_SLOT := 160.0
+const LOT_H := 244.0  # a trader's lot card
 
 
 ## 2632 -> "2.63" ("2,63" in Russian).
@@ -2775,116 +3093,402 @@ static func _rate_txt(milli: int) -> String:
 	var t := "%.2f" % (milli / 1000.0)
 	return t.replace(".", ",") if L.lang() == "ru" else t
 
-## Market: «give / get» resource pickers, amount presets, live quote and the daily trader's 3 lots.
-## `info`: level, rate (thousandths), res, cap, lots [{key, give, get, give_amt, get_amt, rate, bought, ok}],
+
+## Market (05 §13, docs/ui_style.md §6 «Рынок»): a window L with the info plate (the stall, as on its card); ✕ closes
+## it. First the trader's lots of the day as option cards in a well — the lot's name, what it gives (the icon and
+## «+90»), its rate, «Купить» (go S) with what it costs (short: the number red, the tap shakes and says why; bought:
+## a check, the card dimmed) — under the section «Торговец» with a timer chip (new lots). Then the exchange in a well:
+## «Отдаю» and «Получаю» as rows of round resource toggles Ø88 (the chosen one a raised info button; the stock / the
+## free room under each), the amount as segments 10 / 25 / 50 / 100%, the deal «1 175 [food] → 391 [metal]» on a row
+## plate with a vector arrow (a warning line when the warehouse caps it) and an «i» with the rate; «Обменять» (go L)
+## in the footer, grey with the reason when there is nothing to trade.
+## `info`: level, rate (thousandths), res, cap, lots [{key, give, get, give_amt, get_amt, rate, bought, ok, why}],
 ## refresh_left, sel {give, get, pct}. `quote_fn(give, get, amount) -> {give, get, cap_hit}`;
 ## `on_exchange(give, get, amount)`, `on_lot(i)` — the caller re-opens the modal with fresh info.
 func show_market(info: Dictionary, quote_fn: Callable, on_exchange: Callable, on_lot: Callable) -> void:
-	var box := _modal_box(Rect2(40, 330, 861, 1180))
 	var sel: Dictionary = info["sel"]
 	var res: Dictionary = info["res"]
 	var cap: Dictionary = info["cap"]
+	var lots: Array = info.get("lots", [])
 	var rerender := func(): show_market(info, quote_fn, on_exchange, on_lot)
-	_at(_label(tr("market.title") % int(info["level"]), 34), box, Vector2(36, 26))
-	var rl := _label(tr("market.rate") % _rate_txt(int(info["rate"])), 22, Color(1.0, 0.85, 0.4))
-	rl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	_at(rl, box, Vector2(430, 34), Vector2(395, 34))
-	for row in 2:
-		var y := 96.0 + row * 170.0
-		var side := "give" if row == 0 else "get"
-		_at(_label(tr("market." + side), 22, MUTED, false), box, Vector2(36, y))
-		for i in MARKET_RES.size():
-			var r: String = MARKET_RES[i]
-			var on: bool = String(sel[side]) == r
-			var other := "get" if side == "give" else "give"
-			var b := _panel(box, Rect2(36 + i * 268, y + 36, 254, 116), _style(Color(0.16, 0.42, 0.95) if on else Color(0.14, 0.18, 0.27), 14, Color(1, 1, 1, 0.6 if on else 0.25), 2))
-			var ic := TextureRect.new()
-			ic.texture = _icon(r)
-			ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-			ic.size = Vector2(44, 44)
-			ic.position = Vector2(14, 14)
-			ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			b.add_child(ic)
-			var nl := _label(tr("res.name." + r), 22)
-			nl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			_at(nl, b, Vector2(66, 20))
-			var amount: int = int(res.get(r, 0)) if side == "give" else maxi(0, int(cap.get(r, 0)) - int(res.get(r, 0)))
-			var sub := _label(tr("market.stock" if side == "give" else "market.free") % fmt_num(amount), 17, Color(0.85, 0.9, 1.0) if on else MUTED, false)
-			sub.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			_at(sub, b, Vector2(14, 70))
-			b.gui_input.connect(func(e):
-				if _is_tap(e) and String(sel[side]) != r:
-					if String(sel[other]) == r:
-						sel[other] = sel[side]
-					sel[side] = r
-					rerender.call())
 	var give: String = sel["give"]
 	var get_r: String = sel["get"]
-	for i in MARKET_PCT.size():
-		var pct: int = MARKET_PCT[i]
-		var on2: bool = int(sel["pct"]) == pct
-		_button(box, Rect2(36 + i * 200, 448, 188, 70), "%d%%" % pct if pct < 100 else tr("market.max"), Color(0.16, 0.42, 0.95) if on2 else Color(0.14, 0.18, 0.27), func():
-			sel["pct"] = pct
-			rerender.call())
 	var want: int = int(res.get(give, 0)) * int(sel["pct"]) / 100
 	var q: Dictionary = quote_fn.call(give, get_r, want)
 	var qg: int = int(q.get("give", 0))
 	var qr: int = int(q.get("get", 0))
-	var line := HBoxContainer.new()
-	line.add_theme_constant_override("separation", 12)
-	line.alignment = BoxContainer.ALIGNMENT_CENTER
-	line.position = Vector2(0, 540)
-	line.size = Vector2(861, 56)
-	for part in [[give, "−" + fmt_num(qg)], ["", "→"], [get_r, "+" + fmt_num(qr)]]:
-		if String(part[0]) != "":
-			var ic2 := TextureRect.new()
-			ic2.texture = _icon(String(part[0]))
-			ic2.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-			ic2.custom_minimum_size = Vector2(44, 44)
-			line.add_child(ic2)
-		line.add_child(_label(String(part[1]), 34))
-	box.add_child(line)
-	if bool(q.get("cap_hit", false)):
-		var ch := _label(tr("market.fits") % fmt_num(qr), 18, Color(1.0, 0.7, 0.35), false)
+	var cap_hit := bool(q.get("cap_hit", false)) and qr > 0
+	var lots_h := (48.0 + 12.0 + 16.0 + LOT_H + 16.0 + 24.0) if not lots.is_empty() else 0.0
+	var ex_h := 16.0 + MARKET_ROW_H + 8.0 + MARKET_ROW_H + 16.0 + 80.0 + 20.0 + 80.0 + (8.0 + 38.0 if cap_hit else 0.0) + 16.0
+	var h := 72.0 + lots_h + ex_h + 24.0 + 116.0 + 32.0
+	var box := _modal_box(_win_rect("L", h), false, tr("market.title2"), "stall", "info", true, false)
+	box.set_meta("kit_native", true)
+	var w := box.size.x
+	var iw := w - 64.0
+	var y := 72.0
+	# ---- the trader's lots
+	if not lots.is_empty():
+		var tc := Kit.chip(null, Vector2.ZERO, "hourglass", fmt_time(int(info.get("refresh_left", 0))), "status")
+		tc.name = "new_lots"
+		Kit.section(box, Vector2(32, y), iw - tc.size.x - 16.0, tr("market.trader2"), "stall")
+		tc.position = Vector2(32.0 + iw - tc.size.x, y + (48.0 - tc.size.y) * 0.5)
+		box.add_child(tc)
+		y += 48.0 + 12.0
+		var lw := Kit.well(box, Rect2(32, y, iw, 16.0 + LOT_H + 16.0))
+		lw.name = "lots"
+		var n := lots.size()
+		var cw := (iw - 32.0 - 12.0 * (n - 1)) / n
+		for i in n:
+			_lot_card(lw, Rect2(16.0 + i * (cw + 12.0), 16, cw, LOT_H), lots[i], i, on_lot)
+		y += 16.0 + LOT_H + 16.0 + 24.0
+	# ---- the exchange
+	var ew := Kit.well(box, Rect2(32, y, iw, ex_h))
+	ew.name = "exchange"
+	var ry := 16.0
+	for row in 2:
+		var side := "give" if row == 0 else "get"
+		var other := "get" if row == 0 else "give"
+		var head := Kit.label(tr("market." + side), 30, Kit.INK_TEXT, true)
+		head.name = side
+		head.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+		head.position = Vector2(24, ry + 18.0)
+		head.size = Vector2(190, 42)
+		ew.add_child(head)
+		var sub := Kit.label(tr("market.give_sub" if row == 0 else "market.get_sub"), 26, Kit.MUTED_CREAM, false)
+		sub.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+		sub.position = Vector2(24, ry + 62.0)
+		sub.size = Vector2(190, 36)
+		ew.add_child(sub)
+		var x0 := 216.0 + (iw - 16.0 - 216.0 - 52.0 - 12.0 - MARKET_RES.size() * MARKET_SLOT) * 0.5
+		for i in MARKET_RES.size():
+			var r: String = MARKET_RES[i]
+			var amount: int = int(res.get(r, 0)) if row == 0 else maxi(0, int(cap.get(r, 0)) - int(res.get(r, 0)))
+			var pick := func():
+				if String(sel[side]) == r:
+					return
+				if String(sel[other]) == r:
+					sel[other] = sel[side]
+				sel[side] = r
+				rerender.call()
+			var dc := Vector2(x0 + i * MARKET_SLOT + MARKET_SLOT * 0.5, ry + 8.0 + MARKET_DISC * 0.5)
+			var disc := _res_toggle(ew, dc, r, String(sel[side]) == r, pick)
+			disc.name = "%s_%s" % [side, r]
+			var nl := Kit.label(fmt_num(amount), 24, Kit.NEG_CREAM if row == 1 and amount == 0 else Kit.INK_TEXT, true)
+			nl.name = "%s_%s_n" % [side, r]
+			nl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			nl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			nl.position = Vector2(dc.x - MARKET_SLOT * 0.5, ry + 8.0 + MARKET_DISC + 4.0)
+			nl.size = Vector2(MARKET_SLOT, 32)
+			ew.add_child(nl)
+		ry += MARKET_ROW_H + 8.0
+	var tip_title := tr("market.tip_title") % int(info.get("level", 1))
+	var tip := tr("market.tip") % _rate_txt(int(info.get("rate", 0)))
+	var ib := Kit.info_button(ew, Vector2(iw - 16.0 - 26.0, 16.0 + 8.0 + 26.0), Callable())
+	ib.name = "rules"
+	ib.cb = func(): Kit.tooltip(ib, tip_title, tip)
+	ry += 8.0
+	var pcts: Array = []
+	for p in MARKET_PCT:
+		pcts.append("%d%%" % p)
+	var seg := Kit.segmented(ew, Rect2(16, ry, iw - 32.0, 80), pcts, MARKET_PCT.find(int(sel["pct"])), func(i: int):
+		if MARKET_PCT[i] != int(sel["pct"]):
+			sel["pct"] = MARKET_PCT[i]
+			rerender.call())
+	seg.name = "amount"
+	ry += 80.0 + 20.0
+	var deal := _deal_row([[give, fmt_num(qg), false], [get_r, fmt_num(qr), qr <= 0]], 36, 52.0)
+	deal.name = "deal"
+	deal.position = Vector2(roundf((iw - deal.size.x) * 0.5), ry)
+	ew.add_child(deal)
+	ry += 80.0
+	if cap_hit:
+		var ch := Kit.label(tr("market.fits") % fmt_num(qr), 26, Kit.WARN_CREAM, false)
+		ch.name = "fits"
 		ch.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		_at(ch, box, Vector2(0, 600), Vector2(861, 26))
-	var can := qr > 0
-	var ex := _button(box, Rect2(36, 636, 789, 92), tr("market.exchange"), Color(0.2, 0.6, 0.3) if can else Color(0.3, 0.33, 0.4), func():
-		if can:
-			on_exchange.call(give, get_r, qg))
-	ex.modulate.a = 1.0 if can else 0.6
-	var tl := _label(tr("market.trader") % fmt_time(int(info["refresh_left"])), 22, Color(1.0, 0.85, 0.4))
-	tl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_at(tl, box, Vector2(0, 752), Vector2(861, 32))
-	var lots: Array = info["lots"]
-	for i in lots.size():
-		var lot: Dictionary = lots[i]
-		var y2 := 796.0 + i * 100.0
-		var row_p := _panel(box, Rect2(36, y2, 789, 88), _style(Color(0.12, 0.16, 0.24), 12, Color(0.95, 0.75, 0.3, 0.6), 2), Control.MOUSE_FILTER_IGNORE)
-		var nm := _label(tr(String(lot["key"])), 20, Color(1.0, 0.85, 0.4))
-		_at(nm, row_p, Vector2(16, 6))
-		var lr := HBoxContainer.new()
-		lr.add_theme_constant_override("separation", 8)
-		lr.position = Vector2(16, 38)
-		for part2 in [[String(lot["give"]), fmt_num(int(lot["give_amt"]))], ["", "→"], [String(lot["get"]), fmt_num(int(lot["get_amt"]))]]:
-			if String(part2[0]) != "":
-				var ic3 := TextureRect.new()
-				ic3.texture = _icon(String(part2[0]))
-				ic3.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-				ic3.custom_minimum_size = Vector2(32, 32)
-				lr.add_child(ic3)
-			lr.add_child(_label(String(part2[1]), 24))
-		row_p.add_child(lr)
-		var rate_l := _label(_rate_txt(int(lot["rate"])) + " : 1", 17, MUTED, false)
-		_at(rate_l, row_p, Vector2(380, 44))
-		var bought: bool = lot["bought"]
-		var ok: bool = lot.get("ok", false)
-		var idx := i
-		var bb := _button(row_p, Rect2(560, 12, 214, 64), tr("market.bought") if bought else tr("market.buy"), Color(0.3, 0.33, 0.4) if bought or not ok else Color(0.85, 0.55, 0.1), func():
-			if not bought:
-				on_lot.call(idx))
-		bb.mouse_filter = Control.MOUSE_FILTER_STOP
-	_button(box, Rect2(36, 1100, 789, 64), tr("ui.close"), Color(0.13, 0.4, 0.9), close_modal)
+		ch.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		ch.clip_text = true
+		ch.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		ch.position = Vector2(16, ry + 8.0)
+		ch.size = Vector2(iw - 32.0, 38)
+		ew.add_child(ch)
+	# ---- the footer: exchange
+	var can := qr > 0 and qg > 0
+	var why := tr("market.nothing") if want <= 0 else tr("market.no_space")
+	var ex := Kit.button(box, Rect2((w - 480.0) * 0.5, h - 32.0 - 116.0, 480, 116), "go", tr("market.exchange"),
+		{"icon": "swap", "size": "L", "enabled": can, "cb": func(): on_exchange.call(give, get_r, qg)})
+	ex.name = "exchange_btn"
+	ex.denied.connect(func(): Kit.tooltip(ex, tr("market.exchange"), why))
+
+
+## A round resource toggle Ø88 centred at `c`: chosen — a raised info button with the icon; else a flat CREAM_ROW
+## disc (INK 3) with the icon; a tap calls `cb`.
+func _res_toggle(host: Control, c: Vector2, res_key: String, on: bool, cb: Callable) -> Control:
+	var r := Rect2(c - Vector2(MARKET_DISC, MARKET_DISC) * 0.5, Vector2(MARKET_DISC, MARKET_DISC))
+	if on:
+		return Kit.button(host, r, "info", "", {"icon": String(RES_ICON.get(res_key, "coin")), "round": true, "size": "M",
+			"icon_scale": 0.66, "cb": cb, "hit_pad": 4.0})
+	var t := Kit.KitSegment.new()
+	t.position = r.position
+	t.size = r.size
+	t.cb = cb
+	var d := Panel.new()
+	var sb := Kit.style(Kit.CREAM_ROW, int(MARKET_DISC * 0.5), 3, Kit.INK, 0, 0)
+	sb.set_meta("kit_kind", "")
+	d.add_theme_stylebox_override("panel", sb)
+	d.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	d.size = r.size
+	t.add_child(d)
+	var ic := _icon_rect(String(RES_ICON.get(res_key, "coin")), 56)
+	ic.position = (r.size - ic.size) * 0.5
+	t.add_child(ic)
+	host.add_child(t)
+	return t
+
+
+## A deal on a row plate: [number][icon] → [number][icon] (the arrow is kit chrome: Rubik has no arrow glyph).
+## parts: [[res, text, short], [res, text, short]]; `size` the numbers' type, `side` the icons'.
+func _deal_row(parts: Array, size: int, side: float) -> Panel:
+	var p := Panel.new()
+	var sb := Kit.style(Kit.CREAM_ROW, 20, 0, Kit.INK, 0, 5)
+	sb.set_meta("kit_kind", "")
+	sb.set_meta("kit_lip_color", Kit.ROW_LIP)
+	p.add_theme_stylebox_override("panel", sb)
+	p.add_child(Kit.KitDecor.new())  # the lip (child 0)
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var hgt := side + 28.0
+	var x := 24.0
+	for i in parts.size():
+		var a: Array = parts[i]
+		if i > 0:
+			Kit.chrome(p, "arrow_right", Rect2(x, (hgt - 5.0 - side) * 0.5, side, side))
+			x += side + 14.0
+		var t := String(a[1])
+		var l := Kit.label(t, size, Kit.NEG_CREAM if bool(a[2]) else Kit.INK_TEXT, true)
+		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		var tw := Kit.text_w(t, size, "d900", false) + 2.0
+		l.position = Vector2(x, 0)
+		l.size = Vector2(tw, hgt - 5.0)
+		p.add_child(l)
+		x += tw + 8.0
+		var ic := _icon_rect(String(RES_ICON.get(String(a[0]), "coin")), side)
+		ic.position = Vector2(x, (hgt - 5.0 - side) * 0.5)
+		p.add_child(ic)
+		x += side + 14.0
+	p.size = Vector2(x + 10.0, hgt)
+	return p
+
+
+## A trader's lot as an option card: its name, what it gives (the icon and «+90»), its rate, «Купить» (go S) with what
+## it costs — short: the number red and the tap shakes and says why; bought: a check, the card dimmed.
+func _lot_card(host: Control, r: Rect2, lot: Dictionary, idx: int, on_lot: Callable) -> void:
+	var bought := bool(lot.get("bought", false))
+	var ok := bool(lot.get("ok", false))
+	var card := Kit.tile(host, r, {"taken": bought})
+	card.name = "lot_%d" % idx
+	var cw := r.size.x
+	var nm := tr(String(lot.get("key", "")))
+	var ns := Kit.fit_size(nm, 30, cw - 24.0, "d900", 24, false)
+	var nl := Kit.label(nm, ns, Kit.INK_TEXT, true)
+	nl.name = "name"
+	nl.add_theme_font_size_override("font_size", ns)
+	nl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	nl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	nl.clip_text = true
+	nl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	nl.position = Vector2(12, 10)
+	nl.size = Vector2(cw - 24.0, 40)
+	card.add_child(nl)
+	var amt := "+" + fmt_num(int(lot.get("get_amt", 0)))
+	var aw := Kit.text_w(amt, 36, "d900", false) + 2.0
+	var gx := roundf((cw - (64.0 + 8.0 + aw)) * 0.5)
+	var ic := _icon_rect(String(RES_ICON.get(String(lot.get("get", "")), "coin")), 64)
+	ic.position = Vector2(gx, 56)
+	card.add_child(ic)
+	var al := Kit.label(amt, 36, Kit.INK_TEXT, true)
+	al.name = "gets"
+	al.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	al.position = Vector2(gx + 72.0, 56)
+	al.size = Vector2(aw, 64)
+	card.add_child(al)
+	var rl := Kit.label(tr("market.rate") % _rate_txt(int(lot.get("rate", 0))), 24, Kit.MUTED_CREAM, true)
+	rl.name = "rate"
+	rl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	rl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	rl.position = Vector2(8, 126)
+	rl.size = Vector2(cw - 16.0, 30)
+	card.add_child(rl)
+	var br := Rect2(12, LOT_H - 5.0 - 12.0 - 64.0, cw - 24.0, 64)
+	if bought:
+		var dl := Kit.label(tr("market.bought"), 26, Kit.POS_CREAM, true)
+		dl.name = "bought"
+		dl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		dl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		dl.position = br.position
+		dl.size = br.size
+		card.add_child(dl)
+		return
+	var cap := tr("market.buy")
+	var b := Kit.button(card, br, "go", cap, {"size": "S", "price": [[String(RES_ICON.get(String(lot.get("give", "")), "coin")),
+		fmt_num(int(lot.get("give_amt", 0))), not ok]], "cb": func(): on_lot.call(idx)})
+	b.name = "buy"
+	if not ok:  # not enough (or no room): the role stays, the tap shakes and says why (§4.1)
+		var why := String(lot.get("why", tr("market.not_enough")))
+		b.cb = func():
+			Kit.shake(b)
+			Kit.tooltip(card, cap, why)
+
+
+# ------------------------------------------------------------------ territory swap (canon §10.9, 06 §15)
+
+const SWAP_TILE := Vector2(160, 178)
+
+
+## A territory swap (§6 «Обмен территорией»): the player's offer or an AI's. A window L docked to the bottom (its
+## bottom at VB − 24) over a light dim, so the hexes being swapped stay in sight on the map; the plate is a treaty's
+## (go). The leader's face says how they take it (`mood`: smile — agreed / a fair trade, cunning — wants a top-up),
+## their line in a bubble, the state's name in a chip on the frame; under the bubble a timer chip (an AI offer: how
+## long it stands, `left`) and the border chip «Граница 4 → 7» (the arrow drawn; the new length green when shorter,
+## red when longer). The well: «Отдаём» tiles ⇄ «Получаем» tiles (the hex's render, its name, a gold value hex; more
+## than 2 a side — the first and «+N»), then «Вы доплачиваете [coin] 272» (red when the gold is short) or «Без
+## доплаты». The footer takes the buttons as show_choice does (a cancel entry is the ✕; none — a decision).
+## info: {state, color, portrait, mood, say, left, give: [{name, tile, value}], get: [...], border: [before, after],
+## gold, short}. Returns the window's top edge on the canvas (the caller frames the hexes above it).
+func show_swap(info: Dictionary, buttons: Array) -> float:
+	var bt := _dlg_buttons(buttons)
+	var items: Array = bt["items"]
+	var border: Array = info.get("border", [])
+	var chips: Array = []
+	var left := int(info.get("left", 0))
+	if left > 0:  # a fresh offer reads «24ч», not «1д 0ч»
+		chips.append({"kind": "status", "icon": "hourglass", "name": "timer",
+			"text": tr("time.h") % (left / 3600) if left >= 86400 and left < 2 * 86400 else fmt_time(left)})
+	if border.size() >= 2:  # drawn here: a kit chip has no arrow
+		chips.append({"node": _border_chip(int(border[0]), int(border[1]))})
+	var p := {"id": String(info.get("portrait", "")), "plate": info.get("color", Kit.face_of("info")),
+		"mood": String(info.get("mood", "")), "name": String(info.get("state", "")), "say": String(info.get("say", "")),
+		"chips": chips}
+	var well_h := 12.0 + 30.0 + 6.0 + SWAP_TILE.y + 16.0 + PAPER_CHIP_H + 16.0
+	var w := 893.0
+	var top := _dlg_body(null, w, 72.0, p, [])
+	var h := top + well_h + 24.0 + _dlg_footer_h(items) + 32.0
+	var box := _dlg_box(h, tr("swap.title"), "go", "hex_tile", bt["cancel"], true, true)
+	box.name = "swap"
+	_dlg_body(box, w, 72.0, p, [])  # the leader, the line, the timer and the border
+	# the trade
+	var well := Kit.well(box, Rect2(DLG_PAD, top, w - 2.0 * DLG_PAD, well_h))
+	well.name = "trade"
+	var ww := well.size.x
+	var half := (ww - 32.0 - 96.0) * 0.5
+	for side in 2:
+		var key := "give" if side == 0 else "get"
+		var x0 := 16.0 + side * (half + 96.0)
+		var cap := Kit.label(tr("swap.give_h" if side == 0 else "swap.get_h"), 24, Kit.MUTED_CREAM, true)
+		cap.name = key + "_h"
+		cap.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		cap.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		cap.position = Vector2(x0, 12)
+		cap.size = Vector2(half, 30)
+		well.add_child(cap)
+		var hexes: Array = info.get(key, [])
+		var shown: Array = hexes.slice(0, 2) if hexes.size() <= 2 else [hexes[0], {"more": hexes.size() - 1}]
+		var n := shown.size()
+		var tx := x0 + (half - (n * SWAP_TILE.x + (n - 1) * 12.0)) * 0.5
+		for i in n:
+			var hx: Dictionary = shown[i]
+			var r := Rect2(tx + i * (SWAP_TILE.x + 12.0), 12.0 + 30.0 + 6.0, SWAP_TILE.x, SWAP_TILE.y)
+			var t: Kit.KitTile
+			if hx.has("more"):
+				t = Kit.tile(well, r, {"icon": "hex_tile", "icon_side": 72.0, "value": "+%d" % int(hx["more"]),
+					"caption": L.plural(int(hx["more"]), "plural.hexes").trim_prefix(str(int(hx["more"]))).strip_edges()})
+			else:
+				var tex := _tile_tex(String(hx.get("tile", "")))
+				var o := {"title": String(hx.get("name", "")), "wrap_title": true}
+				if tex != null:
+					o["tex"] = tex
+					o["icon_side"] = 140.0  # a render's transparent margin: drawn large, the name rises into it
+					o["pic_overlap"] = 24.0
+				else:
+					o["icon"] = "hex_tile"
+					o["icon_side"] = 84.0
+				t = Kit.tile(well, r, o)
+				var vb := Kit.hex_badge(t, Vector2(SWAP_TILE.x - 10.0, 12.0), 22, "gold", str(int(hx.get("value", 1))))
+				vb.name = "value"
+			t.name = "%s_%d" % [key, i]
+	Kit.chrome(well, "swap", Rect2(16.0 + half + 12.0, 12.0 + 30.0 + 6.0 + (SWAP_TILE.y - 72.0) * 0.5, 72, 72))
+	var gold := int(info.get("gold", 0))
+	var pay := _pay_chip(well, gold, bool(info.get("short", false)))
+	pay.position = Vector2(roundf((ww - pay.size.x) * 0.5), 12.0 + 30.0 + 6.0 + SWAP_TILE.y + 16.0)
+	_dlg_footer(box, w, top + well_h + 24.0, items)
+	return box.position.y + (_modal.position.y if _modal else 0.0)
+
+
+## «Граница 4 → 7» on a paper chip (CREAM_DEEP pill h 44): the word, the old length, a vector arrow, the new length —
+## green when the border gets shorter (easier to hold), red when longer.
+func _border_chip(before: int, after: int) -> Panel:
+	var p := Panel.new()
+	p.name = "border"
+	var sb := Kit.style(Kit.CREAM_DEEP, int(PAPER_CHIP_H * 0.5), 0, Kit.INK, 0, 0)
+	sb.set_meta("kit_kind", "")
+	p.add_theme_stylebox_override("panel", sb)
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var x := 16.0
+	var word := tr("swap.border2")
+	for part in [[word, "d800", Kit.INK_TEXT], [str(before), "d900", Kit.INK_TEXT], ["->", "", Kit.INK_TEXT],
+			[str(after), "d900", Kit.POS_CREAM if after < before else (Kit.NEG_CREAM if after > before else Kit.INK_TEXT)]]:
+		if String(part[1]) == "":
+			Kit.chrome(p, "arrow_right", Rect2(x - 2.0, 6, 32, 32))
+			x += 34.0
+			continue
+		var t := String(part[0])
+		var l := Kit.label(t, 26, part[2], true)
+		l.add_theme_font_override("font", Kit.font(String(part[1])))
+		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		var tw := Kit.text_w(t, 26, String(part[1]), false) + 2.0
+		l.position = Vector2(x, -1)
+		l.size = Vector2(tw, PAPER_CHIP_H)
+		p.add_child(l)
+		x += tw + 8.0
+	p.size = Vector2(x + 8.0, PAPER_CHIP_H)
+	return p
+
+
+## The top-up on a paper chip in `host`: «Вы доплачиваете [coin] 272» (the number red when the gold is short), or «Без
+## доплаты».
+func _pay_chip(host: Control, gold: int, short: bool) -> Panel:
+	if gold <= 0:
+		var fp := _paper_chip(host, Vector2.ZERO, "handshake", tr("swap.no_pay"))
+		fp.name = "pay"
+		return fp
+	var p := Panel.new()
+	p.name = "pay"
+	var sb := Kit.style(Kit.CREAM_DEEP, int(PAPER_CHIP_H * 0.5), 0, Kit.INK, 0, 0)
+	sb.set_meta("kit_kind", "")
+	p.add_theme_stylebox_override("panel", sb)
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var word := tr("swap.you_pay")
+	var l := Kit.label(word, 26, Kit.INK_TEXT, true)
+	l.add_theme_font_override("font", Kit.font("d800"))
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	var tw := Kit.text_w(word, 26, "d800", false) + 2.0
+	l.position = Vector2(16, -1)
+	l.size = Vector2(tw, PAPER_CHIP_H)
+	p.add_child(l)
+	var x := 16.0 + tw + 10.0
+	var ic := _icon_rect("coin", 34)
+	ic.position = Vector2(x, 5)
+	p.add_child(ic)
+	x += 38.0
+	var num := fmt_num(gold)
+	var nl := Kit.label(num, 28, Kit.NEG_CREAM if short else Kit.INK_TEXT, true)
+	nl.name = "gold"
+	nl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	var nw := Kit.text_w(num, 28, "d900", false) + 2.0
+	nl.position = Vector2(x, -1)
+	nl.size = Vector2(nw, PAPER_CHIP_H)
+	p.add_child(nl)
+	p.size = Vector2(x + nw + 16.0, PAPER_CHIP_H)
+	host.add_child(p)
+	return p
 
 
 # ------------------------------------------------------------------ buildings tab (canon §7)
