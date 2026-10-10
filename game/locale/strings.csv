@@ -109,7 +109,7 @@ cell.copper_mine,Медная шахта,Copper Mine
 cell.hamlets_fields,Хуторские нивы,Hamlet Fields
 cell.abandoned_mill,Заброшенная мельница,Abandoned Mill
 cell.old_adit,Старая штольня,Old Adit
-pity.royal,Эпическое+ через %d · Легендарное через %d,Epic+ in %d · Legendary in %d
+pity.royal,Эпическое и выше — через %d\nЛегендарное — через %d,Epic or better in %d\nLegendary in %d
 pity.cosmetic,Косметика — осталось открытий: %d,Cosmetic in %d openings at most
 pity.collection_done,Набор собран,Set complete
 pity.collection_left,Осталось %d из %d,%d of %d left
@@ -254,12 +254,16 @@ shop.no_packs,Наборы за деньги недоступны в вашем 
 shop.atelier_empty,"Косметика выпадает из кейсов: чернила границы, печати, салюты, узоры заливки.","Cosmetics drop from cases: border inks, seals, fireworks, fill patterns."
 pack.starter,Набор новобранца,Recruit Pack
 pack.starter.desc,"250 Райвитов, ресурсы на 8 ч, Леди Вэнс, рамка флага","250 Raivites, 8 h of resources, Lady Vance, a flag frame"
+pack.starter.short,250 Райвитов и Леди Вэнс,250 Raivites and Lady Vance
 pack.builder,Пакет прораба,Foreman Pack
 pack.builder.desc,4-й строитель навсегда + 300 Райвитов,4th builder forever + 300 Raivites
+pack.builder.short,4-й строитель навсегда,A 4th builder forever
 pack.no_ads,Без рекламы,No Ads
 pack.no_ads.desc,"Без межстраничной рекламы навсегда, 200 Райвитов, рамка «Меценат»","No interstitial ads ever, 200 Raivites, the “Patron” frame"
+pack.no_ads.short,Навсегда и 200 Райвитов,"Forever, and 200 Raivites"
 pack.ration,Паёк державы,Realm Rations
 pack.ration.desc,300 сразу + 60 в день при ежедневном входе,300 now + 60 a day when you log in daily
+pack.ration.short,300 Райвитов и 60 в день,300 Raivites and 60 a day
 pack.period_30d,/30 дней,/30 days
 kind.capital,Столица,Capital
 kind.city,Город,City
@@ -908,6 +912,7 @@ cal.rw_season,Рамка или эмоция сезона,A season frame or emot
 toast.cal_claim,Награда календаря: %s,Calendar reward: %s
 pack.pass,Военный пропуск,War Pass
 pack.pass.desc,"Премиум-ветка сезона: 40 наград сверх бесплатных — ящики, Райвиты, осколки и косметика.","The season's premium track: 40 rewards on top of the free ones — crates, Raivites, shards and cosmetics."
+pack.pass.short,40 наград премиум-ветки,40 premium-track rewards
 pack.period_season,/сезон,/season
 swap.value,ценность,value
 swap.max,Не больше %d гексов с каждой стороны,No more than %d hexes a side
@@ -991,6 +996,7 @@ patent.restored,Покупки проверены — всё на месте,Pur
 patent.doc_soon,Документ откроется в браузере после публикации в сторах,The document opens in the browser after the store release
 pack.patent,Державный патент,Sovereign Patent
 pack.patent.desc,"Подписка: награды роликов сразу, +1 строитель и обоз, автосбор, 40 Райвитов в день, ключ Королевского кейса в неделю.","Subscription: video rewards at once, +1 builder and convoy, auto-collect, 40 Raivites a day, a Royal case key a week."
+pack.patent.short,"Без роликов, 40 Райвитов в день","No videos, 40 Raivites a day"
 pack.period_month,/мес,/mo
 cal.double_patent,×2 · Патент,×2 · Patent
 settings.manage_sub,Управление подпиской,Manage subscription
@@ -1004,6 +1010,7 @@ chr.name,Летопись,Chronicle
 chr.ready,Можно забрать,Ready to claim
 chr.reward,Награда: %d Райвитов,Reward: %d Raivites
 chr.reward_cos,и «%s»,and “%s”
+chr.done_once,Выполнено!,Completed!
 chr.claimed,«%s»: +%d Райвитов,“%s”: +%d Raivites
 chr.soon,скоро,soon
 chr.ch.map,Территория и карта,Territory and map
@@ -1023,7 +1030,7 @@ chr.ach_hexes_100.d,100 официальных гексов,100 official hexes
 chr.ach_hexes_200,Империя,Empire
 chr.ach_hexes_200.d,200 официальных гексов,200 official hexes
 chr.ach_half_world,Полмира,Half the World
-chr.ach_half_world.d,"Держите половину суши мира, когда в нём от 160 гексов",Hold half the world's land once it has 160+ hexes
+chr.ach_half_world.d,Половина суши в мире от 160 гексов,Half the land in a world of 160+ hexes
 chr.ach_colonize_40,Первопроходцы,Pioneers
 chr.ach_colonize_40.d,Колонизируйте 40 гексов,Settle 40 hexes
 chr.ach_offensive_10,Боевое крещение,Baptism of Fire
@@ -1033,7 +1040,7 @@ chr.ach_offensive_100.d,100 наступлений,100 offensives
 chr.ach_offensive_500,Вечный фронт,The Endless Front
 chr.ach_offensive_500.d,500 наступлений,500 offensives
 chr.ach_perfect_25,Безупречно,Flawless
-chr.ach_perfect_25.d,25 наступлений на ★★★,25 offensives with ★★★
+chr.ach_perfect_25.d,25 наступлений на три звезды,25 three-star offensives
 chr.ach_wedge_100,Мастер клина,Master of the Wedge
 chr.ach_wedge_100.d,100 атак «Клином» — с двух и более гексов,100 «Wedge» attacks — from 2+ hexes
 chr.ach_pocket_50,Окружи 50 гексов,Encircle 50 Hexes

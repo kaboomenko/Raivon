@@ -1728,15 +1728,15 @@ func show_pass(info: Dictionary, on_claim: Callable, on_buy: Callable) -> void:
 	var fy := h - 32.0 - 116.0
 	if foot == "both":
 		var eb := Kit.button(box, Rect2(32, fy + 14.0, 300, 88), "gold", tr("pass.elite"),
-			{"size": "M", "price": [["", String(info.get("price_elite", ""))]], "cb": func(): on_buy.call("iap_pass_elite")})
+			{"size": "M", "price": [["", Kit.store_price(String(info.get("price_elite", "")))]], "cb": func(): on_buy.call("iap_pass_elite")})
 		eb.name = "buy_elite"
 		Kit.ribbon(box, Vector2(eb.position.x + eb.size.x * 0.5, eb.position.y), tr("pass.plus15"), "war")
 		var pb := Kit.button(box, Rect2(348, fy, w - 380.0, 116), "gold", tr("pass.premium"),
-			{"size": "L", "icon": "medal", "price": [["", String(info.get("price", ""))]], "cb": func(): on_buy.call("iap_pass")})
+			{"size": "L", "icon": "medal", "price": [["", Kit.store_price(String(info.get("price", "")))]], "cb": func(): on_buy.call("iap_pass")})
 		pb.name = "buy_premium"
 	elif foot == "up":  # premium → elite for the difference (09 §9.12)
 		var ub := Kit.button(box, Rect2((w - 480.0) * 0.5, fy, 480, 116), "gold", tr("pass.elite"),
-			{"size": "L", "icon": "medal", "price": [["", String(info.get("price_up", ""))]], "cb": func(): on_buy.call("iap_pass_elite_up")})
+			{"size": "L", "icon": "medal", "price": [["", Kit.store_price(String(info.get("price_up", "")))]], "cb": func(): on_buy.call("iap_pass_elite_up")})
 		ub.name = "buy_elite"
 		Kit.ribbon(box, Vector2(ub.position.x + ub.size.x * 0.5, ub.position.y), tr("pass.plus15"), "war")
 	# ---- the track
@@ -1841,7 +1841,9 @@ func show_pass(info: Dictionary, on_claim: Callable, on_buy: Callable) -> void:
 			var txt := String(r["free_text" if k == 0 else "prem_text"])
 			var rw: Array = r.get("free_rw" if k == 0 else "prem_rw", [])
 			var look := _pass_look_rw(rw) if not rw.is_empty() else _pass_look(txt)
-			var o := {"icon_side": 88.0, "claimable": state == "claim", "taken": state == "claimed"}
+			# only the first reward to take breathes (§3.6: one per screen); the others keep the gold outline
+			var o := {"icon_side": 88.0, "claimable": state == "claim", "taken": state == "claimed",
+				"still": state == "claim" and first_claim >= 0}
 			if look.has("tex"):
 				o["tex"] = look["tex"]
 				o["icon_side"] = 108.0
@@ -2064,13 +2066,13 @@ func show_patent(info: Dictionary, on_buy: Callable, on_restore: Callable) -> vo
 	y += well_h + 24.0
 	if buy:
 		var fy := y + 34.0
-		var price := String(info.get("price", ""))
+		var price := Kit.store_price(String(info.get("price", "")))  # RU «7,99 $», EN «$7.99» (§3.7), as in the store
 		if trial:
 			var mb := Kit.button(box, Rect2(32, fy + 14.0, 260, 88), "info", tr("patent.month_btn") % price,
 				{"size": "M", "cb": func(): on_buy.call("iap_sub_patent")})
 			mb.name = "buy_month"
 			var tb := Kit.button(box, Rect2(308, fy, w - 340.0, 116), "gold", tr("patent.trial_btn"),
-				{"size": "L", "price": [["", String(info.get("trial_price", ""))]], "cb": func(): on_buy.call("iap_sub_trial")})
+				{"size": "L", "price": [["", Kit.store_price(String(info.get("trial_price", "")))]], "cb": func(): on_buy.call("iap_sub_trial")})
 			tb.name = "buy_trial"
 			Kit.ribbon(box, Vector2(tb.position.x + tb.size.x * 0.5, fy), tr("patent.trial_tag"), "war")
 		else:
@@ -2203,6 +2205,7 @@ func _chr_row(host: Control, rect: Rect2, r: Dictionary, on_claim: Callable) -> 
 	var rv := int(ChronicleSim.LIST[i][4]) if i >= 0 else 0
 	var cos := String(ChronicleSim.LIST[i][5]) if i >= 0 else ""
 	var o := {"icon": _chr_medal(code), "title": String(r["name"])}
+	var once := need <= 1 and st != "soon"  # a one-time goal: what to do, not a 0/1 bar
 	match st:
 		"claim":
 			o["state"] = "claim"
@@ -2219,19 +2222,25 @@ func _chr_row(host: Control, rect: Rect2, r: Dictionary, on_claim: Callable) -> 
 			o["sub"] = tr("chr.soon")
 		_:
 			o["bar"] = {"frac": float(prog) / maxf(1.0, need), "role": "info", "text": "%s/%s" % [fmt_num(prog), fmt_num(need)]}
-	if st == "open":
-		var t := Kit.tile(null, Rect2(0, 0, 88, 88), {"icon": "raivite", "icon_side": 56.0, "pill": [["", str(rv)]],
-			"pill_inside": true, "face": Kit.CREAM_WELL})
-		t.name = "reward"
+	var desc := String(r.get("desc", ""))
+	if once:  # the claim row's button leaves little room: «Выполнено!» there, the task itself elsewhere
+		o.erase("bar")
+		o["sub"] = tr("chr.done_once") if st == "claim" else desc
+	if st == "open":  # the reward tile 80, its amount on the bottom edge (§4.9) under the crystal, not over it
+		var holder := Control.new()
+		holder.name = "reward"
+		holder.size = Vector2(88, 100)
+		holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var t := Kit.tile(holder, Rect2(4, 0, 80, 80), {"icon": "raivite", "icon_side": 52.0, "pill": [["", str(rv)]],
+			"face": Kit.CREAM_WELL})
 		t.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		if cos != "":  # the goal also gives a cosmetic: its picture on the tile's corner
 			var ci := _icon_rect(String(Kit.COSMETIC_ICON.get(String(CasesSim.cosmetic(cos).get("category", "")), "frame")), 40)
-			ci.position = Vector2(56, -10)
+			ci.position = Vector2(50, -12)
 			t.add_child(ci)
-		o["right"] = t
+		o["right"] = holder
 	var row := Kit.row(host, rect, o)
 	row.name = code
-	var desc := String(r.get("desc", ""))
 	var reward := tr("chr.reward") % rv
 	if cos != "":
 		reward += "\n" + tr("chr.reward_cos") % CasesSim.cosmetic_name(cos)
@@ -2432,7 +2441,7 @@ func show_settings(sound_on: bool, on_sound: Callable, on_new_game: Callable, on
 	var row_h := 96.0
 	var w1 := 16.0 + 2.0 * row_h + 12.0 + 16.0
 	var w2 := (16.0 + store_rows * row_h + (store_rows - 1) * 12.0 + 16.0) if store_rows > 0 else 0.0
-	var w3 := 16.0 + 64.0 + 16.0
+	var w3 := 16.0 + 64.0 + 8.0 + 30.0 + 12.0  # the button, then the hint «hold it» (LEGAL)
 	var h := 72.0 + w1 + 16.0 + (w2 + 16.0 if w2 > 0.0 else 0.0) + w3 + 16.0 + 32.0 + 32.0
 	var box := _modal_box(_win_rect("M", h), false, tr("settings.title"), "gear", "info", true, false)
 	box.set_meta("kit_native", true)
@@ -2489,6 +2498,13 @@ func show_settings(sound_on: bool, on_sound: Callable, on_new_game: Callable, on
 		close_modal()
 		on_new_game.call()
 	nb.released_early.connect(func(): Kit.tooltip(nb, tr("settings.new_game"), tr("settings.hold_hint")))
+	var hh := Kit.label(tr("settings.hold_hint"), 22, Kit.MUTED_CREAM, false)  # it must be held: said before, not after
+	hh.name = "hold_hint"
+	hh.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hh.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	hh.position = Vector2(16, 16 + 64 + 8)
+	hh.size = Vector2(well3.size.x - 32.0, 30)
+	well3.add_child(hh)
 	y += w3 + 16.0
 	var vl := Kit.label(tr("settings.build") % ProjectSettings.get_setting("application/config/version", "0.3"), 22, Kit.MUTED_CREAM, false)
 	vl.name = "build"

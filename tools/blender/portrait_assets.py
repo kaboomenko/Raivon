@@ -1,6 +1,10 @@
 """Commander portrait kit (04 §15.4): 3/4 busts built from the kit parameters — head shape, hair, facial hair,
 headgear, uniform, accessory, palette from 04 §15.3 — rendered on a transparent background (the game draws the
 rarity plate and frame). Run: python3 tools/blender/portrait_assets.py OUTDIR [ids...] [--size=256]
+[--eras=1,2,3,4] [--moods=calm,smile,...]. The game's set (game/assets/ui/portraits, 150 files):
+- the commanders: OUTDIR cmd_bram cmd_lira ... cmd_rai --eras=1,2,3,4 --moods=calm,smile
+- the AI leaders: OUTDIR ldr_barons ... ldr_lakes --moods=calm,angry,cunning,smile,tired
+- the ruler: OUTDIR ruler --eras=1,2,3,4
 """
 import math
 import os
@@ -42,6 +46,21 @@ LOOK.update({
 # the player's ruler on the HUD (reference frame 1: a bearded king in a gold crown and a royal-blue robe)
 LOOK["ruler"] = ("#e2b08c", (0.38, 0.42), "#5a3a22", "long", "beard", "crown", "#2e5bd8", "#e8b23a")
 HEAD_Z = 1.3
+# The soft light (docs/art_direction.md §6.4, the map's own rig, as in card_art.py and icon_assets.py): a warm
+# KEY_COLOR key and a sky-blue SKY_FILL world at AMBIENT of the key's radiance on the face, so the shadow side of a
+# face goes soft blue, never grey-black; AgX at its base contrast. The key stays an area lamp: 2.5 wide at 3.7 from
+# the head it subtends about 37°, already softer than the map's 25° sun.
+KEY_COLOR, SKY_FILL = "#fff1da", "#a9c1e8"
+KEY_W = 240  # with the brighter world the lit side stays as bright as under the old 260 W white key
+KEY_RAD_PER_W = 0.00617  # the key's radiance on a white face at the head facing it, per W (measured in Cycles)
+AMBIENT = 0.8
+VIEW_LOOK = "AgX - Base Contrast"
+# What reflections see instead of the sky-blue world (crowns, helmets and armour mirroring a bright blue sky go grey):
+# a warm neutral at REFLECT_SHARE of the world's strength.
+REFLECT_COLOR, REFLECT_SHARE = "#f2ece2", 0.5
+# The back light behind the bust, on the right: (rotation in degrees, W, colour). A faint sky-blue rim on the shaded
+# side of the head and shoulders. (It used to be turned (−50°, 0, 140°), facing away from the bust, and lit nothing.)
+RIM = ((50, 0, 140), 60, SKY_FILL)
 
 
 def darker(hex_color, k=0.6):
@@ -319,6 +338,29 @@ def build(cid, era=1, mood=""):
         kit.sphere("cloak", 1.0, (0, 0.18, 0.55), kit.mat("cloak", "#3a8dff", 0.6), (0.72, 0.4, 0.5))
 
 
+def soft_world(strength):
+    """The sky-blue world of the soft light at `strength`; glossy rays see REFLECT_COLOR instead (see above)."""
+    w = bpy.data.worlds.new("w")
+    bpy.context.scene.world = w
+    w.use_nodes = True
+    nt = w.node_tree
+    bg = nt.nodes["Background"]
+    bg.inputs["Color"].default_value = (*kit.srgb(SKY_FILL), 1)
+    bg.inputs["Strength"].default_value = strength
+    if not REFLECT_SHARE:
+        return w
+    ref = nt.nodes.new("ShaderNodeBackground")
+    ref.inputs["Color"].default_value = (*kit.srgb(REFLECT_COLOR), 1)
+    ref.inputs["Strength"].default_value = strength * REFLECT_SHARE
+    lp = nt.nodes.new("ShaderNodeLightPath")
+    mix = nt.nodes.new("ShaderNodeMixShader")
+    nt.links.new(lp.outputs["Is Glossy Ray"], mix.inputs["Fac"])
+    nt.links.new(bg.outputs[0], mix.inputs[1])
+    nt.links.new(ref.outputs[0], mix.inputs[2])
+    nt.links.new(mix.outputs[0], nt.nodes["World Output"].inputs["Surface"])
+    return w
+
+
 def setup(size):
     sc = bpy.context.scene
     sc.render.engine = "CYCLES"
@@ -328,22 +370,21 @@ def setup(size):
     sc.render.resolution_x = size
     sc.render.resolution_y = int(size * 1.15)
     sc.view_settings.view_transform = "AgX"
-    world = bpy.data.worlds.new("w")
-    sc.world = world
-    world.use_nodes = True
-    world.node_tree.nodes["Background"].inputs["Color"].default_value = (0.55, 0.6, 0.7, 1)
-    world.node_tree.nodes["Background"].inputs["Strength"].default_value = 0.6
+    sc.view_settings.look = VIEW_LOOK
+    soft_world(AMBIENT * KEY_W * KEY_RAD_PER_W)
     key = bpy.data.objects.new("key", bpy.data.lights.new("key", "AREA"))
-    key.data.energy = 260
+    key.data.energy = KEY_W
+    key.data.color = kit.srgb(KEY_COLOR)
     key.data.size = 2.5
     key.location = (-2.2, -2.6, 2.8)
     key.rotation_euler = (math.radians(50), 0, math.radians(-40))
     sc.collection.objects.link(key)
     rim = bpy.data.objects.new("rim", bpy.data.lights.new("rim", "AREA"))
-    rim.data.energy = 160
+    rim.data.energy = RIM[1]
+    rim.data.color = kit.srgb(RIM[2])
     rim.data.size = 1.5
     rim.location = (2.2, 1.8, 2.4)
-    rim.rotation_euler = (math.radians(-50), 0, math.radians(140))
+    rim.rotation_euler = tuple(math.radians(a) for a in RIM[0])
     sc.collection.objects.link(rim)
     cam = bpy.data.objects.new("cam", bpy.data.cameras.new("cam"))
     sc.collection.objects.link(cam)
@@ -386,4 +427,5 @@ def main():
                 print("rendered", name)
 
 
-main()
+if __name__ == "__main__":
+    main()

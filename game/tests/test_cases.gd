@@ -606,10 +606,10 @@ func _test_odds_items() -> void:
 
 func _test_texts() -> void:
 	var c := Cases.new(SEED)
-	_eq(c.pity_text("case_royal"), "Эпическое+ через 10 · Легендарное через 50", "royal fresh")
+	_eq(c.pity_text("case_royal"), "Эпическое и выше — через 10\nЛегендарное — через 50", "royal fresh")
 	c.pity["royal_epic"] = 6
 	c.pity["royal_leg"] = 27
-	_eq(c.pity_text("case_royal"), "Эпическое+ через 4 · Легендарное через 23", "royal example from §9.10.8")
+	_eq(c.pity_text("case_royal"), "Эпическое и выше — через 4\nЛегендарное — через 23", "royal example from §9.10.8")
 	c.pity["crate_cosmetic"] = 37
 	_eq(c.pity_text("case_war_crate"), "Косметика — осталось открытий: 23", "crate example")
 	_eq(c.pity_text("case_trophy_gold"), "Косметика — осталось открытий: 23", "trophy shares the counter")
@@ -738,7 +738,7 @@ func _test_english() -> void:
 	_eq(Cases.rarity_name("epic"), "Epic", "rarity name")
 	_eq(Cases.cosmetic_name("cos_capital_skin_steampunk"), "Steampunk", "cosmetic name")
 	_eq(Cases.category_name("cos_border_ink"), "Border Ink", "category name")
-	_eq(c.pity_text("case_royal"), "Epic+ in 10 · Legendary in 50", "royal pity text")
+	_eq(c.pity_text("case_royal"), "Epic or better in 10\nLegendary in 50", "royal pity text")
 	_eq(c.pity_text("case_collection"), "8 of 8 left", "collection pity text")
 	var row: Dictionary = c.odds_items("case_trophy_silver", "common")[0]
 	_eq(String(row["name"]), "Gold 6 h", "×3 item name in English")

@@ -17,19 +17,19 @@ const VW := 941.0
 const VH := 1672.0
 
 ## Raivite packs (canon §15.3): price label, amount; the first purchase of each is doubled. Price labels are
-## placeholders until the store SDK supplies localized prices (`_price` switches the decimal comma in English).
+## placeholders until the store SDK supplies localized prices (`_price` shows them per language: «7,99 $» / «$7.99»).
 const RAIVITE_SKUS := [
-	["iap_raivite_s", "$0,99", 80], ["iap_raivite_m", "$4,99", 500], ["iap_raivite_l", "$9,99", 1100],
-	["iap_raivite_xl", "$19,99", 2400], ["iap_raivite_xxl", "$49,99", 6500], ["iap_raivite_xxxl", "$99,99", 14000],
+	["iap_raivite_s", "$0.99", 80], ["iap_raivite_m", "$4.99", 500], ["iap_raivite_l", "$9.99", 1100],
+	["iap_raivite_xl", "$19.99", 2400], ["iap_raivite_xxl", "$49.99", 6500], ["iap_raivite_xxxl", "$99.99", 14000],
 ]
 ## Packs: sku, name key, price, description key, optional period key appended to the price.
 const PACK_SKUS := [
-	["iap_starter", "pack.starter", "$1,99", "pack.starter.desc", ""],
-	["iap_builder", "pack.builder", "$4,99", "pack.builder.desc", ""],
-	["iap_no_ads", "pack.no_ads", "$4,99", "pack.no_ads.desc", ""],
-	["iap_ration", "pack.ration", "$4,99", "pack.ration.desc", "pack.period_30d"],
-	["iap_pass", "pack.pass", "$7,99", "pack.pass.desc", "pack.period_season"],
-	["patent_screen", "pack.patent", "$7,99", "pack.patent.desc", "pack.period_month"],
+	["iap_starter", "pack.starter", "$1.99", "pack.starter.desc", ""],
+	["iap_builder", "pack.builder", "$4.99", "pack.builder.desc", ""],
+	["iap_no_ads", "pack.no_ads", "$4.99", "pack.no_ads.desc", ""],
+	["iap_ration", "pack.ration", "$4.99", "pack.ration.desc", "pack.period_30d"],
+	["iap_pass", "pack.pass", "$7.99", "pack.pass.desc", "pack.period_season"],
+	["patent_screen", "pack.patent", "$7.99", "pack.patent.desc", "pack.period_month"],
 ]
 const PACK_ICON := {"iap_starter": "helmet", "iap_builder": "mason", "iap_no_ads": "ad", "iap_ration": "food",
 	"iap_pass": "medal", "patent_screen": "charter"}
@@ -168,6 +168,7 @@ func _render() -> void:
 		Kit.fade_in(_body)
 	if is_instance_valid(_reveal):
 		move_child(_reveal, get_child_count() - 1)
+		_store_shown(false)  # a refresh under an opening keeps the store out of sight until «Забрать»
 
 
 # ------------------------------------------------------------------ cases
@@ -338,27 +339,40 @@ func _royal_pity() -> Array:
 
 
 ## «i»: odds by rarity, base and with the pity (long-run), before any purchase (canon §15.4) — a window M with a
-## rarity gem per row; the pity line and the history note under the list. ✕ closes it; the store stays.
+## rarity gem per row; the pity lines and the history note under the list. A case whose pity changes nothing (the
+## collection) shows one column. ✕ closes it; the store stays.
 func _show_odds(case_id: String) -> void:
 	var rows: Array = cases.odds(case_id)
+	var same := true  # «with pity» repeats «base» on every row: one column, no headers
+	for o in rows:
+		if absf(float(o["base"]) - float(o["effective"])) >= 0.005:
+			same = false
 	var row_h := 88.0
 	var well_h := 16.0 + rows.size() * row_h + maxf(0, rows.size() - 1) * 12.0 + 16.0
 	var pity := String(cases.pity_text(case_id))
-	var h := 72.0 + 40.0 + well_h + 20.0 + (76.0 if pity != "" else 0.0) + 36.0 + 32.0
+	var win_w := 781.0  # the window M (§4.3)
+	var pity_h := 0.0
+	if pity != "":  # as tall as its lines: one, or the Royal case's two
+		pity_h = ceilf(Kit.font("b800").get_multiline_string_size(pity, HORIZONTAL_ALIGNMENT_LEFT, win_w - 64.0, 26, -1,
+			TextServer.BREAK_MANDATORY | TextServer.BREAK_WORD_BOUND).y) + 4.0
+	var head_h := 0.0 if same else 40.0
+	var h := 72.0 + head_h + well_h + 20.0 + (pity_h + 12.0 if pity != "" else 0.0) + 32.0 + 32.0
 	var box: Panel = ui._modal_box(ui._win_rect("M", h), false, tr("shop.odds"), "", "info", true, false)
 	box.set_meta("kit_native", true)
 	var w := box.size.x
-	# the two number columns (base, with the pity) end where the rows' numbers end: well 32 + row 16 + its right pad 16
+	# the number columns (base, with the pity) end where the rows' numbers end: well 32 + row 16 + its right pad 16
 	var nums_x := w - 32.0 - 16.0 - 16.0 - 330.0
-	for k in 2:
-		var hl := Kit.label(tr("shop.odds_base") if k == 0 else tr("shop.odds_pity"), 24, Kit.MUTED_CREAM, true)
-		hl.add_theme_font_override("font", Kit.font("d800"))
-		hl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		hl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		hl.position = Vector2(nums_x + k * 170.0 - 40.0, 72)
-		hl.size = Vector2(200, 36)
-		box.add_child(hl)
-	var well := Kit.well(box, Rect2(32, 112, w - 64.0, well_h))
+	if not same:
+		for k in 2:
+			var hl := Kit.label(tr("shop.odds_base") if k == 0 else tr("shop.odds_pity"), 24, Kit.MUTED_CREAM, true)
+			hl.add_theme_font_override("font", Kit.font("d800"))
+			hl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+			hl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			hl.position = Vector2(nums_x + k * 170.0 - 40.0, 72)
+			hl.size = Vector2(200, 36)
+			box.add_child(hl)
+	var wy := 72.0 + head_h
+	var well := Kit.well(box, Rect2(32, wy, w - 64.0, well_h))
 	for i in rows.size():
 		var o: Dictionary = rows[i]
 		var r := String(o["rarity"])
@@ -366,27 +380,28 @@ func _show_odds(case_id: String) -> void:
 		var nums := Control.new()
 		nums.size = Vector2(330, 48)
 		nums.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		for k in 2:
+		for k in (1 if same else 2):
 			var v := float(o["base"]) if k == 0 else float(o["effective"])
 			var nl := Kit.label(Kit.fmt_dec(v, 2) + "%", 30, Kit.INK_TEXT, true)
 			nl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 			nl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-			nl.position = Vector2(k * 170.0, 0)
+			nl.position = Vector2(170.0 if same else k * 170.0, 0)
 			nl.size = Vector2(160, 48)
 			nums.add_child(nl)
 		var rw := Kit.row(well, Rect2(16, 16 + i * (row_h + 12.0), well.size.x - 32.0, row_h),
 			{"icon_node": gem, "title": String(o.get("name", cases.rarity_name(r))), "right": nums})
 		rw.name = "odds_" + r
-	var y := 112.0 + well_h + 20.0
+	var y := wy + well_h + 20.0
 	if pity != "":
 		var pl := Kit.label(pity, 26, Kit.SOFT_CREAM, false)
+		pl.name = "pity"
 		pl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		pl.max_lines_visible = 2
 		pl.position = Vector2(32, y)
-		pl.size = Vector2(w - 64.0, 72)
+		pl.size = Vector2(w - 64.0, pity_h)
 		box.add_child(pl)
-		y += 76.0
+		y += pity_h + 12.0
 	var hs := Kit.label(tr("shop.history"), 22, Kit.MUTED_CREAM, false)
+	hs.name = "history"
 	hs.position = Vector2(32, y)
 	hs.size = Vector2(w - 64.0, 32)
 	hs.clip_text = true
@@ -396,28 +411,42 @@ func _show_odds(case_id: String) -> void:
 
 # ------------------------------------------------------------------ the opening
 
-## The reveal after an opening (§6 Лавка): a dim α 0.75 over the store, the best rarity on a hex plate of its colour,
-## rays and the item's tile 300 (several rewards: a grid of tiles, 4 a row, a repeated one counted «×N» on its tile),
-## «Забрать» (go L) under it.
+## The reveal after an opening (§6 Лавка): the store steps aside (its window and dim hide until «Забрать»), a dim
+## α 0.75 over the map, the best rarity on a hex plate of its colour, rotating rays and the item's tile 300 (several
+## rewards: a grid of tiles, 4 a row, an incomplete last row centred, over the same rays); «Забрать» (go L) under it.
+## The same reward merges into one tile whatever its rarity (tinted with the best): shards of one commander, a
+## resource, Glitter sum their amounts on the pill; repeated speed-up items count «×N» on the tile (§4.9).
 func show_reveal(results: Array) -> void:
 	if is_instance_valid(_reveal):
 		_reveal.queue_free()
 	var best := "common"
-	var looks: Array = []  # one tile per kind of reward: repeats share it with a «×N» hex (§4.9)
+	var merged: Array = []  # [{rw (amounts summed), rarity, count}] in the order they came
 	var by_key := {}
 	for r in results:
 		var rar := String(r.get("rarity", "common"))
 		if RARITY_ORDER.find(rar) > RARITY_ORDER.find(best):
 			best = rar
 		for rw in r.get("rewards", []):
-			var o := _reward_look(rw, rar)
-			var key := "%s|%s|%s|%s" % [o.get("icon", ""), (o["tex"] as Texture2D).resource_path if o.has("tex") else "",
-				o.get("title", ""), str(o.get("pill", [])) + str(o["face"])]
+			var rr := String((rw as Dictionary).get("rarity", rar))
+			if rr == "" or not RARITY_ORDER.has(rr):
+				rr = rar
+			var key := _reward_key(rw)
 			if by_key.has(key):
-				by_key[key]["count"] = int(by_key[key].get("count", 1)) + 1
+				var m: Dictionary = by_key[key]
+				_merge_reward(m, rw)
+				if RARITY_ORDER.find(rr) > RARITY_ORDER.find(String(m["rarity"])):
+					m["rarity"] = rr
 			else:
-				by_key[key] = o
-				looks.append(o)
+				var m := {"rw": (rw as Dictionary).duplicate(true), "rarity": rr,
+					"count": int(rw.get("n", 1)) if String(rw.get("kind", "")) == "speedup" else 1}
+				by_key[key] = m
+				merged.append(m)
+	var looks: Array = []
+	for m in merged:
+		var o := _reward_look(m["rw"], String(m["rarity"]), int(m["count"]))
+		if int(m["count"]) > 1:
+			o["count"] = int(m["count"])
+		looks.append(o)
 	var vis := get_viewport().get_visible_rect() if is_inside_tree() else Rect2(0, 0, VW, VH)
 	_reveal = Control.new()
 	_reveal.name = "reveal"
@@ -425,6 +454,7 @@ func show_reveal(results: Array) -> void:
 	_reveal.size = Vector2(maxf(VW, vis.size.x), maxf(VH, vis.size.y))
 	_reveal.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(_reveal)
+	_store_shown(false)
 	var dim := ColorRect.new()
 	dim.color = Kit.alpha(Kit.INK, 0.75)
 	dim.size = _reveal.size
@@ -443,6 +473,18 @@ func show_reveal(results: Array) -> void:
 	var rows := ceili(looks.size() / float(cols))
 	var grid_h := 340.0 if single else rows * th + (rows - 1) * 16.0
 	var top := (VH - (104.0 + 48.0 + grid_h + 56.0 + 116.0)) * 0.5
+	var gy := top + 104.0 + 48.0
+	# the rays turn behind the reward (one tile or the whole grid)
+	var rays_d := 760.0 if single else clampf(maxf(cols * (tw + 16.0), grid_h) + 360.0, 900.0, 1240.0)
+	var rays := Kit.KitShape.new("rays", tint.lerp(Kit.WHITE, 0.35))
+	rays.name = "rays"
+	rays.data = {"n": 14 if single else 18}
+	rays.size = Vector2(rays_d, rays_d)
+	rays.position = Vector2(VW * 0.5, gy + grid_h * 0.5) - rays.size * 0.5
+	rays.pivot_offset = rays.size * 0.5
+	stage.add_child(rays)
+	if Kit._dur(1.0) > 0.0:
+		rays.create_tween().set_loops().tween_property(rays, "rotation", TAU, 24.0).from(0.0)
 	var holder := Control.new()  # the plate sits centred on this line
 	holder.size = Vector2(VW, 1)
 	holder.position = Vector2(0, top + 52.0)
@@ -452,27 +494,24 @@ func show_reveal(results: Array) -> void:
 	plate.face = tint
 	plate.lip = tint.darkened(0.32)
 	plate.queue_redraw()
-	var gy := top + 104.0 + 48.0
 	if single:
-		var rays := Kit.KitShape.new("rays", tint.lerp(Kit.WHITE, 0.35))
-		rays.size = Vector2(760, 760)
-		rays.position = Vector2(VW * 0.5 - 380.0, gy + 170.0 - 380.0)
-		rays.pivot_offset = rays.size * 0.5
-		stage.add_child(rays)
-		if Kit._dur(1.0) > 0.0:
-			rays.create_tween().set_loops().tween_property(rays, "rotation", TAU, 24.0).from(0.0)
 		if not looks.is_empty():
 			var o: Dictionary = (looks[0] as Dictionary).duplicate()
 			o["icon_side"] = 180.0
+			if o.has("pic_node"):
+				(o["pic_node"] as Control).size = Vector2(180, 180)
 			var t := Kit.tile(stage, Rect2(VW * 0.5 - 150.0, gy, 300, 340), o)
 			t.name = "item"
 			Kit.pop_in(t)
 	else:
-		var gx := (VW - (cols * tw + (cols - 1) * 16.0)) * 0.5
 		for i in looks.size():
+			var row := i / cols
+			var in_row := mini(cols, looks.size() - row * cols)  # the last row may be short: centred like the others
+			var gx := (VW - (in_row * tw + (in_row - 1) * 16.0)) * 0.5
 			var o: Dictionary = (looks[i] as Dictionary).duplicate()
 			o["icon_side"] = 100.0
-			var t := Kit.tile(stage, Rect2(gx + (i % cols) * (tw + 16.0), gy + (i / cols) * (th + 16.0), tw, th - 20.0), o)
+			o["wrap_title"] = true
+			var t := Kit.tile(stage, Rect2(gx + (i % cols) * (tw + 16.0), gy + row * (th + 16.0), tw, th - 20.0), o)
 			t.name = "item_%d" % i
 			ui._pop_later(t, 0.05 * i)
 	var by := gy + grid_h + 56.0
@@ -480,14 +519,64 @@ func show_reveal(results: Array) -> void:
 	var cb := Kit.button(stage, Rect2(VW * 0.5 - 240.0, by, 480, 116), "go", tr("ui.claim"), {"size": "L",
 		"cb": func():
 			if is_instance_valid(rv):
-				rv.queue_free()})
+				rv.queue_free()
+				_reveal = null
+				_store_shown(true)
+				if is_instance_valid(_frame):
+					Kit.pop_in(_frame)})
 	cb.name = "claim"
 
 
-## How a reward shows on a tile: the picture (an icon or a commander's portrait), its name, the amount pill and the
-## rarity's tinted face.
-func _reward_look(rw: Dictionary, rarity: String) -> Dictionary:
-	var r := String(rw.get("rarity", rarity))
+## The store's own window and dim, hidden while an opening is shown (the reveal is the only thing on screen).
+func _store_shown(on: bool) -> void:
+	for c in get_children():
+		if c != _reveal and c is CanvasItem:
+			(c as CanvasItem).visible = on
+
+
+## What makes two rewards «the same» on the reveal (rarity aside): the commander's shards, the resource, the
+## speed-up item, the cosmetic, Glitter.
+static func _reward_key(rw: Dictionary) -> String:
+	match String(rw.get("kind", "")):
+		"res":
+			var res: Dictionary = rw.get("res", {})
+			var keys: Array = res.keys().filter(func(k): return int(res[k]) > 0)
+			return "res|" + (String(keys[0]) if keys.size() == 1 else "all")
+		"speedup":
+			return "speedup|%s|%d" % [String(rw.get("item", "")), int(rw.get("minutes", 0)) / maxi(1, int(rw.get("n", 1)))]
+		"shards":
+			return "shards|" + String(rw.get("commander", ""))
+		"cosmetic":
+			return "cosmetic|" + String(rw.get("id", rw.get("name", "")))
+		"glitter":
+			return "glitter"
+	return str(rw)
+
+
+## Adds a repeat into the merged reward: the amounts sum (resources and their hours, shards, Glitter); speed-up items
+## count up (each keeps its own duration).
+static func _merge_reward(m: Dictionary, rw: Dictionary) -> void:
+	var into: Dictionary = m["rw"]
+	match String(rw.get("kind", "")):
+		"res":
+			var res: Dictionary = into.get("res", {})
+			var add: Dictionary = rw.get("res", {})
+			for k in add:
+				res[k] = int(res.get(k, 0)) + int(add[k])
+			into["res"] = res
+			into["hours"] = int(into.get("hours", 0)) + int(rw.get("hours", 0))
+		"shards", "glitter":
+			into["n"] = int(into.get("n", 0)) + int(rw.get("n", 0))
+		"speedup":
+			m["count"] = int(m["count"]) + int(rw.get("n", 1))
+		_:
+			m["count"] = int(m["count"]) + 1
+
+
+## How a reward shows on a tile: the picture (an icon, a commander's portrait, an ink's swatch), its name, the amount
+## pill and the rarity's tinted face. `count`: how many speed-up items share the tile (their pill gives one's time).
+func _reward_look(rw: Dictionary, rarity: String, count := 1) -> Dictionary:
+	var r := rarity if rarity != "" else String(rw.get("rarity", "common"))
 	var o := {"face": (Kit.RARITY.get(r, Kit.RARITY["common"]) as Color).lerp(Kit.CREAM_ROW, 0.55)}
 	match String(rw.get("kind", "")):
 		"res":
@@ -495,14 +584,14 @@ func _reward_look(rw: Dictionary, rarity: String) -> Dictionary:
 			var keys: Array = res.keys().filter(func(k): return int(res[k]) > 0)
 			if keys.size() == 1:
 				o["icon"] = String(RES_ICON.get(String(keys[0]), "coin"))
-				o["pill"] = [["", "+" + Kit.fmt_num(int(res[keys[0]]))]]
+				o["pill"] = [["", Kit.fmt_num(int(res[keys[0]]))]]
 				o["title"] = tr("res.name." + String(keys[0]))
 			else:
 				o["icon"] = "crate"
 				o["pill"] = [["", tr("time.h") % int(rw.get("hours", 1))]]
 				o["title"] = tr("shop.resources")
 		"speedup":
-			var m := int(rw.get("minutes", 0))
+			var m := int(rw.get("minutes", 0)) / maxi(1, int(rw.get("n", 1)))
 			o["icon"] = "lightning"
 			o["pill"] = [["", tr("time.h") % (m / 60) if m >= 60 and m % 60 == 0 else tr("time.m") % m]]
 			o["title"] = tr("shop.speedup")
@@ -516,11 +605,15 @@ func _reward_look(rw: Dictionary, rarity: String) -> Dictionary:
 			o["pill"] = [["shard", "×%d" % int(rw.get("n", 1))]]
 			o["title"] = String(rw.get("name", cmd))
 		"cosmetic":
-			o["icon"] = String(Kit.COSMETIC_ICON.get(String(rw.get("category", "")), "frame"))
+			var cat := String(rw.get("category", ""))
+			if cat == "cos_border_ink":
+				o["pic_node"] = Kit.ink_swatch(String(rw.get("id", "")), 100.0)
+			else:
+				o["icon"] = String(Kit.COSMETIC_ICON.get(cat, "frame"))
 			o["title"] = String(rw.get("name", ""))
 		"glitter":
 			o["icon"] = "xp"
-			o["pill"] = [["", "+%d" % int(rw.get("n", 0))]]
+			o["pill"] = [["", Kit.fmt_num(int(rw.get("n", 0)))]]
 			o["title"] = tr("shop.glitter_name")
 	return o
 
@@ -546,9 +639,10 @@ static func describe(rw: Dictionary) -> String:
 	return str(rw)
 
 
-## Price placeholder in the UI language ("$4,99" → "$4.99" in English).
+## A price placeholder as the player reads it: RU «4,99 $», EN «$4.99» (Kit.store_price, shared with the pass and the
+## patent).
 static func _price(s: String) -> String:
-	return s.replace(",", ".") if L.lang() == "en" else s
+	return Kit.store_price(s)
 
 
 ## A paragraph on paper for a tab with nothing to sell here (BODY 28 SOFT_CREAM, centred, under an icon).
@@ -574,16 +668,16 @@ func _raivite_tab() -> void:
 		_empty("raivite", tr("shop.no_payments").replace("\n", " "))
 		return
 	var w := _body.size.x
-	Kit.ribbon(_body, Vector2(w * 0.5, 20.0), tr("shop.first_x2"), "gold").name = "first_x2"
 	var cols := 3
 	var gap := 16.0
+	var rib := 20.0  # room over each row for the ribbons on the tiles' top edges
 	var tw := (w - gap * (cols - 1)) / cols
 	var rows := ceili(RAIVITE_SKUS.size() / float(cols))
-	var th := minf(360.0, (_body.size.y - 56.0 - gap * (rows - 1)) / rows)
+	var th := minf(340.0, (_body.size.y - rows * rib - gap * (rows - 1)) / rows)
 	for i in RAIVITE_SKUS.size():
 		var sku: Array = RAIVITE_SKUS[i]
-		var r := Rect2((i % cols) * (tw + gap), 56.0 + (i / cols) * (th + gap), tw, th)
-		var t := Kit.tile(_body, r, {"icon": "raivite", "icon_side": 84.0 + (i / cols) * 16.0 + (i % cols) * 6.0,
+		var r := Rect2((i % cols) * (tw + gap), rib + (i / cols) * (th + gap + rib), tw, th)
+		var t := Kit.tile(_body, r, {"pic_node": _raivite_pile(i), "icon_side": 150.0 + 6.0 * i,
 			"value": Kit.fmt_exact(int(sku[2])), "face": Kit.CREAM_ROW})
 		t.name = String(sku[0])
 		# the bottom of the tile holds the price (S, full width); the picture and the amount above it
@@ -594,6 +688,49 @@ func _raivite_tab() -> void:
 		var b := Kit.button(t, Rect2(12, th - 5.0 - 12.0 - 60.0, tw - 24.0, 60), "gold", _price(sku[1]), {"size": "S",
 			"filter": Control.MOUSE_FILTER_PASS, "cb": func(): buy_sku.emit(id)})
 		b.name = "buy"
+		Kit.ribbon(t, Vector2(tw * 0.5, 0.0), tr("shop.first_x2"), "gold").name = "first_x2"
+
+
+## A pack's picture grows with its value: one crystal, a cluster, a heap, then chests (wood, silver, royal) brimming
+## with crystals — the ladder from 80 to 14 000 reads at a glance. [x, bottom, side] in the pile's unit box, back first;
+## "c" marks the chest.
+const PILES := [
+	[["r", 0.5, 0.96, 0.82]],
+	[["r", 0.5, 0.8, 0.62], ["r", 0.29, 0.98, 0.56], ["r", 0.71, 0.98, 0.6]],
+	[["r", 0.36, 0.74, 0.5], ["r", 0.64, 0.72, 0.52], ["r", 0.5, 0.86, 0.6], ["r", 0.2, 0.99, 0.48], ["r", 0.8, 0.99, 0.5]],
+	[["r", 0.38, 0.52, 0.44], ["r", 0.62, 0.5, 0.48], ["c", "chest_wood", 0.98, 0.84], ["r", 0.13, 1.0, 0.36], ["r", 0.87, 1.0, 0.34]],
+	[["r", 0.3, 0.52, 0.42], ["r", 0.7, 0.52, 0.42], ["r", 0.5, 0.48, 0.5], ["c", "chest_silver", 0.98, 0.86],
+		["r", 0.12, 1.0, 0.38], ["r", 0.88, 1.0, 0.36]],
+	[["r", 0.28, 0.52, 0.46], ["r", 0.72, 0.52, 0.46], ["r", 0.5, 0.47, 0.56], ["c", "chest_royal", 0.98, 0.88],
+		["r", 0.11, 1.0, 0.4], ["r", 0.89, 1.0, 0.4], ["r", 0.5, 1.03, 0.3]],
+]
+
+
+func _raivite_pile(tier: int) -> Control:
+	var pile := Control.new()
+	pile.name = "pile"
+	pile.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var parts: Array = PILES[clampi(tier, 0, PILES.size() - 1)]
+	var crystal := Kit.icon_tex("raivite")
+	for prt in parts:
+		var p: Array = prt
+		var tr_ := TextureRect.new()
+		tr_.texture = Kit.icon_tex(String(p[1])) if p[0] == "c" else crystal
+		tr_.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		tr_.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		tr_.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		tr_.set_meta("unit", [0.5 if p[0] == "c" else float(p[1]), float(p[2]), float(p[3])])
+		pile.add_child(tr_)
+	var lay := func():  # laid out in the box the tile gives it
+		var s := minf(pile.size.x, pile.size.y)
+		for c in pile.get_children():
+			var u: Array = c.get_meta("unit")
+			var side: float = u[2] * s
+			(c as Control).position = Vector2(u[0] * s - side * 0.5, u[1] * s - side).round()
+			(c as Control).size = Vector2(side, side)
+	pile.resized.connect(lay)
+	pile.tree_entered.connect(lay)
+	return pile
 
 
 func _packs_tab() -> void:
@@ -620,7 +757,7 @@ func _packs_tab() -> void:
 		var name := tr(p[1])
 		var desc := tr(p[3])
 		var rw := Kit.row(host, Rect2(16, 16 + i * (row_h + gap), rw_w, row_h), {"icon": String(PACK_ICON.get(id, "gift")),
-			"title": name, "sub": desc, "right": b})
+			"title": name, "sub": tr(p[1] + ".short"), "right": b})
 		rw.name = id
 		rw.cb = func(): Kit.tooltip(rw.title_label, name, desc)
 
@@ -660,9 +797,13 @@ func _atelier_tab() -> void:
 		var id := String(ids[i])
 		var it: Dictionary = cases.cosmetic(id)
 		var rar := String(it.get("rarity", "common"))
-		var t := Kit.tile(host, Rect2(16 + (i % cols) * (tw + gap), 16 + (i / cols) * (th + gap), tw, th),
-			{"icon": String(Kit.COSMETIC_ICON.get(String(it.get("category", "")), "frame")), "icon_side": 96.0,
-			"title": String(cases.cosmetic_name(id)), "face": (Kit.RARITY.get(rar, Kit.RARITY["common"]) as Color).lerp(Kit.CREAM_ROW, 0.55)})
+		var o := {"icon_side": 96.0, "title": String(cases.cosmetic_name(id)), "wrap_title": true,
+			"face": (Kit.RARITY.get(rar, Kit.RARITY["common"]) as Color).lerp(Kit.CREAM_ROW, 0.55)}
+		if String(it.get("category", "")) == "cos_border_ink":  # an ink shows itself: a hex ringed in its colours
+			o["pic_node"] = Kit.ink_swatch(id, 96.0)
+		else:
+			o["icon"] = String(Kit.COSMETIC_ICON.get(String(it.get("category", "")), "frame"))
+		var t := Kit.tile(host, Rect2(16 + (i % cols) * (tw + gap), 16 + (i / cols) * (th + gap), tw, th), o)
 		t.name = id
 		var cat := String(cases.category_name(String(it.get("category", ""))))
 		t.cb = func(): Kit.tooltip(t, String(cases.cosmetic_name(id)), cat + "\n" + String(cases.rarity_name(rar)))

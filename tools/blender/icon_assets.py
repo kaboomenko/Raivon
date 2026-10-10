@@ -17,6 +17,8 @@ Portraits and card art (tools/blender/card_art.py) get no rim.
 Look: the Standard view transform and metallic ≤ METAL_MAX. Under AgX Punchy (and with fully metallic surfaces
 mirroring the dim icon studio) every gold and yellow came out ochre or brown, far from the UI's WARN #FFC531: the
 medal tiers could not be told apart, the lightning bolt was khaki. Standard keeps the hues the UI is built on.
+Light: the soft rig of docs/art_direction.md §6.4 (KEY_COLOR, SKY_FILL, AMBIENT below): a warm key, a sky-blue world,
+so the shaded sides go soft blue instead of grey.
 """
 import math
 import os
@@ -35,7 +37,17 @@ INK_RIM = os.path.join(HERE, "..", "ui", "ink_rim.py")
 ROOT_ICONS = ("coin", "food", "metal", "raivite", "oil", "builder")  # these sit in assets/ui/, the rest in assets/ui/icons/
 RAW, OUT_PX = 256, 128
 VIEW = "Standard"
-METAL_MAX = 0.55  # a fully metallic surface only mirrors the icon studio's dim grey-blue world and reads brown
+METAL_MAX = 0.55  # a fully metallic surface only mirrors the icon studio's world and reads brown
+# The soft light (docs/art_direction.md §6.4, the map's own rig, as in card_art.py): a warm KEY_COLOR key and a
+# sky-blue SKY_FILL world at AMBIENT of the key's radiance, so the shadow sides go soft blue, never black. The key stays
+# an area lamp: 2.5 wide at 3.8 from the model it subtends about 36°, already softer than the map's 25° sun.
+KEY_COLOR, SKY_FILL = "#fff1da", "#a9c1e8"
+KEY_W = 240  # with the brighter world the lit side stays as bright as under the old 260 W white key
+KEY_RAD_PER_W = 0.00602  # the key's radiance on a white face at the origin facing it, per W (measured in Cycles)
+AMBIENT = 0.8
+# What reflections see instead of the sky-blue world (a gold or steel face mirroring a bright blue sky goes green or
+# grey): a warm neutral at REFLECT_SHARE of the world's strength.
+REFLECT_COLOR, REFLECT_SHARE = "#f2ece2", 0.5
 
 
 def mat(name, color, rough=0.6, metal=0.0, emission=None, emit_strength=0.0):
@@ -1393,11 +1405,35 @@ def _fit_camera(cam, fill):
     cam.data.shift_y = (lo[1] + hi[1]) / 2 / size
 
 
+def soft_world(strength):
+    """The sky-blue world of the soft light at `strength`; glossy rays see REFLECT_COLOR instead (see above)."""
+    w = bpy.data.worlds.new("w")
+    bpy.context.scene.world = w
+    w.use_nodes = True
+    nt = w.node_tree
+    bg = nt.nodes["Background"]
+    bg.inputs["Color"].default_value = (*kit.srgb(SKY_FILL), 1)
+    bg.inputs["Strength"].default_value = strength
+    if not REFLECT_SHARE:
+        return w
+    ref = nt.nodes.new("ShaderNodeBackground")
+    ref.inputs["Color"].default_value = (*kit.srgb(REFLECT_COLOR), 1)
+    ref.inputs["Strength"].default_value = strength * REFLECT_SHARE
+    lp = nt.nodes.new("ShaderNodeLightPath")
+    mix = nt.nodes.new("ShaderNodeMixShader")
+    nt.links.new(lp.outputs["Is Glossy Ray"], mix.inputs["Fac"])
+    nt.links.new(bg.outputs[0], mix.inputs[1])
+    nt.links.new(ref.outputs[0], mix.inputs[2])
+    nt.links.new(mix.outputs[0], nt.nodes["World Output"].inputs["Surface"])
+    return w
+
+
 def render(path, fill=FILL, rim_energy=120, raw_dir=None, samples=64, view=VIEW):
     sc = bpy.context.scene
     bpy.ops.object.light_add(type="AREA", location=(-1.5, -2.5, 2.5))
     k = bpy.context.active_object
-    k.data.energy = 260
+    k.data.energy = KEY_W
+    k.data.color = kit.srgb(KEY_COLOR)
     k.data.size = 2.5
     k.rotation_euler = (math.radians(50), 0, math.radians(-30))
     bpy.ops.object.light_add(type="AREA", location=(2, 1.5, 1.2))
@@ -1405,11 +1441,7 @@ def render(path, fill=FILL, rim_energy=120, raw_dir=None, samples=64, view=VIEW)
     r.data.energy = rim_energy
     r.data.color = (0.6, 0.75, 1.0)
     r.rotation_euler = (math.radians(70), 0, math.radians(125))
-    w = bpy.data.worlds.new("w")
-    sc.world = w
-    w.use_nodes = True
-    w.node_tree.nodes["Background"].inputs["Color"].default_value = (0.35, 0.4, 0.5, 1)
-    w.node_tree.nodes["Background"].inputs["Strength"].default_value = 0.8
+    soft_world(AMBIENT * KEY_W * KEY_RAD_PER_W)
     cam = bpy.data.objects.new("cam", bpy.data.cameras.new("cam"))
     sc.collection.objects.link(cam)
     cam.data.type = "ORTHO"

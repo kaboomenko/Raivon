@@ -601,6 +601,8 @@ class KitShape extends Control:
 					var cols := PackedColorArray([Color(face, 0.55), Color(face, 0.0), Color(face, 0.0)])
 					draw_polygon(pts, cols)
 				draw_circle(c, rr * 0.42, Color(face, 0.22), true, -1.0, true)
+			"ink_hex":  # a border ink's swatch (the Atelier): a map hex of land ringed by the ink, INK contour both sides
+				_ink_hex()
 			"grid":  # the blueprint backdrop: white 10 % lines every data.step px
 				var step: float = data.get("step", 16.0)
 				var col := Color(1, 1, 1, 0.1)
@@ -642,6 +644,35 @@ class KitShape extends Control:
 		else:
 			draw_colored_polygon(body, CREAM_DEEP)
 			draw_colored_polygon(SELF.star_points(c + Vector2(0, rr * 0.06), rr * 0.72), CREAM_DEEP.darkened(0.12))
+
+	func _ink_hex() -> void:
+		var rr := minf(size.x, size.y) * 0.5 - 3.0
+		var c := size * 0.5
+		var band := maxf(8.0, rr * 0.3)  # the ink's width: the ink is the point, the land only frames it
+		var mid := rr - band * 0.5 - 3.0  # the band's centre line, inside the outer contour
+		var raw := SELF.hex_points(c, rr)
+		var shadow := PackedVector2Array()
+		for v in SELF.round_poly(raw, 0.22 * rr):
+			shadow.append(v + Vector2(0, 4))
+		draw_colored_polygon(shadow, Color(INK, SHADOW_A))
+		draw_colored_polygon(SELF.round_poly(raw, 0.22 * rr), INK)
+		draw_colored_polygon(SELF.round_poly(SELF.hex_points(c, rr - band - 3.0), 0.22 * (rr - band)), data.get("land", GRASS.lerp(CREAM_ROW, 0.3)))
+		var cols: Array = data.get("colors", [INK_TEXT])
+		var ring := SELF.round_poly(SELF.hex_points(c, mid), 0.22 * mid)
+		var pts := PackedVector2Array(ring)
+		pts.append(ring[0])
+		var pc := PackedColorArray()
+		for i in pts.size():  # the colours run round the ring: c0 → c1 → … → c0
+			var t := float(i) / float(pts.size() - 1) * cols.size()
+			var a: Color = cols[int(t) % cols.size()]
+			var b: Color = cols[(int(t) + 1) % cols.size()]
+			pc.append(a.lerp(b, t - floorf(t)))
+		draw_polyline_colors(pts, pc, band, true)
+		for i in pts.size():
+			draw_circle(pts[i], band * 0.5, pc[i], true, -1.0, true)
+		# a white glint on the ink's upper left edge: it reads as a glossy line of ink, not a flat stripe
+		var g := PackedVector2Array([ring[int(ring.size() * 0.55)], ring[int(ring.size() * 0.66)]])
+		draw_line(g[0] + Vector2(0, -band * 0.2), g[1] + Vector2(0, -band * 0.2), Color(1, 1, 1, 0.55), maxf(2.0, band * 0.25), true)
 
 	func _hex_badge() -> void:
 		var rr := minf(size.x, size.y) * 0.5
@@ -2780,11 +2811,12 @@ class KitTile extends Panel:
 ## bottom edge. opts:
 ##   icon: a kit icon name | tex: a Texture2D (a hex render); icon_side (default: by what else the tile holds);
 ##   pic_overlap: how far the lines under it may rise into the picture's box (a render's transparent margin)
-##   title: the name (Rubik 900 26 INK_TEXT, fit to 22, cut at the floor)
+##   title: the name (Rubik 900 26 INK_TEXT, fit to 22, cut at the floor; wrap_title: two lines of 22 instead of the cut)
 ##   value: a big number (NUM_L 44; value_color, INK_TEXT by default) and caption: a muted line under it (Rubik 800 24)
 ##   pill: [[icon, text, short], …] — the INK amount pill on the bottom edge (NUM_S 26); pill_inside: above the lip
 ##   count: a «×N» info hex on the top-left corner when > 1
-##   selected: a go outline 5 + a check badge; claimable: a gold outline 4 (+ breathe); locked: a lock, the picture
+##   pic_node: a Control drawn in the picture's box instead of an icon (an ink swatch)
+##   selected: a go outline 5 + a check badge; claimable: a gold outline 4 (+ breathe unless still); locked: a lock, the picture
 ##   dimmed; dim: the picture dimmed (it cannot be taken now); taken: a reward already claimed — a check badge on the
 ##   corner, the tile at 60 %
 ##   cb: a tap on the tile
@@ -2813,6 +2845,9 @@ static func tile(parent: Node, rect: Rect2, opts := {}) -> KitTile:
 	var tex: Texture2D = opts.get("tex", null)
 	if tex == null:
 		tex = icon_tex(String(opts.get("icon", "")))
+	var pic_node: Control = opts.get("pic_node")  # a drawn picture (an ink swatch) laid in the picture's box
+	if pic_node != null:
+		tex = null
 	var ph := 36.0
 	var inside := bool(opts.get("pill_inside", false))  # a demand's cost sits inside, a reward's amount on the edge
 	var bottom := h - 5.0 - (4.0 if pill.is_empty() else (ph + 10.0 if inside else ph * 0.5 + 2.0))
@@ -2820,10 +2855,20 @@ static func tile(parent: Node, rect: Rect2, opts := {}) -> KitTile:
 	if side <= 0.0:
 		side = minf(w * 0.5, h * 0.44) if (title != "" or value != "") else minf(w, h) * 0.6
 	var overlap := float(opts.get("pic_overlap", 0.0)) if tex != null else 0.0  # a render's empty margin under the art
-	var parts_h := (side - overlap if tex != null else 0.0) + (34.0 if title != "" else 0.0) + (50.0 if value != "" else 0.0) \
-		+ (30.0 if caption != "" else 0.0)
+	# wrap_title: a name too long for one line at 22 takes two (the picture gives up the room) instead of «…»
+	var two_lines := title != "" and bool(opts.get("wrap_title", false)) and text_w(title, 22, "d900", false) > w - 20.0
+	var title_h := 56.0 if two_lines else 34.0
+	if two_lines:
+		side = maxf(48.0, side - 22.0)
+	var parts_h := (side - overlap if tex != null or pic_node != null else 0.0) + (title_h if title != "" else 0.0) \
+		+ (50.0 if value != "" else 0.0) + (30.0 if caption != "" else 0.0)
 	var y := maxf(6.0, (bottom - parts_h) * 0.5 + 2.0)
-	if tex != null:
+	if pic_node != null:
+		pic_node.position = Vector2(roundf((w - side) * 0.5), roundf(y))
+		pic_node.size = Vector2(side, side)
+		t.add_child(pic_node)
+		y += side
+	elif tex != null:
 		var pic := _card_rect(tex, Rect2((w - side) * 0.5, y, side, side))
 		pic.name = "pic"
 		pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -2836,18 +2881,23 @@ static func tile(parent: Node, rect: Rect2, opts := {}) -> KitTile:
 			t.add_child(lk)
 		y += side - overlap
 	if title != "":
-		var s := fit_size(title, 26, w - 20.0, "d900", 22, false)
+		var s := 22 if two_lines else fit_size(title, 26, w - 20.0, "d900", 22, false)
 		var tl := label(title, s, INK_TEXT, true)
 		tl.name = "title"
 		tl.add_theme_font_size_override("font_size", s)
 		tl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		tl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		tl.clip_text = true
 		tl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		if two_lines:
+			tl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			tl.max_lines_visible = 2
+			tl.add_theme_constant_override("line_spacing", -4)
+		else:
+			tl.clip_text = true
 		tl.position = Vector2(10, y)
-		tl.size = Vector2(w - 20.0, 34)
+		tl.size = Vector2(w - 20.0, title_h)
 		t.add_child(tl)
-		y += 34.0
+		y += title_h
 	if value != "":
 		var vs := fit_size(value, 44, w - 16.0, "d900", 30, false)
 		var vl := label(value, vs, opts.get("value_color", INK_TEXT), true)
@@ -2886,7 +2936,7 @@ static func tile(parent: Node, rect: Rect2, opts := {}) -> KitTile:
 	elif bool(opts.get("taken", false)):
 		check_badge(t, Vector2(w - 10.0, 10.0))
 		t.modulate.a = 0.6
-	if claim:
+	if claim and not bool(opts.get("still", false)):  # still: the gold outline alone (one thing breathes per screen)
 		breathe(t)
 	if parent:
 		parent.add_child(t)
@@ -3356,6 +3406,26 @@ static var _vis_right := {}
 const COSMETIC_ICON := {"cos_border_ink": "pencil", "cos_peace_seal": "seal", "cos_peace_fireworks": "xp",
 	"cos_fill_pattern": "hex_tile", "cos_capital_skin": "castle_icon", "cos_frame": "frame", "cos_flag_part": "pin",
 	"cos_unit_skin": "helmet", "cos_emote": "hands"}
+## The border inks' own colours (cases.json has the names only), by the id's tail; several run round the ring.
+const INK_SWATCH := {"copper": [Color("c8763a"), Color("eaa063")], "gold_thread": [Color("e6b13e"), Color("fff0a8")],
+	"flame": [Color("ff4b1f"), Color("ffc531")], "ice": [Color("7fd0f0"), Color("e3f7ff")],
+	"neon": [Color("2ff0c8"), Color("ff4fd8")], "aurora": [Color("46e89a"), Color("2fc6d0"), Color("5b7cf2")],
+	"river": [Color("2f86e0"), Color("8fd6f2")], "battle_banner": [Color("ef4b3f"), Color("ffc531")],
+	"season1_anim": [Color("ffc531"), Color("ef4b3f"), Color("3e9bf0")]}
+
+
+## A border ink's swatch (§6 Лавка › Ателье): a hex of land ringed by the ink's colours — the ink itself, not a pencil.
+static func ink_swatch(id: String, side: float) -> KitShape:
+	var cols: Array = [INK_TEXT]
+	for k in INK_SWATCH:
+		if id.ends_with("_" + String(k)):
+			cols = INK_SWATCH[k]
+			break
+	var s := KitShape.new("ink_hex", WHITE)
+	s.name = "swatch"
+	s.data = {"colors": cols}
+	s.size = Vector2(side, side)
+	return s
 
 
 ## res://assets/ui/icons/<name>.png, then res://assets/ui/<name>.png, then the stand-in; null if none exists.
@@ -3517,6 +3587,18 @@ static func fmt_dec(x: float, d := 1) -> String:
 	if L.lang() == "ru":
 		s = s.replace(".", ",")
 	return (MINUS if x < 0.0 and s.trim_prefix("0").replace("0", "").replace(",", "").replace(".", "") != "" else "") + s
+
+
+## A store price placeholder («$7.99», until the store SDK gives localized prices) as the player reads it (§3.7):
+## RU «7,99 $», EN «$7.99». Anything that is not «$<number>» passes through as it is.
+static func store_price(s: String) -> String:
+	var t := s.strip_edges()
+	if not t.begins_with("$"):
+		return t
+	var num := t.substr(1).replace(",", ".")
+	if not num.is_valid_float():
+		return t
+	return (num.replace(".", ",") + NBSP + "$") if L.lang() == "ru" else "$" + num
 
 
 ## 42 с · 1:06 · 2ч 57м · 3д 4ч

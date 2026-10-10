@@ -70,7 +70,7 @@ def sky(top, bottom, ground="#2c3a22", ground2="#4a5a30", band=(0.42, 0.62), mid
     bd.data.materials.append(m)
     bpy.ops.mesh.primitive_plane_add(size=40, location=(0, 0, 0))
     g = bpy.context.active_object
-    g.data.materials.append(kit.noisy_mat("ground", ground, ground2, 3.0))
+    g.data.materials.append(kit.noisy_mat("ground", ground, ground2, 3.0, GROUND_ROUGH))
 
 
 def smoke_mat(name="smoke_soft", color="#f3f0ea", alpha=0.4):
@@ -107,17 +107,57 @@ AMBIENT = 0.8  # world strength = AMBIENT × the key's radiance on a white face 
 SUN_ANGLE = 25.0  # the key sun's angular diameter, degrees
 FILL = 0.5  # the camera-side fill's share of its old power, tinted SKY_FILL (it was a white 220 W lamp)
 LOOK = "AgX - Base Contrast"
+# What reflections see instead of the sky-blue world: the meadow at a grazing angle mirrored a bright blue sky and
+# went pale and hazy. A warm neutral at REFLECT_SHARE of the world's strength (as in icon_assets.py).
+REFLECT_COLOR, REFLECT_SHARE = "#f2ece2", 0.5
+GROUND_ROUGH = 0.95  # the stage meadow is matte, like the map's lawn (§6.5: roughness about 0.9, no highlights)
+# The map's own colour grade (§6.4, main.gd's Environment adjustments: brightness, contrast, saturation), applied to
+# every rendered card the way Godot applies it after the tonemap: in sRGB, contrast about mid-grey, saturation about
+# the channel mean. AgX at its base contrast alone left the meadow and sky greyer than the map they sit on.
+GRADE = (1.03, 1.04, 1.12)
 
 
 def soft_world(key):
-    """The sky-blue ambient for a key sun of `key` W/m² (render() keeps the world set here)."""
+    """The sky-blue ambient for a key sun of `key` W/m² (render() keeps the world set here); glossy rays see
+    REFLECT_COLOR instead."""
     wd = bpy.data.worlds.new("w")
     bpy.context.scene.world = wd
     wd.use_nodes = True
-    bg = wd.node_tree.nodes["Background"]
+    nt = wd.node_tree
+    bg = nt.nodes["Background"]
     bg.inputs["Color"].default_value = (*kit.srgb(SKY_FILL), 1)
     bg.inputs["Strength"].default_value = AMBIENT * key / math.pi
+    if REFLECT_SHARE:
+        ref = nt.nodes.new("ShaderNodeBackground")
+        ref.inputs["Color"].default_value = (*kit.srgb(REFLECT_COLOR), 1)
+        ref.inputs["Strength"].default_value = AMBIENT * key / math.pi * REFLECT_SHARE
+        lp = nt.nodes.new("ShaderNodeLightPath")
+        mix = nt.nodes.new("ShaderNodeMixShader")
+        nt.links.new(lp.outputs["Is Glossy Ray"], mix.inputs["Fac"])
+        nt.links.new(bg.outputs[0], mix.inputs[1])
+        nt.links.new(ref.outputs[0], mix.inputs[2])
+        nt.links.new(mix.outputs[0], nt.nodes["World Output"].inputs["Surface"])
     return wd
+
+
+def grade(path):
+    """GRADE on the PNG at `path`, in place (alpha untouched)."""
+    import numpy as np
+    from PIL import Image
+    if GRADE == (1.0, 1.0, 1.0):
+        return
+    im = Image.open(path)
+    a = im.getchannel("A") if im.mode == "RGBA" else None
+    c = np.asarray(im.convert("RGB")).astype(np.float64) / 255.0
+    b, k, sat = GRADE
+    c = c * b
+    c = 0.5 + (c - 0.5) * k
+    m = c.mean(axis=2, keepdims=True)
+    c = m + (c - m) * sat
+    out = Image.fromarray(np.round(np.clip(c, 0.0, 1.0) * 255.0).astype(np.uint8), "RGB")
+    if a is not None:
+        out.putalpha(a)
+    out.save(path)
 
 
 def key_sun(energy, rot):
@@ -179,6 +219,7 @@ def render(path, w=None, h=None, transparent=False):
         soft_world(6.0)
     sc.render.filepath = path
     bpy.ops.render.render(write_still=True)
+    grade(path)
 
 
 # ------------------------------------------------------------------ scenes
@@ -189,7 +230,10 @@ STAGE_SKY = ("#3f8fe2", "#fdebc8")  # zenith, horizon
 # Stops between them, so the sky goes blue → pale blue → cream without the grey-mauve band a straight blue-to-cream
 # blend passes through.
 STAGE_MIDS = ((0.352, "#e4f2fc"), (0.385, "#a3d2f5"))
-STAGE_GROUND = ("#6f9f42", "#8abb52")
+# The meadow, tuned so it renders like the map's lit lawn (about #94C659 on screen) under the sky fill, which takes
+# its blue out (the old #6f9f42 / #8abb52 came out a pale grey-green, S 35 %).
+MEADOW = ("#6aa630", "#7fbb3c")
+STAGE_GROUND = MEADOW
 
 
 def stage():
@@ -396,13 +440,21 @@ for _n in range(1, 9):
         TILE_MODELS["city_dl%d_%s" % (_n, _side)] = [("city_dl%d_%s" % (_n, _side), (0, 0), 1.0 if _n >= 7 else 1.15)]
 
 
+# The tile's own ground in the map's palette (docs/art_direction.md §6.3): the stage's sunny meadow, the warm soil of
+# the tile's side (#B58A5E → #7E5A45), the sea. (The old dark olive grass and dark brown soil went grey-olive under
+# the sky fill, far from the lawn the hex panel sits over.)
+TILE_GRASS = MEADOW
+TILE_SOIL = ("#94704f", "#b08659")
+TILE_WATER = "#1d6db5"  # renders as the sea between the map's middle #36A3D8 and deep #2A7BBF
+
+
 def tile(kind):
     """The hex panel's picture (the «Равнина» tile of the reference HUD): one hex of that land or building."""
     def scene():
-        grass = kit.noisy_mat("grass", "#4c7a2c", "#5f8f36", 4.0)
-        dirt = kit.noisy_mat("dirt", "#5b4029", "#6d4a2c", 6.0)
+        grass = kit.noisy_mat("grass", *TILE_GRASS, 4.0, GROUND_ROUGH)
+        dirt = kit.noisy_mat("dirt", *TILE_SOIL, 6.0, GROUND_ROUGH)
         if kind == "water":
-            grass = mat("water", "#1b5a78", 0.15, 0.2)
+            grass = mat("water", TILE_WATER, 0.15, 0.2)
         kit.hex_prism("tile", (0, 0, -0.18), 1.0, 0.18, grass, dirt, 0.03)
         for name, (x, y), sc in TILE_MODELS[kind]:
             load(name, (x, y, 0), 0.4, sc)
@@ -821,6 +873,7 @@ def render_building(path, kind):
     shade = Image.open(raw_shadow).convert("RGBA").getchannel("A")
     keep = Image.merge("RGB", [shade.point(lambda a, k=k: round(255 - a * (1 - k))) for k in SHADOW_KEEP])
     bg = Image.merge("RGBA", (*ImageChops.multiply(bg.convert("RGB"), keep).split(), bg.getchannel("A")))
+    grade(raw)
     model = Image.open(raw).convert("RGBA")
     bg.alpha_composite(model)
     bg.convert("RGBa").resize((BW, BH), Image.LANCZOS).convert("RGB").save(path)
