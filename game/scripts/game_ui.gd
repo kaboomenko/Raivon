@@ -2934,8 +2934,8 @@ func _dlg_footer(box: Control, w: float, y: float, items: Array) -> void:
 
 
 ## The window of a dialog: M (L when docked) sized to its content, centred in the band — or docked to the bottom
-## (its bottom at VB − 24) over a light dim, so what it is about stays in sight on the map. ✕: the cancel entry's
-## callable, else (not blocking) it closes; a decision has none.
+## (its bottom at VB − 24) over a light dim, so what it is about stays in sight on the map. ✕ (and a tap on the dim,
+## unless docked): the cancel entry's callable, else (not blocking) it closes; a decision has none.
 func _dlg_box(h: float, title: String, role: String, icon: String, cancel: Callable, blocking: bool, dock_bottom: bool) -> Panel:
 	var r := _win_rect("L" if dock_bottom else "M", h)
 	if dock_bottom:
@@ -2945,6 +2945,9 @@ func _dlg_box(h: float, title: String, role: String, icon: String, cancel: Calla
 	box.set_meta("kit_native", true)
 	if cancel.is_valid():
 		Kit.close_button(box, cancel)
+		if not dock_bottom:  # a tap on the dim cancels too (§4.3); docked, the map above stays out of reach
+			var m := _modal
+			_modal.gui_input.connect(func(e): if _is_tap(e) and _modal == m: cancel.call())
 	return box
 
 
@@ -3340,7 +3343,7 @@ func _lot_card(host: Control, r: Rect2, lot: Dictionary, idx: int, on_lot: Calla
 
 # ------------------------------------------------------------------ territory swap (canon §10.9, 06 §15)
 
-const SWAP_TILE := Vector2(160, 178)
+const SWAP_TILE := Vector2(190, 190)  # a hex of the package; two a side share the half (≤ 169 wide each)
 
 
 ## A territory swap (§6 «Обмен территорией»): the player's offer or an AI's. A window L docked to the bottom (its
@@ -3392,10 +3395,11 @@ func show_swap(info: Dictionary, buttons: Array) -> float:
 		var hexes: Array = info.get(key, [])
 		var shown: Array = hexes.slice(0, 2) if hexes.size() <= 2 else [hexes[0], {"more": hexes.size() - 1}]
 		var n := shown.size()
-		var tx := x0 + (half - (n * SWAP_TILE.x + (n - 1) * 12.0)) * 0.5
+		var tw := minf(SWAP_TILE.x, (half - 12.0 * (n - 1)) / n)
+		var tx := x0 + (half - (n * tw + (n - 1) * 12.0)) * 0.5
 		for i in n:
 			var hx: Dictionary = shown[i]
-			var r := Rect2(tx + i * (SWAP_TILE.x + 12.0), 12.0 + 30.0 + 6.0, SWAP_TILE.x, SWAP_TILE.y)
+			var r := Rect2(tx + i * (tw + 12.0), 12.0 + 30.0 + 6.0, tw, SWAP_TILE.y)
 			var t: Kit.KitTile
 			if hx.has("more"):
 				t = Kit.tile(well, r, {"icon": "hex_tile", "icon_side": 72.0, "value": "+%d" % int(hx["more"]),
@@ -3405,13 +3409,13 @@ func show_swap(info: Dictionary, buttons: Array) -> float:
 				var o := {"title": String(hx.get("name", "")), "wrap_title": true}
 				if tex != null:
 					o["tex"] = tex
-					o["icon_side"] = 140.0  # a render's transparent margin: drawn large, the name rises into it
-					o["pic_overlap"] = 24.0
+					o["icon_side"] = roundf(tw * 0.86)  # a render's transparent margin: drawn large, the name rises into it
+					o["pic_overlap"] = 26.0
 				else:
 					o["icon"] = "hex_tile"
 					o["icon_side"] = 84.0
 				t = Kit.tile(well, r, o)
-				var vb := Kit.hex_badge(t, Vector2(SWAP_TILE.x - 10.0, 12.0), 22, "gold", str(int(hx.get("value", 1))))
+				var vb := Kit.hex_badge(t, Vector2(tw - 10.0, 12.0), 22, "gold", str(int(hx.get("value", 1))))
 				vb.name = "value"
 			t.name = "%s_%d" % [key, i]
 	Kit.chrome(well, "swap", Rect2(16.0 + half + 12.0, 12.0 + 30.0 + 6.0 + (SWAP_TILE.y - 72.0) * 0.5, 72, 72))
