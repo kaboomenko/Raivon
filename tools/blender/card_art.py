@@ -99,17 +99,55 @@ def fireball(x, y, z, r=0.25):
     bpy.context.active_object.data.color = (1.0, 0.55, 0.2)
 
 
-def lights(key=6.0, rim="#7fb2ff"):
-    bpy.ops.object.light_add(type="AREA", location=(0.8, -3.0, 2.2))  # a soft fill from the camera side
-    f = bpy.context.active_object
-    f.data.energy = 220
-    f.data.size = 3.0
-    f.rotation_euler = (math.radians(55), 0, math.radians(15))
+# The soft light (docs/art_direction.md §6.4, the map's own rig, so the cards sit on the sunny map as one set): a warm
+# key sun with a 25° disc (soft shadow edges), a cool sky-blue world at AMBIENT of the key (the shadow sides go soft
+# blue, never black), and AgX at its base contrast.
+KEY_COLOR, SKY_FILL = "#fff1da", "#a9c1e8"
+AMBIENT = 0.8  # world strength = AMBIENT × the key's radiance on a white face (energy / π), like main.gd's 0.8 to 1.1
+SUN_ANGLE = 25.0  # the key sun's angular diameter, degrees
+FILL = 0.5  # the camera-side fill's share of its old power, tinted SKY_FILL (it was a white 220 W lamp)
+LOOK = "AgX - Base Contrast"
+
+
+def soft_world(key):
+    """The sky-blue ambient for a key sun of `key` W/m² (render() keeps the world set here)."""
+    wd = bpy.data.worlds.new("w")
+    bpy.context.scene.world = wd
+    wd.use_nodes = True
+    bg = wd.node_tree.nodes["Background"]
+    bg.inputs["Color"].default_value = (*kit.srgb(SKY_FILL), 1)
+    bg.inputs["Strength"].default_value = AMBIENT * key / math.pi
+    return wd
+
+
+def key_sun(energy, rot):
+    """The warm key sun (rotation in degrees) and its sky-blue world."""
     bpy.ops.object.light_add(type="SUN")
     s = bpy.context.active_object
-    s.data.energy = key
-    s.data.color = (1.0, 0.92, 0.8)
-    s.rotation_euler = (math.radians(50), math.radians(-25), math.radians(-30))
+    s.data.energy = energy
+    s.data.color = kit.srgb(KEY_COLOR)
+    s.data.angle = math.radians(SUN_ANGLE)
+    s.rotation_euler = tuple(math.radians(a) for a in rot)
+    soft_world(energy)
+    return s
+
+
+def fill_light(loc, rot, energy, size):
+    """A soft sky-blue fill from the camera side (lifts the faces the key does not reach)."""
+    if FILL <= 0:
+        return None
+    bpy.ops.object.light_add(type="AREA", location=loc)
+    f = bpy.context.active_object
+    f.data.energy = energy * FILL
+    f.data.size = size
+    f.data.color = kit.srgb(SKY_FILL)
+    f.rotation_euler = tuple(math.radians(a) for a in rot)
+    return f
+
+
+def lights(key=6.0, rim="#7fb2ff"):
+    fill_light((0.8, -3.0, 2.2), (55, 0, 15), 220, 3.0)
+    key_sun(key, (50, -25, -30))
     bpy.ops.object.light_add(type="SUN")
     r = bpy.context.active_object
     r.data.energy = 2.0
@@ -127,7 +165,7 @@ def camera(loc, target, lens=50):
     bpy.context.scene.camera = cam
 
 
-def render(path, w=None, h=None, transparent=False, world=None):
+def render(path, w=None, h=None, transparent=False):
     sc = bpy.context.scene
     sc.render.film_transparent = transparent
     sc.render.engine = "CYCLES"
@@ -136,12 +174,9 @@ def render(path, w=None, h=None, transparent=False, world=None):
     sc.render.resolution_x = w or W
     sc.render.resolution_y = h or H
     sc.view_settings.view_transform = "AgX"
-    sc.view_settings.look = "AgX - Punchy"
-    w = bpy.data.worlds.new("w")
-    sc.world = w
-    w.use_nodes = True
-    w.node_tree.nodes["Background"].inputs["Color"].default_value = (*kit.srgb(world[0]), 1) if world else (0.05, 0.07, 0.12, 1)
-    w.node_tree.nodes["Background"].inputs["Strength"].default_value = world[1] if world else 0.6
+    sc.view_settings.look = LOOK
+    if sc.world is None:  # lights() / key_sun() set the soft world
+        soft_world(6.0)
     sc.render.filepath = path
     bpy.ops.render.render(write_still=True)
 
@@ -155,8 +190,6 @@ STAGE_SKY = ("#3f8fe2", "#fdebc8")  # zenith, horizon
 # blend passes through.
 STAGE_MIDS = ((0.352, "#e4f2fc"), (0.385, "#a3d2f5"))
 STAGE_GROUND = ("#6f9f42", "#8abb52")
-STAGE_WORLD = ("#bcd8f0", 0.75)
-BATTLE = ("attack", "breakthrough", "airstrike", "encircle", "defense", "landing", "missile", "corps")
 
 
 def stage():
@@ -332,13 +365,13 @@ def corps():
 
 def unit(n):
     """The Army tab's card picture (the unit cards of the reference HUD): the era's infantry up close with its
-    assault unit behind, under the card sky."""
+    assault unit behind, on the battle cards' stage (the old dusk sky over a dark field read as night on the sunny
+    map)."""
     def scene():
-        sky("#1d2c4c", "#d8a060", "#34482a")
+        stage()
         load("squad_dl%d_blue" % n, (0.05, 0.1, 0), math.radians(205), 1.7)
         if n >= 2:
             load("assault_dl%d_blue" % n, (0.75, 0.75, 0), math.radians(215), 1.5)
-        lights()
         camera((0.35, -1.55, 0.72), (0.15, 0.25, 0.32), 40)
     return scene
 
@@ -667,17 +700,8 @@ def building(kind):
                 load(name, (x, y, 0), rz, s)
         else:
             BUILDING_SCENES[kind]()
-        bpy.ops.object.light_add(type="SUN")
-        s = bpy.context.active_object
-        s.data.energy = 3.6
-        s.data.color = kit.srgb("#fff1da")
-        s.data.angle = math.radians(12)  # soft shadows
-        s.rotation_euler = (math.radians(50), math.radians(-12), math.radians(-38))
-        bpy.ops.object.light_add(type="AREA", location=(0.6, -3.0, 2.4))
-        f = bpy.context.active_object
-        f.data.energy = 160
-        f.data.size = 4.0
-        f.rotation_euler = (math.radians(52), 0, math.radians(10))
+        key_sun(3.6, (50, -12, -38))
+        fill_light((0.6, -3.0, 2.4), (52, 0, 10), 160, 4.0)
         cam = bpy.data.objects.new("cam", bpy.data.cameras.new("cam"))
         bpy.context.scene.collection.objects.link(cam)
         cam.data.type = "ORTHO"
@@ -736,9 +760,16 @@ def _fit_building(cam, w, h):
     return r
 
 
+# The caught shadow is laid on the painted grass as a multiply that keeps SHADOW_KEEP of each channel at full shadow:
+# blue survives most, so the shade reads soft blue like the sky-lit shadows on the map (a plain alpha-black overlay
+# turned the grass a muddy dark green).
+SHADOW_KEEP = (0.16, 0.24, 0.52)
+
+
 def render_building(path, kind):
-    """Render the model on a transparent film (with its caught shadow) at 2×, then paint the backdrop in Pillow."""
-    from PIL import Image, ImageDraw
+    """Render the model on a transparent film at 2×, then its caught shadow alone (the model hidden from the camera),
+    then paint the backdrop in Pillow: sky, grass plot, the blue-tinted shadow, the model."""
+    from PIL import Image, ImageChops, ImageDraw
     from bpy_extras.object_utils import world_to_camera_view
     sc = bpy.context.scene
     cam = sc.camera
@@ -758,15 +789,21 @@ def render_building(path, kind):
     sc.render.resolution_x = BW * ss
     sc.render.resolution_y = BH * ss
     sc.view_settings.view_transform = "AgX"
-    sc.view_settings.look = "AgX - Punchy"
-    wd = bpy.data.worlds.new("w")
-    sc.world = wd
-    wd.use_nodes = True
-    wd.node_tree.nodes["Background"].inputs["Color"].default_value = (*kit.srgb("#b9dcf5"), 1)
-    wd.node_tree.nodes["Background"].inputs["Strength"].default_value = 0.7
-    raw = path[:-4] + "_raw.png"
+    sc.view_settings.look = LOOK
+    if sc.world is None:  # key_sun() sets the soft world
+        soft_world(3.6)
+    raw, raw_shadow = path[:-4] + "_raw.png", path[:-4] + "_shadow.png"
+    catcher.hide_render = True
     sc.render.filepath = raw
     bpy.ops.render.render(write_still=True)
+    catcher.hide_render = False
+    hidden = [o for o in sc.objects if o.type == "MESH" and o is not catcher and o.visible_camera]
+    for o in hidden:  # still casts its shadow
+        o.visible_camera = False
+    sc.render.filepath = raw_shadow
+    bpy.ops.render.render(write_still=True)
+    for o in hidden:
+        o.visible_camera = True
     # the grass plot: the ground circle under the model, projected; a darker copy below it is the plot's lip
     pts = []
     for (x, y) in plot:
@@ -781,10 +818,14 @@ def render_building(path, kind):
     lip = LIP_PX * ss
     d.polygon([(x, y + lip) for (x, y) in pts], fill=kit_rgb(GRASS_LIP) + (255,))
     d.polygon(pts, fill=kit_rgb(GRASS) + (255,))
+    shade = Image.open(raw_shadow).convert("RGBA").getchannel("A")
+    keep = Image.merge("RGB", [shade.point(lambda a, k=k: round(255 - a * (1 - k))) for k in SHADOW_KEEP])
+    bg = Image.merge("RGBA", (*ImageChops.multiply(bg.convert("RGB"), keep).split(), bg.getchannel("A")))
     model = Image.open(raw).convert("RGBA")
     bg.alpha_composite(model)
     bg.convert("RGBa").resize((BW, BH), Image.LANCZOS).convert("RGB").save(path)
     os.remove(raw)
+    os.remove(raw_shadow)
 
 
 def kit_rgb(hex_color):
@@ -814,5 +855,5 @@ if __name__ == "__main__":
         elif name.startswith("bld_"):
             render_building(os.path.join(os.path.abspath(out), name + ".png"), name[4:])
         else:
-            render(os.path.join(os.path.abspath(out), name + ".png"), world=STAGE_WORLD if name in BATTLE else None)
+            render(os.path.join(os.path.abspath(out), name + ".png"))
         print("CARD", name, flush=True)

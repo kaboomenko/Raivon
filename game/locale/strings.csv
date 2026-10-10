@@ -959,7 +959,7 @@ toast.patent_daily,Патент: +%d Райвитов,Patent: +%d Raivites
 inbox.patent_key.title,Ключ Королевского кейса,A Royal case key
 inbox.patent_key.text,Державный патент: ключ недели ждёт в Лавке — откройте Королевский кейс бесплатно.,Sovereign Patent: this week's key waits in the Shop — open a Royal case for free.
 patent.card,Патент: забрать %d Райвитов,Patent: take %d Raivites
-patent.active,Активен ещё %d дн.,Active for %d more days
+patent.active,Активен: %dд,Active: %dd
 patent.p_ads,"Награды роликов сразу, без просмотра (в тех же лимитах); межстраничной рекламы нет","Video rewards at once, no watching (same limits); no interstitial ads"
 patent.p_builder,+1 временный строитель,+1 temporary builder
 patent.p_convoy,+1 обоз к залежам,+1 convoy to deposits

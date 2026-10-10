@@ -28,7 +28,6 @@ const BLUEPRINT := Color("3e7fc1")
 const SEA_WELL := Color("2a6596")
 const FULL := Color("8c5a1f")
 const PREMIUM_WELL := Color("ffe7a6")  ## the War Pass's premium column: a gold-tinted well (§6 Военный пропуск)
-const PREMIUM_LIP := Color("e8c66a")
 const MAP_ROCK := Color("a9aebb")  ## minimap mountains (the land is in the states' colours, water shows the well)
 const WILD := Color("977a4b")  ## the «Ничья» owner chip: a darker sand than the map's wild land, so its white text reads; warm, never the lock grey
 const WHITE := Color(1, 1, 1)
