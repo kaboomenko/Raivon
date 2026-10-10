@@ -802,14 +802,13 @@ class KitPrice extends Panel:
 		_more.visible = false
 		add_child(_more)
 
-	## The items shown: all of them (at most 2), or the scarcest one when compact / more than two.
+	## The items shown: all of them (at most 2); of more, the first two with what is short first (callers order the
+	## items scarcest first) and «+N»; when compact, the scarcest one alone.
 	func _shown() -> Array:
 		if _rows.size() <= 2 and not compact:
 			return _rows
-		for r in _rows:
-			if r["short"]:
-				return [r]
-		return _rows.slice(0, 1)
+		var ranked: Array = _rows.filter(func(r): return r["short"]) + _rows.filter(func(r): return not r["short"])
+		return ranked.slice(0, 1 if compact else 2)
 
 	## The plate's width at a height, number size and icon side (nothing moves).
 	func width_for(h: float, num: int, icon: float) -> float:
@@ -851,10 +850,10 @@ class KitPrice extends Panel:
 			var mt := "+%d" % more
 			x += 6.0
 			var mw := SELF.text_w(mt, num, "d900", false)
-			if apply:
+			if apply:  # «+1»: the other prices, softer than the numbers so it does not read as part of them
 				_more.text = mt
 				_more.visible = true
-				_num(_more, num, TEXT, x, mw, h)
+				_num(_more, num, SOFT, x, mw, h)
 			x += mw
 		elif apply:
 			_more.visible = false
@@ -1955,6 +1954,7 @@ class KitCard extends Panel:
 	var cta: KitButton
 	var chip: Control
 	var chip_cb := Callable()
+	var tap_cb := Callable()  ## a tap on the body runs this instead of the tooltip (a card that opens its own screen)
 	var _press_at := Vector2(-1, -1)
 	var _press_g := Vector2.ZERO  # where the finger went down, on the screen
 	var _travel := 0.0  # how far it has moved on the screen since, at most
@@ -2008,6 +2008,9 @@ class KitCard extends Panel:
 			if not (chip is KitButton) and chip_cb.is_valid():
 				chip_cb.call()
 			return
+		if tap_cb.is_valid():
+			tap_cb.call()
+			return
 		SELF.tooltip(self, title, details)
 
 
@@ -2017,20 +2020,27 @@ class KitCard extends Panel:
 ##   art_node: a Control laid into the art window (172×104 local coordinates) over the picture
 ##   badge: the text of the top-left hex badge (R 22, centre 16, 16); badge_role (info)
 ##   tag: a short text on an INK pill standing out of the top-left corner instead of a badge («7/12»)
-##   chip: {node: Control} (a portrait, clipped round) | {plus: true} (a go «+» button) | {icon: name}; chip_cb
+##   corner: {icon, fill}: a round status chip Ø44 on the top-left corner instead of a badge (peace, war, pact)
+##   chip: {node: Control} (a portrait, clipped round) | {plus: true} (a go «+» button) | {icon: name, fill} |
+##         {btn: {icon, role, caption}} (a round XS button: «i», a swap); chip_cb
+##   tag_r: {text, role}: a short text on a pill of the role's face (or SLATE_WELL) standing out of the top-right
+##          corner instead of a chip (an opinion «−10»)
 ##   dot: the role of a dot on the card's corner; dot_n: its number (-1: none)
 ##   art_bar: {frac, role}: an S bar along the art's bottom, under the name
-##   cta: {role, caption, icon, price ([[icon, text, short]] ≤ 2), cb, enabled, reason} → an XS button at
-##        (6, 114, 168, 46); without a cb it opens the card's tooltip; a disabled one shows `reason` when tapped
+##   cta: {role, caption, icon, price ([[icon, text, short]] ≤ 2), cb, enabled, reason, short_reason} → an XS
+##        button at (6, 114, 168, 46); without a cb it opens the card's tooltip; a disabled one shows `reason` when
+##        tapped; with `short_reason` (not enough of something, §4.1) it keeps its role but its tap shakes and shows
+##        that instead of acting
 ##   stat: {icon, text, bar_frac, bar_role, check} → icon 36 + NUM_S 26, an optional S bar at y 146, a go check
 ##   locked: dark art + a lock 56; the cta becomes lock XS with a lock and opts.lock_caption («УР3»), its tap shows
 ##           opts.reason
 ##   selected: a brass outline 5 and a 6 px lift
-##   details: the tooltip text of a tap on the body
+##   details: the tooltip text of a tap on the body; tap_cb: runs instead of that tooltip
 static func card(art_tex: Texture2D, title: String, opts := {}) -> KitCard:
 	var c := KitCard.new()
 	c.title = title
 	c.details = String(opts.get("details", ""))
+	c.tap_cb = opts.get("tap_cb", Callable())
 	var sel: bool = opts.get("selected", false)
 	var locked: bool = opts.get("locked", false)
 	var b := Panel.new()
@@ -2112,9 +2122,10 @@ static func card(art_tex: Texture2D, title: String, opts := {}) -> KitCard:
 		aw.add_child(lk)
 	# ---- the name on its scrim (an S bar under it with art_bar)
 	var bar_d: Dictionary = opts.get("art_bar", {})
-	var nw := w - 12.0
-	var ns := fit_size(title, 26, nw, "d900", 22)
-	var long := text_w(title, ns, "d900") > nw
+	# the glyphs get the window less 4 px a side; their outline may spill into that margin («Металлургия» fits at 22)
+	var nw := w - 8.0
+	var ns := fit_size(title, 26, nw, "d900", 22, false)
+	var long := text_w(title, ns, "d900", false) > nw
 	var two := long and title.strip_edges().contains(" ")  # two lines at 22; one long word is cut instead
 	if long:
 		ns = 22
@@ -2130,11 +2141,12 @@ static func card(art_tex: Texture2D, title: String, opts := {}) -> KitCard:
 	if two:
 		nl.autowrap_mode = TextServer.AUTOWRAP_WORD
 		nl.max_lines_visible = 2
+		nl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS  # a third line is cut with «…», never dropped
 		nl.add_theme_constant_override("line_spacing", -4)
 	elif long:
 		nl.clip_text = true
 		nl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	nl.position = Vector2(6, name_bottom - 64.0)
+	nl.position = Vector2(4, name_bottom - 64.0)
 	nl.size = Vector2(nw, 64.0)
 	aw.add_child(nl)
 	c.name_label = nl
@@ -2161,6 +2173,11 @@ static func card(art_tex: Texture2D, title: String, opts := {}) -> KitCard:
 			{"icon": String(ct.get("icon", "")), "price": ct.get("price", []), "enabled": en, "size": "XS",
 			"filter": Control.MOUSE_FILTER_PASS})
 		btn.cb = cb if cb.is_valid() else func(): SELF.tooltip(btn, title, c.details)
+		var short_why := String(ct.get("short_reason", ""))
+		if short_why != "":  # «Не хватает»: the role stays, the tap shakes and says what is missing (§4.1)
+			btn.cb = func():
+				SELF.shake(btn)
+				SELF.tooltip(btn, title, short_why)
 		var why := String(ct.get("reason", ""))
 		if why != "":
 			btn.denied.connect(func(): SELF.tooltip(btn, title, why))
@@ -2177,41 +2194,30 @@ static func card(art_tex: Texture2D, title: String, opts := {}) -> KitCard:
 		var tg := caption_pill(b, String(opts["tag"]), 32.0, INK, 24)
 		tg.name = "tag"
 		tg.position = Vector2(-2, -6)
+	elif opts.has("corner"):
+		_card_ring(b, Rect2(-6, -6, 44, 44), opts["corner"]).name = "corner"
 	var chd: Dictionary = opts.get("chip", {})
 	var chip_r := Rect2(142, -6, 44, 44)  # Ø44 centred on (164, 16)
 	if chd.get("plus", false):
 		c.chip = button(b, chip_r, "go", "", {"icon": "plus", "round": true, "size": "XS", "filter": Control.MOUSE_FILTER_PASS,
 			"cb": opts.get("chip_cb", Callable()), "hit_pad": 8.0})
+	elif chd.has("btn"):
+		var bd: Dictionary = chd["btn"]
+		var cbtn := button(b, chip_r, String(bd.get("role", "info")), String(bd.get("caption", "")),
+			{"icon": String(bd.get("icon", "")), "round": true, "size": "XS", "filter": Control.MOUSE_FILTER_PASS,
+			"cb": opts.get("chip_cb", Callable()), "hit_pad": 8.0, "icon_scale": 0.6 if bd.has("icon") else 0.0})
+		cbtn.name = "chip"
+		c.chip = cbtn
 	elif chd.has("node") or chd.has("icon"):
-		var ring := Panel.new()
-		ring.name = "chip"
-		var rsb := style(SLATE_WELL, 22, 3, INK, 3, 0)
-		rsb.set_meta("kit_kind", "")
-		ring.add_theme_stylebox_override("panel", rsb)
-		ring.position = chip_r.position
-		ring.size = chip_r.size
-		ring.mouse_filter = Control.MOUSE_FILTER_PASS
-		b.add_child(ring)
-		var inner := Panel.new()  # the picture inside the ring, clipped round
-		var isb := StyleBoxFlat.new()
-		isb.bg_color = SKY_LOW
-		isb.anti_aliasing = true
-		isb.set_corner_radius_all(19)
-		inner.add_theme_stylebox_override("panel", isb)
-		inner.position = Vector2(3, 3)
-		inner.size = Vector2(38, 38)
-		inner.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
-		inner.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		ring.add_child(inner)
-		if chd.has("node"):
-			var pn: Control = chd["node"]
-			pn.position = Vector2(-5, -3)  # a little larger than the circle: the portrait's own frame stays outside
-			pn.size = Vector2(48, 50)
-			inner.add_child(pn)
-		else:
-			inner.add_child(_card_rect(icon_tex(String(chd["icon"])), Rect2(3, 3, 32, 32)))
-		c.chip = ring
+		c.chip = _card_ring(b, chip_r, chd)
 		c.chip_cb = opts.get("chip_cb", Callable())
+	elif opts.has("tag_r"):
+		# a short value pill standing out of the top-right corner (an opinion): the role's face, or the slate well
+		var td: Dictionary = opts["tag_r"]
+		var role := String(td.get("role", ""))
+		var tr_ := caption_pill(b, String(td.get("text", "")), 36.0, face_of(role) if ROLE.has(role) else SLATE_WELL, 26, 3)
+		tr_.name = "tag_r"
+		tr_.position = Vector2(KitCard.W + 4.0 - tr_.size.x, -6)
 	if opts.has("dot"):
 		var d := dot(b, int(opts.get("dot_n", -1)), String(opts["dot"]))
 		d.name = "dot"
@@ -2228,6 +2234,42 @@ static func _card_rect(tex: Texture2D, r: Rect2) -> TextureRect:
 	t.position = r.position
 	t.size = r.size
 	return t
+
+
+## A round chip Ø44 on a card's corner (§4.4): an INK 3 ring on SLATE_WELL, inside it — clipped round — a portrait
+## ({node}) or an icon 32 ({icon}) on SKY_LOW or on `fill` (a status colour). PASS: a drag still scrolls the row.
+static func _card_ring(b: Control, r: Rect2, chd: Dictionary) -> Panel:
+	var ring := Panel.new()
+	ring.name = "chip"
+	var rsb := style(SLATE_WELL, 22, 3, INK, 3, 0)
+	rsb.set_meta("kit_kind", "")
+	ring.add_theme_stylebox_override("panel", rsb)
+	ring.position = r.position
+	ring.size = r.size
+	ring.mouse_filter = Control.MOUSE_FILTER_PASS
+	b.add_child(ring)
+	var inner := Panel.new()  # the picture inside the ring, clipped round
+	var isb := StyleBoxFlat.new()
+	var fill: Color = chd.get("fill", CLEAR)
+	isb.bg_color = fill if fill.a > 0.0 else SKY_LOW
+	isb.anti_aliasing = true
+	isb.set_corner_radius_all(19)
+	inner.add_theme_stylebox_override("panel", isb)
+	inner.position = Vector2(3, 3)
+	inner.size = Vector2(38, 38)
+	inner.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
+	inner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	ring.add_child(inner)
+	if chd.has("node"):
+		var pn: Control = chd["node"]
+		pn.position = Vector2(-5, -3)  # a little larger than the circle: the portrait's own frame stays outside
+		pn.size = Vector2(48, 50)
+		inner.add_child(pn)
+	elif chd.has("icon"):
+		var ic := _card_rect(icon_tex(String(chd["icon"])), Rect2(3, 3, 32, 32))
+		ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		inner.add_child(ic)
+	return ring
 
 
 ## The stat line of a tray card's bottom zone: icon 36 + NUM_S 26 (fit to 22), an optional S bar at y 146, an
@@ -2904,6 +2946,25 @@ static func fmt_short(n: int) -> String:
 
 static func _trim0(s: String) -> String:
 	return s.substr(0, s.length() - 2) if s.ends_with(",0") or s.ends_with(".0") else s
+
+
+## Reads back a number fmt_num wrote (a resource plate's value): [the lowest, the highest] it can stand for, since
+## fmt_num floors («12 437» → «12,4K» → [12 400, 12 499]); [-1, -1] when the text is not a number.
+static func parse_num(s: String) -> Array:
+	var t := s.strip_edges().replace(NBSP, "").replace(" ", "")
+	if t.ends_with("K") or t.ends_with("M"):
+		var mult := 1000 if t.ends_with("K") else 1000000
+		var num := t.left(-1).replace(",", ".")
+		if not num.is_valid_float():
+			return [-1, -1]
+		var low := roundi(num.to_float() * mult)
+		# fmt_num keeps one decimal below 100K (and drops a «,0»), whole thousands up to 1M, one decimal of a million
+		var step := (100 if low < 100000 else 1000) if mult == 1000 else 100000
+		return [low, low + step - 1]
+	t = t.replace(",", "").replace(".", "")
+	if not t.is_valid_int():
+		return [-1, -1]
+	return [int(t), int(t)]
 
 
 ## Always exact, grouped (1 000 / 1,000).

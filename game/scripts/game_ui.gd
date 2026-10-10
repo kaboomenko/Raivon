@@ -743,7 +743,6 @@ func _input(event: InputEvent) -> void:
 		_finger_down = (event as InputEventScreenTouch).pressed
 	elif event is InputEventMouseButton and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
 		_finger_down = (event as InputEventMouseButton).pressed
-	_track_travel(event)
 	if _drag_card != "":
 		var pos := Vector2.ZERO
 		var released := false
@@ -849,35 +848,6 @@ func _build_action() -> void:
 
 func _is_tap(e: InputEvent) -> bool:
 	return (e is InputEventScreenTouch and not e.pressed) or (e is InputEventMouseButton and not e.pressed and e.button_index == MOUSE_BUTTON_LEFT)
-
-
-var _down_at := Vector2(-1, -1)  # where the finger went down (canvas px)
-var _travel := 0.0  # how far it has moved since, at most
-
-
-## Follows the finger from _input (before the GUI sees the event), so a release handler knows the whole travel.
-func _track_travel(e: InputEvent) -> void:
-	var pos := Vector2.ZERO
-	if e is InputEventScreenTouch or (e is InputEventMouseButton and (e as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT):
-		pos = (e as InputEventScreenTouch).position if e is InputEventScreenTouch else (e as InputEventMouseButton).position
-		if e.is_pressed():
-			_down_at = pos  # the emulated mouse twin of a touch comes at the same spot
-			_travel = 0.0
-			return
-	elif e is InputEventScreenDrag:
-		pos = (e as InputEventScreenDrag).position
-	elif e is InputEventMouseMotion:
-		pos = (e as InputEventMouseMotion).position
-	else:
-		return
-	if _down_at.x >= 0.0:
-		_travel = maxf(_travel, pos.distance_to(_down_at))
-
-
-## A tap on a button of a legacy card in the scrolling card row: a release that ends a swipe of the row is not one
-## (§2: a swipe must never spend). Kit buttons and cards tell swipes apart themselves.
-func _row_tap(e: InputEvent) -> bool:
-	return _is_tap(e) and _travel <= Kit.TAP_SLOP
 
 
 ## The status slot (§5, §6 HUD) — kind "" hides it. Kind «timer»: the battle timer plate (hourglass, the time in
@@ -1372,7 +1342,7 @@ func _peace_scroller(well: Control, content_h: float, at: int) -> Control:
 	var track := Rect2(well.size.x - 12.0, 12.0, 8.0, well.size.y - 24.0)
 	var bar := Panel.new()
 	bar.name = "scroll_bar"
-	var bsb := Kit.style(Kit.alpha(Kit.INK, 0.4), 4, 0, Kit.INK, 0, 0)  # a pill: R = w/2
+	var bsb := Kit.style(Kit.alpha(Kit.INK, 0.4), 8, 0, Kit.INK, 0, 0)  # a pill: R 8 on an 8 px bar (Godot fits it to w/2)
 	bsb.set_meta("kit_kind", "")
 	bar.add_theme_stylebox_override("panel", bsb)
 	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -2288,18 +2258,14 @@ func show_market(info: Dictionary, quote_fn: Callable, on_exchange: Callable, on
 
 # ------------------------------------------------------------------ buildings tab (canon §7)
 
-const RES_ICON := {"gold": "coin", "food": "food", "metal": "metal", "oil": "metal", "raivite": "raivite"}
+const RES_ICON := {"gold": "coin", "food": "food", "metal": "metal", "oil": "barrel", "raivite": "raivite"}
 var _bpanel: Control
 var _bscroll: ScrollContainer
 var _brow: HBoxContainer
-var _icon_cache := {}
 
 
 func _icon(res: String) -> Texture2D:
-	var k: String = RES_ICON.get(res, "coin")
-	if not _icon_cache.has(k):
-		_icon_cache[k] = load("res://assets/ui/%s.png" % k)
-	return _icon_cache[k]
+	return Kit.icon_tex(String(RES_ICON.get(res, "coin")))
 
 
 ## 8 620 / 12,4K / 1,2M (docs/ui_style.md §3.7).
@@ -2393,10 +2359,6 @@ func _fill_panel(kind: String, items: Array, builder: Callable) -> void:
 	for it in items:
 		var card: Control = builder.call(it)
 		_brow.add_child(card)
-		if card.has_meta("legacy_dx"):
-			for c in card.get_children():
-				if c is Control and not (c as Control).has_meta("card_btn"):
-					(c as Control).position.x += float(card.get_meta("legacy_dx"))
 		if card is Kit.KitCard:
 			ns = mini(ns, (card as Kit.KitCard).name_label.get_theme_font_size("font_size"))
 	for card in _brow.get_children():
@@ -2563,19 +2525,6 @@ func _fan(pics: Array, dy := 0.0) -> Control:
 		fr.add_child(p)
 		fan.add_child(fr)
 	return fan
-
-
-## A card of a tab not rebuilt on Kit.card yet (s07): the row's 172 px height; a 150 px card is widened to 180 and
-## its content centred (_fill_panel moves it once the card is in the tree: moved earlier, an autowrapped label takes
-## its one-line width for good). Its XS button, placed by _card_button, already spans the new width.
-func _legacy_card(card: Control) -> Control:
-	var w := card.custom_minimum_size.x
-	if w < 180.0:
-		card.set_meta("legacy_dx", (180.0 - w) * 0.5)
-		card.custom_minimum_size.x = 180.0
-	card.custom_minimum_size.y = 172.0
-	card.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
-	return card
 
 
 ## The realm's profile (10 §4.23): the flag, name, chapter and DL; tiles — realm size, the chapter's map share, the
@@ -3070,275 +3019,414 @@ func show_hand_picker(cards: Array, chosen: Array, slots: int, on_toggle: Callab
 	_button(box, Rect2(30, h - 100, 761, 76), tr("ui.close"), Color(0.13, 0.4, 0.9), close_modal)
 
 
+## Соседи (§6): the alarm first, then a card per neighbour.
 func show_diplomacy(items: Array) -> void:
 	_fill_panel("d", items, _diplomacy_card)
 
 
+## The status chip of a neighbour's card by the relation (§6 Соседи): its icon and its fill.
+const RELATION_LOOK := {"war": ["swords", "war"], "coalition": ["horn", "war"], "pact": ["handshake", "go"],
+	"ally": ["handshake", "go"], "truce": ["dove", "info"], "peace": ["dove", "info"]}
+
+
+## A neighbour's relation with the player from its item: "war", "coalition" (one forming against us), "ally",
+## "pact", "truce" or "peace".
+func _relation(it: Dictionary) -> String:
+	var st := String(it.get("status", ""))
+	if st == tr("dipl.war"):
+		return "war"
+	if st == tr("dipl.in_coalition"):
+		return "coalition"
+	if bool(it.get("ally", false)):
+		return "ally"
+	if int(it.get("pact_left", 0)) > 0:
+		return "pact"
+	if st != "" and st != tr("dipl.peace"):
+		return "truce"
+	return "peace"
+
+
+## The leader's mood by the relation and the opinion (§6 Соседи): angry at war or at −30 and below, a smile from +30,
+## cunning while plotting in a coalition, calm otherwise.
+func _leader_face(it: Dictionary) -> String:
+	var rel := _relation(it)
+	var v := float(it.get("opinion", 0.0))
+	if rel == "war" or v <= -30.0:
+		return "angry"
+	if v >= 30.0:
+		return "smile"
+	return "cunning" if rel == "coalition" else ""
+
+
+## «+46» / «−10» / «0» (a real minus).
+static func _signed(v: int) -> String:
+	return ("+" if v > 0 else "") + Kit.fmt_num(v)
+
+
+## A neighbour's card (§6 Соседи): the leader in their mood on the state's colour, the state's short name; the relation on
+## the left chip, the opinion on the right one (green / red); exactly one button for the moment — «Мир» at war, a
+## gift while they dislike us, «Призыв» for an ally we may call into our war, else «Пакт» (grey with the reason
+## while it cannot be signed). A tap on the card opens the leader's window with every action.
 func _diplomacy_card(it: Dictionary) -> Control:
 	if String(it.get("kind", "")) == "alarm":
 		return _alarm_card(it)
-	var card := Panel.new()
-	card.custom_minimum_size = Vector2(304, 178)
-	var col: Color = it["color"]
-	card.add_theme_stylebox_override("panel", _style(Color(0.1, 0.14, 0.22), 12, col, 3))
-	card.mouse_filter = Control.MOUSE_FILTER_PASS
-	var fx := 12.0
-	if not (it.get("flag", {}) as Dictionary).is_empty():
-		var fl := FlagView.new(it["flag"])
-		fl.position = Vector2(10, 6)
-		fl.size = Vector2(20, 26)
-		card.add_child(fl)
-		fx = 36.0
-	var st := _label(it["state"], 18, col.lightened(0.3))
-	_fit(st, 18, 172.0 - fx)  # room for the Pact and ⇄ buttons on the right
-	st.position = Vector2(fx, 8)
-	card.add_child(st)
-	var tx := 12.0
-	if String(it.get("portrait", "")) != "":
-		# the leader's face from the portrait kit (canon §10.4), on a plate of the state's colour
-		var lp := CmdPortrait.new(String(it["portrait"]))
-		lp.mood = String(it.get("mood", ""))
-		lp.plate = col.darkened(0.1)
-		lp.position = Vector2(10, 36)
-		lp.size = Vector2(54, 66)
-		card.add_child(lp)
-		tx = 72.0
-	var ld := _label("%s · %s" % [it["leader"], it["archetype"]], 14, MUTED, false)
-	ld.position = Vector2(tx, 32)
-	ld.size = Vector2(296 - tx, 20)
-	ld.clip_text = true
-	card.add_child(ld)
-	var v: float = it["opinion"]
-	var op := _label(tr("dipl.opinion") % [roundi(v), it["word"]], 16, Color(0.5, 1.0, 0.6) if v > 10.0 else (Color(1.0, 0.55, 0.45) if v < -10.0 else TEXT), false)
-	_fit(op, 16, 296 - tx)
-	op.position = Vector2(tx, 56)
-	card.add_child(op)
-	var st_text: String = it["status"] if String(it.get("ai_ally", "")) == "" else "%s · %s" % [it["status"], tr("dipl.ai_ally") % it["ai_ally"]]
-	if it.has("share"):  # a coalition member's share of the war score (06 §14.6)
-		st_text = tr("dipl.share") % float(it["share"])
-	var stt := _label(st_text, 16, Color(1.0, 0.85, 0.4), false)
-	_fit(stt, 16, 196 - tx)
-	stt.position = Vector2(tx, 82)
-	card.add_child(stt)
+	var rel := _relation(it)
+	var v := roundi(float(it.get("opinion", 0.0)))
+	var look: Array = RELATION_LOOK[rel]
+	var opts := {"backdrop": "team", "team": it.get("color", Kit.face_of("war")),
+		"art_node": _leader_bust(it, Rect2(22, -14, 128, 147)),
+		"corner": {"icon": look[0], "fill": Kit.face_of(String(look[1]))},
+		"tag_r": {"text": _signed(v), "role": "go" if v > 0 else ("war" if v < 0 else "")},
+		"tap_cb": func(): _leader_dialog(it),
+		"cta": _diplomacy_cta(it, rel)}
+	return Kit.card(null, _state_short(String(it.get("state", ""))), opts)
+
+
+const STATE_KEYS: Array[String] = ["barons", "hamlets", "league", "order", "pack", "conclave", "lakes", "alvaria",
+	"saren", "veilmark"]
+
+
+## A state's short name for its card («Кремнёвые Бароны» → «Бароны», as on the map's owner chips): one line under
+## the leader's face, which a two-line name would cover; the full name titles the leader's window.
+func _state_short(name: String) -> String:
+	for k in STATE_KEYS:
+		if tr("state." + k) == name:
+			var sk := "state." + k + ".short"
+			return tr(sk) if tr(sk) != sk else name
+	return name
+
+
+## A leader's bust in their mood (the portrait render) laid at `r` inside an art window, or a crown without one.
+func _leader_bust(it: Dictionary, r: Rect2) -> Control:
+	var pid := String(it.get("portrait", ""))
+	var tex: Texture2D = CmdPortrait._render(pid, _leader_face(it)) if pid != "" else null
+	var t := TextureRect.new()
+	t.texture = tex if tex != null else Kit.icon_tex("crown")
+	t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	t.position = r.position
+	t.size = r.size
+	return t
+
+
+## The one button of a neighbour's card (see _diplomacy_card).
+func _diplomacy_cta(it: Dictionary, rel: String) -> Dictionary:
 	var id: int = it["id"]
-	if it.get("separate", false):
-		# «Сепаратный мир» with a coalition member (canon §10.8)
-		var bsp := _panel(card, Rect2(176, 78, 118, 36), _style(Color(0.2, 0.55, 0.35), 10, Color(1, 1, 1, 0.45), 2))
-		bsp.mouse_filter = Control.MOUSE_FILTER_PASS
-		var lsp := _label(tr("dipl.separate"), 14)
-		lsp.size = Vector2(118, 36)
-		lsp.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		lsp.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		bsp.add_child(lsp)
-		bsp.gui_input.connect(func(e): if _row_tap(e): diplomacy_action.emit(id, "separate"))
-	elif it.get("can_call", false):
-		var bc := _panel(card, Rect2(196, 78, 98, 36), _style(Color(0.85, 0.55, 0.1), 10, Color(1, 1, 1, 0.45), 2))
-		bc.mouse_filter = Control.MOUSE_FILTER_PASS
-		var lc := _label(tr("dipl.call"), 15)
-		lc.size = Vector2(98, 36)
-		lc.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		lc.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		bc.add_child(lc)
-		bc.gui_input.connect(func(e): if _row_tap(e): diplomacy_action.emit(id, "call"))
-	elif it.get("ally", false):
-		var al := _label(tr("dipl.ally"), 16, Color(0.5, 1.0, 0.6))
-		al.position = Vector2(190, 82)
-		al.size = Vector2(104, 24)
-		al.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		card.add_child(al)
-	elif it.has("ally_reason"):
-		var why: String = it["ally_reason"]
-		var ba := _panel(card, Rect2(196, 78, 98, 36), _style(Color(0.16, 0.42, 0.95) if why == "" else Color(0.3, 0.33, 0.4), 10, Color(1, 1, 1, 0.45), 2))
-		ba.mouse_filter = Control.MOUSE_FILTER_PASS
-		var la := _label(tr("dipl.alliance"), 15)
-		la.size = Vector2(98, 36)
-		la.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		la.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		ba.add_child(la)
-		ba.gui_input.connect(func(e): if _row_tap(e):
-			if why == "":
-				diplomacy_action.emit(id, "ally")
-			else:
-				toast(why))
-	var bw := _panel(card, Rect2(10, 128, 136, 40), _style(Color(0.75, 0.2, 0.15) if it["can_war"] else Color(0.3, 0.33, 0.4), 10, Color(1, 1, 1, 0.45), 2))
-	bw.mouse_filter = Control.MOUSE_FILTER_PASS
-	var lw := _label(tr("dipl.war"), 17)
-	lw.size = Vector2(136, 40)
-	lw.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lw.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	bw.add_child(lw)
-	var can_war: bool = it["can_war"]
-	bw.gui_input.connect(func(e): if _row_tap(e):
-		if can_war:
-			diplomacy_action.emit(id, "war")
+	if rel == "war":
+		return {"role": "go", "caption": tr("dipl.peace"), "icon": "dove", "cb": _peace_cb(it)}
+	if bool(it.get("can_call", false)):
+		return {"role": "info", "caption": tr("dipl.call"), "icon": "horn", "cb": func(): diplomacy_action.emit(id, "call")}
+	if float(it.get("opinion", 0.0)) < 0.0 and int(it.get("gift_left", 0)) == 0:
+		var g := _gift_price(it)
+		var ct := {"role": "go", "caption": tr("dipl.gift"), "icon": "gift", "price": [g[0]], "cb": func(): diplomacy_action.emit(id, "gift")}
+		if String(g[1]) != "":
+			ct["short_reason"] = g[1]
+		return ct
+	var why := String(it.get("pact_reason", ""))
+	if why == "":
+		return {"role": "info", "caption": tr("dipl.pact_btn"), "icon": "treaty", "cb": func(): diplomacy_action.emit(id, "pact")}
+	if int(it.get("pact_left", 0)) > 0:  # the pact holds: its time left
+		return {"role": "lock", "caption": fmt_time(int(it["pact_left"])), "icon": "hourglass", "enabled": false, "reason": why}
+	return {"role": "lock", "caption": tr("dipl.pact_btn"), "icon": "treaty", "enabled": false, "reason": why}
+
+
+## «Мир» with a neighbour at war: a coalition member's separate peace, else the treaty of the war (the status
+## button's «peace»).
+func _peace_cb(it: Dictionary) -> Callable:
+	var id: int = it["id"]
+	if bool(it.get("separate", false)):
+		return func(): diplomacy_action.emit(id, "separate")
+	return func(): action_pressed.emit("peace")
+
+
+## The gift's price item [coin, N, short] and, when the gold is surely short, the reason («Не хватает золота»).
+func _gift_price(it: Dictionary) -> Array:
+	var cost := int(it.get("gift_cost", 0))
+	var st := _stock("gold")
+	var short := int(st[1]) >= 0 and cost > int(st[1])
+	return [["coin", fmt_num(cost), short], L.t("err.not_enough|res.gen.gold") if short else ""]
+
+
+## A neighbour's leader (§6 Соседи): a window M with the state's name. The face in its mood with the leader's name,
+## a line by the mood, the relation and the opinion; the actions the relation allows on a 2×2 grid of M buttons —
+## «Пакт», «Союз» (never for a hostile state or a coalition member; «Призыв» for an ally while we may call them),
+## «Обмен», «Подарок» — a temporarily blocked one grey, its tap says why; at the bottom «Объявить войну» (war L), or
+## «Мир» (go L) while at war with them. An action closes the window and emits the existing diplomacy_action.
+func _leader_dialog(it: Dictionary) -> void:
+	var id: int = it["id"]
+	var rel := _relation(it)
+	var v := float(it.get("opinion", 0.0))
+	var hostile := rel in ["war", "coalition"] or v < -10.0
+	var acts: Array = []  # {kind, cap, icon, on, why, price, short}
+	if rel != "war" and it.has("pact_reason"):
+		var why_p := String(it["pact_reason"])
+		acts.append({"kind": "pact", "cap": tr("dipl.pact_btn"), "icon": "treaty", "on": why_p == "", "why": why_p})
+	if rel == "ally":
+		if bool(it.get("can_call", false)):
+			acts.append({"kind": "call", "cap": tr("dipl.call"), "icon": "horn", "on": true, "why": ""})
+	elif not hostile and it.has("ally_reason"):
+		var why_a := String(it["ally_reason"])
+		acts.append({"kind": "ally", "cap": tr("dipl.alliance"), "icon": "handshake", "on": why_a == "", "why": why_a})
+	if rel != "war" and it.has("swap_reason"):
+		var why_s := String(it["swap_reason"])
+		acts.append({"kind": "swap", "cap": tr("dipl.swap"), "icon": "swap", "on": why_s == "", "why": why_s})
+	var gl := int(it.get("gift_left", 0))
+	var g := _gift_price(it)
+	acts.append({"kind": "gift", "cap": tr("dipl.gift"), "icon": "gift", "on": gl == 0,
+		"why": tr("dipl.gift_wait") % fmt_time(gl), "price": [g[0]], "short": g[1]})
+	var rows := ceili(acts.size() / 2.0)
+	var grid_y := 280.0
+	var foot_y := grid_y + rows * 88.0 + (rows - 1) * 16.0 + 36.0
+	var h := foot_y + 116.0 + 32.0
+	var box := _modal_box(_win_rect("M", h), false, String(it.get("state", "")), "", "info", true, false)
+	box.set_meta("kit_native", true)
+	var w := box.size.x
+	var team: Color = it.get("color", Kit.face_of("info"))
+	_leader_seal(box, String(it.get("portrait", "")), team, Rect2(32, 64, 156, 170), _leader_face(it))
+	# the right column: who speaks (H2), their line by the mood, then the relation and the opinion
+	var bx := 32.0 + 156.0 + 28.0
+	var cw := w - 32.0 - bx
+	var leader := String(it.get("leader", ""))
+	var ns := Kit.fit_size(leader, 30, cw, "d900", 24, false)
+	var nl := Kit.label(leader, ns, Kit.INK_TEXT, true)
+	nl.name = "leader_name"
+	nl.add_theme_font_size_override("font_size", ns)
+	nl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	nl.clip_text = true
+	nl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	nl.position = Vector2(bx - 4.0, 60)
+	nl.size = Vector2(cw + 4.0, 40)
+	box.add_child(nl)
+	var say: String = "dipl.say.war" if rel == "war" else {"angry": "dipl.say.angry", "smile": "dipl.say.smile",
+		"cunning": "dipl.say.cunning"}.get(_leader_face(it), "dipl.say.calm")
+	Kit.bubble(box, Rect2(bx, 106, cw, 88), tr(say), "left")
+	# the relation and the opinion under the line
+	# the relation's chip says the most telling thing: a coalition member's share of the war score (06 §14.6), an AI
+	# alliance, else the status
+	var look: Array = RELATION_LOOK[rel]
+	var st_text := String(it.get("status", ""))
+	var st_icon := String(look[0])
+	if it.has("share"):
+		st_text = tr("dipl.share") % Kit.fmt_dec(float(it["share"]), 1)
+	elif String(it.get("ai_ally", "")) != "":
+		st_text = tr("dipl.ai_ally") % String(it["ai_ally"])
+		st_icon = "handshake"
+	var sc := _paper_chip(box, Vector2.ZERO, st_icon, st_text, cw * 0.58)
+	sc.name = "status"
+	sc.position = Vector2(bx, 208)
+	var vi := roundi(v)
+	var oc := Kit.chip(box, Vector2.ZERO, "", tr("dipl.opinion") % _signed(vi), "owner",
+		Kit.face_of("go") if vi > 0 else (Kit.face_of("war") if vi < 0 else Kit.SLATE_FILL), {"max_w": cw - sc.size.x - 12.0})
+	oc.name = "opinion"
+	oc.position = Vector2(sc.position.x + sc.size.x + 12.0, sc.position.y + (sc.size.y - oc.size.y) * 0.5)
+	# the actions: two per row, the last one alone in the middle
+	var bw := (w - 64.0 - 16.0) * 0.5
+	for i in acts.size():
+		var a: Dictionary = acts[i]
+		var col := i % 2
+		var row := i / 2
+		var x := 32.0 + col * (bw + 16.0)
+		if i == acts.size() - 1 and col == 0:
+			x = (w - bw) * 0.5
+		var kind := String(a["kind"])
+		var b := Kit.button(box, Rect2(x, grid_y + row * 104.0, bw, 88), "info", String(a["cap"]),
+			{"icon": String(a["icon"]), "price": a.get("price", []), "enabled": bool(a["on"]), "size": "M"})
+		b.name = "act_" + kind
+		var why := String(a["why"])
+		if why != "":
+			b.denied.connect(func(): Kit.tooltip(b, String(a["cap"]), why))
+		if String(a.get("short", "")) != "":
+			var short_why := String(a["short"])
+			b.cb = func():
+				Kit.shake(b)
+				Kit.tooltip(b, String(a["cap"]), short_why)
 		else:
-			toast(it["status"]))
-	if it.has("pact_reason"):
-		# «Пакт о ненападении» (06 §11): a small button left of ⇄; shows its timer while it holds
-		var why_p: String = it["pact_reason"]
-		var pl: int = it.get("pact_left", 0)
-		var bp := _panel(card, Rect2(176, 6, 70, 34), _style(Color(0.55, 0.42, 0.2) if why_p == "" else Color(0.3, 0.33, 0.4), 9, Color(1, 1, 1, 0.45), 2))
-		bp.mouse_filter = Control.MOUSE_FILTER_PASS
-		var lp := _label(tr("dipl.pact_btn") if pl == 0 else fmt_time(pl), 14)
-		lp.size = Vector2(70, 34)
-		lp.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		lp.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		bp.add_child(lp)
-		bp.gui_input.connect(func(e): if _row_tap(e):
-			if why_p == "":
-				diplomacy_action.emit(id, "pact")
-			else:
-				toast(why_p))
-	if it.has("swap_reason"):
-		# «Обмен территориями» (06 §15): a compact ⇄ in the corner, greyed with the reason when not possible
-		var why_s: String = it["swap_reason"]
-		var bs := _panel(card, Rect2(250, 6, 44, 34), _style(Color(0.2, 0.45, 0.6) if why_s == "" else Color(0.3, 0.33, 0.4), 9, Color(1, 1, 1, 0.45), 2))
-		bs.mouse_filter = Control.MOUSE_FILTER_PASS
-		var ls := _label("⇄", 20)
-		ls.size = Vector2(44, 34)
-		ls.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		ls.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		bs.add_child(ls)
-		bs.gui_input.connect(func(e): if _row_tap(e):
-			if why_s == "":
-				diplomacy_action.emit(id, "swap")
-			else:
-				toast(why_s))
-	var gl: int = it["gift_left"]
-	var bg := _panel(card, Rect2(156, 128, 138, 40), _style(Color(0.2, 0.5, 0.35) if gl == 0 else Color(0.3, 0.33, 0.4), 10, Color(1, 1, 1, 0.45), 2))
-	bg.mouse_filter = Control.MOUSE_FILTER_PASS
-	var lg := _label((tr("dipl.gift") % int(it["gift_cost"])) if gl == 0 else "🎁 " + fmt_time(gl), 16)
-	lg.size = Vector2(138, 40)
-	lg.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lg.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	bg.add_child(lg)
-	bg.gui_input.connect(func(e): if _row_tap(e): diplomacy_action.emit(id, "gift"))
-	return _legacy_card(card)
+			b.cb = func():
+				close_modal()
+				diplomacy_action.emit(id, kind)
+	# the footer: one action in the middle
+	var fr := Rect2((w - 480.0) * 0.5, foot_y, 480, 116)
+	if rel == "war":
+		var pcb := _peace_cb(it)
+		var pb := Kit.button(box, fr, "go", tr("dipl.separate") if bool(it.get("separate", false)) else tr("dipl.peace"),
+			{"icon": "dove", "size": "L"})
+		pb.name = "peace"
+		pb.cb = func():
+			close_modal()
+			pcb.call()
+	else:
+		var can_war := bool(it.get("can_war", false))
+		var why_w := ""
+		if not can_war:
+			why_w = String(it.get("status", "")) if rel in ["pact", "truce"] else tr("dipl.war_busy")
+		var wb := Kit.button(box, fr, "war", tr("dipl.declare"), {"icon": "swords", "size": "L", "enabled": can_war})
+		wb.name = "declare"
+		wb.cb = func():
+			close_modal()
+			diplomacy_action.emit(id, "war")
+		if why_w != "":
+			wb.denied.connect(func(): Kit.tooltip(wb, tr("dipl.declare"), why_w))
 
 
-## «Тревога соседей» (canon §10.8): threat / coalition threshold as a bar, what it means now, how to calm it.
+## «Тревога соседей» (canon §10.8, §6 Соседи), the first card: the horn on paper, the threat in per cent with a red
+## bar; a tap on the card says what the threat means now, «i» how it grows and falls (the rules).
 func _alarm_card(it: Dictionary) -> Control:
-	var card := Panel.new()
-	card.custom_minimum_size = Vector2(304, 178)
-	var pct: int = it["pct"]
-	var hot := Color(0.95, 0.3, 0.25) if pct >= 100 else (Color(1.0, 0.7, 0.2) if pct >= 50 else Color(0.4, 0.8, 0.5))
-	card.add_theme_stylebox_override("panel", _style(Color(0.1, 0.14, 0.22), 12, hot, 3))
-	card.mouse_filter = Control.MOUSE_FILTER_PASS
-	var t := _label(tr("alarm.title"), 18, hot.lightened(0.3))
-	t.position = Vector2(12, 6)
-	card.add_child(t)
-	var pl := _label("%d%%" % mini(pct, 999), 18, hot.lightened(0.3))
-	pl.position = Vector2(220, 6)
-	pl.size = Vector2(72, 26)
-	pl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	card.add_child(pl)
-	var bar := _panel(card, Rect2(12, 38, 280, 14), _style(Color(1, 1, 1, 0.1), 7, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
-	_panel(bar, Rect2(0, 0, 280.0 * clampf(pct / 100.0, 0.0, 1.0), 14), _style(hot, 7, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
-	_panel(bar, Rect2(139, -3, 2, 20), _style(Color(1, 1, 1, 0.55), 1, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)  # 50%
-	var ln := _label(it["line"], 15, TEXT, false)
-	ln.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	ln.custom_minimum_size = Vector2(284, 0)
-	ln.position = Vector2(12, 60)
-	ln.size = Vector2(284, 44)
-	card.add_child(ln)
-	var h := _label(tr("alarm.hint"), 13, MUTED, false)
-	h.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	h.custom_minimum_size = Vector2(284, 0)
-	h.position = Vector2(12, 108)
-	h.size = Vector2(284, 64)
-	card.add_child(h)
-	return _legacy_card(card)
+	var pct := int(it.get("pct", 0))
+	var rules := tr("alarm.hint")
+	var opts := {"backdrop": "cream", "art_side": 72.0, "art_y": 38.0, "details": String(it.get("line", "")),
+		"chip": {"btn": {"caption": "i", "role": "info"}},
+		"stat": {"text": "%d%%" % mini(pct, 999), "bar_frac": clampf(pct / 100.0, 0.0, 1.0), "bar_role": "war"}}
+	var card := Kit.card(Kit.icon_tex("horn"), tr("alarm.title"), opts)
+	if card.chip is Kit.KitButton:
+		(card.chip as Kit.KitButton).cb = func(): Kit.tooltip(card, tr("alarm.title"), rules)
+	return card
 
 
-## World tab: chapter progress and the chapter stars (canon §12.1).
+## World tab (§6 Мир, canon §12.1): the chapter, the War Pass, the patent's daily gift, the calendar, the day's orders,
+## the week's tasks and chests, the chapter stars. The chapter's number is the newest chapter whose stars are listed.
+var _world_chapter := 1
+
+
 func show_world(items: Array) -> void:
+	var ch := 1
+	for it in items:
+		var id := String((it as Dictionary).get("id", ""))
+		for k in [2, 3, 4]:
+			if id.begins_with("c%d_" % k):
+				ch = maxi(ch, k)
+	_world_chapter = ch
 	_fill_panel("w", items, func(it): return _chapter_card(it) if it["kind"] == "chapter" else _star_card(it))
 
 
+## The chapter (§6 Мир): the hex on paper, «Глава I», its hexes on a bar; «Расширить» once the goal is met and the
+## war is over; a check when it is done.
 func _chapter_card(it: Dictionary) -> Control:
-	var card := Panel.new()
-	card.custom_minimum_size = Vector2(250, 178)
-	card.add_theme_stylebox_override("panel", _style(Color(0.1, 0.16, 0.26), 12, Color(0.45, 0.65, 1.0), 3))
-	card.mouse_filter = Control.MOUSE_FILTER_PASS
-	_at(_label(tr("world.chapter1"), 18), card, Vector2(12, 6))
-	var h: int = it["hexes"]
-	var g: int = it["goal"]
-	_at(_label(tr("world.hexes") % [h, g], 17, TEXT, false), card, Vector2(12, 36))
-	var bar := _panel(card, Rect2(12, 66, 226, 14), _style(Color(1, 1, 1, 0.1), 7, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
-	_panel(bar, Rect2(0, 0, 226.0 * clampf(float(h) / g, 0.0, 1.0), 14), _style(Color(0.3, 0.62, 1.0), 7, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
-	if it["done"]:
-		_at(_label(tr("world.chapter_done"), 16, Color(0.5, 1.0, 0.6)), card, Vector2(12, 96))
-	elif it["can_expand"]:
-		var b := _panel(card, Rect2(10, 128, 230, 40), _style(Color(0.2, 0.55, 0.3), 10, Color(1, 1, 1, 0.5), 2))
-		b.mouse_filter = Control.MOUSE_FILTER_PASS
-		var l := _label(tr("world.expand"), 17)
-		l.size = Vector2(230, 40)
-		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		b.add_child(l)
-		b.gui_input.connect(func(e): if _row_tap(e): world_action.emit("expand"))
+	var h := int(it.get("hexes", 0))
+	var g := maxi(1, int(it.get("goal", 1)))
+	var title := tr("world.chapter") % ROMAN[clampi(_world_chapter, 1, ROMAN.size() - 1)]
+	var stat := {"icon": "hex_tile", "text": "%d/%d" % [mini(h, g), g], "bar_frac": clampf(float(h) / g, 0.0, 1.0), "bar_role": "info"}
+	var opts := {"backdrop": "cream", "art_side": 80.0, "art_y": 40.0,
+		"details": tr("world.hexes") % [h, g] + "\n" + tr("world.hint")}
+	if bool(it.get("done", false)):
+		stat.erase("bar_frac")
+		stat["check"] = true
+		opts["stat"] = stat
+		opts["details"] = tr("world.chapter_done")
+	elif bool(it.get("can_expand", false)):
+		opts["cta"] = {"role": "go", "caption": tr("world.expand"), "icon": "globe", "cb": func(): world_action.emit("expand")}
 	else:
-		var hint := _label(tr("world.hint"), 14, MUTED, false)
-		hint.position = Vector2(12, 96)
-		hint.autowrap_mode = TextServer.AUTOWRAP_WORD
-		hint.custom_minimum_size = Vector2(226, 0)  # autowrap needs a fixed width
-		card.add_child(hint)
-	return _legacy_card(card)
+		opts["stat"] = stat
+	return Kit.card(Kit.icon_tex("hex_tile"), title, opts)
 
 
+## «Задание · +40 ОП» (the orders, the week's tasks) → [the task, 40]; [title, 0] without that tail.
+func _xp_split(title: String) -> Array:
+	var i := title.rfind(" · +")
+	if i < 0 or not title.ends_with(tr("pass.xp")):
+		return [title, 0]
+	var m := _num_re.search(title, i)
+	return [title.left(i), int(m.get_string()) if m != null else 0]
+
+
+## A short name for a card from a task's text: the part before «:» («Выход к морю: присоедините порт»), or after it
+## when the part before is only a frame («За неделю: …»); without a «(…)» remark.
+func _task_name(text: String, after := false) -> String:
+	var t := text
+	var c := t.find(": ")
+	if c > 0:
+		t = t.substr(c + 2) if after else t.left(c)
+		if after and t.length() > 0:
+			t = t.left(1).to_upper() + t.substr(1)
+	var p := t.find(" (")
+	if p > 0:
+		t = t.left(p)
+	return t.strip_edges()
+
+
+## A card of the World tab other than the chapter (§6 Мир): its picture on paper, a short name, the progress on a
+## bar or the reward; «Забрать» only when there is something to take; a check once taken. The War Pass and the
+## calendar open their screens from the whole card; the others explain themselves in the tooltip.
 func _star_card(it: Dictionary) -> Control:
-	var card := Panel.new()
-	card.custom_minimum_size = Vector2(150, 178)
-	var done: bool = int(it["progress"]) >= int(it["need"])
-	var claimed: bool = it["claimed"]
-	card.add_theme_stylebox_override("panel", _style(Color(0.16, 0.14, 0.08) if done and not claimed else Color(0.1, 0.15, 0.25), 12, Color(1.0, 0.8, 0.3) if done else Color(0.45, 0.58, 0.8, 0.7), 2))
-	card.mouse_filter = Control.MOUSE_FILTER_PASS
-	var glyph: String = it.get("icon", "")  # «Приказы дня» carry their own icon instead of the star
-	var star := _label(glyph if glyph != "" else ("★" if claimed else "☆"), 30, Color(1.0, 0.82, 0.25) if done else MUTED)
-	star.position = Vector2(0, 4)
-	star.size = Vector2(150, 40)
-	star.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	card.add_child(star)
-	var t := _label(it["title"], 15, TEXT, false)
-	t.position = Vector2(8, 46)
-	t.autowrap_mode = TextServer.AUTOWRAP_WORD
-	t.custom_minimum_size = Vector2(134, 0)  # autowrap needs a fixed width
-	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	card.add_child(t)
-	var id: String = it["id"]
-	if it.get("swap", false):  # the day's one free swap of an order (08 §8.6)
-		var sw := _panel(card, Rect2(112, 6, 32, 32), _style(Color(0.2, 0.28, 0.42), 8, Color(0.6, 0.72, 0.95, 0.8), 1))
-		var sl := _label("⇄", 18)
-		sl.size = Vector2(32, 32)
-		sl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		sl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		sw.add_child(sl)
-		sw.gui_input.connect(func(e): if _row_tap(e): world_action.emit("swap:" + id))
-	if it.get("ready", false):  # something waits inside (the calendar's day)
-		var dot := _panel(card, Rect2(124, 8, 18, 18), _style(Color(0.9, 0.2, 0.15), 9, Color(1, 1, 1, 0.9), 2), Control.MOUSE_FILTER_IGNORE)
-		dot.name = "ReadyDot"
-	if it.get("open", false):
-		_card_button(card, tr("ui.open"), Color(0.55, 0.25, 0.8), func(): world_action.emit(id), true)
-		var pr := _label("%d / %d" % [int(it["progress"]), int(it["need"])], 15, MUTED)
-		pr.position = Vector2(0, 94)
-		pr.size = Vector2(150, 22)
-		pr.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		card.add_child(pr)
-	elif claimed:
-		var ok := _label(tr("world.claimed"), 16, Color(0.5, 1.0, 0.6))
-		ok.position = Vector2(0, 140)
-		ok.size = Vector2(150, 24)
-		ok.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		card.add_child(ok)
-	elif done:
-		_card_button(card, tr("ui.claim"), Color(0.75, 0.55, 0.12), func(): world_action.emit(id), true)
+	var id := String(it.get("id", ""))
+	var prog := int(it.get("progress", 0))
+	var need := maxi(1, int(it.get("need", 1)))
+	var claimed := bool(it.get("claimed", false))
+	var done := prog >= need
+	var full := String(it.get("title", ""))
+	var xs := _xp_split(full)
+	var text := String(xs[0])
+	var xp := int(xs[1])
+	var claim_cb := func(): world_action.emit(id)
+	var title := _task_name(text)
+	var icon := "xp"
+	var opts := {"backdrop": "cream", "art_side": 68.0, "art_y": 38.0}
+	var tip := PackedStringArray([text])
+	var progress := {"text": "%d/%d" % [mini(prog, need), need], "bar_frac": clampf(float(prog) / need, 0.0, 1.0), "bar_role": "info"}
+	var stat := progress
+	if id == "pass":
+		icon = "medal"
+		title = tr("world.pass")
+		var lv := _num_re.search(full)
+		opts["badge"] = lv.get_string() if lv != null else "1"
+		stat = {"icon": "xp", "text": progress["text"], "bar_frac": progress["bar_frac"], "bar_role": "gold"}
+		tip = PackedStringArray([full])
+		opts["tap_cb"] = claim_cb
+		done = false
+	elif id == "calendar":
+		icon = "calendar"
+		title = tr("world.calendar")
+		stat = {"text": tr("world.day") % prog}
+		tip = PackedStringArray([full])
+		opts["tap_cb"] = claim_cb
+		done = bool(it.get("ready", false))
+		claimed = false
+		if done:
+			opts["dot"] = "go"
+	elif id == "patent_daily":
+		icon = "charter"
+		title = tr("world.patent")
+		var n := _num_re.search(full)
+		stat = {"icon": "raivite", "text": "+" + (n.get_string() if n != null else ""), "check": claimed}
+	elif id.begins_with("order:") or id.begins_with("weekly:"):
+		var weekly := id.begins_with("weekly:")
+		icon = "medal_silver" if weekly else "orders"
+		title = _task_name(text, weekly)
+		if xp > 0:
+			tip.append(tr("world.tip.xp") % xp)
+		if bool(it.get("swap", false)):  # the day's one free swap of an order (08 §8.6)
+			opts["chip"] = {"btn": {"icon": "swap", "role": "info"}}
+			opts["chip_cb"] = func(): world_action.emit("swap:" + id)
+	elif id == "orders_all":
+		icon = "chest_wood"
+	elif id.begins_with("weekly_chest:"):
+		var step := int(id.get_slice(":", 1))
+		icon = "chest_silver" if step > 0 else "chest_wood"
+		title = tr("world.chest")
+		opts["badge"] = str(step + 1)
 	else:
-		var p := _label("%d / %d" % [int(it["progress"]), int(it["need"])], 18, MUTED)
-		p.position = Vector2(0, 138)
-		p.size = Vector2(150, 28)
-		p.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		card.add_child(p)
-	return _legacy_card(card)
+		# a chapter star: the vector star, gold once reached
+		icon = ""
+		var holder := Control.new()
+		holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		holder.size = Vector2(172, 104)
+		Kit.star(holder, Vector2(86, 36), 32.0, done or claimed)
+		opts["art_node"] = holder
+	if claimed:
+		stat = stat.duplicate()
+		stat.erase("bar_frac")
+		stat["check"] = true
+		if not stat.has("icon") and id != "patent_daily":
+			stat["text"] = tr("world.claimed")
+		opts["stat"] = stat
+	elif done:
+		opts["cta"] = {"role": "go", "caption": tr("ui.claim"), "cb": claim_cb}
+	else:
+		opts["stat"] = stat
+	if not claimed and not (id in ["pass", "calendar", "patent_daily"]):
+		tip.append(tr("world.tip.progress") % [mini(prog, need), need])
+	opts["details"] = "\n".join(tip)
+	return Kit.card(Kit.icon_tex(icon) if icon != "" else null, title, opts)
 
 
 func hide_buildings() -> void:
@@ -3348,151 +3436,203 @@ func hide_buildings() -> void:
 	_bfam = ""
 
 
-## The rendered icon of each building on its card (tools/blender/icon_assets.py → assets/ui/icons).
-const BUILDING_ICONS := {"residence": "castle_icon", "barracks": "helmet", "academy": "book", "warehouse": "crate",
-	"infirmary": "flask", "convoy_yard": "cart", "market": "stall", "embassy": "hands", "quarters": "houses",
-	"farm": "food", "mine": "metal", "port": "anchor", "military_base": "target",
-	# the Academy's research lines (the Development tab uses the same cards)
-	"rs_infantry": "helmet", "rs_reserve": "fort", "rs_drill": "target", "rs_taxes": "coin", "rs_harvest": "food",
-	"rs_metallurgy": "metal", "rs_cellars": "crate", "rs_logistics": "cart", "rs_thrift": "stall", "rs_colonization": "pin"}
+## The fallback picture of a building with no render (assets/ui/cards/bld_<type>.png) — never a tab's icon (castle,
+## helmet, flask, handshake, globe).
+const BUILDING_ICONS := {"residence": "crown", "barracks": "swords", "academy": "book", "warehouse": "crate",
+	"infirmary": "shield", "convoy_yard": "cart", "market": "stall", "embassy": "seal", "quarters": "houses",
+	"farm": "food", "mine": "metal", "port": "anchor", "military_base": "target"}
+## The Development tab's art (§6 Развитие): what a line does — the ledger of taxes, the harvest's sack, the convoy's
+## cart — on the blueprint; never its price's icon or the tab's flask.
+const RESEARCH_ICONS := {"taxes": "book", "harvest": "food", "metallurgy": "metal", "infantry": "swords",
+	"reserve": "shield", "drill": "target", "logistics": "cart", "cellars": "crate", "colonization": "pin",
+	"thrift": "coins"}
+const PRICE_ICON := {"gold": "coin", "food": "food", "metal": "metal", "oil": "barrel", "raivite": "raivite"}
+const RES_ORDER: Array[String] = ["gold", "food", "metal", "oil"]
+
+var stock_of := Callable()  ## res -> the player's stock (int); while unset, the HUD's plates are read back
+var _num_re := RegEx.create_from_string("\\d+")
 
 
+## The player's stock of a resource as [lowest, highest]: exact through `stock_of`, else read back from the HUD's
+## plate (pill_of), where «12,4K» stands for 12 400–12 499; [-1, -1] when unknown.
+func _stock(res: String) -> Array:
+	if stock_of.is_valid():
+		var v := int(stock_of.call(res))
+		return [v, v]
+	if pill_of.is_valid():
+		var p: Variant = pill_of.call(res)
+		if p is Kit.KitPill and (p as Kit.KitPill).value != null:
+			return Kit.parse_num((p as Kit.KitPill).value.text)
+	return [-1, -1]
+
+
+## A card's price (§4.1, §4.4) as [[icon, number, short], …], the scarcest first — by the share of the stock each
+## cost takes — so the button's two places (one when compact, with «+1») show what holds the player back.
+## `short_res`, the resource the game's reason names, is short for sure; while something stops the action
+## (`blocked`), another one is short only when its cost surely exceeds the stock read back.
+func _price_items(cost: Dictionary, short_res := "", blocked := false) -> Array:
+	var rows: Array = []
+	for r in cost:
+		var n := int(cost[r])
+		if n <= 0:
+			continue
+		var st := _stock(String(r))
+		var ratio := float(n) / maxf(1.0, float(st[0])) if int(st[0]) >= 0 else 0.0
+		var short := String(r) == short_res or (blocked and int(st[1]) >= 0 and n > int(st[1]))
+		rows.append({"r": String(r), "n": n, "ratio": ratio, "short": short})
+	rows.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		if bool(a["short"]) != bool(b["short"]):
+			return bool(a["short"])
+		if not is_equal_approx(float(a["ratio"]), float(b["ratio"])):
+			return float(a["ratio"]) > float(b["ratio"])
+		return RES_ORDER.find(String(a["r"])) < RES_ORDER.find(String(b["r"])))
+	var out: Array = []
+	for x in rows:
+		out.append([PRICE_ICON.get(x["r"], "coin"), fmt_num(int(x["n"])), bool(x["short"])])
+	return out
+
+
+## «300 золота, 100 металла» — the whole price in words for a tooltip.
+func _cost_words(cost: Dictionary) -> String:
+	var parts := PackedStringArray()
+	for r in RES_ORDER + ["raivite"]:
+		if int(cost.get(r, 0)) > 0:
+			parts.append("%s %s" % [fmt_num(int(cost[r])), tr("res.gen." + r)])
+	return ", ".join(parts)
+
+
+## What stops an upgrade or a research (the game passes its reason translated): [kind, arg] — "short" (arg: the
+## resource missing), "level" (the development level needed), "academy" (its level), "hexes" (how many), "chapter",
+## "max", "wait" (builders, the academy or the treasury are busy), or "" when nothing does.
+func _reason_kind(reason: String) -> Array:
+	if reason == "":
+		return ["", ""]
+	for r in RES_ORDER:
+		if reason == L.t("err.not_enough|res.gen." + r):
+			return ["short", r]
+	if reason == L.t("err.max_level") or reason == L.t("err.max"):
+		return ["max", ""]
+	var m := _num_re.search(reason)
+	if m != null:
+		var n := m.get_string()
+		for k in [["err.need_residence", "level"], ["err.unlock_dl", "level"], ["err.need_academy", "academy"],
+				["err.need_hexes", "hexes"], ["err.chapter_locked", "chapter"]]:
+			if reason == L.t(String(k[0]) + "|" + n):
+				return [k[1], n]
+	return ["wait", ""]
+
+
+const ROMAN: Array[String] = ["", "I", "II", "III", "IV", "V", "VI", "VII", "VIII"]
+
+
+## A building or a research line (§6 Здания, Развитие) on Kit.card: the building's render on the sky (its icon
+## when there is none) or the line's effect on the blueprint, the level on the hex. The button: the price (two
+## places at most, the scarcest first; a short one red, its tap says what is missing); while it builds — the time
+## left (a free «Готово» under 5 min), its tap speeds it up; blocked — lock with a short reason («УР2»), its tap
+## gives the whole one. The time, the full price and the effect are in the card's tooltip.
 func _building_card(it: Dictionary) -> Control:
 	if it.has("market"):
 		return _market_card(it)
-	var card := Panel.new()
-	card.custom_minimum_size = Vector2(150, 178)
+	var line := String(it.get("line", ""))
+	var research := line != ""
+	var typ := String(it.get("type", ""))
 	var busy: bool = it["busy"]
-	card.add_theme_stylebox_override("panel", _style(Color(0.1, 0.15, 0.25) if not busy else Color(0.16, 0.14, 0.1), 12, Color(0.45, 0.58, 0.8, 0.8) if not busy else Color(0.95, 0.7, 0.25, 0.9), 2))
-	card.mouse_filter = Control.MOUSE_FILTER_PASS
-	var nm := _label(it["name"], 17)
-	nm.position = Vector2(0, 6)
-	nm.size = Vector2(150, 24)
-	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	nm.clip_text = true
-	card.add_child(nm)
-	var lv := _label(tr("bld.level") % [it["level"], it["max"]], 15, MUTED, false)
-	lv.position = Vector2(0, 32)
-	lv.size = Vector2(150, 22)
-	lv.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	card.add_child(lv)
-	var icon_name := String(BUILDING_ICONS.get(String(it.get("type", "")), ""))
-	var pic_path := "res://assets/ui/icons/%s.png" % icon_name
-	if not ResourceLoader.exists(pic_path):  # the resource icons (coin, food, metal) sit one folder up
-		pic_path = "res://assets/ui/%s.png" % icon_name
-	if not busy and icon_name != "" and ResourceLoader.exists(pic_path):  # the building's picture beside the cost (reference HUD cards)
-		var pic := TextureRect.new()
-		pic.texture = load(pic_path)
-		pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		pic.position = Vector2(86, 52)
-		pic.size = Vector2(58, 58)
-		pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		card.add_child(pic)
+	var lvl := int(it["level"])
+	var cost: Dictionary = it.get("cost", {})
+	var reason := String(it.get("reason", ""))
+	var rk := _reason_kind(reason)
 	var id: int = it["id"]
-	if busy:
-		var t := _label(fmt_time(int(it["left"])), 28, Color(1.0, 0.85, 0.4))
-		t.position = Vector2(0, 52)
-		t.size = Vector2(150, 40)
-		t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		card.add_child(t)
-		var sp: int = it["speed"]
-		var stock: int = it.get("stock", 0)
-		var txt := tr("bld.free") if sp == 0 else (tr("bld.stock") % stock if stock > 0 else "⚡ %d" % sp)
-		var line_s: String = it.get("line", "")
-		if int(it.get("bp", 0)) > 0:
-			# «Применить чертёж» (07 §6.1)
-			var bpb := _panel(card, Rect2(20, 86, 110, 30), _style(Color(0.45, 0.32, 0.18), 8, Color(1.0, 0.85, 0.5, 0.7), 2))
-			var bpl := _label(tr("bld.blueprint") % int(it["bp"]), 15)
-			bpl.size = Vector2(110, 30)
-			bpl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			bpl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-			bpl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			bpb.add_child(bpl)
-			bpb.gui_input.connect(func(e): if _row_tap(e): research_speedup.emit("bp:" + line_s))
-		_card_button(card, txt, Color(0.85, 0.55, 0.1), func():
-			if line_s != "":
-				research_speedup.emit(line_s)
-			else:
-				building_speedup.emit(id), sp > 0)
-		return _legacy_card(card)
-	if int(it["level"]) >= int(it["max"]) and String(it["reason"]) != "":
-		var m := _label(it["reason"], 15, MUTED, false)
-		m.position = Vector2(8, 66)
-		m.autowrap_mode = TextServer.AUTOWRAP_WORD
-		m.custom_minimum_size = Vector2(134, 0)  # autowrap needs a fixed width
-		m.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		card.add_child(m)
-		return _legacy_card(card)
-	var y := 50.0
-	var cost: Dictionary = it["cost"]
-	for r in cost:
-		var row := HBoxContainer.new()
-		row.position = Vector2(26, y)
-		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		var ic := TextureRect.new()
-		ic.texture = _icon(r)
-		ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		ic.custom_minimum_size = Vector2(20, 20)
-		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		row.add_child(ic)
-		row.add_child(_label(str(cost[r]), 16, TEXT, false))
-		card.add_child(row)
-		y += 18
-	var tl := _label("⏱ " + fmt_time(int(it["seconds"])), 14, MUTED, false)
-	tl.position = Vector2(26, y)
-	card.add_child(tl)
-	var ok: bool = String(it["reason"]) == ""
-	var line: String = it.get("line", "")
-	_card_button(card, tr("bld.research") if line != "" else tr("ui.upgrade"), Color(0.2, 0.55, 0.3) if ok else Color(0.3, 0.33, 0.4), func():
-		if ok and line != "":
-			research_start.emit(line)
-		elif ok:
-			building_upgrade.emit(id)
+	var opts := {"badge": str(lvl)}
+	var tex: Texture2D = null
+	if research:
+		opts["backdrop"] = "blueprint"
+		tex = Kit.icon_tex(String(RESEARCH_ICONS.get(line, "book")))
+		opts["art_side"] = 72.0
+		opts["art_y"] = 40.0
+	else:
+		var pic := "res://assets/ui/cards/bld_%s.png" % typ
+		if ResourceLoader.exists(pic):
+			tex = load(pic)
 		else:
-			toast(it["reason"]), true)
-	return _legacy_card(card)
+			tex = Kit.icon_tex(String(BUILDING_ICONS.get(typ, "houses")))
+			opts["art_side"] = 72.0
+			opts["art_y"] = 40.0
+	# the tooltip (§4.11, 4 lines at most): the effect, the level, then the time and the price, or the time left
+	var tip := PackedStringArray()
+	if research:
+		tip.append(tr("rs." + line + ".desc"))  # what a level gives (Research.LINES[line].desc)
+	tip.append(tr("bld.level") % [lvl, int(it["max"])])
+	if busy:
+		var sp := int(it.get("speed", 0))
+		tip.append(tr("bld.tip.left") % fmt_time(int(it["left"])))
+		if sp == 0:
+			tip.append(tr("bld.free"))
+		elif int(it.get("stock", 0)) > 0:
+			tip.append(tr("bld.stock") % int(it["stock"]))
+		else:
+			tip.append(tr("bld.tip.speed") % sp)
+		if int(it.get("bp", 0)) > 0:
+			tip.append(tr("bld.blueprint") % int(it["bp"]))
+	elif not cost.is_empty() and rk[0] != "max":
+		tip.append(tr("bld.tip.time") % fmt_time(int(it.get("seconds", 0))))
+		tip.append(tr("bld.tip.cost") % _cost_words(cost))
+	if reason != "" and rk[0] != "short" and not busy:
+		tip.append(reason)
+	opts["details"] = "\n".join(tip.slice(0, 4))
+	if busy:
+		var speed_cb := func():
+			if research:
+				research_speedup.emit(line)
+			else:
+				building_speedup.emit(id)
+		if int(it.get("speed", 0)) == 0:
+			opts["cta"] = {"role": "go", "caption": tr("ui.finish"), "icon": "lightning", "cb": speed_cb}
+		else:
+			opts["cta"] = {"role": "info", "caption": fmt_time(int(it["left"])), "icon": "hourglass", "cb": speed_cb}
+		if int(it.get("bp", 0)) > 0:
+			# «Применить чертёж» (07 §6.1): a round button with the blueprint on the chip's corner
+			opts["chip"] = {"btn": {"icon": "blueprint", "role": "info"}}
+			opts["chip_cb"] = func(): research_speedup.emit("bp:" + line)
+	elif rk[0] == "max" or cost.is_empty():
+		opts["stat"] = {"text": tr("err.max"), "check": true}
+	elif rk[0] in ["level", "academy", "chapter"]:
+		var cap := tr("dl.short") % int(rk[1])
+		if rk[0] == "academy":
+			cap = tr("bld.academy")
+		elif rk[0] == "chapter":
+			cap = tr("world.chapter") % ROMAN[clampi(int(rk[1]), 0, ROMAN.size() - 1)]
+		if research and lvl == 0 and rk[0] == "level":
+			# a line the realm has not reached yet: closed (§4.4) — the dark art, the lock and «УР3»
+			opts["locked"] = true
+			opts["lock_caption"] = cap
+			opts["reason"] = reason
+		else:
+			opts["cta"] = {"role": "lock", "icon": "lock", "caption": cap, "enabled": false, "reason": reason}
+	elif rk[0] == "hexes":
+		opts["cta"] = {"role": "lock", "icon": "hex_tile", "caption": String(rk[1]), "enabled": false, "reason": reason}
+	else:
+		var go_cb := func():
+			if research:
+				research_start.emit(line)
+			else:
+				building_upgrade.emit(id)
+		var ct := {"role": "go", "caption": tr("bld.research") if research else "", "cb": go_cb,
+			"price": _price_items(cost, String(rk[1]) if rk[0] == "short" else "", reason != "")}
+		if rk[0] == "short":
+			ct["short_reason"] = reason  # the role stays: the scarce number turns red, the tap says what is missing
+		elif rk[0] == "wait":
+			ct["enabled"] = false  # builders, the academy or the treasury are busy: grey, the tap says which
+			ct["reason"] = reason
+		opts["cta"] = ct
+	return Kit.card(tex, String(it["name"]), opts)
 
 
-## First card of the Buildings tab once the Market stands: current rate and an «open» button.
+## The Buildings tab's first card once the Market stands (05 §13): the stall on paper, «Обмен» opens the Market;
+## the rate is in the tooltip.
 func _market_card(it: Dictionary) -> Control:
-	var card := Panel.new()
-	card.custom_minimum_size = Vector2(150, 178)
-	card.add_theme_stylebox_override("panel", _style(Color(0.17, 0.14, 0.08), 12, Color(0.95, 0.75, 0.3, 0.9), 2))
-	card.mouse_filter = Control.MOUSE_FILTER_PASS
-	var nm := _label(tr("bld.market"), 17)
-	nm.position = Vector2(0, 6)
-	nm.size = Vector2(150, 24)
-	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	card.add_child(nm)
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 2)
-	row.position = Vector2(14, 44)
-	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	for r in MARKET_RES:
-		var ic := TextureRect.new()
-		ic.texture = _icon(r)
-		ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		ic.custom_minimum_size = Vector2(38, 38)
-		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		row.add_child(ic)
-	card.add_child(row)
-	var rl := _label(tr("market.rate") % _rate_txt(int(it["rate"])), 15, MUTED, false)
-	rl.position = Vector2(0, 92)
-	rl.size = Vector2(150, 22)
-	rl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	card.add_child(rl)
-	_card_button(card, tr("market.open"), Color(0.85, 0.55, 0.1), func(): market_open.emit(), true)
-	return _legacy_card(card)
-
-
-## The XS button at the bottom of a legacy tray card (6, 120, 168, 46 on the 180×172 card; PASS: a drag still
-## scrolls the row). The legacy «can't» grey shows the lock role but still runs `cb` (the callers explain the
-## reason in a toast). `_enabled` stays unused as before: the speed-up card passes false for its free speed-up.
-func _card_button(card: Control, text: String, color: Color, cb: Callable, _enabled: bool) -> void:
-	var role := "lock" if Kit.is_legacy_disabled(color) else Kit.role_of(color)
-	var b := Kit.button(card, Rect2(6, 120, 168, 46), role, text, {"cb": cb, "size": "XS", "filter": Control.MOUSE_FILTER_PASS})
-	b.set_meta("card_btn", true)
+	return Kit.card(Kit.icon_tex("stall"), String(it.get("name", tr("bld.market"))), {"backdrop": "cream",
+		"art_side": 76.0, "art_y": 40.0, "details": tr("market.tip") % _rate_txt(int(it["rate"])),
+		"cta": {"role": "info", "caption": tr("market.open"), "icon": "swap", "cb": func(): market_open.emit()}})
 
 
 # ------------------------------------------------------------------ coach (FTUE, canon §14.3)

@@ -1,7 +1,7 @@
 shader_type spatial;
-// Squad figures come baked into one mesh (tools/blender/troops_assets.py: 4×3 block, 0.13 spacing, odd rows
-// shifted 0.06; figures face +Z, hips at y ≈ 0.16). Each vertex finds its figure from that grid, so every
-// figure moves as one piece with its own phase:
+// Squad figures come baked into one mesh (tools/blender/troops_assets.py LOOSE: eight men in three rows 0.15
+// apart, 0.2 apart in a row; figures face +Z, hips at y ≈ 0.16). Each vertex finds its figure from those places,
+// so every figure moves as one piece with its own phase:
 // - march: a body bob, legs scissoring around the hip with the foot lifted, arms swinging against the legs;
 // - fight: a three-beat strike — slow wind-up, quick lunge, recovery — strongest at the head and weapon tip,
 //   with a half step forward on the lunge;
@@ -20,12 +20,18 @@ const float HIP = 0.16;
 
 varying float v_h;  // the undeformed object-space height (troops stand about 0.4 tall)
 
-// the figure a vertex belongs to; parts poking out of the block (front tabards, weapon tips) stay with the
-// outer figures instead of falling into a phantom row or column with another phase
+// x of the first man of a row: the front row (z 0.15) starts at −0.22, the middle (z 0) at −0.12, the back
+// (z −0.15, two men) at −0.2 — the LOOSE places of troops_assets.py
+float row_x0(float row) {
+	return row < 0.5 ? -0.22 : (row < 1.5 ? -0.12 : -0.2);
+}
+
+// the figure a vertex belongs to: each man keeps every part within ±0.1 of his place across and ±0.075 along
+// (troops_assets.py checks it), and parts poking out of the group (front shields, weapon tips, the back row's
+// colour) stay with the outer men instead of falling into a phantom row or column with another phase
 vec2 figure_cell(vec3 v) {
-	float row = clamp(floor((-v.z + 0.185) / 0.13), 0.0, 2.0);
-	float off = mod(row, 2.0) > 0.5 ? 0.06 : 0.0;
-	float col = clamp(floor((v.x + 0.265 - off) / 0.13), 0.0, 3.0);
+	float row = clamp(floor((-v.z + 0.225) / 0.15), 0.0, 2.0);
+	float col = clamp(floor((v.x - row_x0(row) + 0.1) / 0.2), 0.0, row > 1.5 ? 1.0 : 2.0);
 	return vec2(col, row);
 }
 
@@ -56,8 +62,7 @@ void vertex() {
 	float t = TIME;
 	float gait = sin(t * 9.0 + ph);
 	if (!solid) {
-		float row_off = mod(cell.y, 2.0) > 0.5 ? 0.06 : 0.0;
-		float cx = -0.2 + cell.x * 0.13 + row_off;
+		float cx = row_x0(cell.y) + cell.x * 0.2;
 		float side = v.x < cx ? -1.0 : 1.0;
 		// legs: swing around the hip, the forward foot lifted
 		float leg = clamp((HIP - v.y) / HIP, 0.0, 1.0);
@@ -65,7 +70,11 @@ void vertex() {
 		VERTEX.z += swing * 0.032 * leg * march;
 		VERTEX.y += max(0.0, swing) * 0.014 * leg * march;
 		// arms (out from the torso, between waist and shoulder) swing against the legs
-		float arm_zone = smoothstep(0.18, 0.22, v.y) * (1.0 - smoothstep(0.32, 0.36, v.y)) * step(0.06, abs(v.x - cx));
+		// (eased in over a wide band from the torso side out to the hands: across a shield before the chest the
+		// swing is then nearly linear in x, a shear that keeps its face and the eagle on it parallel — a steep ramp
+		// bent the two layers differently and the eagle sank into the face)
+		float arm_zone = smoothstep(0.18, 0.22, v.y) * (1.0 - smoothstep(0.32, 0.36, v.y))
+				* smoothstep(0.035, 0.095, abs(v.x - cx));
 		VERTEX.z -= swing * 0.022 * arm_zone * march;
 	}
 	// the body bobs twice per stride
