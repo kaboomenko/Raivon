@@ -9,6 +9,7 @@ const HexGrid := preload("res://scripts/sim/hexgrid.gd")
 const FlagView := preload("res://scripts/flag_view.gd")
 const SoftLook := preload("res://scripts/soft_look.gd")
 const SoftPalette := preload("res://scripts/soft_palette.gd")
+const Kit := preload("res://scripts/ui_kit.gd")
 const RIBBON_SHADER := preload("res://shaders/border_ribbon.gdshader")
 const FILL_SHADER := preload("res://shaders/territory_fill.gdshader")
 const SCORCH_SHADER := preload("res://shaders/territory_scorch.gdshader")
@@ -2286,6 +2287,25 @@ const CLOUD_PRIO := 4
 const BEAM_PRIO := 5
 const MARK_PRIO := 6
 
+## Every 3D text of the map (army strengths, hex labels, the strike countdown, floaters, income amounts, convoys and
+## main.gd's drag forecast) shares one look (soft_style_plan F1, docs/ui_style.md §3.3/§4.14): the HUD's bold display
+## font (Rubik 900, Kit d900) with an INK navy outline 0.22 of the font size: thick enough to stay a soft body over the
+## sunny ground and the ribbons at a small pixel size. A billboard over everything (no depth test, over the clouds).
+const LABEL_OUTLINE_K := 0.22
+
+
+static func soft_label(size: int, prio := MARK_PRIO + 1) -> Label3D:
+	var l := Label3D.new()
+	l.font = Kit.font("d900")
+	l.font_size = size
+	l.outline_size = roundi(size * LABEL_OUTLINE_K)
+	l.outline_modulate = Kit.INK
+	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	l.no_depth_test = true
+	l.render_priority = prio
+	l.outline_render_priority = prio - 1
+	return l
+
 var _cloud_mat: ShaderMaterial
 var _cloud_puff: ImageTexture
 
@@ -2469,7 +2489,7 @@ func _rebuild_overlay() -> void:
 	for o in fills:
 		var fm := ShaderMaterial.new()
 		fm.shader = FILL_SHADER
-		fm.set_shader_parameter("team", team_look(o)["fill"])
+		fm.set_shader_parameter("team", SoftPalette.scene(team_look(o)["fill"]))  # unshaded: undo the grade (F1)
 		# built-up DL8 land: a lighter veil, the city shows through; the player: a lighter interior
 		fm.set_meta("k_rim", 0.75 if _built(o) else 1.0)
 		fm.set_meta("k_in", (0.6 if _built(o) else 1.0) * (0.7 if o == Types.PLAYER else 1.0))
@@ -2481,7 +2501,7 @@ func _rebuild_overlay() -> void:
 	for o in hatch:
 		var hm := ShaderMaterial.new()
 		hm.shader = HATCH_SHADER
-		hm.set_shader_parameter("col", team_look(o)["body"])
+		hm.set_shader_parameter("col", SoftPalette.scene(team_look(o)["body"]))
 		hm.render_priority = 1
 		_add(hatch[o], hm)
 	# one rounded candy ribbon per state along its whole border (§6.6): no inner hex grid, no glow, no white core
@@ -2490,7 +2510,9 @@ func _rebuild_overlay() -> void:
 		var mesh := _ribbon_mesh(_loops(func(c: Dictionary) -> bool: return Types.is_passable(c) and owner_of(c) == o), o)
 		if mesh == null:
 			continue
-		var look := team_look(o)
+		# the §6.3 colours are what the screen must show: scene() undoes the grade on the unshaded ribbon (F1; fed as
+		# they were, #4FA8FF read as a light cyan #4FC5FF, the water's hue, and the light band as near-white)
+		var look := SoftPalette.scene_look(team_look(o))
 		var rm := ShaderMaterial.new()
 		rm.shader = RIBBON_SHADER
 		rm.set_shader_parameter("body", look["body"])
@@ -3513,19 +3535,12 @@ func _make_army(a: Dictionary) -> Node3D:
 			tw.tween_property(orbit, "rotation:y", -TAU, 7.0).from(0.0)
 	node.set_meta("anim", anim)
 	spawn("banner_" + side, model, Vector3(0.05, 0, -0.35), 0.0, 0.9, int(a["side"]))
-	var lbl := Label3D.new()
+	var lbl := soft_label(64)  # a marker: over the ribbons and the clouds (see CLOUD_PRIO); the side shows in the bar
 	lbl.name = "label"
-	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	lbl.no_depth_test = true
-	lbl.render_priority = MARK_PRIO + 1  # a marker: over the ribbons and the clouds (see CLOUD_PRIO)
-	lbl.outline_render_priority = MARK_PRIO
-	lbl.font_size = 64
-	lbl.outline_size = 14
 	lbl.pixel_size = 0.00024  # a small tag over the bar: the reference frames show bars, not big numbers
 	lbl.fixed_size = true  # the same size on screen at every zoom: up close it no longer towers over the soldiers
 	lbl.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM  # sits on top of the strength bar at any zoom, never over it
 	lbl.position = Vector3(0, 0.98, 0)
-	lbl.outline_modulate = Color(0.05, 0.1, 0.25) if side == "blue" else Color(0.3, 0.05, 0.05)
 	node.add_child(lbl)
 	var bar := Node3D.new()
 	bar.name = "bar"
@@ -3541,7 +3556,7 @@ func _make_army(a: Dictionary) -> Node3D:
 		mi.name = part[0]
 		mi.mesh = q
 		mi.position.z = part[3]
-		mi.material_override = _pill_mat(part[1], part[2], part[0] == "fill")
+		mi.material_override = _pill_mat(SoftPalette.scene(part[1]), part[2], part[0] == "fill")  # on-screen colours
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		bar.add_child(mi)
 	return node
@@ -3587,9 +3602,9 @@ func burst_at(pos: Vector3, color: Color, big := false, alpha := 1.0) -> void:
 	mi.mesh = tm
 	var col := color
 	if color == C_PLAYER:
-		col = SoftPalette.PLAYER["body"]
+		col = SoftPalette.scene(SoftPalette.PLAYER["body"])  # unshaded: reads as the §6.3 body on screen
 	elif color == C_WAR:
-		col = SoftPalette.ENEMY["body"]
+		col = SoftPalette.scene(SoftPalette.ENEMY["body"])
 	var m := StandardMaterial3D.new()
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	m.albedo_color = Color(col.r, col.g, col.b, alpha)
@@ -3638,14 +3653,8 @@ func set_bubbles(data: Dictionary) -> void:
 				sp.render_priority = MARK_PRIO + 2 + part[3]
 				sp.shaded = false
 				node.add_child(sp)
-			var lbl := Label3D.new()
+			var lbl := soft_label(44, MARK_PRIO + 4)  # over the bubble and its icon
 			lbl.name = "amount"
-			lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-			lbl.no_depth_test = true
-			lbl.render_priority = MARK_PRIO + 4
-			lbl.outline_render_priority = MARK_PRIO + 3
-			lbl.font_size = 44
-			lbl.outline_size = 12
 			lbl.pixel_size = 0.005
 			lbl.position = Vector3(0, -0.42, 0)
 			node.add_child(lbl)
@@ -3744,13 +3753,7 @@ func hex_label(hex: int, text: String, color := Color(1, 0.9, 0.5)) -> void:
 			_hex_labels.erase(hex)
 		return
 	if l == null:
-		l = Label3D.new()
-		l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		l.no_depth_test = true
-		l.render_priority = MARK_PRIO + 1
-		l.outline_render_priority = MARK_PRIO
-		l.font_size = 52
-		l.outline_size = 14
+		l = soft_label(52)
 		l.pixel_size = 0.005
 		l.position = cell_world(hex) + Vector3(0, 0.9, 0)
 		add_child(l)
@@ -3975,14 +3978,8 @@ func _make_cart() -> Node3D:
 			wheel.rotation.z = PI / 2
 			wheel.position = Vector3(x, 0.06, z)
 			body.add_child(wheel)
-	var lbl := Label3D.new()
+	var lbl := soft_label(40)
 	lbl.name = "label"
-	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	lbl.no_depth_test = true
-	lbl.render_priority = MARK_PRIO + 1
-	lbl.outline_render_priority = MARK_PRIO
-	lbl.font_size = 40
-	lbl.outline_size = 10
 	lbl.pixel_size = 0.005
 	lbl.modulate = C_DEPOSIT
 	lbl.position = Vector3(0, 0.55, 0)
@@ -4016,7 +4013,8 @@ func strike_arrow(from: int, to: int, text: String) -> void:
 		var grown := Geometry2D.offset_polygon(outline, 0.03, Geometry2D.JOIN_ROUND)
 		if not grown.is_empty():
 			rim = grown[0]
-		for part in [[rim, SoftPalette.ENEMY["rim"], MARK_PRIO + 2], [outline, SoftPalette.ENEMY["body"], MARK_PRIO + 3]]:
+		for part in [[rim, SoftPalette.scene(SoftPalette.ENEMY["rim"]), MARK_PRIO + 2],
+				[outline, SoftPalette.scene(SoftPalette.ENEMY["body"]), MARK_PRIO + 3]]:
 			var poly: PackedVector2Array = part[0]
 			var tris := Geometry2D.triangulate_polygon(poly)
 			if tris.is_empty():
@@ -4037,14 +4035,8 @@ func strike_arrow(from: int, to: int, text: String) -> void:
 			mi.material_override = am
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			_strike.add_child(mi)
-		var l := Label3D.new()
+		var l := soft_label(56)
 		l.name = "label"
-		l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		l.no_depth_test = true
-		l.render_priority = MARK_PRIO + 1
-		l.outline_render_priority = MARK_PRIO
-		l.font_size = 56
-		l.outline_size = 14
 		l.pixel_size = 0.006
 		l.modulate = Color(1.0, 0.55, 0.5)
 		l.position = a.lerp(b, 0.5) + Vector3(0, 1.2, 0)
@@ -4676,14 +4668,8 @@ func fireworks(pos: Vector3, volleys: int) -> void:
 
 
 func floater(hex: int, text: String, color := Color.WHITE) -> void:
-	var lbl := Label3D.new()
+	var lbl := soft_label(56)
 	lbl.text = text
-	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	lbl.no_depth_test = true
-	lbl.render_priority = MARK_PRIO + 1
-	lbl.outline_render_priority = MARK_PRIO
-	lbl.font_size = 56
-	lbl.outline_size = 12
 	lbl.modulate = color
 	lbl.pixel_size = 0.006
 	lbl.position = cell_world(hex) + Vector3(0, 1.4, 0)
@@ -4735,7 +4721,9 @@ func _process(delta: float) -> void:
 			continue
 		if f.get("float", false):
 			n.position.y += delta * 0.8
-			(n as Label3D).modulate.a = 1.0 - k * k
+			var lb := n as Label3D
+			lb.modulate.a = 1.0 - k * k
+			lb.outline_modulate.a = lb.modulate.a  # the outline is drawn apart: fade it too, no navy ghost is left
 		else:
 			var s := 0.6 + k * (1.6 if f["big"] else 0.7)
 			n.scale = Vector3(s, 0.3, s)

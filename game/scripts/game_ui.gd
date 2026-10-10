@@ -1642,40 +1642,150 @@ func _fly_rewards(srcs: Array) -> void:
 	get_tree().create_timer(0.45 + 0.06 * k + 0.4).timeout.connect(layer.queue_free)
 
 
-## Inbox (mail button): reports of raids, defenses, ultimatums. items: [{title, text, t (unix), read}];
-## title / text are translation keys packed with their arguments (l10n.gd `pack`), shown in the current language.
+## Inbox (the mail button, docs/ui_style.md §6 «Почта»): a window L with the info plate and the mail icon; the reports
+## newest first as rows — the sender's picture 72 (the advisor's face, else the report's kind as an icon), the title, the
+## time in a chip («5 мин»), one muted line of the text. An unread report is a light row with a red dot, a read one sits
+## in the well's colour. A tap opens the whole text (BODY 28) in the row, a second tap folds it.
+## items: [{title, text, t (unix), read}]; title / text are translation keys packed with their arguments (l10n.gd
+## `pack`), shown in the current language.
+const INBOX_ICON := {"raid": "swords", "defense": "shield", "defense_lost": "shield", "defeat": "white_flag",
+	"war": "swords", "ai_war": "swords", "counter": "swords", "coalition_war": "swords", "ultimatum": "seal",
+	"ceded": "hex_tile", "tribute": "coins", "war_cap": "treaty", "peace_offer": "dove", "ai_peace": "dove",
+	"separate": "dove", "separate_offer": "dove", "ruin": "hammer", "expansion": "globe", "all_stars": "trophy",
+	"chapter_done": "trophy", "ai_dl": "crown", "oil": "barrel", "alliance": "handshake", "alliance_broken": "handshake",
+	"ally_joins": "handshake", "ally_asks": "handshake", "ai_alliance": "handshake", "pact": "handshake",
+	"coalition": "horn", "coalition_broken": "horn", "alarm": "horn", "swap": "scales", "swap_offer": "scales",
+	"subsidy": "coins", "patent_key": "key"}
+const INBOX_ROW := 104.0
+const INBOX_PAD := Vector2(20, 16)
+var _inbox_open := -1  # the report opened in the list (its index in items)
+var _inbox_unread := {}  # index -> true: unread when the inbox opened (they keep that look while it re-renders)
+var _inbox_scroll := 0
+
+
 func show_inbox(items: Array, now: int) -> void:
-	var box := _modal_box(Rect2(50, 300, 841, 1060))
-	_title(box, tr("inbox.title"), 34, TEXT, Vector2(36, 26), "mail")
-	var scroll := ScrollContainer.new()
-	scroll.position = Vector2(24, 90)
-	scroll.size = Vector2(793, 830)
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	box.add_child(scroll)
-	var col := VBoxContainer.new()
-	col.custom_minimum_size = Vector2(780, 0)
-	col.add_theme_constant_override("separation", 10)
-	scroll.add_child(col)
-	if items.is_empty():
-		var empty := _label(tr("inbox.empty"), 22, MUTED, false)
-		empty.autowrap_mode = TextServer.AUTOWRAP_WORD
-		empty.custom_minimum_size = Vector2(760, 0)
-		col.add_child(empty)
+	var again := _modal != null and _modal.has_meta("inbox")
+	if not again:
+		_inbox_open = -1
+		_inbox_scroll = 0
+		_inbox_unread = {}
+		for i in items.size():
+			if not bool((items[i] as Dictionary).get("read", false)):
+				_inbox_unread[i] = true
+	var w := 893.0
+	var rw := w - 64.0 - 12.0  # the rows leave the scroll bar's lane
+	var text_w := rw - INBOX_PAD.x * 2.0 - 72.0 - 16.0
+	var body_f := Kit.font("b800")
+	var heights := {}
+	var content_h := 0.0
+	for i in range(items.size() - 1, -1, -1):
+		var rh := INBOX_ROW
+		if i == _inbox_open:
+			var body := L.t(String(items[i]["text"]))
+			rh = INBOX_PAD.y + 40.0 + 6.0 + body_f.get_multiline_string_size(body, HORIZONTAL_ALIGNMENT_LEFT, text_w, 28).y * 1.02 + INBOX_PAD.y + 5.0
+			rh = maxf(INBOX_ROW, rh)
+		heights[i] = rh
+		content_h += rh + 12.0
+	content_h = maxf(0.0, content_h - 12.0) + 8.0
+	var empty := items.is_empty()
+	var box := _modal_box(_win_rect("L", 72.0 + (220.0 if empty else content_h) + 32.0), false, tr("inbox.title"), "mail", "info", true, false)
+	_modal.set_meta("inbox", true)
+	box.set_meta("kit_native", true)
+	w = box.size.x
+	if empty:
+		var ic := _icon_rect("mail", 96)
+		ic.position = Vector2((w - 96.0) * 0.5, 84)
+		box.add_child(ic)
+		var el := Kit.label(tr("inbox.empty"), 28, Kit.MUTED_CREAM, false)
+		el.name = "empty"
+		el.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		el.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		el.position = Vector2(48, 192)
+		el.size = Vector2(w - 96.0, 80)
+		box.add_child(el)
+		return
+	var list := Control.new()
+	list.name = "list"
+	list.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	list.position = Vector2(32, 72)
+	list.size = Vector2(w - 64.0, box.size.y - 72.0 - 32.0)
+	box.add_child(list)
+	var host: Control = list
+	if content_h > list.size.y + 1.0:
+		var sc: Dictionary = Kit.scroller(list, content_h, Kit.CREAM)
+		host = sc["inner"]
+		var scroll: ScrollContainer = sc["scroll"]
+		scroll.get_v_scroll_bar().value_changed.connect(func(v: float): _inbox_scroll = int(v))
+		Kit.scroll_to(scroll, float(_inbox_scroll))
+	var y := 0.0
 	for i in range(items.size() - 1, -1, -1):
 		var it: Dictionary = items[i]
-		var card := PanelContainer.new()
-		card.add_theme_stylebox_override("panel", _style(Color(0.1, 0.15, 0.25) if it.get("read", false) else Color(0.14, 0.22, 0.38), 12, EDGE, 2))
-		var v := VBoxContainer.new()
-		card.add_child(v)
-		var ago := maxi(0, now - int(it["t"]))
-		var when := tr("time.just_now") if ago < 60 else (tr("time.min_ago") % (ago / 60) if ago < 3600 else tr("time.h_ago") % (ago / 3600))
-		v.add_child(_label("%s  ·  %s" % [L.t(String(it["title"])), when], 22))
-		var body := _label(L.t(String(it["text"])), 19, MUTED, false)
-		body.autowrap_mode = TextServer.AUTOWRAP_WORD
-		body.custom_minimum_size = Vector2(760, 0)
-		v.add_child(body)
-		col.add_child(card)
-	_button(box, Rect2(24, 950, 793, 84), tr("ui.close"), Color(0.13, 0.4, 0.9), close_modal)
+		var rh: float = heights[i]
+		_inbox_row(host, Rect2(0, y, rw, rh), it, now, i, items)
+		y += rh + 12.0
+
+
+func _inbox_row(host: Control, r: Rect2, it: Dictionary, now: int, idx: int, items: Array) -> void:
+	var unread := _inbox_unread.has(idx)
+	var open := idx == _inbox_open
+	var face := Kit.CREAM_ROW if unread else Kit.CREAM_WELL
+	var t := Kit.KitTile.new()
+	t.name = "report_%d" % idx
+	var sb := Kit.style(face, 20, 0, Kit.INK, 0, 5)
+	sb.set_meta("kit_kind", "")
+	sb.set_meta("kit_lip_color", Kit.ROW_LIP if unread else Kit.CREAM_DEEP)
+	t.add_theme_stylebox_override("panel", sb)
+	t.add_child(Kit.KitDecor.new())
+	t.position = r.position
+	t.size = r.size
+	t.cb = func():
+		_inbox_open = -1 if open else idx
+		show_inbox(items, now)
+	host.add_child(t)
+	var title_key := String(it["title"]).split("|")[0]
+	var kind := title_key.trim_prefix("inbox.").trim_suffix(".title")
+	var pic: Control
+	if kind == "advisor" and ResourceLoader.exists("res://assets/ui/portraits/cmd_bram_smile.png"):
+		pic = _cmd_face("cmd_bram", "common", 72.0)
+		(pic.get_child(0) as Control).set("mood", "smile")
+	else:
+		pic = _icon_rect(String(INBOX_ICON.get(kind, "mail")), 72)
+	pic.name = "pic"
+	pic.position = Vector2(INBOX_PAD.x, INBOX_PAD.y)
+	t.add_child(pic)
+	if unread:
+		Kit.dot(pic, -1, "war").name = "new"
+	var x := INBOX_PAD.x + 72.0 + 16.0
+	var ago := maxi(0, now - int(it["t"]))
+	var when := tr("time.just_now") if ago < 60 else (tr("time.m") % (ago / 60) if ago < 3600 else (tr("time.h") % (ago / 3600) if ago < 86400 else tr("time.d") % (ago / 86400)))
+	var tc := Kit.chip(t, Vector2.ZERO, "", when, "status", Kit.CLEAR, {"size": 22})
+	tc.name = "time"
+	tc.position = Vector2(r.size.x - INBOX_PAD.x - tc.size.x, INBOX_PAD.y + 3.0)
+	var tw := tc.position.x - 16.0 - x
+	var title := L.t(String(it["title"]))
+	var ts := Kit.fit_size(title, 30, tw, "d900", 26, false)
+	var tl := Kit.label(title, ts, Kit.INK_TEXT, true)
+	tl.name = "title"
+	tl.add_theme_font_size_override("font_size", ts)
+	tl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	tl.clip_text = true
+	tl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	tl.position = Vector2(x, INBOX_PAD.y - 2.0)
+	tl.size = Vector2(tw, 40)
+	t.add_child(tl)
+	var body := L.t(String(it["text"]))
+	var bl := Kit.label(body, 28 if open else 26, Kit.SOFT_CREAM if open else Kit.MUTED_CREAM, false)
+	bl.name = "body" if open else "preview"
+	bl.position = Vector2(x, INBOX_PAD.y + 40.0 + 2.0)
+	if open:
+		bl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		bl.size = Vector2(r.size.x - INBOX_PAD.x - x, r.size.y - bl.position.y - INBOX_PAD.y - 5.0)
+	else:
+		bl.text = body.replace("\n", " ")
+		bl.clip_text = true
+		bl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		bl.size = Vector2(r.size.x - INBOX_PAD.x - x, 36)
+	t.add_child(bl)
 
 
 ## «Военный пропуск» (canon §15.6, docs/ui_style.md §6 «Военный пропуск»): a sheet L with the gold plate. The header: the
@@ -1881,7 +1991,11 @@ var _tmpl_cache := {}
 
 ## A localized template (pass.rw_res: «Ресурсы %d ч») as a pattern that reads its numbers / names back.
 func _tmpl_re(key: String) -> RegEx:
-	var t := tr(key)
+	return _tmpl_re_text(tr(key))
+
+
+## The same from a template already in the current language (a count's plural form put into a line).
+func _tmpl_re_text(t: String) -> RegEx:
 	if _tmpl_cache.has(t):
 		return _tmpl_cache[t]
 	var pat := ""
@@ -1939,6 +2053,9 @@ func _pass_look(text: String) -> Dictionary:
 	if m:
 		return _pass_look_rw(["raivite", int(m.get_string(1))])
 	m = _tmpl_re("pass.rw_shards").search(text)
+	for f in ["one", "few", "many", "other"]:  # «4 осколка: Генерал Вега» (L.plural, pass.rw_shards_n)
+		if m == null:
+			m = _tmpl_re_text(tr("pass.rw_shards_n") % [tr("plural.shards." + f), "%s"]).search(text)
 	if m:
 		var who := m.get_string(2)
 		var cmds: Dictionary = CasesSim.data().get("commanders", {})
@@ -1955,70 +2072,174 @@ func _pass_look(text: String) -> Dictionary:
 			return {"icon": String(Kit.COSMETIC_ICON.get(String(cat), "frame")), "pill": ""}
 	return {"icon": "gift", "pill": ""}
 
-## The 28-day login calendar (08 §8.8): a 7 × 4 grid — taken days ticked, today's glowing, key days (no ×2) in
-## gold; «Take» and, where allowed, «×2 for an ad».
+## The 28-day login calendar (08 §8.8, docs/ui_style.md §6 «Календарь»): a window L with the gold plate. A header line
+## with the day chip and the «i» that holds the rules; a well of 7 × 4 tiles — the day in a hex, the reward's icon 64 and
+## its amount in a pill. Days 7/14/21/28 are gold-backed with the ribbon «Приз»; today glows in a gold outline (and
+## breathes), a taken day has a check and fades to 55 %. A tap on a tile tells the reward. The footer: «Забрать» (go)
+## and, where allowed, «×2» (info, with the ad icon — or the Patent's) on the left; when nothing waits, when the next one
+## comes.
+## info: {cycle, days: [{day, text, state: claimed|today|future, key, rw?}], pending, can_double, patent}
+const CAL_TILE := Vector2(109, 132)
+const CAL_ROW_GAP := 22.0
+
+
 func show_calendar(info: Dictionary, on_claim: Callable) -> void:
-	var box := _modal_box(Rect2(30, 250, 881, 1150))
-	var title := _label(tr("cal.title1") if int(info["cycle"]) == 1 else tr("cal.title2"), 32, Color(1.0, 0.85, 0.4))
-	_fit(title, 32, 821)
-	_at(title, box, Vector2(30, 22))
-	var sub := _label(tr("cal.rule"), 17, MUTED, false)
-	sub.autowrap_mode = TextServer.AUTOWRAP_WORD
-	sub.custom_minimum_size = Vector2(821, 0)
-	_at(sub, box, Vector2(30, 68))
-	var cw := 110.0
-	var ch := 196.0
-	for d in info["days"]:
-		var i: int = int(d["day"]) - 1
-		var st: String = d["state"]
-		var key: bool = d["key"]
-		var bg := Color(0.09, 0.12, 0.2)
-		var edge := Color(0.4, 0.5, 0.68, 0.7)
-		if st == "today":
-			bg = Color(0.2, 0.17, 0.08)
-			edge = Color(1.0, 0.85, 0.3)
-		elif key:
-			edge = Color(0.85, 0.65, 0.25, 0.9)
-		if st == "claimed":
-			bg = Color(0.08, 0.16, 0.12)
-		var cell := _panel(box, Rect2(30 + (i % 7) * (cw + 8.5), 130 + (i / 7) * (ch + 8), cw, ch), _style(bg, 12, edge, 3 if st == "today" else 2), Control.MOUSE_FILTER_IGNORE)
-		var n := _label(str(int(d["day"])), 20, Color(1.0, 0.85, 0.4) if key else (TEXT if st != "future" else MUTED))
-		n.size = Vector2(cw, 30)
-		n.position = Vector2(0, 6)
-		n.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		cell.add_child(n)
-		var t := _label(d["text"], 14, TEXT if st != "future" else Color(0.75, 0.8, 0.88), false)
-		t.autowrap_mode = TextServer.AUTOWRAP_WORD
-		t.custom_minimum_size = Vector2(cw - 10, 0)
-		t.position = Vector2(5, 40)
-		t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		cell.add_child(t)
-		if st == "claimed":
-			var ok := _label("✓", 30, Color(0.45, 1.0, 0.55))
-			ok.size = Vector2(cw, 40)
-			ok.position = Vector2(0, ch - 46)
-			ok.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			cell.add_child(ok)
-		elif key:
-			var kx := _label("★", 22, Color(1.0, 0.8, 0.3))
-			kx.size = Vector2(cw, 30)
-			kx.position = Vector2(0, ch - 38)
-			kx.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			cell.add_child(kx)
-	var by := 130.0 + 4 * (ch + 8) + 12
-	if info["pending"]:
-		if info["can_double"]:
-			_button(box, Rect2(30, by, 400, 76), tr("ui.claim"), Color(0.75, 0.55, 0.12), func(): on_claim.call(false))
-			_button(box, Rect2(451, by, 400, 76), tr("cal.double_patent" if info.get("patent", false) else "cal.double"), Color(0.2, 0.55, 0.3), func(): on_claim.call(true))
+	var days: Array = info["days"]
+	var pending := bool(info["pending"])
+	var grid_h := 12.0 + 4.0 * CAL_TILE.y + 3.0 * CAL_ROW_GAP + 26.0
+	var h := 72.0 + 52.0 + 16.0 + grid_h + 32.0 + 112.0 + 32.0
+	var title := tr("cal.title1") if int(info["cycle"]) == 1 else tr("cal.title2")
+	var box := _modal_box(_win_rect("L", h), false, title, "calendar", "gold", true, false)
+	box.set_meta("kit_native", true)
+	var w := box.size.x
+	# ---- the header: which day it is, the rules in the «i»
+	var today := 0  # the waiting day, else the last one taken
+	for d in days:
+		if String(d["state"]) == "today":
+			today = int(d["day"])
+			break
+		if String(d["state"]) == "claimed":
+			today = maxi(today, int(d["day"]))
+	var dc := Kit.chip(box, Vector2(32, 72 + 9), "calendar", tr("cal.day_of") % [maxi(1, today), days.size()], "status")
+	dc.name = "day"
+	var ib := Kit.info_button(box, Vector2(w - 32.0 - 26.0, 72 + 26), Callable())
+	ib.cb = func(): Kit.tooltip(ib, title, tr("cal.rule"))
+	# ---- the 28 days
+	var well := Kit.well(box, Rect2(32, 72.0 + 52.0 + 16.0, w - 64.0, grid_h))
+	well.name = "days"
+	var gx := (well.size.x - 24.0 - 7.0 * CAL_TILE.x) / 6.0
+	for d in days:
+		var day := int(d["day"])
+		var i := day - 1
+		var st := String(d["state"])
+		var key := day % 7 == 0
+		var look := _cal_look(d.get("rw", []), String(d.get("text", "")))
+		var o := {"icon_side": 64.0, "pill_inside": true, "face": Kit.PREMIUM_WELL if key else Kit.CREAM_ROW,
+			"claimable": st == "today" and pending, "taken": st == "claimed"}
+		if look.has("tex"):
+			o["tex"] = look["tex"]
 		else:
-			_button(box, Rect2(30, by, 821, 76), tr("ui.claim"), Color(0.75, 0.55, 0.12), func(): on_claim.call(false))
+			o["icon"] = String(look.get("icon", "gift"))
+		if String(look.get("pill", "")) != "":
+			o["pill"] = [["", String(look["pill"])]]
+		var r := Rect2(12.0 + (i % 7) * (CAL_TILE.x + gx), 12.0 + (i / 7) * (CAL_TILE.y + CAL_ROW_GAP), CAL_TILE.x, CAL_TILE.y)
+		var t := Kit.tile(well, r, o)
+		t.name = "day_%d" % day
+		if st == "claimed":
+			t.modulate.a = 0.55
+		var role := "gold" if key else ("info" if st != "future" else "")
+		var hb := Kit.hex_badge(t, Vector2(14, 14), 18, role if role != "" else "info", str(day), Kit.CLEAR if role != "" else Kit.CREAM_DEEP.darkened(0.2))
+		hb.name = "num"
+		var second := String(look.get("second", ""))
+		if second != "":
+			var si := _icon_rect(second, 40)
+			si.name = "second"
+			si.position = Vector2(CAL_TILE.x - 42.0, 2)
+			t.add_child(si)
+		if key:
+			var rb := Kit.ribbon(t, Vector2(CAL_TILE.x * 0.5, CAL_TILE.y + 2.0), tr("cal.prize"), "war")
+			rb.name = "prize"
+		var tip_t := tr("cal.day_n") % day
+		var tip := String(d.get("text", ""))
+		t.cb = func(): Kit.tooltip(t, tip_t, tip)
+	# ---- the footer
+	var fy := box.size.y - 32.0 - 112.0
+	if pending:
+		var main_r := Rect2((w - 480.0) * 0.5, fy, 480, 112)
+		if bool(info.get("can_double", false)):
+			var pat := bool(info.get("patent", false))
+			var dw := (w - 64.0 - 16.0) * 0.4
+			var db := Kit.button(box, Rect2(32, fy, dw, 112), "info", "×2", {"size": "L", "icon": "charter" if pat else "ad",
+				"cb": func(): on_claim.call(true)})
+			db.name = "double"
+			main_r = Rect2(32.0 + dw + 16.0, fy, w - 64.0 - dw - 16.0, 112)
+		var cb_ := Kit.button(box, main_r, "go", tr("ui.claim"), {"size": "L", "cb": func(): on_claim.call(false)})
+		cb_.name = "claim"
 	else:
-		var nx := _label(tr("cal.tomorrow"), 20, MUTED, false)
-		nx.size = Vector2(821, 76)
-		nx.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		nx.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		_at(nx, box, Vector2(30, by))
-	_button(box, Rect2(30, by + 90, 821, 76), tr("ui.close"), Color(0.13, 0.4, 0.9), close_modal)
+		var nx := _paper_chip(box, Vector2(w * 0.5, fy + 56.0), "hourglass", tr("cal.tomorrow"), w - 64.0)
+		nx.name = "next"
+
+
+## How a calendar day shows on its tile: {icon | tex, pill, second} from its rewards ([kind, …], calendar.gd); the
+## first reward is the picture, a second one a small icon in the corner. Without them, the reward's text is read back.
+func _cal_look(rw: Array, text: String) -> Dictionary:
+	if rw.is_empty():
+		return _pass_look(text)
+	var r: Array = rw[0]
+	var o := {}
+	match String(r[0]):
+		"speed":
+			var cnt := int(r[2]) if r.size() > 2 else 1
+			o = {"icon": "lightning", "pill": tr("time.h") % int(r[1]) + (" ×%d" % cnt if cnt > 1 else "")}
+		"builder":
+			o = {"icon": "mason", "pill": "+1"}
+		"cmd":
+			var p := "res://assets/ui/portraits/%s.png" % String(r[1])
+			o = {"tex": load(p)} if ResourceLoader.exists(p) else {"icon": "frame"}
+		"shards_pick", "shards_choice":
+			o = {"icon": "shard", "pill": "×%d" % int(r[1])}
+		"season_cosmetic":
+			o = {"icon": "frame"}
+		_:
+			o = _pass_look_rw(r)
+	if rw.size() > 1:
+		var r2: Array = rw[1]
+		var l2 := _pass_look_rw(r2)
+		o["second"] = String(l2.get("icon", "gift"))
+	return o
+
+
+## «15 осколков на выбор» (08 §8.8.2, the calendar's day 26): a decision window L with the gold plate — no ✕, the shards
+## must go to someone. One option card per common and rare commander: the portrait with its level, the name, the
+## shards it has in a chip, «Выбрать» (go S) → on_pick(id).
+## rows: [{id, name, rarity, have, level}]
+func show_shard_pick(n: int, rows: Array, on_pick: Callable) -> void:
+	var cols := 4
+	var ch := 320.0
+	var lines := maxi(1, ceili(rows.size() / float(cols)))
+	var grid_h := 16.0 + lines * ch + (lines - 1) * 16.0 + 16.0
+	var h := 72.0 + 44.0 + 16.0 + grid_h + 32.0
+	var box := _modal_box(_win_rect("L", h), false, tr("cal.pick_title2") % L.plural(n, "plural.shards"), "shard", "gold", false, true)
+	box.set_meta("kit_native", true)
+	var w := box.size.x
+	var q := Kit.label(tr("cal.pick_q"), 28, Kit.SOFT_CREAM, false)
+	q.name = "question"
+	q.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	q.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	q.position = Vector2(32, 72)
+	q.size = Vector2(w - 64.0, 44)
+	box.add_child(q)
+	var well := Kit.well(box, Rect2(32, 72.0 + 44.0 + 16.0, w - 64.0, grid_h))
+	var cw := (well.size.x - 32.0 - (cols - 1) * 12.0) / cols
+	for i in rows.size():
+		var r: Dictionary = rows[i]
+		var id := String(r["id"])
+		var cr := Rect2(16.0 + (i % cols) * (cw + 12.0), 16.0 + (i / cols) * (ch + 16.0), cw, ch)
+		var card := Kit.tile(well, cr, {})
+		card.name = id
+		var face := _cmd_face(id, String(r["rarity"]), 120.0, int(r.get("level", 0)))
+		face.position = Vector2((cw - 120.0) * 0.5, 12)
+		card.add_child(face)
+		var nm := String(r["name"])
+		var two := Kit.text_w(nm, 22, "d900", false) > cw - 16.0
+		var fs := 22 if two else Kit.fit_size(nm, 26, cw - 16.0, "d900", 22, false)
+		var nl := Kit.label(nm, fs, Kit.INK_TEXT, true)
+		nl.name = "name"
+		nl.add_theme_font_size_override("font_size", fs)
+		nl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		nl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		if two:
+			nl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			nl.max_lines_visible = 2
+			nl.add_theme_constant_override("line_spacing", -4)
+		nl.position = Vector2(8, 136)
+		nl.size = Vector2(cw - 16.0, 54)
+		card.add_child(nl)
+		var chip := _paper_chip(card, Vector2(cw * 0.5, 214), "shard", tr("cal.has") % int(r.get("have", 0)), cw - 16.0)
+		chip.name = "have"
+		var b := Kit.button(card, Rect2(12, ch - 5.0 - 12.0 - 60.0, cw - 24.0, 60), "go", tr("cal.pick_btn2"), {"size": "S",
+			"cb": func(): on_pick.call(id)})
+		b.name = "pick"
 
 
 ## «Державный патент» (09 §9.13.4, Apple 3.1.2; docs/ui_style.md §6 «Патент»): a window M with the gold plate, the
@@ -2908,78 +3129,156 @@ func _fan(pics: Array, dy := 0.0) -> Control:
 	return fan
 
 
-## The realm's profile (10 §4.23): the flag, name, chapter and DL; tiles — realm size, the chapter's map share, the
-## Arena league, «Командиры 7/12» and «Летопись 23/40» (these two open their screens); the 3 latest achievements;
-## «Таймлапс», «Сравнить державы», «Друзья» (with the server) and «Настройки».
+## The realm's profile (10 §4.23, docs/ui_style.md §6 «Профиль»): a window L with the info plate «Держава». The header:
+## the flag 120 and the ruler's portrait 120 (its level hex on the corner), a round info pencil on the flag (the flag
+## constructor) and one after the realm's name (H1 36; the name editor), the chapter under it. Six stat tiles 3 × 2 — the
+## tappable ones («Командиры», «Летопись») with a chevron and their dot; the 3 latest achievements as rows with their
+## medal. Unreleased features (the Arena league, the timelapse, comparing realms, friends) are not shown, and Settings
+## live on the HUD's gear.
+## info: {name, dl, hexes, chapter, map_pct, commanders [n, of], chronicle [n, of], recent [{name, chapter, code?}],
+##   flag, book_badge, cmd_dot, wins}; cb: {flag, name, commanders, chronicle, …}
+const PROFILE_TILE_H := 150.0
+
+
 func show_profile(info: Dictionary, cb: Dictionary) -> void:
-	var box := _modal_box(Rect2(30, 170, 881, 1300))
-	_button(box, Rect2(881 - 86, 18, 64, 56), "✕", Color(0.3, 0.33, 0.42), close_modal)
-	_at(_label(tr("profile.title"), 24, MUTED), box, Vector2(30, 26))
+	var recent: Array = info.get("recent", [])
+	var rec_n := maxi(1, recent.size())
+	var rec_h := (16.0 + rec_n * 96.0 + (rec_n - 1) * 12.0 + 16.0) if not recent.is_empty() else 56.0
+	var stats_h := 16.0 + 2.0 * PROFILE_TILE_H + 12.0 + 16.0
+	var h := 72.0 + 160.0 + 24.0 + stats_h + 24.0 + 48.0 + 12.0 + rec_h + 32.0
+	var box := _modal_box(_win_rect("L", h), false, tr("profile.title"), "crown", "info", true, false)
+	box.set_meta("kit_native", true)
+	var w := box.size.x
+	# ---- the header: flag, ruler, name
 	var crest := FlagView.new(info.get("flag", {}))
-	crest.position = Vector2(34, 84)
-	crest.size = Vector2(130, 168)
+	crest.name = "flag"
+	crest.position = Vector2(32, 72)
+	crest.size = Vector2(120, 154)
 	crest.mouse_filter = Control.MOUSE_FILTER_STOP
-	crest.gui_input.connect(func(e): if _is_tap(e): (cb["flag"] as Callable).call())
 	box.add_child(crest)
-	var edit := _label("✎", 26, Color(1.0, 0.85, 0.4))
-	_at(edit, box, Vector2(150, 222))
-	var nm := _label(String(info["name"]) + "  ✎", 38, Color(1.0, 0.85, 0.4))
-	_fit(nm, 38, 640)
-	_at(nm, box, Vector2(190, 92))
-	nm.mouse_filter = Control.MOUSE_FILTER_STOP
-	nm.gui_input.connect(func(e): if _is_tap(e): (cb["name"] as Callable).call())
-	var ch := _label(String(info["chapter"]), 22, TEXT, false)
-	_fit(ch, 22, 640)
-	_at(ch, box, Vector2(190, 148))
-	_at(_label(tr("profile.dl") % int(info["dl"]), 22, Color(0.55, 0.75, 1.0)), box, Vector2(190, 186))
-	# tiles
+	var rf := Panel.new()
+	rf.name = "ruler"
+	var rsb := Kit.style(Kit.face_of(_trim), 20, 4, Kit.INK, 6, 6)
+	rsb.set_meta("kit_kind", "")
+	rf.add_theme_stylebox_override("panel", rsb)
+	rf.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	rf.position = Vector2(176, 80)
+	rf.size = Vector2(120, 130)
+	box.add_child(rf)
+	rf.add_child(Kit.KitDecor.new())
+	var sky := Panel.new()
+	var ssb := Kit.style(Kit.SKY_TOP, 14, 0, Kit.INK, 0, 0)
+	ssb.set_meta("kit_kind", "")
+	sky.add_theme_stylebox_override("panel", ssb)
+	sky.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
+	sky.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	sky.position = Vector2(8, 8)
+	sky.size = Vector2(104, 104)
+	rf.add_child(sky)
+	var era := CmdPortrait.era
+	var rp := "res://assets/ui/portraits/ruler%s.png" % ("" if era <= 1 else "_e%d" % era)
+	if not ResourceLoader.exists(rp):
+		rp = "res://assets/ui/portraits/ruler.png"
+	if ResourceLoader.exists(rp):
+		var face := TextureRect.new()
+		face.texture = load(rp)
+		face.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		face.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		face.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		face.size = sky.size
+		sky.add_child(face)
+	else:
+		var cr := _icon_rect("crown", 72)
+		cr.position = Vector2(16, 16)
+		sky.add_child(cr)
+	var lv := Kit.hex_badge(box, Vector2(176 + 10, 80 + 130 - 6), 24, "info", str(int(info.get("dl", 1))))
+	lv.name = "dl"
+	var nx := 176.0 + 120.0 + 28.0
+	var nw := w - 32.0 - nx - (64.0 if cb.has("name") else 0.0)
+	var nm := String(info["name"])
+	var ns := Kit.fit_size(nm, 36, nw, "d900", 26, false)
+	var nl := Kit.label(nm, ns, Kit.INK_TEXT, true)
+	nl.name = "realm_name"
+	nl.add_theme_font_size_override("font_size", ns)
+	nl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	nl.clip_text = true
+	nl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	var tw := minf(Kit.text_w(nm, ns, "d900", false) + 4.0, nw)
+	nl.position = Vector2(nx, 92)
+	nl.size = Vector2(tw, 48)
+	box.add_child(nl)
+	if cb.has("name"):
+		nl.mouse_filter = Control.MOUSE_FILTER_STOP
+		nl.gui_input.connect(func(e): if _is_tap(e): (cb["name"] as Callable).call())
+		var np := _pencil(box, Vector2(nx + tw + 14.0 + 26.0, 116), cb["name"])
+		np.name = "edit_name"
+	if cb.has("flag"):
+		crest.gui_input.connect(func(e): if _is_tap(e): (cb["flag"] as Callable).call())
+		var fp := _pencil(box, Vector2(32 + 120 - 10, 72 + 154 - 22), cb["flag"])
+		fp.name = "edit_flag"
+	var chl := Kit.label(String(info.get("chapter", "")), 26, Kit.MUTED_CREAM, false)
+	chl.name = "chapter"
+	chl.clip_text = true
+	chl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	chl.position = Vector2(nx, 148)
+	chl.size = Vector2(w - 32.0 - nx, 36)
+	box.add_child(chl)
+	# ---- the stats
+	var sw := Kit.well(box, Rect2(32, 72.0 + 160.0 + 24.0, w - 64.0, stats_h))
+	sw.name = "stats"
 	var cm: Array = info["commanders"]
-	var cr: Array = info["chronicle"]
+	var cr2: Array = info["chronicle"]
 	var tiles := [
-		[tr("profile.hexes"), tr("profile.hexes_v") % int(info["hexes"]), "", false],
-		[tr("profile.map"), "%d%%" % int(info["map_pct"]), "", false],
-		[tr("profile.arena"), tr("profile.arena_v"), "", false],
-		[tr("profile.commanders"), "%d / %d" % [int(cm[0]), int(cm[1])], "commanders", bool(info["cmd_dot"])],
-		[tr("profile.chronicle"), "%d / %d" % [int(cr[0]), int(cr[1])], "chronicle", int(info["book_badge"]) > 0],
-		[tr("profile.wins"), str(int(info["wins"])), "", false],
+		["hex_tile", str(int(info["hexes"])), tr("profile.hexes"), "", false],
+		["globe", "%d%%" % int(info["map_pct"]), tr("profile.map"), "", false],
+		["crown", str(int(info.get("dl", 1))), tr("profile.dl_short"), "", false],
+		["frame", "%d/%d" % [int(cm[0]), int(cm[1])], tr("profile.commanders"), "commanders", bool(info.get("cmd_dot", false))],
+		["book", "%d/%d" % [int(cr2[0]), int(cr2[1])], tr("profile.chronicle"), "chronicle", int(info.get("book_badge", 0)) > 0],
+		["swords", str(int(info["wins"])), tr("profile.wins"), "", false],
 	]
+	var tw3 := (sw.size.x - 32.0 - 2.0 * 12.0) / 3.0
 	for i in tiles.size():
-		var t: Array = tiles[i]
-		var r := Rect2(30 + (i % 3) * 277, 280 + (i / 3) * 150, 263, 136)
-		var link := String(t[2]) != ""
-		var tile := _panel(box, r, _style(Color(0.12, 0.17, 0.28) if link else Color(0.09, 0.12, 0.2), 14, Color(1.0, 0.8, 0.35, 0.8) if link else EDGE, 2 if link else 1))
-		var tl := _label(String(t[0]), 18, MUTED, false)
-		_fit(tl, 18, 240)
-		_at(tl, tile, Vector2(16, 14))
-		var tv := _label(String(t[1]), 34, TEXT)
-		_fit(tv, 34, 240)
-		_at(tv, tile, Vector2(16, 52))
-		if link:
-			var go := _label("›", 34, Color(1.0, 0.85, 0.4))
-			_at(go, tile, Vector2(232, 48))
-			var key: String = t[2]
-			tile.gui_input.connect(func(e): if _is_tap(e): (cb[key] as Callable).call())
-		if bool(t[3]):
-			_panel(tile, Rect2(236, 10, 18, 18), _style(Color(0.3, 0.9, 0.4), 9, Color(1, 1, 1, 0.8), 2), Control.MOUSE_FILTER_IGNORE)
-	# the latest achievements
-	_at(_label(tr("profile.recent"), 22, Color(1.0, 0.85, 0.4)), box, Vector2(30, 600))
-	var y := 646.0
-	if (info["recent"] as Array).is_empty():
-		_at(_label(tr("profile.none"), 19, MUTED, false), box, Vector2(30, y))
-	for a in info["recent"]:
-		var row := _panel(box, Rect2(30, y, 821, 84), _style(Color(0.16, 0.14, 0.08), 12, Color(1.0, 0.8, 0.3, 0.7), 1), Control.MOUSE_FILTER_IGNORE)
-		_at(_label("✦", 34, Color(1.0, 0.8, 0.3)), row, Vector2(20, 16))
-		var an := _label(String(a["name"]), 21, TEXT)
-		_fit(an, 21, 700)
-		_at(an, row, Vector2(72, 10))
-		_at(_label(String(a["chapter"]), 16, MUTED, false), row, Vector2(72, 46))
-		y += 96.0
-	# buttons
-	var bs := [[tr("profile.timelapse"), "soon"], [tr("profile.compare"), "soon"], [tr("profile.friends"), "soon"], [tr("profile.settings"), "settings"]]
-	for i in bs.size():
-		var key: String = bs[i][1]
-		_button(box, Rect2(30 + (i % 2) * 416, 1300 - 216 + (i / 2) * 96, 405, 82), String(bs[i][0]),
-			Color(0.13, 0.4, 0.9) if key != "soon" else Color(0.22, 0.26, 0.36), cb[key])
+		var tdef: Array = tiles[i]
+		var key := String(tdef[3])
+		var r := Rect2(16.0 + (i % 3) * (tw3 + 12.0), 16.0 + (i / 3) * (PROFILE_TILE_H + 12.0), tw3, PROFILE_TILE_H)
+		var o := {"icon": String(tdef[0]), "icon_side": 52.0, "value": String(tdef[1]), "caption": String(tdef[2])}
+		if key != "" and cb.has(key):
+			o["cb"] = cb[key]
+		var t := Kit.tile(sw, r, o)
+		t.name = "stat_%d" % i
+		if key != "" and cb.has(key):
+			var chev := Kit.chrome(t, "chevron_right", Rect2(tw3 - 46.0, (PROFILE_TILE_H - 5.0) * 0.5 - 18.0, 36, 36), Kit.WHITE)
+			chev.name = "chevron"
+			if bool(tdef[4]):
+				Kit.dot(t, -1, "go").name = "dot"
+	# ---- the latest achievements
+	var ry := 72.0 + 160.0 + 24.0 + stats_h + 24.0
+	Kit.section(box, Vector2(32, ry), w - 64.0, tr("profile.recent"), "medal")
+	ry += 60.0
+	if recent.is_empty():
+		var none := Kit.label(tr("profile.none"), 28, Kit.MUTED_CREAM, false)
+		none.name = "none"
+		none.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		none.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		none.position = Vector2(32, ry)
+		none.size = Vector2(w - 64.0, 44)
+		box.add_child(none)
+		return
+	var rw_ := Kit.well(box, Rect2(32, ry, w - 64.0, rec_h))
+	rw_.name = "recent"
+	var y := 16.0
+	for a in recent:
+		var code := String(a.get("code", ""))
+		var row := Kit.row(rw_, Rect2(16, y, rw_.size.x - 32.0, 96), {"icon": _chr_medal(code) if code != "" else "medal",
+			"title": String(a["name"]), "sub": String(a.get("chapter", ""))})
+		row.name = "medal"
+		y += 96.0 + 12.0
+
+
+## A round info button Ø52 with the pencil (the profile's «edit»), centred at `c`; a 96 px touch zone.
+func _pencil(parent: Control, c: Vector2, cb: Callable) -> Kit.KitButton:
+	return Kit.button(parent, Rect2(c - Vector2(26, 26), Vector2(52, 52)), "info", "", {"icon": "pencil", "round": true,
+		"size": "XS", "icon_scale": 0.66, "hit_pad": 22.0, "cb": cb})
 
 
 var _flag_tab := "div"
@@ -2991,413 +3290,924 @@ func set_portrait_era(dl: int) -> void:
 	_trim = "steel" if dl >= 5 else "brass"  # the leader frames switch with the era too (§3.2)
 
 
-## The flag constructor (10 §4.23): the preview on top; tabs «Деление» (12), «Цвета» (2 field colours of 16, the
-## emblem's of 18 — gold and yellow only for the emblem), «Эмблема» (24 free + premium `cos_flag_part`), «Рамка»
-## (`cos_frame`); locked items show a lock; «Случайно» and «Готово». Each tap calls on_change with the new flag.
+## The flag constructor (10 §4.23, docs/ui_style.md §6 «Флаг, имя, мастер флага»): a paper window L with the info plate.
+## The preview on top, segments «Деление | Цвета | Эмблема | Рамка», the options of the tab as tiles in a well (a flag
+## 120, a colour swatch, an emblem on the field) — the chosen one with a go outline and check, a closed premium one
+## with a lock (a tap says so). Each tap calls on_change with the new flag (the caller shows the editor again). The
+## footer: «Случайно» (info, the die) → on_random, «Готово» (go) → on_done; ✕ leaves without keeping the draft.
+const FLAG_TILE := Vector2(120, 150)
+
+
 func show_flag_editor(flag: Dictionary, owned: Dictionary, on_change: Callable, on_random: Callable, on_done: Callable) -> void:
-	var box := _modal_box(Rect2(30, 120, 881, 1430))
-	_at(_label(tr("flag.title"), 30, Color(1.0, 0.85, 0.4)), box, Vector2(30, 26))
+	var area_h := 16.0 + 5.0 * 120.0 + 4.0 * 12.0 + 16.0  # the tallest tab: 27 emblems, 6 in a row
+	var h := 72.0 + 196.0 + 20.0 + 80.0 + 20.0 + area_h + 32.0 + 112.0 + 32.0
+	var box := _modal_box(_win_rect("L", h), false, tr("flag.title"), "", "info", true, false)
+	box.set_meta("kit_native", true)
+	var w := box.size.x
 	var prev := FlagView.new(flag)
-	prev.position = Vector2(330, 80)
-	prev.size = Vector2(220, 280)
+	prev.name = "preview"
+	prev.position = Vector2((w - 152.0) * 0.5, 72)
+	prev.size = Vector2(152, 196)
 	box.add_child(prev)
-	var tabs := [["div", tr("flag.tab_div")], ["colors", tr("flag.tab_colors")], ["em", tr("flag.tab_em")], ["frame", tr("flag.tab_frame")]]
-	for i in tabs.size():
-		var key: String = tabs[i][0]
-		var on := key == _flag_tab
-		_button(box, Rect2(30 + i * 207, 380, 195, 64), String(tabs[i][1]), Color(0.2, 0.42, 0.85) if on else Color(0.16, 0.2, 0.3), func():
-			_flag_tab = key
+	var keys := ["div", "colors", "em", "frame"]
+	var names := [tr("flag.tab_div"), tr("flag.tab_colors"), tr("flag.tab_em"), tr("flag.tab_frame")]
+	var seg := Kit.segmented(box, Rect2(32, 72.0 + 196.0 + 20.0, w - 64.0, 80), names, maxi(0, keys.find(_flag_tab)), func(i: int):
+		if keys[i] != _flag_tab:
+			_flag_tab = keys[i]
 			show_flag_editor(flag, owned, on_change, on_random, on_done))
-	var area := Control.new()
-	area.position = Vector2(30, 470)
-	area.size = Vector2(821, 800)
-	box.add_child(area)
+	seg.name = "tabs"
+	var area := Kit.well(box, Rect2(32, 72.0 + 196.0 + 20.0 + 80.0 + 20.0, w - 64.0, area_h))
+	area.name = "options"
+	var aw := area.size.x - 32.0
 	var set_key := func(k: String, v: Variant) -> void:
 		var f := flag.duplicate()
 		f[k] = v
 		on_change.call(f)
+	var locked_tip := func(node: Control) -> void: Kit.tooltip(node, tr("flag.locked"))
 	match _flag_tab:
 		"div":
+			var gx := (aw - 6.0 * FLAG_TILE.x) / 5.0
 			for i in FlagView.DIVISIONS.size():
 				var d: String = FlagView.DIVISIONS[i]
 				var f := flag.duplicate()
 				f["div"] = d
-				f["em"] = ""
-				_flag_tile(area, Rect2((i % 4) * 207, (i / 4) * 250, 195, 238), f, d == String(flag["div"]), false, func(): set_key.call("div", d))
+				var r := Rect2(16.0 + (i % 6) * (FLAG_TILE.x + gx), 16.0 + (i / 6) * (FLAG_TILE.y + 16.0), FLAG_TILE.x, FLAG_TILE.y)
+				_flag_tile(area, r, f, d == String(flag["div"]), false, func(): set_key.call("div", d))
 		"colors":
 			var groups := [["c1", tr("flag.field1"), FlagView.FIELD], ["c2", tr("flag.field2"), FlagView.FIELD], ["ec", tr("flag.emblem_c"), FlagView.emblem_colors()]]
-			var y := 0.0
+			var y := 12.0
+			var side := 72.0
+			var per := 9
+			var gx := (aw - per * side) / (per - 1)
 			for g in groups:
 				var key: String = g[0]
-				_at(_label(String(g[1]), 20, MUTED), area, Vector2(0, y))
-				y += 36.0
+				Kit.section(area, Vector2(16, y), aw, String(g[1]))
+				y += 52.0
 				var cols: Array = g[2]
 				for i in cols.size():
-					var r := Rect2((i % 9) * 91, y + (i / 9) * 91, 80, 80)
-					var sel := int(flag[key]) == i
-					var sw := _panel(area, r, _style(cols[i], 12, Color(1.0, 0.85, 0.3) if sel else Color(1, 1, 1, 0.25), 5 if sel else 2))
+					var r := Rect2(16.0 + (i % per) * (side + gx), y + (i / per) * (side + 12.0), side, side)
 					var idx := i
-					sw.gui_input.connect(func(e): if _is_tap(e): set_key.call(key, idx))
-				y += ceilf(cols.size() / 9.0) * 91.0 + 18.0
+					var sw := Kit.tile(area, r, {"face": cols[i], "selected": int(flag[key]) == i, "cb": func(): set_key.call(key, idx)})
+					sw.name = "%s_%d" % [key, i]
+				y += ceilf(cols.size() / float(per)) * (side + 12.0) + 8.0
 		"em":
 			var all: Array = FlagView.EMBLEMS + FlagView.PREMIUM.keys()
 			var ecs := FlagView.emblem_colors()
 			var ec: Color = ecs[clampi(int(flag["ec"]), 0, ecs.size() - 1)]
 			var bg := FlagView.field_color(int(flag["c1"]))
+			var side := 120.0
+			var gx := (aw - 6.0 * side) / 5.0
 			for i in all.size():
 				var em: String = all[i]
 				var locked := FlagView.PREMIUM.has(em) and not owned.has(em)
-				var sel := em == String(flag["em"])
-				var r := Rect2((i % 6) * 137, (i / 6) * 137, 125, 125)
-				var tile := _panel(area, r, _style(bg, 14, Color(1.0, 0.85, 0.3) if sel else (Color(0.8, 0.55, 1.0) if FlagView.PREMIUM.has(em) else Color(1, 1, 1, 0.2)), 5 if sel else 2))
+				var r := Rect2(16.0 + (i % 6) * (side + gx), 16.0 + (i / 6) * (side + 12.0), side, side)
+				var t := Kit.tile(area, r, {"face": bg, "selected": em == String(flag["em"])})
+				t.name = "em_%s" % em
 				var art := Control.new()
-				art.size = r.size
+				art.size = Vector2(side, side - 5.0)
 				art.mouse_filter = Control.MOUSE_FILTER_IGNORE
 				var draw_em := String(FlagView.PREMIUM.get(em, em))
-				art.draw.connect(func(): FlagView.draw_emblem(art, draw_em, art.size / 2, 40.0, ec))
-				tile.add_child(art)
+				art.draw.connect(func(): FlagView.draw_emblem(art, draw_em, art.size / 2, 36.0, ec))
 				if locked:
-					tile.modulate = Color(1, 1, 1, 0.45)
-					_at(_icon_rect(INLINE_ICONS["🔒"], 28.0), tile, Vector2(86, 4))
-				tile.gui_input.connect(func(e):
-					if _is_tap(e):
-						if locked:
-							toast(tr("flag.locked"))
-						else:
-							set_key.call("em", em))
+					art.modulate = Kit.LOCK_MOD
+				t.add_child(art)
+				t.move_child(art, 1)
+				if locked:
+					var lk := _icon_rect("lock", 40)
+					lk.position = Vector2(side - 46.0, side - 50.0)
+					t.add_child(lk)
+					t.cb = func(): locked_tip.call(t)
+				else:
+					t.cb = func(): set_key.call("em", em)
 		"frame":
 			var ids: Array = FlagView.FRAMES.keys()
+			var gx := (aw - 6.0 * FLAG_TILE.x) / 5.0
 			for i in ids.size():
 				var fid: String = ids[i]
 				var locked := fid != "" and not owned.has(fid)
 				var f := flag.duplicate()
 				f["frame"] = fid
-				_flag_tile(area, Rect2((i % 4) * 207, (i / 4) * 262, 195, 250), f, fid == String(flag["frame"]), locked, func():
+				var r := Rect2(16.0 + (i % 6) * (FLAG_TILE.x + gx), 16.0 + (i / 6) * (FLAG_TILE.y + 16.0), FLAG_TILE.x, FLAG_TILE.y)
+				var holder := [null]
+				holder[0] = _flag_tile(area, r, f, fid == String(flag["frame"]), locked, func():
 					if locked:
-						toast(tr("flag.locked"))
+						locked_tip.call(holder[0])
 					else:
 						set_key.call("frame", fid))
-	_button(box, Rect2(30, 1430 - 110, 400, 84), tr("flag.random"), Color(0.45, 0.3, 0.75), on_random)
-	_button(box, Rect2(451, 1430 - 110, 400, 84), tr("flag.done"), Color(0.2, 0.6, 0.3), on_done)
+	var fy := box.size.y - 32.0 - 112.0
+	var rw_ := (w - 64.0 - 16.0) * 0.4
+	Kit.button(box, Rect2(32, fy, rw_, 112), "info", tr("flag.random"), {"size": "L", "icon": "dice", "cb": on_random}).name = "random"
+	Kit.button(box, Rect2(32.0 + rw_ + 16.0, fy, w - 64.0 - rw_ - 16.0, 112), "go", tr("flag.done"), {"size": "L", "cb": on_done}).name = "done"
 
 
-## «Название державы» (canon §14.3): a text field (the system keyboard on a phone), 6 ideas as chips, a die for
-## new ideas, «Готово». An empty field keeps «Ваша держава».
+## «Название державы» (canon §14.3, §6 «Флаг, имя»): a paper window M with the info plate; the name field is a well
+## (INK 3, R 20, Nunito 800 30 — the system keyboard on a phone); six ideas as option tiles (the one in the field has a go
+## outline and check; a tap puts it in the field). The footer: «Ещё идеи» (info, the die) → on_more, «Готово» (go) →
+## on_done(text). An empty field keeps «Ваша держава».
 func show_name_editor(current: String, ideas: Array, max_len: int, on_done: Callable, on_more: Callable) -> void:
-	var box := _modal_box(Rect2(60, 340, 821, 680))
-	var t := _label(tr("realm.title"), 32, Color(1.0, 0.85, 0.4))
-	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_at(t, box, Vector2(0, 30), Vector2(821, 44))
+	var rows := ceili(ideas.size() / 2.0)
+	var ideas_h := 16.0 + rows * 72.0 + (rows - 1) * 12.0 + 16.0
+	var h := 72.0 + 88.0 + 24.0 + 60.0 + ideas_h + 32.0 + 112.0 + 32.0
+	var box := _modal_box(_win_rect("M", h), false, tr("realm.title"), "pencil", "info", false, false)
+	box.set_meta("kit_native", true)
+	var w := box.size.x
 	var field := LineEdit.new()
+	field.name = "field"
 	field.text = current
 	field.placeholder_text = tr("state.player")
 	field.max_length = max_len
-	field.position = Vector2(40, 100)
-	field.size = Vector2(741, 84)
-	field.add_theme_font_size_override("font_size", 34)
-	if font_bold:
-		field.add_theme_font_override("font", font_bold)
-	field.add_theme_stylebox_override("normal", _style(Color(0.08, 0.11, 0.18), 14, Color(1.0, 0.8, 0.35, 0.8), 2))
-	field.add_theme_stylebox_override("focus", _style(Color(0.1, 0.14, 0.22), 14, Color(1.0, 0.85, 0.4), 3))
+	field.position = Vector2(32, 72)
+	field.size = Vector2(w - 64.0, 88)
 	field.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	field.add_theme_font_override("font", Kit.font("b800"))
+	field.add_theme_font_size_override("font_size", 30)
+	field.add_theme_color_override("font_color", Kit.INK_TEXT)
+	field.add_theme_color_override("font_placeholder_color", Kit.MUTED_CREAM)
+	field.add_theme_color_override("caret_color", Kit.INK_TEXT)
+	field.add_theme_color_override("selection_color", Kit.alpha(Kit.face_of("info"), 0.35))
+	for st in ["normal", "focus", "read_only"]:
+		var sb := Kit.style(Kit.CREAM_WELL, 20, 3, Kit.face_of("info") if st == "focus" else Kit.INK, 0, 0)
+		sb.set_meta("kit_kind", "")
+		sb.content_margin_left = 20
+		sb.content_margin_right = 20
+		field.add_theme_stylebox_override(st, sb)
 	box.add_child(field)
-	_at(_label(tr("realm.ideas"), 20, MUTED), box, Vector2(40, 210))
-	for i in ideas.size():
-		var idea: String = ideas[i]
-		_button(box, Rect2(40 + (i % 2) * 376, 250 + (i / 2) * 96, 365, 82), idea, Color(0.16, 0.22, 0.34), func():
-			field.text = idea)
-	_button(box, Rect2(40, 680 - 120, 300, 84), tr("realm.more"), Color(0.45, 0.3, 0.75), on_more)
-	_button(box, Rect2(361, 680 - 120, 420, 84), tr("flag.done"), Color(0.2, 0.6, 0.3), func(): on_done.call(field.text))
+	Kit.section(box, Vector2(32, 72.0 + 88.0 + 24.0), w - 64.0, tr("realm.ideas"), "dice")
+	var well := Kit.well(box, Rect2(32, 72.0 + 88.0 + 24.0 + 60.0, w - 64.0, ideas_h))
+	well.name = "ideas"
+	var draw_ideas := func(self_ref: Callable) -> void:
+		for ch in well.get_children():
+			ch.queue_free()
+		var iw := (well.size.x - 32.0 - 12.0) / 2.0
+		for i in ideas.size():
+			var idea := String(ideas[i])
+			var r := Rect2(16.0 + (i % 2) * (iw + 12.0), 16.0 + (i / 2) * 84.0, iw, 72)
+			var t := Kit.tile(well, r, {"title": idea, "selected": field.text.strip_edges() == idea})
+			t.name = "idea_%d" % i
+			t.cb = func():
+				field.text = idea
+				self_ref.call(self_ref)
+	draw_ideas.call(draw_ideas)
+	field.text_changed.connect(func(_t: String): draw_ideas.call(draw_ideas))
+	var fy := box.size.y - 32.0 - 112.0
+	var rw_ := (w - 64.0 - 16.0) * 0.4
+	Kit.button(box, Rect2(32, fy, rw_, 112), "info", tr("realm.more"), {"size": "L", "icon": "dice", "cb": on_more}).name = "more"
+	Kit.button(box, Rect2(32.0 + rw_ + 16.0, fy, w - 64.0 - rw_ - 16.0, 112), "go", tr("flag.done"), {"size": "L",
+		"cb": func(): on_done.call(field.text)}).name = "done"
 
 
-## The FTUE flag wizard (canon §14.3: 3 taps): step dots, 6 flags to pick from (division, emblem, colours), then
-## the chosen flag with «Готово» and «Случайно»; «Можно изменить в профиле».
+## The FTUE flag wizard (canon §14.3: 3 taps, §6 «Флаг, имя, мастер флага»): a paper window L with the info plate. The
+## steps as three hexes under it (the passed ones go, the current info); 6 flags to pick from as option tiles (division,
+## emblem, colours) → on_pick(i), «Случайно» under them; then the chosen flag big with «Можно изменить в профиле»,
+## «Случайно» and «Готово».
 func show_flag_wizard(step: int, opts: Array, on_pick: Callable, on_random: Callable, on_done: Callable) -> void:
-	var box := _modal_box(Rect2(30, 170, 881, 1300))
 	var titles := [tr("flagw.title0"), tr("flagw.title1"), tr("flagw.title2"), tr("flagw.title3")]
-	var t := _label(String(titles[mini(step, 3)]), 32, Color(1.0, 0.85, 0.4))
-	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_at(t, box, Vector2(0, 30), Vector2(881, 44))
+	var tile := Vector2(256, 320)
+	var grid_h := 16.0 + 2.0 * tile.y + 16.0 + 16.0
+	var body_h := grid_h if step < 3 else 420.0 + 16.0 + 44.0
+	var h := 72.0 + 48.0 + 16.0 + body_h + 32.0 + 112.0 + 32.0
+	var box := _modal_box(_win_rect("L", h), false, String(titles[mini(step, 3)]), "", "info", false, false)
+	box.set_meta("kit_native", true)
+	var w := box.size.x
+	# the steps: three hexes on a line
+	var line := Panel.new()
+	var lsb := Kit.style(Kit.CREAM_DEEP, 4, 0, Kit.INK, 0, 0)
+	lsb.set_meta("kit_kind", "")
+	line.add_theme_stylebox_override("panel", lsb)
+	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	line.position = Vector2(w * 0.5 - 72.0, 72.0 + 24.0 - 4.0)
+	line.size = Vector2(144, 8)
+	box.add_child(line)
 	for i in 3:
-		var on := i <= step
-		_panel(box, Rect2(380 + i * 44, 90, 30, 30), _style(Color(1.0, 0.8, 0.3) if on else Color(0.2, 0.24, 0.34), 15, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
+		var role := "go" if i < step else ("info" if i == step else "")
+		var hb := Kit.hex_badge(box, Vector2(w * 0.5 + (i - 1) * 72.0, 72.0 + 24.0), 22, role if role != "" else "info", str(i + 1),
+			Kit.CLEAR if role != "" else Kit.CREAM_DEEP.darkened(0.2))
+		hb.name = "step_%d" % i
+	var y0 := 72.0 + 48.0 + 16.0
+	var fy := box.size.y - 32.0 - 112.0
 	if step < 3:
+		var well := Kit.well(box, Rect2(32, y0, w - 64.0, grid_h))
+		well.name = "options"
+		var gx := (well.size.x - 32.0 - 3.0 * tile.x) / 2.0
 		for i in opts.size():
-			var r := Rect2(40 + (i % 3) * 272, 150 + (i / 3) * 430, 256, 410)
-			_flag_tile(box, r, opts[i], false, false, func(): on_pick.call(i))
-		_button(box, Rect2(240, 1300 - 120, 400, 84), tr("flag.random"), Color(0.45, 0.3, 0.75), on_random)
+			var r := Rect2(16.0 + (i % 3) * (tile.x + gx), 16.0 + (i / 3) * (tile.y + 16.0), tile.x, tile.y)
+			var idx := i
+			_flag_tile(well, r, opts[i], false, false, func(): on_pick.call(idx))
+		Kit.button(box, Rect2((w - 480.0) * 0.5, fy, 480, 112), "info", tr("flag.random"), {"size": "L", "icon": "dice",
+			"cb": on_random}).name = "random"
 		return
 	var big := FlagView.new(opts[0])
-	big.position = Vector2(270, 160)
-	big.size = Vector2(340, 440)
+	big.name = "flag"
+	big.position = Vector2((w - 326.0) * 0.5, y0)
+	big.size = Vector2(326, 420)
 	box.add_child(big)
-	var hint := _label(tr("flagw.later"), 20, MUTED, false)
-	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_at(hint, box, Vector2(0, 640), Vector2(881, 30))
-	_button(box, Rect2(40, 1300 - 120, 390, 84), tr("flag.random"), Color(0.45, 0.3, 0.75), on_random)
-	_button(box, Rect2(451, 1300 - 120, 390, 84), tr("flag.done"), Color(0.2, 0.6, 0.3), on_done)
+	var hint := _paper_chip(box, Vector2(w * 0.5, y0 + 420.0 + 16.0 + 22.0), "pencil", tr("flagw.later"), w - 64.0)
+	hint.name = "hint"
+	var rw_ := (w - 64.0 - 16.0) * 0.4
+	Kit.button(box, Rect2(32, fy, rw_, 112), "info", tr("flag.random"), {"size": "L", "icon": "dice", "cb": on_random}).name = "random"
+	Kit.button(box, Rect2(32.0 + rw_ + 16.0, fy, w - 64.0 - rw_ - 16.0, 112), "go", tr("flag.done"), {"size": "L",
+		"cb": on_done}).name = "done"
 
 
-func _flag_tile(parent: Control, r: Rect2, f: Dictionary, sel: bool, locked: bool, cb: Callable) -> void:
-	var tile := _panel(parent, r, _style(Color(0.1, 0.14, 0.23), 14, Color(1.0, 0.85, 0.3) if sel else EDGE, 4 if sel else 1))
+## A flag as an option tile (§4.9): the banner on a paper tile; the chosen one with a go outline and check; a closed one
+## (a frame not owned yet) with its banner dimmed and a lock. A tap calls `cb`.
+func _flag_tile(parent: Control, r: Rect2, f: Dictionary, sel: bool, locked: bool, cb: Callable) -> Control:
+	var t := Kit.tile(parent, r, {"selected": sel, "cb": cb})
+	t.name = "flag_" + String(f.get("div", "")) + "_" + String(f.get("em", ""))
+	var fh := r.size.y - 5.0 - 20.0
+	var fw := minf(r.size.x - 24.0, fh * 0.78)
+	fh = fw / 0.78
 	var fv := FlagView.new(f)
-	fv.position = Vector2(r.size.x * 0.18, 12)
-	fv.size = Vector2(r.size.x * 0.64, r.size.y - 24)
-	tile.add_child(fv)
+	fv.position = Vector2((r.size.x - fw) * 0.5, (r.size.y - 5.0 - fh) * 0.5)
+	fv.size = Vector2(fw, fh)
 	if locked:
-		tile.modulate = Color(1, 1, 1, 0.45)
-		_at(_icon_rect(INLINE_ICONS["🔒"], 30.0), tile, Vector2(r.size.x - 40, 6))
-	tile.gui_input.connect(func(e): if _is_tap(e): cb.call())
+		fv.modulate = Kit.LOCK_MOD
+	t.add_child(fv)
+	t.move_child(fv, 1)  # under the check badge
+	if locked:
+		var lk := _icon_rect("lock", 40)
+		lk.position = Vector2(r.size.x - 46.0, r.size.y - 54.0)
+		t.add_child(lk)
+	return t
 
 
-## The commander picker of an army (04 §15.6): a row per open commander — portrait, level, the passive now, the
-## best one marked «Рекомендуем», one of another army marked with its number; «Снять» at the bottom.
+## The commander picker of an army (04 §15.6, docs/ui_style.md §6): a window M with a row per open commander —
+## the portrait 72 with its level, the name, the skill in a chip, «Назначить» go XS at the right; the commander who
+## leads this army is the selected row (a go outline and a check); the best free one wears the ribbon «Рекомендуем»,
+## one of another army a chip with its number. «Снять» (info S) under the list while one leads it; ✕ closes.
+## rows: [{id, name, rarity, level, lines, skills?, busy, here, best?}]
+const PICK_ROW := 112.0
+
+
 func show_cmd_picker(title: String, rows: Array, on_pick: Callable, on_remove: Callable) -> void:
-	var h := minf(1370.0, 200.0 + rows.size() * 142.0 + 110.0)
-	var box := _modal_box(Rect2(30, maxf(150.0, (VH - h) / 2.0 - 60.0), 881, h))
-	_button(box, Rect2(881 - 86, 18, 64, 56), "✕", Color(0.3, 0.33, 0.42), close_modal)
-	var t := _label(title, 30, Color(1.0, 0.85, 0.4))
-	_at(t, box, Vector2(30, 26))
-	var scroll := ScrollContainer.new()
-	scroll.position = Vector2(20, 90)
-	scroll.size = Vector2(841, h - 210)
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	box.add_child(scroll)
-	var col := VBoxContainer.new()
-	col.custom_minimum_size = Vector2(830, 0)
-	col.add_theme_constant_override("separation", 10)
-	scroll.add_child(col)
+	var any_here := rows.any(func(r): return bool(r["here"]))
+	var list_h := 16.0 + rows.size() * (PICK_ROW + 12.0) - 12.0 + 16.0 + 14.0  # the first row's ribbon pokes up 14
+	var foot := 16.0 + 64.0 if any_here else 0.0
+	var box := _modal_box(_win_rect("M", 72.0 + list_h + foot + 32.0), false, title, "frame", "info", true, false)
+	box.set_meta("kit_native", true)
+	var w := box.size.x
+	var well := Kit.well(box, Rect2(32, 72, w - 64.0, box.size.y - 72.0 - foot - 32.0))
+	var host: Control = well
+	var lane := 0.0
+	if list_h > well.size.y + 1.0:
+		host = Kit.scroller(well, list_h)["inner"]
+		lane = 12.0
+	var rw := well.size.x - 32.0 - lane
+	var y := 30.0
 	for r in rows:
 		var here := bool(r["here"])
-		var best := bool(r.get("best", false))
-		var row := Panel.new()
-		row.custom_minimum_size = Vector2(830, 132)
-		row.mouse_filter = Control.MOUSE_FILTER_PASS
-		row.add_theme_stylebox_override("panel", _style(Color(0.15, 0.24, 0.16) if here else Color(0.1, 0.14, 0.23), 12, Color(0.3, 0.9, 0.4) if here else (Color(1.0, 0.8, 0.3) if best else EDGE), 2))
-		var pr := CmdPortrait.new(String(r["id"]), String(r["rarity"]))
-		pr.position = Vector2(10, 10)
-		pr.size = Vector2(96, 112)
-		row.add_child(pr)
-		var nm := _label("%s · %s" % [String(r["name"]), tr("cmdr.lvl_n") % int(r["level"])], 20)
-		_fit(nm, 20, 520)
-		nm.position = Vector2(124, 10)
-		row.add_child(nm)
-		var y := 44.0
-		for ln in r["lines"]:
-			var pl := _label(String(ln), 16, Color(0.75, 0.88, 1.0), false)
-			_fit(pl, 16, 690)
-			pl.position = Vector2(124, y)
-			row.add_child(pl)
-			y += 26.0
-		var tag := tr("cmdr.leads") if here else (String(r["busy"]) if String(r["busy"]) != "" else (tr("cmdr.recommend") if best else ""))
-		if tag != "":
-			var tl := _label(tag, 16, Color(0.5, 1.0, 0.6) if here else (Color(1.0, 0.85, 0.4) if best else MUTED))
-			tl.position = Vector2(560, 12)
-			tl.size = Vector2(256, 24)
-			tl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-			row.add_child(tl)
-		var id: String = r["id"]
-		row.gui_input.connect(func(e): if _is_tap(e) and not here: on_pick.call(id))
-		col.add_child(row)
-	var any_here := rows.any(func(r): return bool(r["here"]))
-	_button(box, Rect2(30, h - 106, 821, 80), tr("cmdr.remove") if any_here else tr("ui.close"), Color(0.55, 0.2, 0.2) if any_here else Color(0.13, 0.4, 0.9), on_remove)
+		var id := String(r["id"])
+		var pic := _cmd_face(id, String(r["rarity"]), 72.0, int(r["level"]))
+		var o := {"icon_node": pic, "title": String(r["name"]), "sub": " "}
+		if here:
+			o["state"] = "selected"
+		else:
+			var b := Kit.button(null, Rect2(0, 0, 196, 48), "go", tr("cmdr.assign"), {"size": "XS", "filter": Control.MOUSE_FILTER_PASS,
+				"cb": func(): on_pick.call(id)})
+			b.name = "assign"
+			o["right"] = b
+		var row := Kit.row(host, Rect2(16, y, rw, PICK_ROW), o)
+		row.name = id
+		var sub := row.get_node_or_null("sub")
+		if sub:
+			sub.queue_free()
+		var skills: Array = r.get("skills", [])
+		if not skills.is_empty():
+			var sk: Dictionary = skills[0]
+			var room := (row.right.position.x if row.right else rw - 16.0) - row.title_label.position.x - 16.0
+			var chip := _paper_chip(row, Vector2.ZERO, _skill_icon(sk), _skill_text(sk), room)
+			chip.position = Vector2(row.title_label.position.x, roundf((PICK_ROW - 5.0) * 0.5 + 2.0))
+		if not here:
+			row.cb = func(): on_pick.call(id)
+		var busy := String(r.get("busy", ""))
+		if busy != "":
+			var bc := Kit.chip(row, Vector2.ZERO, "", busy, "status")
+			bc.name = "busy"
+			bc.position = Vector2(rw - 24.0 - bc.size.x, -17)
+		elif bool(r.get("best", false)) and not here:
+			var rb := Kit.ribbon(row, Vector2.ZERO, tr("cmdr.recommend"), "gold")
+			rb.position = Vector2(rw - 24.0 - rb.size.x, -17)
+		y += PICK_ROW + 12.0
+	if any_here:
+		var rm := Kit.button(box, Rect2((w - 320.0) * 0.5, box.size.y - 32.0 - 64.0, 320, 64), "info", tr("cmdr.remove"),
+			{"size": "S", "cb": on_remove})
+		rm.name = "remove"
 
 
-## The collection (04 §15.7): albums, each a 3 × N grid of commander cards; a tap opens the commander.
+## A commander's face in a small slot (a picker row, a choice card): the portrait with its rarity frame and, when
+## open, the level in an info hex on the bottom-right corner.
+func _cmd_face(id: String, rarity: String, side: float, level := 0, locked := false) -> Control:
+	var holder := Control.new()
+	holder.name = "face"
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	holder.size = Vector2(side, side)
+	var p := CmdPortrait.new(id, rarity, locked)
+	p.size = holder.size
+	holder.add_child(p)
+	if level > 0:
+		var hb := Kit.hex_badge(holder, Vector2(side - 6.0, side - 6.0), 18, "info", str(level))
+		hb.name = "level"
+	return holder
+
+
+## A commander skill's icon by its passive key (sim/commanders.gd PASSIVES).
+const SKILL_ICON := {"inf": "helmet", "refill": "crate", "forts": "fort", "scout": "target", "power": "swords",
+	"wedge": "target", "pocket": "target", "landing": "anchor", "port": "anchor", "home": "shield", "breach": "hammer",
+	"attack": "swords", "air": "lightning", "energy": "lightning", "forms": "orders", "regen": "lightning"}
+
+
+static func _skill_icon(sk: Dictionary) -> String:
+	return String(sk.get("icon", SKILL_ICON.get(String(sk.get("key", "")), "frame")))
+
+
+## «Клин +5,8%»: a skill's short name and its value now (a fixed part — «Разведка» — has no value).
+static func _skill_text(sk: Dictionary) -> String:
+	var v := String(sk.get("value", ""))
+	return String(sk.get("name", "")) + (" " + v if v != "" else "")
+
+
+## The collection (04 §15.7, docs/ui_style.md §6 «Командиры»): a window L with the info plate and the frame, the
+## «owned/total» chip under it; an album is a section with its «3/4» chip, then tiles 3 in a row (a short last row
+## centred). A tap on a tile opens the commander (on_pick(id)). The list scrolls in its well and keeps its place when
+## the player comes back from a card.
+## info: {title, owned?, total?, albums: [{name, full, cards: [{id, name, rarity, level, cap, can, shards?, src}]}]}
+const CMD_TILE := Vector2(250, 320)
+const CMD_GAP_Y := 18.0
+const CMD_HEAD := 60.0  # an album's section header (48) and its gap
+var _cmd_scroll := 0  # the collection's scroll (kept across the trip to a card and back)
+
+
 func show_commanders(info: Dictionary, on_pick: Callable) -> void:
-	var box := _modal_box(Rect2(30, 150, 881, 1370))
-	_button(box, Rect2(881 - 86, 18, 64, 56), "✕", Color(0.3, 0.33, 0.42), close_modal)
-	_at(_label(String(info["title"]), 30, Color(1.0, 0.85, 0.4)), box, Vector2(30, 26))
-	var scroll := ScrollContainer.new()
-	scroll.position = Vector2(20, 90)
-	scroll.size = Vector2(841, 1260)
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	box.add_child(scroll)
-	var col := VBoxContainer.new()
-	col.custom_minimum_size = Vector2(830, 0)
-	col.add_theme_constant_override("separation", 10)
-	scroll.add_child(col)
-	for a in info["albums"]:
-		var hl := _label(String(a["name"]) + ("  ✦" if bool(a["full"]) else ""), 22, Color(1.0, 0.85, 0.4) if bool(a["full"]) else MUTED)
-		hl.custom_minimum_size = Vector2(830, 40)
-		hl.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
-		col.add_child(hl)
-		var grid := GridContainer.new()
-		grid.columns = 3
-		grid.add_theme_constant_override("h_separation", 13)
-		grid.add_theme_constant_override("v_separation", 13)
-		col.add_child(grid)
+	var albums: Array = info["albums"]
+	var owned := 0
+	var total := 0
+	for a in albums:
 		for c in a["cards"]:
-			grid.add_child(_commander_tile(c, on_pick))
+			total += 1
+			if int(c["level"]) > 0:
+				owned += 1
+	owned = int(info.get("owned", owned))
+	total = int(info.get("total", total))
+	var content_h := 16.0
+	for a in albums:
+		content_h += CMD_HEAD + ceili((a["cards"] as Array).size() / 3.0) * (CMD_TILE.y + CMD_GAP_Y)
+	content_h += 18.0  # the ribbon of a tile in the first row pokes up; the last row's shadow
+	var keep := _modal != null and (_modal.has_meta("commanders") or _modal.has_meta("commander"))
+	var at := _cmd_scroll if keep else 0
+	var box := _modal_box(_win_rect("L", 88.0 + content_h + 32.0), false, tr("cmdr.title"), "frame", "info", true, false)
+	_modal.set_meta("commanders", true)
+	box.set_meta("kit_native", true)
+	var w := box.size.x
+	var cc := Kit.chip(box, Vector2.ZERO, "", "%d/%d" % [owned, total], "status")
+	cc.name = "count"
+	cc.position = Vector2((w - cc.size.x) * 0.5, 34)
+	var well := Kit.well(box, Rect2(32, 88, w - 64.0, box.size.y - 88.0 - 32.0))
+	var host: Control = well
+	var lane := 0.0
+	if content_h > well.size.y + 1.0:
+		var sc: Dictionary = Kit.scroller(well, content_h)
+		host = sc["inner"]
+		lane = 12.0
+		var scroll: ScrollContainer = sc["scroll"]
+		scroll.get_v_scroll_bar().value_changed.connect(func(v: float): _cmd_scroll = int(v))
+		Kit.scroll_to(scroll, float(at))
+	_cmd_scroll = at
+	var rw := well.size.x - 32.0 - lane
+	var gap_x := (rw - 3.0 * CMD_TILE.x) / 2.0
+	var y := 16.0
+	for a in albums:
+		var cards: Array = a["cards"]
+		var have := cards.filter(func(c): return int(c["level"]) > 0).size()
+		var chip := Kit.chip(null, Vector2.ZERO, "", "%d/%d" % [have, cards.size()], "status")
+		chip.name = "album_count"
+		Kit.section(host, Vector2(16, y), rw - chip.size.x - 12.0, String(a["name"]))
+		chip.position = Vector2(16 + rw - chip.size.x, y + 7.0)
+		host.add_child(chip)
+		y += CMD_HEAD
+		for i in cards.size():
+			var row_n := mini(3, cards.size() - (i / 3) * 3)  # how many tiles share this row
+			var x0 := 16.0 + (rw - (row_n * CMD_TILE.x + (row_n - 1) * gap_x)) * 0.5
+			var t := _commander_tile(cards[i], on_pick)
+			t.position = Vector2(x0 + (i % 3) * (CMD_TILE.x + gap_x), y + 14.0 + (i / 3) * (CMD_TILE.y + CMD_GAP_Y))
+			host.add_child(t)
+		y += ceili(cards.size() / 3.0) * (CMD_TILE.y + CMD_GAP_Y)
 
 
+## The sources of a commander's shards (cmdr.src.* says the same in words): [icon, key, arg] — the card's «Где взять»
+## chips and, as icons alone, a locked tile's.
+const CMD_SRC := {
+	"cmd_bram": [["swords", "cmdr.s.tutorial", 0]],
+	"cmd_lira": [["trophy", "cmdr.s.chapter", 1]],
+	"cmd_olm": [["chest_wood", "cmdr.s.crates", 0], ["swords", "cmdr.s.arena", 0]],
+	"cmd_vik": [["chest_wood", "cmdr.s.crates", 0], ["orders", "cmdr.s.orders", 0]],
+	"cmd_vega": [["calendar", "cmdr.s.calendar", 4], ["chest_wood", "cmdr.s.crates", 0]],
+	"cmd_kort": [["horn", "cmdr.s.events", 0], ["chest_wood", "cmdr.s.crates", 0]],
+	"cmd_seir": [["medal", "cmdr.s.pass", 0], ["chest_wood", "cmdr.s.crates", 0]],
+	"cmd_frey": [["trophy", "cmdr.s.chapter", 2], ["chest_wood", "cmdr.s.crates", 0]],
+	"cmd_irma": [["calendar", "cmdr.s.calendar", 7], ["chest_royal", "cmdr.s.royal", 0]],
+	"cmd_hawk": [["trophy", "cmdr.s.chapter", 3], ["chest_royal", "cmdr.s.royal", 0]],
+	"cmd_vance": [["gift", "cmdr.s.recruit", 0], ["horn", "cmdr.s.events", 0], ["chest_royal", "cmdr.s.royal", 0]],
+	"cmd_rai": [["trophy", "cmdr.s.chapter", 4], ["calendar", "cmdr.s.calendar", 28], ["medal", "cmdr.s.pass", 0],
+		["chest_royal", "cmdr.s.cases", 0]],
+}
+
+
+func _src_text(s: Array) -> String:
+	var k := String(s[1])
+	match k:
+		"cmdr.s.chapter":
+			return tr(k) % ROMAN[clampi(int(s[2]), 0, ROMAN.size() - 1)]
+		"cmdr.s.calendar":
+			return tr(k) % int(s[2])
+	return tr(k)
+
+
+## A tile of the collection (§6 «Командиры», 250×320): the portrait full-bleed on its rarity gradient in an INK body,
+## the rarity gem (a hex of the rarity's colour) top-left and the level hex top-right, the name on a scrim, the shard
+## bar M at the bottom — full «4/4» in go with the go ribbon «Повысить!» when a level can be bought (never «29/4»),
+## gold at the top level. A locked one: the faint silhouette, a lock, the sources as icon chips and the shards toward
+## the unlock. A tap opens the card.
 func _commander_tile(c: Dictionary, on_pick: Callable) -> Control:
-	var lvl: int = c["level"]
-	var tile := Panel.new()
-	tile.custom_minimum_size = Vector2(268, 350)
-	tile.add_theme_stylebox_override("panel", _style(Color(0.1, 0.14, 0.23), 14, Color(0.3, 0.9, 0.4) if bool(c["can"]) else EDGE, 3 if bool(c["can"]) else 1))
-	tile.mouse_filter = Control.MOUSE_FILTER_PASS
-	var p := CmdPortrait.new(String(c["id"]), String(c["rarity"]), lvl <= 0)
-	p.position = Vector2(8, 8)
-	p.size = Vector2(252, 222)
-	tile.add_child(p)
-	var nm := _label(String(c["name"]), 19, TEXT if lvl > 0 else MUTED)
-	_fit(nm, 19, 252)
-	nm.position = Vector2(8, 236)
-	nm.size = Vector2(252, 28)
-	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	tile.add_child(nm)
-	var sub := _label(tr("cmdr.lvl") % [lvl, int(c["cap"])] if lvl > 0 else String(c.get("src", "")), 16 if lvl > 0 else 14, Color(1.0, 0.85, 0.4) if lvl > 0 else MUTED, lvl > 0)
-	_fit(sub, 16 if lvl > 0 else 14, 252)
-	sub.position = Vector2(8, 266)
-	sub.size = Vector2(252, 24)
-	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	tile.add_child(sub)
+	var lvl := int(c["level"])
+	var locked := lvl <= 0
+	var can := bool(c.get("can", false))
+	var rarity := String(c["rarity"])
+	var w := CMD_TILE.x
+	var h := CMD_TILE.y
+	var t := Kit.KitTile.new()
+	t.name = String(c["id"])
+	var sb := Kit.style(Kit.INK, 24, 0, Kit.INK, 5, 0)
+	sb.set_meta("kit_kind", "")
+	t.add_theme_stylebox_override("panel", sb)
+	t.size = CMD_TILE
+	var id := String(c["id"])
+	t.cb = func(): on_pick.call(id)
+	var p := CmdPortrait.new(id, rarity, locked)
+	p.name = "portrait"
+	p.position = Vector2(4, 4)
+	p.size = Vector2(w - 8.0, h - 8.0)
+	t.add_child(p)
+	var clip := Panel.new()  # the scrim follows the frame's inner corners
+	var csb := Kit.style(Kit.INK, 16, 0, Kit.INK, 0, 0)
+	csb.set_meta("kit_kind", "")
+	clip.add_theme_stylebox_override("panel", csb)
+	clip.clip_children = CanvasItem.CLIP_CHILDREN_ONLY
+	clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	clip.position = Vector2(8, 8)
+	clip.size = Vector2(w - 16.0, h - 16.0)
+	t.add_child(clip)
+	var scrim := TextureRect.new()
+	scrim.texture = Kit.vgradient(Kit.alpha(Kit.INK, 0.0), Kit.alpha(Kit.INK, 0.92))
+	scrim.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	scrim.stretch_mode = TextureRect.STRETCH_SCALE
+	scrim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	scrim.position = Vector2(0, clip.size.y - 150.0)
+	scrim.size = Vector2(clip.size.x, 150)
+	clip.add_child(scrim)
+	var gem := Kit.hex_badge(t, Vector2(24, 24), 20, "", "", Kit.RARITY.get(rarity, Kit.RARITY["common"]))
+	gem.name = "rarity"
+	if not locked:
+		var lh := Kit.hex_badge(t, Vector2(w - 26.0, 26), 22, "info", str(lvl))
+		lh.name = "level"
+	else:
+		var lk := _icon_rect("lock", 72)
+		lk.name = "lock"
+		lk.position = Vector2((w - 72.0) * 0.5, 74)
+		t.add_child(lk)
+		var srcs: Array = CMD_SRC.get(id, [])
+		var n := mini(3, srcs.size())
+		var d := 48.0
+		var sx := (w - (n * d + (n - 1) * 8.0)) * 0.5
+		for i in n:
+			var s: Array = srcs[i]
+			var disc := Panel.new()
+			disc.name = "src_%d" % i
+			var dsb := Kit.style(Kit.alpha(Kit.INK, 0.85), 24, 3, Kit.INK, 0, 0)
+			dsb.set_meta("kit_kind", "")
+			disc.add_theme_stylebox_override("panel", dsb)
+			disc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			disc.position = Vector2(sx + i * (d + 8.0), 164)
+			disc.size = Vector2(d, d)
+			t.add_child(disc)
+			var ic := _icon_rect(String(s[0]), 34)
+			ic.position = Vector2(7, 7)
+			disc.add_child(ic)
+	var nm := String(c["name"])
+	var ns := Kit.fit_size(nm, 26, w - 28.0, "d900", 22)
+	var nl := Kit.label(nm, ns, Kit.TEXT, true)
+	nl.name = "name"
+	nl.add_theme_font_size_override("font_size", ns)
+	nl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	nl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	nl.clip_text = true
+	nl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	nl.position = Vector2(14, h - 20.0 - 28.0 - 8.0 - 36.0)
+	nl.size = Vector2(w - 28.0, 36)
+	t.add_child(nl)
+	var br := Rect2(18, h - 20.0 - 28.0, w - 36.0, 28)
 	if c.has("shards"):
 		var sh: Array = c["shards"]
-		var bar := _panel(tile, Rect2(20, 300, 228, 18), _style(Color(1, 1, 1, 0.1), 9, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
-		var fill := clampf(float(sh[0]) / maxf(1.0, float(sh[1])), 0.0, 1.0)
-		_panel(bar, Rect2(0, 0, 228.0 * fill, 18), _style(Color(0.3, 0.85, 0.45) if fill >= 1.0 else Color(0.35, 0.6, 1.0), 9, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
-		var st := _label("%d / %d" % [int(sh[0]), int(sh[1])], 14)
-		st.size = Vector2(228, 18)
-		st.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		st.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		st.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		bar.add_child(st)
-	elif lvl > 0:
-		var mx := _label(tr("cmdr.max_short"), 15, Color(0.5, 1.0, 0.6))
-		mx.position = Vector2(8, 298)
-		mx.size = Vector2(252, 22)
-		mx.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		tile.add_child(mx)
-	if bool(c["can"]):
-		var up := _label("▲", 22, Color(0.3, 0.95, 0.45))
-		up.position = Vector2(226, 12)
-		tile.add_child(up)
-	var id: String = c["id"]
-	tile.gui_input.connect(func(e): if _is_tap(e): on_pick.call(id))
-	return tile
+		var need := maxi(1, int(sh[1]))
+		var have := mini(int(sh[0]), need)  # «4/4», never «29/4»
+		var full := int(sh[0]) >= need
+		var bar := Kit.bar(t, br, float(have) / need, "go" if full else "info", "%d/%d" % [have, need])
+		bar.name = "shards"
+	elif not locked:
+		var bar := Kit.bar(t, br, 1.0, "gold", tr("cmdr.max_short"))
+		bar.name = "shards"
+	if can:
+		var rb := Kit.ribbon(t, Vector2(w * 0.5, 2), tr("cmdr.up_ribbon"), "go")
+		rb.name = "upgrade"
+	return t
 
 
-## The commander card (04 §15.7): portrait, rarity and album, biography, the passive now and by level (the current
-## row marked), «Повысить: N осколков + G золота», where the shards come from, «Поставить Целью» (epic, legendary).
+## The commander card (04 §15.7, docs/ui_style.md §6 «Карточка командира»): a sub-page of the collection — the back
+## button (on_back) top-left, ✕ top-right. The portrait 320×360 on the left; at the right the rarity chip, the album, the
+## level hex R 40 with the cap, the shard bar L and the skill chips («Клин +5,8%»; a tap tells the whole skill). The
+## biography; a track of 8 level nodes (2…16, the reached ones filled, those past the era's cap locked; a tap tells
+## the value there); «Где взять» as source chips. The footer: go L «Повысить» with its price [shard N][coin G] →
+## on_upgrade (the short number red; grey with the reason when the era caps it or the commander is locked), and the
+## Royal case target as info L on the left (epic, legendary; on_target).
+## info: {id, name, rarity, rarity_name, level, cap, bio, album, mood, can, block, cost [shards, gold], need_dl,
+##   shards [have, need]?, unlock, skills [{icon, name, value, full}], track [[level, text]], target?}
+const TRACK_LEVELS: Array[int] = [2, 4, 6, 8, 10, 12, 14, 16]
+
+
 func show_commander(info: Dictionary, on_upgrade: Callable, on_target: Callable, on_back: Callable) -> void:
-	var box := _modal_box(Rect2(30, 150, 881, 1370))
-	_button(box, Rect2(881 - 86, 18, 64, 56), "✕", Color(0.3, 0.33, 0.42), close_modal)
-	_button(box, Rect2(22, 18, 64, 56), "‹", Color(0.3, 0.33, 0.42), on_back)
-	var t := _label(String(info["name"]), 32, Color(1.0, 0.85, 0.4))
-	_fit(t, 32, 680)
-	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_at(t, box, Vector2(100, 22), Vector2(681, 50))
-	var lvl: int = info["level"]
-	var p := CmdPortrait.new(String(info["id"]), String(info["rarity"]), lvl <= 0)
+	var id := String(info["id"])
+	var lvl := int(info["level"])
+	var locked := lvl <= 0
+	var rarity := String(info["rarity"])
+	var cap := int(info.get("cap", 16))
+	var block := String(info.get("block", "" if bool(info.get("can", false)) else "locked" if locked else "max"))
+	var srcs: Array = CMD_SRC.get(id, [])
+	var bio := String(info.get("bio", ""))
+	var bio_h := 0.0
+	if bio != "":
+		var f := Kit.font("b800")
+		bio_h = minf(3.0, ceilf(f.get_multiline_string_size(bio, HORIZONTAL_ALIGNMENT_LEFT, 829.0, 26).y / (26.0 * 1.36))) * 36.0 + 20.0
+	# the source chips' rows (they wrap)
+	var src_rows := 1
+	var sxw := 0.0
+	for s in srcs:
+		var cw := _paper_chip_w(String(s[0]), _src_text(s))
+		if sxw > 0.0 and sxw + cw > 829.0:
+			src_rows += 1
+			sxw = 0.0
+		sxw += cw + 12.0
+	var y_bio := 72.0 + 360.0 + 20.0
+	var y_track := y_bio + bio_h
+	var y_src := y_track + 48.0 + 12.0 + 112.0 + 20.0
+	var h := y_src + 48.0 + 12.0 + src_rows * 56.0 - 12.0 + 32.0 + 112.0 + 32.0
+	var box := _modal_box(_win_rect("L", h), false, String(info["name"]), "", "info", true, false)
+	_modal.set_meta("commander", true)
+	box.set_meta("kit_native", true)
+	var w := box.size.x
+	if on_back.is_valid():
+		Kit.back_button(box, on_back).name = "back"
+	# ---- the portrait
+	var pf := Panel.new()
+	pf.name = "portrait_frame"
+	var psb := Kit.style(Kit.INK, 24, 0, Kit.INK, 6, 0)
+	psb.set_meta("kit_kind", "")
+	pf.add_theme_stylebox_override("panel", psb)
+	pf.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pf.position = Vector2(32, 72)
+	pf.size = Vector2(320, 360)
+	box.add_child(pf)
+	var p := CmdPortrait.new(id, rarity, locked)
+	p.name = "portrait"
 	p.mood = String(info.get("mood", ""))  # a smile right after a level-up
-	p.position = Vector2(30, 92)
-	p.size = Vector2(330, 390)
-	box.add_child(p)
-	var rc: Color = CmdPortrait.RARITY.get(String(info["rarity"]), MUTED)
-	var x := 384.0
-	_at(_label(String(info["rarity_name"]), 22, rc), box, Vector2(x, 96))
-	var al := _label(String(info["album"]), 17, MUTED, false)
-	_fit(al, 17, 470)
-	_at(al, box, Vector2(x, 130))
-	var lv := _label(tr("cmdr.lvl") % [lvl, int(info["cap"])] if lvl > 0 else tr("cmdr.locked_short"), 30, TEXT)
-	_at(lv, box, Vector2(x, 164))
+	p.position = Vector2(4, 4)
+	p.size = pf.size - Vector2(8, 8)
+	pf.add_child(p)
+	if locked:
+		var lk := _icon_rect("lock", 96)
+		lk.position = (pf.size - lk.size) * 0.5
+		pf.add_child(lk)
+	# ---- the right column
+	var x0 := 32.0 + 320.0 + 28.0
+	var cw0 := w - 32.0 - x0
+	var rc := Kit.chip(box, Vector2(x0, 76), "", String(info.get("rarity_name", "")), "owner", Kit.RARITY.get(rarity, Kit.RARITY["common"]))
+	rc.name = "rarity"
+	var album := String(info.get("album", ""))
+	if album != "":
+		var al := Kit.label(album, 26, Kit.MUTED_CREAM, false)
+		al.name = "album"
+		al.clip_text = true
+		al.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		al.position = Vector2(x0, 118)
+		al.size = Vector2(cw0, 36)
+		box.add_child(al)
+	var hx := Kit.hex_badge(box, Vector2(x0 + 40.0, 212), 40, "info" if not locked else "lock", str(lvl) if not locked else "")
+	hx.name = "level"
+	if locked:
+		var hl := _icon_rect("lock", 44)
+		hl.position = Vector2(18, 16)
+		hx.add_child(hl)
+	var lt := Kit.label(tr("cmdr.level") if not locked else tr("cmdr.locked_short"), 30, Kit.INK_TEXT, true)
+	lt.name = "level_title"
+	lt.position = Vector2(x0 + 96.0, 178)
+	lt.size = Vector2(cw0 - 96.0, 38)
+	box.add_child(lt)
+	var cl := Kit.label(tr("cmdr.cap") % cap if not locked else tr("cmdr.unlock_at") % L.plural(int(info.get("unlock", 10)), "plural.shards"), 24, Kit.MUTED_CREAM, true)
+	cl.name = "cap"
+	cl.add_theme_font_override("font", Kit.font("d800"))
+	cl.position = Vector2(x0 + 96.0, 216)
+	cl.size = Vector2(cw0 - 96.0, 32)
+	box.add_child(cl)
 	if info.has("shards"):
 		var sh: Array = info["shards"]
-		var bar := _panel(box, Rect2(x, 214, 460, 22), _style(Color(1, 1, 1, 0.1), 11, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
-		var fill := clampf(float(sh[0]) / maxf(1.0, float(sh[1])), 0.0, 1.0)
-		_panel(bar, Rect2(0, 0, 460.0 * fill, 22), _style(Color(0.3, 0.85, 0.45) if fill >= 1.0 else Color(0.35, 0.6, 1.0), 11, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
-		var st := _label(tr("cmdr.shards") % [int(sh[0]), int(sh[1])], 15)
-		st.size = Vector2(460, 22)
-		st.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		st.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		bar.add_child(st)
-	var py := 254.0
-	for ln in info["passive"]:
-		var pl := _label("• " + String(ln), 19, Color(0.75, 0.88, 1.0), false)
-		pl.autowrap_mode = TextServer.AUTOWRAP_WORD
-		pl.custom_minimum_size = Vector2(470, 0)
-		pl.position = Vector2(x, py)
-		box.add_child(pl)
-		py += _line_h(String(ln)) * 0.9
-	var bio := _label(String(info["bio"]), 19, TEXT, false)
-	bio.autowrap_mode = TextServer.AUTOWRAP_WORD
-	bio.custom_minimum_size = Vector2(821, 0)
-	bio.position = Vector2(30, 500)
-	box.add_child(bio)
-	# the passive by level
-	var ty := 650.0
-	_at(_label(tr("cmdr.by_level"), 20, Color(1.0, 0.85, 0.4)), box, Vector2(30, ty))
-	ty += 40.0
-	var cur_row := 0  # the highest table level the commander has reached
-	for row in info["table"]:
-		if int(row[0]) <= lvl:
-			cur_row = int(row[0])
-	for row in info["table"]:
-		var l: int = row[0]
-		var cur := l == cur_row
-		var bg := _panel(box, Rect2(30, ty, 821, 42), _style(Color(0.2, 0.3, 0.16) if cur else Color(0.09, 0.12, 0.2), 8, Color(0.5, 0.9, 0.4) if cur else Color(0, 0, 0, 0), 2 if cur else 0), Control.MOUSE_FILTER_IGNORE)
-		var future := l > lvl
-		var lab := _label(tr("cmdr.lvl_n") % l + ("  ·  " + tr("cmdr.launch_cap") if l == 16 else ""), 17, MUTED if future else TEXT, false)
-		_at(lab, bg, Vector2(16, 9))
-		var val := _label(String(row[1]), 17, MUTED if future else Color(0.75, 0.88, 1.0))
-		val.size = Vector2(380, 24)
-		val.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		_at(val, bg, Vector2(425, 9), Vector2(380, 24))
-		ty += 48.0
-	var src := _label(tr("cmdr.where") % String(info["src"]), 17, MUTED, false)
-	src.autowrap_mode = TextServer.AUTOWRAP_WORD
-	src.custom_minimum_size = Vector2(821, 0)
-	src.position = Vector2(30, ty + 10)
-	box.add_child(src)
-	var can := bool(info["can"])
-	var by := 1370.0 - 110.0
+		var need := maxi(1, int(sh[1]))
+		var have := mini(int(sh[0]), need)
+		var full := int(sh[0]) >= need
+		var bar := Kit.bar(box, Rect2(x0 + 26.0, 276, cw0 - 26.0, 40), float(have) / need, "go" if full else "info", "%d/%d" % [have, need], true)
+		bar.name = "shards"
+		var si := _icon_rect("shard", 56)
+		si.position = Vector2(x0 - 6.0, 268)
+		box.add_child(si)
+	elif not locked:
+		var mc := _paper_chip(box, Vector2.ZERO, "medal_gold", tr("cmdr.max_short"), cw0)
+		mc.name = "max"
+		mc.position = Vector2(x0, 274)
+	var sy := 336.0
+	for sk in info.get("skills", []):
+		var chip := _paper_chip(box, Vector2.ZERO, _skill_icon(sk), _skill_text(sk), cw0)
+		chip.name = "skill"
+		chip.position = Vector2(x0, sy)
+		chip.mouse_filter = Control.MOUSE_FILTER_STOP
+		var full_text := String(sk.get("full", ""))
+		var title := _skill_text(sk)
+		chip.gui_input.connect(func(e): if _is_tap(e): Kit.tooltip(chip, title, full_text if full_text != title else ""))
+		sy += 52.0
+	# ---- the biography
+	if bio != "":
+		var bl := Kit.label(bio, 26, Kit.SOFT_CREAM, false)
+		bl.name = "bio"
+		bl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		bl.max_lines_visible = 3
+		bl.position = Vector2(32, y_bio)
+		bl.size = Vector2(w - 64.0, bio_h - 20.0)
+		box.add_child(bl)
+	# ---- the level track
+	Kit.section(box, Vector2(32, y_track), w - 64.0, tr("cmdr.levels"), "xp")
+	var tw := Kit.well(box, Rect2(32, y_track + 60.0, w - 64.0, 112))
+	tw.name = "track"
+	var track: Array = info.get("track", [])
+	var vals := {}
+	for tv in track:
+		vals[int(tv[0])] = String(tv[1])
+	var x_a := 56.0
+	var x_b := tw.size.x - 56.0
+	var step := (x_b - x_a) / (TRACK_LEVELS.size() - 1)
+	var line_y := 56.0
+	var line := Panel.new()
+	var lsb := Kit.style(Kit.CREAM_DEEP, 6, 0, Kit.INK, 0, 0)
+	lsb.set_meta("kit_kind", "")
+	line.add_theme_stylebox_override("panel", lsb)
+	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	line.position = Vector2(x_a, line_y - 6.0)
+	line.size = Vector2(x_b - x_a, 12)
+	tw.add_child(line)
+	var reach := 0.0  # how far along the line the commander is: between the nodes when the level is odd
+	for i in TRACK_LEVELS.size():
+		if lvl >= TRACK_LEVELS[i]:
+			reach = float(i)
+	if lvl > TRACK_LEVELS[0] and lvl < TRACK_LEVELS[-1] and lvl % 2 == 1:
+		reach += 0.5
+	if lvl >= TRACK_LEVELS[0]:
+		var fill := Panel.new()
+		var fsb := Kit.style(Kit.face_of("info"), 6, 0, Kit.INK, 0, 0)
+		fsb.set_meta("kit_kind", "")
+		fill.add_theme_stylebox_override("panel", fsb)
+		fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		fill.position = line.position
+		fill.size = Vector2(maxf(12.0, reach * step), 12)
+		tw.add_child(fill)
+	for i in TRACK_LEVELS.size():
+		var lv: int = TRACK_LEVELS[i]
+		var c := Vector2(x_a + i * step, line_y)
+		var role := "info" if lvl >= lv else ("lock" if lv > cap else "")
+		var face := Kit.CLEAR if role != "" else Kit.CREAM_DEEP.darkened(0.18)
+		var node := Kit.hex_badge(tw, c, 30, role if role != "" else "info", str(lv), face)
+		node.name = "lv_%d" % lv
+		var hit := Control.new()
+		hit.position = c - Vector2(46, 46)
+		hit.size = Vector2(92, 92)
+		hit.mouse_filter = Control.MOUSE_FILTER_STOP
+		tw.add_child(hit)
+		var tip := String(vals.get(lv, ""))
+		if lv > cap:
+			tip += ("\n" if tip != "" else "") + tr("cmdr.need_dl") % ceili(lv / 2.0)
+		var tt := tr("cmdr.lvl_n") % lv
+		hit.gui_input.connect(func(e): if _is_tap(e): Kit.tooltip(node, tt, tip))
+	# ---- where the shards come from
+	Kit.section(box, Vector2(32, y_src), w - 64.0, tr("cmdr.where_title"), "shard")
+	var cx := 32.0
+	var cy := y_src + 60.0
+	for s in srcs:
+		var txt := _src_text(s)
+		var cwid := _paper_chip_w(String(s[0]), txt)
+		if cx > 32.0 and cx + cwid > w - 32.0:
+			cx = 32.0
+			cy += 56.0
+		var chip := _paper_chip(box, Vector2.ZERO, String(s[0]), txt, w - 64.0)
+		chip.name = "source"
+		chip.position = Vector2(cx, cy)
+		cx += chip.size.x + 12.0
+	# ---- the footer: «Повысить» with its price, the Royal case target
+	var fy := box.size.y - 32.0 - 112.0
+	var main_r := Rect2((w - 480.0) * 0.5, fy, 480, 112)
 	if on_target.is_valid():
+		var tw2 := (w - 64.0 - 16.0) * 0.4
 		var on := bool(info.get("target", false))
-		_button(box, Rect2(30, by - 96, 821, 80), tr("cmdr.target_on") if on else tr("cmdr.target"), Color(0.45, 0.3, 0.75) if not on else Color(0.25, 0.25, 0.32), on_target)
-	var b := _button(box, Rect2(30, by, 821, 86), String(info["button"]), Color(0.2, 0.6, 0.3) if can else Color(0.25, 0.28, 0.36), on_upgrade)
-	if not can:
-		b.modulate = Color(1, 1, 1, 0.85)
+		var tb := Kit.button(box, Rect2(32, fy, tw2, 112), "info", tr("cmdr.target_btn"), {"size": "L",
+			"icon": "check" if on else "chest_royal", "cb": on_target})
+		tb.name = "target"
+		main_r = Rect2(32.0 + tw2 + 16.0, fy, w - 64.0 - tw2 - 16.0, 112)
+	var cost: Array = info.get("cost", [])
+	var price: Array = []
+	if cost.size() >= 2:
+		price = [["shard", str(int(cost[0])), block == "shards"], ["coin", fmt_num(int(cost[1])), block == "gold"]]
+	var b: Kit.KitButton
+	match block:
+		"", "shards", "gold":
+			b = Kit.button(box, main_r, "go", tr("cmdr.upgrade_btn"), {"size": "L", "icon": "arrow_up", "price": price,
+				"cb": on_upgrade})
+		"dl":
+			b = Kit.button(box, main_r, "go", tr("cmdr.upgrade_btn"), {"size": "L", "icon": "arrow_up", "price": price,
+				"enabled": false})
+			var why := tr("cmdr.need_dl") % int(info.get("need_dl", ceili((lvl + 1) / 2.0)))
+			b.denied.connect(func(): Kit.tooltip(b, tr("cmdr.upgrade_btn"), why))
+		"locked":
+			var left := maxi(0, int(info.get("unlock", 10)) - (int((info["shards"] as Array)[0]) if info.has("shards") else 0))
+			b = Kit.button(box, main_r, "go", tr("cmdr.locked_short"), {"size": "L", "icon": "lock", "enabled": false})
+			var why2 := tr("cmdr.unlock_left") % L.plural(left, "plural.shards")
+			b.denied.connect(func(): Kit.tooltip(b, tr("cmdr.locked_short"), why2))
+		_:
+			b = Kit.button(box, main_r, "go", tr("cmdr.max_btn"), {"size": "L", "icon": "medal_gold", "enabled": false})
+			b.denied.connect(func(): Kit.tooltip(b, tr("cmdr.max_short"), ""))
+	b.name = "upgrade"
 
 
-## Hand picker (03 §5.2): every open card as a toggle; «Атака» is fixed, `slots` more can be chosen.
+## The width a paper chip will take for this icon and text (lays chips out in rows before making them).
+func _paper_chip_w(icon: String, text: String) -> float:
+	var x := 50.0 if Kit.icon_tex(icon) != null else 14.0
+	return x + Kit.text_w(text, 26, "d800", false) + 2.0 + 16.0
+
+
+## Hand picker (03 §5.2, docs/ui_style.md §6 «Выбор руки»): a window L with the info plate «Рука» and the chip
+## «chosen/slots». On top a well of sockets 116×150 — «Атака» pinned in the first with a lock badge, the chosen cards in
+## the next ones, the free ones empty with their number in a hex; under it a well with every other open card (180×230,
+## its energy cost in a hex), the chosen ones with a go check. A tap on a card calls on_toggle(card) (the caller shows
+## the picker again; the card that moved pops in for 160 ms); a tap on «Атака» lets the caller say it is fixed.
+## The sockets explain the rule — no paragraph; «Готово» (go) closes it.
+const HAND_SOCKET := Vector2(116, 150)
+const HAND_CARD := Vector2(180, 230)
+var _hand_last := ""  # the card the last tap toggled: it pops in after the picker shows again
+
+
 func show_hand_picker(cards: Array, chosen: Array, slots: int, on_toggle: Callable) -> void:
-	var rows := ceili(cards.size() / 2.0)
-	var h := 200.0 + rows * 96.0 + 110.0
-	var box := _modal_box(Rect2(60, maxf(200.0, (VH - h) / 2.0 - 80.0), 821, h))
-	var t := _label(tr("hand.title_full"), 32, Color(1.0, 0.85, 0.4))
-	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_at(t, box, Vector2(0, 24), Vector2(821, 44))
-	var sub := _label(tr("hand.rule") % [chosen.size(), slots], 19, MUTED, false)
-	sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	sub.autowrap_mode = TextServer.AUTOWRAP_WORD
-	_at(sub, box, Vector2(30, 76), Vector2(761, 60))
-	for i in cards.size():
-		var c: String = cards[i]
-		var on := chosen.has(c) or c == "attack"
-		var r := Rect2(30 + (i % 2) * 391, 150 + (i / 2) * 96, 370, 80)
-		var col := Color(0.2, 0.42, 0.28) if on else Color(0.14, 0.18, 0.27)
-		var pic := "res://assets/ui/cards/%s.png" % c
-		var has_pic := ResourceLoader.exists(pic)
-		var label := "%s%s" % [_card_name(c), "  ✓" if on else ""]  # (s09 rebuilds this picker; no glyph art)
-		var b := _button(box, r, label, col, func(): on_toggle.call(c))
-		if has_pic:  # the card's painted scene on the left, the name beside it
-			var tr_ := TextureRect.new()
-			tr_.texture = load(pic)
-			tr_.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-			tr_.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-			tr_.clip_contents = true
-			tr_.position = Vector2(8, 6)
-			tr_.size = Vector2(62, 68)
-			tr_.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			b.add_child(tr_)
-			for ch in b.get_children():
-				if ch is Label:
-					(ch as Label).position.x = 40.0  # centred in the room right of the picture
-		if c == "attack":
-			b.modulate = Color(1, 1, 1, 0.75)  # fixed
-	_button(box, Rect2(30, h - 100, 761, 76), tr("ui.close"), Color(0.13, 0.4, 0.9), close_modal)
+	var grid_cards: Array = cards.filter(func(c): return String(c) != "attack")
+	var rows := maxi(1, ceili(grid_cards.size() / 4.0))
+	var sock_h := 16.0 + HAND_SOCKET.y + 16.0
+	var grid_h := 16.0 + rows * HAND_CARD.y + (rows - 1) * 16.0 + 16.0
+	var h := 88.0 + sock_h + 20.0 + grid_h + 32.0 + 112.0 + 32.0
+	var again := _modal != null and _modal.has_meta("hand")
+	var last := _hand_last if again else ""
+	_hand_last = ""
+	var box := _modal_box(_win_rect("L", h), false, tr("hand.plate"), "cards", "info", true, false)
+	_modal.set_meta("hand", true)
+	box.set_meta("kit_native", true)
+	var w := box.size.x
+	var cc := Kit.chip(box, Vector2.ZERO, "", "%d/%d" % [chosen.size(), slots], "status")
+	cc.name = "count"
+	cc.position = Vector2((w - cc.size.x) * 0.5, 34)
+	var tap := func(c: String) -> void:
+		_hand_last = c
+		on_toggle.call(c)
+	# ---- the sockets
+	var sw := Kit.well(box, Rect2(32, 88, w - 64.0, sock_h))
+	sw.name = "sockets"
+	var n := 1 + slots
+	var gap := minf(16.0, (sw.size.x - 32.0 - n * HAND_SOCKET.x) / maxf(1.0, n - 1.0))
+	var x0 := (sw.size.x - (n * HAND_SOCKET.x + (n - 1) * gap)) * 0.5
+	for i in n:
+		var r := Rect2(x0 + i * (HAND_SOCKET.x + gap), 16, HAND_SOCKET.x, HAND_SOCKET.y)
+		var sock := Panel.new()
+		sock.name = "socket_%d" % i
+		var ssb := Kit.style(Kit.CREAM_DEEP, 20, 0, Kit.INK, 0, 0)
+		ssb.set_meta("kit_kind", "")
+		sock.add_theme_stylebox_override("panel", ssb)
+		sock.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		sock.position = r.position
+		sock.size = r.size
+		sw.add_child(sock)
+		var card := "attack" if i == 0 else (String(chosen[i - 1]) if i - 1 < chosen.size() else "")
+		if card == "":
+			var hb := Kit.hex_badge(sock, r.size * 0.5, 26, "info", str(i + 1), Kit.CREAM_DEEP.darkened(0.2))
+			hb.name = "num"
+			continue
+		var t := _hand_tile(sock, Rect2(Vector2.ZERO, r.size), card, func(): tap.call(card))
+		if i == 0:  # «Атака» is pinned: a lock badge, at full opacity
+			var lb := Panel.new()
+			lb.name = "pinned"
+			var lsb := Kit.style(Kit.INK, 20, 3, Kit.INK, 0, 0)
+			lsb.set_meta("kit_kind", "")
+			lb.add_theme_stylebox_override("panel", lsb)
+			lb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			lb.size = Vector2(40, 40)
+			lb.position = Vector2(r.size.x - 30.0, -10)
+			t.add_child(lb)
+			var li := _icon_rect("lock", 28)
+			li.position = Vector2(6, 5)
+			lb.add_child(li)
+		if card == last:
+			_hand_pop(t)
+	# ---- every other open card
+	var gw := Kit.well(box, Rect2(32, 88.0 + sock_h + 20.0, w - 64.0, grid_h))
+	gw.name = "cards"
+	var gx := (gw.size.x - 32.0 - 4.0 * HAND_CARD.x) / 3.0
+	for i in grid_cards.size():
+		var c := String(grid_cards[i])
+		var r := Rect2(16.0 + (i % 4) * (HAND_CARD.x + gx), 16.0 + (i / 4) * (HAND_CARD.y + 16.0), HAND_CARD.x, HAND_CARD.y)
+		var t := _hand_tile(gw, r, c, func(): tap.call(c))
+		if chosen.has(c):
+			var ck := Kit.check_badge(t, Vector2(r.size.x - 8.0, 8.0), 44.0)
+			if c == last:
+				Kit.badge_pop(ck)
+		elif c == last:
+			_hand_pop(t)
+	var done := Kit.button(box, Rect2((w - 480.0) * 0.5, box.size.y - 32.0 - 112.0, 480, 112), "go", tr("flag.done"),
+		{"size": "L", "cb": close_modal})
+	done.name = "done"
+
+
+## A hand card on paper: the card's painted scene full-bleed in a SLATE card (INK 4, lip 6), its name on a scrim and
+## its energy cost in an ENERGY hex on the top-left corner; a tap (not a swipe) calls `cb`.
+func _hand_tile(parent: Control, r: Rect2, card: String, cb: Callable) -> Kit.KitTile:
+	var small := r.size.x < 150.0
+	var t := Kit.KitTile.new()
+	t.name = card
+	var sb := Kit.style(Kit.SLATE, 20, 4, Kit.INK, 5, 6)
+	sb.set_meta("kit_kind", "")
+	t.add_theme_stylebox_override("panel", sb)
+	t.position = r.position
+	t.size = r.size
+	t.cb = cb
+	t.add_child(Kit.KitDecor.new())
+	var art := Panel.new()
+	art.name = "art"
+	var asb := Kit.style(Kit.SKY_LOW, 14, 0, Kit.INK, 0, 0)
+	asb.set_meta("kit_kind", "")
+	art.add_theme_stylebox_override("panel", asb)
+	art.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
+	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	art.position = Vector2(4, 4)
+	art.size = Vector2(r.size.x - 8.0, r.size.y - 14.0)
+	t.add_child(art)
+	var pic := TextureRect.new()
+	pic.texture = _card_art(card)
+	pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pic.size = art.size
+	art.add_child(pic)
+	var scrim := TextureRect.new()
+	scrim.texture = Kit.vgradient(Kit.alpha(Kit.INK, 0.0), Kit.alpha(Kit.INK, 0.9))
+	scrim.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	scrim.stretch_mode = TextureRect.STRETCH_SCALE
+	scrim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	scrim.position = Vector2(0, art.size.y - (56.0 if small else 72.0))
+	scrim.size = Vector2(art.size.x, 56.0 if small else 72.0)
+	art.add_child(scrim)
+	var name_txt := _card_name(card)
+	var base := 22 if small else 26
+	var fs := Kit.fit_size(name_txt, base, r.size.x - 12.0, "d900", 22 if not small else 20)
+	var nm := Kit.label(name_txt, fs, Kit.TEXT, true)
+	nm.name = "name"
+	nm.add_theme_font_override("font", Kit.font("d900"))
+	nm.add_theme_font_size_override("font_size", fs)
+	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	nm.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	nm.clip_text = true
+	nm.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	nm.position = Vector2(4, r.size.y - 10.0 - 40.0)
+	nm.size = Vector2(r.size.x - 8.0, 36)
+	t.add_child(nm)
+	var cost := Kit.hex_badge(t, Vector2(16, 16) if small else Vector2(18, 18), 20 if small else 24, "energy", str(_card_cost(card)))
+	cost.name = "cost"
+	return t
+
+
+## The card that just moved: 0.86 → 1 in 160 ms (BACK/OUT).
+func _hand_pop(node: Control) -> void:
+	var d := Kit._dur(0.16)
+	if d <= 0.0:
+		return
+	node.pivot_offset = node.size * 0.5
+	node.scale = Vector2(0.86, 0.86)
+	node.create_tween().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT).tween_property(node, "scale", Vector2.ONE, d)
 
 
 ## Соседи (§6): the alarm first, then a card per neighbour.

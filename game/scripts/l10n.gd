@@ -50,6 +50,30 @@ static func t(s: String) -> String:
 	return fmt % args
 
 
+## A count with its noun in the right form (docs/ui_style.md §3.7): «1 осколок», «4 осколка», «5 осколков» /
+## «1 shard», «4 shards». Reads `<key>.one` / `.few` / `.many` in Russian and `<key>.one` / `.other` in English; each
+## form may hold %d for the number. A missing form falls back to `<key>` itself (the plural form, %d too).
+static func plural(n: int, key: String) -> String:
+	var form := "other"
+	var a := absi(n)
+	if lang() == "ru":
+		var m10 := a % 10
+		var m100 := a % 100
+		if m10 == 1 and m100 != 11:
+			form = "one"
+		elif m10 >= 2 and m10 <= 4 and (m100 < 12 or m100 > 14):
+			form = "few"
+		else:
+			form = "many"
+	elif a == 1:
+		form = "one"
+	var k := key + "." + form
+	var f := String(TranslationServer.translate(k))
+	if f == k:  # no such form: the base key
+		f = String(TranslationServer.translate(key))
+	return f % n if f.contains("%d") else f
+
+
 ## Packs a key with arguments for `t()` (used for texts stored and translated later, e.g. the inbox).
 static func pack(key: String, args: Array = []) -> String:
 	var parts := PackedStringArray([key])

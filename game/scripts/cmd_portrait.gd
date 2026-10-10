@@ -1,11 +1,13 @@
 extends Control
-## A commander's bust drawn in 2D from the portrait kit's parameters (04 §15.3–15.4): rarity plate, uniform, head
-## shape, hair, facial hair, headgear and the one detail each has. Stands in for the bpy portrait renders; a locked
-## commander is a silhouette.
+## A commander's bust (04 §15.3–15.4): the bpy render (tools/blender/portrait_assets.py) on a rarity gradient, or the
+## 2D stand-in drawn from the portrait kit's parameters (uniform, head shape, hair, facial hair, headgear and the one
+## detail each has). The whole picture is a rounded box with a rarity-coloured frame (docs/ui_style.md §6 «Командиры»:
+## R 20, OUT 4 at full size, scaled down in small slots); a locked commander is a faint silhouette on a muted plate (the
+## screen adds the lock).
 
-const RARITY := {
-	"common": Color("9aa3ad"), "rare": Color("1fb5ad"), "epic": Color("8e5bd0"), "legendary": Color("f08a24"),
-}
+const Kit := preload("res://scripts/ui_kit.gd")
+## The rarity colours are the kit's (§3.2: the gem and the tinted backdrop; purple is only EPIC).
+const RARITY := Kit.RARITY
 ## skin, head [w, h], hair color, hair style, facial hair, headgear, uniform, accent
 const LOOK := {
 	"cmd_bram": [Color("e8b48e"), [0.36, 0.40], Color("b5562b"), "short", "beard", "", Color("d9c9a3"), Color("7a4e2d")],
@@ -35,6 +37,7 @@ var rarity := "common"
 var locked := false
 var mood := ""  # "" calm, "angry", "smile", "cunning", "tired" — a render of that mood if there is one, else calm
 var plate := Color(0, 0, 0, 0)  # a plate colour instead of the rarity's (AI leaders: their state's colour)
+var frame := true  # the rarity-coloured frame round the picture (off where the slot draws its own rim)
 
 
 func _init(id: String = "", r: String = "common", is_locked := false) -> void:
@@ -62,32 +65,54 @@ func _fill(pts: PackedVector2Array, col: Color) -> void:
 	draw_polyline(ring, col.darkened(0.35), maxf(1.2, minf(size.x, size.y) * 0.007), true)
 
 
+## The frame's radius and width: R 20 / OUT 4 at full size (§6), smaller in a small slot (a chip Ø44, the fan's 58 px).
+func frame_r() -> float:
+	return minf(20.0, minf(size.x, size.y) * 0.25)
+
+
+func frame_w() -> float:
+	return clampf(minf(size.x, size.y) * 0.025, 2.0, 4.0)
+
+
+## The picture's outline: a rounded box (what the plate, the render and the frame share).
+func _box() -> PackedVector2Array:
+	var w := size.x
+	var h := size.y
+	return Kit.round_poly(PackedVector2Array([Vector2(0, 0), Vector2(w, 0), Vector2(w, h), Vector2(0, h)]), frame_r(), 6)
+
+
 func _draw() -> void:
 	var w := size.x
 	var h := size.y
 	var u := minf(w, h)
+	if w < 2.0 or h < 2.0:
+		return
 	var rc: Color = RARITY.get(rarity, RARITY["common"]) if plate.a == 0.0 else plate
-	# the plate: a vertical gradient of the rarity color
-	var top := rc.darkened(0.15) if not locked else Color(0.16, 0.18, 0.24)
-	var bot := rc.darkened(0.6) if not locked else Color(0.08, 0.09, 0.13)
-	draw_polygon(PackedVector2Array([Vector2(0, 0), Vector2(w, 0), Vector2(w, h), Vector2(0, h)]),
-		PackedColorArray([top, top, bot, bot]))
+	var box := _box()
+	# the plate: a vertical gradient of the rarity colour (a locked one: the colour washed into a muted grey)
+	var top := rc.lightened(0.08) if not locked else rc.lerp(Kit.CREAM_DEEP, 0.72)
+	var bot := rc.darkened(0.42) if not locked else top.darkened(0.32)
+	var cols := PackedColorArray()
+	for v in box:
+		cols.append(top.lerp(bot, clampf(v.y / h, 0.0, 1.0)))
+	draw_polygon(box, cols)
 	# a soft halo behind the head
-	_fill(_ellipse(Vector2(w * 0.5, h * 0.42), u * 0.36, u * 0.36), Color(1, 1, 1, 0.08 if not locked else 0.03))
+	_fill(_ellipse(Vector2(w * 0.5, h * 0.42), u * 0.36, u * 0.36), Color(1, 1, 1, 0.1 if not locked else 0.05))
 	var tex := _render(cmd, mood)
 	if tex != null:
-		# the bpy render (tools/blender/portrait_assets.py): cover the box, keep the head, crop the torso;
-		# a locked commander is its silhouette
+		# the bpy render: cover the box, keep the head, crop the torso — drawn through the rounded box (UVs), so its
+		# corners never poke out of the frame; a locked commander is its silhouette at α 0.3
 		var ts := tex.get_size()
 		var sc := maxf(w / ts.x, h / ts.y)
 		var src := Rect2((ts.x - w / sc) / 2.0, 0, w / sc, h / sc)
-		draw_texture_rect_region(tex, Rect2(Vector2.ZERO, size), src, Color(0.05, 0.06, 0.09) if locked else Color.WHITE)
-		if locked:
-			draw_string(get_theme_default_font(), Vector2(0, h * 0.5 + u * 0.08), "?", HORIZONTAL_ALIGNMENT_CENTER, w, int(u * 0.28), Color(0.62, 0.68, 0.78, 0.9))
-		draw_rect(Rect2(Vector2.ZERO, size), rc if not locked else rc.darkened(0.5), false, maxf(3.0, u * 0.025))
+		var uvs := PackedVector2Array()
+		for v in box:
+			uvs.append((src.position + Vector2(v.x / w, v.y / h) * src.size) / ts)
+		draw_colored_polygon(box, Kit.alpha(Kit.INK, 0.3) if locked else Color.WHITE, uvs, tex)
+		_frame(rc)
 		return
 	var look: Array = LOOK.get(cmd, LOOK["cmd_bram"])
-	var shade := Color(0.05, 0.06, 0.09, 0.95)
+	var shade := Kit.alpha(Kit.INK, 0.3)
 	var skin: Color = shade if locked else look[0]
 	var hair: Color = shade if locked else look[2]
 	var uni: Color = shade if locked else look[6]
@@ -219,11 +244,21 @@ func _draw() -> void:
 				_fill(_ellipse(hc + Vector2(0, -hh * 0.98), u * 0.06, u * 0.06), Color(0.35, 0.6, 1.0, 0.3))
 	if not locked and cmd == "cmd_hawk":
 		_fill(_ellipse(Vector2(w * 0.5, sy - u * 0.01), u * 0.17, u * 0.05), Color("f4f4f4"))  # white scarf
-	if locked:
-		var f := get_theme_default_font()
-		draw_string(f, Vector2(0, h * 0.5 + u * 0.08), "?", HORIZONTAL_ALIGNMENT_CENTER, w, int(u * 0.28), Color(0.62, 0.68, 0.78, 0.9))
-	# the rarity frame
-	draw_rect(Rect2(Vector2.ZERO, size), rc if not locked else rc.darkened(0.5), false, maxf(3.0, u * 0.025))
+	_frame(rc)
+
+
+## The rarity-coloured frame along the rounded box (a locked one in the muted plate's darker tone).
+func _frame(rc: Color) -> void:
+	if not frame:
+		return
+	var sb := StyleBoxFlat.new()
+	sb.draw_center = false
+	sb.anti_aliasing = true
+	sb.corner_detail = 8
+	sb.set_corner_radius_all(int(frame_r()))
+	sb.set_border_width_all(int(roundf(frame_w())))
+	sb.border_color = rc if not locked else rc.lerp(Kit.CREAM_DEEP, 0.72).darkened(0.45)
+	draw_style_box(sb, Rect2(Vector2.ZERO, size))
 
 
 static func _render(id: String, m := "") -> Texture2D:

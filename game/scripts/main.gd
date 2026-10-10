@@ -14,6 +14,7 @@ const BattleAI := preload("res://scripts/sim/battle_ai.gd")
 const Armies := preload("res://scripts/sim/armies.gd")
 const Topology := preload("res://scripts/sim/topology.gd")
 const MapView := preload("res://scripts/map_view.gd")
+const SoftPalette := preload("res://scripts/soft_palette.gd")
 const Hud := preload("res://scripts/hud.gd")
 const CameraRig := preload("res://scripts/camera_rig.gd")
 const GameUI := preload("res://scripts/game_ui.gd")
@@ -335,16 +336,17 @@ const ERA_LIGHT_1 := {
 ## sky-blue fill so the shade side of things stays blue-lilac instead of black. No SSAO: the Mobile renderer phones run
 ## has none. Glow is for VFX and sci-fi lights only — a threshold above sunlit ground and no bloom, so the frame never
 ## hazes and the borders never glow (§6.1 rule 4).
-## Tuned on the Mobile renderer (tools/soft_shots.sh): exposure 0.9 — the strategic frame's V p50 stays above 0.62 even
-## there, held up by the bright water. Fog 0.001 instead of §6.4's 0.006: the fog colour is emitted, not lit, so over the
-## sunlit ground it reads near-white, and 0.006 veiled the whole frame (mean S 0.59 -> 0.30, grass S 57 % -> 24 %).
+## Tuned on the Mobile renderer (tools/soft_shots.sh): exposure 0.75 and the grade live in SoftPalette (EXPOSURE,
+## GRADE_BCS), whose scene() undoes them for the unshaded map colours (F1: 0.9 left every frame lighter than §6.12, the
+## lawn at L* 71–76). Fog 0.001 instead of §6.4's 0.006: the fog colour is emitted, not lit, so over the sunlit ground
+## it reads near-white, and 0.006 veiled the whole frame (mean S 0.59 -> 0.30, grass S 57 % -> 24 %).
 func _environment() -> void:
 	var we := WorldEnvironment.new()
 	var e := Environment.new()
 	e.background_mode = Environment.BG_COLOR
 	e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR  # a ProceduralSky ambient measured no better (G1)
 	e.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	e.tonemap_exposure = 0.9
+	e.tonemap_exposure = SoftPalette.EXPOSURE
 	e.glow_enabled = true
 	e.glow_strength = 1.0
 	e.glow_bloom = 0.0
@@ -352,9 +354,9 @@ func _environment() -> void:
 	e.fog_enabled = true
 	e.fog_density = 0.001
 	e.adjustment_enabled = true
-	e.adjustment_brightness = 1.03
-	e.adjustment_contrast = 1.04
-	e.adjustment_saturation = 1.12
+	e.adjustment_brightness = SoftPalette.GRADE_BCS.x
+	e.adjustment_contrast = SoftPalette.GRADE_BCS.y
+	e.adjustment_saturation = SoftPalette.GRADE_BCS.z
 	we.environment = e
 	add_child(we)
 	_env = e
@@ -407,11 +409,11 @@ func _set_era_light(l: Dictionary) -> void:
 
 ## The selection's looks [ribbon body, ribbon rim, inner glow] (docs/art_direction.md §6.7): cream with a golden rim
 ## on a tapped hex; the UI's "yes" green / "attack" red (§6.3) while a card is dragged over a hex it can / cannot take.
-## The cream is fed in darker than §6.7's #FFF1B8 (and the light band, SEL_HI, is a pale cream, not #FFFFFF): the
-## sunny grade (G1) lifts light unshaded colours, and #FFF1B8 came out on screen as #FFFFD6 — a white-hot hoop
-## (V 1, S 0.16; §6.12 allows white-hot only to foam and clouds). These read on screen as ≈ #FFF1B8 / #FFF8DC.
-const SEL_LOOK := [Color("#EBDCA0"), Color("#D29A2E"), Color("#FFE27A")]
-const SEL_HI := Color("#F7EDC8")
+## These are the colours on screen: _tint_selection feeds them through SoftPalette.scene(), which undoes the sunny
+## grade (fed as they are, #FFF1B8 came out as #FFFFD6 — a white-hot hoop, V 1, S 0.16; §6.12 allows white-hot only
+## to foam and clouds). The light band, SEL_HI, is a pale cream, not #FFFFFF, for the same reason.
+const SEL_LOOK := [Color("#FFF1B8"), Color("#D29A2E"), Color("#FFE27A")]
+const SEL_HI := Color("#FFF8DC")
 const SEL_OK := [Color("#8FE070"), Color("#2A7A1E"), Color("#6BD13C")]
 const SEL_NO := [Color("#FF7A6E"), Color("#9E1F22"), Color("#FF5A4E")]
 
@@ -442,7 +444,7 @@ func _make_selection() -> void:
 	rib.mesh = map_view.rounded_hex_ribbon(0.94, 0.09)
 	_sel_ribbon = ShaderMaterial.new()
 	_sel_ribbon.shader = MapView.RIBBON_SHADER
-	_sel_ribbon.set_shader_parameter("hi", SEL_HI)
+	_sel_ribbon.set_shader_parameter("hi", SoftPalette.scene(SEL_HI))
 	_sel_ribbon.set_shader_parameter("w", 0.09)
 	_sel_ribbon.set_shader_parameter("pulse", 1.0)
 	_sel_ribbon.render_priority = MapView.SEL_PRIO
@@ -455,9 +457,9 @@ func _make_selection() -> void:
 
 ## Colours the selection: look = [ribbon body, ribbon rim, glow] (SEL_LOOK, SEL_OK, SEL_NO).
 func _tint_selection(look: Array) -> void:
-	_sel_ribbon.set_shader_parameter("body", look[0])
-	_sel_ribbon.set_shader_parameter("rim", look[1])
-	_sel_glow.set_shader_parameter("team", look[2])
+	_sel_ribbon.set_shader_parameter("body", SoftPalette.scene(look[0]))  # on-screen colours: undo the grade
+	_sel_ribbon.set_shader_parameter("rim", SoftPalette.scene(look[1]))
+	_sel_glow.set_shader_parameter("team", SoftPalette.scene(look[2]))
 
 
 ## Puts the selection on hex id; on a hex it was not showing on, it springs in 0.92 → 1.05 → 1.0 over 0.3 s (§6.10).
@@ -484,11 +486,7 @@ func _make_drag_marker() -> void:
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	_drag_line.material_override = m
 	add_child(_drag_line)
-	_drag_lbl = Label3D.new()
-	_drag_lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	_drag_lbl.no_depth_test = true
-	_drag_lbl.font_size = 72
-	_drag_lbl.outline_size = 16
+	_drag_lbl = MapView.soft_label(72)  # the map's one 3D-text look: Rubik 900, INK outline 0.22 × size (F1)
 	_drag_lbl.pixel_size = 0.006
 	_drag_lbl.visible = false
 	add_child(_drag_lbl)
@@ -4326,7 +4324,7 @@ func _pass_text(r: Array) -> String:
 		"raivite":
 			return tr("pass.rw_raivite") % int(r[1])
 		"shards":
-			return tr("pass.rw_shards") % [int(r[2]), Cases.commander_name(String(r[1]))]
+			return tr("pass.rw_shards_n") % [L.plural(int(r[2]), "plural.shards"), Cases.commander_name(String(r[1]))]
 		"speed":
 			return tr("pass.rw_speed") % int(r[1])
 		"cosmetic":
@@ -4541,7 +4539,7 @@ func _cal_text(r: Array) -> String:
 		"cmd":
 			return tr("cal.rw_cmd") % Cases.commander_name(String(r[1]))
 		"shards_pick", "shards_choice":
-			return tr("cal.rw_shards_pick") % int(r[1])
+			return tr("cal.rw_shards_pick") % L.plural(int(r[1]), "plural.shards")
 		"season_cosmetic":
 			return tr("cal.rw_season")
 	return _pass_text(r)
@@ -4564,7 +4562,7 @@ func _pay_calendar(r: Array, mult: int) -> String:
 			return _pass_text(x)
 		"shards_choice":
 			calendar.choice += int(r[1]) * mult  # given once the player picks the commander
-			return tr("cal.rw_shards_pick") % (int(r[1]) * mult)
+			return tr("cal.rw_shards_pick") % L.plural(int(r[1]) * mult, "plural.shards")
 		"speed":
 			speed_minutes += int(r[1]) * int(r[2]) * mult * 60
 			return _cal_text([r[0], r[1], int(r[2]) * mult])
@@ -4613,7 +4611,7 @@ func _open_calendar() -> void:
 			state = "claimed"
 		elif k == n:
 			state = "today"
-		days.append({"day": d, "text": " + ".join(parts), "state": state, "key": not bool(e[1])})
+		days.append({"day": d, "text": " + ".join(parts), "state": state, "key": not bool(e[1]), "rw": e[0]})
 	ui.show_calendar({"cycle": cyc, "days": days, "pending": calendar.pending, "can_double": calendar.can_double(),
 		"patent": patent.active(now_s())},
 		func(double: bool): _claim_calendar(double))
@@ -4645,12 +4643,13 @@ func _pick_cal_commander() -> void:
 	if calendar.choice <= 0:
 		return
 	var n: int = calendar.choice
-	var buttons: Array = []
+	ui.set_portrait_era(econ.dev_level())
+	var rows: Array = []
 	for c in CHOICE_COMMANDERS:
 		var cmd: String = c
-		buttons.append([tr("cal.pick_btn") % [Cases.commander_name(cmd), int(cases.shards.get(cmd, 0))], Color(0.2, 0.36, 0.6), func():
-			_give_cal_shards(cmd)])
-	ui.show_choice(tr("cal.pick_title") % n, [tr("cal.pick_line")], buttons)
+		rows.append({"id": cmd, "name": Cases.commander_name(cmd), "rarity": _cmd_rarity(cmd), "have": int(cases.shards.get(cmd, 0)),
+			"level": _cmd_level(cmd)})
+	ui.show_shard_pick(n, rows, func(id: String): _give_cal_shards(id))
 
 
 func _give_cal_shards(cmd: String) -> void:
@@ -5273,6 +5272,30 @@ func _cmd_passive_lines(id: String, lvl: int) -> Array:
 	return out
 
 
+## The skill chips of a commander at a level (docs/ui_style.md §6 «Карточка командира»): {key, name (short), value,
+## full (the whole line, for the tooltip)} per part of the passive; a fixed part has no value.
+func _cmd_skills(id: String, lvl: int) -> Array:
+	var out: Array = []
+	for p in Commanders.PASSIVES.get(id, []):
+		var k := String(p[0])
+		var v := "" if String(p[3]) == "" else _cmd_value_text(p, lvl)
+		out.append({"key": k, "name": tr("cmdr.ps." + k), "value": v,
+			"full": tr("cmdr.p." + k) if v == "" else "%s: %s" % [tr("cmdr.p." + k), v]})
+	return out
+
+
+## The card's level track: [level, the skills' values there (a line each)] for the levels 2, 4 … 16.
+func _cmd_track(id: String) -> Array:
+	var out: Array = []
+	for l in range(2, 17, 2):
+		var lines := PackedStringArray()
+		for sk in _cmd_skills(id, l):
+			if String(sk["value"]) != "":
+				lines.append("%s %s" % [sk["name"], sk["value"]])
+		out.append([l, "\n".join(lines)])
+	return out
+
+
 ## The collection (04 §15.7): albums of a 3 × N grid — portrait, level «ур. 9/16», shards to the next level.
 func _open_commanders() -> void:
 	var dl: int = econ.dev_level()
@@ -5296,7 +5319,8 @@ func _open_commanders() -> void:
 				card["shards"] = [commanders.free_shards(id, r, total), int(c[0])]
 			cards.append(card)
 		albums.append({"name": tr("cmdr.album." + String(a[0])), "full": full, "cards": cards})
-	ui.show_commanders({"title": tr("cmdr.collection") % [_cmd_owned_count(), Commanders.PASSIVES.size()], "albums": albums},
+	ui.show_commanders({"title": tr("cmdr.collection") % [_cmd_owned_count(), Commanders.PASSIVES.size()], "albums": albums,
+		"owned": _cmd_owned_count(), "total": Commanders.PASSIVES.size()},
 		func(id: String): _open_commander(id))
 
 
@@ -5324,14 +5348,22 @@ func _open_commander(id: String, mood := "") -> void:
 	var c: Array = commanders.next_cost(id, r, total)
 	if lvl <= 0:
 		info["button"] = tr("cmdr.locked") % [total, int(Commanders.UNLOCK[r])]
+		info["shards"] = [total, int(Commanders.UNLOCK[r])]
 	elif c.is_empty():
 		info["button"] = tr("cmdr.max")
 	elif block == "dl":
 		info["button"] = tr("cmdr.need_dl") % int(c[2])
 	else:
 		info["button"] = tr("cmdr.upgrade") % [int(c[0]), GameUI.fmt_num(int(c[1]))]
+	if lvl > 0 and not c.is_empty():
 		info["shards"] = [commanders.free_shards(id, r, total), int(c[0])]
+		info["cost"] = [int(c[0]), int(c[1])]
+		info["need_dl"] = int(c[2])
 	info["can"] = block == ""
+	info["block"] = block
+	info["unlock"] = int(Commanders.UNLOCK[r])
+	info["skills"] = _cmd_skills(id, maxi(1, lvl))
+	info["track"] = _cmd_track(id)
 	var on_target := Callable()
 	if r in ["epic", "legendary"] and not Commanders.maxed(r, total):
 		info["target"] = cases.target_commander == id
@@ -5463,7 +5495,7 @@ func _open_cmd_picker(army_id: int) -> void:
 			continue
 		var other: int = commanders.army_of(id)
 		rows.append({"id": id, "name": Cases.commander_name(id), "rarity": _cmd_rarity(id), "level": _cmd_level(id),
-			"lines": _cmd_passive_lines(id, _cmd_level(id)), "score": _cmd_score(id, a),
+			"lines": _cmd_passive_lines(id, _cmd_level(id)), "skills": _cmd_skills(id, _cmd_level(id)), "score": _cmd_score(id, a),
 			"busy": tr("cmdr.in_army") % int(nums.get(other, 0)) if other >= 0 and other != army_id else "",
 			"here": other == army_id})
 	# the free ones first, then those of other armies; «Рекомендуем» goes to the best free one
@@ -5525,7 +5557,7 @@ func _open_profile() -> void:
 	var recent: Array = []
 	for code in chronicle.recent(3):
 		var row: Array = Chronicle.LIST[Chronicle.index_of(String(code))]
-		recent.append({"name": tr("chr." + String(code)), "chapter": tr("chr.ch." + String(row[1]))})
+		recent.append({"name": tr("chr." + String(code)), "chapter": tr("chr.ch." + String(row[1])), "code": String(code)})
 	var info := {"name": _state_name(Types.PLAYER), "dl": econ.dev_level(), "hexes": hexes,
 		"chapter": tr(CHAPTER_NAME_KEYS[clampi(chapter, 1, CHAPTER_NAME_KEYS.size() - 1)]),
 		"map_pct": roundi(100.0 * hexes / maxf(1.0, float(land))),
@@ -6623,6 +6655,21 @@ func _demo(spec: String) -> void:
 			research.current["dur"] = 7200
 		_open_tab("development")
 		return
+	if what == "inbox":  # the mail with three reports (one read, the advisor's, a raid); inbox:open — the first one opened
+		var cap_id: int = sim.states[Types.PLAYER]["capital_id"]
+		_post(L.pack("inbox.pact.title", [_state_key(MapGen.BARONS)]), L.pack("inbox.pact.text", [_state_key(MapGen.BARONS)]))
+		_post("inbox.advisor.title", String(STORY_DL[4]))
+		_post("inbox.raid.title", L.pack("inbox.raid.text", [_cell_key(cap_id)]))
+		var t0 := now_s()
+		inbox[inbox.size() - 3]["t"] = t0 - 3 * 3600
+		inbox[inbox.size() - 3]["read"] = true
+		inbox[inbox.size() - 2]["t"] = t0 - 40 * 60
+		inbox[inbox.size() - 1]["t"] = t0 - 5 * 60
+		_on_hud_button("mail")
+		if parts.size() > 1 and parts[1] == "open":
+			ui._inbox_open = inbox.size() - 2
+			ui.show_inbox(inbox, now_s())
+		return
 	if what == "realm_name":  # the realm's name field with ideas
 		_open_name_editor(func(): pass)
 		return
@@ -7107,11 +7154,17 @@ func _shot(path: String) -> void:
 			await get_tree().create_timer(float(a.substr(13))).timeout
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png(path)
-	# the frame's rendering cost, for checking the scene against the phone budget (docs/dev/how_to_run.md)
-	print("perf draw_calls=%d objects=%d primitives=%d video_mem_mb=%.0f" % [
+	# the frame's rendering cost, for checking the scene against the phone budget (docs/dev/how_to_run.md). The total
+	# counts the 2D canvas too (the HUD), so the split follows: the 3D scene's own draws (visible + shadow passes) and
+	# the canvas draws (soft_style_plan F1: of ~1000 draws on the strategic frame, ~770 are the HUD's).
+	var vp := get_viewport()
+	print("perf draw_calls=%d objects=%d primitives=%d video_mem_mb=%.0f draws_3d=%d draws_shadow=%d draws_canvas=%d" % [
 		Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
 		Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME),
 		Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME),
-		Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1048576.0])
+		Performance.get_monitor(Performance.RENDER_VIDEO_MEM_USED) / 1048576.0,
+		vp.get_render_info(Viewport.RENDER_INFO_TYPE_VISIBLE, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME),
+		vp.get_render_info(Viewport.RENDER_INFO_TYPE_SHADOW, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME),
+		vp.get_render_info(Viewport.RENDER_INFO_TYPE_CANVAS, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME)])
 	print("shot saved ", path)
 	get_tree().quit()

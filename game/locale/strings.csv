@@ -901,13 +901,13 @@ toast.pass_owned,Этот пропуск уже открыт в текущем �
 cal.card,Календарь входа · день %d,Login calendar · day %d
 cal.title1,Календарь «Новобранец»,«Recruit» calendar
 cal.title2,Державный календарь,Sovereign calendar
-cal.rule,День засчитывается при первом входе в сутки (сброс в 04:00). Пропуск ставит календарь на паузу — серия не сгорает. ★ — ключевые дни.,A day counts on your first visit of the day (reset at 04:00). Missing a day only pauses the calendar — the streak never burns. ★ marks key days.
+cal.rule,День засчитывается при первом входе в сутки (сброс в 04:00). Пропуск ставит календарь на паузу — серия не сгорает. Золотые дни — главные призы недели.,A day counts on your first visit of the day (reset at 04:00). Missing a day only pauses the calendar — the streak never burns. The gold days hold the week's big prizes.
 cal.double,×2 за рекламу,×2 for an ad
 cal.tomorrow,Следующая награда — завтра после 04:00,Next reward — tomorrow after 04:00
 cal.rw_speeds,%d ускорения по %d ч,%d speed-ups of %d h
 cal.rw_builder,3-й строитель навсегда,A 3rd builder for good
 cal.rw_cmd,Командир: %s,Commander: %s
-cal.rw_shards_pick,%d осколков командира,%d commander shards
+cal.rw_shards_pick,%s командира,%s for a commander
 cal.rw_season,Рамка или эмоция сезона,A season frame or emote
 toast.cal_claim,Награда календаря: %s,Calendar reward: %s
 pack.pass,Военный пропуск,War Pass
@@ -1110,7 +1110,7 @@ cmdr.max_short,Высший уровень,Top level
 cmdr.locked,Откроется при %d/%d осколках,Unlocks at %d/%d shards
 cmdr.locked_short,Не открыт,Locked
 cmdr.max,Высший уровень,Top level
-cmdr.need_dl,Следующий уровень — с УР%d,Next level from DL%d
+cmdr.need_dl,Нужен уровень развития %d,Needs development level %d
 cmdr.upgrade,Повысить: %d осколков + %s золота,Upgrade: %d shards + %s gold
 cmdr.shards,Осколки: %d/%d,Shards: %d/%d
 cmdr.by_level,Пассивка по уровням,Passive by level
@@ -1124,7 +1124,7 @@ cmdr.why.gold,Не хватает золота,Not enough gold
 cmdr.why.dl,Нужен выше уровень развития,A higher development level is needed
 cmdr.why.max,Высший уровень,Top level
 cmdr.why.locked,Командир ещё не открыт,This commander is still locked
-cmdr.pp,+%s п.п.,+%s pts
+cmdr.pp,+%s%%,+%s%%
 cmdr.p.inf,Сила Пехоты,Infantry strength
 cmdr.p.refill,Пополнение армии,Army refill
 cmdr.p.forts,Урон по укреплённым гексам,Damage to fortified hexes
@@ -1182,9 +1182,9 @@ cmdr.assigned,%s ведёт армию,%s leads the army
 cmdr.recommend,Рекомендуем,Recommended
 cmdr.leads,Ведёт эту армию,Leads this army
 cmdr.remove,Снять командира,Remove the commander
-profile.title,Профиль державы,Realm profile
+profile.title,Держава,Realm
 profile.dl,Уровень развития %d,Development level %d
-profile.hexes,Держава,Realm
+profile.hexes,Гексы,Hexes
 profile.hexes_v,%d гексов,%d hexes
 profile.map,Карта главы,Chapter map
 profile.arena,Лига Арены,Arena league
@@ -1210,9 +1210,9 @@ flag.tab_em,Эмблема,Emblem
 flag.tab_frame,Рамка,Frame
 flag.field1,"Поле, первый цвет","Field, first colour"
 flag.field2,"Поле, второй цвет","Field, second colour"
-flag.emblem_c,Цвет эмблемы (золото и жёлтый — только здесь),Emblem colour (gold and yellow — only here)
+flag.emblem_c,Цвет эмблемы,Emblem colour
 flag.locked,Этот элемент ещё не получен,You don't have this item yet
-flag.random,🎲 Случайно,🎲 Random
+flag.random,Случайно,Random
 flag.done,Готово,Done
 flagw.title0,Ваш флаг: выберите деление,Your flag: pick a division
 flagw.title1,Теперь эмблему,Now an emblem
@@ -1245,6 +1245,60 @@ realm.n14,Серебряный Брод,Silver Ford
 realm.n15,Ясная Гавань,Clear Haven
 realm.n16,Соколиный Утёс,Falcon Cliff
 realm.title,Название державы,Name your realm
-realm.ideas,Идеи:,Ideas:
-realm.more,🎲 Ещё идеи,🎲 More ideas
+realm.ideas,Идеи,Ideas
+realm.more,Ещё идеи,More ideas
 realm.too_short,Название — от 2 букв,A name needs at least 2 letters
+plural.shards,%d осколков,%d shards
+plural.shards.one,%d осколок,%d shard
+plural.shards.few,%d осколка,%d shards
+plural.shards.many,%d осколков,%d shards
+plural.shards.other,%d осколков,%d shards
+pass.rw_shards_n,%s: %s,%s: %s
+time.d,%dд,%dd
+cmdr.assign,Назначить,Assign
+cmdr.up_ribbon,Повысить!,Level up!
+cmdr.level,Уровень,Level
+cmdr.cap,макс. %d,max %d
+cmdr.unlock_at,Нужно %s,Needs %s
+cmdr.unlock_left,Ещё %s до открытия,%s more to unlock
+cmdr.levels,Уровни,Levels
+cmdr.where_title,Где взять,Where to get
+cmdr.target_btn,Цель кейса,Case target
+cmdr.upgrade_btn,Повысить,Level up
+cmdr.max_btn,Максимум,Maxed
+cmdr.s.tutorial,Обучение,Tutorial
+cmdr.s.chapter,Глава %s,Chapter %s
+cmdr.s.crates,Военные ящики,War crates
+cmdr.s.arena,Арена,Arena
+cmdr.s.orders,Задания,Orders
+cmdr.s.calendar,"Календарь, день %d","Calendar, day %d"
+cmdr.s.events,События,Events
+cmdr.s.pass,Пропуск,War Pass
+cmdr.s.royal,Королевский кейс,Royal case
+cmdr.s.recruit,Набор новобранца,Recruit pack
+cmdr.s.cases,Кейсы,Cases
+cmdr.ps.inf,Пехота,Infantry
+cmdr.ps.refill,Пополнение,Refill
+cmdr.ps.forts,Штурм,Assault
+cmdr.ps.scout,Разведка,Scouting
+cmdr.ps.power,Армия,Army
+cmdr.ps.wedge,Клин,Wedge
+cmdr.ps.pocket,Котёл,Pocket
+cmdr.ps.landing,Десант,Landing
+cmdr.ps.port,Порты,Ports
+cmdr.ps.home,Оборона,Defense
+cmdr.ps.breach,Прорыв,Breakthrough
+cmdr.ps.attack,Атака,Attack
+cmdr.ps.air,Авиаудар,Airstrike
+cmdr.ps.energy,Энергия,Energy
+cmdr.ps.forms,Фронт,Front
+cmdr.ps.regen,Восполнение,Regen
+hand.plate,Рука,Hand
+cal.day_of,День %d/%d,Day %d/%d
+cal.day_n,День %d,Day %d
+cal.prize,Приз,Prize
+cal.pick_title2,%s на выбор,%s to give
+cal.pick_q,Кому отдать осколки?,Who gets the shards?
+cal.has,есть %d,has %d
+cal.pick_btn2,Выбрать,Choose
+profile.dl_short,Развитие,Development
