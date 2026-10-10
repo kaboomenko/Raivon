@@ -34,7 +34,7 @@ const TRAY := Rect2(12, 1464, 628, 196)
 const TILE_RECT := Rect2(652, 1374, 277, 152)
 const TILE_OWNER := Vector2(14, -17)  # the owner chip (h 34) straddles the top contour
 const TILE_COL := Rect2(102, 58, 165, 80)  # the stat chips: rows at y 58 and 100 (h 38)
-const TILE_ICON := Rect2(29, 70, 46, 46)  # a kind's 3D icon set on the terrain's tile while the kind has no render
+const TILE_ICON := Rect2(32, 72, 40, 40)  # a kind's 3D icon set on the terrain's tile while the kind has no render
 const CHIP_GAP := 6.0
 
 var world: Node3D

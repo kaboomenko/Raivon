@@ -1496,13 +1496,17 @@ def terem_block(w, d, h_stone, h_wood, team, roof_h, dome=True, dome_team=False,
     return z1
 
 
+WIN_SOFT = "#5a6b84"  # unlit glass of the DL4 painted facades (L* ≈ 44; WIN_D #2f3a4a is L* ≈ 24)
+
+
 def mansion(w, d, floors, wall, team, fh=0.11, roof_h=0.14, col=0.07):
     """A stone town mansion (DL4) under a coursed hip roof of roof_h, a painted window grid (one column every col),
     a white cornice, two chimneys. «Raivon Soft» (plan step B3): city_dl4 builds two storeys under a fat roof
     (≈ 45 % of the height), fewer bigger painted windows (col 0.1: ≤ 3 a face) and round chimneys."""
     H = floors * fh + 0.02
     bx((w + 0.02, d + 0.02, 0.04), (0, 0, 0.02), stone(STONE_D), bev=0)
-    bx((w, d, H), (0, 0, H / 2), facade(wall, WIN_D, col, fh, 0.42, 0.5, lit_p=0.3), soft="v")  # (cornice on top)
+    # (the glass a light slate, not the near-black WIN_D: §6.1 no albedo darker than L* ≈ 28)
+    bx((w, d, H), (0, 0, H / 2), facade(wall, WIN_SOFT, col, fh, 0.42, 0.5, lit_p=0.45), soft="v")  # (cornice on top)
     bx((w + 0.03, d + 0.03, 0.025), (0, 0, H), flat("cornice", WHITE, 0.6), bev=0.006)
     coursed_hip(w, d, roof_h, (0, 0, H + 0.0125), slate(team, 1.00), oh=0.03 if roof_h <= 0.14 else 0.05)
     for sx in (-1, 1):
@@ -1625,8 +1629,8 @@ def city_dl2(team):
     build_at(lambda: log_house(0.32, 0.26, 0.2, team, smoke=True), -0.33, 0.22, 0.12, 1.2)
     build_at(lambda: log_house(0.28, 0.24, 0.18, team, gable_front=True, smoke=True), 0.37, 0.2, -0.15, 1.2)
     build_at(lambda: barn(team, coursed=True), 0.22, -0.39, -0.15)
-    build_at(well, -0.15, -0.16, 0.3)
-    well_roof(-0.15, -0.16, 0.3, team)
+    build_at(well, -0.15, -0.22, 0.3)
+    well_roof(-0.15, -0.22, 0.3, team)
     build_at(lambda: garden(0.26, 0.15, 3, "#5aa63a"), -0.44, -0.3, 0.4)
     haystack(0.62, -0.13, 0.85)
     build_at(lambda: woodpile(2, 1.4), -0.69, -0.11, 1.57)
@@ -1682,13 +1686,18 @@ def city_dl3(team):
 
 
 def city_dl4(team):
+    """The DL4 town square. «Raivon Soft» (plan step B3): four buildings (was seven: the back-row cottages are gone
+    and one front town house, so the rest stand ×1.2 with clear gaps) — the town hall under a fat hip roof with its
+    clock tower, two-storey mansions ×1.2 under fat roofs at the sides, a tall jettied town house ×1.2 in front —
+    at least 0.05 apart; the fountain, two stalls and one cask and crate a heap on the square."""
     pad(0.74, stone(COBBLE, 1.8), 0.012, 14, 0.04, 4)
 
     def town_hall():
-        st = facade("#ddc9a0", WIN_D, 0.07, 0.12, 0.42, 0.5, lit_p=0.35)
-        bx((0.58, 0.26, 0.28), (0, 0, 0.14), st, soft="v")  # soft masses (cornices on their tops)
-        bx((0.6, 0.28, 0.025), (0, 0, 0.28), flat("cornice", WHITE, 0.6), bev=0.006)
-        coursed_hip(0.58, 0.26, 0.13, (0, 0, 0.29), slate(team, 1.00), oh=0.03)
+        # two storeys of big painted windows (one column every 0.11) under a fat coursed hip roof (≈ 45 % of the hall)
+        st = facade("#ddc9a0", WIN_SOFT, 0.11, 0.12, 0.42, 0.5, lit_p=0.45)
+        bx((0.5, 0.26, 0.24), (0, 0, 0.12), st, soft="v")  # soft masses (cornices on their tops)
+        bx((0.52, 0.28, 0.025), (0, 0, 0.24), flat("cornice", WHITE, 0.6), bev=0.006)
+        coursed_hip(0.5, 0.26, 0.21, (0, 0, 0.25), slate(team, 1.00), oh=0.05)
         tw = stone("#e6dcc4", 1.5)
         bx((0.15, 0.15, 0.66), (0, 0.0, 0.33), tw, soft="v")
         bx((0.18, 0.18, 0.025), (0, 0, 0.66), flat("cornice", WHITE, 0.6), bev=0.005)
@@ -1698,38 +1707,31 @@ def city_dl4(team):
             clock_face(math.sin(a) * 0.076, -math.cos(a) * 0.076, 0.56, a)
             window(math.sin(a) * 0.066, -math.cos(a) * 0.066, 0.74, a, 0.04, 0.062)
         coursed_hip(0.13, 0.13, 0.3, (0, 0, 0.79), slate(team, 1.00), oh=0.03, ct=0.014)
-        ico(0.02, (0, 0, 1.11), flat("gold", GOLD, 0.35), sub=2)  # a round gilt ball on the spire
-        for x in (-0.09, -0.03, 0.03, 0.09):
-            cy(0.014, 0.18, (x, -0.165, 0.09), flat("cornice", WHITE, 0.6), 8)
-        bx((0.24, 0.07, 0.02), (0, -0.165, 0.19), flat("cornice", WHITE, 0.6), bev=0)
-        prism_roof("pedi", 0.07, 0.22, 0.06, (0, -0.165, 0.2), flat("cornice", WHITE, 0.6), overhang=0.01, rot_z=math.pi / 2)
-    build_at(town_hall, 0.0, 0.36)
-    build_at(lambda: mansion(0.26, 0.22, 3, "#f0d9b5", team), -0.47, -0.02, 0.15)
-    build_at(lambda: mansion(0.28, 0.22, 2, "#e9c2b4", team), 0.47, 0.0, -0.15)
-    # tall jettied half-timber houses on the front of the square (the town of reference frame 3, grown rich), set
-    # wide and turned in, so the market stalls and the fountain show through the street between them
-    build_at(lambda: town_house(0.23, 0.18, 0.12, 0.11, team, "#d5d0c3", "#f2e8d4", shop="#2f62c8", smoke=True),
-             -0.29, -0.42, 0.25)
-    build_at(lambda: town_house(0.21, 0.18, 0.12, 0.11, team, "#cfc6b4", "#efe1c4", shop="#c0392b", chim=-1),
-             0.31, -0.42, -0.25)
+        ico(0.024, (0, 0, 1.112), flat("gold", GOLD, 0.35), sub=2)  # a round gilt ball on the spire
+        for x in (-0.08, 0.0, 0.08):  # three stout columns (were four 0.028 ones)
+            cy(0.018, 0.16, (x, -0.165, 0.08), flat("cornice", WHITE, 0.6), 8)
+        bx((0.24, 0.07, 0.024), (0, -0.165, 0.172), flat("cornice", WHITE, 0.6), bev=0)
+        prism_roof("pedi", 0.07, 0.22, 0.06, (0, -0.165, 0.184), flat("cornice", WHITE, 0.6), overhang=0.01, rot_z=math.pi / 2)
+    build_at(town_hall, 0.0, 0.43, 0.0, 1.05)
+    build_at(lambda: mansion(0.26, 0.22, 2, "#f0d9b5", team, roof_h=0.21, col=0.1), -0.5, -0.07, 0.12, 1.2)
+    build_at(lambda: mansion(0.28, 0.22, 2, "#e9c2b4", team, roof_h=0.21, col=0.1), 0.5, -0.06, -0.12, 1.2)
+    # a tall jettied half-timber house on the front of the square (the town of reference frame 3, grown rich), set
+    # to one side, so the market stalls and the fountain show beside it
+    build_at(lambda: town_house(0.23, 0.18, 0.1, 0.09, team, "#d5d0c3", "#f2e8d4", shop="#2f62c8", smoke=True,
+                                pitch=1.45), -0.08, -0.49, 0.05, 1.2)
 
     def fountain():
         st = stone(STONE)
         cy(0.11, 0.05, (0, 0, 0.025), st, 12)
         cy(0.095, 0.004, (0, 0, 0.05), flat("water", "#5fb8e0", 0.15), 12)
-        cy(0.02, 0.12, (0, 0, 0.09), st, 8)
-        cy(0.045, 0.02, (0, 0, 0.15), st, 10)
-    build_at(fountain, 0.02, -0.06)
-    tree(-0.24, 0.0, 0.8)
-    tree(0.26, -0.06, 0.8)
-    flagpole(0.2, 0.18, 0.5, team, 0.14)
-    for (x, y, rz, c) in ((-0.05, -0.39, 0.1, "#c0392b"), (0.08, -0.29, -0.12, "#2f62c8")):
-        build_at(lambda c=c: market_stall(team, c), x, y, rz)
-    # back-row houses: only their roofs and chimneys show over the mansions and the town hall
-    build_at(lambda: cottage(0.2, 0.16, 0.15, team, "#efe3c8", smoke=True, plain=True), -0.5, 0.42, 0.45)
-    build_at(lambda: cottage(0.18, 0.15, 0.14, team, "#f1e6d2", gable_front=False, eave_z=0.0, plain=True),
-             0.52, 0.4, -0.45)
-    town_props(team, [(-0.64, -0.24), (0.64, -0.26)])
+        cy(0.024, 0.12, (0, 0, 0.09), st, 8)
+        cy(0.05, 0.024, (0, 0, 0.15), st, 10)
+    build_at(fountain, 0.0, 0.03)  # before the hall's portico: it shows over the front house's ridge
+    tree(0.27, -0.2, 0.8)
+    flagpole(0.22, 0.12, 0.5, team, 0.14)
+    for (x, y, rz, c) in ((0.3, -0.53, -0.2, "#c0392b"), (0.48, -0.44, -0.6, "#2f62c8")):
+        build_at(lambda c=c: market_stall(team, c), x, y, rz, 1.2)
+    town_props(team, [(-0.62, -0.34), (0.62, -0.32)])
 
 
 def street_lamp(x, y, h=0.2, modern=False):
@@ -4031,14 +4033,14 @@ def fort_post(level):
 def homestead(team):
     """A farmstead on an owned open hex (the settled countryside of the reference frames): a half-timbered cottage
     under a coursed roof in the owner's colour with a smoking brick chimney, a fenced vegetable patch, a haystack,
-    a woodpile and barrels by the door."""
-    build_at(lambda: cottage(0.24, 0.19, 0.17, team, smoke=True, pitch=1.06), 0.0, 0.05, 0.15)
-    build_at(lambda: garden(0.2, 0.13, 3), -0.02, -0.25, 0.15)
-    haystack(0.22, -0.1, 0.7)
-    build_at(lambda: woodpile(2), 0.27, 0.16, 1.4, 0.7)
-    for (x, y) in ((-0.19, -0.06), (-0.22, -0.01)):
-        cy(0.02, 0.045, (x, y, 0.0225), tex("wood", WOOD, 3.0), 8)
-        cy(0.021, 0.006, (x, y, 0.034), flat("band", "#3d3f45", 0.5), 8)
+    a woodpile and a cask by the door. «Raivon Soft» (plan step B3): the cottage ×1.15 under a fat roof (pitch 1.3,
+    ≈ 48 % of its height) with a round chimney, three beds of ×1.4 cabbages behind a chunky wattle (0.03 stakes
+    with round tops), a round beehive haystack, a woodpile of fat logs and one ×1.4 cask (were two and a hoop)."""
+    build_at(lambda: cottage(0.24, 0.19, 0.17, team, smoke=True), 0.0, 0.08, 0.15, 1.15)
+    build_at(lambda: garden(0.2, 0.13, 3), -0.05, -0.27, 0.15)
+    haystack(0.25, -0.16, 0.75)
+    build_at(lambda: woodpile(2, 1.4), 0.33, 0.12, 1.75, 0.7)
+    barrel(-0.24, -0.05, 1.35)
 
 
 # ------------------------------------------------------------------ LATE-ERA COUNTRYSIDE (DL6+ homesteads, farms, mine)

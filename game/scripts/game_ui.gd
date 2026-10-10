@@ -23,7 +23,6 @@ const TEXT := Color(0.96, 0.97, 1.0)
 const MUTED := Color(0.62, 0.68, 0.78)
 const VW := 941.0
 const VH := 1672.0
-const CARD_ART := {"attack": "⚔", "breakthrough": "➶", "airstrike": "✈", "encircle": "◎", "defense": "⛨", "corps": "⚑", "landing": "⇓", "missile": "✦"}
 const CARD_ORDER := ["attack", "breakthrough", "airstrike", "encircle", "defense"]
 var _locked := {}  # card -> DL it opens at
 var _hand_order: Array = []
@@ -36,19 +35,24 @@ const Kit := preload("res://scripts/ui_kit.gd")
 
 var font_bold: Font
 var root: Control
+var _top: Control  # the war bar's group: moved down by the safe top inset (§3.1)
 var _control_bar: Control
-var _control_fill: Panel
+var _control_track: Panel  # the enemy's part of the war bar (the whole inner track)
+var _control_fill: Panel  # the player's part, from the left: 484 px × control
 var _control_lbl: Label
 var _control_lbl2: Label
-var _score_lbl: Label
-var _laststand: Label
-var _war_flags: Array = []  # [player FlagView, enemy FlagView] at the ends of the control bar (concept panel 7)
-var _war_swords: Label
+var _score_chip: Panel  # the signed war score under the junction
+var _score_txt := ""
+var _laststand: Panel  # the «Последний рубеж» chip
+var _war_flags: Array = []  # [player FlagView, enemy FlagView] in the round chips at the ends of the war bar
+var _war_swords: TextureRect  # the junction
+var _bar_colors: Array = []
 var _battle: Control
 var _energy_lbl: Label
-var _energy_segs: Array = []
-var _cards := {}
+var _energy_segs: Array = []  # the fill of each energy pip (a clipping Control sized from the bottom)
+var _cards := {}  # card -> its Panel (child Label "cd": the cooldown seconds)
 var _card_names := {}  # card -> name Label (re-translated on a language switch)
+var _card_look := {}  # card -> {art, cost, veil, lock, state}: the parts set_battle / set_locked restyle
 var _timer_lbl: Label
 var _action: Control  # the status slot: the status button or the battle timer plate (visible while its kind is not "")
 var _action_kind := ""
@@ -57,9 +61,10 @@ var _action2_kind := ""
 var _modal: Control
 var _bottom: Control  # the bottom group (card row, battle hand, status / big buttons): moved to VB − 1672 (§3.1)
 var _drag_card := ""
-var _ghost: Label
-var _seal_t := -1.0
-var _seal_prog: Panel
+var _ghost: Control  # the dragged card: its art at 0.9× with a shadow and the name
+var _ghost_name: Label
+var _ghost_art: TextureRect
+var _trim := "brass"  # the leader portrait frames: brass (DL1–4) / steel (DL5–8), §3.2
 
 
 func _ready() -> void:
@@ -77,10 +82,7 @@ func _ready() -> void:
 	_build_control_bar()
 	_build_battle()
 	_build_action()
-	_ghost = _label("", 64)
-	_ghost.visible = false
-	_ghost.z_index = 50
-	root.add_child(_ghost)
+	_build_ghost()
 	get_viewport().size_changed.connect(_anchor_bottom)
 	_anchor_bottom()
 
@@ -88,6 +90,7 @@ func _ready() -> void:
 ## The bottom group follows the visible bottom (VB, §3.1) like the HUD's tabs and tray under it.
 func _anchor_bottom() -> void:
 	_bottom.position.y = Kit.vb(self) - VH
+	_top.position.y = Kit.top_inset(self)
 
 
 # ------------------------------------------------------------------ helpers

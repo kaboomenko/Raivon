@@ -600,13 +600,22 @@ class KitShape extends Control:
 				while y < size.y:
 					draw_line(Vector2(0, y), Vector2(size.x, y), col, 1.0)
 					y += step
-			"tail":  # tooltip tail pointing down (data.up = true: up)
-				var up: bool = data.get("up", false)
-				var p := PackedVector2Array([Vector2(0, 0), Vector2(size.x, 0), Vector2(size.x * 0.5, size.y)]) if not up \
-					else PackedVector2Array([Vector2(0, size.y), Vector2(size.x, size.y), Vector2(size.x * 0.5, 0)])
+			"tail":  # a tooltip / bubble tail pointing down (data.up = true: up; data.dir: "left" / "right" too)
+				var dir: String = data.get("dir", "up" if data.get("up", false) else "down")
+				var p: PackedVector2Array
+				match dir:
+					"up":
+						p = PackedVector2Array([Vector2(0, size.y), Vector2(size.x, size.y), Vector2(size.x * 0.5, 0)])
+					"left":
+						p = PackedVector2Array([Vector2(size.x, 0), Vector2(size.x, size.y), Vector2(0, size.y * 0.5)])
+					"right":
+						p = PackedVector2Array([Vector2(0, 0), Vector2(0, size.y), Vector2(size.x, size.y * 0.5)])
+					_:
+						p = PackedVector2Array([Vector2(0, 0), Vector2(size.x, 0), Vector2(size.x * 0.5, size.y)])
 				draw_colored_polygon(p, face)
 				draw_line(p[0], p[2], INK, 4.0, true)
 				draw_line(p[1], p[2], INK, 4.0, true)
+				draw_circle(p[2], 2.0, INK, true, -1.0, true)
 
 	func _star(c: Vector2, rr: float, full: bool) -> void:
 		var body := SELF.star_points(c, rr)
@@ -1569,20 +1578,22 @@ static func hex_badge(parent: Node, center: Vector2, r: float, role: String, tex
 
 
 ## The hex title plate centred on the window's top edge (y = −42). `animate`: it drops in from −20 px after 60 ms
-## (§3.6 POP_IN); a window replaced in the same frame passes false.
-static func title_plate(panel: Control, text: String, role := "info", icon := "", animate := true) -> KitShape:
-	var h := 84.0
+## (§3.6 POP_IN); a window replaced in the same frame passes false. `size`: TITLE 46, or HERO 64 for «Победа!» (the
+## plate grows to h 104, still centred on the edge).
+static func title_plate(panel: Control, text: String, role := "info", icon := "", animate := true, size := 46) -> KitShape:
+	var h := 84.0 if size <= 46 else 104.0
 	var has_icon := icon != "" and icon_tex(icon) != null
-	var tw := text_w(text, 46, "d900")
+	var tw := text_w(text, size, "d900")
 	var w := clampf(tw + 108.0 + (64.0 if has_icon else 0.0), 320.0, maxf(320.0, panel.size.x - 200.0))
 	var s := KitShape.new("plate", face_of(role))
 	s.lip = lip_of(role)
 	s.size = Vector2(w, h)
-	s.position = Vector2((panel.size.x - w) * 0.5, -42.0)
+	var y0 := -h * 0.5
+	s.position = Vector2((panel.size.x - w) * 0.5, y0)
 	panel.add_child(s)
 	var tx := 54.0 + (64.0 if has_icon else 0.0)
-	var l := label(text, 46, TEXT, true)
-	l.add_theme_font_size_override("font_size", fit_size(text, 46, w - tx - 54.0, "d900", 32))
+	var l := label(text, size, TEXT, true)
+	l.add_theme_font_size_override("font_size", fit_size(text, size, w - tx - 54.0, "d900", 32))
 	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
@@ -1600,10 +1611,10 @@ static func title_plate(panel: Control, text: String, role := "info", icon := ""
 		s.add_child(ic)
 	var d := _dur(0.22)
 	if animate and d > 0.0:
-		s.position.y = -62.0
+		s.position.y = y0 - 20.0
 		s.modulate.a = 0.0
 		var drop := s.create_tween().set_parallel()
-		drop.tween_property(s, "position:y", -42.0, d).set_delay(0.06).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+		drop.tween_property(s, "position:y", y0, d).set_delay(0.06).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 		drop.tween_property(s, "modulate:a", 1.0, d * 0.5).set_delay(0.06)
 	return s
 
@@ -2394,6 +2405,366 @@ static func chrome(parent: Node, kind: String, rect: Rect2, color := Color.WHITE
 	if parent:
 		parent.add_child(s)
 	return s
+
+
+## A round go badge with a vector check (Ø40: a selected / claimed tile, §4.9), centred at `center`.
+static func check_badge(parent: Node, center: Vector2, d := 40.0) -> KitShape:
+	var ck := KitShape.new("disc", face_of("go"))
+	ck.name = "check"
+	ck.lip = lip_of("go")
+	ck.size = Vector2(d, d)
+	ck.position = center - ck.size * 0.5
+	if parent:
+		parent.add_child(ck)
+	chrome(ck, "check", Rect2(d * 0.12, d * 0.06, d * 0.76, d * 0.76))
+	return ck
+
+
+# ------------------------------------------------------------------ paper: wells, sections, bubbles (§4.3, §4.9)
+
+## A well on paper: CREAM_WELL, R 20, no contour, no lip (§3.4) — lists and tiles sit in it.
+static func well(parent: Node, rect: Rect2, face := CREAM_WELL) -> Panel:
+	var p := Panel.new()
+	p.name = "well"
+	var sb := style(face, 20, 0, INK, 0, 0)
+	sb.set_meta("kit_kind", "")
+	p.add_theme_stylebox_override("panel", sb)
+	p.position = rect.position
+	p.size = rect.size
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	if parent:
+		parent.add_child(p)
+	return p
+
+
+## A section header on paper (§4.9): an optional icon 48, Rubik 900 32 INK_TEXT (fit to 24), then a 4 px CREAM_DEEP
+## line to the right end. 48 px tall.
+static func section(parent: Node, pos: Vector2, w: float, text: String, icon := "") -> Control:
+	var c := Control.new()
+	c.name = "section"
+	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	c.position = pos
+	c.size = Vector2(w, 48)
+	var x := 0.0
+	var tex := icon_tex(icon)
+	if tex != null:
+		var ic := _card_rect(tex, Rect2(0, 0, 48, 48))
+		ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		c.add_child(ic)
+		x = 56.0
+	var s := fit_size(text, 32, w - x - 40.0, "d900", 24, false)
+	var l := label(text, s, INK_TEXT, true)
+	l.add_theme_font_size_override("font_size", s)
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	var tw := minf(text_w(text, s, "d900", false), w - x - 40.0)
+	l.position = Vector2(x, -2)
+	l.size = Vector2(tw + 4.0, 48)
+	l.clip_text = true
+	l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	c.add_child(l)
+	var line := Panel.new()
+	var lsb := style(CREAM_DEEP, 2, 0, INK, 0, 0)
+	lsb.set_meta("kit_kind", "")
+	line.add_theme_stylebox_override("panel", lsb)
+	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	line.position = Vector2(x + tw + 16.0, 22)
+	line.size = Vector2(maxf(0.0, w - x - tw - 16.0), 4)
+	c.add_child(line)
+	if parent:
+		parent.add_child(c)
+	return c
+
+
+## A speech bubble on paper (a leader's line): a white face, INK 4, R 24, a hard shadow 4, a tail toward the speaker
+## ("left" / "right" / "up" / "down"); BODY 28 INK_TEXT (26 when long), word-wrapped, at most 3 lines, centred
+## vertically. Returns the bubble Panel; its Label is "text".
+static func bubble(parent: Node, rect: Rect2, text: String, tail := "left") -> Panel:
+	var p := Panel.new()
+	p.name = "bubble"
+	var sb := style(WHITE, 24, 4, INK, 4, 0)
+	sb.set_meta("kit_kind", "")
+	p.add_theme_stylebox_override("panel", sb)
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	p.position = rect.position
+	p.size = rect.size
+	var tl := KitShape.new("tail", WHITE)
+	tl.data = {"dir": tail}
+	match tail:
+		"left":
+			tl.size = Vector2(22, 30)
+			tl.position = Vector2(-18, rect.size.y * 0.5 - 15.0)
+		"right":
+			tl.size = Vector2(22, 30)
+			tl.position = Vector2(rect.size.x - 4.0, rect.size.y * 0.5 - 15.0)
+		"up":
+			tl.size = Vector2(30, 22)
+			tl.position = Vector2(rect.size.x * 0.5 - 15.0, -18)
+		_:
+			tl.size = Vector2(30, 22)
+			tl.position = Vector2(rect.size.x * 0.5 - 15.0, rect.size.y - 4.0)
+	p.add_child(tl)
+	var inner := rect.size.x - 40.0
+	var f := font("b800")
+	var fs := 28
+	for s in [28, 26]:
+		fs = s
+		var lines := f.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, inner, s).y / (s * 1.36)
+		if lines <= 2.2 or (s == 26):
+			break
+	var l := label(text, fs, INK_TEXT, false)
+	l.name = "text"
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.max_lines_visible = 3
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.position = Vector2(20, 4)
+	l.size = Vector2(inner, rect.size.y - 8.0)
+	p.add_child(l)
+	if parent:
+		parent.add_child(p)
+	return p
+
+
+# ------------------------------------------------------------------ segments (§4.5)
+
+## A segment that is not selected: text only; a tap calls `cb`.
+class KitSegment extends Control:
+	var cb := Callable()
+	var _down := false
+	var _frame := -1
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_STOP
+		gui_input.connect(_on_input)
+
+	func _on_input(e: InputEvent) -> void:
+		var pressed := false
+		var pos := Vector2.ZERO
+		if e is InputEventMouseButton and (e as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
+			pressed = e.pressed
+			pos = (e as InputEventMouseButton).position
+		elif e is InputEventScreenTouch:
+			pressed = e.pressed
+			pos = (e as InputEventScreenTouch).position
+		else:
+			return
+		if pressed:
+			_down = true
+			return
+		var f := Engine.get_process_frames()
+		if not _down or f == _frame:
+			return  # the emulated mouse twin of a touch
+		_down = false
+		_frame = f
+		if Rect2(Vector2.ZERO, size).has_point(pos) and cb.is_valid():
+			cb.call()
+
+
+## Segments (§4.5): an INK 4 track (CREAM_DEEP on paper, SLATE_WELL on slate), the selected segment a raised info
+## button S, the others Rubik 900 28 text (SOFT_CREAM on paper, white on slate) fit to 22. A tap on a segment calls
+## cb.call(i) (the selected one too: the caller may ignore it). Returns the track Panel; segment i is "seg_i".
+static func segmented(parent: Node, rect: Rect2, items: Array, selected: int, cb: Callable, on_paper := true) -> Panel:
+	var p := Panel.new()
+	p.name = "segmented"
+	var sb := style(CREAM_DEEP if on_paper else SLATE_WELL, 24, 4, INK, 0, 0)
+	sb.set_meta("kit_kind", "")
+	p.add_theme_stylebox_override("panel", sb)
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	p.position = rect.position
+	p.size = rect.size
+	if parent:
+		parent.add_child(p)
+	var n := maxi(1, items.size())
+	var pad := 6.0
+	var sw := (rect.size.x - 2.0 * pad) / n
+	var col := SOFT_CREAM if on_paper else alpha(WHITE, 0.85)
+	for i in items.size():
+		var r := Rect2(pad + i * sw, pad, sw, rect.size.y - 2.0 * pad)
+		var txt := String(items[i])
+		var idx := i
+		if i == selected:
+			var b := button(p, r.grow_individual(-2, 0, -2, 0), "info", txt, {"size": "S", "cb": func(): cb.call(idx)})
+			b.name = "seg_%d" % i
+		else:
+			var s := KitSegment.new()
+			s.name = "seg_%d" % i
+			s.position = r.position
+			s.size = r.size
+			s.cb = func(): cb.call(idx)
+			p.add_child(s)
+			var fs := fit_size(txt, 28, r.size.x - 16.0, "d900", 22, not on_paper)
+			var l := label(txt, fs, col, true)
+			l.add_theme_font_size_override("font_size", fs)
+			l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+			l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			l.size = r.size
+			l.clip_text = true
+			l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+			s.add_child(l)
+	return p
+
+
+# ------------------------------------------------------------------ tiles (§4.9)
+
+## A tile on paper — see `tile`. A tap (a release inside after a press, not a swipe) calls `cb`; it sinks a little
+## while pressed.
+class KitTile extends Panel:
+	var cb := Callable()
+	var _press_g := Vector2.ZERO
+	var _travel := 0.0
+	var _down := false
+	var _frame := -1
+
+	func _init() -> void:
+		name = "tile"
+		mouse_filter = Control.MOUSE_FILTER_PASS
+		gui_input.connect(_on_input)
+
+	func _on_input(e: InputEvent) -> void:
+		if not cb.is_valid():
+			return
+		var pressed := false
+		var pos := Vector2.ZERO
+		if e is InputEventMouseButton and (e as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
+			pressed = e.pressed
+			pos = (e as InputEventMouseButton).position
+		elif e is InputEventScreenTouch:
+			pressed = e.pressed
+			pos = (e as InputEventScreenTouch).position
+		elif e is InputEventMouseMotion or e is InputEventScreenDrag:
+			if _down:
+				_travel = maxf(_travel, SELF.screen_pos(self, e).distance_to(_press_g))
+			return
+		else:
+			return
+		var f := Engine.get_process_frames()
+		if pressed:
+			if _down:
+				return
+			_down = true
+			_press_g = SELF.screen_pos(self, e)
+			_travel = 0.0
+			pivot_offset = size * 0.5
+			scale = Vector2(0.97, 0.97)
+			return
+		if not _down or f == _frame:
+			return
+		_down = false
+		_frame = f
+		scale = Vector2.ONE
+		_travel = maxf(_travel, SELF.screen_pos(self, e).distance_to(_press_g))
+		if _travel <= SELF.TAP_SLOP and Rect2(Vector2.ZERO, size).has_point(pos):
+			cb.call()
+
+
+## A tile on paper (§4.9: a reward, a demand, a statistic): face CREAM_ROW (or opts.face), R 20, lip 5, no contour.
+## Top to bottom, centred: the picture, then a title, then a big value and its caption; the amount pill sits on the
+## bottom edge. opts:
+##   icon: a kit icon name | tex: a Texture2D (a hex render); icon_side (default: by what else the tile holds)
+##   title: the name (Rubik 900 26 INK_TEXT, fit to 22, cut at the floor)
+##   value: a big number (NUM_L 44; value_color, INK_TEXT by default) and caption: a muted line under it (Rubik 800 24)
+##   pill: [[icon, text, short], …] — the INK amount pill on the bottom edge (NUM_S 26)
+##   count: a «×N» info hex on the top-left corner when > 1
+##   selected: a go outline 5 + a check badge; claimable: a gold outline 4 (+ breathe); locked: a lock, the picture
+##   dimmed; dim: the picture dimmed (it cannot be taken now)
+##   cb: a tap on the tile
+static func tile(parent: Node, rect: Rect2, opts := {}) -> KitTile:
+	var t := KitTile.new()
+	var w := rect.size.x
+	var h := rect.size.y
+	var face: Color = opts.get("face", CREAM_ROW)
+	var sel := bool(opts.get("selected", false))
+	var claim := bool(opts.get("claimable", false))
+	var locked := bool(opts.get("locked", false))
+	var line := face_of("go") if sel else (face_of("gold") if claim else INK)
+	var out := 5 if sel else (4 if claim else 0)
+	var sb := style(face, 20, out, line, 0, 5)
+	sb.set_meta("kit_kind", "")
+	sb.set_meta("kit_lip_color", ROW_LIP if face.is_equal_approx(CREAM_ROW) else face.darkened(0.25))
+	t.add_theme_stylebox_override("panel", sb)
+	t.add_child(KitDecor.new())  # the lip (child 0)
+	t.position = rect.position
+	t.size = rect.size
+	t.cb = opts.get("cb", Callable())
+	var title := String(opts.get("title", ""))
+	var value := String(opts.get("value", ""))
+	var caption := String(opts.get("caption", ""))
+	var pill: Array = opts.get("pill", [])
+	var tex: Texture2D = opts.get("tex", null)
+	if tex == null:
+		tex = icon_tex(String(opts.get("icon", "")))
+	var ph := 36.0
+	var bottom := h - 5.0 - (ph * 0.5 + 2.0 if not pill.is_empty() else 4.0)
+	var side := float(opts.get("icon_side", 0.0))
+	if side <= 0.0:
+		side = minf(w * 0.5, h * 0.44) if (title != "" or value != "") else minf(w, h) * 0.6
+	var parts_h := (side if tex != null else 0.0) + (34.0 if title != "" else 0.0) + (50.0 if value != "" else 0.0) \
+		+ (30.0 if caption != "" else 0.0)
+	var y := maxf(6.0, (bottom - parts_h) * 0.5 + 2.0)
+	if tex != null:
+		var pic := _card_rect(tex, Rect2((w - side) * 0.5, y, side, side))
+		pic.name = "pic"
+		pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		if locked or bool(opts.get("dim", false)):
+			pic.modulate = LOCK_MOD
+		t.add_child(pic)
+		if locked:
+			var lk := _card_rect(icon_tex("lock"), Rect2(w * 0.5 + side * 0.18, y + side * 0.42, side * 0.5, side * 0.5))
+			lk.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			t.add_child(lk)
+		y += side
+	if title != "":
+		var s := fit_size(title, 26, w - 20.0, "d900", 22, false)
+		var tl := label(title, s, INK_TEXT, true)
+		tl.name = "title"
+		tl.add_theme_font_size_override("font_size", s)
+		tl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		tl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		tl.clip_text = true
+		tl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		tl.position = Vector2(10, y)
+		tl.size = Vector2(w - 20.0, 34)
+		t.add_child(tl)
+		y += 34.0
+	if value != "":
+		var vs := fit_size(value, 44, w - 16.0, "d900", 30, false)
+		var vl := label(value, vs, opts.get("value_color", INK_TEXT), true)
+		vl.name = "value"
+		vl.add_theme_font_size_override("font_size", vs)
+		vl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		vl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		vl.position = Vector2(8, y)
+		vl.size = Vector2(w - 16.0, 50)
+		t.add_child(vl)
+		y += 50.0
+	if caption != "":
+		var cs := fit_size(caption, 24, w - 16.0, "d800", 22, false)
+		var cl := label(caption, cs, MUTED_CREAM, true)
+		cl.name = "caption"
+		cl.add_theme_font_override("font", font("d800"))
+		cl.add_theme_font_size_override("font_size", cs)
+		cl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		cl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		cl.clip_text = true
+		cl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		cl.position = Vector2(8, y - 2.0)
+		cl.size = Vector2(w - 16.0, 30)
+		t.add_child(cl)
+	if not pill.is_empty():
+		var pp := price_plate(pill, ph)
+		pp.name = "pill"
+		pp.position = Vector2(roundf((w - pp.size.x) * 0.5), h - ph * 0.5 - 2.0)
+		t.add_child(pp)
+	var n := int(opts.get("count", 0))
+	if n > 1:
+		var hb := hex_badge(t, Vector2(14, 14), 24, "info", "×%d" % n)
+		hb.name = "count"
+	if sel:
+		check_badge(t, Vector2(w - 6.0, 6.0))
+	if claim:
+		breathe(t)
+	if parent:
+		parent.add_child(t)
+	return t
 
 
 # ------------------------------------------------------------------ icons (§3.5)

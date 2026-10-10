@@ -1976,16 +1976,18 @@ func _place_biome_props(c: Dictionary, holder: Node3D, p: Vector3, biome: String
 				spawn("tree_round", holder, rnd.call(0.5), rng.randf() * TAU, rng.randf_range(0.6, 0.85))
 
 
+## The edge of the world (reference frame 1, docs/art_direction.md §6.7, soft_style_plan P7): the unexplored land
+## next to the open world as sunken slate "cookies" (rounded hexes, corner radius FOG_RHO) over a slate underlay, so
+## the rounded gaps between them read as slate and not as the sea below; the wooded rim beyond as green cookie
+## bases under the trees; puffy two-tone clouds drifting low over it all.
 func _build_horizon() -> void:
 	_bay_spots = []
-	var tiles: Array = []  # fog-hex and forest-base cylinders, drawn as two MultiMeshes (one draw each)
+	var tiles: Array = []  # fog cookies (+ their underlay) and forest bases, drawn as three MultiMeshes (one draw each)
 	var bases: Array = []
 	var clouds: Array = []  # [position, size] of the low clouds, one billboard MultiMesh
 	var zmax := -1e9  # the open world's near edge (toward the camera): the bay starts beyond it
 	for c in sim.cells:
 		zmax = maxf(zmax, cell_world(int(c["id"])).z)
-	var ring_mat := StandardMaterial3D.new()
-	ring_mat.albedo_color = Color(0.13, 0.2, 0.12)  # dark forest floor, as the wooded rim of the references
 	var rr: int = maxi(4, int(sim.radius))  # the horizon ring sits around the open world (grows by chapter)
 	for q in range(-rr - 5, rr + 6):
 		for r in range(-rr - 5, rr + 6):
@@ -2002,10 +2004,10 @@ func _build_horizon() -> void:
 					if d == rr + 1 and roll < 0.3:
 						_bay_spots.append([q, r, p])
 					continue
-				# the unexplored land next to the open world (reference frame 1): dark slate hexes with a faint grid,
-				# drifting low clouds and a peak here and there
-				# a step below the open world (its cliffs and waterfalls show), just above the sea
-				tiles.append(Transform3D(Basis(Vector3.UP, PI / 6.0), p + Vector3(0, -0.7 - rng.randf() * 0.04, 0)))
+				# the unexplored land next to the open world (reference frame 1): slate cookies a step below the open
+				# world (its cliffs and waterfalls show), drifting low clouds and a peak here and there. The cookie's
+				# top is its origin; it sits FOG_Y .. FOG_Y − FOG_JITTER, always over the underlay (FOG_UNDER_Y).
+				tiles.append(Transform3D(Basis.IDENTITY, p + Vector3(0, FOG_Y - rng.randf() * FOG_JITTER, 0)))
 				if d == rr + 2 and roll < 0.3:
 					spawn("mountain", _horizon_root, p + Vector3(0, -0.2, 0), rng.randf() * TAU, rng.randf_range(1.5, 2.4))
 				elif rng.randf() < 0.3:
@@ -2019,32 +2021,32 @@ func _build_horizon() -> void:
 			elif d <= rr + 2:
 				for i in 5:
 					spawn("tree_pine", _horizon_root, p + Vector3(rng.randf_range(-0.7, 0.7), -0.1, rng.randf_range(-0.7, 0.7)), rng.randf() * TAU, rng.randf_range(0.9, 1.4))
-			bases.append(Transform3D(Basis.IDENTITY, p + Vector3(0, -0.62, 0)))
+			bases.append(Transform3D(Basis.IDENTITY, p + Vector3(0, -0.12, 0)))  # the cookie's top at −0.12, under the trees
 			if not near and rng.randf() < 0.3 + 0.1 * (d - rr - 1):  # a lighter veil: the reference keeps its peaks in view
 				clouds.append([p + Vector3(rng.randf_range(-0.5, 0.5), rng.randf_range(1.0, 2.6), rng.randf_range(-0.5, 0.5)), rng.randf_range(2.5, 4.5)])
-	for set in [[tiles, 0.985, _fog_hex_mat()], [bases, 1.16, ring_mat]]:  # 1.16: overlap, or the sky shows through
+	var under: Array = []
+	for xf: Transform3D in tiles:
+		under.append(Transform3D(Basis.IDENTITY, Vector3(xf.origin.x, FOG_UNDER_Y, xf.origin.z)))
+	# fog cookies; their underlay; forest bases at ×1.16 (they overlap, or the sky shows through between them)
+	for set in [[tiles, _rounded_hex_prism(FOG_R, FOG_RHO, 0.05, 1.0, Color("#7D89A6"), Color("#5D6883"))],
+			[under, _hex_prism(1.0, 1.0, Color("#4A5468"))],
+			[bases, _rounded_hex_prism(FOG_R * 1.16, FOG_RHO * 1.16, 0.05, 1.0, Color("#4F7F45"), Color("#7E5A45"))]]:
 		var xfs: Array = set[0]
 		if xfs.is_empty():
 			continue
-		var cm := CylinderMesh.new()
-		cm.top_radius = set[1]
-		cm.bottom_radius = set[1]
-		cm.height = 1.0
-		cm.radial_segments = 6
-		cm.material = set[2]
 		var mm := MultiMesh.new()
 		mm.transform_format = MultiMesh.TRANSFORM_3D
-		mm.mesh = cm
+		mm.mesh = set[1]
 		mm.instance_count = xfs.size()
 		for i in xfs.size():
 			mm.set_instance_transform(i, xfs[i])
 		var mmi := MultiMeshInstance3D.new()
 		mmi.multimesh = mm
+		mmi.material_override = _fog_hex_mat()
 		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF  # below the world's edge: nothing to shade
 		_horizon_root.add_child(mmi)
 	if not clouds.is_empty():
-		_cloud(Vector3.ZERO, 1.0).queue_free()  # builds the shared cloud material
-		var cmat: StandardMaterial3D = _cloud_mat.duplicate()
+		var cmat: StandardMaterial3D = _cloud_material().duplicate()
 		cmat.billboard_keep_scale = true  # each instance keeps its own size
 		cmat.distance_fade_mode = BaseMaterial3D.DISTANCE_FADE_PIXEL_ALPHA  # up close they were blurry white blobs
 		cmat.distance_fade_min_distance = 9.0  # gone when the camera is this near
@@ -2063,6 +2065,96 @@ func _build_horizon() -> void:
 		cmi.multimesh = cmm
 		cmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_horizon_root.add_child(cmi)
+
+
+## The fog cookies (§6.1 rule 2: the sunken cookies of the unexplored land round their corners with 0.24, not SOFT_R).
+## FOG_R 0.94 leaves a rounded slate gap of ≥ 0.10 between neighbours.
+const FOG_R := 0.94
+const FOG_RHO := 0.24
+## Cookie tops lie FOG_Y .. FOG_Y − FOG_JITTER, over the slate underlay at FOG_UNDER_Y, which must stay over the open-sea
+## plane (−0.25, bobbing up to −0.238, water.gdshader): under it, the gaps showed the sea. Hence a jitter of 0.02, not
+## the old 0.04 (a cookie top at −0.24 would sink under the underlay).
+const FOG_Y := -0.2
+const FOG_JITTER := 0.02
+const FOG_UNDER_Y := -0.232
+
+
+## A soft hex "cookie" (soft_style_plan P7): the top is a fan over the hex of corner radius r (corner k at 60°·k, the
+## map's orientation, so no PI/6 turn) with corners rounded to rho (_fillet); a quarter-round bevel `bevel` wide inside
+## that outline (2 rings, the normal turning from up to out); then a wall down to −depth. The top is at y = 0.
+## Vertex colours: top_col on the top and the upper bevel, side_col from the bevel's foot down. No bottom face.
+func _rounded_hex_prism(r: float, rho: float, bevel: float, depth: float, top_col: Color, side_col: Color) -> ArrayMesh:
+	var corners := PackedVector2Array()
+	for k in 6:
+		corners.append(HEX_CORNERS[k] * r)
+	var pts: PackedVector2Array = _fillet(corners, rho, RIB_SEG)["pts"]
+	var n := pts.size()
+	var ctr := r - rho / sin(PI / 3.0)  # each corner's arc is centred this far out along the corner's ray
+	var out := PackedVector2Array()  # the outline's outward normal per point
+	for i in n:
+		out.append((pts[i] - HEX_CORNERS[i / (RIB_SEG + 1)] * ctr).normalized())
+	var verts := PackedVector3Array([Vector3.ZERO])
+	var norms := PackedVector3Array([Vector3.UP])
+	var cols := PackedColorArray([top_col])
+	# rows of n points: the top's rim (bevel angle 0), the bevel's middle (45°), its foot = the wall's top (90°)
+	for row: Array in [[0.0, top_col], [PI / 4.0, top_col], [PI / 2.0, side_col]]:
+		var th: float = row[0]
+		for i in n:
+			var p := pts[i] - out[i] * bevel * (1.0 - sin(th))
+			verts.append(Vector3(p.x, -bevel * (1.0 - cos(th)), p.y))
+			norms.append(Vector3(out[i].x * sin(th), cos(th), out[i].y * sin(th)))
+			cols.append(row[1])
+	for i in n:  # the wall's foot
+		verts.append(Vector3(pts[i].x, -depth, pts[i].y))
+		norms.append(Vector3(out[i].x, 0.0, out[i].y))
+		cols.append(side_col)
+	var idx := PackedInt32Array()
+	for i in n:
+		var j := (i + 1) % n
+		idx.append_array([0, 1 + i, 1 + j])  # clockwise seen from above: Godot's front face
+		for row in 3:  # each band between row a (upper, inner) and row b (lower, outer), facing outward
+			var a := 1 + row * n
+			var b := a + n
+			idx.append_array([a + i, b + j, a + j, a + i, b + i, b + j])
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_NORMAL] = norms
+	arrays[Mesh.ARRAY_COLOR] = cols
+	arrays[Mesh.ARRAY_INDEX] = idx
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
+
+
+## A plain hex prism of corner radius r (corner k at 60°·k), top at y = 0, wall down to −depth, one vertex colour: the
+## slate underlay under the fog cookies. 18 triangles.
+func _hex_prism(r: float, depth: float, col: Color) -> ArrayMesh:
+	var verts := PackedVector3Array([Vector3.ZERO])
+	var norms := PackedVector3Array([Vector3.UP])
+	for k in 6:
+		verts.append(Vector3(HEX_CORNERS[k].x * r, 0.0, HEX_CORNERS[k].y * r))
+		norms.append(Vector3.UP)
+	for y in [0.0, -depth]:
+		for k in 6:
+			verts.append(Vector3(HEX_CORNERS[k].x * r, y, HEX_CORNERS[k].y * r))
+			norms.append(Vector3(HEX_CORNERS[k].x, 0.0, HEX_CORNERS[k].y))
+	var idx := PackedInt32Array()
+	for k in 6:
+		var j := (k + 1) % 6
+		idx.append_array([0, 1 + k, 1 + j, 7 + k, 13 + j, 7 + j, 7 + k, 13 + k, 13 + j])
+	var cols := PackedColorArray()
+	cols.resize(verts.size())
+	cols.fill(col)
+	var arrays := []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = verts
+	arrays[Mesh.ARRAY_NORMAL] = norms
+	arrays[Mesh.ARRAY_COLOR] = cols
+	arrays[Mesh.ARRAY_INDEX] = idx
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	return mesh
 
 
 ## The warship of a state's era: a sailing ship under its colours (DL1–5), a steel destroyer (DL6–7), a hover
@@ -2113,15 +2205,20 @@ func _horizon_ship(q: int, r: int, p: Vector3, lr: RandomNumberGenerator) -> voi
 var _fog_mat: StandardMaterial3D
 
 
+## The horizon's cookie material (P7): matte, its colours from the vertex colours (sRGB, §6.3: fog top #7D89A6, side
+## #5D6883, underlay #4A5468, forest bases #4F7F45), wrapped light for a soft terminator on the bevels.
 func _fog_hex_mat() -> StandardMaterial3D:
 	if _fog_mat == null:
 		_fog_mat = StandardMaterial3D.new()
-		_fog_mat.albedo_color = Color(0.32, 0.33, 0.35)  # mid slate grey, as the unexplored land of reference frame 1
+		_fog_mat.vertex_color_use_as_albedo = true
+		_fog_mat.vertex_color_is_srgb = true
 		_fog_mat.roughness = 0.95
+		_fog_mat.diffuse_mode = BaseMaterial3D.DIFFUSE_LAMBERT_WRAP
 	return _fog_mat
 
 
 var _cloud_mat: StandardMaterial3D
+var _cloud_puff: ImageTexture
 
 ## World expansion (02 §17.1): every new hex starts under a cloud; `part_clouds` blows them away from the
 ## old border outward (`order`: hex ids, nearest first) over `seconds`.
@@ -2132,8 +2229,8 @@ func veil_hexes(ids: Array) -> void:
 	for h in ids:
 		var p := cell_world(int(h))
 		var mi := _cloud(p + Vector3(0, 0.9, 0), 3.2, false)
-		mi.material_override = _cloud_mat.duplicate()
-		(mi.material_override as StandardMaterial3D).albedo_color = Color(0.93, 0.95, 0.98, 1.0)
+		mi.material_override = _cloud_material().duplicate()  # its own alpha for the tween in part_clouds
+		(mi.material_override as StandardMaterial3D).albedo_color = Color(1, 1, 1, 1)  # opaque: the new land stays hidden
 		_veil[int(h)] = mi
 
 
@@ -2152,27 +2249,59 @@ func part_clouds(order: Array, seconds: float) -> void:
 		tw.tween_callback(mi.queue_free)
 
 
-func _cloud(pos: Vector3, size: float, horizon := true) -> MeshInstance3D:
+## The shared cloud material (the horizon's clouds and the veil): unshaded billboards of the puff (_cloud_puff_tex).
+func _cloud_material() -> StandardMaterial3D:
 	if _cloud_mat == null:
-		var tex := GradientTexture2D.new()
-		var g := Gradient.new()
-		g.set_color(0, Color(1, 1, 1, 0.92))
-		g.set_color(1, Color(1, 1, 1, 0.0))
-		tex.gradient = g
-		tex.fill = GradientTexture2D.FILL_RADIAL
-		tex.fill_from = Vector2(0.5, 0.5)
-		tex.fill_to = Vector2(0.5, 0.0)
 		_cloud_mat = StandardMaterial3D.new()
 		_cloud_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		_cloud_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		_cloud_mat.albedo_texture = tex
+		_cloud_mat.albedo_texture = _cloud_puff_tex()
 		_cloud_mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
-		_cloud_mat.albedo_color = Color(0.9, 0.92, 0.95, 0.85)
+		_cloud_mat.albedo_color = Color(1, 1, 1, 0.95)
+	return _cloud_mat
+
+
+## A puffy cloud (§6.7, soft_style_plan P7): the union of five round lobes (UV centre and radius; the radius in
+## heights, so the lobes stay round on the 256×160 image and the 1.0×0.6 quad: a big dome, two shoulders and a
+## scalloped underside, clear of the image's edges), its edge anti-aliased over 3 px; white on top, lilac-blue
+## underneath (§6.3 #FFFFFF / #C9CFF0). RGB is filled everywhere, so the filtered edge has no dark fringe. Built once.
+func _cloud_puff_tex() -> ImageTexture:
+	if _cloud_puff != null:
+		return _cloud_puff
+	var w := 256
+	var h := 160
+	var inside := PackedFloat32Array()  # px inside the union's edge (the max over the lobes), -1 outside all of them
+	inside.resize(w * h)
+	inside.fill(-1.0)
+	for l: Vector3 in [Vector3(0.30, 0.58, 0.22), Vector3(0.50, 0.45, 0.28), Vector3(0.70, 0.58, 0.22),
+			Vector3(0.42, 0.66, 0.20), Vector3(0.60, 0.68, 0.20)]:
+		var c := Vector2(l.x * w, l.y * h)
+		var rad := l.z * h
+		for y in range(maxi(0, int(c.y - rad)), mini(h, int(c.y + rad) + 1)):
+			for x in range(maxi(0, int(c.x - rad)), mini(w, int(c.x + rad) + 1)):
+				var k := y * w + x
+				inside[k] = maxf(inside[k], rad - c.distance_to(Vector2(x + 0.5, y + 0.5)))
+	var top := Color("#FFFFFF")
+	var under := Color("#C9CFF0")
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	for y in h:
+		var t := clampf(((y + 0.5) / h - 0.75) / (0.35 - 0.75), 0.0, 1.0)  # smoothstep(0.75, 0.35, v)
+		var col := under.lerp(top, t * t * (3.0 - 2.0 * t))
+		for x in w:
+			var a := clampf(inside[y * w + x] / 3.0, 0.0, 1.0)
+			col.a = a * a * (3.0 - 2.0 * a)
+			img.set_pixel(x, y, col)
+	img.generate_mipmaps()
+	_cloud_puff = ImageTexture.create_from_image(img)
+	return _cloud_puff
+
+
+func _cloud(pos: Vector3, size: float, horizon := true) -> MeshInstance3D:
 	var q := QuadMesh.new()
 	q.size = Vector2(size, size * 0.6)
 	var mi := MeshInstance3D.new()
 	mi.mesh = q
-	mi.material_override = _cloud_mat
+	mi.material_override = _cloud_material()
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	mi.position = pos
 	(_horizon_root if horizon else _props_root.get_parent()).add_child(mi)
