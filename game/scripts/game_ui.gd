@@ -222,38 +222,129 @@ func _inline(text: String, size: int, color := TEXT, bold := true, max_w := 0.0)
 	return hb
 
 
-# ------------------------------------------------------------------ control bar (war)
+# ------------------------------------------------------------------ control bar (war, §5)
 
+const BAR_RECT := Rect2(176, 106, 492, 44)  # the war bar: INK R 22, inside it a 484×36 track
+const BAR_IN := 484.0
+const BAR_X0 := 180.0  # where the player's fill starts (the bar's left + 4)
+const FLAG_CHIPS := [Vector2(152, 128), Vector2(692, 128)]  # round SLATE Ø64 chips with the two flags
+
+
+## The war bar (§5): the two flags in round chips at the ends, the INK bar between them — the player's colour from
+## the left (`_control_fill`, 484 px × control), the enemy's for the rest — the percentages inside both ends, the
+## swords on the junction, the signed war score in a chip under it and «Последний рубеж» on the right under the bar.
 func _build_control_bar() -> void:
+	_top = Control.new()
+	_top.name = "top"
+	_top.size = Vector2(VW, 200)
+	_top.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(_top)
 	_control_bar = Control.new()
+	_control_bar.name = "control_bar"
 	_control_bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	root.add_child(_control_bar)
-	_panel(_control_bar, Rect2(108, 84, 612, 74), _style(PANEL, 12), Control.MOUSE_FILTER_IGNORE)
-	var bar := _panel(_control_bar, Rect2(156, 94, 516, 30), _style(Color(0.85, 0.15, 0.13), 14, Color(1, 1, 1, 0.9), 2), Control.MOUSE_FILTER_IGNORE)
-	_control_fill = _panel(bar, Rect2(2, 2, 256, 26), _style(Color(0.18, 0.45, 1.0), 12, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
-	_control_lbl = _at(_label("50%", 18), _control_bar, Vector2(168, 96)) as Label
-	_control_lbl2 = _at(_label("50%", 18), _control_bar, Vector2(616, 96)) as Label
-	# the two sides' flags at the ends and crossed swords on the front line, as on the concept's Last Stand panel
-	for x in [116.0, 678.0]:
+	_top.add_child(_control_bar)
+	var body := Panel.new()
+	var bsb := Kit.style(Kit.INK, 22, 0, Kit.INK, 4, 0)
+	bsb.set_meta("kit_kind", "")
+	body.add_theme_stylebox_override("panel", bsb)
+	body.position = BAR_RECT.position
+	body.size = BAR_RECT.size
+	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_control_bar.add_child(body)
+	_control_track = _bar_part(body, BAR_IN)
+	_control_fill = _bar_part(body, BAR_IN * 0.5)
+	_set_bar_colors([Kit.face_of("info"), Kit.face_of("war")])
+	var gloss := Panel.new()  # the bars' gloss strip (§4.7): white α 0.3 over the top 30 % of the track
+	var gsb := Kit.style(Kit.alpha(Kit.WHITE, 0.3), 8, 0, Kit.INK, 0, 0)
+	gsb.set_meta("kit_kind", "")
+	gloss.add_theme_stylebox_override("panel", gsb)
+	gloss.position = Vector2(18, 8)
+	gloss.size = Vector2(BAR_IN - 28.0, 9)
+	gloss.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.add_child(gloss)
+	_control_lbl = _bar_pct(Vector2(BAR_RECT.position.x + 18.0, BAR_RECT.position.y), HORIZONTAL_ALIGNMENT_LEFT)
+	_control_lbl2 = _bar_pct(Vector2(BAR_RECT.end.x - 18.0 - 110.0, BAR_RECT.position.y), HORIZONTAL_ALIGNMENT_RIGHT)
+	_war_swords = TextureRect.new()
+	_war_swords.name = "swords"
+	_war_swords.texture = Kit.icon_tex("swords")
+	_war_swords.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_war_swords.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_war_swords.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_war_swords.size = Vector2(56, 56)
+	_war_swords.position = Vector2(BAR_X0 + BAR_IN * 0.5 - 28.0, 100)
+	_control_bar.add_child(_war_swords)
+	for c in FLAG_CHIPS:
+		var chip := Panel.new()
+		var csb := Kit.style(Kit.SLATE, 32, 4, Kit.INK, 4, 0)
+		csb.set_meta("kit_kind", "")
+		chip.add_theme_stylebox_override("panel", csb)
+		chip.size = Vector2(64, 64)
+		chip.position = (c as Vector2) - chip.size * 0.5
+		chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_control_bar.add_child(chip)
 		var fv := FlagView.new(FlagView.DEFAULT)
-		fv.position = Vector2(x, 90)
-		fv.size = Vector2(32, 40)
+		fv.position = Vector2(14, 9)
+		fv.size = Vector2(36, 46)
 		fv.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_control_bar.add_child(fv)
+		chip.add_child(fv)
 		_war_flags.append(fv)
-	_war_swords = _at(_label("⚔", 26), _control_bar, Vector2(400, 90), Vector2(32, 34)) as Label
-	_war_swords.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_score_lbl = _at(_label(tr("ui.war_score_zero"), 15, MUTED, false), _control_bar, Vector2(126, 128)) as Label
-	_laststand = _at(_label(tr("ui.last_stand"), 17, Color(1, 0.4, 0.35)), _control_bar, Vector2(350, 128)) as Label
+	_laststand = Kit.caption_pill(_control_bar, tr("ui.last_stand"), 30.0, Kit.face_of("war"), 22, 3)
+	_laststand.name = "last_stand"
+	_laststand.position = Vector2(BAR_RECT.end.x - _laststand.size.x, 152)
+	_laststand.visible = false
 	_control_bar.visible = false
 
 
-func set_control(score: float, control: int, enemy: String, visible_bar: bool, flags: Array = []) -> void:
+## A part of the war bar's track: a pill with a darker bottom (§4.7), inside the INK body.
+func _bar_part(body: Control, w: float) -> Panel:
+	var p := Panel.new()
+	p.position = Vector2(4, 4)
+	p.size = Vector2(w, 36)
+	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.add_child(p)
+	return p
+
+
+func _set_bar_colors(colors: Array) -> void:
+	if colors == _bar_colors:
+		return
+	_bar_colors = colors.duplicate()
+	for i in 2:
+		var face: Color = colors[i]
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = face
+		sb.set_corner_radius_all(18)
+		sb.corner_detail = 8
+		sb.anti_aliasing = true
+		sb.border_width_bottom = 6  # the darker bottom 18 % of a bar's fill (§4.7)
+		sb.border_color = face.darkened(0.22)
+		(_control_fill if i == 0 else _control_track).add_theme_stylebox_override("panel", sb)
+
+
+## The percentage at one end of the war bar: NUM_S 26 white, outlined.
+func _bar_pct(pos: Vector2, align: HorizontalAlignment) -> Label:
+	var l := Kit.label("50%", 26)
+	l.horizontal_alignment = align
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.position = pos + Vector2(0, -1)
+	l.size = Vector2(110, BAR_RECT.size.y)
+	_control_bar.add_child(l)
+	return l
+
+
+## `colors`: [player, enemy] fills (the states' colours on the map); the kit's info / war faces by default.
+func set_control(score: float, control: int, enemy: String, visible_bar: bool, flags: Array = [], colors: Array = []) -> void:
 	_control_bar.visible = visible_bar
 	if not visible_bar:
 		return
-	_control_fill.size.x = 512.0 * clampf(control / 100.0, 0.0, 1.0)
-	_war_swords.position.x = 158.0 + _control_fill.size.x - 16.0
+	if colors.size() >= 2:
+		_set_bar_colors(colors)
+	var k := clampf(control / 100.0, 0.0, 1.0)
+	_control_fill.size.x = maxf(36.0, BAR_IN * k)
+	_control_fill.visible = k > 0.0
+	_control_track.visible = k < 1.0 or not _control_fill.visible
+	var jx := BAR_X0 + BAR_IN * k  # the junction
+	_war_swords.position.x = clampf(jx, BAR_X0 + 14.0, BAR_X0 + BAR_IN - 14.0) - 28.0
 	for i in mini(flags.size(), _war_flags.size()):
 		var fv: Control = _war_flags[i]
 		if fv.get("flag") != flags[i]:
@@ -261,113 +352,206 @@ func set_control(score: float, control: int, enemy: String, visible_bar: bool, f
 			fv.queue_redraw()
 	_control_lbl.text = "%d%%" % control
 	_control_lbl2.text = "%d%%" % (100 - control)
-	_score_lbl.text = tr("ui.war_status") % [enemy, score]
+	# the percentages give way to the swords when the junction comes close to an end
+	_control_lbl.visible = jx > BAR_X0 + 120.0
+	_control_lbl2.visible = jx < BAR_X0 + BAR_IN - 120.0
+	var txt := "" if absf(score) < 0.05 else ("+" if score > 0.0 else "") + Kit.fmt_dec(score, 1)
+	if txt != _score_txt:
+		_score_txt = txt
+		if is_instance_valid(_score_chip):
+			_score_chip.queue_free()
+		_score_chip = null
+		if txt != "":
+			_score_chip = Kit.caption_pill(_control_bar, txt, 30.0, Kit.alpha(Kit.INK, 0.85), 22)
+			_score_chip.name = "score"
+			var sl := _score_chip.get_child(0) as Label
+			Kit.style_label(sl, 22, Kit.POS if score > 0.0 else Kit.NEG, true)
+			sl.add_theme_font_override("font", Kit.font("d900"))  # MICRO: Rubik 900
+	if _score_chip != null:
+		var w := _score_chip.size.x
+		_score_chip.position = Vector2(clampf(jx - w * 0.5, 196.0, 648.0 - w), 152)
 	_laststand.visible = control <= 30
+	if _laststand.visible and _score_chip != null and _score_chip.get_rect().intersects(_laststand.get_rect().grow(6.0)):
+		_score_chip.position.x = _laststand.position.x - 8.0 - _score_chip.size.x
 
 
-# ------------------------------------------------------------------ battle hand
+# ------------------------------------------------------------------ battle hand (§5, §6 «Бой»)
+
+const HAND_RECT := Rect2(12, 1374, 628, 286)  # the battle tray (on the 1672 canvas, inside _bottom)
+const ENERGY_C := Vector2(56, 1416)  # the energy counter: an energy hex R 32
+const PIP_X0 := 116.0  # 10 hex pips R 20, centres x = 116 + i·50, y 1416
+const CARD_Y := 1452.0
+const CARD_H := 196.0
+const CORPS_RECT := Rect2(524, 1206, 116, 160)  # «Союзный корпус»: over the tray, while an ally fights
+
 
 func _build_battle() -> void:
 	_battle = Control.new()
+	_battle.name = "battle"
 	_battle.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_bottom.add_child(_battle)
-	# up to y 1364: the hand covers the HUD's folder tabs (they reach 1370 with a dot) until s06 rebuilds this tray
-	_panel(_battle, Rect2(0, VH - 308, 640, 308), _style(PANEL, 16))
-	_energy_lbl = _at(_label("5", 26), _battle, Vector2(26, VH - 262)) as Label
-	var orb := _panel(_battle, Rect2(14, VH - 268, 46, 46), _style(Color(0.55, 0.3, 0.95), 23, Color(1, 1, 1, 0.9), 3), Control.MOUSE_FILTER_IGNORE)
-	_battle.move_child(orb, _battle.get_child_count() - 2)
+	var tray := _panel(_battle, HAND_RECT, Kit.style(Kit.SLATE, 24, 4, Kit.INK, 6, 6), Control.MOUSE_FILTER_STOP)
+	tray.name = "hand_tray"  # stops taps from reaching the map under the hand
+	var badge := Kit.hex_badge(_battle, ENERGY_C, 32, "energy", "0")
+	badge.name = "energy"
+	_energy_lbl = badge.get_child(0) as Label
 	for i in 10:
-		var seg := _panel(_battle, Rect2(72 + i * 55, VH - 256, 50, 20), _style(Color(1, 1, 1, 0.1), 6, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
-		var fill := _panel(seg, Rect2(0, 0, 50, 20), _style(Color(0.62, 0.38, 1.0), 6, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
+		var c := Vector2(PIP_X0 + i * 50.0, ENERGY_C.y)
+		var pip := Kit.hex_badge(_battle, c, 20, "energy", "", Kit.SLATE_WELL)  # empty: a sunken slate hex, INK 3
+		pip.name = "pip_%d" % i
+		pip.lip = Kit.SLATE_WELL
+		pip.data["gloss"] = false
+		var fill := Control.new()  # clips the full pip from the bottom: a partial pip fills up like a glass
+		fill.name = "fill"
+		fill.clip_contents = true
+		fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		fill.size = Vector2(40, 40)
+		pip.add_child(fill)
+		var full := Kit.hex_badge(fill, Vector2(20, 20), 20, "energy")
+		full.name = "full"
 		_energy_segs.append(fill)
 	_build_cards(CARD_ORDER)
-	# «Союзный корпус»: a compact extra card above the hand, shown only with an ally in the war
-	var cp := _panel(_battle, Rect2(512, VH - 352, 116, 120), _style(Color(0.14, 0.24, 0.2), 14, Color(0.5, 1.0, 0.7, 0.9), 2))
-	cp.gui_input.connect(_on_card_input.bind("corps"))
-	var ca := _label(CARD_ART["corps"], 40)
-	ca.position = Vector2(0, 4)
-	ca.size = Vector2(116, 50)
-	ca.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	cp.add_child(ca)
-	var cn := _label(_card_name("corps"), 15)
-	_fit(cn, 15, 110.0)
-	cn.position = Vector2(0, 54)
-	cn.size = Vector2(116, 22)
-	cn.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	cp.add_child(cn)
-	_card_names["corps"] = cn
-	var cc := _panel(cp, Rect2(43, 80, 30, 30), _style(Color(0.55, 0.3, 0.95), 15, Color(1, 1, 1, 0.9), 2), Control.MOUSE_FILTER_IGNORE)
-	var ccl := _label("3", 16)
-	ccl.size = Vector2(30, 30)
-	ccl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	ccl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	cc.add_child(ccl)
-	var ccd := _label("", 26)
-	ccd.name = "cd"
-	ccd.size = Vector2(116, 60)
-	ccd.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	cp.add_child(ccd)
+	var cp := _battle_card("corps", CORPS_RECT, true)
 	cp.visible = false
-	_cards["corps"] = cp
 	_battle.visible = false
 
 
-## The hand's card row (canon §9.9: «Атака» + 4 slots, 5 from DL6): the cards share the 628 px row.
+## The hand's card row (canon §9.9: «Атака» + 4 slots, 5 from DL6): n cards share the tray, w = (612 − 8(n − 1))/n.
 func _build_cards(order: Array) -> void:
 	for c in _cards.keys():
 		if c != "corps":
 			(_cards[c] as Control).queue_free()
 			_cards.erase(c)
 			_card_names.erase(c)
+			_card_look.erase(c)
 	_hand_order = order.duplicate()
-	var n := order.size()
-	var step := 628.0 / n
-	var w := step - 9.0
-	for i in n:
-		var card: String = order[i]
-		var x := 12.0 + i * step
-		var p := _panel(_battle, Rect2(x, VH - 222, w, 196), _style(Color(0.12, 0.17, 0.28), 14, Color(0.5, 0.62, 0.85, 0.8), 2))
-		p.gui_input.connect(_on_card_input.bind(card))
-		var pic := "res://assets/ui/cards/%s.png" % card
-		var name_y := 94.0
-		if ResourceLoader.exists(pic):
-			# the painted scene of the card (tools/blender/card_art.py), as on the «War Cards» concept panel
-			var tr_ := TextureRect.new()
-			tr_.texture = load(pic)
-			tr_.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-			tr_.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-			tr_.position = Vector2(5, 5)
-			tr_.size = Vector2(w - 10, 112)
-			tr_.clip_contents = true
-			tr_.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			p.add_child(tr_)
-			name_y = 118.0
-		else:
-			var art := _label(CARD_ART[card], 54 if n <= 5 else 46)
-			art.position = Vector2(0, 14)
-			art.size = Vector2(w, 70)
-			art.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			p.add_child(art)
-		var nm := _label(_card_name(card), 17)
-		_fit(nm, 17, w - 6.0)
-		nm.position = Vector2(0, name_y)
-		nm.size = Vector2(w, 24)
-		nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		p.add_child(nm)
-		_card_names[card] = nm
-		var cost := _panel(p, Rect2(w / 2.0 - 20.0, 146 if name_y > 100.0 else 138, 40, 40), _style(Color(0.55, 0.3, 0.95), 20, Color(1, 1, 1, 0.9), 3), Control.MOUSE_FILTER_IGNORE)
-		var cl := _label(str(_card_cost(card)), 20)
-		cl.position = Vector2(0, 5)
-		cl.size = Vector2(40, 30)
-		cl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		cost.add_child(cl)
-		var cd := _label("", 34)
-		cd.name = "cd"
-		cd.position = Vector2(0, 40)
-		cd.size = Vector2(w, 60)
-		cd.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		p.add_child(cd)
-		_cards[card] = p
+	var n := maxi(1, order.size())
+	var w := (612.0 - 8.0 * (n - 1)) / n
+	for i in order.size():
+		_battle_card(String(order[i]), Rect2(20.0 + i * (w + 8.0), CARD_Y, w, CARD_H))
+
+
+## A card of the hand (§6 «Бой»): a slate card (R 20, INK 4, lip 6) whose art fills the face (R 14), the name in
+## MICRO 22 on an INK scrim at the art's bottom, the energy cost in an ENERGY hex R 22 on the top-left corner, and a
+## Label «cd» for the cooldown seconds (NUM_L 44) over an INK α 0.6 veil. Unaffordable: the art dimmed and the cost
+## hex grey; not open yet (set_locked): a dark art, a lock 56 and the DL in a grey hex.
+func _battle_card(card: String, r: Rect2, two_lines := false) -> Panel:
+	var p := _panel(_battle, r, Kit.style(Kit.SLATE, 20, 4, Kit.INK, 5, 6))
+	p.name = "card_" + card
+	p.gui_input.connect(_on_card_input.bind(card))
+	var w := r.size.x
+	var art := Panel.new()
+	art.name = "art"
+	var asb := Kit.style(Kit.SKY_LOW, 14, 0, Kit.INK, 0, 0)
+	asb.set_meta("kit_kind", "")
+	art.add_theme_stylebox_override("panel", asb)
+	art.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
+	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	art.position = Vector2(4, 4)
+	art.size = Vector2(w - 8.0, r.size.y - 14.0)
+	p.add_child(art)
+	var pic := TextureRect.new()
+	pic.name = "pic"
+	pic.texture = _card_art(card)
+	pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	pic.size = art.size
+	art.add_child(pic)
+	var scrim := TextureRect.new()
+	scrim.texture = Kit.vgradient(Kit.alpha(Kit.INK, 0.0), Kit.alpha(Kit.INK, 0.9))
+	scrim.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	scrim.stretch_mode = TextureRect.STRETCH_SCALE
+	scrim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sh := 84.0 if two_lines else 62.0
+	scrim.position = Vector2(0, art.size.y - sh)
+	scrim.size = Vector2(art.size.x, sh)
+	art.add_child(scrim)
+	var veil := Panel.new()  # the cooldown veil
+	veil.name = "veil"
+	var vsb := Kit.style(Kit.alpha(Kit.INK, 0.6), 14, 0, Kit.INK, 0, 0)
+	vsb.set_meta("kit_kind", "")
+	veil.add_theme_stylebox_override("panel", vsb)
+	veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	veil.size = art.size
+	veil.visible = false
+	art.add_child(veil)
+	var nm := Kit.label(_card_name(card), 22)
+	nm.name = "name"
+	nm.add_theme_font_override("font", Kit.font("d900"))  # MICRO: Rubik 900
+	nm.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	nm.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	nm.position = Vector2(3, art.size.y - 66.0)
+	nm.size = Vector2(art.size.x - 6.0, 60)
+	if two_lines:
+		nm.autowrap_mode = TextServer.AUTOWRAP_WORD
+		nm.max_lines_visible = 2
+		nm.add_theme_constant_override("line_spacing", -5)
+	art.add_child(nm)
+	_fit_card_name(nm, art.size.x - 6.0)
+	_card_names[card] = nm
+	var lk := TextureRect.new()
+	lk.name = "lock"
+	lk.texture = Kit.icon_tex("lock")
+	lk.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	lk.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	lk.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	lk.size = Vector2(56, 56)
+	lk.position = Vector2((art.size.x - 56.0) * 0.5, (art.size.y - 56.0) * 0.5 - 18.0)
+	lk.visible = false
+	art.add_child(lk)
+	var cost := Kit.hex_badge(p, Vector2(16, 16), 22, "energy", str(_card_cost(card)))
+	cost.name = "cost"
+	var cd := Kit.label("", 44)  # NUM_L 44
+	cd.name = "cd"
+	cd.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	cd.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	cd.position = Vector2(0, 4)
+	cd.size = Vector2(w, art.size.y - 50.0)
+	p.add_child(cd)
+	_cards[card] = p
+	_card_look[card] = {"pic": pic, "cost": cost, "veil": veil, "lock": lk, "state": ""}
+	return p
+
+
+## The painted scene of a card (tools/blender/card_art.py), or the swords on the sky while it has none.
+func _card_art(card: String) -> Texture2D:
+	var path := "res://assets/ui/cards/%s.png" % card
+	return load(path) if ResourceLoader.exists(path) else Kit.icon_tex("swords")
+
+
+## A card name: MICRO 22, down to 20 (§3.3: only the hand's names may), then cut with an ellipsis.
+func _fit_card_name(nm: Label, max_w: float) -> void:
+	var probe := nm.text
+	if nm.autowrap_mode != TextServer.AUTOWRAP_OFF:  # two lines: the widest word must fit
+		probe = ""
+		for wd in nm.text.split(" "):
+			if Kit.text_w(wd, 22, "d900") > Kit.text_w(probe, 22, "d900"):
+				probe = wd
+	var s := Kit.fit_size(probe, 22, max_w, "d900", 20)
+	nm.add_theme_font_size_override("font_size", s)
+	var cut := nm.autowrap_mode == TextServer.AUTOWRAP_OFF and Kit.text_w(nm.text, s, "d900") > max_w
+	nm.clip_text = cut
+	nm.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS if cut else TextServer.OVERRUN_NO_TRIMMING
+
+
+## A card's look: "" ready, "short" (not enough energy: dimmed art, grey cost hex), "cool" (the cooldown veil and its
+## seconds), "locked" (not open yet). Restyled only when it changes (set_battle runs every frame in battle).
+func _card_state(card: String, state: String) -> void:
+	var lk: Dictionary = _card_look.get(card, {})
+	if lk.is_empty() or lk["state"] == state:
+		return
+	lk["state"] = state
+	(lk["pic"] as Control).modulate = Kit.LOCK_ART if state == "locked" else (Kit.LOCK_MOD if state == "short" or state == "cool" else Color.WHITE)
+	(lk["veil"] as Control).visible = state == "cool"
+	(lk["lock"] as Control).visible = state == "locked"
+	var hex := lk["cost"] as Kit.KitShape
+	var role := "lock" if state == "locked" or state == "short" else "energy"
+	hex.face = Kit.face_of(role)
+	hex.lip = Kit.lip_of(role)
+	hex.queue_redraw()
+	var hl := hex.get_child(0) as Label
+	hl.text = str(int(_locked[card])) if state == "locked" else str(_card_cost(card))
 
 
 ## The offensive's hand in order (cards not open yet included, shown locked); rebuilt only when it changes.
@@ -377,12 +561,15 @@ func set_hand(order: Array) -> void:
 		set_locked(_locked)
 
 
-## Cards not open yet: {card: DL it opens at} — shown greyed with «УР N» in place of the name; a tap explains.
+## Cards not open yet: {card: DL it opens at} — a dark art, a lock and the DL in a grey hex (the name stays: the
+## player learns the cards by name, §2); a tap says when it opens.
 func set_locked(locked: Dictionary) -> void:
 	_locked = locked
-	for c in _card_names:
-		var nm: Label = _card_names[c]
-		nm.text = tr("dl.short") % int(locked[c]) if locked.has(c) else _card_name(c)
+	for c in _cards:
+		if locked.has(c):
+			_card_state(c, "locked")
+		elif String((_card_look.get(c, {}) as Dictionary).get("state", "")) == "locked":
+			_card_state(c, "")
 
 
 ## Shows the «Союзный корпус» card when an ally fights in this war and it was not played yet.
@@ -397,11 +584,16 @@ func _card_name(c: String) -> String:
 
 ## Static labels built once in _ready, re-applied after a language switch.
 func retranslate() -> void:
-	_laststand.text = tr("ui.last_stand")
+	var lp := _laststand.get_child(0) as Label
+	lp.text = tr("ui.last_stand")
+	var tw := Kit.text_w(lp.text, 22, "d900")
+	_laststand.size.x = tw + 30.0
+	lp.size = _laststand.size
+	_laststand.position.x = BAR_RECT.end.x - _laststand.size.x
 	for c in _card_names:
 		var nm: Label = _card_names[c]
-		nm.text = tr("dl.short") % int(_locked[c]) if _locked.has(c) else _card_name(c)
-		_fit(nm, 17, 110.0)
+		nm.text = _card_name(c)
+		_fit_card_name(nm, nm.size.x)
 
 
 var cost_discount := {}  # card -> energy off its price in this battle (Admiral Seir: «Десант» −1)
@@ -420,18 +612,83 @@ func set_battle(visible_hand: bool, energy_units: int, unit: int, cooldowns: Dic
 	var frac := float(energy_units % unit) / unit
 	_energy_lbl.text = str(pts)
 	for i in 10:
-		var f: Panel = _energy_segs[i]
-		f.size.x = 50.0 if i < pts else (50.0 * frac if i == pts else 0.0)
+		var f: Control = _energy_segs[i]
+		var k := 1.0 if i < pts else (frac if i == pts else 0.0)
+		f.size.y = 40.0 * k
+		f.position.y = 40.0 - f.size.y
+		(f.get_child(0) as Control).position.y = -f.position.y  # the full pip stays put while its window grows
 	for c in _cards:
 		var p: Panel = _cards[c]
 		var cd: int = cooldowns.get(c, 0)
+		var cdl := p.get_node("cd") as Label
 		if _locked.has(c):
-			p.modulate = Color(0.6, 0.6, 0.6, 0.8)
-			(p.get_node("cd") as Label).text = ""  # greyed, «УР N» in place of the name
+			cdl.text = ""
+			_card_state(c, "locked")
 			continue
-		p.modulate = Color(1, 1, 1, 0.45 if (pts < _card_cost(c) or cd > 0) else 1.0)
-		(p.get_node("cd") as Label).text = str(int(ceil(cd / 10.0))) if cd > 0 else ""
+		cdl.text = str(int(ceil(cd / 10.0))) if cd > 0 else ""
+		_card_state(c, "cool" if cd > 0 else ("short" if pts < _card_cost(c) else ""))
 	set_action("timer", "%d:%02d" % [seconds_left / 60, seconds_left % 60], tr("ui.final_rush") if rush else tr("ui.offensive_left"), "war" if rush else "slate")
+
+
+## The drop line of a dragged card: above the battle tray's top (it moves with the bottom group, §5).
+func drop_y() -> float:
+	return HAND_RECT.position.y + (Kit.vb(self) - VH)
+
+
+## The dragged card (§6 «Бой»): its art at 0.9× (104×176) on an INK card with a hard shadow, the name on a scrim.
+func _build_ghost() -> void:
+	_ghost = Control.new()
+	_ghost.name = "ghost"
+	_ghost.size = Vector2(104, 176)
+	_ghost.pivot_offset = Vector2(52, 176)
+	_ghost.rotation_degrees = -4.0
+	_ghost.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ghost.z_index = 50
+	_ghost.visible = false
+	root.add_child(_ghost)
+	var body := Panel.new()
+	var bsb := Kit.style(Kit.INK, 14, 0, Kit.INK, 8, 0)
+	bsb.set_meta("kit_kind", "")
+	body.add_theme_stylebox_override("panel", bsb)
+	body.size = _ghost.size
+	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ghost.add_child(body)
+	var art := Panel.new()
+	var asb := Kit.style(Kit.SKY_LOW, 14, 0, Kit.INK, 0, 0)
+	asb.set_meta("kit_kind", "")
+	asb.set_corner_radius_all(11)
+	art.add_theme_stylebox_override("panel", asb)
+	art.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
+	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	art.position = Vector2(4, 4)
+	art.size = _ghost.size - Vector2(8, 8)
+	body.add_child(art)
+	_ghost_art = TextureRect.new()
+	_ghost_art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_ghost_art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	_ghost_art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_ghost_art.size = art.size
+	art.add_child(_ghost_art)
+	var scrim := TextureRect.new()
+	scrim.texture = Kit.vgradient(Kit.alpha(Kit.INK, 0.0), Kit.alpha(Kit.INK, 0.9))
+	scrim.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	scrim.stretch_mode = TextureRect.STRETCH_SCALE
+	scrim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	scrim.position = Vector2(0, art.size.y - 58.0)
+	scrim.size = Vector2(art.size.x, 58)
+	art.add_child(scrim)
+	_ghost_name = Kit.label("", 22)
+	_ghost_name.add_theme_font_override("font", Kit.font("d900"))
+	_ghost_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_ghost_name.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
+	_ghost_name.position = Vector2(2, art.size.y - 56.0)
+	_ghost_name.size = Vector2(art.size.x - 4.0, 50)
+	art.add_child(_ghost_name)
+
+
+## The ghost floats above the finger (its bottom 18 px over the touch), so the finger never hides the card.
+func _place_ghost(pos: Vector2) -> void:
+	_ghost.position = pos - Vector2(52, 194)
 
 
 func _on_card_input(event: InputEvent, card: String) -> void:
@@ -444,11 +701,16 @@ func _on_card_input(event: InputEvent, card: String) -> void:
 		var pressed: bool = event.pressed
 		var pos: Vector2 = (event as InputEventScreenTouch).position if event is InputEventScreenTouch else (event as InputEventMouseButton).position
 		pos += (_cards[card] as Control).global_position
-		if pressed:
+		if pressed and _drag_card == "":
 			_drag_card = card
-			_ghost.text = CARD_ART[card]
+			_ghost_art.texture = _card_art(card)
+			_ghost_name.text = _card_name(card)
+			_fit_card_name(_ghost_name, _ghost_name.size.x)
+			_place_ghost(pos)
 			_ghost.visible = true
-			_ghost.position = pos - Vector2(30, 90)
+			var src := _cards[card] as Control
+			src.pivot_offset = src.size * 0.5
+			src.scale = Vector2(0.94, 0.94)  # the card in the hand sinks while its ghost flies
 			card_drag.emit(card, pos, true)
 
 
@@ -473,13 +735,15 @@ func _input(event: InputEvent) -> void:
 			released = true
 		else:
 			return
-		_ghost.position = pos - Vector2(30, 90)
+		_place_ghost(pos)
 		if released:
 			var c := _drag_card
 			_drag_card = ""
 			_ghost.visible = false
+			if _cards.has(c):
+				(_cards[c] as Control).scale = Vector2.ONE
 			card_drag.emit(c, pos, false)
-			if pos.y < _bottom.position.y + VH - 280:  # above the hand (it moves with the bottom group)
+			if pos.y < drop_y():  # above the hand
 				card_drop.emit(c, pos)
 		else:
 			card_drag.emit(_drag_card, pos, true)
