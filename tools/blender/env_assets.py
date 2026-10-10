@@ -904,28 +904,32 @@ def _smax(a, b, k):
     return max(a, b) + h * h * k * 0.25
 
 
-def _soft_abs(n, e=0.08):
-    """|n| with a rounded bottom: the ridged noise keeps its crests, but a smooth-shaded crest no longer draws a
-    hairline down the slope (§6.1 rule 1)."""
+def _soft_abs(n, e=0.35):
+    """|n| with a broadly rounded bottom. A true |noise| crease is far narrower than the massif's mesh (ring spacing
+    ≈ 0.05), so every crest and gully became a mesh crease, and smooth shading drew it as a lilac hairline down the
+    slope (§6.1 rule 1). e = 0.35 rounds it over about one ring spacing: soft crests, no creases."""
     return math.sqrt(n * n + e * e) - e
 
 
 def _mountain(x, y, k=0.84):
     """Height and snow-cap factor of the massif at (x, y). «Raivon Soft» (§6.8): three broad masses with smoothstep
-    shoulders (a rounded dome, no spire; was four sharp peaks with a t^1.3 profile), joined by smooth maxima, a
+    shoulders (a rounded dome, no spire; was four sharp peaks with a t^1.3 profile), joined by a p-norm (p = 5): a
+    smooth union whose saddles are broad and a little filled (×1.15), where a max — even a smooth max with k 0.25 —
+    left a gully about one ring spacing wide between two steep masses, drawn as a hairline down the slope. A
     lobed footprint, faint rounded ridging (0.03, was 0.1) and fine noise (0.015, was 0.045). The cap factor is 1
     at a mass's summit, 0 at the rim of its cap and negative below (mountain_paint reads it)."""
     x, y = x / k, y / k
-    h, cap = 0.0, -1.0
+    hp, cap = 0.0, -1.0
     for px, py, H, R, ph, cd in MASSES:
         dx, dy = x - px, y - py
         th = math.atan2(dy, dx)
         Rm = R * (1 + 0.16 * math.sin(3 * th + ph) + 0.03 * math.sin(7 * th + 2 * ph))
         t = min(1.0, max(0.0, 1 - math.hypot(dx, dy) / Rm))
         s = t * t * (3 - 2 * t)
-        h = _smax(h, H * s, 0.25)
+        hp += (H * s) ** 5
         if cd:
             cap = max(cap, (s - (1 - cd)) / cd)
+    h = hp ** 0.2
     v = Vector((x * 3.5, y * 3.5, 0.7))
     h += 0.07 * mnoise.noise(v) * (0.35 + h) + 0.015 * _soft_abs(mnoise.noise(v * 2.7))
     h += 0.03 * h * (1.0 - _soft_abs(mnoise.noise(v * 1.6 + Vector((3.1, 0.0, 0.0)))))  # faint crests and gullies
@@ -976,6 +980,18 @@ def mountain():
                 faces += [(a, b, c), (a, c, d)]
             else:
                 faces += [(a, b, d), (b, c, d)]
+    # two passes of Laplacian smoothing of the heights (not the rim): whatever is narrower than the ring spacing
+    # (≈ 0.05) — noise bumps on the summits, the saddles between masses — would be a mesh crease, and smooth shading
+    # draws a crease as a hairline (§6.1 rule 1); smoothed, the massif reads as soft cushions
+    nbrs = [set() for _ in verts]
+    for f in faces:
+        for a in f:
+            nbrs[a].update(b for b in f if b != a)
+    inner = vid(rings, 0)  # the rim ring (and the skirt below it) keeps its heights
+    for _ in range(2):
+        zs = [v[2] for v in verts]
+        verts = [(x, y, 0.5 * zs[i] + 0.5 * sum(zs[n] for n in nbrs[i]) / len(nbrs[i])) if i < inner else (x, y, z)
+                 for i, (x, y, z) in enumerate(verts)]
     # short skirt below the rim so the foot never floats
     base = len(verts)
     for j in range(segs):
