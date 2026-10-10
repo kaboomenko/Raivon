@@ -15,7 +15,7 @@ const FILL_SHADER := preload("res://shaders/territory_fill.gdshader")
 const SCORCH_SHADER := preload("res://shaders/territory_scorch.gdshader")
 const HATCH_SHADER := preload("res://shaders/occupation_hatch.gdshader")
 const CLOUD_SHADER := preload("res://shaders/cloud_puff.gdshader")
-const PILL_SHADER := preload("res://shaders/pill.gdshader")
+const PLATE_SHADER := preload("res://shaders/map_plate.gdshader")
 
 const SQ3 := 1.7320508
 const DIRS := [Vector2i(1, 0), Vector2i(1, -1), Vector2i(0, -1), Vector2i(-1, 0), Vector2i(-1, 1), Vector2i(0, 1)]
@@ -2295,7 +2295,7 @@ const LABEL_OUTLINE_K := 0.22
 
 
 static func soft_label(size: int, prio := MARK_PRIO + 1) -> Label3D:
-	var l := Label3D.new()
+	var l := SoftLabel3D.new()
 	l.font = Kit.font("d900")
 	l.font_size = size
 	l.outline_size = roundi(size * LABEL_OUTLINE_K)
@@ -2305,6 +2305,354 @@ static func soft_label(size: int, prio := MARK_PRIO + 1) -> Label3D:
 	l.render_priority = prio
 	l.outline_render_priority = prio - 1
 	return l
+
+
+## Pictographs of map texts → 3D icons (game/assets/ui/icons), as escapes for tools/ui_lint.py R4: ⚔ swords, ⇢ the
+## march's destination pin, ⛳ a colonist's flag, ⇄ the kit's swap arrows, ✖ a routed army's white flag, ★ ⭐ the
+## gold star (xp), ⛏ the convoy's hammer. Other pictographs map through Kit.PICTO or are dropped.
+const MAP_PICTO := {"⚔": "swords", "⇢": "pin", "⛳": "orders", "⇄": "@swap", "✖": "white_flag",
+	"★": "xp", "⭐": "xp", "⛏": "hammer"}
+
+
+## A map text (soft_label) that never draws a pictograph glyph. Rubik has no ★ ⚔ ⇢ ⛳ ⇄ ✖ ⛏: they fell back to a
+## system font (a colour emoji golf flag, thin pink swords). When the text holds one (main.gd's drag forecast still
+## appends « ★»), the glyph is cut and its 3D icon is drawn beside the text: a billboard of the text's own scale, the
+## pair kept centred. The text is checked once a frame and only reshaped when it changed; labels whose text map_view
+## writes itself turn that off (set_process(false)).
+class SoftLabel3D extends Label3D:
+	var _seen := ""
+	var _icon: Sprite3D
+	static var _icons := {}
+
+	func _process(_delta: float) -> void:
+		if text == _seen:
+			return
+		var cut: Array = split_picto(text)
+		if String(cut[1]) == "" and String(cut[0]) == text:  # plain text: nothing to cut
+			_seen = text
+			_place_icon("", false)
+			return
+		# the cut text carries a zero-width mark, so the caller writing the same words again without the pictograph
+		# still reads as a change (and drops the icon)
+		_seen = String(cut[0]) + "\u200B"
+		text = _seen
+		_place_icon(String(cut[1]), bool(cut[2]))
+
+	func _place_icon(icon_name: String, first: bool) -> void:
+		var tex := icon_tex(icon_name)
+		if tex == null:
+			if _icon != null:
+				_icon.visible = false
+				offset.x = 0.0
+			return
+		if _icon == null:
+			_icon = Sprite3D.new()
+			_icon.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+			_icon.no_depth_test = true
+			_icon.shaded = false
+			add_child(_icon)
+		_icon.visible = true
+		_icon.render_priority = render_priority
+		_icon.fixed_size = fixed_size
+		_icon.texture = tex
+		var ih := font_size * 0.95  # the icon's height in the text's raster pixels
+		var words := text.replace("\u200B", "")
+		var tw := font.get_string_size(words, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x if words != "" else 0.0
+		var gap := font_size * 0.15 if words != "" else 0.0
+		offset.x = (ih + gap) * 0.5 * (1.0 if first else -1.0)
+		var cx := (tw + gap) * 0.5 * (-1.0 if first else 1.0)
+		_icon.pixel_size = pixel_size * ih / float(tex.get_height())
+		_icon.offset = Vector2(cx, offset.y) * (pixel_size / _icon.pixel_size)
+
+	## "⇢ 0:35" → ["0:35", "pin", true]; "×1.4 ★" → ["×1.4", "xp", false]: every pictograph is cut, the first one with
+	## a picture gives the icon, and `first` says whether it stood before the text.
+	static func split_picto(s: String) -> Array:
+		var out := ""
+		var icon := ""
+		var first := false
+		for i in s.length():
+			var ch := s[i]
+			if MAP_PICTO.has(ch) or Kit.PICTO.has(ch) or Kit._is_picto(s.unicode_at(i)):
+				if icon == "":
+					icon = picto_icon(ch)
+					first = out.strip_edges() == ""
+				continue
+			out += ch
+		return [out.strip_edges(), icon, first]
+
+	static func picto_icon(ch: String) -> String:
+		if MAP_PICTO.has(ch):
+			return MAP_PICTO[ch]
+		var p: Dictionary = Kit.PICTO.get(ch, {})
+		if p.has("i"):
+			return String(p["i"])
+		return {"star": "xp", "swap": "@swap"}.get(String(p.get("v", "")), "")
+
+	## A 3D icon by name: Kit.icon_tex with mipmaps (the 128 px renders stay smooth drawn at 28–44 px); "@swap" is the
+	## kit's vector swap arrows rasterised once. null when there is no such icon.
+	static func icon_tex(icon_name: String) -> Texture2D:
+		if icon_name == "":
+			return null
+		if _icons.has(icon_name):
+			return _icons[icon_name]
+		var t: Texture2D = null
+		if icon_name.begins_with("@"):
+			t = _chrome_tex(icon_name.substr(1))
+		else:
+			t = Kit.icon_tex(icon_name)
+			var img: Image = t.get_image() if t != null and DisplayServer.get_name() != "headless" else null
+			if img != null and not img.is_empty():
+				if img.is_compressed():
+					img.decompress()
+				img.generate_mipmaps()
+				t = ImageTexture.create_from_image(img)
+		_icons[icon_name] = t
+		return t
+
+	## Kit chrome (§3.5: a white stroke 9 px over an INK stroke 18 px in a 64 px box, round ends) as a 64 × 64 texture,
+	## from the kit's own polylines (KitShape._chrome_lines), anti-aliased over a pixel.
+	static func _chrome_tex(kind: String) -> Texture2D:
+		var shape := Kit.KitShape.new(kind)
+		var lines: Array = shape._chrome_lines()
+		shape.free()
+		if lines.is_empty():
+			return null
+		var n := 64
+		var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+		for y in n:
+			for x in n:
+				var p := Vector2(x + 0.5, y + 0.5) / n
+				var d := 1e9
+				for ln in lines:
+					for i in (ln as Array).size() - 1:
+						d = minf(d, Geometry2D.get_closest_point_to_segment(p, ln[i], ln[i + 1]).distance_to(p))
+				d *= n
+				var a_ink := clampf(9.5 - d, 0.0, 1.0)
+				var a_white := clampf(5.0 - d, 0.0, 1.0)
+				img.set_pixel(x, y, Color(Kit.INK.lerp(Color.WHITE, a_white), a_ink))
+		img.generate_mipmaps()
+		return ImageTexture.create_from_image(img)
+
+
+## A plate the map keeps clear of the others on screen (_declutter): `base` is its anchor in the parent's space, `box`
+## its rectangle in design pixels round the projected anchor (+y down, as the screen). Plates of a higher `prio` keep
+## their place; the others rise above whatever they would cover. `lift` is the current rise in pixels (eased).
+class MapTag extends Node3D:
+	var base := Vector3.ZERO
+	var box := Rect2()
+	var prio := 0
+	var lift := -1.0  # < 0: not placed yet (the first placement snaps)
+
+
+## Map plates are laid out in design pixels of the 941 × 1672 canvas (docs/ui_style.md); their texts are rasterised at
+## RASTER × that size (crisp on a phone's denser screen) and drawn back at the design size by pixel_size.
+const RASTER := 1.5
+const PLATE_PRIO := MARK_PRIO + 4  # the plates' faces: over the strike arrow (+2/+3) and the income bubbles (+2..+4)
+const STACK_GAP := 4.0  # px kept between stacked plates
+## The army plate (§4.14): a hex R 26 centred 34 px over the anchor, the 64 × 12 strength bar under it (its bottom at
+## the anchor, the hex tip tucked under it); stacking reads the box up to the hex's top corners, so the roof of a
+## plate may sit under the bar of the plate stacked over it but its number never does.
+const ARMY_HEX_Y := 34.0
+const ARMY_BOX := Rect2(-32.0, -48.0, 64.0, 48.0)
+## Chips (§4.8): S, the status chip (h 34, icon 28, LABEL 24 Rubik 800); M, the timer chip (h 52, icon 44, NUM 30).
+const CHIP := {"S": {"h": 34.0, "icon": 28.0, "px": 24, "font": "d800", "pad": 8.0, "gap": 6.0, "end": 14.0},
+	"M": {"h": 52.0, "icon": 44.0, "px": 30, "font": "d900", "pad": 8.0, "gap": 6.0, "end": 18.0}}
+var _tags: Array = []  # MapTag nodes placed each frame by _declutter
+var _plate_mats := {}  # look key -> ShaderMaterial (map_plate.gdshader)
+var _plate_mesh: QuadMesh
+
+
+## World units per design pixel at depth 1 for the fixed-size billboards: 2·tan(fov/2) over the canvas height
+## (0.000343 on the 941 × 1672 canvas at the rig's fov 32°).
+func _px_k() -> float:
+	var vp := get_viewport() if is_inside_tree() else null
+	var cam := vp.get_camera_3d() if vp != null else null
+	var h := vp.get_visible_rect().size.y if vp != null else 1672.0
+	return 2.0 * tan(deg_to_rad(cam.fov if cam != null else 32.0) * 0.5) / maxf(h, 1.0)
+
+
+## A plate face (map_plate.gdshader), one per look: "army:<side>" (the team hex and bar) or "chip:<face>:<edge>:<w>".
+## Colours go through SoftPalette.scene, so the tonemapped view shows the UI's own colours.
+func _plate_mat(key: String) -> ShaderMaterial:
+	if _plate_mats.has(key):
+		return _plate_mats[key]
+	var m := ShaderMaterial.new()
+	m.shader = PLATE_SHADER
+	m.render_priority = PLATE_PRIO
+	m.set_shader_parameter("px_k", _px_k())
+	m.set_shader_parameter("ink", SoftPalette.scene(Kit.INK))
+	m.set_shader_parameter("track", SoftPalette.scene(Kit.SLATE_WELL))
+	var parts := key.split(":")
+	if parts[0] == "army":
+		var look: Array = ARMY_LOOK.get(parts[1], ARMY_LOOK["red"])
+		m.set_shader_parameter("kind", 0)
+		m.set_shader_parameter("face", SoftPalette.scene(look[0]))
+		m.set_shader_parameter("lip", SoftPalette.scene(look[1]))
+		m.set_shader_parameter("gloss", SoftPalette.scene(Kit.gloss(look[0])))
+		m.set_shader_parameter("hex_c", Vector2(0.0, ARMY_HEX_Y))
+	else:
+		m.set_shader_parameter("kind", 1)
+		m.set_shader_parameter("face", SoftPalette.scene(Color.html(parts[1])))
+		m.set_shader_parameter("edge", SoftPalette.scene(Color.html(parts[2])))
+		m.set_shader_parameter("edge_w", float(parts[3]))
+	_plate_mats[key] = m
+	return m
+
+
+## The army plate's faces by the troops' model colour: the player's blue and the enemy's red of soft_palette.gd (body
+## over rim), the green leagues in the kit's go green, and the fog's lock grey.
+const ARMY_LOOK := {"blue": [Color("#4FA8FF"), Color("#1D4DB3")], "red": [Color("#DD3A30"), Color("#8E1D17")],
+	"green": [Color("#5CC93B"), Color("#3A8F22")], "fog": [Color("#A7AFBC"), Color("#6C7482")]}
+
+
+func _plate_quad(box: Vector2, shift: Vector2, key: String) -> MeshInstance3D:
+	if _plate_mesh == null:
+		_plate_mesh = QuadMesh.new()
+		_plate_mesh.custom_aabb = AABB(Vector3(-3, -3, -3), Vector3(6, 6, 6))  # it is drawn depth-scaled, far past 1 × 1
+	var mi := MeshInstance3D.new()
+	mi.name = "quad"
+	mi.mesh = _plate_mesh
+	mi.material_override = _plate_mat(key)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.set_instance_shader_parameter("box", box)
+	mi.set_instance_shader_parameter("shift", shift)
+	return mi
+
+
+## A plate's text: white with the §3.3 INK outline (clamp(size/7, 3, 8)), `px` design pixels, fixed on screen.
+func _plate_text(px: int, kind := "d900") -> Label3D:
+	var l := Label3D.new()
+	l.name = "label"
+	l.font = Kit.font(kind)
+	_text_size(l, px)
+	l.outline_modulate = SoftPalette.scene(Kit.INK)
+	l.pixel_size = _px_k() / RASTER
+	l.fixed_size = true
+	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	l.no_depth_test = true
+	l.render_priority = PLATE_PRIO + 2
+	l.outline_render_priority = PLATE_PRIO + 1
+	return l
+
+
+static func _text_size(l: Label3D, px: int) -> void:
+	l.font_size = roundi(px * RASTER)
+	l.outline_size = roundi(Kit.outline_for(px) * RASTER)
+
+
+## A plate's icon: a fixed-size billboard of `px` design pixels whose centre sits `at` pixels off the anchor.
+func _plate_icon(tex: Texture2D, px: float, at: Vector2, sp: Sprite3D = null) -> Sprite3D:
+	if sp == null:
+		sp = Sprite3D.new()
+		sp.name = "icon"
+		sp.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		sp.fixed_size = true
+		sp.no_depth_test = true
+		sp.shaded = false
+		sp.render_priority = PLATE_PRIO + 1
+	sp.texture = tex
+	sp.visible = tex != null
+	if tex != null:
+		var th := float(tex.get_height())
+		sp.pixel_size = _px_k() * px / th
+		sp.offset = at / px * th
+	return sp
+
+
+func _text_w(l: Label3D, text: String) -> float:
+	return l.font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, l.font_size).x / RASTER if text != "" else 0.0
+
+
+## A chip plate (§4.8) for hex labels, the strike countdown and convoys: the pill, an icon and the text.
+func _make_chip(prio: int) -> MapTag:
+	var tag := MapTag.new()
+	tag.prio = prio
+	tag.add_child(_plate_quad(Vector2(64, 38), Vector2.ZERO, "chip:%s:%s:0" % [Color(Kit.INK, 0.85).to_html(), Kit.INK.to_html()]))
+	tag.add_child(_plate_text(24, "d800"))
+	tag.add_child(_plate_icon(null, 28.0, Vector2.ZERO))
+	_tags.append(tag)
+	return tag
+
+
+## Lays a chip out for `text` and `icon` (an icon name, "" for none): size "S" or "M" (CHIP), the face and an optional
+## contour (edge.a 0: none). Only what changed is touched (a Label3D reshapes on every text change).
+func _set_chip(tag: MapTag, text: String, icon: String, size := "S", face := Color(0.106, 0.129, 0.251, 0.85),
+		edge := Color(0, 0, 0, 0)) -> void:
+	var key := "%s|%s|%s|%s|%s" % [text, icon, size, face.to_html(), edge.to_html()]
+	if String(tag.get_meta("chip", "")) == key:
+		return
+	tag.set_meta("chip", key)
+	var c: Dictionary = CHIP[size]
+	var lbl: Label3D = tag.get_node("label")
+	var kind: String = c["font"]
+	if lbl.font != Kit.font(kind):
+		lbl.font = Kit.font(kind)
+	_text_size(lbl, int(c["px"]))
+	lbl.text = text
+	var tex := SoftLabel3D.icon_tex(icon)
+	var h: float = c["h"]
+	var ic: float = c["icon"] if tex != null else 0.0
+	var tw := _text_w(lbl, text)
+	var pad: float = c["pad"] if tex != null else c["end"]
+	var gap: float = c["gap"] if tex != null and text != "" else 0.0
+	var w := maxf(h, ceilf((pad + ic + gap + tw + (c["end"] if text != "" else pad)) / 4.0) * 4.0)  # a ticking timer keeps its width
+	var x0 := -w * 0.5 + pad
+	lbl.offset = Vector2((x0 + ic + gap + tw * 0.5) * RASTER, 0.0)
+	_plate_icon(tex, ic, Vector2(x0 + ic * 0.5, 0.0), tag.get_node("icon"))
+	var quad: MeshInstance3D = tag.get_node("quad")
+	var ew := 3.0 if edge.a > 0.0 else 0.0
+	quad.material_override = _plate_mat("chip:%s:%s:%d" % [face.to_html(), edge.to_html(), int(ew)])
+	quad.set_instance_shader_parameter("box", Vector2(w + 4.0, h + 4.0))
+	tag.box = Rect2(-w * 0.5, -h * 0.5, w, h)
+
+
+## Keeps the map's plates from covering each other (§4.14 «метки ближе 48 px складываются столбиком»): every frame
+## each plate's box is placed round its projected anchor, highest prio first, then from the bottom of the screen up
+## (the nearer one keeps its place); a plate that would overlap a placed one rises just above it, again until it is
+## clear. The rise moves the plate along the camera's up at its depth, so it is exact on screen and keeps its size.
+func _declutter(delta: float) -> void:
+	var cam := get_viewport().get_camera_3d()
+	if cam == null or _tags.is_empty():
+		return
+	var view := cam.global_transform.affine_inverse()
+	var up := cam.global_basis.y
+	var k := _px_k()
+	var items: Array = []
+	for i in range(_tags.size() - 1, -1, -1):
+		var o: Variant = _tags[i]
+		if not is_instance_valid(o):
+			_tags.remove_at(i)
+			continue
+		var t := o as MapTag
+		if not t.is_inside_tree() or not (t.get_parent() as Node3D).is_visible_in_tree() or not t.visible:
+			continue
+		var p: Vector3 = (t.get_parent() as Node3D).global_transform * t.base
+		if cam.is_position_behind(p):
+			continue
+		items.append([t, cam.unproject_position(p), p])
+	items.sort_custom(func(a: Array, b: Array) -> bool:
+		return a[0].prio > b[0].prio if a[0].prio != b[0].prio else a[1].y > b[1].y)
+	var placed: Array[Rect2] = []
+	var ease := 1.0 - pow(0.0005, delta)
+	for it in items:
+		var t: MapTag = it[0]
+		var r := Rect2(t.box.position + (it[1] as Vector2), t.box.size)
+		var want := 0.0
+		for _n in 12:
+			var hit := false
+			for q in placed:
+				var g := q.grow(STACK_GAP)
+				if r.intersects(g):
+					var rise := r.end.y - g.position.y
+					want += rise
+					r.position.y -= rise
+					hit = true
+			if not hit:
+				break
+		placed.append(r)
+		t.lift = want if t.lift < 0.0 or absf(t.lift - want) < 0.5 else lerpf(t.lift, want, ease)
+		var p: Vector3 = it[2]
+		t.global_position = p + up * (t.lift * -(view * p).z * k)
 
 var _cloud_mat: ShaderMaterial
 var _cloud_puff: ImageTexture
@@ -3181,7 +3529,6 @@ func _edge_kind(o: int, nb: int) -> int:
 
 func sync_armies(armies: Array, battle) -> void:
 	var t := Time.get_ticks_msec() / 1000.0
-	var cam := get_viewport().get_camera_3d()
 	# who is fighting where (canon §9.5: clashes on a target hex)
 	var fighting := {}  # army id -> target hex (attackers) or -2 (defender)
 	var live_clashes := {}
@@ -3250,15 +3597,8 @@ func sync_armies(armies: Array, battle) -> void:
 		model.position.y = hop
 		model.rotation.z = sway
 		var ready := float(a["str"]) / maxf(1.0, float(a["max_str"]))
-		var lbl: Label3D = node.get_node("label")
 		var hidden: bool = a["side"] != Types.PLAYER and not fog_visible.is_empty() and not fog_visible.has(int(a["hex"]))
-		lbl.text = ("?" if hidden else str(int(round(a["str"] / 1000.0)))) if not a["routed"] else "✖"
-		lbl.modulate = Color(1, 1, 1) if ready >= 0.5 else Color(1.0, 0.75, 0.4)
-		var bar: Node3D = node.get_node("bar")
-		bar.visible = battle != null and not a["routed"]
-		if cam:
-			bar.global_basis = cam.global_basis
-		(bar.get_node("fill") as GeometryInstance3D).set_instance_shader_parameter("k", ready)  # pill.gdshader
+		_sync_plate(node, a, ready, hidden, battle != null)
 		model.scale = Vector3.ONE * (0.8 if a["routed"] else 1.0)
 		node.modulate_alpha = 0.45 if a["routed"] else 1.0
 		# face the enemy (the clash target, or the enemy-controlled neighbours)
@@ -3535,51 +3875,61 @@ func _make_army(a: Dictionary) -> Node3D:
 			tw.tween_property(orbit, "rotation:y", -TAU, 7.0).from(0.0)
 	node.set_meta("anim", anim)
 	spawn("banner_" + side, model, Vector3(0.05, 0, -0.35), 0.0, 0.9, int(a["side"]))
-	var lbl := soft_label(64)  # a marker: over the ribbons and the clouds (see CLOUD_PRIO); the side shows in the bar
-	lbl.name = "label"
-	lbl.pixel_size = 0.00024  # a small tag over the bar: the reference frames show bars, not big numbers
-	lbl.fixed_size = true  # the same size on screen at every zoom: up close it no longer towers over the soldiers
-	lbl.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM  # sits on top of the strength bar at any zoom, never over it
-	lbl.position = Vector3(0, 0.98, 0)
-	node.add_child(lbl)
-	var bar := Node3D.new()
-	bar.name = "bar"
-	bar.position = Vector3(0, 0.92, 0)
-	node.add_child(bar)
-	# the strength "pill" (§6.7, pill.gdshader): a navy track with a 1 px outline and the side's body colour filled to
-	# the army's strength (instance uniform k, sync_armies); the quads keep their size, so the ends stay round
-	var team: Color = SoftPalette.PLAYER["body"] if side == "blue" else (PILL_GREEN if side == "green" else SoftPalette.ENEMY["body"])
-	for part in [["bg", PILL_TRACK, Vector2(0.7, 0.1), 0.0], ["fill", team, Vector2(0.66, 0.06), 0.002]]:
-		var q := QuadMesh.new()
-		q.size = part[2]
-		var mi := MeshInstance3D.new()
-		mi.name = part[0]
-		mi.mesh = q
-		mi.position.z = part[3]
-		mi.material_override = _pill_mat(SoftPalette.scene(part[1]), part[2], part[0] == "fill")  # on-screen colours
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		bar.add_child(mi)
+	node.set_meta("side", side)
+	node.add_child(_army_plate(side))
 	return node
 
 
-const PILL_TRACK := Color(0.11, 0.17, 0.29, 0.9)  # the strength pill's track: the UI's navy family (§6.3)
-const PILL_GREEN := Color("#6BD13C")  # the green side's strength: the UI's "yes" green (§6.3)
-var _pill_mats := {}  # "fill:colour:size" -> ShaderMaterial (pill.gdshader); the fill level is per instance (k)
+## The army's plate (docs/ui_style.md §4.14): one fixed-size billboard over the troops — the team hex (the player's
+## blue, the enemy's red, the leagues' green) with the strength in Rubik 900, the strength bar under it, and in place of
+## the number a white flag (routed) or the eye_off icon on a grey hex (an army in the fog). sync_armies fills it in.
+## It replaced a bare white number with an ink outline, which showed no side in peacetime (the bar was hidden) and
+## pushed white-hot pixels over 1 % of the battle frames (§6.12).
+func _army_plate(side: String) -> MapTag:
+	var tag := MapTag.new()
+	tag.name = "plate"
+	tag.base = Vector3(0, 0.95, 0)
+	tag.position = tag.base
+	tag.box = ARMY_BOX
+	tag.prio = 2
+	tag.add_child(_plate_quad(Vector2(72.0, 70.0), Vector2(0.0, 32.0), "army:" + side))
+	var lbl := _plate_text(26)
+	lbl.offset = Vector2(0.0, ARMY_HEX_Y * RASTER)
+	tag.add_child(lbl)
+	var icon := _plate_icon(null, 32.0, Vector2(0.0, ARMY_HEX_Y))
+	tag.add_child(icon)
+	_tags.append(tag)
+	return tag
 
 
-## A shared strength-pill material (pill.gdshader): drawn over everything without a depth test (MARK_PRIO), the
-## fill over its track.
-func _pill_mat(col: Color, size: Vector2, fill: bool) -> ShaderMaterial:
-	var key := "%s:%s:%s" % [fill, col.to_html(), size]
-	if not _pill_mats.has(key):
-		var m := ShaderMaterial.new()
-		m.shader = PILL_SHADER
-		m.set_shader_parameter("col", col)
-		m.set_shader_parameter("size", size)
-		m.set_shader_parameter("fill", fill)
-		m.render_priority = MARK_PRIO + 1 if fill else MARK_PRIO
-		_pill_mats[key] = m
-	return _pill_mats[key]
+## Fills an army plate: the look (side or fog), the number or the icon that replaces it, the bar (in battle, or while
+## the army is below full strength; never for the routed or the unseen) and the fade of a routed army. Only what
+## changed is touched: a Label3D reshapes its text on every change and the instance uniforms are server calls.
+func _sync_plate(node: Node3D, a: Dictionary, ready: float, hidden: bool, in_battle: bool) -> void:
+	var plate: Node3D = node.get_node("plate")
+	var quad: MeshInstance3D = plate.get_node("quad")
+	var lbl: Label3D = plate.get_node("label")
+	var routed: bool = a["routed"]
+	var look := "fog" if hidden else String(node.get_meta("side", "red"))
+	var sym := "eye_off" if hidden else ("white_flag" if routed else "")
+	var num := "" if sym != "" else str(int(round(a["str"] / 1000.0)))
+	var show_bar := not hidden and not routed and (in_battle or ready < 0.995)
+	var k := snappedf(clampf(ready, 0.0, 1.0), 0.005) if show_bar else -1.0
+	var fade := 0.6 if routed else 1.0
+	var state := "%s|%s|%s|%s|%s" % [look, sym, num, k, fade]
+	if String(plate.get_meta("state", "")) == state:
+		return
+	plate.set_meta("state", state)
+	quad.material_override = _plate_mat("army:" + look)
+	quad.set_instance_shader_parameter("k", k)
+	quad.set_instance_shader_parameter("fade", fade)
+	if lbl.text != num:
+		_text_size(lbl, 26 if num.length() <= 2 else 22)  # three digits stay inside the hex at the MICRO size
+		lbl.text = num
+	lbl.modulate = Color(1, 1, 1, fade)
+	lbl.outline_modulate.a = fade
+	var icon: Sprite3D = _plate_icon(SoftLabel3D.icon_tex(sym), 32.0, Vector2(0.0, ARMY_HEX_Y), plate.get_node("icon"))
+	icon.modulate.a = fade
 
 
 # ------------------------------------------------------------------ FX
@@ -3620,7 +3970,7 @@ func burst_at(pos: Vector3, color: Color, big := false, alpha := 1.0) -> void:
 # ------------------------------------------------------------------ resource bubbles & hex labels
 
 var _bubbles := {}  # hex -> Node3D
-var _hex_labels := {}  # hex -> Label3D
+var _hex_labels := {}  # hex -> MapTag (a chip, hex_label)
 var _tex_cache := {}
 
 
@@ -3654,6 +4004,7 @@ func set_bubbles(data: Dictionary) -> void:
 				sp.shaded = false
 				node.add_child(sp)
 			var lbl := soft_label(44, MARK_PRIO + 4)  # over the bubble and its icon
+			lbl.set_process(false)  # "+N": map_view writes it, no pictograph to watch for
 			lbl.name = "amount"
 			lbl.pixel_size = 0.005
 			lbl.position = Vector3(0, -0.42, 0)
@@ -3745,26 +4096,32 @@ func set_march_paths(paths: Dictionary) -> void:
 		_march_paths[id] = {"key": key, "node": root}
 
 
-func hex_label(hex: int, text: String, color := Color(1, 0.9, 0.5)) -> void:
-	var l: Label3D = _hex_labels.get(hex)
-	if text == "":
-		if l:
-			l.queue_free()
+## A status chip over a hex (§4.14: colonization timers, march destinations, swap tags): a pill of INK α 0.85, a 3D
+## icon and the text in LABEL 24, white. "" removes it. Old call sites that still lead with a pictograph (⇢ ⛳ ⇄ ⚔)
+## get its icon (SoftLabel3D.split_picto) and lose the glyph Rubik lacks; `icon` names one outright. The text stays
+## white (a state's colour is never a text colour, §3.2): a `color` other than the default rings the pill instead.
+func hex_label(hex: int, text: String, color := Color(1, 0.9, 0.5), icon := "") -> void:
+	var tag: MapTag = _hex_labels.get(hex)
+	if text == "" and icon == "":
+		if tag:
+			tag.queue_free()
 			_hex_labels.erase(hex)
 		return
-	if l == null:
-		l = soft_label(52)
-		l.pixel_size = 0.005
-		l.position = cell_world(hex) + Vector3(0, 0.9, 0)
-		add_child(l)
-		_hex_labels[hex] = l
-	l.text = text
-	l.modulate = color
+	if tag == null:
+		tag = _make_chip(1)
+		tag.base = cell_world(hex) + Vector3(0, 0.9, 0)
+		tag.position = tag.base
+		add_child(tag)
+		_hex_labels[hex] = tag
+	var cut: Array = SoftLabel3D.split_picto(text)
+	var ring := Color(0, 0, 0, 0) if color.is_equal_approx(Color(1, 0.9, 0.5)) else Color(color, 1.0)
+	_set_chip(tag, String(cut[0]), icon if icon != "" else String(cut[1]), "S", Color(Kit.INK, 0.85), ring)
 
 
 # ------------------------------------------------------------------ deposits & convoys (canon §5.2)
 
 const C_DEPOSIT := Color(1.0, 0.82, 0.15)
+const C_DEPOSIT_RING := Color("#FFD24A")  # the deposit marks' gold (_build_deposit_marks): the convoy chip's ring
 var _dep_nodes := {}  # hex -> Node3D
 var _carts := {}  # convoy id -> Node3D
 
@@ -3814,8 +4171,9 @@ func set_deposits(deposits: Array, convoys: Array) -> void:
 			_:
 				p = _along(cart, route, float(ph["progress"]), true)
 		cart.position = p
-		var lbl: Label3D = cart.get_node("label")
-		lbl.text = ("⛏ " if String(ph["phase"]) == "gather" else "") + _fmt_left(int(ph["left"]))
+		# a status chip with the time left, ringed in the deposits' gold; the hammer while the cart gathers
+		_set_chip(cart.get_node("label"), _fmt_left(int(ph["left"])), "hammer" if String(ph["phase"]) == "gather" else "",
+				"S", Color(Kit.INK, 0.85), C_DEPOSIT_RING)
 	for id in _carts.keys():
 		if not live.has(id):
 			_carts[id].queue_free()
@@ -3978,12 +4336,11 @@ func _make_cart() -> Node3D:
 			wheel.rotation.z = PI / 2
 			wheel.position = Vector3(x, 0.06, z)
 			body.add_child(wheel)
-	var lbl := soft_label(40)
-	lbl.name = "label"
-	lbl.pixel_size = 0.005
-	lbl.modulate = C_DEPOSIT
-	lbl.position = Vector3(0, 0.55, 0)
-	cart.add_child(lbl)
+	var chip := _make_chip(0)
+	chip.name = "label"
+	chip.base = Vector3(0, 0.55, 0)
+	chip.position = chip.base
+	cart.add_child(chip)
 	return cart
 
 
@@ -4035,13 +4392,14 @@ func strike_arrow(from: int, to: int, text: String) -> void:
 			mi.material_override = am
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			_strike.add_child(mi)
-		var l := soft_label(56)
-		l.name = "label"
-		l.pixel_size = 0.006
-		l.modulate = Color(1.0, 0.55, 0.5)
-		l.position = a.lerp(b, 0.5) + Vector3(0, 1.2, 0)
-		_strike.add_child(l)
-	(_strike.get_node("label") as Label3D).text = text
+		var chip := _make_chip(1)  # the countdown: a timer chip M over the arrow's middle (§4.8), stacked clear of plates
+		chip.name = "label"
+		chip.base = a.lerp(b, 0.5) + Vector3(0, 0.3, 0)
+		chip.position = chip.base
+		_strike.add_child(chip)
+	var cut: Array = SoftLabel3D.split_picto(text)  # "⚔ 19:09": the swords become the chip's icon
+	_set_chip(_strike.get_node("label"), String(cut[0]), String(cut[1]) if String(cut[1]) != "" else "swords", "M",
+			Kit.face_of("war"), Kit.INK)
 
 
 ## The strike arrow's outline in its own frame (x from the attacker's hex toward the target, y across), counter-
@@ -4667,14 +5025,60 @@ func fireworks(pos: Vector3, volleys: int) -> void:
 		tw.tween_callback(fx.queue_free)
 
 
-func floater(hex: int, text: String, color := Color.WHITE) -> void:
-	var lbl := soft_label(56)
-	lbl.text = text
-	lbl.modulate = color
-	lbl.pixel_size = 0.006
-	lbl.position = cell_world(hex) + Vector3(0, 1.4, 0)
-	add_child(lbl)
-	_fx.append({"node": lbl, "t": 0.0, "dur": 1.4, "float": true})
+## Text rising off a hex (§4.14 «+86»): an icon and NUM 32 (Rubik 900, white INK outline; `color` tints the text as
+## before), rising 40 px in 900 ms and fading out, kept 24 px inside the screen edges (_float_fx). A pictograph in the
+## text becomes the icon; `icon` names one outright (s14 passes the resource icons).
+const FLOAT_DUR := 1.3
+const FLOAT_RISE := 40.0
+const FLOAT_EDGE := 24.0
+
+
+func floater(hex: int, text: String, color := Color.WHITE, icon := "") -> void:
+	var cut: Array = SoftLabel3D.split_picto(text)
+	var tex := SoftLabel3D.icon_tex(icon if icon != "" else String(cut[1]))
+	var root := Node3D.new()
+	var at := cell_world(hex) + Vector3(0, 1.4, 0)
+	root.position = at
+	add_child(root)
+	var lbl := _plate_text(32)
+	lbl.text = String(cut[0])
+	lbl.modulate = Color(color, 1.0)
+	root.add_child(lbl)
+	var ic := 40.0 if tex != null else 0.0
+	var gap := 6.0 if tex != null and lbl.text != "" else 0.0
+	var tw := _text_w(lbl, lbl.text)
+	var w := ic + gap + tw
+	lbl.offset.x = (w * 0.5 - tw * 0.5) * RASTER
+	var sp := _plate_icon(tex, ic, Vector2(-w * 0.5 + ic * 0.5, 0.0))
+	root.add_child(sp)
+	_fx.append({"node": root, "t": 0.0, "dur": FLOAT_DUR, "float": true, "at": at, "w": w + 8.0, "h": 44.0, "lbl": lbl,
+		"icon": sp})
+
+
+## A floater's frame: the rise (ease-out over 900 ms), the fade (the last 45 %), and the screen clamp — its box is kept
+## FLOAT_EDGE px inside the visible canvas, moved along the camera's right / up at the anchor's depth.
+func _float_fx(f: Dictionary, k: float) -> void:
+	var root: Node3D = f["node"]
+	var a := 1.0 - smoothstep(0.55, 1.0, k)
+	var lbl: Label3D = f["lbl"]
+	lbl.modulate.a = a
+	lbl.outline_modulate.a = a  # the outline is drawn apart: fade it too, no navy ghost is left
+	(f["icon"] as Sprite3D).modulate.a = a
+	var cam := get_viewport().get_camera_3d()
+	var at: Vector3 = f["at"]
+	if cam == null or cam.is_position_behind(at):
+		return
+	var u := clampf(float(f["t"]) / 0.9, 0.0, 1.0)
+	var sp := cam.unproject_position(at)
+	var want := sp - Vector2(0.0, FLOAT_RISE * (1.0 - pow(1.0 - u, 3.0)))
+	var vis := get_viewport().get_visible_rect().size
+	var hw := float(f["w"]) * 0.5 + FLOAT_EDGE
+	var hh := float(f["h"]) * 0.5 + FLOAT_EDGE
+	want.x = clampf(want.x, minf(hw, vis.x * 0.5), maxf(vis.x - hw, vis.x * 0.5))
+	want.y = clampf(want.y, minf(hh, vis.y * 0.5), maxf(vis.y - hh, vis.y * 0.5))
+	var d := want - sp
+	var s := -(cam.global_transform.affine_inverse() * at).z * _px_k()
+	root.global_position = at + (cam.global_basis.x * d.x - cam.global_basis.y * d.y) * s
 
 
 func _process(delta: float) -> void:
@@ -4720,11 +5124,9 @@ func _process(delta: float) -> void:
 			_fx.erase(f)
 			continue
 		if f.get("float", false):
-			n.position.y += delta * 0.8
-			var lb := n as Label3D
-			lb.modulate.a = 1.0 - k * k
-			lb.outline_modulate.a = lb.modulate.a  # the outline is drawn apart: fade it too, no navy ghost is left
+			_float_fx(f, k)
 		else:
 			var s := 0.6 + k * (1.6 if f["big"] else 0.7)
 			n.scale = Vector3(s, 0.3, s)
 			((n as MeshInstance3D).material_override as StandardMaterial3D).albedo_color.a = float(f.get("a0", 1.0)) * (1.0 - k)
+	_declutter(delta)
