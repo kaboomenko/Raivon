@@ -67,7 +67,7 @@ rs.thrift.desc,−3% апкипа,−3% upkeep
 rs.colonization.desc,−10% цены колонизации,−10% colonization cost
 rs.branch.army,Армия,Army
 rs.branch.economy,Экономика,Economy
-err.unlock_dl,Откроется на УР%d,Unlocks at DL%d
+err.unlock_dl,Откроется на уровне развития %d,Unlocks at development level %d
 err.academy_busy,Академия занята,Academy is busy
 err.max,Максимум,Maxed out
 err.need_academy,Нужна Академия ур. %d или УР выше,Needs Academy Lv %d or a higher DL
@@ -161,7 +161,7 @@ ceremony.double,×2,×2
 ceremony.title,Победа!,Victory!
 ceremony.claim,Забрать,Claim
 ceremony.realm_cap,Держава,Realm
-ceremony.chapter_cap,Глава I,Chapter I
+ceremony.chapter_cap,Глава %s,Chapter %s
 ceremony.rep_hours,24ч,24h
 ceremony.cosmetic,Косметика,Cosmetic
 ui.continue,Продолжить,Continue
@@ -183,7 +183,7 @@ ult.pay,Откупиться,Pay off
 ult.refuse,Война,War
 ult.truce,мир 24ч,24h peace
 ult.refuse_title,Отказ,Refuse
-ult.no_gold,Не хватает золота на дань,Not enough gold for the tribute
+ult.no_gold,Не хватает %s золота,%s more gold needed
 settings.title,Настройки,Settings
 settings.sound_on,🔊 Звук: вкл,🔊 Sound: on
 settings.sound_off,🔇 Звук: выкл,🔇 Sound: off
@@ -331,7 +331,7 @@ ceremony.hexes,Земли: +%d,Land: +%d
 ceremony.city,+1 город,+1 city
 ceremony.cities,+%d город,+%d cities
 ceremony.realm,Держава: с %d до %d,Realm: %d to %d
-ceremony.chapter,Глава I: с %d до %d из %d,Chapter I: %d to %d of %d
+ceremony.chapter,Глава %s: с %d до %d из %d,Chapter %s: %d to %d of %d
 ceremony.plunder,"Разграблено: %d золота, %d еды, %d металла","Plundered: %d gold, %d food, %d metal"
 ceremony.indemnity,Контрибуция: +%d золота,Indemnity: +%d gold
 ceremony.reparations,Репарации: 10% производства на 24ч,Reparations: 10% of output for 24h

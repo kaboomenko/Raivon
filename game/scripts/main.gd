@@ -223,6 +223,7 @@ func _ready() -> void:
 	hud.button_pressed.connect(_on_hud_button)
 	ui = GameUI.new()
 	add_child(ui)
+	ui.pill_of = func(r: String) -> Control: return hud.res_pills.get(r)  # the ceremony's rewards fly into these plates
 	ui.action_pressed.connect(_on_action)
 	ui.card_drop.connect(_on_card_drop)
 	ui.card_drag.connect(_on_card_drag)
@@ -2356,6 +2357,11 @@ func _chapter_goal() -> int:
 	return CHAPTER_GOALS[clampi(chapter, 1, CHAPTER_GOALS.size() - 1)]
 
 
+## The open chapter's number as it is written in the game: «I» … «V».
+func _chapter_roman() -> String:
+	return ["I", "II", "III", "IV", "V"][clampi(chapter, 1, 5) - 1]
+
+
 ## Every AI state of the open world (chapter I: Barons, Hamlets; chapter II adds the League and the Order).
 func _ai_states() -> Array:
 	var out: Array = []
@@ -3053,6 +3059,16 @@ func _open_peace() -> void:
 			d["goal"] = h == war["goal"]
 		else:
 			d["label"] = L.t(String(d["label"]))
+	# unnamed hexes share their terrain's name: number the repeats («Лес 1», «Лес 2») so the tiles can be told apart
+	var seen := {}
+	for d in _demands:
+		if d["kind"] == "annex":
+			seen[d["label"]] = int(seen.get(d["label"], 0)) + 1
+	var nth := {}
+	for d in _demands:
+		if d["kind"] == "annex" and int(seen[d["label"]]) > 1:
+			nth[d["label"]] = int(nth.get(d["label"], 0)) + 1
+			d["label"] = "%s %d" % [d["label"], nth[d["label"]]]
 	_chosen = {}
 	for d in War.recommend_package(sim, war, _demands, ws["score"]):
 		_chosen[d["id"]] = true
@@ -3206,12 +3222,12 @@ func _sign_peace() -> void:
 			land += ", " + (tr("ceremony.city") if cities == 1 else tr("ceremony.cities") % cities)
 	lines.append(land)
 	lines.append(tr("ceremony.realm") % [before, MapGen.official_value(sim, Types.PLAYER)])
-	lines.append(tr("ceremony.chapter") % [hexes_before, _player_hexes(), _chapter_goal()])
+	lines.append(tr("ceremony.chapter") % [_chapter_roman(), hexes_before, _player_hexes(), _chapter_goal()])
 	# the ceremony window's items (ui.show_ceremony_counters; the lines stay as its fallback): the realm's value
 	# counting up, the chapter bar, then one reward tile per kind — the gold of plunder, triumph and indemnity in one
 	var items: Array = [
 		{"kind": "hero", "icon": "crown", "from": before, "to": MapGen.official_value(sim, Types.PLAYER), "text": tr("ceremony.realm_cap")},
-		{"kind": "bar", "icon": "hex_tile", "from": hexes_before, "to": _player_hexes(), "max": _chapter_goal(), "text": tr("ceremony.chapter_cap")},
+		{"kind": "bar", "icon": "hex_tile", "from": hexes_before, "to": _player_hexes(), "max": _chapter_goal(), "text": tr("ceremony.chapter_cap") % _chapter_roman()},
 	]
 	var got := {"gold": 0, "food": 0, "metal": 0, "raivite": 0}
 	var extra: Array = []
@@ -3236,7 +3252,7 @@ func _sign_peace() -> void:
 		var burned: int = research.add_blueprints(plunder_level)
 		stats["blueprints"] = int(stats.get("blueprints", 0)) + plunder_level
 		lines.append(tr("ceremony.blueprints") % [plunder_level, research.blueprints] + (tr("ceremony.blueprints_burned") % burned if burned > 0 else ""))
-		extra.append({"kind": "tile", "icon": "blueprint", "text": "+%d" % plunder_level})
+		extra.append({"kind": "tile", "icon": "blueprint", "text": "+%d" % plunder_level, "order": 6})
 	_opinion_add(enemy, PLUNDER_OPINION[plunder_level])
 	# «Угроза» (canon §10.8): the value of every annexed hex (a city +4 more), plunder +5 / +10 / +15
 	var annexed_threat := 0.0
@@ -3261,24 +3277,30 @@ func _sign_peace() -> void:
 	if res.get("reparations", false):
 		lines.append(tr("ceremony.reparations"))
 		extra.append({"kind": "tile", "icon": "treaty", "pill": [["", "10%"], ["hourglass", tr("ceremony.rep_hours")]],
-			"name": tr("demand.reparations")})
+			"name": tr("demand.reparations"), "order": 4})
 	# trophy chest for a victorious peace: bronze < 30, silver < 60, gold ≥ 60 war score (canon §15.4)
 	var score: float = _last_score  # war score at signing (the war dict is cleared below)
 	var chest := "case_trophy_gold" if score >= 60.0 else ("case_trophy_silver" if score >= 30.0 else "case_trophy_bronze")
 	var opened: Dictionary = cases.open(chest, _case_ctx(), now_s())
 	_apply_case_rewards([opened])
 	lines.append("%s: %s" % [Cases.case_name(chest), ShopUI.describe(opened["rewards"][0]) if opened["rewards"].size() > 0 else "—"])
+	# the tiles, the big ones first — land, the cities, the trophy chest, the gold, the reparations, Raivites — and
+	# the minor ones last (blueprints, food, metal): past 6 tiles those go into the «+N» tile (ui), not the chest
+	var tiles: Array = extra.duplicate()
 	if annexed.size() > 0:
-		items.append({"kind": "tile", "icon": "hex_tile", "text": "+%d" % annexed.size()})
+		tiles.append({"kind": "tile", "icon": "hex_tile", "text": "+%d" % annexed.size(), "order": 0})
 	if cities > 0:
-		items.append({"kind": "tile", "icon": "houses", "text": "+%d" % cities})
+		tiles.append({"kind": "tile", "icon": "houses", "text": "+%d" % cities, "order": 1})
+	var res_order := {"gold": 3, "raivite": 5, "food": 7, "metal": 8}
 	for r in ["gold", "food", "metal", "raivite"]:
 		if int(got[r]) > 0:
-			items.append({"kind": "tile", "icon": String(Hud.RES_ICON[r]), "text": "+" + Kit.fmt_num(int(got[r])), "name": tr("res.name." + r)})
-	items.append_array(extra)
+			tiles.append({"kind": "tile", "icon": String(Hud.RES_ICON[r]), "text": "+" + Kit.fmt_num(int(got[r])), "name": tr("res.name." + r),
+				"res": r, "order": res_order[r]})
 	if opened["rewards"].size() > 0:
-		items.append({"kind": "tile", "icon": {"case_trophy_gold": "chest_royal", "case_trophy_silver": "chest_silver"}.get(chest, "chest_wood"),
-			"pill": _reward_pill(opened["rewards"][0]), "name": Cases.case_name(chest)})
+		tiles.append({"kind": "tile", "icon": {"case_trophy_gold": "chest_royal", "case_trophy_silver": "chest_silver"}.get(chest, "chest_wood"),
+			"pill": _reward_pill(opened["rewards"][0]), "name": Cases.case_name(chest), "order": 2})
+	tiles.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a["order"]) < int(b["order"]))
+	items.append_array(tiles)
 	truce[enemy] = Time.get_unix_time_from_system() + TRUCE_SEC
 	if ultimatum_at == 0:
 		ultimatum_at = now_s() + 2 * 3600  # scripted Barons ultimatum ~2 h later (canon §14.3)
@@ -3405,7 +3427,7 @@ func _open_defeat_or_white(score: float) -> void:
 	var lost := _defeat_losses(enemy)
 	ui.show_result(0, 0, lost.size(), score, War.war_score(sim, war)["control"], tr("result.defeat"),
 		func(): ui.close_modal(); _set_mode(Mode.WAR),
-		func(): _apply_defeat(enemy, lost), "coins")
+		func(): _apply_defeat(enemy, lost), "coins", true)
 
 
 ## Defeat (canon §9.14): the AI annexes what it occupies, ≤20% of value, ≤1 city, never the core.
@@ -3567,7 +3589,9 @@ func _econ_tick() -> void:
 			_finish_colonize(h)
 		else:
 			map_view.hex_label(h, "⛳ " + GameUI.fmt_time(int(colonizing[h]) - now))
-	hud.set_resources(econ.res, econ.income_per_hour(sim), econ.storage_cap(), econ.builders + econ.bonus_builders - econ.busy_builders(now), econ.builders + econ.bonus_builders)
+	# in battle the folder tabs lie under the battle tray: no free-builders count on them (it would peek over the tray)
+	var free_builders: int = econ.builders + econ.bonus_builders - econ.busy_builders(now) if mode != Mode.BATTLE else 0
+	hud.set_resources(econ.res, econ.income_per_hour(sim), econ.storage_cap(), free_builders, econ.builders + econ.bonus_builders)
 	hud.set_level(econ.dev_level())
 	hud.set_mail(_unread())
 	_market_hint()
@@ -6042,7 +6066,7 @@ func _show_ultimatum() -> void:
 		econ.res["gold"] >= int(ultimatum["tribute"]), int(ultimatum["deadline"]) - now_s(),
 		_answer_ultimatum.bind("accept"), _answer_ultimatum.bind("pay"), _answer_ultimatum.bind("refuse"),
 		_leader_portrait(int(ultimatum["state"])), map_view.team_look(int(ultimatum["state"]))["body"],
-		String(_describe(int(ultimatum["hex"]))["tile"]))
+		String(_describe(int(ultimatum["hex"]))["tile"]), maxi(0, int(ultimatum["tribute"]) - int(econ.res["gold"])))
 
 
 func _answer_ultimatum(kind: String) -> void:

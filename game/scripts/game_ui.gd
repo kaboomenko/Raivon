@@ -554,17 +554,21 @@ func _fit_card_name(nm: Label) -> void:
 
 
 ## A card's look: "" ready, "short" (not enough energy: dimmed art, grey cost hex), "cool" (the cooldown veil and its
-## seconds), "locked" (not open yet). Restyled only when it changes (set_battle runs every frame in battle).
-func _card_state(card: String, state: String) -> void:
+## seconds over the art as it is), "locked" (not open yet). `short` greys the cost hex in any state: during a
+## cooldown it still tells whether the energy will be there. Restyled only when it changes (set_battle runs every
+## frame in battle).
+func _card_state(card: String, state: String, short := false) -> void:
 	var lk: Dictionary = _card_look.get(card, {})
-	if lk.is_empty() or lk["state"] == state:
+	short = short or state == "short"
+	var key := state + ("+short" if short else "")
+	if lk.is_empty() or lk["state"] == key:
 		return
-	lk["state"] = state
-	(lk["pic"] as Control).modulate = Kit.LOCK_ART if state == "locked" else (Kit.LOCK_MOD if state == "short" or state == "cool" else Color.WHITE)
+	lk["state"] = key
+	(lk["pic"] as Control).modulate = Kit.LOCK_ART if state == "locked" else (Kit.LOCK_MOD if state == "short" else Color.WHITE)
 	(lk["veil"] as Control).visible = state == "cool"
 	(lk["lock"] as Control).visible = state == "locked"
 	var hex := lk["cost"] as Kit.KitShape
-	var role := "lock" if state == "locked" or state == "short" else "energy"
+	var role := "lock" if state == "locked" or short else "energy"
 	hex.face = Kit.face_of(role)
 	hex.lip = Kit.lip_of(role)
 	hex.queue_redraw()
@@ -644,7 +648,8 @@ func set_battle(visible_hand: bool, energy_units: int, unit: int, cooldowns: Dic
 			_card_state(c, "locked")
 			continue
 		cdl.text = str(int(ceil(cd / 10.0))) if cd > 0 else ""
-		_card_state(c, "cool" if cd > 0 else ("short" if pts < _card_cost(c) else ""))
+		var short := pts < _card_cost(c)
+		_card_state(c, "cool" if cd > 0 else ("short" if short else ""), short)
 	set_action("timer", "%d:%02d" % [seconds_left / 60, seconds_left % 60], tr("ui.final_rush") if rush else tr("ui.offensive_left"), "war" if rush else "slate")
 
 
@@ -714,7 +719,7 @@ func _on_card_input(event: InputEvent, card: String) -> void:
 	if _locked.has(card):
 		if event is InputEventScreenTouch or event is InputEventMouseButton:
 			if event.pressed:
-				toast(tr("err.unlock_dl") % int(_locked[card]))
+				toast(tr("err.unlock_dl") % int(_locked[card]))  # «Откроется на уровне развития 6» (no «УР6», §3.7)
 		return
 	if event is InputEventScreenTouch or event is InputEventMouseButton:
 		var pressed: bool = event.pressed
@@ -1109,9 +1114,10 @@ var _result_peace: Control  # the result's «К миру» (the FTUE points at i
 ## Offensive results (§6 «Итоги наступления»): a decision window M without ✕. The plate: gold «Успех!» (a star and land
 ## taken), war «Поражение» (more lost than taken), info «Ничья» otherwise; three vector stars (the middle one bigger and
 ## raised); the reason in a chip (`reason_icon`: hourglass — time is up, white_flag — retreat, …); a well with the tiles [captured] [front] [peace points] (+ [lost] when not 0); the
-## border note when land was taken; «Ещё бой» (info) and «К миру» (go).
-func show_result(stars: int, captured: int, lost: int, score: float, control: int, reason: String, on_continue: Callable, on_peace: Callable, reason_icon := "hourglass") -> void:
-	var defeat := lost > captured
+## border note when land was taken; «Ещё бой» (info) and «К миру» (go). `defeat`: the war is lost whatever was taken
+## (the defeat offer: the plate is «Поражение» even when the enemy holds no land to annex).
+func show_result(stars: int, captured: int, lost: int, score: float, control: int, reason: String, on_continue: Callable, on_peace: Callable, reason_icon := "hourglass", defeat := false) -> void:
+	defeat = defeat or lost > captured
 	var won := stars >= 1 and captured > 0 and not defeat
 	var role := "gold" if won else ("war" if defeat else "info")
 	var title := tr("result.win") if won else (tr("result.defeat_title") if defeat else tr("result.draw"))
@@ -1188,20 +1194,48 @@ func show_peace(enemy: String, budget: float, control: int, demands: Array, chos
 	for d in demands:
 		var key := "contribution" if d["kind"] == "contribution" else String(d["id"])
 		if not by_key.has(key):
-			by_key[key] = {"d": d, "ids": [], "on": []}
+			by_key[key] = {"d": d, "ids": [], "on": [], "i": groups.size()}
 			groups.append(by_key[key])
 		(by_key[key]["ids"] as Array).append(d["id"])
 		if chosen.has(d["id"]):
 			(by_key[key]["on"] as Array).append(d["id"])
+	# the order on the grid: pockets, the war's goal, the money (indemnity, reparations), then the other hexes by
+	# value — a long list scrolls, and what it hides is the least of the land, never the gold; the recommended
+	# package (War.recommend_package ranks the same way) fills the first tiles
+	var rank := func(g: Dictionary) -> int:
+		var d: Dictionary = g["d"]
+		match String(d["kind"]):
+			"pocket":
+				return 0
+			"contribution":
+				return 2
+			"reparations":
+				return 3
+		return 1 if bool(d.get("goal", false)) else 4
+	groups.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var ra: int = rank.call(a)
+		var rb: int = rank.call(b)
+		if ra != rb:
+			return ra < rb
+		var ca := float(a["d"]["cost"])
+		var cb := float(b["d"]["cost"])
+		if ra == 4 and absf(ca - cb) > 0.001:
+			return ca > cb
+		return int(a["i"]) < int(b["i"]))
 	var hint := _hold_hints <= 3
 	var rows := maxi(1, ceili(groups.size() / 3.0))
 	var row_h := 212.0
 	var head := 258.0  # leader, bubble, budget
 	var tail := 24.0 + 48.0 + 12.0 + 80.0 + (52.0 if hint else 0.0) + 24.0 + 116.0 + 32.0  # plunder, hint, footer
 	var max_h := Kit.vb(self) - 24.0 - 150.0
-	var vis := clampi(floori((max_h - head - 60.0 - tail - 32.0 + 12.0) / row_h), 1, rows)
-	var well_h := 32.0 + vis * row_h - 12.0
+	var room := max_h - head - 60.0 - tail  # the most the well may take
+	var well_h := 32.0 + rows * row_h - 12.0
+	var scroll := well_h > room
+	if scroll:  # the rows that fit, and the top of the next one peeking out under the fade (§4.3)
+		var vis := clampi(floori((room - 16.0 - PEACE_PEEK) / row_h), 1, rows - 1)
+		well_h = 16.0 + vis * row_h + PEACE_PEEK
 	var h := head + 60.0 + well_h + tail
+	var keep_scroll := 0 if fresh else _peace_scroll  # a tap re-renders the treaty: the list stays where it was
 	var box := _modal_box(_win_rect("L", h), false, tr("peace.title"), "", "go", false, true)
 	_modal.set_meta("peace", true)
 	box.set_meta("kit_native", true)
@@ -1216,23 +1250,23 @@ func show_peace(enemy: String, budget: float, control: int, demands: Array, chos
 	var bud := Kit.bar(box, Rect2(bx + 60.0, 186, w - 32.0 - bx - 60.0, 40), minf(frac, 1.0), "war" if over else "go",
 		"%s / %s" % [Kit.fmt_dec(used, 1), Kit.fmt_dec(budget, 1)], true)
 	bud.name = "budget"
-	# the demands
-	Kit.section(box, Vector2(32, head), w - 64.0, tr("peace.demands"))
+	# the demands; a list longer than the screen holds says so: «✓ chosen/all» on the header
+	var sec_w := w - 64.0
+	if scroll:
+		var on_n := 0
+		for g in groups:
+			on_n += int(not (g["on"] as Array).is_empty())
+		var cc := Kit.chip(box, Vector2.ZERO, "", "%d/%d" % [on_n, groups.size()], "status")
+		cc.name = "demand_count"
+		cc.position = Vector2(w - 32.0 - cc.size.x, head + 7.0)
+		Kit.check_badge(box, Vector2(cc.position.x - 14.0, head + 24.0), 36.0)
+		sec_w -= cc.size.x + 48.0
+	Kit.section(box, Vector2(32, head), sec_w, tr("peace.demands"))
 	var well := Kit.well(box, Rect2(32, head + 60.0, w - 64.0, well_h))
 	var grid: Control = well
-	if vis < rows:  # more rows than the screen holds: they scroll inside the well
-		var sc := ScrollContainer.new()
-		sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-		sc.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
-		sc.position = Vector2(0, 4)
-		sc.size = Vector2(well.size.x, well_h - 8.0)
-		well.add_child(sc)
-		var inner := Control.new()
-		inner.custom_minimum_size = Vector2(well.size.x, 24.0 + rows * row_h)
-		inner.mouse_filter = Control.MOUSE_FILTER_PASS
-		sc.add_child(inner)
-		grid = inner
-	var tw := (well.size.x - 32.0 - 24.0) / 3.0
+	if scroll:
+		grid = _peace_scroller(well, 20.0 + rows * row_h, keep_scroll)
+	var tw := (well.size.x - 32.0 - 24.0 - (PEACE_BAR_ROOM if scroll else 0.0)) / 3.0
 	for i in groups.size():
 		var g: Dictionary = groups[i]
 		var d: Dictionary = g["d"]
@@ -1302,6 +1336,67 @@ func _on_seal() -> void:
 	seal_done.emit()
 
 
+const PEACE_PEEK := 76.0  # how much of the first hidden row shows under the well's bottom fade (the list goes on)
+const PEACE_BAR_ROOM := 12.0  # the scroll bar's lane on the well's right (the tiles step aside for it)
+const FADE_H := 24.0  # the scroll fades (§4.3)
+var _peace_scroll := 0  # the treaty list's scroll (kept while the treaty re-renders after a tap)
+
+
+## The scrolling inside a treaty's well (§4.3): a ScrollContainer over the whole well holding a Control
+## `content_h` tall (returned: the tiles go in it), 24 px CREAM_WELL fades at the bottom (and at the top once
+## scrolled), an 8 px INK α 0.4 pill bar on the right; it opens at `at` px.
+func _peace_scroller(well: Control, content_h: float, at: int) -> Control:
+	var sc := ScrollContainer.new()
+	sc.name = "scroll"
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	sc.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+	sc.size = well.size
+	well.add_child(sc)
+	var inner := Control.new()
+	inner.custom_minimum_size = Vector2(well.size.x, content_h)
+	inner.mouse_filter = Control.MOUSE_FILTER_PASS
+	sc.add_child(inner)
+	var fades: Array = []
+	for top in [true, false]:
+		var f := TextureRect.new()
+		f.name = "fade_top" if top else "fade_bottom"
+		f.texture = Kit.vgradient(Kit.CREAM_WELL, Kit.alpha(Kit.CREAM_WELL, 0.0)) if top \
+			else Kit.vgradient(Kit.alpha(Kit.CREAM_WELL, 0.0), Kit.CREAM_WELL)
+		f.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		f.stretch_mode = TextureRect.STRETCH_SCALE
+		f.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		f.position = Vector2(10, 0.0 if top else well.size.y - FADE_H)  # 10 in: clear of the well's round corners
+		f.size = Vector2(well.size.x - 20.0, FADE_H)
+		well.add_child(f)
+		fades.append(f)
+	var track := Rect2(well.size.x - 12.0, 12.0, 8.0, well.size.y - 24.0)
+	var bar := Panel.new()
+	bar.name = "scroll_bar"
+	var bsb := Kit.style(Kit.alpha(Kit.INK, 0.4), 4, 0, Kit.INK, 0, 0)  # a pill: R = w/2
+	bsb.set_meta("kit_kind", "")
+	bar.add_theme_stylebox_override("panel", bsb)
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.size = Vector2(track.size.x, maxf(48.0, track.size.y * minf(1.0, well.size.y / content_h)))
+	bar.position = track.position
+	well.add_child(bar)
+	var span := maxf(1.0, content_h - well.size.y)
+	var show_at := func(v: float) -> void:
+		var k := clampf(v / span, 0.0, 1.0)
+		bar.position.y = track.position.y + k * (track.size.y - bar.size.y)
+		(fades[0] as Control).visible = v > 1.0
+		(fades[1] as Control).visible = v < span - 1.0
+		_peace_scroll = int(v)
+	sc.get_v_scroll_bar().value_changed.connect(show_at)
+	show_at.call(0.0)
+	if at > 0:  # once the container has laid out its content (its scroll range is known then)
+		var restore := func() -> void:
+			if is_instance_valid(sc):
+				sc.scroll_vertical = at
+				show_at.call(float(sc.scroll_vertical))
+		restore.call_deferred()
+	return inner
+
+
 ## The centre of «Подписать мир» / of the plunder segments on the screen (where the FTUE points).
 func peace_seal_center() -> Vector2:
 	if is_instance_valid(_seal_btn) and _seal_btn.is_inside_tree():
@@ -1353,19 +1448,19 @@ func show_ceremony_counters(lines: Array, on_done: Callable, on_double := Callab
 				bar = it
 			_:
 				tiles.append(it)
-	if tiles.size() > 6:  # 6 tiles at most; the rest are counted on one more («+2», §6 «Церемония»)
-		var more := tiles.size() - 6
+	if tiles.size() > 6:  # two rows at most: 5 tiles and one more counting the rest («+3», §6 «Церемония»; main puts the minor ones last)
+		var more := tiles.size() - 5
 		var rest: Array = []
-		for it in tiles.slice(6):
+		for it in tiles.slice(5):
 			var pill: Array = (it as Dictionary).get("pill", [["", String((it as Dictionary).get("text", ""))]])
 			var parts: Array = []
 			for pi in pill:
 				parts.append(String((pi as Array)[1]))
 			rest.append(String((it as Dictionary).get("name", "")) + " " + " ".join(parts) if (it as Dictionary).has("name") else " ".join(parts))
 		var icons: Array = []
-		for it in tiles.slice(6):
+		for it in tiles.slice(5):
 			icons.append(String((it as Dictionary).get("icon", "")))
-		tiles = tiles.slice(0, 6)
+		tiles = tiles.slice(0, 5)
 		tiles.append({"kind": "more", "text": "+%d" % more, "rest": rest, "icons": icons})
 	var listed: Array = lines if items.is_empty() else []
 	var rows := ceili(tiles.size() / 3.0)
@@ -1434,6 +1529,7 @@ func show_ceremony_counters(lines: Array, on_done: Callable, on_double := Callab
 		var kb := Kit.bar(box, Rect2(bx, bar_y, w - 40.0 - bx, 40), clampf(float(bar.get("frac", float(to_v) / mx)), 0.0, 1.0), "gold",
 			"%d/%d" % [to_v, mx], true)
 		kb.name = "chapter"
+	var flyers: Array = []  # [tile, res, icon]: the resource rewards fly into their plates when claimed
 	if rows > 0:
 		var well := Kit.well(box, Rect2(32, well_y, w - 64.0, well_h))
 		var tw := (well.size.x - 32.0 - 24.0) / 3.0
@@ -1459,6 +1555,8 @@ func show_ceremony_counters(lines: Array, on_done: Callable, on_double := Callab
 			else:
 				var pill: Array = it.get("pill", [["", String(it.get("text", ""))]])
 				t = Kit.tile(well, r, {"icon": String(it.get("icon", "")), "icon_side": 92.0, "pill": pill})
+				if it.has("res"):
+					flyers.append([t, String(it["res"]), String(it.get("icon", ""))])
 			t.name = "reward_%d" % i
 			_pop_later(t, 0.35 + 0.08 * i)
 	elif not listed.is_empty():
@@ -1477,12 +1575,12 @@ func show_ceremony_counters(lines: Array, on_done: Callable, on_double := Callab
 	var dbl: Kit.KitButton = null
 	if on_double.is_valid():
 		dbl = Kit.button(box, Rect2(32, fy + 12.0, 280, 92), "info", tr("ceremony.double"), {"icon": "ad", "size": "M", "enabled": false,
-			"cb": func(): if gate["open"]: on_double.call()})
+			"cb": func(): _claim(gate, flyers, on_double)})
 		dbl.name = "double"
 		buttons.append(dbl)
 	var main_r := Rect2(328, fy, w - 360.0, 116) if dbl != null else Rect2((w - 480.0) * 0.5, fy, 480, 116)
 	var done := Kit.button(box, main_r, "go", tr("ceremony.claim"), {"size": "L", "enabled": false,
-		"cb": func(): if gate["open"]: on_done.call()})
+		"cb": func(): _claim(gate, flyers, on_done)})
 	done.name = "claim"
 	buttons.append(done)
 	var open := func():
@@ -1495,6 +1593,64 @@ func show_ceremony_counters(lines: Array, on_done: Callable, on_double := Callab
 		open.call()
 	else:
 		get_tree().create_timer(active_after).timeout.connect(open)
+
+
+## «Забрать» / «×2» of the ceremony once open: the rewards fly into their plates, then `cb` runs.
+func _claim(gate: Dictionary, flyers: Array, cb: Callable) -> void:
+	if not gate["open"]:
+		return
+	_fly_rewards(flyers)
+	cb.call()
+
+
+var pill_of := Callable()  # res -> the HUD's resource plate (main wires hud.res_pills): the ceremony's rewards fly into it
+
+
+## The claimed rewards fly into their resource plates (§3.6 COUNT_UP, §6 «Церемония»): each tile's icon arcs up to
+## its plate in 450 ms (60 ms apart), shrinking, and the plate bumps 1 → 1.1 → 1 (180 ms) as it lands. On a layer
+## above the currency plates, so it outlives the closing window; nothing with reduced motion or headless.
+func _fly_rewards(srcs: Array) -> void:
+	if not pill_of.is_valid() or Kit._dur(0.45) <= 0.0 or srcs.is_empty():
+		return
+	var layer := CanvasLayer.new()
+	layer.name = "reward_fly"
+	layer.layer = 4
+	add_child(layer)
+	var k := 0
+	for s in srcs:
+		var src: Control = s[0]
+		var pill: Control = pill_of.call(String(s[1]))
+		var tex := Kit.icon_tex(String(s[2]))
+		if not is_instance_valid(src) or pill == null or not pill.is_visible_in_tree() or tex == null:
+			continue
+		var ic := TextureRect.new()
+		ic.texture = tex
+		ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		ic.size = Vector2(92, 92)
+		ic.pivot_offset = ic.size * 0.5
+		var from := src.get_global_rect().get_center() + Vector2(0, -12)
+		var pr := pill.get_global_rect()
+		var to := Vector2(pr.position.x + 30.0, pr.get_center().y)  # the plate's icon
+		var via := Vector2(from.x + (to.x - from.x) * 0.15, to.y + (from.y - to.y) * 0.3)  # up first, then across
+		ic.position = from - ic.size * 0.5
+		layer.add_child(ic)
+		var tw := ic.create_tween()
+		tw.tween_interval(0.06 * k)
+		tw.tween_method(func(t: float) -> void:
+			var p := from.lerp(via, t).lerp(via.lerp(to, t), t)
+			ic.position = p - ic.size * 0.5
+			ic.scale = Vector2.ONE * lerpf(1.0, 0.62, t), 0.0, 1.0, 0.45).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+		tw.tween_callback(func() -> void:
+			ic.queue_free()
+			if is_instance_valid(pill):
+				pill.pivot_offset = pill.size * 0.5
+				var bump := pill.create_tween()
+				bump.tween_property(pill, "scale", Vector2(1.1, 1.1), 0.09).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+				bump.tween_property(pill, "scale", Vector2.ONE, 0.09))
+		k += 1
+	get_tree().create_timer(0.45 + 0.06 * k + 0.4).timeout.connect(layer.queue_free)
 
 
 ## Inbox (mail button): reports of raids, defenses, ultimatums. items: [{title, text, t (unix), read}];
@@ -1798,9 +1954,9 @@ func show_chronicle(info: Dictionary, on_claim: Callable) -> void:
 
 ## AI ultimatum (canon §9.1, §6 «Ультиматум»): a window L with the war plate; ✕ is «later». The angry leader says it in
 ## one sentence, a red timer chip counts the time left; three equal choices as option cards in a well — give the hex
-## (24 h of peace), pay the tribute (grey when the gold is short: a tap says why), or refuse (war). `hex_tile`: the
-## hex's render key (the card shows the hex itself).
-func show_ultimatum(enemy: String, hex_name: String, tribute: int, can_pay: bool, left_sec: int, on_accept: Callable, on_pay: Callable, on_refuse: Callable, portrait := "", plate := Kit.CLEAR, hex_tile := "") -> void:
+## (24 h of peace), pay the tribute (grey when the gold is short: the amount turns red, a tap says how much is
+## missing — `short`, in gold), or refuse (war). `hex_tile`: the hex's render key (the card shows the hex itself).
+func show_ultimatum(enemy: String, hex_name: String, tribute: int, can_pay: bool, left_sec: int, on_accept: Callable, on_pay: Callable, on_refuse: Callable, portrait := "", plate := Kit.CLEAR, hex_tile := "", short := 0) -> void:
 	var h := 64.0 + 170.0 + 40.0 + 332.0 + 32.0
 	var box := _modal_box(_win_rect("L", h), false, tr("ult.title"), "", "war", true, false)
 	box.set_meta("kit_native", true)
@@ -1818,7 +1974,7 @@ func show_ultimatum(enemy: String, hex_name: String, tribute: int, can_pay: bool
 		{"tex": hex_tex, "icon": "hex_tile", "title": hex_name, "chip": ["dove", tr("ult.truce")], "role": "go", "cap": tr("ult.accept"),
 			"cb": on_accept, "enabled": true},
 		{"icon": "coins", "title": Kit.fmt_num(tribute), "role": "go", "cap": tr("ult.pay"), "cb": on_pay, "enabled": can_pay,
-			"reason": tr("ult.no_gold")},
+			"reason": tr("ult.no_gold") % Kit.fmt_num(short) if short > 0 else tr("toast.no_gold"), "title_color": Kit.NEG_CREAM},
 		{"icon": "swords", "title": tr("ult.refuse_title"), "role": "war", "cap": tr("ult.refuse"), "cb": on_refuse, "enabled": true},
 	]
 	for i in 3:
@@ -1838,7 +1994,7 @@ func show_ultimatum(enemy: String, hex_name: String, tribute: int, can_pay: bool
 		card.add_child(pic)
 		var title := String(o["title"])
 		var s := Kit.fit_size(title, 30, cw - 24.0, "d900", 22, false)
-		var tl := Kit.label(title, s, Kit.INK_TEXT, true)
+		var tl := Kit.label(title, s, Kit.INK_TEXT if bool(o["enabled"]) else o.get("title_color", Kit.INK_TEXT), true)
 		tl.add_theme_font_size_override("font_size", s)
 		tl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		tl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -1852,9 +2008,9 @@ func show_ultimatum(enemy: String, hex_name: String, tribute: int, can_pay: bool
 		var b := Kit.button(card, Rect2(14, 300 - 5.0 - 14.0 - 64.0, cw - 28.0, 64), String(o["role"]), String(o["cap"]),
 			{"size": "S", "cb": o["cb"], "enabled": bool(o["enabled"])})
 		b.name = "choice"
-		if not bool(o["enabled"]):
+		if not bool(o["enabled"]):  # the tip stands over the whole card: the coins and the amount stay in sight
 			var why := String(o.get("reason", ""))
-			b.denied.connect(func(): Kit.tooltip(b, String(o["cap"]), why))
+			b.denied.connect(func(): Kit.tooltip(card, String(o["cap"]), why))
 
 
 ## An enemy leader's portrait (ultimatum, peace): the face on the state's colour in a TRIM frame (brass DL1–4, steel

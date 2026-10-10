@@ -26,6 +26,7 @@ import bpy
 import bmesh
 from mathutils import Matrix, Vector
 from mathutils import noise as mnoise
+from mathutils.bvhtree import BVHTree
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -147,17 +148,23 @@ def cached(key, fn):
 # «Raivon Soft» stone (§6.3): warm grey rock, a pale sunlit top, lilac shade (never a darker grey), spring-green moss.
 # Under the M1 sun a face turned to the sky shows ×1.25 lighter than its albedo: §6.3's pale top #D8CFBF clipped to
 # «white-hot» (V > 0.92, S < 0.18: 8.5 % of a rock pile's pixels in game), and even #BDB3A3 sat at V 0.93 there. So
-# the top only turns warm (sunlit sand) at the base's value, the light makes it the brightest face, and the base sits
-# a hair under §6.3's #BDB3A3 (L* 72 instead of 73).
-STONE_C = {"base": "#B9AF9F", "top": "#BCAF98", "shade": "#8C86A0", "moss": "#8DBA4E"}
-MOSS_C = ("#7AA845", STONE_C["moss"])  # moss mottle: a slightly deeper green and the §6.3 moss
+# the top only turns warm (sunlit sand) at the base's value, the light makes it the brightest face.
+# Even #B9AF9F (L* 72) lit to L* 86–89 in game (#EADFCD), and with the lilac flanks the piles read as lilac-white
+# porcelain, as light as the straw roofs (L* 77–85 on screen; §6.3 value rule: roofs are the lightest surfaces);
+# #AEA391 (L* 67.5) still lit to 82.5. So the base and top sit at L* 63–64 (≈ −10 under §6.3's #BDB3A3: lit faces
+# ≈ 78, under the roofs) and a touch warmer (b* 11–13), and the moss is a step less yellow than §6.3's #8DBA4E
+# (hue 91° instead of 85°): soft_model's saturation ×1.15 turned it lime on screen.
+STONE_C = {"base": "#A39886", "top": "#A69983", "shade": "#8C86A0", "moss": "#84B556"}
+MOSS_C = ("#72A44C", STONE_C["moss"])  # moss mottle: a slightly deeper green and the moss
 # the massif's stone: the same warm grey, deeper. A mountain is mostly sunlit slope, so its albedo shows ×1.5 lighter
 # on screen: #BDB3A3 read L* 85 (a pale ghost whose snow caps vanished), #80786B ≈ 75 — still a pale mound at the
-# world zoom; #776F62 keeps a mid-value massif under snow caps at L* ≈ 92
-MOUNTAIN_C = {"base": "#776F62", "warm": "#82796B", "top": "#938A7B"}
+# world zoom; #7E6F5A keeps a mid-value massif under snow caps. Warmer than the rocks' grey (b* 14–19, the shoulders
+# a pale sand): under the warm sun the lit side reads warm, and the shade side, where soft_light adds the blue sky
+# ambient and its lilac fill, reads lilac — a temperature split that carries the form at the world zoom
+MOUNTAIN_C = {"base": "#7E6F5A", "warm": "#8A7A62", "top": "#A38F70"}
 
 
-def rock_paint(c1=STONE_C["base"], c2="#BFB5A5", moss=MOSS_C, moss_at=0.62, scale=7.0, top=STONE_C["top"],
+def rock_paint(c1=STONE_C["base"], c2="#A89D8B", moss=MOSS_C, moss_at=0.62, scale=7.0, top=STONE_C["top"],
                shade_c=STONE_C["shade"], speck=0.1):
     """Loose stones and boulders. «Raivon Soft» (§6.3, §6.8): warm grey c1 with big soft patches of c2, the warm
     `top` colour on the up-facing faces, the lilac `shade_c` on the faces that turn down (a shade hue, never a darker
@@ -182,13 +189,15 @@ def rock_paint(c1=STONE_C["base"], c2="#BFB5A5", moss=MOSS_C, moss_at=0.62, scal
 
 
 def granite_paint(base=STONE_C["base"], top=STONE_C["top"], shade_c=STONE_C["shade"], moss=MOSS_C, moss_at=0.8,
-                  scale=4.0, cracks=0.1, moss_z=0.08, cover=0.3, warm="#BEB3A2"):
+                  scale=4.0, cracks=0.1, moss_z=0.08, cover=0.3, warm="#A89D8B", lilac=0.5):
     """The big rounded stone blocks of «Raivon Soft» (§6.3, §6.8: «тёплый серый, лиловая тень, мох»), for soft_block:
-    - warm grey `base` (STONE_C, ≈ §6.3 #BDB3A3) in a few big soft patches of `warm`, a very faint banding;
+    - warm grey `base` (STONE_C: §6.3's #BDB3A3, deeper, see there) in a few big soft patches of `warm`, a very
+      faint banding;
     - a warm cream `top` on the faces turned to the sky (the broad slanted top of every block; see STONE_C);
-    - lilac `shade_c` (#8C86A0) on the steep and down-turned faces and a little at the foot — the shade side leans to
-      the §6.3 shade hue instead of going grey (§6.1 rule 3), so a block reads as a lit top over lilac flanks; the
-      AO bake darkens the creases on top of it;
+    - lilac `shade_c` (#8C86A0) on the steep and down-turned faces (up to `lilac` of it: 0.5, was 0.75, which with
+      the blue sky ambient and the lilac shade fill of soft_light read as lilac porcelain rather than warm grey) and
+      a little at the foot — the shade side leans to the §6.3 shade hue instead of going grey (§6.1 rule 3), so a
+      block reads as a lit top over lilac flanks; the AO bake darkens the creases on top of it;
     - joints between upright blocks only as a hint (cracks 0.1, was 0.4, and in the lilac shade, not near-black);
     - soft patches of spring-green moss on the flattest high tops (about `cover` of them; none below moss_z)."""
     def build():
@@ -197,7 +206,7 @@ def granite_paint(base=STONE_C["base"], top=STONE_C["top"], shade_c=STONE_C["sha
         band = p.noise(scale * 0.5, 2.0, stretch=(1.0, 1.0, 8.0))
         col = p.mix(p.math("MULTIPLY", p.step(band, 0.5, 0.68), 0.15), col, shade(base, 0.9))
         col = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.6, 0.95), 0.7), col, top)
-        col = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.55, -0.05), 0.75), col, shade_c)
+        col = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.55, -0.05), lilac), col, shade_c)
         col = p.mix(p.math("MULTIPLY", p.step(p.nz, -0.15, -0.7), 0.6), col, shade_c)
         col = p.mix(p.math("MULTIPLY", p.step(p.z, 0.05, 0.0), 0.3), col, shade_c)  # grounded foot
         if cracks:  # a hint of jointing: upright blocks of a slightly different tone, parted by soft lilac lines
@@ -216,7 +225,7 @@ def granite_paint(base=STONE_C["base"], top=STONE_C["top"], shade_c=STONE_C["sha
             mcol = p.mix(p.step(p.noise(10.0, 2.0), 0.35, 0.65), moss[0], moss[1])
             col = p.mix(mf, col, mcol)
         return p.done(col, 0.9)
-    return cached(("granite", base, top, shade_c, moss, moss_at, scale, cracks, moss_z, cover, warm), build)
+    return cached(("granite", base, top, shade_c, moss, moss_at, scale, cracks, moss_z, cover, warm, lilac), build)
 
 
 def soft_block(cx, cy_, w, d, h, mt, seed, z0=-0.02, rz=0.0, cuts=(6, 10), sub=2, bevel=0.1, segs=2, top=0.62,
@@ -318,12 +327,15 @@ def cull_hidden(objs, margin=0.003):
 def mountain_paint(grass_line=0.15, snow_edge=0.24):
     """«Raivon Soft» massif (§6.3, §6.8: «горы — 3 мягких массива, снег мягкими шапками»): a meadow-green foot
     (a step under the §6.3 plain #74A645) whose rim climbs the slopes in broad soft tongues → warm grey stone
-    (MOUNTAIN_C, in big soft patches, a lighter tone on the flattest shoulders, a lilac lean on the steepest flanks;
-    no fine strata, speckle or scree band — they read as haze at map size) → a soft snow cap on the two big masses.
-    The caps follow
-    the "cap" point attribute that mountain() writes (1 at a mass's summit, 0 at its cap's rim, below 0 lower down),
-    broken by a broad noise and leaning onto the flatter slopes; their edge is a smoothstep `snow_edge` wide. Snow
-    is blue-white (#E8EDF7 lit, #C6D0E8 in the shade), not pure white."""
+    (MOUNTAIN_C, in big soft patches, a pale sandy tone on the shoulders, a faint lilac lean on the steepest flanks
+    — the model turns at random on the map, so the paint can only follow the slope, not the sun: a warm albedo lets
+    the sun light it warm and the sky ambient shade it lilac, so the form reads at the world zoom; no fine strata,
+    speckle or scree band — they read as haze at map size) → a soft snow cap on the two big masses. The caps follow the "cap" point attribute that mountain() writes
+    (1 at a mass's summit, 0 at its cap's rim, below 0 lower down), broken by a broad noise and leaning onto the
+    flatter slopes; their edge is a smoothstep `snow_edge` wide. Snow is a pale blue-grey albedo, #C6CEDF lit and
+    #A9B4CF in the shade, that the light lifts to blue-white: #E8EDF7 and even #D5DCEA clipped to pure #FFFFFF on the
+    sunlit summits in game (flat white blobs without form, «white-hot» 3.4 % of a close mountain frame; §6.12 keeps
+    white-hot for foam and clouds)."""
     def build():
         p = Paint("mountain")
         jit = p.math("MULTIPLY", p.math("SUBTRACT", p.noise(2.5, 2.0), 0.5), 0.22)  # broad tongues, no speckle
@@ -334,10 +346,11 @@ def mountain_paint(grass_line=0.15, snow_edge=0.24):
                      MOUNTAIN_C["warm"])
         band = p.noise(1.6, 2.0, stretch=(1.0, 1.0, 6.0))
         rock = p.mix(p.math("MULTIPLY", p.step(band, 0.5, 0.7), 0.15), rock, shade(MOUNTAIN_C["base"], 0.9))
-        # most of a massif faces the sky (nz 0.5–0.8): the pale top colour only on its flattest shoulders, a lilac
-        # lean on the steepest flanks
-        rock = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.8, 0.95), 0.6), rock, MOUNTAIN_C["top"])
-        rock = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.6, 0.25), 0.5), rock, STONE_C["shade"])
+        # most of a massif faces the sky (nz 0.5–0.8): the pale sandy top colour on its shoulders, only a faint lilac
+        # lean on the steepest flanks (0.45 below nz 0.2): the lilac of the shade comes from the light (soft_light's
+        # sky ambient and lilac fill); painted lilac also turns the sunlit flanks pink (#C2B7BD, hue 341° at 0.7)
+        rock = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.72, 0.92), 0.75), rock, MOUNTAIN_C["top"])
+        rock = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.62, 0.2), 0.45), rock, STONE_C["shade"])
         # a step under the plain #74A645: the foot is lit by the wrap light and tilts to the sun, and a brighter apron
         # read as a lime disc round the mountains on the slate of the unexplored land
         grass = p.mix(p.step(p.noise(6.0, 2.0), 0.35, 0.65), "#5E9040", "#6C9E44")
@@ -346,7 +359,7 @@ def mountain_paint(grass_line=0.15, snow_edge=0.24):
         at.attribute_name = "cap"
         sf = p.math("ADD", at.outputs["Fac"], p.math("MULTIPLY", p.math("SUBTRACT", p.noise(3.0, 2.0), 0.5), 0.5))
         sf = p.math("ADD", sf, p.math("MULTIPLY", p.math("SUBTRACT", p.nz, 0.6), 0.4))
-        snow = p.mix(p.step(p.nz, 0.2, 0.8), "#C6D0E8", "#E8EDF7")
+        snow = p.mix(p.step(p.nz, 0.2, 0.8), "#A9B4CF", "#C6CEDF")
         col = p.mix(p.step(sf, 0.0, snow_edge), col, snow)
         return p.done(col, 0.9)
     return cached(("mountain", grass_line, snow_edge), build)
@@ -852,13 +865,20 @@ def flowers():
 def rock():
     """«Raivon Soft» outcrop (§6.8: «крупные скруглённые глыбы»): three big rounded blocks — a leaning main block, a
     second one and a low slab at its foot — and two loose stones, in warm grey with pale tops, lilac shade and a
-    little moss (granite_paint). The faces hidden inside a neighbour are dropped. ≤ 500 triangles."""
+    little moss (granite_paint). The faces hidden inside a neighbour are dropped.
+    239 triangles, under the tree budget (§6.2: ≤ 300): rocks are scattered by the dozen over the badlands, taiga and
+    hills hexes (≈ 140 of them from chapter III on) and drawn as one map-wide MultiMesh, so every triangle here is
+    paid ≈ 140 times in every frame (485 cost ≈ +48 k primitives a frame). So only the main block keeps the round
+    2-segment bevel, on its sharpest edges (> 70°: the top's rim and the face-to-face corners that catch the light);
+    the second block, the slab and the stones are cut icosahedra (sub 1) under the soft weighted normals, which read
+    just as round at map size. The second block takes 4–5 cuts, the slab 2–3 and the stones only the ground cut (a
+    plain icosahedron: a round pebble) — fewer than soft_block's 6–10, which only add n-gon fans on a small stone."""
     mt = granite_paint(moss_at=0.72, scale=6.0, moss_z=0.1, cover=0.4)
-    blocks = [soft_block(0.0, 0.02, 0.25, 0.2, 0.19, mt, 11, rz=0.3),
-              soft_block(0.15, -0.07, 0.14, 0.12, 0.11, mt, 12, rz=-0.4, sharp=55.0),
-              soft_block(-0.13, 0.07, 0.15, 0.13, 0.07, mt, 13, rz=0.8, cuts=(4, 6)),  # the slab (no bevel: < 0.08)
-              soft_block(0.05, -0.16, 0.09, 0.08, 0.07, mt, 14, sub=1, cuts=(2, 3), bevel=0),  # two loose stones
-              soft_block(-0.11, -0.1, 0.075, 0.065, 0.06, mt, 15, sub=1, cuts=(2, 3), bevel=0)]
+    blocks = [soft_block(0.0, 0.02, 0.25, 0.2, 0.19, mt, 11, rz=0.3, sharp=70.0),
+              soft_block(0.15, -0.07, 0.14, 0.12, 0.11, mt, 12, rz=-0.4, sub=1, cuts=(4, 5), bevel=0),
+              soft_block(-0.13, 0.07, 0.15, 0.13, 0.07, mt, 13, rz=0.8, sub=1, cuts=(2, 3), bevel=0),  # the slab
+              soft_block(0.05, -0.16, 0.09, 0.08, 0.07, mt, 14, sub=1, cuts=(0, 0), bevel=0),  # two loose stones
+              soft_block(-0.11, -0.1, 0.075, 0.065, 0.06, mt, 15, sub=1, cuts=(0, 0), bevel=0)]
     cull_hidden(blocks)
 
 
@@ -870,7 +890,7 @@ def crag():
     triangles: the blocks ≈ 1000, two pines of 18-segment tiers (221 each; four 284-triangle B5 pines alone would
     take 1136)."""
     mt = granite_paint(moss_at=0.75, moss_z=0.1, cover=0.4)
-    deep = granite_paint(base="#AFA596", top="#B2A58F", moss=None, warm="#B6AC9C")
+    deep = granite_paint(base="#998E7D", top="#9C8E79", moss=None, warm="#9E9383")
     big = dict(cuts=(4, 6), sharp=60.0, ground=0.05)  # 4–6 cuts and the sharpest edges only: ≈ 120 triangles a block
     blocks = [
         # the main ridge: broad rounded blocks rising toward the back, the summit block stacked on them
@@ -940,10 +960,6 @@ def _mountain(x, y, k=0.84):
     return h, min(1.0, max(-1.0, cap))
 
 
-def _mountain_height(x, y, k=0.84):
-    return _mountain(x, y, k)[0]
-
-
 def mountain():
     """«Raivon Soft» mountain (§6.8): a friendly massif of three broad rounded masses with soft snow caps, smooth
     shaded (was faceted spires), on a meadow foot with three rounded stones and the soft pines of the forests
@@ -1005,14 +1021,31 @@ def mountain():
     at = o.data.attributes.new("cap", "FLOAT", "POINT")
     at.data.foreach_set("value", caps)
 
-    def ground(x, y, rr):  # the lowest ground under a footprint of radius rr: nothing hangs over the slope
-        return min(_mountain_height(x + rr * math.cos(a), y + rr * math.sin(a)) for a in (0, 2.1, 4.2)) - 0.012
+    # the props stand on the built (smoothed) surface, not on _mountain(): the two smoothing passes move it by
+    # −0.07…+0.08, and a pine seated on the analytic height showed its foot ring 0.04 above the downhill slope
+    bvh = BVHTree.FromPolygons([Vector(v) for v in verts], faces)
 
-    # rounded boulders on the grassy foot
+    def height(x, y):
+        hit = bvh.ray_cast(Vector((x, y, 3.0)), Vector((0.0, 0.0, -1.0)))[0]
+        return hit.z if hit is not None else 0.0
+
+    def ground(x, y, rr):  # the lowest ground under a footprint of radius rr: nothing hangs over the slope
+        pts = [(x, y)] + [(x + f * rr * math.cos(k * math.tau / 8), y + f * rr * math.sin(k * math.tau / 8))
+                          for k in range(8) for f in (0.5, 1.0)]
+        return min(height(px, py) for px, py in pts) - 0.012
+
+    # rounded boulders on the grassy foot, on its gentlest spots (≈ 100° apart; the drop of the ground under their
+    # footprint is 0.02–0.03 there, where the old sites on the flanks of the masses dropped 0.04–0.09)
     rk = granite_paint(moss_at=0.7, scale=6.0, moss_z=0.0, cover=0.4)
-    for k, (a, r, s) in enumerate([(4.4, 0.68, 0.06), (1.2, 0.7, 0.05), (2.6, 0.66, 0.055)]):
+    stones = []
+    for k, (a, r, s) in enumerate([(5.1, 0.69, 0.06), (1.5, 0.69, 0.05), (3.3, 0.68, 0.055)]):
         x, y = r * math.cos(a), r * math.sin(a)
-        soft_block(x, y, s * 2.3, s * 1.9, s * 1.2, rk, 70 + k, z0=ground(x, y, s), rz=a, sub=1, cuts=(2, 3), bevel=0)
+        stones.append((x, y))
+        # open at the bottom: the whole footprint (half-sizes 1.15·s × 0.95·s) must be under z0, which sinks the
+        # stone by the drop under its footprint; it grows by that drop, so it still stands 1.2·s out of the grass
+        z0 = ground(x, y, 1.2 * s)
+        soft_block(x, y, s * 2.3, s * 1.9, s * 1.2 + height(x, y) - z0, rk, 70 + k, z0=z0, rz=a, sub=1, cuts=(2, 3),
+                   bevel=0)
     # the soft pines of the forests climb the lower slopes (reference frame 1), not only the grassy foot
     placed = []
     cand = [(a, r) for a in [i * 0.37 for i in range(17)] for r in (0.5, 0.58, 0.64, 0.7)]
@@ -1020,11 +1053,12 @@ def mountain():
     pine_mt, bark = pine_paint(), tex("wood", BARK_SOFT)
     for a, r in cand:
         x, y = r * math.cos(a), r * math.sin(a)
-        if _mountain_height(x, y) > 0.36 or any(math.dist((x, y), p) < 0.2 for p in placed):
+        if (height(x, y) > 0.36 or any(math.dist((x, y), p) < 0.2 for p in placed)
+                or any(math.dist((x, y), p) < 0.14 for p in stones)):
             continue
         placed.append((x, y))
         s_ = random.Random(len(placed)).uniform(0.46, 0.56)
-        tall_pine(x, y, s_, 30 + len(placed), pine_mt, bark, n=18, na=9, z=ground(x, y, 0.05 * s_))
+        tall_pine(x, y, s_, 30 + len(placed), pine_mt, bark, n=18, na=9, z=ground(x, y, 0.06 * s_))  # trunk r 0.055·s
         if len(placed) >= 6:
             break
 
