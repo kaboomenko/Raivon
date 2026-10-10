@@ -98,7 +98,8 @@ var _water_mi: MeshInstance3D
 ## The bay (the open sea below the world's near edge, _build_horizon) gets the same shore: the off-map hexes there
 ## that touch land are drawn as sea hexes just above the open-sea plane (BAY_Y), so the sandy near shore has its
 ## turquoise shallows, foam lip and foam ring too. Their far edges lie >= 1.0 from the land, where the shader's
-## colour is the plane's deep blue with the same ripples, so they melt into the open sea.
+## colour is the plane's deep blue with the same ripples, so they melt into the open sea. Their shore is a beach
+## sloping into them (_rim_loop), so their foam starts further out (UV2.y = _bay_shore).
 func _build_water() -> void:
 	if _water_mi:
 		_water_mi.queue_free()
@@ -122,6 +123,7 @@ func _build_water() -> void:
 			if nbs[d] >= 0 and not _is_water(nbs[d]):
 				mask |= 1 << d
 		_water_hex(st, axial_to_world(c["q"], c["r"]) + Vector3(0, -0.07, 0), mask)
+	var shore := _bay_shore()
 	for a in bay:
 		var p := axial_to_world(a.x, a.y)
 		if p.z <= zmax - 0.5:
@@ -131,7 +133,7 @@ func _build_water() -> void:
 			var nb: int = sim.id_at(a.x + DIRS[d].x, a.y + DIRS[d].y)
 			if nb >= 0 and not _is_water(nb):
 				mask |= 1 << d
-		_water_hex(st, p + Vector3(0, BAY_Y, 0), mask)
+		_water_hex(st, p + Vector3(0, BAY_Y, 0), mask, shore)
 		any = true
 	if any:
 		var mat := ShaderMaterial.new()
@@ -142,7 +144,26 @@ func _build_water() -> void:
 		_water_mi.material_override = mat
 		_water_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(_water_mi)
+		_water_zoom()
 	_build_waterfalls()
+
+
+## The foam lip by zoom (P5 review): 0.07 of it shows past the rim, 2–4 px on the strategic view, at the §6.1 rule-5
+## limit; from the middle zoom out it widens by up to 0.035 (water.gdshader lip_w), so it keeps ≈ 4–6 px.
+func _water_zoom() -> void:
+	if _water_mi == null:
+		return
+	(_water_mi.material_override as ShaderMaterial).set_shader_parameter("lip_w", 0.035 * smoothstep(0.2, 0.6, _zoom))
+
+
+## How much further out than on an in-map coast the waterline lies on a bay beach (w = 1, _rim_loop): there the bay
+## water draws its shallows, foam lip and ring from (water.gdshader, UV2.y). In-map, the quarter round meets the water
+## (−0.07) 0.079 out; in the bay, the slope meets BAY_Y 0.152 out.
+static func _bay_shore() -> float:
+	var y3 := -RIM_W * (1.0 - cos(BAY_PHI))
+	var bay_line := RIM_W * sin(BAY_PHI) + (y3 - BAY_Y) * cos(BAY_PHI) / sin(BAY_PHI)
+	var in_map := RIM_W * sqrt(1.0 - pow(1.0 - 0.07 / RIM_W, 2.0))
+	return bay_line - in_map
 
 
 ## The bay's shore hexes: 0.025 over the open-sea plane (−0.25), clear of it however the two surfaces bob (±0.012
@@ -150,12 +171,13 @@ func _build_water() -> void:
 const BAY_Y := -0.225
 
 
-## One water hex at `center` for water.gdshader: UV = the vertex minus the centre (x, z), UV2.x = the land mask.
-static func _water_hex(st: SurfaceTool, center: Vector3, mask: int) -> void:
+## One water hex at `center` for water.gdshader: UV = the vertex minus the centre (x, z), UV2 = (the land mask, how
+## much further out its waterline lies than on an in-map coast: _bay_shore for the bay, else 0).
+static func _water_hex(st: SurfaceTool, center: Vector3, mask: int, shore := 0.0) -> void:
 	var pts := [center + Vector3(1, 0, 0), center + Vector3(0.5, 0, SQ3 * 0.5), center + Vector3(-0.5, 0, SQ3 * 0.5),
 			center + Vector3(-1, 0, 0), center + Vector3(-0.5, 0, -SQ3 * 0.5), center + Vector3(0.5, 0, -SQ3 * 0.5)]
 	st.set_normal(Vector3.UP)
-	st.set_uv2(Vector2(mask, 0))
+	st.set_uv2(Vector2(mask, shore))
 	for k in 6:
 		for p in [center, pts[k], pts[(k + 1) % 6]]:
 			st.set_uv(Vector2((p as Vector3).x - center.x, (p as Vector3).z - center.z))
@@ -752,8 +774,11 @@ func _build_terrain() -> void:
 			_vtx(st, _v3(arc[j]), c_in.lerp(c_out, float(j) / COAST_SEG))
 			_vtx(st, _v3(arc[j + 1]), c_in.lerp(c_out, float(j + 1) / COAST_SEG))
 	# the beach rim along the rounded loops, the world's edge included, and the soil walls under it
+	var near_z := -1e9
+	for c in sim.cells:
+		near_z = maxf(near_z, cell_world(int(c["id"])).z)
 	for lp in coast["loops"]:
-		_rim_loop(st, lp, cols, corner_sum, edge_sum)
+		_rim_loop(st, lp, cols, corner_sum, edge_sum, near_z)
 	_terrain_mi = MeshInstance3D.new()
 	_terrain_mi.mesh = st.commit()
 	_terrain_mat = ShaderMaterial.new()
@@ -861,12 +886,17 @@ func _coastline() -> Dictionary:
 
 
 const RIM_W := 0.08  # the beach rim: a quarter round 0.08 out over the water and 0.08 down (§6.7)
-const RIM_PHI := [0.0, PI / 6.0, PI / 3.0, PI / 2.0]  # its rings
 const TURF_K := 1.08  # the turf lip: the land colour there ×1.08 (§6.3)
-## Sand and wet sand (§6.3) through GROUND_K like every ground colour: at full strength the lit sand read #FFF6CE,
-## white rather than golden
-const SAND := Color("e8d39a") * GROUND_K
-const WET_SAND := Color("c9b27a") * GROUND_K
+## Sand and wet sand (§6.3) scaled like the ground colours (GROUND_K), but further: the rim faces the sun, so at
+## GROUND_K (0.92) the lit sand read #F1E6BE…#FFF4BE, pale cream and brighter than the foam (P5 review). At 0.82 it
+## reads golden, near #E8D39A.
+const SAND_K := 0.82
+const SAND := Color("e8d39a") * SAND_K
+const WET_SAND := Color("c9b27a") * SAND_K
+## The bay beach (_rim_loop): where the rim faces the bay, whose water lies 0.155 lower than the in-map water
+## (BAY_Y), the quarter round stops at 66° and the beach runs on down its tangent to BAY_FOOT, under the bay's water.
+const BAY_PHI := PI * 66.0 / 180.0
+const BAY_FOOT := -0.26
 
 
 ## The beach rim along one rounded land loop (soft_style_plan P5, docs/art_direction.md §6.7) and the soil walls
@@ -879,7 +909,14 @@ const WET_SAND := Color("c9b27a") * GROUND_K
 ## sand only where it faces the camera and the bay (n.z > 0.3, blended over 0.2–0.4, so it never steps), else turf
 ## -> earth. Under it at the world's edge, the §6.3 earth gradient down to −1.4. Water edges get no wall: the opaque
 ## water surface covers the whole water hex, the rim's foot included, so it would never show.
-func _rim_loop(st: SurfaceTool, lp: Dictionary, cols: Array, corner_sum: Dictionary, edge_sum: Dictionary) -> void:
+## The bay (P5 review): its water lies at BAY_Y (−0.225), so a rim ending at −0.08 stood on a 0.145 soil wall, a
+## khaki band between the sand and the foam. Where the edge faces a bay hex the beach slopes into the bay instead:
+## the round ends at BAY_PHI (66°), all sand, and a fifth row runs on down its tangent to BAY_FOOT, sand to wet
+## sand, so the waves lap at a lit sandy slope (the waterline 0.152 out; water.gdshader takes the shift,
+## _bay_shore). The bay weight w blends across the corner arcs between a bay edge and any other, so nothing steps.
+## near_z: the world's near edge (the bay lies beyond near_z − 0.5, as in _build_water and _build_horizon).
+func _rim_loop(st: SurfaceTool, lp: Dictionary, cols: Array, corner_sum: Dictionary, edge_sum: Dictionary,
+		near_z: float) -> void:
 	var fp: PackedVector2Array = lp["pts"]
 	var fe: PackedInt32Array = lp["edge"]
 	var nbs: PackedInt32Array = lp["nb"]
@@ -887,11 +924,18 @@ func _rim_loop(st: SurfaceTool, lp: Dictionary, cols: Array, corner_sum: Diction
 	var hx: PackedInt32Array = lp["hex"]
 	var m := fp.size()
 	var nc := cp.size()
-	# the points with their outward normals; a straight run T2 -> T1 is split at its edge midpoint like the land
-	# top, so the turf lip meets it without a T-junction
+	# which edges face a bay hex: off the map, with the hex beyond the edge past near_z − 0.5
+	var bay := PackedFloat32Array()
+	for e in nc:
+		var ctr := cell_world(hx[e])
+		var beyond_z := (cp[e].y + cp[(e + 1) % nc].y) - ctr.z  # 2 · the edge midpoint − the land hex's centre
+		bay.append(1.0 if nbs[e] < 0 and beyond_z > near_z - 0.5 else 0.0)
+	# the points with their outward normals and bay weights; a straight run T2 -> T1 is split at its edge midpoint
+	# like the land top, so the turf lip meets it without a T-junction
 	var pts := PackedVector2Array()
 	var nrm := PackedVector2Array()
 	var edg := PackedInt32Array()
+	var bw := PackedFloat32Array()
 	for k in m:
 		var i := floori(float(k) / (COAST_SEG + 1))  # the corner whose arc holds point k
 		var j := k % (COAST_SEG + 1)
@@ -902,14 +946,17 @@ func _rim_loop(st: SurfaceTool, lp: Dictionary, cols: Array, corner_sum: Diction
 			o = _out(cp[i], cp[(i + 1) % nc])
 		else:  # inside an arc: the mean of the two segments' normals is the arc's radial direction
 			o = (_out(fp[(k - 1 + m) % m], fp[k]) + _out(fp[k], fp[(k + 1) % m])).normalized()
+		var w := lerpf(bay[(i - 1 + nc) % nc], bay[i], float(j) / COAST_SEG)  # blended across the arc
 		pts.append(fp[k])
 		nrm.append(o)
 		edg.append(fe[k])
+		bw.append(w)
 		if j == COAST_SEG:
 			pts.append((fp[k] + fp[(k + 1) % m]) * 0.5)
 			nrm.append(o)
 			edg.append(fe[k])
-	# per point: the four rings' positions, normals and colours, and the wall's top
+			bw.append(w)
+	# per point: the four rings and the foot (positions, normals, colours); the foot is the wall's top
 	var n := pts.size()
 	var rp: Array = []
 	var rn: Array = []
@@ -919,34 +966,46 @@ func _rim_loop(st: SurfaceTool, lp: Dictionary, cols: Array, corner_sum: Diction
 		var o := nrm[k]
 		var e := edg[k]
 		var h := hx[e]
+		var w := bw[k]
 		var turf: Color = _shore_col(p, cp[e], cp[(e + 1) % nc], cols[h], corner_sum, edge_sum) * TURF_K
 		turf = Color(minf(turf.r, 1.0), minf(turf.g, 1.0), minf(turf.b, 1.0))
-		var sand := 1.0 if nbs[e] >= 0 else smoothstep(0.2, 0.4, o.y)
+		var sand := maxf(1.0 if nbs[e] >= 0 else smoothstep(0.2, 0.4, o.y), w)
+		var big := lerpf(PI / 2.0, BAY_PHI, w)  # the round's last angle: 90°, 66° on a bay beach
 		var pos: Array = []
 		var nor: Array = []
-		for phi in RIM_PHI:
-			var s := sin(phi)
-			var c := cos(phi)
+		for r in 4:
+			var s := sin(big * r / 3.0)
+			var c := cos(big * r / 3.0)
 			pos.append(Vector3(p.x + o.x * RIM_W * s, -RIM_W * (1.0 - c), p.y + o.y * RIM_W * s))
 			nor.append(Vector3(o.x * s, c, o.y * s))
+		# the foot: on down the round's last tangent to yf (where w = 0, the last ring itself)
+		var yf := lerpf(-RIM_W, BAY_FOOT, w)
+		var last: Vector3 = pos[3]
+		var run := (last.y - yf) * cos(big) / sin(big)
+		pos.append(Vector3(last.x + o.x * run, yf, last.z + o.y * run))
+		nor.append(nor[3])
 		rp.append(pos)
 		rn.append(nor)
-		rc.append([turf, turf.lerp(WALL_TOP, 0.5).lerp(SAND, sand), WALL_TOP.lerp(SAND, sand), WALL_TOP.lerp(WET_SAND, sand)])
+		var wet := WALL_TOP.lerp(WET_SAND, sand)
+		rc.append([turf, turf.lerp(WALL_TOP, 0.5).lerp(SAND, sand), WALL_TOP.lerp(SAND, sand), wet.lerp(SAND, w), wet])
 	for k in n:
 		var k1 := (k + 1) % n
-		for r in RIM_PHI.size() - 1:
+		for r in 3:
 			_quad(st, rp[k][r], rp[k1][r], rp[k][r + 1], rp[k1][r + 1], rn[k][r], rn[k1][r], rn[k][r + 1], rn[k1][r + 1],
 					rc[k][r], rc[k1][r], rc[k][r + 1], rc[k1][r + 1])
+		if bw[k] > 0.0 or bw[k1] > 0.0:  # the bay beach's slope
+			_quad(st, rp[k][3], rp[k1][3], rp[k][4], rp[k1][4], rn[k][3], rn[k1][3], rn[k][4], rn[k1][4],
+					rc[k][3], rc[k1][3], rc[k][4], rc[k1][4])
 		if nbs[edg[k]] >= 0 and nbs[edg[k1]] >= 0:
 			continue  # under water
-		# the world's edge: the cliff from the rim's foot on down to the horizon
-		var a: Vector3 = rp[k][3]
-		var b: Vector3 = rp[k1][3]
-		var na: Vector3 = rn[k][3]
-		var nb: Vector3 = rn[k1][3]
+		# the world's edge: the cliff from the foot on down to the horizon
+		var a: Vector3 = rp[k][4]
+		var b: Vector3 = rp[k1][4]
+		var na: Vector3 = rn[k][4]
+		var nb: Vector3 = rn[k1][4]
 		var a4 := Vector3(a.x, -0.4, a.z)
 		var b4 := Vector3(b.x, -0.4, b.z)
-		_quad(st, a, b, a4, b4, na, nb, na, nb, rc[k][3], rc[k1][3], WALL_MID, WALL_MID)
+		_quad(st, a, b, a4, b4, na, nb, na, nb, rc[k][4], rc[k1][4], WALL_MID, WALL_MID)
 		_quad(st, a4, b4, Vector3(a.x, -1.4, a.z), Vector3(b.x, -1.4, b.z), na, nb, na, nb, WALL_MID, WALL_MID, WALL_DEEP,
 				WALL_DEEP)
 
@@ -2264,10 +2323,20 @@ func _sync_war_scars() -> void:
 
 
 const ROAD_W := 0.12  # §6.7: a broad, friendly dirt road
-## Road colours by era (§6.7): warm light dirt (DL1–5), light blue-grey asphalt with its dashed line (DL6–7), the
-## dark glowing road of reference frame 2 (DL8+).
+## Road colours by era as the screen should show them (§6.7): warm light dirt (DL1–5), light blue-grey asphalt with
+## its dashed line (DL6–7), the dark glowing road of reference frame 2 (DL8+).
 const ROAD_COL := [Color("d9b07a"), Color("8c93a3"), Color(0.12, 0.14, 0.18)]
+## The albedo factor (linear) that makes each lit road read as ROAD_COL, as water.gdshader's light_k: lit by the sun
+## and the sky ambient an albedo comes out ≈ 2× brighter, so #D9B07A itself read #FFE3AA, clipped (P5 review). The
+## DL8 road keeps its colour: it glows.
+const ROAD_LIGHT_K := [0.5, 0.5, 1.0]
 var bridge_spots: Array = []  # world positions of the bridges (screenshots, tests)
+
+
+## `c` with its linear RGB scaled by k: the albedo that lights up to c on screen (ROAD_LIGHT_K).
+static func _lit_albedo(c: Color, k: float) -> Color:
+	var l := c.srgb_to_linear()
+	return Color(l.r * k, l.g * k, l.b * k, c.a).linear_to_srgb()
 
 ## Dirt roads (the close reference frames: carts on country roads): from every building hex to its owner's capital
 ## along the shortest way over the owner's land, as wavy ribbons that stop at the building pads; rebuilt with the
@@ -2355,7 +2424,7 @@ func _build_roads() -> void:
 		var mi := MeshInstance3D.new()
 		mi.mesh = (tools[era] as SurfaceTool).commit()
 		var m := StandardMaterial3D.new()
-		m.albedo_color = ROAD_COL[era]
+		m.albedo_color = _lit_albedo(ROAD_COL[era], ROAD_LIGHT_K[era])
 		m.roughness = 1.0 if era == 0 else 0.6
 		if era == 2:  # the glowing roads of reference frame 2
 			m.emission_enabled = true
@@ -2369,7 +2438,7 @@ func _build_roads() -> void:
 		var dm := MeshInstance3D.new()
 		dm.mesh = dashes.commit()
 		var wm := StandardMaterial3D.new()
-		wm.albedo_color = Color(0.92, 0.9, 0.82)
+		wm.albedo_color = _lit_albedo(Color(0.92, 0.9, 0.82), ROAD_LIGHT_K[1])  # reads cream, not clipped white
 		wm.roughness = 0.8
 		wm.cull_mode = BaseMaterial3D.CULL_DISABLED
 		dm.material_override = wm
@@ -2464,6 +2533,7 @@ func set_zoom(zoom: float) -> void:
 	_rib_w = lerpf(0.08, 0.16, smoothstep(0.05, 0.8, zoom))
 	_rib_skirt_a = lerpf(0.2, 0.32, smoothstep(0.1, 0.6, zoom))
 	_terrain_zoom()
+	_water_zoom()
 	for m in _fill_mats:
 		_fill_zoom(m)
 	for m in _ribbon_mats:

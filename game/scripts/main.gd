@@ -2148,7 +2148,7 @@ func _describe(id: int) -> Dictionary:
 			chips.append(["raivite", "%d/4" % econ.vein_amount(id)])
 			lines.append(tr("tile.vein") % econ.vein_amount(id))
 		if own == Types.PLAYER and econ.damaged.has(id):
-			chips.append(["hammer", tr("tile.repair"), "neg"])
+			chips.append(["hammer", tr("tile.repair")])  # white: no red text on slate (§6 HUD)
 			lines.append(tr("tile.damaged"))
 		if own == Types.PLAYER and econ.ruin_left(now_s()) > 0:
 			lines.append(tr("tile.ruin") % [econ.ruin_pct, GameUI.fmt_time(econ.ruin_left(now_s()))])
