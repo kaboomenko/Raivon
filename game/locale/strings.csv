@@ -110,9 +110,10 @@ cell.hamlets_fields,Хуторские нивы,Hamlet Fields
 cell.abandoned_mill,Заброшенная мельница,Abandoned Mill
 cell.old_adit,Старая штольня,Old Adit
 pity.royal,Эпическое+ через %d · Легендарное через %d,Epic+ in %d · Legendary in %d
-pity.cosmetic,Косметика не позже чем через %d,Cosmetic in %d openings at most
+pity.cosmetic,Косметика — осталось открытий: %d,Cosmetic in %d openings at most
 pity.collection_done,Набор собран,Set complete
 pity.collection_left,Осталось %d из %d,%d of %d left
+pity.epic_in,Эпик через %d,Epic in %d
 hud.shop,Лавка,Shop
 tab.buildings,Здания,Buildings
 tab.army,Армия,Army
@@ -176,6 +177,8 @@ time.h_ago,%d ч назад,%d h ago
 time.hm,%dч %02dм,%dh %02dm
 time.dh,%dд %dч,%dd %dh
 time.s,%d с,%ds
+time.h,%dч,%dh
+time.m,%d мин,%d min
 ult.title,Ультиматум,Ultimatum
 ult.text,Отдай нам «%s» — или будет война!,"Hand over “%s”, or it's war!"
 ult.accept,Отдать,Give up
@@ -185,12 +188,11 @@ ult.truce,мир 24ч,24h peace
 ult.refuse_title,Отказ,Refuse
 ult.no_gold,Не хватает %s золота,%s more gold needed
 settings.title,Настройки,Settings
-settings.sound_on,🔊 Звук: вкл,🔊 Sound: on
-settings.sound_off,🔇 Звук: выкл,🔇 Sound: off
-settings.language,🌐 Язык,🌐 Language
-settings.new_game,Новая игра (удерживайте),New game (hold)
-settings.autosave,Прогресс сохраняется автоматически на устройстве.,Progress is saved automatically on this device.
-settings.build,Raivon: Territory Wars · тестовая сборка %s,Raivon: Territory Wars · test build %s
+settings.sound,Звук,Sound
+settings.hold_hint,"Удерживайте кнопку, чтобы начать заново",Hold the button to start over
+settings.language,Язык,Language
+settings.new_game,Новая игра,New game
+settings.build,"Raivon: Territory Wars, сборка %s","Raivon: Territory Wars, build %s"
 army.recruiting,сбор новобранцев,recruiting
 army.locked_dl,Откроется с УР%d,Opens at DL%d
 army.train,Собрать,Recruit
@@ -225,22 +227,22 @@ shop.tab.cases,Кейсы,Cases
 shop.tab.raivite,Райвиты,Raivites
 shop.tab.packs,Наборы,Packs
 shop.tab.atelier,Ателье,Atelier
-shop.crate_free,Бесплатно каждые 6 ч (копится до 2).,Free every 6 h (stacks up to 2).
-shop.ready,Готово: %d,Ready: %d
-shop.next_in,Следующий через %s,Next in %s
-shop.open_n,Открыть (%d),Open (%d)
+shop.open,Открыть,Open
+shop.crate_note,Бесплатно каждые 6ч,Free every 6h
+shop.target_short,Цель: %s,Target: %s
+shop.epic_sure,Эпик гарантирован,Epic guaranteed
+shop.short,Не хватает Райвитов: %d,Raivites short: %d
+shop.odds_base,Базовый,Base
+shop.odds_pity,С гарантом,With pity
+shop.resources,Ресурсы,Resources
+shop.speedup,Ускорение,Speed-up
+shop.glitter_name,Блёстки,Glitter
+shop.owned,Предметы: %d,Items: %d
+shop.glitter,Блёстки: %d,Glitter: %d
 toast.crate_not_ready,Ящик ещё собирается,The crate isn't ready yet
-shop.ad_plus1,🎬 +1 за рекламу,🎬 +1 for an ad
 shop.target_none,не выбрана,not set
-shop.target,«Цель»: %s (50%% эпических и легендарных осколков),“Target”: %s (50%% of epic and legendary shards)
-shop.open_price,Открыть · %d 💎,Open · %d 💎
-shop.x10_note,×10 гарантирует эпическое и выше,×10 guarantees Epic or better
-shop.collection_desc,Каждое открытие — новый предмет сезона.,Every opening is a new item of the season.
-shop.collection_complete,Набор сезона собран полностью!,Season set complete!
 shop.odds,Шансы,Odds
-shop.odds_sub,Базовые / с учётом гаранта сейчас,Base / with your current pity
 shop.history,История последних открытий хранится в профиле.,Your recent openings are saved in your profile.
-ui.got_it,Понятно,Got it
 shop.rw_res,Ресурсы: %s,Resources: %s
 shop.rw_speedup,Ускорение %d мин,Speed-up %d min
 shop.rw_shards,%d осколков: %s,%d shards: %s
@@ -249,7 +251,6 @@ shop.rw_glitter,Повтор → %d Блёсток,Duplicate → %d Glitter
 shop.no_payments,"Покупки за деньги недоступны в вашем регионе.\nРайвиты зарабатываются в игре: задания, ящики, жилы.","Real-money purchases aren't available in your region.\nEarn Raivites in the game: quests, crates, veins."
 shop.first_x2,Первая покупка ×2,First purchase ×2
 shop.no_packs,Наборы за деньги недоступны в вашем регионе.,Paid packs aren't available in your region.
-shop.collection,Ваша коллекция: %d предм. · Блёстки: %d,Your collection: %d items · Glitter: %d
 shop.atelier_empty,"Косметика выпадает из кейсов: чернила границы, печати, салюты, узоры заливки.","Cosmetics drop from cases: border inks, seals, fireworks, fill patterns."
 pack.starter,Набор новобранца,Recruit Pack
 pack.starter.desc,"250 Райвитов, ресурсы на 8 ч, Леди Вэнс, рамка флага","250 Raivites, 8 h of resources, Lady Vance, a flag frame"
@@ -259,7 +260,7 @@ pack.no_ads,Без рекламы,No Ads
 pack.no_ads.desc,"Без межстраничной рекламы навсегда, 200 Райвитов, рамка «Меценат»","No interstitial ads ever, 200 Raivites, the “Patron” frame"
 pack.ration,Паёк державы,Realm Rations
 pack.ration.desc,300 сразу + 60 в день при ежедневном входе,300 now + 60 a day when you log in daily
-pack.period_30d,/ 30 дн.,/ 30 days
+pack.period_30d,/30 дней,/30 days
 kind.capital,Столица,Capital
 kind.city,Город,City
 kind.farm,Ферма,Farm
@@ -859,16 +860,15 @@ orders.all,Все три приказа: Военный ящик + 10 Райви
 toast.order_done,Приказ выполнен: +%d ОП пропуска,Order done: +%d pass XP
 toast.orders_all,Все приказы дня выполнены: Военный ящик и 10 Райвитов,All daily orders done: a War crate and 10 Raivites
 ui.open,Открыть,Open
-pass.title,Военный пропуск · сезон %d,War Pass · season %d
-pass.days_left,До конца сезона: %d дн.,Season ends in %d d
-pass.level,Уровень %d / 40,Level %d / 40
 pass.card,Военный пропуск · ур. %d,War Pass · lvl %d
 pass.free,Бесплатно,Free
 pass.premium,Премиум,Premium
-pass.buy,Премиум · %s,Premium · %s
-pass.buy_elite,Элитный (+15 уровней) · %s,Elite (+15 levels) · %s
-pass.premium_on,Премиум-ветка открыта,The premium track is open
-pass.elite_on,Элитный пропуск: премиум-ветка и анимированные чернила сезона,Elite pass: the premium track and the animated season ink
+pass.days_chip,%dд,%dd
+pass.elite,Элитный,Elite
+pass.plus15,+15 уровней,+15 levels
+pass.taken,Уже получено,Already claimed
+pass.prem_lock,Откроется с премиумом,Unlocks with Premium
+pass.at_level,Откроется на уровне %d,Unlocks at level %d
 pass.rw_res,Ресурсы %d ч,Resources %d h
 pass.rw_crate,Военный ящик,War crate
 pass.rw_crates,Военных ящиков: %d,War crates: %d
@@ -894,7 +894,6 @@ weekly.chest2,"Сундук недели, ступень 2 (6 из 7): ресу�
 toast.weekly_chest,Сундук недели открыт!,The weekly chest is open!
 toast.order_swapped,Приказ заменён (бесплатная замена на сегодня потрачена),Order swapped (today's free swap is used)
 toast.pass_owned,Этот пропуск уже открыт в текущем сезоне,This pass is already open this season
-pass.upgrade,Улучшить до элитного (+15 уровней) · %s,Upgrade to Elite (+15 levels) · %s
 cal.card,Календарь входа · день %d,Login calendar · day %d
 cal.title1,Календарь «Новобранец»,«Recruit» calendar
 cal.title2,Державный календарь,Sovereign calendar
@@ -909,7 +908,7 @@ cal.rw_season,Рамка или эмоция сезона,A season frame or emot
 toast.cal_claim,Награда календаря: %s,Calendar reward: %s
 pack.pass,Военный пропуск,War Pass
 pack.pass.desc,"Премиум-ветка сезона: 40 наград сверх бесплатных — ящики, Райвиты, осколки и косметика.","The season's premium track: 40 rewards on top of the free ones — crates, Raivites, shards and cosmetics."
-pack.period_season,/ сезон,/ season
+pack.period_season,/сезон,/season
 swap.value,ценность,value
 swap.max,Не больше %d гексов с каждой стороны,No more than %d hexes a side
 swap.tag_give,отдаём,give
@@ -960,8 +959,6 @@ toast.patent_daily,Патент: +%d Райвитов,Patent: +%d Raivites
 inbox.patent_key.title,Ключ Королевского кейса,A Royal case key
 inbox.patent_key.text,Державный патент: ключ недели ждёт в Лавке — откройте Королевский кейс бесплатно.,Sovereign Patent: this week's key waits in the Shop — open a Royal case for free.
 patent.card,Патент: забрать %d Райвитов,Patent: take %d Raivites
-patent.title,Державный патент — подписка на 1 месяц,Sovereign Patent — a 1-month subscription
-patent.price,%s / месяц,%s / month
 patent.active,Активен ещё %d дн.,Active for %d more days
 patent.p_ads,"Награды роликов сразу, без просмотра (в тех же лимитах); межстраничной рекламы нет","Video rewards at once, no watching (same limits); no interstitial ads"
 patent.p_builder,+1 временный строитель,+1 temporary builder
@@ -971,19 +968,30 @@ patent.p_timers,Таймеры до 10 минут завершаются бес�
 patent.p_raivite,40 Райвитов каждый день (забирать ежедневно),40 Raivites every day (claim daily)
 patent.p_key,Ключ Королевского кейса каждую неделю,A Royal case key every week
 patent.p_frame,Анимированная рамка «Патент месяца» за каждый месяц,An animated «Patent of the Month» frame for every month
-patent.buy,Оформить · %s в месяц,Subscribe · %s a month
 patent.trial,"7 дней за %s, затем %s в месяц","7 days for %s, then %s a month"
 patent.unavailable,Подписка недоступна в вашем регионе,The subscription is not available in your region
 patent.renewal,"Подписка продлевается автоматически, пока вы её не отмените. Отменить можно в настройках App Store / Google Play не позднее чем за 24 ч до конца периода.",The subscription renews automatically until you cancel it. Cancel in the App Store / Google Play settings at least 24 h before the period ends.
 patent.terms_link,Условия,Terms
 patent.privacy_link,Конфиденциальность,Privacy
 patent.restore,Восстановить покупки,Restore purchases
+patent.restore_short,Восстановить,Restore
+patent.trial_btn,7 дней,7 days
+patent.trial_tag,Пробный,Trial
+patent.month_btn,%s/мес,%s/mo
+patent.subscribe,Оформить,Subscribe
+patent.k_ads,Без рекламы,No ads
+patent.k_builder,+1 строитель,+1 builder
+patent.k_convoy,+1 обоз,+1 convoy
+patent.k_collect,Автосбор дохода,Auto-collect
+patent.k_timers,10 минут бесплатно,10 minutes free
+patent.k_raivite,+40 в день,+40 a day
+patent.k_key,Ключ в неделю,Key a week
+patent.k_frame,Рамка месяца,Monthly frame
 patent.restored,Покупки проверены — всё на месте,Purchases checked — all restored
 patent.doc_soon,Документ откроется в браузере после публикации в сторах,The document opens in the browser after the store release
 pack.patent,Державный патент,Sovereign Patent
 pack.patent.desc,"Подписка: награды роликов сразу, +1 строитель и обоз, автосбор, 40 Райвитов в день, ключ Королевского кейса в неделю.","Subscription: video rewards at once, +1 builder and convoy, auto-collect, 40 Raivites a day, a Royal case key a week."
-pack.period_month,/ мес.,/ mo
-shop.open_key,Открыть ключом (%d),Open with a key (%d)
+pack.period_month,/мес,/mo
 cal.double_patent,×2 · Патент,×2 · Patent
 settings.manage_sub,Управление подпиской,Manage subscription
 settings.manage_soon,Откроется экран подписок App Store / Google Play,Opens the App Store / Google Play subscriptions screen
@@ -991,8 +999,11 @@ patent.offer_title,Награды роликов — сразу,Video rewards �
 patent.offer_line,Получайте награды роликов без просмотра — 7 дней за %s.,Get video rewards without watching — 7 days for %s.
 patent.offer_more,Подробнее,Details
 patent.offer_later,Не сейчас,Not now
-chr.title,Летопись державы · %d / %d,Chronicle of the Realm · %d / %d
 chr.toast,Летопись: %s,Chronicle: %s
+chr.name,Летопись,Chronicle
+chr.ready,Можно забрать,Ready to claim
+chr.reward,Награда: %d Райвитов,Reward: %d Raivites
+chr.reward_cos,и «%s»,and “%s”
 chr.claimed,«%s»: +%d Райвитов,“%s”: +%d Raivites
 chr.soon,скоро,soon
 chr.ch.map,Территория и карта,Territory and map

@@ -34,6 +34,8 @@ const FlagView := preload("res://scripts/flag_view.gd")
 const Kit := preload("res://scripts/ui_kit.gd")
 const OrdersSim := preload("res://scripts/sim/orders.gd")  ## the order codes (World cards' short names)
 const WeeklySim := preload("res://scripts/sim/weekly.gd")  ## the week's task codes
+const ChronicleSim := preload("res://scripts/sim/chronicle.gd")  ## the Chronicle's goals (rewards, ladders)
+const CasesSim := preload("res://scripts/sim/cases.gd")  ## names of commanders and cosmetics (pass rewards)
 
 var font_bold: Font
 var root: Control
@@ -1676,96 +1678,280 @@ func show_inbox(items: Array, now: int) -> void:
 	_button(box, Rect2(24, 950, 793, 84), tr("ui.close"), Color(0.13, 0.4, 0.9), close_modal)
 
 
-## «Военный пропуск» (canon §15.6): season header with the level bar, buy buttons (only where payments work), and
-## the 40 levels — free and premium rewards side by side with their claim buttons.
-## info: {season, days_left, level, xp_in_level, premium, elite, can_buy, price, price_elite,
-##   rows: [{lvl, free_text, free_state, prem_text, prem_state}]} — state: "claim" | "claimed" | "locked"
+## «Военный пропуск» (canon §15.6, docs/ui_style.md §6 «Военный пропуск»): a sheet L with the gold plate. The header: the
+## level hex R 40, the XP bar L with the star, the season's time left in a chip. The track scrolls in a well: a spine of
+## level hexes down the middle (the reached ones filled info), the free rewards (tiles 150) on the left, the premium ones
+## on the right on a gold-tinted well whose header has a lock while premium is not bought (and every premium tile a
+## small lock). A reward to take breathes in a gold outline and a tap takes it (on_claim(level, track)); a taken one has
+## a check and fades to 60 %; a tap on any other tile says what it is and when it opens. The list opens at the first
+## reward to take, else at the current level. The purchase in the footer (only where payments work): «Премиум» gold L
+## with its price, «Элитный» gold M with the ribbon «+15 уровней» (after premium: «Элитный» alone for the difference).
+## info: {season, days_left, level, xp_in_level, premium, elite, can_buy, price, price_elite, price_up,
+##   rows: [{lvl, free_text, free_state, prem_text, prem_state, free_rw?, prem_rw?}]} — state: "claim" | "claimed" |
+##   "locked"; *_rw: the reward as the pass keeps it ([kind, …]); without it the text is read back
+const PASS_ROW := 174.0  # a level's row on the track: a tile 150 and its amount pill hanging under it
+const PASS_SPINE_R := 30.0
+
+
 func show_pass(info: Dictionary, on_claim: Callable, on_buy: Callable) -> void:
-	var box := _modal_box(Rect2(30, 170, 881, 1330))
-	_title(box, tr("pass.title") % int(info["season"]), 32, Color(1.0, 0.85, 0.4), Vector2(30, 22), "medal", true, 600.0)
-	var dl := _label(tr("pass.days_left") % int(info["days_left"]), 18, MUTED, false)
-	_at(dl, box, Vector2(30, 66))
-	var lv := _label(tr("pass.level") % int(info["level"]), 26)
-	lv.position = Vector2(560, 24)
-	lv.size = Vector2(290, 36)
-	lv.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	box.add_child(lv)
-	var bar := _panel(box, Rect2(30, 100, 821, 18), _style(Color(1, 1, 1, 0.1), 9, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
-	_panel(bar, Rect2(0, 0, 821.0 * clampf(int(info["xp_in_level"]) / 1000.0, 0.0, 1.0), 18), _style(Color(0.95, 0.72, 0.2), 9, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
-	var xl := _label("%d / 1000 %s" % [int(info["xp_in_level"]), tr("pass.xp")], 15, TEXT, false)
-	xl.position = Vector2(30, 120)
-	box.add_child(xl)
-	var top := 150.0
-	if not info["premium"] and info["can_buy"]:
-		_button(box, Rect2(30, top, 400, 64), tr("pass.buy") % String(info["price"]), Color(0.75, 0.5, 0.1), func(): on_buy.call("iap_pass"))
-		_button(box, Rect2(451, top, 400, 64), tr("pass.buy_elite") % String(info["price_elite"]), Color(0.55, 0.25, 0.8), func(): on_buy.call("iap_pass_elite"))
-		top += 78.0
-	elif info["premium"]:
-		var pl := _label(tr("pass.elite_on") if info["elite"] else tr("pass.premium_on"), 18, Color(1.0, 0.82, 0.3), false)
-		_at(pl, box, Vector2(30, top))
-		top += 34.0
-		if not info["elite"] and info["can_buy"]:  # premium → elite for the difference (09 §9.12)
-			_button(box, Rect2(30, top, 821, 60), tr("pass.upgrade") % String(info["price_up"]), Color(0.55, 0.25, 0.8), func(): on_buy.call("iap_pass_elite_up"))
-			top += 72.0
-	var head_f := _label(tr("pass.free"), 18, MUTED)
-	_at(head_f, box, Vector2(140, top))
-	var head_p := _label(tr("pass.premium"), 18, Color(1.0, 0.82, 0.3))
-	_at(head_p, box, Vector2(505, top))
-	top += 32.0
-	var scroll := ScrollContainer.new()
-	scroll.position = Vector2(20, top)
-	scroll.size = Vector2(841, 1330 - top - 110)
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	box.add_child(scroll)
-	var col := VBoxContainer.new()
-	col.custom_minimum_size = Vector2(830, 0)
-	col.add_theme_constant_override("separation", 8)
-	scroll.add_child(col)
-	for r in info["rows"]:
-		var row := Panel.new()
-		row.custom_minimum_size = Vector2(830, 76)
-		var reached: bool = int(r["lvl"]) <= int(info["level"])
-		row.add_theme_stylebox_override("panel", _style(Color(0.14, 0.2, 0.32) if reached else Color(0.09, 0.12, 0.2), 12, EDGE, 1))
-		var ln := _label(str(int(r["lvl"])), 26, Color(1.0, 0.85, 0.4) if reached else MUTED)
-		ln.position = Vector2(0, 18)
-		ln.size = Vector2(90, 40)
-		ln.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		row.add_child(ln)
+	var level := int(info["level"])
+	var premium := bool(info["premium"])
+	var elite := bool(info.get("elite", false))
+	var can_buy := bool(info.get("can_buy", false))
+	var foot := ""
+	if can_buy and not premium:
+		foot = "both"
+	elif can_buy and not elite:
+		foot = "up"
+	var keep := _modal != null and _modal.has_meta("pass")
+	var at := _pass_scroll if keep else -1
+	var box := _modal_box(_win_rect("L", 4000.0), false, tr("pack.pass"), "medal", "gold", true, false)
+	_modal.set_meta("pass", true)
+	box.set_meta("kit_native", true)
+	var w := box.size.x
+	var h := box.size.y
+	# ---- the header: level, XP, the season's time left
+	var lv := Kit.hex_badge(box, Vector2(32 + 40, 72 + 40), 40, "info", str(level))
+	lv.name = "level"
+	var tc := _paper_chip(box, Vector2.ZERO, "hourglass", tr("pass.days_chip") % int(info.get("days_left", 0)), 220.0)
+	tc.name = "season_left"
+	tc.position = Vector2(w - 32.0 - tc.size.x, 112.0 - tc.size.y * 0.5)
+	var xp := clampi(int(info.get("xp_in_level", 0)), 0, 1000)
+	var bx := 32.0 + 80.0 + 40.0
+	var xb := Kit.bar(box, Rect2(bx, 92, tc.position.x - 20.0 - bx, 40), xp / 1000.0, "gold",
+		"%s/%s" % [fmt_num(xp), fmt_num(1000)], true)
+	xb.name = "xp"
+	var star := _icon_rect("xp", 60)
+	star.position = Vector2(bx - 30.0, 82)
+	box.add_child(star)
+	# ---- the footer: the purchase
+	var fy := h - 32.0 - 116.0
+	if foot == "both":
+		var eb := Kit.button(box, Rect2(32, fy + 14.0, 300, 88), "gold", tr("pass.elite"),
+			{"size": "M", "price": [["", String(info.get("price_elite", ""))]], "cb": func(): on_buy.call("iap_pass_elite")})
+		eb.name = "buy_elite"
+		Kit.ribbon(box, Vector2(eb.position.x + eb.size.x * 0.5, eb.position.y), tr("pass.plus15"), "war")
+		var pb := Kit.button(box, Rect2(348, fy, w - 380.0, 116), "gold", tr("pass.premium"),
+			{"size": "L", "icon": "medal", "price": [["", String(info.get("price", ""))]], "cb": func(): on_buy.call("iap_pass")})
+		pb.name = "buy_premium"
+	elif foot == "up":  # premium → elite for the difference (09 §9.12)
+		var ub := Kit.button(box, Rect2((w - 480.0) * 0.5, fy, 480, 116), "gold", tr("pass.elite"),
+			{"size": "L", "icon": "medal", "price": [["", String(info.get("price_up", ""))]], "cb": func(): on_buy.call("iap_pass_elite_up")})
+		ub.name = "buy_elite"
+		Kit.ribbon(box, Vector2(ub.position.x + ub.size.x * 0.5, ub.position.y), tr("pass.plus15"), "war")
+	# ---- the track
+	var wy := 168.0
+	var wb := (fy - 28.0) if foot != "" else h - 32.0
+	var well := Kit.well(box, Rect2(32, wy, w - 64.0, wb - wy))
+	var ww := well.size.x
+	var cx := roundf(ww * 0.5) - 6.0  # the spine (the scroll bar's lane takes the right 12 px)
+	var col_free := (16.0 + cx - 46.0) * 0.5
+	var prem_x := cx + 46.0
+	var prem := Panel.new()  # the premium column: a gold-tinted well from the header down
+	prem.name = "premium_well"
+	var psb := Kit.style(Kit.PREMIUM_WELL, 20, 0, Kit.INK, 0, 0)
+	psb.set_meta("kit_kind", "")
+	prem.add_theme_stylebox_override("panel", psb)
+	prem.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	prem.position = Vector2(prem_x, 8)
+	prem.size = Vector2(ww - 20.0 - prem_x, well.size.y - 16.0)
+	well.add_child(prem)
+	var col_prem := prem_x + prem.size.x * 0.5
+	var head_h := 56.0
+	for k in 2:
+		var hl := Kit.label(tr("pass.free") if k == 0 else tr("pass.premium"), 28, Kit.MUTED_CREAM if k == 0 else Kit.WARN_CREAM, true)
+		hl.name = "head_free" if k == 0 else "head_premium"
+		hl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		hl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		var hw := Kit.text_w(hl.text, 28, "d900", false) + 8.0
+		var ccx: float = col_free if k == 0 else col_prem
+		var lock_w := 44.0 if k == 1 and not premium else 0.0
+		hl.position = Vector2(roundf(ccx - (hw + lock_w) * 0.5 + lock_w), 10)
+		hl.size = Vector2(hw, 40)
+		well.add_child(hl)
+		if lock_w > 0.0:
+			var lk := _icon_rect("lock", 38)
+			lk.name = "premium_lock"
+			lk.position = Vector2(hl.position.x - 44.0, 11)
+			well.add_child(lk)
+	var list := Control.new()  # the scrolling part under the column headers
+	list.name = "track"
+	list.position = Vector2(0, head_h)
+	list.size = Vector2(ww, well.size.y - head_h)
+	list.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	well.add_child(list)
+	var rows: Array = info["rows"]
+	var content_h := 8.0 + rows.size() * PASS_ROW + 8.0
+	var sc: Dictionary = Kit.scroller(list, content_h, Kit.CREAM_WELL)
+	var host: Control = sc["inner"]
+	for f in ["fade_top", "fade_bottom"]:  # the fades stop at the premium column (it has its own colour)
+		var fd := list.get_node(f) as Control
+		fd.size.x = prem_x - fd.position.x
+	for f2 in ["fade_top", "fade_bottom"]:
+		var src := list.get_node(f2) as TextureRect
+		var pf := TextureRect.new()
+		pf.name = f2 + "_premium"
+		pf.texture = Kit.vgradient(Kit.PREMIUM_WELL, Kit.alpha(Kit.PREMIUM_WELL, 0.0)) if f2 == "fade_top" \
+			else Kit.vgradient(Kit.alpha(Kit.PREMIUM_WELL, 0.0), Kit.PREMIUM_WELL)
+		pf.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		pf.stretch_mode = TextureRect.STRETCH_SCALE
+		pf.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		pf.position = Vector2(prem_x, src.position.y)
+		pf.size = Vector2(prem.size.x, src.size.y)
+		list.add_child(pf)
+		src.visibility_changed.connect(func(): pf.visible = src.visible)
+		pf.visible = src.visible
+	var scroll: ScrollContainer = sc["scroll"]
+	scroll.get_v_scroll_bar().value_changed.connect(func(v: float): _pass_scroll = int(v))
+	# the spine: a CREAM_DEEP track, filled info down to the current level
+	var y0 := 8.0 + PASS_ROW * 0.5 - 12.0
+	var y1 := 8.0 + (rows.size() - 1) * PASS_ROW + PASS_ROW * 0.5 - 12.0
+	var spine := Panel.new()
+	spine.name = "spine"
+	var ssb := Kit.style(Kit.CREAM_DEEP, 8, 0, Kit.INK, 0, 0)  # a pill: Godot fits R 8 to the 12 px bar
+	ssb.set_meta("kit_kind", "")
+	spine.add_theme_stylebox_override("panel", ssb)
+	spine.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	spine.position = Vector2(cx - 6.0, y0)
+	spine.size = Vector2(12, maxf(0.0, y1 - y0))
+	host.add_child(spine)
+	var reach := clampi(level, 0, rows.size())
+	if reach > 1:
+		var fill := Panel.new()
+		fill.name = "spine_fill"
+		var fsb := Kit.style(Kit.face_of("info"), 8, 0, Kit.INK, 0, 0)
+		fsb.set_meta("kit_kind", "")
+		fill.add_theme_stylebox_override("panel", fsb)
+		fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		fill.position = spine.position
+		fill.size = Vector2(12, (reach - 1) * PASS_ROW)
+		host.add_child(fill)
+	var first_claim := -1
+	for i in rows.size():
+		var r: Dictionary = rows[i]
+		var lvl := int(r["lvl"])
+		var ty := 8.0 + i * PASS_ROW
+		var hy := ty + PASS_ROW * 0.5 - 12.0
+		var reached := lvl <= level
+		var hb := Kit.hex_badge(host, Vector2(cx, hy), PASS_SPINE_R, "info", str(lvl), Kit.CLEAR if reached else Kit.CREAM_DEEP)
+		hb.name = "lvl_%d" % lvl
 		for k in 2:
 			var track: String = ["free", "premium"][k]
-			var x := 100.0 + 365.0 * k
-			var txt: String = r["free_text" if k == 0 else "prem_text"]
-			var state: String = r["free_state" if k == 0 else "prem_state"]
-			var t := _label(txt, 16, TEXT if state != "locked" else MUTED, false)
-			t.autowrap_mode = TextServer.AUTOWRAP_WORD
-			t.custom_minimum_size = Vector2(210, 0)
-			t.position = Vector2(x, 10)
-			row.add_child(t)
-			var lvl: int = r["lvl"]
-			if state == "claim":
-				var b := _panel(row, Rect2(x + 220, 16, 130, 44), _style(Color(0.75, 0.55, 0.12), 10, Color(1, 1, 1, 0.45), 2))
-				var bl := _label(tr("ui.claim"), 17)
-				bl.size = Vector2(130, 44)
-				bl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-				bl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-				b.add_child(bl)
-				b.mouse_filter = Control.MOUSE_FILTER_PASS
-				b.gui_input.connect(func(e): if _is_tap(e): on_claim.call(lvl, track))
+			var state := String(r["free_state" if k == 0 else "prem_state"])
+			var txt := String(r["free_text" if k == 0 else "prem_text"])
+			var rw: Array = r.get("free_rw" if k == 0 else "prem_rw", [])
+			var look := _pass_look_rw(rw) if not rw.is_empty() else _pass_look(txt)
+			var o := {"icon_side": 88.0, "claimable": state == "claim", "taken": state == "claimed"}
+			if look.has("tex"):
+				o["tex"] = look["tex"]
+				o["icon_side"] = 108.0
 			else:
-				if state == "claimed":
-					var m := _label("✓", 22, Color(0.5, 1.0, 0.6))
-					m.position = Vector2(x + 220, 18)
-					m.size = Vector2(130, 40)
-					m.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-					row.add_child(m)
-				else:
-					var lk := _icon_rect(INLINE_ICONS["🔒"], 30.0)
-					lk.position = Vector2(x + 270, 23)
-					lk.modulate = Color(1, 1, 1, 0.8)
-					row.add_child(lk)
-		col.add_child(row)
-	_button(box, Rect2(30, 1330 - 96, 821, 76), tr("ui.close"), Color(0.13, 0.4, 0.9), close_modal)
+				o["icon"] = String(look.get("icon", "gift"))
+			if String(look.get("pill", "")) != "":
+				o["pill"] = [["", String(look["pill"])]]
+			if k == 1:
+				o["face"] = Kit.CREAM_ROW
+			var tx: float = (col_free if k == 0 else col_prem) - 75.0
+			var t := Kit.tile(host, Rect2(tx, ty, 150, 150), o)
+			t.name = "%s_%d" % [track, lvl]
+			if state == "claim":
+				if first_claim < 0:
+					first_claim = i
+				t.cb = func(): on_claim.call(lvl, track)
+			else:
+				var why := tr("pass.taken") if state == "claimed" else (tr("pass.prem_lock") if k == 1 and not premium \
+					else tr("pass.at_level") % lvl)
+				t.cb = func(): Kit.tooltip(t, txt, why)
+			if k == 1 and not premium and state != "claimed":
+				var lb := _icon_rect("lock", 40)
+				lb.name = "lock"
+				lb.position = Vector2(150.0 - 34.0, -8.0)
+				t.add_child(lb)
+	# open at the first reward to take, else at the current level (a refresh after a claim keeps the place)
+	var target := first_claim if first_claim >= 0 else maxi(0, level - 1)
+	var y := float(at) if at >= 0 else 8.0 + target * PASS_ROW - 8.0
+	Kit.scroll_to(scroll, y)
 
+
+var _pass_scroll := 0  # the track's scroll (kept while the pass re-renders after a claim)
+var _tmpl_cache := {}
+
+
+## A localized template (pass.rw_res: «Ресурсы %d ч») as a pattern that reads its numbers / names back.
+func _tmpl_re(key: String) -> RegEx:
+	var t := tr(key)
+	if _tmpl_cache.has(t):
+		return _tmpl_cache[t]
+	var pat := ""
+	var i := 0
+	while i < t.length():
+		if t[i] == "%" and i + 1 < t.length() and t[i + 1] in ["d", "s"]:
+			pat += "(\\d+)" if t[i + 1] == "d" else "(.+)"
+			i += 2
+			continue
+		var ch := t[i]
+		pat += ("\\" + ch) if "\\^$.|?*+()[]{}".contains(ch) else ch
+		i += 1
+	var re := RegEx.create_from_string("^" + pat + "$")
+	_tmpl_cache[t] = re
+	return re
+
+
+## How a pass reward shows on a tile: {icon | tex, pill}. From the pass's own reward ([kind, …]).
+func _pass_look_rw(rw: Array) -> Dictionary:
+	match String(rw[0]):
+		"res":
+			return {"icon": "crate", "pill": tr("time.h") % int(rw[1])}
+		"crate":
+			return {"icon": "chest_wood", "pill": "×%d" % int(rw[1]) if int(rw[1]) > 1 else ""}
+		"raivite":
+			return {"icon": "raivite", "pill": fmt_num(int(rw[1]))}
+		"shards":
+			var p := "res://assets/ui/portraits/%s.png" % String(rw[1])
+			var o := {"pill": "×%d" % int(rw[2])}
+			if ResourceLoader.exists(p):
+				o["tex"] = load(p)
+			else:
+				o["icon"] = "shard"
+			return o
+		"speed":
+			return {"icon": "lightning", "pill": tr("time.h") % int(rw[1])}
+		"cosmetic":
+			return {"icon": String(Kit.COSMETIC_ICON.get(String(CasesSim.cosmetic(String(rw[1])).get("category", "")), "frame")), "pill": ""}
+	return {"icon": "gift", "pill": ""}
+
+
+## The same from the reward's text (what main passes today): the text is matched against the pass.rw_* templates.
+func _pass_look(text: String) -> Dictionary:
+	if text == "":
+		return {"icon": "gift", "pill": ""}
+	var m := _tmpl_re("pass.rw_res").search(text)
+	if m:
+		return _pass_look_rw(["res", int(m.get_string(1))])
+	if text == tr("pass.rw_crate"):
+		return _pass_look_rw(["crate", 1])
+	m = _tmpl_re("pass.rw_crates").search(text)
+	if m:
+		return _pass_look_rw(["crate", int(m.get_string(1))])
+	m = _tmpl_re("pass.rw_raivite").search(text)
+	if m:
+		return _pass_look_rw(["raivite", int(m.get_string(1))])
+	m = _tmpl_re("pass.rw_shards").search(text)
+	if m:
+		var who := m.get_string(2)
+		var cmds: Dictionary = CasesSim.data().get("commanders", {})
+		for id in cmds:
+			if CasesSim.commander_name(String(id)) == who:
+				return _pass_look_rw(["shards", String(id), int(m.get_string(1))])
+		return {"icon": "shard", "pill": "×%d" % int(m.get_string(1))}
+	m = _tmpl_re("pass.rw_speed").search(text)
+	if m:
+		return _pass_look_rw(["speed", int(m.get_string(1))])
+	var cats: Dictionary = CasesSim.data().get("categories", {})
+	for cat in cats:  # a cosmetic: «<category> «<name>»»
+		if text.begins_with(CasesSim.category_name(String(cat)) + " "):
+			return {"icon": String(Kit.COSMETIC_ICON.get(String(cat), "frame")), "pill": ""}
+	return {"icon": "gift", "pill": ""}
 
 ## The 28-day login calendar (08 §8.8): a 7 × 4 grid — taken days ticked, today's glowing, key days (no ×2) in
 ## gold; «Take» and, where allowed, «×2 for an ad».
@@ -1833,111 +2019,244 @@ func show_calendar(info: Dictionary, on_claim: Callable) -> void:
 	_button(box, Rect2(30, by + 90, 821, 76), tr("ui.close"), Color(0.13, 0.4, 0.9), close_modal)
 
 
-## «Державный патент» (09 §9.13.4, Apple 3.1.2): name and term, the renewal price biggest, the intro offer on one
-## line next to its button, the perks, the auto-renewal terms, the legal links, «Restore purchases», a close
-## cross visible at once.
+## «Державный патент» (09 §9.13.4, Apple 3.1.2; docs/ui_style.md §6 «Патент»): a window M with the gold plate, the
+## charter as its hero, the perks as 8 tiles (icon 80 + two lines; a tap gives the whole perk), the purchase — the trial
+## «7 дней» as gold L with its price and the ribbon «Пробный», the month as info M (each price shown once; without a
+## trial the month is the gold L itself) — the legal links in one row of text and the renewal terms. While active: a
+## chip with the days left instead of the purchase. ✕ closes it.
+const PATENT_PERKS := [["patent.k_ads", "patent.p_ads", "ad"], ["patent.k_builder", "patent.p_builder", "builder"],
+	["patent.k_convoy", "patent.p_convoy", "cart"], ["patent.k_collect", "patent.p_collect", "coin"],
+	["patent.k_timers", "patent.p_timers", "hourglass"], ["patent.k_raivite", "patent.p_raivite", "raivite"],
+	["patent.k_key", "patent.p_key", "key"], ["patent.k_frame", "patent.p_frame", "frame"]]
+
+
 func show_patent(info: Dictionary, on_buy: Callable, on_restore: Callable) -> void:
-	var box := _modal_box(Rect2(30, 230, 881, 1060))
-	_button(box, Rect2(881 - 86, 18, 64, 56), "✕", Color(0.3, 0.33, 0.42), close_modal)
-	_title(box, tr("patent.title"), 30, Color(1.0, 0.85, 0.4), Vector2(30, 26), "crown", true, 740.0)
-	var price := _label(tr("patent.price") % String(info["price"]), 46)
-	_at(price, box, Vector2(30, 76))
-	var y := 150.0
-	if info["active"]:
-		_at(_label(tr("patent.active") % int(info["days_left"]), 22, Color(0.5, 1.0, 0.6)), box, Vector2(30, y))
-		y += 40.0
-	var perks := ["patent.p_ads", "patent.p_builder", "patent.p_convoy", "patent.p_collect", "patent.p_timers",
-		"patent.p_raivite", "patent.p_key", "patent.p_frame"]
-	var icons := ["icons/ad", "builder", "icons/cart", "coin", "icons/hourglass", "raivite", "icons/key", "icons/frame"]
-	for i in perks.size():
-		_at(_icon_rect("res://assets/ui/%s.png" % icons[i], 40.0), box, Vector2(26, y - 6))
-		var row := _label(tr(perks[i]), 21, TEXT, false)
-		row.autowrap_mode = TextServer.AUTOWRAP_WORD
-		row.custom_minimum_size = Vector2(771, 0)
-		_at(row, box, Vector2(80, y))
-		y += maxf(_line_h(tr(perks[i])), 34.0) + 8.0
-	y += 10.0
-	if info["can_buy"]:
-		_button(box, Rect2(30, y, 821, 80), tr("patent.buy") % String(info["price"]), Color(0.75, 0.55, 0.12), func(): on_buy.call("iap_sub_patent"))
-		y += 92.0
-		if info["trial"]:
-			_button(box, Rect2(30, y, 821, 70), tr("patent.trial") % [String(info["trial_price"]), String(info["price"])], Color(0.2, 0.45, 0.35), func(): on_buy.call("iap_sub_trial"))
-			y += 82.0
-	else:
-		_at(_label(tr("patent.unavailable"), 20, MUTED, false), box, Vector2(30, y))
-		y += 40.0
-	var terms := _label(tr("patent.renewal"), 16, MUTED, false)
-	terms.autowrap_mode = TextServer.AUTOWRAP_WORD
-	terms.custom_minimum_size = Vector2(821, 0)
-	_at(terms, box, Vector2(30, y))
-	y += 70.0
-	_button(box, Rect2(30, y, 260, 56), tr("patent.terms_link"), Color(0.2, 0.25, 0.36), func(): toast(tr("patent.doc_soon")))
-	_button(box, Rect2(310, y, 260, 56), tr("patent.privacy_link"), Color(0.2, 0.25, 0.36), func(): toast(tr("patent.doc_soon")))
-	_button(box, Rect2(590, y, 261, 56), tr("patent.restore"), Color(0.2, 0.25, 0.36), func(): on_restore.call())
-
-
-## «Летопись державы» (07 §7.4): a book of 6 chapters; a row — name, condition, progress «37/50», reward, «Забрать».
-func show_chronicle(info: Dictionary, on_claim: Callable) -> void:
-	var box := _modal_box(Rect2(30, 150, 881, 1370))
-	_button(box, Rect2(881 - 86, 18, 64, 56), "✕", Color(0.3, 0.33, 0.42), close_modal)
-	_title(box, tr("chr.title") % [int(info["done"]), int(info["total"])], 30, Color(1.0, 0.85, 0.4), Vector2(30, 26), "book", true, 740.0)
-	var scroll := ScrollContainer.new()
-	scroll.position = Vector2(20, 90)
-	scroll.size = Vector2(841, 1260)
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	box.add_child(scroll)
-	var col := VBoxContainer.new()
-	col.custom_minimum_size = Vector2(830, 0)
-	col.add_theme_constant_override("separation", 8)
-	scroll.add_child(col)
-	var chapter := ""
-	for r in info["rows"]:
-		if String(r["chapter"]) != chapter:
-			chapter = r["chapter"]
-			var hl := _label(tr("chr.ch." + chapter), 22, Color(1.0, 0.85, 0.4))
-			hl.custom_minimum_size = Vector2(830, 40)
-			hl.vertical_alignment = VERTICAL_ALIGNMENT_BOTTOM
-			col.add_child(hl)
-		var st: String = r["state"]
-		var row := Panel.new()
-		row.custom_minimum_size = Vector2(830, 96)
-		var bg := Color(0.16, 0.14, 0.08) if st == "claim" else Color(0.1, 0.14, 0.23)
-		row.add_theme_stylebox_override("panel", _style(bg, 12, Color(1.0, 0.8, 0.3) if st == "claim" else EDGE, 1))
-		var nm := _label(String(r["name"]), 19, TEXT if st != "soon" else MUTED)
-		_fit(nm, 19, 520)
-		nm.position = Vector2(14, 8)
-		row.add_child(nm)
-		var ds := _label(String(r["desc"]), 15, MUTED, false)
-		_fit(ds, 15, 540)
-		ds.position = Vector2(14, 36)
-		row.add_child(ds)
-		var rw := _inline(String(r["reward"]), 15, Color(0.75, 0.85, 1.0), false, 540)
-		rw.position = Vector2(14, 60)
-		row.add_child(rw)
-		var need: int = r["need"]
-		var prog: int = r["progress"]
-		if st == "claim":
-			var b := _panel(row, Rect2(650, 22, 166, 52), _style(Color(0.75, 0.55, 0.12), 10, Color(1, 1, 1, 0.45), 2))
-			var bl := _label(tr("ui.claim"), 18)
-			bl.size = Vector2(166, 52)
-			bl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-			bl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-			b.add_child(bl)
-			b.mouse_filter = Control.MOUSE_FILTER_PASS
-			var code: String = r["code"]
-			b.gui_input.connect(func(e): if _is_tap(e): on_claim.call(code))
+	var active := bool(info.get("active", false))
+	var can_buy := bool(info.get("can_buy", false))
+	var trial := bool(info.get("trial", false))
+	var buy := can_buy and not active
+	var hero := 232.0
+	var perk_h := 156.0
+	var well_h := 16.0 + 2.0 * perk_h + 12.0 + 16.0
+	var legal := tr("patent.renewal")
+	var legal_h := 96.0
+	var foot_h := (34.0 + 116.0) if buy else (56.0 if active or not can_buy else 0.0)
+	var h := 56.0 + hero + 16.0 + well_h + 24.0 + foot_h + 20.0 + 48.0 + 12.0 + legal_h + 32.0
+	var box := _modal_box(_win_rect("M", h), false, tr("pack.patent"), "", "gold", true, false)
+	box.set_meta("kit_native", true)
+	var w := box.size.x
+	var art := _icon_rect("charter", hero)
+	art.name = "charter"
+	art.position = Vector2((w - hero) * 0.5, 50)
+	box.add_child(art)
+	var y := 56.0 + hero + 16.0
+	var well := Kit.well(box, Rect2(32, y, w - 64.0, well_h))
+	var cols := 4
+	var tw := (well.size.x - 32.0 - 12.0 * (cols - 1)) / cols
+	for i in PATENT_PERKS.size():
+		var p: Array = PATENT_PERKS[i]
+		var t := _perk_tile(well, Rect2(16.0 + (i % cols) * (tw + 12.0), 16.0 + (i / cols) * (perk_h + 12.0), tw, perk_h),
+			String(p[2]), tr(p[0]))
+		t.name = "perk_%d" % i
+		var full := tr(p[1])
+		var short := tr(p[0])
+		t.cb = func(): Kit.tooltip(t, short, full)
+	y += well_h + 24.0
+	if buy:
+		var fy := y + 34.0
+		var price := String(info.get("price", ""))
+		if trial:
+			var mb := Kit.button(box, Rect2(32, fy + 14.0, 260, 88), "info", tr("patent.month_btn") % price,
+				{"size": "M", "cb": func(): on_buy.call("iap_sub_patent")})
+			mb.name = "buy_month"
+			var tb := Kit.button(box, Rect2(308, fy, w - 340.0, 116), "gold", tr("patent.trial_btn"),
+				{"size": "L", "price": [["", String(info.get("trial_price", ""))]], "cb": func(): on_buy.call("iap_sub_trial")})
+			tb.name = "buy_trial"
+			Kit.ribbon(box, Vector2(tb.position.x + tb.size.x * 0.5, fy), tr("patent.trial_tag"), "war")
 		else:
-			var txt := "✓" if st == "claimed" else (tr("chr.soon") if st == "soon" else "%s / %s" % [fmt_num(prog), fmt_num(need)])
-			var pl := _label(txt, 18 if st != "claimed" else 26, Color(0.5, 1.0, 0.6) if st == "claimed" else MUTED)
-			pl.position = Vector2(600, 18)
-			pl.size = Vector2(216, 32)
-			pl.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-			row.add_child(pl)
-			if st == "open":
-				var bar := _panel(row, Rect2(600, 58, 216, 12), _style(Color(1, 1, 1, 0.1), 6, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
-				_panel(bar, Rect2(0, 0, 216.0 * clampf(float(prog) / maxf(1.0, float(need)), 0.0, 1.0), 12), _style(Color(0.95, 0.72, 0.2), 6, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
-		col.add_child(row)
+			var sb := Kit.button(box, Rect2((w - 480.0) * 0.5, fy, 480, 116), "gold", tr("patent.subscribe"),
+				{"size": "L", "price": [["", tr("patent.month_btn") % price]], "cb": func(): on_buy.call("iap_sub_patent")})
+			sb.name = "buy_month"
+		y = fy + 116.0 + 20.0
+	elif active:
+		var ac := Kit.chip(box, Vector2.ZERO, "", tr("patent.active") % int(info.get("days_left", 0)), "owner",
+			Kit.face_of("go"), {"size": 26, "max_w": w - 140.0})
+		ac.name = "active"
+		ac.position = Vector2(roundf((w - ac.size.x) * 0.5 + 24.0), y + 28.0 - ac.size.y * 0.5)
+		Kit.check_badge(box, Vector2(ac.position.x - 24.0, y + 28.0), 44.0)
+		y += 56.0 + 20.0
+	elif not can_buy:
+		var ul := Kit.label(tr("patent.unavailable"), 26, Kit.MUTED_CREAM, false)
+		ul.name = "unavailable"
+		ul.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		ul.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		ul.position = Vector2(32, y)
+		ul.size = Vector2(w - 64.0, 56)
+		box.add_child(ul)
+		y += 56.0 + 20.0
+	var doc := func(): toast(tr("patent.doc_soon"))
+	Kit.links(box, Rect2(32, y, w - 64.0, 48), [[tr("patent.terms_link"), doc], [tr("patent.privacy_link"), doc],
+		[tr("patent.restore_short"), func(): on_restore.call()]], 26)
+	y += 48.0 + 12.0
+	var ll := Kit.label(legal, 22, Kit.MUTED_CREAM, false)
+	ll.name = "legal"
+	ll.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	ll.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	ll.max_lines_visible = 4
+	ll.position = Vector2(32, y)
+	ll.size = Vector2(w - 64.0, legal_h)
+	box.add_child(ll)
 
+
+## A perk on paper: a tile with the icon 80 at the top and two lines of LABEL 24 INK_TEXT under it.
+func _perk_tile(parent: Control, r: Rect2, icon: String, text: String) -> Kit.KitTile:
+	var t := Kit.tile(parent, r, {"icon": icon, "icon_side": 80.0})
+	var pic := t.get_node_or_null("pic") as Control
+	if pic:
+		pic.position.y = 10.0
+	var l := Kit.label(text, 24, Kit.INK_TEXT, true)
+	l.add_theme_font_override("font", Kit.font("d800"))
+	l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	l.max_lines_visible = 2
+	l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.add_theme_constant_override("line_spacing", -4)
+	l.position = Vector2(6, 92)
+	l.size = Vector2(r.size.x - 12.0, r.size.y - 5.0 - 96.0)
+	t.add_child(l)
+	return t
+
+
+## «Летопись державы» (07 §7.4, docs/ui_style.md §6 «Летопись»): a sheet L with the info plate, the book and the count
+## «2/40» on a chip under it. The rewards to take come first (a section of their own), then the six chapters as section
+## headers. A row: the medal of the goal's difficulty (bronze, silver, gold), the name, the progress as an M bar «7/25»,
+## the reward tile at the right; a goal reached — go XS «Забрать» with the Raivites in it; taken — a check, the row at
+## α 0.7; not in the build yet — a lock. A tap on a row tells the condition and the reward.
+const CHR_ICONS := {"map": "hex_tile", "war": "swords", "peace": "dove", "dev": "flask", "cmd": "frame", "arena": "trophy"}
+const CHR_ROW := 112.0
+const CHR_GAP := 12.0
+const CHR_HEAD := 60.0  # a section header (48) and its gap
+
+
+func show_chronicle(info: Dictionary, on_claim: Callable) -> void:
+	var rows: Array = info["rows"]
+	var ready: Array = rows.filter(func(r): return String(r["state"]) == "claim")
+	var items: Array = []  # [kind, data]: ["head", [text, icon]] | ["row", row]
+	if not ready.is_empty():
+		items.append(["head", [tr("chr.ready"), "gift"]])
+		for r in ready:
+			items.append(["row", r])
+	var chapter := ""
+	for r in rows:
+		if String(r["state"]) == "claim":
+			continue
+		if String(r["chapter"]) != chapter:
+			chapter = String(r["chapter"])
+			items.append(["head", [tr("chr.ch." + chapter), String(CHR_ICONS.get(chapter, "book"))]])
+		items.append(["row", r])
+	var content_h := 16.0
+	for it in items:
+		content_h += CHR_HEAD if it[0] == "head" else CHR_ROW + CHR_GAP
+	content_h += 4.0
+	var keep := _modal != null and _modal.has_meta("chronicle")
+	var at := _chr_scroll if keep else 0
+	var box := _modal_box(_win_rect("L", 96.0 + content_h + 32.0), false, tr("chr.name"), "book", "info", true, false)
+	_modal.set_meta("chronicle", true)
+	box.set_meta("kit_native", true)
+	var w := box.size.x
+	var cc := Kit.chip(box, Vector2.ZERO, "", "%d/%d" % [int(info["done"]), int(info["total"])], "status")
+	cc.name = "count"
+	cc.position = Vector2((w - cc.size.x) * 0.5, 34)
+	var well := Kit.well(box, Rect2(32, 88, w - 64.0, box.size.y - 88.0 - 32.0))
+	var host: Control = well
+	var lane := 0.0
+	if content_h > well.size.y + 1.0:
+		var sc: Dictionary = Kit.scroller(well, content_h)
+		host = sc["inner"]
+		lane = 12.0
+		var scroll: ScrollContainer = sc["scroll"]
+		scroll.get_v_scroll_bar().value_changed.connect(func(v: float): _chr_scroll = int(v))
+		Kit.scroll_to(scroll, float(at))
+	var rw_w := well.size.x - 32.0 - lane
+	var y := 16.0
+	for it in items:
+		if it[0] == "head":
+			var hd: Array = it[1]
+			Kit.section(host, Vector2(16, y), rw_w, String(hd[0]), String(hd[1]))
+			y += CHR_HEAD
+			continue
+		var r: Dictionary = it[1]
+		_chr_row(host, Rect2(16, y, rw_w, CHR_ROW), r, on_claim)
+		y += CHR_ROW + CHR_GAP
+
+
+var _chr_scroll := 0  # the book's scroll (kept while it re-renders after a claim)
+
+
+func _chr_row(host: Control, rect: Rect2, r: Dictionary, on_claim: Callable) -> Kit.KitRow:
+	var code := String(r["code"])
+	var st := String(r["state"])
+	var need := int(r["need"])
+	var prog := mini(int(r["progress"]), need)
+	var i := ChronicleSim.index_of(code)
+	var rv := int(ChronicleSim.LIST[i][4]) if i >= 0 else 0
+	var cos := String(ChronicleSim.LIST[i][5]) if i >= 0 else ""
+	var o := {"icon": _chr_medal(code), "title": String(r["name"])}
+	match st:
+		"claim":
+			o["state"] = "claim"
+			o["bar"] = {"frac": 1.0, "role": "go", "text": "%s/%s" % [fmt_num(need), fmt_num(need)]}
+			var b := Kit.button(null, Rect2(0, 0, 224, 48), "go", tr("ui.claim"), {"size": "XS",
+				"price": [["raivite", str(rv)]], "filter": Control.MOUSE_FILTER_PASS, "cb": func(): on_claim.call(code)})
+			b.name = "claim"
+			o["right"] = b
+		"claimed":
+			o["state"] = "done"
+			o["bar"] = {"frac": 1.0, "role": "go", "text": "%s/%s" % [fmt_num(need), fmt_num(need)]}
+		"soon":
+			o["state"] = "locked"
+			o["sub"] = tr("chr.soon")
+		_:
+			o["bar"] = {"frac": float(prog) / maxf(1.0, need), "role": "info", "text": "%s/%s" % [fmt_num(prog), fmt_num(need)]}
+	if st == "open":
+		var t := Kit.tile(null, Rect2(0, 0, 88, 88), {"icon": "raivite", "icon_side": 56.0, "pill": [["", str(rv)]],
+			"pill_inside": true, "face": Kit.CREAM_WELL})
+		t.name = "reward"
+		t.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		if cos != "":  # the goal also gives a cosmetic: its picture on the tile's corner
+			var ci := _icon_rect(String(Kit.COSMETIC_ICON.get(String(CasesSim.cosmetic(cos).get("category", "")), "frame")), 40)
+			ci.position = Vector2(56, -10)
+			t.add_child(ci)
+		o["right"] = t
+	var row := Kit.row(host, rect, o)
+	row.name = code
+	var desc := String(r.get("desc", ""))
+	var reward := tr("chr.reward") % rv
+	if cos != "":
+		reward += "\n" + tr("chr.reward_cos") % CasesSim.cosmetic_name(cos)
+	row.cb = func(): Kit.tooltip(row.title_label, String(r["name"]), desc + "\n" + reward)
+	return row
+
+
+## A Chronicle goal's medal (§6 Летопись): its step on the ladder of goals that count the same thing — the first
+## bronze, the second silver, the third and on gold; a goal alone on its counter is gold with a cosmetic, silver from a
+## target of 20, else bronze.
+static func _chr_medal(code: String) -> String:
+	var tiers := ["medal_bronze", "medal_silver", "medal_gold"]
+	var i := ChronicleSim.index_of(code)
+	if i < 0:
+		return "medal"
+	var row: Array = ChronicleSim.LIST[i]
+	var ladder: Array = ChronicleSim.LIST.filter(func(x): return x[2] == row[2])
+	if ladder.size() > 1:
+		ladder.sort_custom(func(a, b): return int(a[3]) < int(b[3]))
+		for k in ladder.size():
+			if ladder[k][0] == code:
+				return tiers[mini(k, 2)]
+	if String(row[5]) != "":
+		return tiers[2]
+	return tiers[1] if int(row[3]) >= 20 else tiers[0]
 
 ## AI ultimatum (canon §9.1, §6 «Ультиматум»): a window L with the war plate; ✕ is «later». The angry leader says it in
 ## one sentence, a red timer chip counts the time left; three equal choices as option cards in a well — give the hex
@@ -2103,52 +2422,81 @@ func show_choice(title: String, lines: Array, buttons: Array) -> void:
 		y += 96.0
 
 
-## Settings: sound, language (applies at once: `on_lang` gets "ru" / "en" and re-renders the game, then this
-## modal is shown again by the caller), new game, build info.
+## Settings (docs/ui_style.md §6 «Настройки»): a window M with the info plate; changes apply at once and ✕ closes it.
+## Well 1: «Звук» with a switch, «Язык» with segments Русский | English (`on_lang` gets "ru" / "en" and re-renders the
+## game, then the caller shows this window again). Well 2: the store's subscription screen and «Restore purchases» as
+## rows with a chevron (when given). Well 3, the danger zone: «Новая игра» — war S held 1.2 s. The build line at the
+## bottom (LEGAL).
 func show_settings(sound_on: bool, on_sound: Callable, on_new_game: Callable, on_lang: Callable, on_manage := Callable(), on_restore := Callable()) -> void:
-	var box := _modal_box(Rect2(90, 380, 761, 804))
-	_title(box, tr("settings.title"), 36, TEXT, Vector2(40, 30), "gear")
-	_button(box, Rect2(40, 110, 681, 84), tr("settings.sound_on") if sound_on else tr("settings.sound_off"), Color(0.2, 0.3, 0.45), func():
+	var store_rows := int(on_manage.is_valid()) + int(on_restore.is_valid())
+	var row_h := 96.0
+	var w1 := 16.0 + 2.0 * row_h + 12.0 + 16.0
+	var w2 := (16.0 + store_rows * row_h + (store_rows - 1) * 12.0 + 16.0) if store_rows > 0 else 0.0
+	var w3 := 16.0 + 64.0 + 16.0
+	var h := 72.0 + w1 + 16.0 + (w2 + 16.0 if w2 > 0.0 else 0.0) + w3 + 16.0 + 32.0 + 32.0
+	var box := _modal_box(_win_rect("M", h), false, tr("settings.title"), "gear", "info", true, false)
+	box.set_meta("kit_native", true)
+	var w := box.size.x
+	var rw := w - 64.0 - 32.0
+	# ---- sound and language
+	var well1 := Kit.well(box, Rect2(32, 72, w - 64.0, w1))
+	well1.name = "general"
+	var sw := Kit.toggle(null, Vector2.ZERO, sound_on)
+	var srow := Kit.row(well1, Rect2(16, 16, rw, row_h), {"icon": "sound_on" if sound_on else "sound_off",
+		"title": tr("settings.sound"), "right": sw})
+	srow.name = "sound"
+	sw.cb = func(on: bool):
 		on_sound.call()
-		show_settings(not sound_on, on_sound, on_new_game, on_lang, on_manage, on_restore))
-	var ll := _label(tr("settings.language"), 24)
-	ll.size = Vector2(250, 84)
-	ll.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	_at(ll, box, Vector2(40, 214))
-	var cur := L.lang()
-	for i in L.LANGS.size():
+		(srow.icon_node as TextureRect).texture = Kit.icon_tex("sound_on" if on else "sound_off")
+	srow.cb = func():
+		sw.set_on(not sw.on)
+		sw.cb.call(sw.on)
+	var names: Array = []
+	for code in L.LANGS:
+		names.append(String(L.LANG_NAMES[code]))
+	var seg_holder := Control.new()
+	seg_holder.size = Vector2(minf(360.0, rw - 260.0), 64)
+	seg_holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var seg := Kit.segmented(seg_holder, Rect2(Vector2.ZERO, seg_holder.size), names, L.LANGS.find(L.lang()), func(i: int):
 		var code: String = L.LANGS[i]
-		_button(box, Rect2(300 + i * 215, 214, 205, 84), String(L.LANG_NAMES[code]), Color(0.16, 0.42, 0.95) if code == cur else Color(0.14, 0.18, 0.27), func():
-			if code != L.lang():
-				on_lang.call(code))
-	var hold := _panel(box, Rect2(40, 318, 681, 84), _style(Color(0.55, 0.16, 0.14), 14, Color(1, 1, 1, 0.5), 2))
-	var prog := _panel(hold, Rect2(0, 0, 0, 84), _style(Color(1, 1, 1, 0.25), 14, Color(0, 0, 0, 0), 0), Control.MOUSE_FILTER_IGNORE)
-	var hl := _label(tr("settings.new_game"), 22)
-	hl.size = Vector2(681, 84)
-	hl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	hl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	hold.add_child(hl)
-	var state := {"tw": null}
-	hold.gui_input.connect(func(e):
-		if e is InputEventScreenTouch or e is InputEventMouseButton:
-			if e.pressed:
-				var tw := create_tween()
-				state["tw"] = tw
-				tw.tween_property(prog, "size:x", 681.0, 1.2)
-				tw.tween_callback(func(): close_modal(); on_new_game.call())
-			elif state["tw"] != null:
-				(state["tw"] as Tween).kill()
-				state["tw"] = null
-				prog.size.x = 0.0)
-	_at(_label(tr("settings.autosave"), 18, MUTED, false), box, Vector2(40, 434))
-	_at(_label(tr("settings.build") % ProjectSettings.get_setting("application/config/version", "0.3"), 18, MUTED, false), box, Vector2(40, 470))
-	# store purchases (09 §9.13.4, Apple 3.1.1): the system subscription screen and «Restore purchases»
-	if on_manage.is_valid():
-		_button(box, Rect2(40, 530, 333, 70), tr("settings.manage_sub"), Color(0.2, 0.25, 0.36), on_manage)
-	if on_restore.is_valid():
-		_button(box, Rect2(388, 530, 333, 70), tr("patent.restore"), Color(0.2, 0.25, 0.36), on_restore)
-	_button(box, Rect2(40, 684, 681, 84), tr("ui.close"), Color(0.13, 0.4, 0.9), close_modal)
-
+		if code != L.lang():
+			on_lang.call(code))
+	seg.name = "lang"
+	var lrow := Kit.row(well1, Rect2(16, 16 + row_h + 12.0, rw, row_h), {"icon": "globe", "title": tr("settings.language"),
+		"right": seg_holder})
+	lrow.name = "language"
+	var y := 72.0 + w1 + 16.0
+	# ---- the store: the subscription screen, restore purchases
+	if store_rows > 0:
+		var well2 := Kit.well(box, Rect2(32, y, w - 64.0, w2))
+		well2.name = "store"
+		var ry := 16.0
+		if on_manage.is_valid():
+			Kit.row(well2, Rect2(16, ry, rw, row_h), {"icon": "charter", "title": tr("settings.manage_sub"), "right": "chevron",
+				"cb": on_manage}).name = "manage"
+			ry += row_h + 12.0
+		if on_restore.is_valid():
+			Kit.row(well2, Rect2(16, ry, rw, row_h), {"icon": "key", "title": tr("patent.restore"), "right": "chevron",
+				"cb": on_restore}).name = "restore"
+		y += w2 + 16.0
+	# ---- the danger zone: a new game, held
+	var well3 := Kit.well(box, Rect2(32, y, w - 64.0, w3))
+	well3.name = "danger"
+	var nb := Kit.button(well3, Rect2((well3.size.x - 400.0) * 0.5, 16, 400, 64), "war", tr("settings.new_game"), {"size": "S",
+		"hold": true, "hold_sec": 1.2})
+	nb.name = "new_game"
+	nb.cb = func():
+		close_modal()
+		on_new_game.call()
+	nb.released_early.connect(func(): Kit.tooltip(nb, tr("settings.new_game"), tr("settings.hold_hint")))
+	y += w3 + 16.0
+	var vl := Kit.label(tr("settings.build") % ProjectSettings.get_setting("application/config/version", "0.3"), 22, Kit.MUTED_CREAM, false)
+	vl.name = "build"
+	vl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	vl.position = Vector2(32, y)
+	vl.size = Vector2(w - 64.0, 32)
+	box.add_child(vl)
 
 # ------------------------------------------------------------------ market (05 §13)
 

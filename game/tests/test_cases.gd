@@ -611,8 +611,8 @@ func _test_texts() -> void:
 	c.pity["royal_leg"] = 27
 	_eq(c.pity_text("case_royal"), "Эпическое+ через 4 · Легендарное через 23", "royal example from §9.10.8")
 	c.pity["crate_cosmetic"] = 37
-	_eq(c.pity_text("case_war_crate"), "Косметика не позже чем через 23", "crate example")
-	_eq(c.pity_text("case_trophy_gold"), "Косметика не позже чем через 23", "trophy shares the counter")
+	_eq(c.pity_text("case_war_crate"), "Косметика — осталось открытий: 23", "crate example")
+	_eq(c.pity_text("case_trophy_gold"), "Косметика — осталось открытий: 23", "trophy shares the counter")
 	c.collection_opened = ["cos_emote_snowman", "cos_frame_ice", "cos_border_ink_ice"]
 	_eq(c.pity_text("case_collection"), "Осталось 5 из 8", "collection example")
 	_eq(c.price("case_collection"), 250, "collection 4th opening price")

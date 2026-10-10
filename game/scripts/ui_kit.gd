@@ -2786,7 +2786,8 @@ class KitTile extends Panel:
 ##   pill: [[icon, text, short], …] — the INK amount pill on the bottom edge (NUM_S 26); pill_inside: above the lip
 ##   count: a «×N» info hex on the top-left corner when > 1
 ##   selected: a go outline 5 + a check badge; claimable: a gold outline 4 (+ breathe); locked: a lock, the picture
-##   dimmed; dim: the picture dimmed (it cannot be taken now)
+##   dimmed; dim: the picture dimmed (it cannot be taken now); taken: a reward already claimed — a check badge on the
+##   corner, the tile at 60 %
 ##   cb: a tap on the tile
 static func tile(parent: Node, rect: Rect2, opts := {}) -> KitTile:
 	var t := KitTile.new()
@@ -2883,6 +2884,9 @@ static func tile(parent: Node, rect: Rect2, opts := {}) -> KitTile:
 		hb.name = "count"
 	if sel:
 		check_badge(t, Vector2(w - 6.0, 6.0))
+	elif bool(opts.get("taken", false)):
+		check_badge(t, Vector2(w - 10.0, 10.0))
+		t.modulate.a = 0.6
 	if claim:
 		breathe(t)
 	if parent:
@@ -3217,18 +3221,34 @@ class KitLink extends Label:
 		draw_line(Vector2(x0, y), Vector2(x0 + tw, y), get_theme_color("font_color"), 2.0, true)
 
 
-## Text links in one row (the legal links of a store screen): LINK #2266B8 Rubik 800, underlined, in equal slots
-## separated by small INK dots; all at one size — the largest scale size ≤ `size` (≥ 22) at which every one fits its
-## slot. items: [[text, cb], …]. Returns the KitLink labels.
+## Text links in one row (the legal links of a store screen): LINK #2266B8 Rubik 800, underlined, separated by small
+## INK dots; all at one size — the largest scale size ≤ `size` (≥ 22) at which the whole row fits — each in a slot as
+## wide as its text plus an even share of the room left. items: [[text, cb], …]. Returns the KitLink labels.
 static func links(parent: Node, rect: Rect2, items: Array, size := 26) -> Array:
 	var n := maxi(1, items.size())
-	var gap := 24.0
-	var sw := (rect.size.x - gap * (n - 1)) / n
-	var s := size
+	var gap := 32.0
+	var s := 22
+	for v in fit_steps(size, 22):
+		var total := gap * (n - 1)
+		for it in items:
+			total += text_w(String(it[0]), v, "d800", false)
+		if total <= rect.size.x:
+			s = v
+			break
+	var widths: Array = []
+	var used := gap * (n - 1)
 	for it in items:
-		s = mini(s, fit_size(String(it[0]), size, sw, "d800", 22, false))
+		var tw := text_w(String(it[0]), s, "d800", false) + 2.0
+		widths.append(tw)
+		used += tw
+	var extra := maxf(0.0, rect.size.x - used) / n
+	var k := 1.0  # even 22 does not fit: every slot shrinks alike and its text is cut
+	if used > rect.size.x:
+		k = (rect.size.x - gap * (n - 1)) / maxf(1.0, used - gap * (n - 1))
 	var out: Array = []
+	var x := rect.position.x
 	for i in items.size():
+		var sw: float = float(widths[i]) * k + extra
 		var l := KitLink.new()
 		l.text = String(items[i][0])
 		l.cb = items[i][1]
@@ -3238,10 +3258,11 @@ static func links(parent: Node, rect: Rect2, items: Array, size := 26) -> Array:
 		l.mouse_filter = Control.MOUSE_FILTER_STOP
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		l.clip_text = text_w(l.text, s, "d800", false) > sw
+		l.clip_text = float(widths[i]) > sw + 0.5
 		l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		l.position = Vector2(rect.position.x + i * (sw + gap), rect.position.y)
+		l.position = Vector2(x, rect.position.y)
 		l.size = Vector2(sw, rect.size.y)
+		x += sw + gap
 		l.name = "link_%d" % i
 		if parent:
 			parent.add_child(l)
@@ -3332,6 +3353,10 @@ const ICON_FALLBACK := {"swords": "target", "shield": "fort", "dove": "hands", "
 	"sound_off": "gear", "dice": "cards", "eye_off": "lock"}
 static var _tex_cache := {}
 static var _vis_right := {}
+## A cosmetic's picture by its category (the Atelier, an opening's tile, a pass or Chronicle reward).
+const COSMETIC_ICON := {"cos_border_ink": "pencil", "cos_peace_seal": "seal", "cos_peace_fireworks": "xp",
+	"cos_fill_pattern": "hex_tile", "cos_capital_skin": "castle_icon", "cos_frame": "frame", "cos_flag_part": "pin",
+	"cos_unit_skin": "helmet", "cos_emote": "hands"}
 
 
 ## res://assets/ui/icons/<name>.png, then res://assets/ui/<name>.png, then the stand-in; null if none exists.
