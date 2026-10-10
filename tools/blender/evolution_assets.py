@@ -2169,19 +2169,18 @@ def city_dl7(team):
         street_lamp(x, y, 0.24, True)
 
 
-def spire8(x, y, w, d, h, mats, rings=(0.62, 0.8), crown=0.12, needle=0.12, buttress=True, banner=None):
+def spire8(x, y, w, d, h, mats, rings=(0.62, 0.8), crown=0.12, needle=0.12, buttress=True, banner=None,
+           beacon=False):
     """A steel tower of the neon city (reference frames 2 and 5, the residence_dl8 kit at city scale): a shaft in
-    the steel facade with plate seams, corner buttresses, thin neon rings round it, inset team panels with a cold
-    light strip on the faces towards the camera, a setback crown and a dark four-sided needle with a lit tip."""
+    the steel facade with a plate seam, inset neon bands round it, inset team panels with a cold light band on the
+    faces towards the camera, a setback crown and a four-sided spire. «Raivon Soft» (plan step B4): the spire is cut
+    at half height under a round cap of 0.6 × its base (no needle; `needle` is kept for the callers), lit when
+    beacon; the corner buttresses are left out (2 px knife lines at map distance; `buttress` is kept too)."""
     st, plate, seam, panel, cap, neon, tip = mats
     bx((w, d, h), (x, y, h / 2), st, bev=0)
     bx((w + 0.012, d + 0.012, 0.022), (x, y, h * 0.34), seam, bev=0)
-    if buttress:
-        for sx in (-1, 1):
-            for sy in (-1, 1):
-                bx((0.018, 0.018, h * 0.96), (x + sx * w / 2, y + sy * d / 2, h * 0.48), plate, bev=0)
     for zf in rings:
-        bx((w + 0.016, d + 0.016, 0.014), (x, y, h * zf), neon, bev=0)
+        bx((w + 0.006, d + 0.006, 0.014 * D8_BAND), (x, y, h * zf), neon, bev=0)
     mb = _MB()
     if banner:  # a great banner down the front instead of the panel (reference frame 2's banners on the spires)
         facade_banner(x, y - d / 2 - 0.016, h * 0.9, w * 0.52, h * 0.4, banner, 0.0, "#c9a24a")
@@ -2192,89 +2191,92 @@ def spire8(x, y, w, d, h, mats, rings=(0.62, 0.8), crown=0.12, needle=0.12, butt
         tx, ty = -ny * L * 0.2, nx * L * 0.2
         mb.face([(px - tx, py - ty, h * 0.38), (px + tx, py + ty, h * 0.38), (px + tx, py + ty, h * 0.93),
                  (px - tx, py - ty, h * 0.93)], (nx, ny, 0))
-        bx((0.012, 0.008, h * 0.5), (px + nx * 0.003, py + ny * 0.003, h * 0.655), neon, 0.0 if ny else math.pi / 2,
-           bev=0)
+        bx((0.012 * D8_BAND, 0.006, h * 0.5), (px + nx * 0.002, py + ny * 0.002, h * 0.655), neon,
+           0.0 if ny else math.pi / 2, bev=0)
     mb.obj(panel, "panels")
     ch = h * crown
     bx((w * 0.78, d * 0.78, ch), (x, y, h + ch / 2), st, bev=0)
     bx((w * 0.8, d * 0.8, 0.012), (x, y, h + ch), plate, bev=0)
-    hc = min(w, d) * 1.6
-    cn(min(w, d) * 0.42, hc, (x, y, h + ch + hc / 2), cap, 4, rot=(0, 0, math.pi / 4))
-    top = h + ch + hc
-    if needle:
-        rod((x, y, top - 0.01), (x, y, top + needle), 0.006, cap, r2=0.0015, n=4)
-        bx((0.014, 0.014, 0.014), (x, y, top + needle * 0.6), tip, bev=0)
-    return top
+    return d8_spire(x, y, h + ch + 0.006, min(w, d) * 0.42, min(w, d) * 1.6, tip if beacon else cap)
 
 
 def round8(x, y, r, h, mats, rings=(0.45, 0.75)):
-    """A round steel tower of the neon city (the drum towers of reference frame 2): neon rings, cold light strips
-    down the front, a plate crown and a glass dome with a lit ring and a needle."""
+    """A round steel tower of the neon city (the drum towers of reference frame 2): inset neon bands, cold light
+    bands down the front, a plate crown and a glass dome with a lit ring and a small lit ball (was a needle)."""
     st, plate, seam, panel, cap, neon, tip = mats
     cy(r, h, (x, y, h / 2), st, 10)
     for zf in rings:
-        cy(r + 0.007, 0.014, (x, y, h * zf), neon, 10)
+        cy(r + 0.004, 0.014 * D8_BAND, (x, y, h * zf), neon, 10)
     for a in (-math.pi / 2 - 0.6, -math.pi / 2 + 0.6, 0.35):
-        bx((0.012, 0.008, h * 0.7), (x + math.cos(a) * (r + 0.002), y + math.sin(a) * (r + 0.002), h * 0.5), neon,
-           a + math.pi / 2, bev=0)
+        bx((0.012 * D8_BAND, 0.006, h * 0.7), (x + math.cos(a) * (r + 0.002), y + math.sin(a) * (r + 0.002), h * 0.5),
+           neon, a + math.pi / 2, bev=0)
     cy(r * 1.12, 0.03, (x, y, h + 0.015), plate, 10)
-    cy(r * 1.0, 0.01, (x, y, h + 0.034), neon, 10)
+    cy(r * 1.0, 0.01 * D8_BAND, (x, y, h + 0.034), neon, 10)
     hemi(r * 0.9, (x, y, h + 0.03), flat("dome_glass", "#6fa9cf", 0.3), 10, 3, (1, 1, 0.8))
-    rod((x, y, h + 0.03 + r * 0.7), (x, y, h + 0.03 + r * 0.7 + 0.12), 0.006, cap, r2=0.0015, n=4)
-    bx((0.014, 0.014, 0.014), (x, y, h + 0.03 + r * 0.7 + 0.08), tip, bev=0)
+    d8_tip(x, y, h + 0.03 + r * 0.72 - 0.004, tip)
+
+
+def d8_city_mats(team, panel_k=0.62):
+    """The citadel kit of city_dl8 / residence_dl8, «Raivon Soft» (plan step B4): (steel, plate, seam, panel, cap,
+    neon, cyan) in the lighter DL8 tones of d8_mats, with the deeper team panels of the citadel, lights at D8_GLOW."""
+    return (steel_facade(), flat("plate8", "#7A8496", 0.5), flat("seam8", "#A7B0BE", 0.5),
+            flat("panel8" + team, shade(team, panel_k), 0.45), flat("spire8", "#5E6878", 0.45),
+            glow("strip" + team, shade(team, 1.2), D8_GLOW), glow("cyan", CYAN, D8_GLOW))
+
+
+def d8_lamp(x, y, z0, h, mt):
+    """A plaza lamp («Raivon Soft», plan step B4): a pale pole 0.018 across under a round lit lamp."""
+    d8_post(x, y, 0.009, z0, z0 + h, flat("mast", "#d0d4da", 0.5))
+    d8_tip(x, y, z0 + h - 0.003, mt, 0.016)
 
 
 def city_dl8(team):
     """The neon city (DL8) after reference frames 2 and 5, in the steel of the late residence: grey steel towers
-    with plate seams and buttresses, inset team panels with cold light strips, neon rings and dark needles round a
-    tall central spire; low steel blocks with lit bands; a dark steel plaza laced with glowing street strips; a
-    holo banner projecting the state's crest, light masts and cargo crates."""
-    st = steel_facade()
-    plate = flat("plate8", "#505760", 0.45)
-    seam = flat("seam8", "#8c939c", 0.45)
-    panel = flat("panel8" + team, shade(team, 0.42), 0.4)
-    cap = flat("spire8", "#4c535d", 0.35)
-    neon = glow("strip" + team, shade(team, 1.25), 2.0)
-    cyan = glow("cyan", CYAN, 2.5)
-    mats = (st, plate, seam, panel, cap, neon, cyan)
-    pad(0.8, stone("#454a52", 0.8), 0.015, 14, 0.0, 8)
-    # glowing street strips: a cross of avenues edged by light lines, and a light rim round the plaza
-    for (x0, y0, x1, y1) in ((-0.74, -0.15, 0.74, -0.15), (-0.74, -0.27, 0.74, -0.27),
-                             (0.07, -0.74, 0.07, 0.74), (0.19, -0.74, 0.19, 0.74)):
-        beam((x0, y0, 0.017), (x1, y1, 0.017), 0.012, neon)
-    paving = flat("road8", "#2c3036", 0.6)
+    with a plate seam, inset team panels with cold light bands, inset neon bands round a tall central spire whose
+    round cap is the city's lit beacon; low steel blocks with lit bands; a holo banner projecting the state's crest,
+    light masts and cargo crates. «Raivon Soft» (plan step B4): a light plaza (D8_PLATE, a soft noise, no paving
+    grid) with a soft round rim, two soft slate avenues with a row of light dots down each (was four thin neon lines
+    and near-black paving), round caps instead of needles, the lights at D8_GLOW."""
+    mats = d8_city_mats(team)
+    st, plate, seam, panel, cap, neon, cyan = mats
+    d8_slab(lambda i: ngon(0.8 - i, 14, 0.1), 0.015, tex("plaster", D8_PLATE), flat("rim8", D8_RIM, 0.8), segs=2)
+    # the avenues: a cross of soft slate lanes, a row of light dots down the middle of each
+    paving = flat("road8", D8_ROAD, 0.7)
     bx((1.48, 0.11, 0.004), (0, -0.21, 0.0155), paving, bev=0)
     for (y0, y1) in ((-0.74, -0.27), (-0.15, 0.74)):  # (not across the other avenue: overlapping plates bake black)
         bx((0.11, y1 - y0, 0.004), (0.13, (y0 + y1) / 2, 0.0155), paving, bev=0)
-    # the central spire, the city's needle, and the ring of towers stepping down from it
-    spire8(-0.18, 0.36, 0.26, 0.22, 1.42, mats, rings=(0.3, 0.46, 0.94), crown=0.14, needle=0.2, banner=team)
+    d8_dots((-0.74, -0.21), (0.74, -0.21), 0.018, neon)
+    d8_dots((0.13, -0.74), (0.13, -0.27), 0.018, neon)
+    d8_dots((0.13, -0.15), (0.13, 0.74), 0.018, neon)
+    # the central spire (the city's lit beacon), and the ring of towers stepping down from it
+    spire8(-0.18, 0.36, 0.26, 0.22, 1.42, mats, rings=(0.3, 0.46, 0.94), crown=0.14, banner=team, beacon=True)
     spire8(0.42, 0.3, 0.18, 0.16, 1.1, mats, rings=(0.28, 0.94), banner=team)
     spire8(-0.5, 0.1, 0.17, 0.15, 0.9, mats, rings=(0.66,))
-    spire8(0.6, -0.04, 0.14, 0.14, 0.7, mats, rings=(0.7,), buttress=False)  # (clear of the banner on its right)
+    spire8(0.6, -0.04, 0.14, 0.14, 0.7, mats, rings=(0.7,))  # (clear of the banner on its right)
     round8(-0.42, -0.46, 0.09, 0.66, mats)
-    # a steel skybridge between the spire and its neighbour, a light line along it (the lit bridges of frame 2)
+    # a steel skybridge between the spire and its neighbour, a light band under it (the lit bridges of frame 2)
     beam((-0.3, 0.3, 0.52), (-0.43, 0.12, 0.52), 0.045, plate)
     beam((-0.3, 0.3, 0.495), (-0.43, 0.12, 0.495), 0.05, neon)
     # low steel blocks with lit window bands and roof plant (the podiums of frame 5)
     for (x, y, w, d, h) in ((-0.2, 0.0, 0.3, 0.2, 0.16), (0.42, -0.46, 0.3, 0.18, 0.14)):
         bx((w, d, h), (x, y, h / 2), st, bev=0)
         bx((w + 0.012, d + 0.012, 0.016), (x, y, h), plate, bev=0)
-        bx((w + 0.004, d + 0.004, 0.012), (x, y, h * 0.55), neon, bev=0)
+        bx((w + 0.004, d + 0.004, 0.012 * D8_BAND), (x, y, h * 0.55), neon, bev=0)
         bx((0.05, 0.05, 0.03), (x + w * 0.36, y + d * 0.26, h + 0.023), seam, bev=0)  # (clear of the dome)
     # a glass dome on the front block (the domes of frame 2)
     hemi(0.09, (0.42, -0.46, 0.148), flat("dome_glass", "#6fa9cf", 0.3), 10, 3, (1, 1, 0.7))
-    cy(0.094, 0.01, (0.42, -0.46, 0.15), neon, 10)
+    cy(0.093, 0.01 * D8_BAND, (0.42, -0.46, 0.151), neon, 10)
     # a holo banner: a mast projecting the state's colour as a glowing panel with the crest
     hx, hy = -0.08, -0.4
     cy(0.04, 0.03, (hx, hy, 0.03), plate, 6)
-    cy(0.007, 0.36, (hx, hy, 0.2), flat("mast", "#d0d4da", 0.5), 6)
+    _round_tag(cy(0.009, 0.36, (hx, hy, 0.2), flat("mast", "#d0d4da", 0.5), 6))
     bx((0.12, 0.004, 0.17), (hx + 0.066, hy, 0.29), glow("holo" + team, team, 1.0), bev=0)
-    bx((0.13, 0.008, 0.008), (hx + 0.066, hy, 0.38), cyan, bev=0)
+    bx((0.13, 0.008, 0.012), (hx + 0.066, hy, 0.38), cyan, bev=0)
     crest = [(0.0, -0.036), (0.026, -0.016), (0.026, 0.026), (0.0, 0.016), (-0.026, 0.026), (-0.026, -0.016)]
     extrude(crest, -0.004, 0.004, glow("holo_crest", "#eef8ff", 1.6), (hx + 0.066, hy, 0.305), (math.pi / 2, 0, 0))
+    lamp = glow("lamp8", "#bfe8ff", D8_GLOW)
     for (x, y) in ((0.3, -0.08), (-0.06, -0.62), (0.62, -0.28), (-0.66, -0.12)):  # light masts by the avenues
-        cy(0.007, 0.16, (x, y, 0.08), flat("mast", "#d0d4da", 0.5), 6)
-        bx((0.022, 0.022, 0.022), (x, y, 0.17), glow("lamp8", "#bfe8ff", 3.0), bev=0)
+        d8_lamp(x, y, 0.015, 0.14, lamp)
     for (x, y, s_) in ((0.41, -0.02, 0.045), (0.36, 0.03, 0.035), (-0.02, 0.18, 0.04)):  # (in sight of the camera)
         bx((s_, s_ * 1.4, s_), (x, y, s_ / 2 + 0.015), flat("crate8", "#b8862e", 0.6), bev=0)
 
@@ -3202,24 +3204,24 @@ def hemi(r, loc, mt, seg=12, rings=3, scale=(1, 1, 1)):
 
 
 def steel_facade():
-    """Grey steel of the late-era citadel (reference frame 5): tall narrow window slits in rows, many lit cold blue."""
-    return facade("#5f6670", "#161c24", 0.04, 0.085, 0.26, 0.64, lit="#8fd4ff", lit_p=0.34)  # darker steel: frame 5 is a dim, cool scene
+    """Grey steel of the late-era citadel (reference frame 5): tall narrow window slits in rows, many lit cold blue.
+    «Raivon Soft» (plan step B4, §6.1 / §6.11: cold but light, no albedo near black): a lighter steel (was #5f6670)
+    and slate slits (was the near-black #161c24), so the towers stop reading as a hard black-and-white barcode."""
+    return facade("#6E7686", "#2B3546", 0.04, 0.085, 0.26, 0.64, lit="#9ad8ff", lit_p=0.3)
 
 
-def citadel_tower(x, y, w, d, h, st, plate, neon, cap, seam=None, panel=None, tip=None, needle=True):
+def citadel_tower(x, y, w, d, h, st, plate, neon, cap, seam=None, panel=None, tip=None, needle=True, beacon=False):
     """A tall rectangular tower of the citadel (reference frame 5): a body with a setback crown and a four-sided
-    spire with a needle and a lit tip, pale plate seams banding it, and on every face an inset panel in a deep team
-    tone with a cold light strip down its middle (the citadel's signature)."""
+    spire, pale plate seams banding it, and on every face an inset panel in a deep team tone with a cold light band
+    down its middle (the citadel's signature). «Raivon Soft» (plan step B4): the spire is cut at half height under a
+    round cap of 0.6 × its base — no needle (`needle` is kept for the callers) — the cap lit (tip) when beacon; the
+    light bands 1.5× wider. Returns the height of the top."""
     bx((w, d, h), (x, y, h / 2), st, bev=0.006)
     for zf in (0.35, 0.6, 0.83):  # plate seams round the body (the string course of the old tower, and two more)
         bx((w + 0.012, d + 0.012, 0.02 if zf != 0.35 else 0.03), (x, y, h * zf), seam or plate, bev=0)
     bx((w * 0.78, d * 0.78, h * 0.16), (x, y, h + h * 0.08), st, bev=0.005)  # setback crown
-    bx((w * 0.8 + 0.006, 0.008, 0.01), (x, y - d * 0.4 - 0.003, h + 0.006), neon, bev=0)  # a light line under the crown
-    cn(min(w, d) * 0.42, h * 0.32, (x, y, h * 1.16 + h * 0.16), cap, 4, rot=(0, 0, math.pi / 4))
-    top = h * 1.16 + h * 0.32
-    if needle:
-        rod((x, y, top - 0.01), (x, y, top + 0.08), 0.006, cap, r2=0.0015, n=4)
-        bx((0.012, 0.012, 0.012), (x, y, top + 0.05), tip or neon, bev=0)
+    bx((w * 0.8 + 0.006, 0.006, 0.01 * D8_BAND), (x, y - d * 0.4 - 0.002, h + 0.008), neon, bev=0)  # a band under the crown
+    top = d8_spire(x, y, h * 1.16, min(w, d) * 0.42, h * 0.32, (tip or neon) if beacon else cap)
     # the panels lie flush on all four faces (the enemy capitals stand turned half round, showing the back), below
     # the plate seams, which run proud across them so they read as insets; the light strip stands proud of both
     mb = _MB()
@@ -3231,41 +3233,35 @@ def citadel_tower(x, y, w, d, h, st, plate, neon, cap, seam=None, panel=None, ti
         mb.face([(px - tx, py - ty, h * 0.15), (px + tx, py + ty, h * 0.15), (px + tx, py + ty, h * 0.85),
                  (px - tx, py - ty, h * 0.85)], (nx, ny, 0))
         rz = 0.0 if ny else math.pi / 2
-        bx((0.014, 0.008, h * 0.62), (px + nx * 0.0035, py + ny * 0.0035, h * 0.5), neon, rz, bev=0)
+        bx((0.014 * D8_BAND, 0.006, h * 0.62), (px + nx * 0.003, py + ny * 0.003, h * 0.5), neon, rz, bev=0)
     mb.obj(panel or plate, "panels")
+    return top
 
 
 def residence_dl8(team):
     """The late-era capital after reference frame 5: a grey steel citadel of tall towers round a central keep with
-    a spire, cold-blue light strips, a portal hall at the head of a grand stair, side wings and great banners, on a
-    dark steel plaza laced with light strips."""
-    st = steel_facade()
-    plate = flat("plate8", "#505760", 0.45)
-    seam = flat("seam8", "#8c939c", 0.45)  # pale plate seams: the panel lines of the frame 5 towers
-    panel = flat("panel8" + team, shade(team, 0.42), 0.4)  # recessed panels in a deep team tone behind the strips
-    cap = flat("spire8", "#4c535d", 0.35)  # dark gothic needles (frame 5), not pale cones
-    neon = glow("strip" + team, shade(team, 1.25), 2.0)  # cold light strips: thin lines, not lamps (frame 5)
-    cyan = glow("cyan", CYAN, 2.5)
+    a spire, cold-blue light bands, a portal hall at the head of a grand stair, side wings and great banners, on a
+    raised steel plaza. «Raivon Soft» (plan step B4): a light plaza (D8_PLATE, a soft noise instead of a paving
+    grid) with a soft round rim, a ring of light dots round it and dotted spokes (was a thin neon rim and strips),
+    a soft inset band along the terrace edge, every spire cut under a round cap — the keep's lit, the capital's
+    beacon — no needles, round plaza lamps, the lights at D8_GLOW."""
+    st, plate, seam, panel, cap, neon, cyan = d8_city_mats(team)
     gold = "#c9a24a"  # the banners' gilded poles (frame 5)
-    base = stone("#454a52", 0.8)  # dark steel plaza slabs (frame 5's plaza is dark steel, not pale paving)
-    extrude(ngon(0.86, 12, math.pi / 12), -0.01, 0.06, base)
-    for k in range(12):  # neon rim of the podium
-        a0, a1 = math.pi / 12 + k * math.tau / 12, math.pi / 12 + (k + 1) * math.tau / 12
-        beam((math.cos(a0) * 0.80, math.sin(a0) * 0.80, 0.062), (math.cos(a1) * 0.80, math.sin(a1) * 0.80, 0.062), 0.014, neon)
-    for k in range(6):  # light strips across the plaza from the terrace to the rim
+    d8_slab(lambda i: ngon(0.86 - i, 12, math.pi / 12), 0.06, tex("plaster", D8_PLATE), flat("rim8", D8_RIM, 0.8),
+            b=0.012)
+    d8_dot_ring(0, 0, 0.80, 0.0605, neon)  # light dots round the rim of the podium (was a thin neon line)
+    for k in range(6):  # dotted light spokes across the plaza from the terrace to the rim
         a = k * math.tau / 6
-        beam((math.cos(a) * 0.58, math.sin(a) * 0.58, 0.062), (math.cos(a) * 0.78, math.sin(a) * 0.78, 0.062), 0.012, neon)
-    extrude(ngon(0.56, 8, math.pi / 8), 0.06, 0.14, flat("terrace8", "#4b4f56", 0.5))  # the citadel's terrace
-    tp = ngon(0.555, 8, math.pi / 8)
-    for k in range(8):  # a light line along the terrace edge
+        d8_dots((math.cos(a) * 0.58, math.sin(a) * 0.58), (math.cos(a) * 0.78, math.sin(a) * 0.78), 0.0605, neon,
+                end=0.01)
+    extrude(ngon(0.56, 8, math.pi / 8), 0.06, 0.14, flat("terrace8", "#848FA4", 0.6))  # the citadel's terrace
+    tp = ngon(0.53, 8, math.pi / 8)
+    for k in range(8):  # a soft light band lying along the terrace edge (was a thin neon bar)
         if k == 5:  # (not across the grand stair)
             continue
-        (x0, y0), (x1, y1) = tp[k], tp[(k + 1) % 8]
-        beam((x0, y0, 0.142), (x1, y1, 0.142), 0.01, neon)
-    # the central keep: a tall stepped tower with the spire
-    citadel_tower(0, 0.1, 0.26, 0.22, 1.45, st, plate, neon, cap, seam, panel, cyan, needle=False)
-    rod((0, 0.1, 1.9), (0, 0.1, 2.15), 0.008, cap, n=5)
-    ico(0.022, (0, 0.1, 2.16), cyan)
+        d8_strip(tp[k], tp[(k + 1) % 8], 0.015, 0.1405, neon)
+    # the central keep: a tall stepped tower whose round cap is the capital's lit beacon
+    citadel_tower(0, 0.1, 0.26, 0.22, 1.45, st, plate, neon, cap, seam, panel, cyan, beacon=True)
     # the ring of towers, tallest at the back so the silhouette climbs to the keep
     for (x, y, w, h) in ((-0.21, -0.02, 0.13, 1.0), (0.21, -0.02, 0.13, 1.0), (-0.37, 0.16, 0.12, 0.82),
                          (0.37, 0.16, 0.12, 0.82), (-0.17, 0.33, 0.12, 1.2), (0.17, 0.33, 0.12, 1.2)):
@@ -3278,49 +3274,49 @@ def residence_dl8(team):
     cy(0.06, 0.012, (0, -0.282, 0.22), cyan, 12, rot=(math.pi / 2, 0, 0))
     for sx in (-1, 1):
         bx((0.03, 0.03, 0.34), (sx * 0.1, -0.29, 0.06 + 0.17), plate, bev=0.004)  # portal pylons
-        bx((0.008, 0.008, 0.28), (sx * 0.1, -0.306, 0.06 + 0.15), neon, bev=0)
+        bx((0.008 * D8_BAND, 0.006, 0.28), (sx * 0.1, -0.306, 0.06 + 0.15), neon, bev=0)
         bx((0.18, 0.28, 0.18), (sx * 0.5, -0.06, 0.06 + 0.09), st, bev=0.006)  # low side wings
         bx((0.19, 0.29, 0.02), (sx * 0.5, -0.06, 0.25), plate, bev=0.003)
-        bx((0.19, 0.008, 0.008), (sx * 0.5, -0.205, 0.235), neon, bev=0)  # a light line along the wing's front
+        bx((0.19, 0.006, 0.008 * D8_BAND), (sx * 0.5, -0.204, 0.235), neon, bev=0)  # a light band along the wing's front
         bx((0.06, 0.05, 0.03), (sx * 0.52, -0.02, 0.275), seam, bev=0)  # roof plant on the wings
-    for sx in (-1, 1):  # holo masts at the hall corners
-        cy(0.008, 0.2, (sx * 0.2, -0.3, 0.46), flat("mast", "#d0d4da", 0.5), 6)
-        bx((0.012, 0.012, 0.012), (sx * 0.2, -0.3, 0.565), cyan, bev=0)
+    for sx in (-1, 1):  # holo masts at the hall corners (a stout pole under a small lit ball)
+        _round_tag(cy(0.009, 0.2, (sx * 0.2, -0.3, 0.46), flat("mast", "#d0d4da", 0.5), 6))
+        d8_tip(sx * 0.2, -0.3, 0.557, cyan)
     # the base of reference frame 5: a grand stair up the podium, an energy orb on a pedestal, banners, plaza lamps
-    stair = flat("stair", "#5e656f", 0.5)
+    stair = flat("stair", "#7C8698", 0.6)
     for k in range(5):
         bx((0.34 - k * 0.02, 0.06, 0.036), (0, -0.62 + k * 0.035, 0.018 + k * 0.036), stair, bev=0.004)
     for sx in (-1, 1):
         bx((0.04, 0.2, 0.012), (sx * 0.19, -0.56, 0.11), neon, bev=0)  # light rails along the stair
         # shield emitters flanking the foot of the stair: dark pylons with a cold glowing head
-        bx((0.04, 0.04, 0.15), (sx * 0.2, -0.69, 0.075 + 0.0), flat("pedestal", "#3a4049", 0.5), bev=0)
+        bx((0.04, 0.04, 0.15), (sx * 0.2, -0.69, 0.075 + 0.0), flat("pedestal", "#5A6375", 0.5), bev=0)
         bx((0.05, 0.05, 0.012), (sx * 0.2, -0.69, 0.156), seam, bev=0)
         uvs(0.017, (sx * 0.2, -0.69, 0.18), cyan, 6, 4)
     ox, oy = 0.5, -0.42
-    cy(0.07, 0.08, (ox, oy, 0.1), flat("pedestal", "#3a4049", 0.5), 12)
+    cy(0.07, 0.08, (ox, oy, 0.1), flat("pedestal", "#5A6375", 0.5), 12)
     cy(0.075, 0.012, (ox, oy, 0.14), neon, 12)
     uvs(0.08, (ox, oy, 0.24), glow("orb" + team, shade(team, 1.05), 1.6), 14, 8)
     torus(0.11, 0.006, (ox, oy, 0.24), flat("ring_frame", "#c9d0d8", 0.4), (math.pi / 2.6, 0, 0.4), 20, 3)
     # a holo banner on the other side: a mast projecting the state's colour as a glowing panel
     hx, hy = -0.5, -0.42
-    cy(0.05, 0.03, (hx, hy, 0.075), flat("pedestal", "#3a4049", 0.5), 8)
-    cy(0.007, 0.36, (hx, hy, 0.24), flat("mast", "#d0d4da", 0.5), 6)
+    cy(0.05, 0.03, (hx, hy, 0.075), flat("pedestal", "#5A6375", 0.5), 8)
+    _round_tag(cy(0.009, 0.36, (hx, hy, 0.24), flat("mast", "#d0d4da", 0.5), 6))
     bx((0.12, 0.004, 0.17), (hx + 0.066, hy, 0.31), glow("holo" + team, team, 1.0), bev=0)
-    bx((0.13, 0.008, 0.008), (hx + 0.066, hy, 0.4), cyan, bev=0)
+    bx((0.13, 0.008, 0.012), (hx + 0.066, hy, 0.4), cyan, bev=0)
     # the state's crest projected on it, white and lit (both faces), so the panel reads as a banner, not a sign
     crest = [(0.0, -0.036), (0.026, -0.016), (0.026, 0.026), (0.0, 0.016), (-0.026, 0.026), (-0.026, -0.016)]
     extrude(crest, -0.004, 0.004, glow("holo_crest", "#eef8ff", 1.6), (hx + 0.066, hy, 0.325), (math.pi / 2, 0, 0))
     for sx in (-1, 1):  # the two great banners of reference frame 5, down the flanking towers
         facade_banner(sx * 0.21, -0.091, 0.92, 0.1, 0.42, team, 0.0, gold)
     facade_banner(0, -0.016, 1.3, 0.12, 0.5, team, 0.0, gold)
+    lamp = glow("lamp8", "#bfe8ff", D8_GLOW)
     for (x, y) in ((-0.55, -0.24), (-0.3, -0.62), (0.28, -0.64), (0.62, -0.2)):
-        cy(0.008, 0.16, (x, y, 0.14), flat("mast", "#d0d4da", 0.5), 6)
-        ico(0.016, (x, y, 0.23), glow("lamp8", "#bfe8ff", 3.0))
+        d8_lamp(x, y, 0.06, 0.16, lamp)
     # service blocks with lit window bands at the back corners of the plaza, a few cargo crates
     for sx in (-1, 1):
         bx((0.2, 0.13, 0.08), (sx * 0.56, 0.42, 0.1), st, bev=0.004)
         bx((0.21, 0.14, 0.012), (sx * 0.56, 0.42, 0.146), plate, bev=0)
-        bx((0.16, 0.006, 0.012), (sx * 0.56, 0.352, 0.11), neon, bev=0)
+        bx((0.16, 0.006, 0.012 * D8_BAND), (sx * 0.56, 0.353, 0.11), neon, bev=0)
     for (x, y, s_) in ((-0.62, 0.22, 0.045), (-0.58, 0.18, 0.035), (0.6, 0.24, 0.04)):
         bx((s_, s_ * 1.4, s_), (x, y, 0.06 + s_ / 2), flat("crate8", "#b8862e", 0.6), bev=0)
 
@@ -5280,26 +5276,160 @@ def mine_scifi(team):
 # ------------------------------------------------------------------ DL8 DISTRICTS (the built-up land of frame 2)
 
 
+# «Raivon Soft» DL8 (plan step B4; art direction §6.8, §6.11): the districts lose their tile look — one light plate
+# over the whole hex with rounded corners and a soft rim (no slab grid, no pale kerb, no gutter of ground between two
+# districts), soft slate avenues, light dots or wider inset bands instead of thin neon edge lines, every sci-fi light
+# at emission <= 1.6, towers ending in round caps instead of needles. city_dl8 and residence_dl8 share the language.
+D8_PLATE = "#9AA6BC"  # the DL8 ground plates, lighter (§6.11); was a three-tone grid of #454b54…#565d68 slabs
+D8_RIM = "#8692A8"  # the plate's round rim and short side (a soft shade of the plate, not the old pale kerb)
+D8_ROAD = "#6A7488"  # the avenues: soft slate (was the near-black #2a2e34)
+D8_DECK = "#5C6678"  # roof decks (was #2c3137)
+# the plate corners: fillets of SOFT_R = 0.3 r (§6.1 rule 2 lists the DL8 plates under the one radius; §6.8 and the
+# plan's step B4 said 0.25 r, A's per-element radius before the plan settled on one). With SOFT_R the plate's corner
+# runs parallel to the border ribbon's and the coast's rounded corners, so it never peeks out past them at a corner
+D8_FILLET = 0.3
+D8_BEVEL = 0.01  # the plate's round top rim
+# the plate reaches this far past the hex edge, so two districts overlap by 2 × D8_OVERLAP: their coplanar tops of one
+# flat colour hide each other's rims, and no seam (and no groove of the rim bevel) shows between them; outside a
+# territory the plate stands this far past the ribbon's outer edge, under the neighbour's ribbon or on the beach rim
+D8_OVERLAP = 0.01
+D8_GLOW = 1.6  # the sci-fi lights' emission cap (§6.11: neon only on sci-fi buildings, emission <= 1.6)
+D8_DOT_R, D8_DOT_STEP = 0.008, 0.04  # a row of light dots instead of a continuous thin neon line
+D8_BAND = 1.5  # neon bands and lines: 1.5× wider (taller) than before, and inset (they stand only ~2 mm proud)
+D8_TIP_R = 0.014  # the small lit ball that replaces a needle with a lit tip
+
+
 def d8_mats(team):
-    """The citadel's steel kit (residence_dl8 / city_dl8): (steel, plate, seam, panel, cap, neon, cyan). The team
-    panels are a step brighter than the citadel's, so a small district tower still shows its colour at map distance."""
-    return (steel_facade(), flat("plate8", "#505760", 0.45), flat("seam8", "#8c939c", 0.45),
-            flat("panel8d" + team, shade(team, 0.5), 0.4), flat("spire8", "#4c535d", 0.35),
-            glow("strip" + team, shade(team, 1.25), 2.0), glow("cyan", CYAN, 2.5))
+    """The DL8 steel kit (districts and the late rural models): (steel, plate, seam, panel, cap, neon, cyan).
+    «Raivon Soft» (plan step B4): lighter plate, seam, cap and team panels (no albedo near black, the team panels
+    the most saturated colour on the block), the lights capped at emission D8_GLOW."""
+    return (steel_facade(), flat("plate8", "#7A8496", 0.5), flat("seam8", "#A7B0BE", 0.5),
+            flat("panel8d" + team, shade(team, 0.72), 0.5), flat("spire8", "#5E6878", 0.45),
+            glow("strip" + team, shade(team, 1.2), D8_GLOW), glow("cyan", CYAN, D8_GLOW))
 
 
-def d8_plate_pts(r=0.86, lim=0.82):
-    """The outline of a district plate: a flat-top hexagon of circumradius r (lined up with the hex: the game turns a
-    district by 60° steps, so it always fills its hex like the built-up land of frame 2) with the corners cut at lim."""
-    a = r * math.sqrt(3) / 2
-    t = math.sqrt(max(lim * lim - a * a, 0.0))
+def _round_tag(o):
+    """Tag o "round": lowpoly() shades it smooth up to ROUND_ANGLE, so a 6- or 8-sided ball or post reads round."""
+    o["round"] = True
+    return o
+
+
+def d8_cap(x, y, z, r, mt, seg=8):
+    """A round cap (the «Raivon Soft» end of a tower, plan step B4): a dome of radius r, a little taller than a half
+    ball, standing on (x, y, z); seg × 2 segments (24 triangles at seg 8). Returns the height of its top."""
+    _round_tag(hemi(r, (x, y, z), mt, seg, 2, (1, 1, 1.15)))
+    return z + r * 1.15
+
+
+def d8_tip(x, y, z, mt, r=D8_TIP_R):
+    """A small lit ball standing on (x, y, z) — what a thin needle with a lit tip becomes. Returns its top."""
+    _round_tag(hemi(r, (x, y, z), mt, 6, 2, (1, 1, 1.3)))
+    return z + r * 1.3
+
+
+def d8_spire(x, y, zt, rb, hc, mt, rot=math.pi / 4, n=4):
+    """A rounded spire (plan step B4: needles become round caps): the old needle spire — an n-sided pyramid of base
+    circumradius rb and height hc — cut at half its height (its top is then rb / 2 across) and crowned by a round cap
+    of radius 0.6 rb. Returns the height of the top."""
+    cy(rb, hc * 0.5, (x, y, zt + hc * 0.25), mt, n, r2=rb * 0.5, rot=(0, 0, rot))
+    return d8_cap(x, y, zt + hc * 0.5 - rb * 0.06, rb * 0.6, mt)
+
+
+def d8_dots(p0, p1, z, mt, r=D8_DOT_R, step=D8_DOT_STEP, end=0.02):
+    """A row of light dots from p0 to p1 lying flat at height z — the «Raivon Soft» stand-in for a continuous thin
+    neon line (plan step B4): small flat diamonds of radius r, one every step, centred along the run, none closer than
+    `end` to its ends. All in one mesh."""
+    (x0, y0), (x1, y1) = p0, p1
+    L = math.hypot(x1 - x0, y1 - y0)
+    if L < 1e-6:
+        return None
+    k = max(1, int((L - 2 * end) / step) + 1)
+    ux, uy = (x1 - x0) / L, (y1 - y0) / L
+    s0 = (L - (k - 1) * step) / 2
+    mb = _MB()
+    for i in range(k):
+        cx, cy_ = x0 + ux * (s0 + i * step), y0 + uy * (s0 + i * step)
+        mb.face([(cx + ux * r, cy_ + uy * r, z), (cx - uy * r, cy_ + ux * r, z), (cx - ux * r, cy_ - uy * r, z),
+                 (cx + uy * r, cy_ - ux * r, z)], (0, 0, 1))
+    return mb.obj(mt, "dots")
+
+
+def d8_dot_ring(cx, cy_, R, z, mt, step=D8_DOT_STEP, r=D8_DOT_R):
+    """Light dots round a circle of radius R at height z, one every `step` along it (plan step B4)."""
+    k = max(6, int(round(math.tau * R / step)))
+    mb = _MB()
+    for i in range(k):
+        a = math.tau * i / k
+        px, py = cx + R * math.cos(a), cy_ + R * math.sin(a)
+        ux, uy = -math.sin(a), math.cos(a)
+        mb.face([(px + ux * r, py + uy * r, z), (px - uy * r, py + ux * r, z), (px - ux * r, py - uy * r, z),
+                 (px + uy * r, py - ux * r, z)], (0, 0, 1))
+    return mb.obj(mt, "dot_ring")
+
+
+def d8_post(x, y, r, z0, z1, mt, n=6):
+    """A round post (plan step B4: soft pilasters, poles): an open-bottom n-sided prism of radius r from z0 to z1 with
+    a flat top, tagged round so it shades smooth — 16 triangles at n 6 (it stands on something: no bottom face)."""
+    mb = _MB()
+    ps = [(x + r * math.cos(math.tau * k / n), y + r * math.sin(math.tau * k / n)) for k in range(n)]
+    for k in range(n):
+        (ax, ay), (bx_, by_) = ps[k], ps[(k + 1) % n]
+        mb.face([(ax, ay, z0), (bx_, by_, z0), (bx_, by_, z1), (ax, ay, z1)], ((ax + bx_) / 2 - x, (ay + by_) / 2 - y, 0))
+    mb.face([(px, py, z1) for px, py in ps], (0, 0, 1))
+    return _round_tag(mb.obj(mt, "post"))
+
+
+def d8_strip(p0, p1, w, z, mt):
+    """A flat inset light band of width w from p0 to p1 at height z (plan step B4: a soft band lying in the surface
+    instead of a thin neon bar standing on it): one quad."""
+    (x0, y0), (x1, y1) = p0, p1
+    L = math.hypot(x1 - x0, y1 - y0)
+    ox, oy = -(y1 - y0) / L * w / 2, (x1 - x0) / L * w / 2
+    mb = _MB()
+    mb.face([(x0 - ox, y0 - oy, z), (x1 - ox, y1 - oy, z), (x1 + ox, y1 + oy, z), (x0 + ox, y0 + oy, z)], (0, 0, 1))
+    return mb.obj(mt, "band")
+
+
+def d8_plate_pts(r=1.0, f=D8_FILLET, n=6, inset=-D8_OVERLAP):
+    """The outline of a district plate, «Raivon Soft» (plan step B4, art direction §6.8): a flat-top hexagon of
+    circumradius r — the whole hex, so neighbouring districts meet edge to edge with no gutter of ground between them
+    (the game turns a district by 60° steps, so it always lines up with its hex) — with every corner rounded by a
+    fillet of radius f·r (n points per corner), counter-clockwise, moved `inset` inwards (the fillets keep their
+    centres); the default inset −D8_OVERLAP lets neighbouring plates overlap a little (see D8_OVERLAP).
+    Where three districts meet, their rounded corners leave a small three-cornered gap of ground (≈ 0.008 of the
+    hex's 2.6 area)."""
+    rho = f * r
+    dc = r - rho / math.sin(math.pi / 3)  # the fillet centres' distance from the hex centre
     pts = []
     for k in range(6):
-        m = math.pi / 6 + k * math.pi / 3  # edge midpoint
-        cx, cy_ = a * math.cos(m), a * math.sin(m)
-        ex, ey = -math.sin(m), math.cos(m)
-        pts += [(cx - ex * t, cy_ - ey * t), (cx + ex * t, cy_ + ey * t)]
+        c = k * math.pi / 3
+        cx, cy_ = dc * math.cos(c), dc * math.sin(c)
+        for i in range(n):
+            a = c - math.pi / 6 + math.pi / 3 * i / (n - 1)
+            pts.append((cx + (rho - inset) * math.cos(a), cy_ + (rho - inset) * math.sin(a)))
     return pts
+
+
+def d8_slab(outline, zt, top_mt, rim_mt, b=D8_BEVEL, z0=-0.01, segs=3):
+    """A flat slab with a soft round rim (plan step B4): the top is one flat face inset by b; the rim is a quarter round
+    of radius b in `segs` steps down to the outline, then a straight side to z0. outline(inset) returns the
+    counter-clockwise outline moved `inset` inwards. The rim is its own mesh, so its round shading never bends the
+    top's normals; both are flat colours (bake_atlas puts them in its palette strip) or textured as given."""
+    top, rim = _MB(), _MB()
+    top.face([(x, y, zt) for x, y in outline(b)], (0, 0, 1))
+    rings = []
+    for i in range(segs + 1):
+        t = math.pi / 2 * i / segs
+        rings.append((outline(b * (1 - math.sin(t))), zt - b + b * math.cos(t)))
+    rings.append((outline(0.0), z0))
+    for (pa, za), (pb, zb) in zip(rings, rings[1:]):
+        n = len(pa)
+        for k in range(n):
+            j = (k + 1) % n
+            ex, ey = pa[j][0] - pa[k][0], pa[j][1] - pa[k][1]
+            rim.face([(pa[k][0], pa[k][1], za), (pa[j][0], pa[j][1], za), (pb[j][0], pb[j][1], zb),
+                      (pb[k][0], pb[k][1], zb)], (ey, -ex, 0))
+    return top.obj(top_mt, "slab"), rim.obj(rim_mt, "slab_rim")
 
 
 def _clip_convex(poly, clip):
@@ -5330,47 +5460,31 @@ def _clip_convex(poly, clip):
 
 
 def d8_plate(mats, seed=0):
-    """Dark steel paving in large slabs of three tones (the plaza of frame 5) with a pale kerb round its edge (the
-    plate's sides), so the block reads as built-up land. The slabs are the plate's top itself: nothing to z-fight."""
-    st, plate, seam, panel, cap, neon, tip = mats
-    pts = d8_plate_pts()
-    tones = [_MB(), _MB(), _MB()]
-    rnd = random.Random(80 + seed)
-    t = 0.164
-    for i in range(-5, 5):
-        for j in range(-5, 5):
-            cell = _clip_convex([(i * t, j * t), ((i + 1) * t, j * t), ((i + 1) * t, (j + 1) * t), (i * t, (j + 1) * t)],
-                                pts)
-            if len(cell) >= 3:
-                tones[rnd.choice((0, 0, 1, 2))].face([(x, y, 0.02) for x, y in cell], (0, 0, 1))
-    for mb, c in zip(tones, ("#4d545e", "#565d68", "#454b54")):
-        mb.obj(flat("ground8" + c, c, 0.6), "plate")
-    side = _MB()
-    n = len(pts)
-    for k in range(n):
-        (x0, y0), (x1, y1) = pts[k], pts[(k + 1) % n]
-        nx, ny = (y1 - y0), -(x1 - x0)
-        side.face([(x0, y0, -0.01), (x1, y1, -0.01), (x1, y1, 0.02), (x0, y0, 0.02)], (nx, ny, 0))
-    side.obj(seam, "kerb")
+    """The district's ground, «Raivon Soft» (plan step B4): one light steel plate (D8_PLATE, §6.11) over the whole hex,
+    its corners filleted (d8_plate_pts) and its top rim softly rounded (d8_slab, D8_BEVEL) — no slab grid, no pale
+    kerb, no gutter of ground — so a run of districts reads as one built-up quarter instead of a field of hex tiles.
+    The top is 0.02 over the ground, as before; seed is kept for the callers (the plate no longer varies)."""
+    d8_slab(lambda i: d8_plate_pts(inset=i - D8_OVERLAP), 0.02, flat("ground8", D8_PLATE, 0.8),
+            flat("rim8", D8_RIM, 0.8), segs=2)
 
 
 def d8_road(p0, p1, w, mats, z=0.022):
-    """A dark avenue with a cold light line along each edge (the glowing streets between the blocks of frame 2)."""
+    """An avenue, «Raivon Soft» (plan step B4): a soft slate lane (was near-black) with a row of light dots down its
+    middle instead of a thin cold neon line along each edge (the lit streets between the blocks of frame 2)."""
     st, plate, seam, panel, cap, neon, tip = mats
     (x0, y0), (x1, y1) = p0, p1
     ln = math.hypot(x1 - x0, y1 - y0)
     a = math.atan2(y1 - y0, x1 - x0)
-    bx((ln, w, 0.004), ((x0 + x1) / 2, (y0 + y1) / 2, z), flat("road8", "#2a2e34", 0.6), a, bev=0)
-    ox, oy = -math.sin(a) * w / 2, math.cos(a) * w / 2
-    for s_ in (-1, 1):
-        beam((x0 + s_ * ox, y0 + s_ * oy, z + 0.002), (x1 + s_ * ox, y1 + s_ * oy, z + 0.002), 0.012, neon)
+    bx((ln, w, 0.004), ((x0 + x1) / 2, (y0 + y1) / 2, z), flat("road8", D8_ROAD, 0.7), a, bev=0)
+    d8_dots(p0, p1, z + 0.0025, neon)
 
 
 def d8_lawn(x, y, w, d, mats, rz=0.0, trees=()):
-    """A raised lawn in a pale kerb with a few pines (frame 2: trees between the towers)."""
+    """A raised lawn in a pale kerb with a few pines (frame 2: trees between the towers); a fresh cartoon green
+    («Raivon Soft», was #3b7432)."""
     st, plate, seam, panel, cap, neon, tip = mats
     bx((w + 0.016, d + 0.016, 0.01), (x, y, 0.024), seam, rz, bev=0)
-    bx((w, d, 0.01), (x, y, 0.027), flat("lawn8", "#3b7432", 0.8), rz, bev=0)
+    bx((w, d, 0.01), (x, y, 0.027), flat("lawn8", "#62A64A", 0.8), rz, bev=0)
     c, s_ = math.cos(rz), math.sin(rz)
     for (u, v, sc_) in trees:
         pine(x + u * c - v * s_, y + u * s_ + v * c, sc_)
@@ -5378,21 +5492,22 @@ def d8_lawn(x, y, w, d, mats, rz=0.0, trees=()):
 
 def d8_tower(x, y, w, d, h, mats, top="spire", rings=(), buttress=True, needle=0.05, seam_z=0.3, foot=True, sp=1.6):
     """A district tower in the citadel kit (frames 2 and 5): a plinth, a steel shaft with window slits, a pale plate
-    seam, corner buttresses, neon rings, an inset team panel with a cold light strip on every face (a district is
-    seen from any side), a setback crown with a light line, and a top: a dark four-sided spire, a lit beacon roof, a
-    small glass dome or a flat roof with plant — each with a needle and a lit tip. Returns the height of the top."""
+    seam, round corner pilasters, inset neon bands, an inset team panel with a cold light strip on every face (a
+    district is seen from any side), a setback crown with a light band, and a top: a four-sided spire under a round
+    cap, a lit beacon roof, a small glass dome or a flat roof with plant — the last three with a small lit ball where
+    the old needle stood (needle > 0). Returns the height of the top."""
     st, plate, seam, panel, cap, neon, tip = mats
     if foot:  # (not on a podium)
         bx((w + 0.03, d + 0.03, 0.03), (x, y, 0.035), plate, bev=0)
     bx((w, d, h), (x, y, h / 2), st, bev=0)
     bx((w + 0.012, d + 0.012, 0.018), (x, y, h * seam_z), seam, bev=0)
-    if buttress:
+    if buttress:  # «Raivon Soft» (plan step B4): soft round pilasters at the corners instead of knife-edged boxes
         bh = h * 0.95 - 0.05
         for sx in (-1, 1):
             for sy in (-1, 1):
-                bx((0.018, 0.018, bh), (x + sx * w / 2, y + sy * d / 2, 0.05 + bh / 2), plate, bev=0)
-    for zf in rings:
-        bx((w + 0.016, d + 0.016, 0.012), (x, y, h * zf), neon, bev=0)
+                d8_post(x + sx * w / 2, y + sy * d / 2, 0.011, 0.05, 0.05 + bh, plate)
+    for zf in rings:  # inset soft bands, 1.5× taller than the old thin neon rings
+        bx((w + 0.006, d + 0.006, 0.012 * D8_BAND), (x, y, h * zf), neon, bev=0)
     pm, sm = _MB(), _MB()
     z0, z1 = h * seam_z + 0.014, h * 0.93
     for (nx, ny) in ((0, -1), (1, 0), (-1, 0), (0, 1)):
@@ -5411,28 +5526,27 @@ def d8_tower(x, y, w, d, h, mats, top="spire", rings=(), buttress=True, needle=0
     ch = max(0.035, h * 0.1)
     bx((w * 0.8, d * 0.8, ch), (x, y, h + ch / 2), st, bev=0)
     bx((w * 0.86, d * 0.86, 0.012), (x, y, h + ch), plate, bev=0)
-    bx((w * 0.8 + 0.008, d * 0.8 + 0.008, 0.01), (x, y, h + 0.012), neon, bev=0)  # a light line round the crown foot
+    bx((w * 0.8 + 0.004, d * 0.8 + 0.004, 0.01 * D8_BAND), (x, y, h + 0.0125), neon, bev=0)  # a band round the crown foot
     zt = h + ch + 0.006
+    # «Raivon Soft» (plan step B4): no needles — the spire is cut at half height under a round cap of 0.6 × its base,
+    # and a needle with a lit tip becomes a small lit ball
     if top == "spire":
-        hc = min(w, d) * sp
-        cn(min(w, d) * 0.4, hc, (x, y, zt + hc / 2), cap, 4, rot=(0, 0, math.pi / 4))
-        zt += hc
+        zt = d8_spire(x, y, zt, min(w, d) * 0.4, min(w, d) * sp, cap)
+        return zt
     elif top == "beacon":  # a lit roof light under a dark cap (the glowing tower tips of frame 2)
         bx((w * 0.46, d * 0.46, 0.032), (x, y, zt + 0.016), tip, bev=0)
         bx((w * 0.56, d * 0.56, 0.014), (x, y, zt + 0.039), cap, bev=0)
         zt += 0.046
     elif top == "dome":
         r = min(w, d) * 0.36
-        cy(r + 0.006, 0.01, (x, y, zt + 0.003), neon, 8)
+        cy(r + 0.004, 0.015, (x, y, zt + 0.004), neon, 8)
         hemi(r, (x, y, zt), flat("dome_glass", "#6fa9cf", 0.3), 8, 2, (1, 1, 0.9))
         zt += r * 0.9
     else:  # flat roof with plant and a dish
         bx((w * 0.34, d * 0.3, 0.03), (x - w * 0.18, y + d * 0.12, zt + 0.015), seam, bev=0)
         cy(0.022, 0.012, (x + w * 0.2, y - d * 0.15, zt + 0.006), cap, 8)
     if needle:
-        rod((x, y, zt - 0.01), (x, y, zt + needle), 0.006, cap, r2=0.0015, n=4)
-        bx((0.014, 0.014, 0.014), (x, y, zt + needle * 0.6), tip, bev=0)
-        zt += needle
+        zt = d8_tip(x, y, zt - 0.004, tip)
     return zt
 
 
@@ -5445,14 +5559,14 @@ def d8_podium(x, y, w, d, h, mats, rz=0.0, plant=True, lights=True):
     def b():
         bx((w, d, h), (0, 0, h / 2), st, bev=0)
         bx((w + 0.004, d + 0.004, 0.016), (0, 0, 0.022 + 0.012), flat("warm8", "#ffbe62", 0.5), bev=0)
-        bx((w + 0.008, d + 0.008, 0.008), (0, 0, h - 0.005), neon, bev=0)
+        bx((w + 0.004, d + 0.004, 0.008 * D8_BAND), (0, 0, h - 0.006), neon, bev=0)
         bx((w + 0.016, d + 0.016, 0.014), (0, 0, h + 0.007), plate, bev=0)
-        bx((w - 0.028, d - 0.028, 0.006), (0, 0, h + 0.016), flat("deck8", "#2c3137", 0.6), bev=0)
-        if lights:  # two roof-light bars along the long sides
+        bx((w - 0.028, d - 0.028, 0.006), (0, 0, h + 0.016), flat("deck8", D8_DECK, 0.6), bev=0)
+        if lights:  # two roof-light bars along the long sides (1.5× wider: soft bands)
             ln, wd = (w, d) if w >= d else (d, w)
             for s_ in (-1, 1):
                 o = wd / 2 - 0.03
-                bx((ln * 0.62, 0.012, 0.006) if w >= d else (0.012, ln * 0.62, 0.006),
+                bx((ln * 0.62, 0.018, 0.006) if w >= d else (0.018, ln * 0.62, 0.006),
                    (0, s_ * o, h + 0.02) if w >= d else (s_ * o, 0, h + 0.02), neon, bev=0)
         if plant:
             bx((min(w * 0.3, 0.07), min(d * 0.4, 0.05), 0.026), (w * 0.22, d * 0.08, h + 0.027), seam, bev=0)
@@ -5461,10 +5575,12 @@ def d8_podium(x, y, w, d, h, mats, rz=0.0, plant=True, lights=True):
 
 
 def d8_mast(x, y, h, mats):
-    """A light mast by the avenue: a slim pale pole with a cold lamp."""
+    """A light mast by the avenue: a pale pole with a cold lamp — «Raivon Soft» (plan step B4): a stouter, shorter
+    pole (0.018 across, §6.1: nothing thinner than ≈ 0.02) under a round lit lamp instead of a cube."""
     st, plate, seam, panel, cap, neon, tip = mats
-    cy(0.006, h, (x, y, 0.02 + h / 2), seam, 6)
-    bx((0.02, 0.02, 0.02), (x, y, 0.02 + h + 0.01), tip, bev=0)
+    h = h * 0.8
+    d8_post(x, y, 0.009, 0.02, 0.02 + h, seam)
+    d8_tip(x, y, 0.02 + h - 0.003, tip, 0.016)
 
 
 def d8_dome(x, y, r, h, mats):
@@ -5475,7 +5591,7 @@ def d8_dome(x, y, r, h, mats):
     cy(r + 0.03, 0.03, (x, y, 0.035), plate, n)
     cy(r, h, (x, y, h / 2), st, n)
     cy(r + 0.004, h * 0.3, (x, y, h * 0.7), panel, n)
-    cy(r + 0.008, 0.012, (x, y, h * 0.7), neon, n)
+    cy(r + 0.006, 0.012 * D8_BAND, (x, y, h * 0.7), neon, n)
     cy(r * 1.08, 0.02, (x, y, h + 0.01), plate, n)
     R, C, z0 = r * 0.97, r * 0.97 * 0.74, h + 0.02
     hemi(R, (x, y, z0), flat("dome_glass", "#6fa9cf", 0.3), n, 4, (1, 1, 0.74))
@@ -5502,8 +5618,7 @@ def d8_dome(x, y, r, h, mats):
     zt = z0 + C
     cy(r * 0.24, 0.022, (x, y, zt), plate, 8)
     cy(r * 0.17, 0.02, (x, y, zt + 0.02), tip, 8)
-    rod((x, y, zt + 0.025), (x, y, zt + 0.11), 0.006, cap, r2=0.0015, n=4)
-    return zt + 0.11
+    return d8_cap(x, y, zt + 0.028, r * 0.12, cap)  # a round cap on the lit lantern (was a needle)
 
 
 def d8_round(x, y, r, h, mats):
@@ -5511,8 +5626,8 @@ def d8_round(x, y, r, h, mats):
     st, plate, seam, panel, cap, neon, tip = mats
     cy(r + 0.025, 0.03, (x, y, 0.035), plate, 10)
     cy(r, h, (x, y, h / 2), st, 10)
-    for zf in (0.42, 0.78):
-        cy(r + 0.007, 0.012, (x, y, h * zf), neon, 10)
+    for zf in (0.42, 0.78):  # inset soft bands (plan step B4)
+        cy(r + 0.004, 0.012 * D8_BAND, (x, y, h * zf), neon, 10)
     sm = _MB()
     for a in (-math.pi / 2, math.pi / 6, math.pi * 5 / 6):  # light strips down three sides
         ca, sa = math.cos(a), math.sin(a)
@@ -5524,8 +5639,7 @@ def d8_round(x, y, r, h, mats):
     cy(r * 1.15, 0.024, (x, y, h + 0.012), plate, 10)
     hemi(r * 0.92, (x, y, h + 0.024), flat("dome_glass", "#6fa9cf", 0.3), 10, 2, (1, 1, 0.8))
     zt = h + 0.024 + r * 0.92 * 0.8
-    rod((x, y, zt - 0.01), (x, y, zt + 0.07), 0.006, cap, r2=0.0015, n=4)
-    bx((0.014, 0.014, 0.014), (x, y, zt + 0.045), tip, bev=0)
+    d8_tip(x, y, zt - 0.004, tip)  # a small lit ball instead of the needle
 
 
 def d8_skybridge(p0, p1, mats):
@@ -5610,12 +5724,12 @@ def d8_hangar(x, y, w, d, h, mats, rz=0.0):
         ends.obj(st, "gables")
         rib.obj(cap, "ribs")
         for sx in (-1, 1):
-            bx((0.006, d * 0.5, h * 0.72), (sx * (w / 2 + 0.002), 0, h * 0.36 + 0.02), flat("door8", "#23282f", 0.6),
+            bx((0.006, d * 0.5, h * 0.72), (sx * (w / 2 + 0.002), 0, h * 0.36 + 0.02), flat("door8", "#465062", 0.6),
                bev=0)
-            bx((0.008, d * 0.56, 0.01), (sx * (w / 2 + 0.004), 0, h * 0.78 + 0.02), neon, bev=0)
+            bx((0.006, d * 0.56, 0.01 * D8_BAND), (sx * (w / 2 + 0.003), 0, h * 0.78 + 0.02), neon, bev=0)
             bx((0.008, d * 0.5, 0.012), (sx * (w / 2 + 0.004), 0, 0.03), flat("warm8", "#ffbe62", 0.5), bev=0)
         for sy in (-1, 1):
-            bx((w + 0.004, 0.008, 0.01), (0, sy * (d / 2 + 0.002), h - 0.012), neon, bev=0)
+            bx((w + 0.004, 0.006, 0.01 * D8_BAND), (0, sy * (d / 2 + 0.002), h - 0.013), neon, bev=0)
     build_at(b, x, y, rz)
 
 
@@ -5637,13 +5751,14 @@ def d8_pad(x, y, r, z, mats):
                  (math.cos(am), math.sin(am), 0))
         rim.face([p_(R0, a0, z + 0.002), p_(R1, a0, z + 0.002), p_(R1, a1, z + 0.002), p_(R0, a1, z + 0.002)],
                  (0, 0, 1))
-    rim.obj(hazard_ring(x, y, R1, 12), "rim")
-    cy(r * 0.94, 0.008, (x, y, z + 0.002), flat("deck8", "#2c3137", 0.6), 12)
+    rim.obj(hazard_ring(x, y, R1, 12, c2="#5A6170"), "rim")  # (soft: amber and slate, no near-black stripes)
+    cy(r * 0.94, 0.008, (x, y, z + 0.002), flat("deck8", D8_DECK, 0.6), 12)
     ring = _MB()
     for k in range(12):
         a0, a1 = math.tau * k / 12, math.tau * (k + 1) / 12
         ring.strip((x + math.cos(a0) * r * 0.66, y + math.sin(a0) * r * 0.66, z + 0.008),
-                   (x + math.cos(a1) * r * 0.66, y + math.sin(a1) * r * 0.66, z + 0.008), (0, 0, 1), 0.016, 0.0)
+                   (x + math.cos(a1) * r * 0.66, y + math.sin(a1) * r * 0.66, z + 0.008), (0, 0, 1), 0.016 * D8_BAND,
+                   0.0)
     ring.obj(neon, "padring")
     for k in range(4):
         a = math.pi / 4 + k * math.pi / 2
@@ -5659,7 +5774,7 @@ def d8_shuttle(x, y, z, rz, team, mats):
         taper_box((0.2, 0.07, 0.045), (0, 0, 0.03), hull, top=(0.82, 0.62))
         wedge = [(0.1, -0.035), (0.17, 0.0), (0.1, 0.035)]
         extrude(wedge, 0.008, 0.045, hull)
-        bx((0.06, 0.05, 0.016), (0.075, 0, 0.056), flat("cab8", "#1b2533", 0.3), bev=0)
+        bx((0.06, 0.05, 0.016), (0.075, 0, 0.056), flat("cab8", "#34445A", 0.3), bev=0)
         bx((0.09, 0.072, 0.012), (-0.03, 0, 0.054), flat("hullteam" + team, team, 0.5), bev=0)
         wing = [(0.03, 0.03), (-0.07, 0.13), (-0.1, 0.13), (-0.08, 0.03)]
         extrude(wing, 0.018, 0.026, hull)
@@ -5675,7 +5790,7 @@ def d8_tank(x, y, r, h, mats):
     """A pale storage tank with a light band and a domed cap."""
     st, plate, seam, panel, cap, neon, tip = mats
     cy(r, h, (x, y, h / 2), seam, 10)
-    cy(r + 0.004, 0.012, (x, y, h * 0.62), neon, 10)
+    cy(r + 0.003, 0.012 * D8_BAND, (x, y, h * 0.62), neon, 10)
     cy(r + 0.004, 0.014, (x, y, 0.03), plate, 10)
     hemi(r, (x, y, h), seam, 10, 2, (1, 1, 0.5))
 
@@ -5687,7 +5802,7 @@ def d8_containers(x, y, rz, team, mats):
                              (0.01, 0.025, 0.04, "#7b838e"), (0.0, 0.075, 0.04, team)):
             bx((0.11, 0.044, 0.04), (u, v, 0.02 + z + 0.02), flat("cont8" + c, shade(c, 0.85), 0.6), bev=0)
             for sx in (-1, 1):
-                bx((0.004, 0.036, 0.032), (u + sx * 0.056, v, 0.02 + z + 0.02), flat("door8", "#23282f", 0.6), bev=0)
+                bx((0.004, 0.036, 0.032), (u + sx * 0.056, v, 0.02 + z + 0.02), flat("door8", "#465062", 0.6), bev=0)
     build_at(b, x, y, rz)
 
 
@@ -5697,7 +5812,7 @@ def d8_car(x, y, rz, color, mats):
 
     def b():
         taper_box((0.06, 0.03, 0.016), (0, 0, 0.042), flat("car8" + color, color, 0.4), top=(0.8, 0.8))
-        bx((0.026, 0.022, 0.01), (-0.004, 0, 0.054), flat("cab8", "#1b2533", 0.3), bev=0)
+        bx((0.026, 0.022, 0.01), (-0.004, 0, 0.054), flat("cab8", "#34445A", 0.3), bev=0)
         bx((0.046, 0.022, 0.004), (0, 0, 0.032), tip, bev=0)
     build_at(b, x, y, rz)
 
@@ -5720,8 +5835,9 @@ def district_scifi(team):
     """DL8+ built-up land, variant A — the tower cluster of reference frame 2 in the citadel's steel kit: a tall
     central spire rising from a podium megablock with a second spire and a mid-rise, a beacon tower over a skybridge,
     a small domed tower, every face with an inset team panel and a cold light strip; podiums with warm lit
-    shopfronts round a glowing avenue and side street, lawns with pines, light masts, crates. On a hex-shaped dark
-    steel plate; lower than city_dl8, so the city still stands out."""
+    shopfronts round a dotted avenue and side street, lawns with pines, light masts, crates. On a light steel plate
+    over the whole hex (rounded corners, a soft rim, no gutter: d8_plate); lower than city_dl8, so the city still
+    stands out."""
     mats = d8_mats(team)
     st, plate, seam, panel, cap, neon, tip = mats
     d8_plate(mats)
@@ -5757,20 +5873,15 @@ def district_scifi(team):
 
 def district_scifi_b(team):
     """DL8+ built-up land, variant B — the civic block of frame 2: a great blue glass dome with pale ribs over a steel
-    drum banded in team panels and a light ring, on a plaza with a glowing rim, ringed by spired and beacon towers
+    drum banded in team panels and a light ring, on a plaza ringed by light dots, ringed by spired and beacon towers
     on podiums, a drum tower with a glass cap, mid-rise blocks, podiums with warm lit shopfronts and lawns with
     pines."""
     mats = d8_mats(team)
     st, plate, seam, panel, cap, neon, tip = mats
     d8_plate(mats, 1)
     dx_, dy_ = -0.06, 0.06
-    cy(0.33, 0.004, (dx_, dy_, 0.022), flat("road8", "#2a2e34", 0.6), 20)  # the plaza round the dome
-    ring = _MB()
-    for k in range(20):
-        a0, a1 = math.tau * k / 20, math.tau * (k + 1) / 20
-        ring.strip((dx_ + math.cos(a0) * 0.32, dy_ + math.sin(a0) * 0.32, 0.025),
-                   (dx_ + math.cos(a1) * 0.32, dy_ + math.sin(a1) * 0.32, 0.025), (0, 0, 1), 0.014, 0.0)
-    ring.obj(neon, "plazaring")
+    cy(0.33, 0.004, (dx_, dy_, 0.022), flat("road8", D8_ROAD, 0.7), 20)  # the plaza round the dome
+    d8_dot_ring(dx_, dy_, 0.305, 0.0245, neon)  # a ring of light dots inside its rim (was a thin neon line)
     d8_road((dx_ + 0.03, dy_ - 0.32), (0.0, -0.72), 0.08, mats)
     d8_dome(dx_, dy_, 0.25, 0.14, mats)
     d8_portal(dx_ + 0.01, dy_ - 0.275, 0.0, mats)
@@ -5796,7 +5907,7 @@ def district_scifi_c(team):
     """DL8+ built-up land, variant C — the service block: a raised landing pad with a hazard rim, a light circle and
     a parked shuttle in the team colour, a steel hangar under a ribbed vault, stacks of cargo containers, a control
     tower with a glass cab, a field of solar panels (the dark blue grids of frame 2), storage tanks with light bands
-    and pipes, a works block with two stacks, a gatehouse, light masts along a glowing service road."""
+    and pipes, a works block with two stacks, a gatehouse, light masts along a dotted service road."""
     mats = d8_mats(team)
     st, plate, seam, panel, cap, neon, tip = mats
     d8_plate(mats, 2)
@@ -5827,12 +5938,11 @@ def district_scifi_c(team):
     pm.obj(panel, "panels")
     sm_.obj(neon, "strips")
     cy(0.1, 0.018, (tx, ty, 0.369), plate, 8)
-    cy(0.095, 0.05, (tx, ty, 0.403), flat("cab8", "#1b2533", 0.3), 8)
+    cy(0.095, 0.05, (tx, ty, 0.403), flat("cab8", "#34445A", 0.3), 8)
     cy(0.099, 0.01, (tx, ty, 0.405), tip, 8)
     cy(0.105, 0.016, (tx, ty, 0.436), cap, 8)
-    rod((tx, ty, 0.44), (tx, ty, 0.56), 0.007, cap, r2=0.002, n=4)
-    bx((0.016, 0.016, 0.016), (tx, ty, 0.52), tip, bev=0)
-    bx((0.05, 0.004, 0.03), (tx + 0.02, ty, 0.5), seam, bev=0)  # a radar vane on the mast
+    d8_cap(tx, ty, 0.444, 0.045, cap)  # a round radar cap with a small lit ball (was a needle mast with a vane)
+    d8_tip(tx, ty, 0.444 + 0.045 * 1.15 - 0.004, tip)
     d8_solar(-0.36, 0.33, 3, 2, mats)
     d8_tank(0.38, 0.2, 0.065, 0.17, mats)
     d8_tank(0.54, 0.07, 0.055, 0.14, mats)
@@ -5844,7 +5954,7 @@ def district_scifi_c(team):
         x = 0.26 + sx * 0.065
         cy(0.034, 0.14, (x, 0.5, 0.19), seam, 10)
         cy(0.038, 0.014, (x, 0.5, 0.255), cap, 10)
-        cy(0.036, 0.01, (x, 0.5, 0.21), neon, 10)
+        cy(0.036, 0.01 * D8_BAND, (x, 0.5, 0.21), neon, 10)
     d8_podium(-0.62, 0.15, 0.12, 0.16, 0.09, mats, 0.0)
     d8_lawn(-0.18, 0.6, 0.22, 0.11, mats, 0.0, ((-0.06, 0.0, 0.7), (0.06, 0.0, 0.6)))
     for (x, y) in ((-0.5, -0.09), (-0.02, 0.05), (0.62, -0.09), (0.12, -0.52)):

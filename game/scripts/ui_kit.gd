@@ -1143,6 +1143,8 @@ class KitButton extends Panel:
 						l.size = Vector2(tw, lh)
 						x += tw + gap
 				"main_icon":
+					if parts.size() == 1 and inset <= 0.0:
+						x = (size.x - icon_side) * 0.5  # an icon alone sits in the middle (a round chip is narrower than its pads)
 					n.size = Vector2(icon_side, icon_side)
 					n.position = Vector2(x, cy - icon_side * 0.5)
 					x += icon_side + gap
@@ -1196,6 +1198,13 @@ class KitButton extends Panel:
 			var r := _solve_set(parts, avail, icon_side, gap, face_h, pp, ph, pi, p_steps)
 			if not r.is_empty():
 				return r
+		if pp != null and pp._rows.size() > 1 and c == "XS":
+			# XS (a card's button, §4.4: prices or a short caption): both prices with 24 icons before the scarcest alone
+			for parts in [all.filter(func(p): return p["kind"] == "price" or p["kind"] == "main_icon"),
+					all.filter(func(p): return p["kind"] == "price")]:
+				for pn in p_steps:
+					if _row_w(parts, FIT_FLOOR, icon_side, gap, pp.width_for(ph, pn, pi - 4.0)) <= avail:
+						return _plan(parts, FIT_FLOOR, ph, pn, pi - 4.0)
 		if pp != null and pp._rows.size() > 1:
 			pp.compact = true
 			for parts in sets:
@@ -1945,6 +1954,7 @@ const LOCK_ART := Color(0.45, 0.47, 0.52)  ## a closed card's art (§4.4)
 class KitCard extends Panel:
 	const W := 180.0
 	const H := 172.0
+	const CORNER_IN := 2.0  ## the corner badge / chips keep this far inside the card's sides (they stand out upwards)
 	var title := ""
 	var details := ""
 	var body: Panel
@@ -2022,10 +2032,12 @@ class KitCard extends Panel:
 ##   tag: a short text on an INK pill standing out of the top-left corner instead of a badge («7/12»)
 ##   corner: {icon, fill}: a round status chip Ø44 on the top-left corner instead of a badge (peace, war, pact)
 ##   chip: {node: Control} (a portrait, clipped round) | {plus: true} (a go «+» button) | {icon: name, fill} |
-##         {btn: {icon, role, caption}} (a round XS button: «i», a swap); chip_cb
+##         {btn: {icon, role, caption}, count} (a round XS button: «i», a swap; `count`, a stock like «×3», on an INK
+##         plate over its bottom); chip_cb. The corners stand out of the top edge, never out of the sides.
 ##   tag_r: {text, role}: a short text on a pill of the role's face (or SLATE_WELL) standing out of the top-right
 ##          corner instead of a chip (an opinion «−10»)
 ##   dot: the role of a dot on the card's corner; dot_n: its number (-1: none)
+##   timer: a time left («1ч 59м», WARN with the hourglass) on a line over the name (a busy card whose button pays)
 ##   art_bar: {frac, role}: an S bar along the art's bottom, under the name
 ##   cta: {role, caption, icon, price ([[icon, text, short]] ≤ 2), cb, enabled, reason, short_reason} → an XS
 ##        button at (6, 114, 168, 46); without a cb it opens the card's tooltip; a disabled one shows `reason` when
@@ -2095,10 +2107,28 @@ static func card(art_tex: Texture2D, title: String, opts := {}) -> KitCard:
 			pic.add_child(grid)
 		"team":
 			pic.add_child(_card_rect(vgradient(team.lightened(0.15), team.darkened(0.2)), Rect2(0, 0, w, h)))
+	# the name's size first: a two-line name (22) takes the art's lower half, so an icon art moves up and shrinks to
+	# end above its glyphs (side 56 at y 30), never under them
+	var bar_d: Dictionary = opts.get("art_bar", {})
+	# the glyphs get the window less 4 px a side; their outline may spill into that margin («Металлургия» fits at 22)
+	var nw := w - 8.0
+	var ns := fit_size(title, 26, nw, "d900", 22, false)
+	var long := text_w(title, ns, "d900", false) > nw
+	# a timer line («1ч 59м», opts.timer) stands over the name, which then keeps to one line
+	var timer_t := String(opts.get("timer", ""))
+	var two := long and timer_t == "" and title.strip_edges().contains(" ")  # two lines at 22; one long word is cut
+	if long:
+		ns = 22
+	var stacked := two or timer_t != ""  # two lines of text over the art's bottom
+	var art_side := float(opts.get("art_side", 0.0))
+	var art_y := float(opts.get("art_y", 42.0))
+	if stacked and art_side > 0.0:
+		art_side = minf(art_side, 56.0 if timer_t == "" else 52.0)
+		art_y = minf(art_y, 30.0 if timer_t == "" else 28.0)
 	if art_tex != null:
-		var side := float(opts.get("art_side", 0.0))
+		var side := art_side
 		if side > 0.0:
-			var cy := float(opts.get("art_y", 42.0))
+			var cy := art_y
 			var ic := _card_rect(art_tex, Rect2((w - side) * 0.5, cy - side * 0.5, side, side))
 			ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 			pic.add_child(ic)
@@ -2113,25 +2143,30 @@ static func card(art_tex: Texture2D, title: String, opts := {}) -> KitCard:
 		pic.modulate = LOCK_ART
 		# the lock 56 in the middle of a cover art; beside an icon art it sits on the icon's lower right, so the
 		# dimmed icon still reads (a lock over a helmet hid all but its crest)
-		var side := float(opts.get("art_side", 0.0))
+		var side := art_side
 		var lc := Vector2(w * 0.5, 42.0)
 		if side > 0.0 and art_tex != null:
-			lc = Vector2(w * 0.5, float(opts.get("art_y", 42.0))) + Vector2(side * 0.36, side * 0.18)
+			lc = Vector2(w * 0.5, art_y) + Vector2(side * 0.36, side * 0.18)
 		var lk := _card_rect(icon_tex("lock"), Rect2(lc - Vector2(28, 28), Vector2(56, 56)))
 		lk.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		aw.add_child(lk)
 	# ---- the name on its scrim (an S bar under it with art_bar)
-	var bar_d: Dictionary = opts.get("art_bar", {})
-	# the glyphs get the window less 4 px a side; their outline may spill into that margin («Металлургия» fits at 22)
-	var nw := w - 8.0
-	var ns := fit_size(title, 26, nw, "d900", 22, false)
-	var long := text_w(title, ns, "d900", false) > nw
-	var two := long and title.strip_edges().contains(" ")  # two lines at 22; one long word is cut instead
-	if long:
-		ns = 22
 	var name_bottom := h - (28.0 if not bar_d.is_empty() else 3.0)
-	var sh := minf(h, (h - name_bottom) + (ns * 1.25) * (2.0 if two else 1.0) + 18.0)
-	aw.add_child(_card_rect(vgradient(alpha(INK, 0.0), alpha(INK, 0.9)), Rect2(0, h - sh, w, sh)))
+	if kind == "cream":
+		# on paper a long INK ramp turns into a muddy grey band: a short ramp, then a solid strip under the glyphs
+		var fh := font("d900").get_height(ns)
+		var strip_top := name_bottom - (fh * 2.0 - 4.0 if stacked else fh) - 2.0
+		aw.add_child(_card_rect(vgradient(alpha(INK, 0.0), alpha(INK, 0.9)), Rect2(0, strip_top - 10.0, w, 10.0)))
+		var strip := ColorRect.new()
+		strip.name = "strip"
+		strip.color = alpha(INK, 0.9)
+		strip.position = Vector2(0, strip_top)
+		strip.size = Vector2(w, h - strip_top)
+		strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		aw.add_child(strip)
+	else:
+		var sh := minf(h, (h - name_bottom) + (ns * 1.25) * (2.0 if stacked else 1.0) + 18.0)
+		aw.add_child(_card_rect(vgradient(alpha(INK, 0.0), alpha(INK, 0.9)), Rect2(0, h - sh, w, sh)))
 	var nl := label(title, ns, TEXT, true)
 	nl.name = "name"
 	nl.add_theme_font_override("font", font("d900"))  # CARD: Rubik 900 down to 22
@@ -2150,6 +2185,26 @@ static func card(art_tex: Texture2D, title: String, opts := {}) -> KitCard:
 	nl.size = Vector2(nw, 64.0)
 	aw.add_child(nl)
 	c.name_label = nl
+	if timer_t != "":
+		# the time left (§3.2 WARN: time) with the hourglass, centred on the line over the name
+		var fh := font("d900").get_height(ns)
+		var tw := text_w(timer_t, 22, "d900")
+		var row := Control.new()
+		row.name = "timer"
+		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.size = Vector2(26.0 + 4.0 + tw, 28.0)
+		row.position = Vector2(roundf((w - row.size.x) * 0.5), roundf(name_bottom - fh - 28.0 + 6.0))
+		var hg := _card_rect(icon_tex("hourglass"), Rect2(0, 1, 26, 26))
+		hg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		row.add_child(hg)
+		var tl := label(timer_t, 22, WARN, true)
+		tl.name = "time"
+		tl.add_theme_font_override("font", font("d900"))
+		tl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		tl.position = Vector2(30, -1)
+		tl.size = Vector2(tw, 28)
+		row.add_child(tl)
+		aw.add_child(row)
 	if not bar_d.is_empty():
 		# on the INK scrim a SLATE_WELL track (and the INK contour) vanish, so an empty bar would not read: SLATE_HI
 		var ab := bar(aw, Rect2(8, h - 24.0, w - 16.0, 16.0), float(bar_d.get("frac", 0.0)), String(bar_d.get("role", "go")))
@@ -2186,18 +2241,20 @@ static func card(art_tex: Texture2D, title: String, opts := {}) -> KitCard:
 		var st: Dictionary = opts.get("stat", {})
 		if not st.is_empty():
 			_card_stat(b, st)
-	# ---- corners: badge or tag top-left, chip top-right, dot
+	# ---- corners: badge or tag top-left, chip top-right, dot. They stand out of the top edge only: sideways they
+	# keep CORNER_IN inside the card, so the corners of two neighbours (12 px apart) never read as one pair
+	var ci := KitCard.CORNER_IN
 	if opts.has("badge"):
-		hex_badge(b, Vector2(16, 16), 22, String(opts.get("badge_role", "info")), String(opts["badge"]))
+		hex_badge(b, Vector2(ci + 19.0, 16), 22, String(opts.get("badge_role", "info")), String(opts["badge"]))
 	elif opts.has("tag"):
 		# a counter pill standing out of the corner like the badge, so it covers little of the art
 		var tg := caption_pill(b, String(opts["tag"]), 32.0, INK, 24)
 		tg.name = "tag"
-		tg.position = Vector2(-2, -6)
+		tg.position = Vector2(ci, -6)
 	elif opts.has("corner"):
-		_card_ring(b, Rect2(-6, -6, 44, 44), opts["corner"]).name = "corner"
+		_card_ring(b, Rect2(ci, -6, 44, 44), opts["corner"]).name = "corner"
 	var chd: Dictionary = opts.get("chip", {})
-	var chip_r := Rect2(142, -6, 44, 44)  # Ø44 centred on (164, 16)
+	var chip_r := Rect2(KitCard.W - ci - 44.0, -6, 44, 44)  # Ø44 centred on (156, 16)
 	if chd.get("plus", false):
 		c.chip = button(b, chip_r, "go", "", {"icon": "plus", "round": true, "size": "XS", "filter": Control.MOUSE_FILTER_PASS,
 			"cb": opts.get("chip_cb", Callable()), "hit_pad": 8.0})
@@ -2205,9 +2262,15 @@ static func card(art_tex: Texture2D, title: String, opts := {}) -> KitCard:
 		var bd: Dictionary = chd["btn"]
 		var cbtn := button(b, chip_r, String(bd.get("role", "info")), String(bd.get("caption", "")),
 			{"icon": String(bd.get("icon", "")), "round": true, "size": "XS", "filter": Control.MOUSE_FILTER_PASS,
-			"cb": opts.get("chip_cb", Callable()), "hit_pad": 8.0, "icon_scale": 0.6 if bd.has("icon") else 0.0})
+			"cb": opts.get("chip_cb", Callable()), "hit_pad": 8.0, "icon_scale": 0.62 if bd.has("icon") else 0.0})
 		cbtn.name = "chip"
 		c.chip = cbtn
+		if chd.has("count"):
+			# how many the button has left («×3»): an INK plate (h 28, MICRO 22) 10 px over its bottom, like a square
+			# button's caption plate (§4.2), kept inside the card's side
+			var cp := caption_pill(b, String(chd["count"]), 28.0, Color(INK, 0.92), 22)
+			cp.name = "chip_count"
+			cp.position = Vector2(minf(chip_r.get_center().x - cp.size.x * 0.5, KitCard.W - ci - cp.size.x), chip_r.end.y - 10.0)
 	elif chd.has("node") or chd.has("icon"):
 		c.chip = _card_ring(b, chip_r, chd)
 		c.chip_cb = opts.get("chip_cb", Callable())
@@ -2217,10 +2280,11 @@ static func card(art_tex: Texture2D, title: String, opts := {}) -> KitCard:
 		var role := String(td.get("role", ""))
 		var tr_ := caption_pill(b, String(td.get("text", "")), 36.0, face_of(role) if ROLE.has(role) else SLATE_WELL, 26, 3)
 		tr_.name = "tag_r"
-		tr_.position = Vector2(KitCard.W + 4.0 - tr_.size.x, -6)
+		tr_.position = Vector2(KitCard.W - ci - tr_.size.x, -6)
 	if opts.has("dot"):
 		var d := dot(b, int(opts.get("dot_n", -1)), String(opts["dot"]))
 		d.name = "dot"
+		d.position = Vector2(KitCard.W - ci - d.size.x, 6.0 - d.size.y * 0.5)  # inside the card's side too
 	return c
 
 

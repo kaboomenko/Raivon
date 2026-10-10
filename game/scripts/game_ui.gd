@@ -32,6 +32,8 @@ const CmdPortrait := preload("res://scripts/cmd_portrait.gd")
 const HudScript := preload("res://scripts/hud.gd")
 const FlagView := preload("res://scripts/flag_view.gd")
 const Kit := preload("res://scripts/ui_kit.gd")
+const OrdersSim := preload("res://scripts/sim/orders.gd")  ## the order codes (World cards' short names)
+const WeeklySim := preload("res://scripts/sim/weekly.gd")  ## the week's task codes
 
 var font_bold: Font
 var root: Control
@@ -1033,8 +1035,9 @@ const PAPER_CHIP_H := 44.0
 
 
 ## A chip on paper: CREAM_DEEP pill h 44, an icon 34 and Rubik 800 26 INK_TEXT (fit to 22, then cut), centred at
-## `center` (the result's reason, an option's «мир 24ч»).
-func _paper_chip(parent: Control, center: Vector2, icon: String, text: String, max_w := 600.0) -> Panel:
+## `center` (the result's reason, an option's «мир 24ч»). With `disc`, the icon (30) sits on a round disc of that
+## colour in an INK 3 ring — a light icon (the white dove) then reads on the paper.
+func _paper_chip(parent: Control, center: Vector2, icon: String, text: String, max_w := 600.0, disc := Kit.CLEAR) -> Panel:
 	var p := Panel.new()
 	p.name = "chip"
 	var sb := Kit.style(Kit.CREAM_DEEP, int(PAPER_CHIP_H * 0.5), 0, Kit.INK, 0, 0)  # a pill (h/2)
@@ -1043,7 +1046,21 @@ func _paper_chip(parent: Control, center: Vector2, icon: String, text: String, m
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var x := 14.0
 	var tex := Kit.icon_tex(icon)
-	if tex != null:
+	if tex != null and disc.a > 0.0:
+		var d := Panel.new()
+		d.name = "disc"
+		var dsb := Kit.style(disc, 20, 3, Kit.INK, 0, 0)
+		dsb.set_meta("kit_kind", "")
+		d.add_theme_stylebox_override("panel", dsb)
+		d.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		d.position = Vector2(2, 2)
+		d.size = Vector2(40, 40)
+		p.add_child(d)
+		var di := _icon_rect(icon, 30)
+		di.position = Vector2(5, 5)
+		d.add_child(di)
+		x = 52.0
+	elif tex != null:
 		var ic := _icon_rect(icon, 34)
 		ic.position = Vector2(10, 5)
 		p.add_child(ic)
@@ -3110,6 +3127,9 @@ func _leader_bust(it: Dictionary, r: Rect2) -> Control:
 	return t
 
 
+const CALL_OPINION := 60.0  ## an ally from this opinion can be called into the player's war (canon §10.7)
+
+
 ## The one button of a neighbour's card (see _diplomacy_card).
 func _diplomacy_cta(it: Dictionary, rel: String) -> Dictionary:
 	var id: int = it["id"]
@@ -3117,8 +3137,9 @@ func _diplomacy_cta(it: Dictionary, rel: String) -> Dictionary:
 		return {"role": "go", "caption": tr("dipl.peace"), "icon": "dove", "cb": _peace_cb(it)}
 	if bool(it.get("can_call", false)):
 		return {"role": "info", "caption": tr("dipl.call"), "icon": "horn", "cb": func(): diplomacy_action.emit(id, "call")}
-	# a gift while they dislike us — or for an ally, whose goodwill (60+) lets us call them into a war
-	if (float(it.get("opinion", 0.0)) < 0.0 or rel == "ally") and int(it.get("gift_left", 0)) == 0:
+	# a gift while they dislike us — or for an ally below the goodwill (60) that lets us call them into a war
+	var op := float(it.get("opinion", 0.0))
+	if (op < 0.0 or (rel == "ally" and op < CALL_OPINION)) and int(it.get("gift_left", 0)) == 0:
 		var g := _gift_price(it)
 		var ct := {"role": "go", "caption": tr("dipl.gift"), "icon": "gift", "price": [g[0]], "cb": func(): diplomacy_action.emit(id, "gift")}
 		if String(g[1]) != "":
@@ -3215,7 +3236,9 @@ func _leader_dialog(it: Dictionary) -> void:
 		st_icon = "handshake"
 	elif rel == "ally":
 		st_text = tr("dipl.ally")
-	var sc := _paper_chip(box, Vector2.ZERO, st_icon, st_text, cw * 0.58)
+	# the icon on a disc of the relation's colour, as on the card's corner (a white dove on bare paper did not read)
+	var st_fill := Kit.face_of("go" if st_icon == "handshake" else String(look[1]))
+	var sc :=_paper_chip(box, Vector2.ZERO, st_icon, st_text, cw * 0.58, st_fill)
 	sc.name = "status"
 	sc.position = Vector2(bx, 208)
 	var vi := roundi(v)
@@ -3233,7 +3256,8 @@ func _leader_dialog(it: Dictionary) -> void:
 		if i == acts.size() - 1 and col == 0:
 			x = (w - bw) * 0.5
 		var kind := String(a["kind"])
-		var b := Kit.button(box, Rect2(x, grid_y + row * 104.0, bw, 88), "info", String(a["cap"]),
+		# the gift is go here as on the card (one role per action); the treaties are secondary info
+		var b := Kit.button(box, Rect2(x, grid_y + row * 104.0, bw, 88), "go" if kind == "gift" else "info", String(a["cap"]),
 			{"icon": String(a["icon"]), "price": a.get("price", []), "enabled": bool(a["on"]), "size": "M"})
 		b.name = "act_" + kind
 		var why := String(a["why"])
@@ -3277,12 +3301,22 @@ func _leader_dialog(it: Dictionary) -> void:
 func _alarm_card(it: Dictionary) -> Control:
 	var pct := int(it.get("pct", 0))
 	var rules := tr("alarm.hint")
-	var opts := {"backdrop": "cream", "art_side": 72.0, "art_y": 38.0, "details": String(it.get("line", "")),
-		"chip": {"btn": {"caption": "i", "role": "info"}},
-		"stat": {"text": "%d%%" % mini(pct, 999), "bar_frac": clampf(pct / 100.0, 0.0, 1.0), "bar_role": "war"}}
+	var line := String(it.get("line", ""))
+	var stat := {"text": "%d%%" % mini(pct, 999), "bar_frac": clampf(pct / 100.0, 0.0, 1.0), "bar_role": "war"}
+	# while a coalition forms (alarm.forming: «… · 3ч 12м»), its countdown is the most urgent thing: the hourglass
+	# and the time take the stat line over the threat bar; the per cent goes to the tooltip
+	var fmt := tr("alarm.forming")
+	var head := fmt.left(fmt.find("%"))
+	if head != "" and line.begins_with(head) and line.contains(" · "):
+		stat["icon"] = "hourglass"
+		stat["text"] = line.rsplit(" · ", true, 1)[1]
+		line += "\n" + tr("alarm.title") + ": %d%%" % pct
+	var opts := {"backdrop": "cream", "art_side": 72.0, "art_y": 38.0, "details": line,
+		"chip": {"btn": {"caption": "i", "role": "info"}}, "stat": stat}
 	var card := Kit.card(Kit.icon_tex("horn"), tr("alarm.title"), opts)
 	if card.chip is Kit.KitButton:
-		(card.chip as Kit.KitButton).cb = func(): Kit.tooltip(card, tr("alarm.title"), rules)
+		var ib := card.chip as Kit.KitButton
+		ib.cb = func(): Kit.tooltip(ib, tr("alarm.title"), rules)  # its tail points at the «i»
 	return card
 
 
@@ -3347,6 +3381,24 @@ func _task_name(text: String, after := false) -> String:
 	return t.strip_edges()
 
 
+## A World card's name: the task's `.short` key when it has one (its full text stays for the tooltip), else the
+## task's text cut by _task_name. The orders and the week's tasks carry an index, not their code, in the id: the key
+## is found among the sim's codes by its translated text.
+func _short_title(id: String, text: String) -> String:
+	var keys: Array = ["star." + id]
+	if id.begins_with("order:"):
+		keys = OrdersSim.POOL.map(func(t): return "order." + String(t[0]))
+	elif id.begins_with("weekly:"):
+		keys = WeeklySim.TASKS.map(func(t): return "weekly." + String(t[0]))
+	for k in keys:
+		if tr(String(k)) == text:
+			var sk := String(k) + ".short"
+			if tr(sk) != sk:
+				return tr(sk)
+			break
+	return _task_name(text, id.begins_with("weekly:"))
+
+
 ## A card of the World tab other than the chapter (§6 Мир): its picture on paper, a short name, the progress on a
 ## bar or the reward; «Забрать» only when there is something to take; a check once taken. The War Pass and the
 ## calendar open their screens from the whole card; the others explain themselves in the tooltip.
@@ -3361,7 +3413,7 @@ func _star_card(it: Dictionary) -> Control:
 	var text := String(xs[0])
 	var xp := int(xs[1])
 	var claim_cb := func(): world_action.emit(id)
-	var title := _task_name(text)
+	var title := _short_title(id, text)
 	var icon := "xp"
 	var opts := {"backdrop": "cream", "art_side": 62.0, "art_y": 34.0}  # above a two-line name
 	var tip := PackedStringArray([text])
@@ -3394,7 +3446,7 @@ func _star_card(it: Dictionary) -> Control:
 	elif id.begins_with("order:") or id.begins_with("weekly:"):
 		var weekly := id.begins_with("weekly:")
 		icon = "medal_silver" if weekly else "orders"
-		title = _task_name(text, weekly)
+		title = _short_title(id, text)
 		if xp > 0:
 			tip.append(tr("world.tip.xp") % xp)
 		if bool(it.get("swap", false)):  # the day's one free swap of an order (08 §8.6)
@@ -3449,6 +3501,9 @@ const BUILDING_ICONS := {"residence": "crown", "barracks": "swords", "academy": 
 const RESEARCH_ICONS := {"taxes": "book", "harvest": "food", "metallurgy": "metal", "infantry": "swords",
 	"reserve": "shield", "drill": "target", "logistics": "cart", "cellars": "crate", "colonization": "pin",
 	"thrift": "coins"}
+## A line whose effect a render shows better than an icon: the harvest is the fields (its price is food, so the food
+## sack would repeat the price; there is no plough render yet)
+const RESEARCH_ART := {"harvest": "res://assets/ui/cards/tile_farm.png"}
 const PRICE_ICON := {"gold": "coin", "food": "food", "metal": "metal", "oil": "barrel", "raivite": "raivite"}
 const RES_ORDER: Array[String] = ["gold", "food", "metal", "oil"]
 
@@ -3549,7 +3604,8 @@ func _building_card(it: Dictionary) -> Control:
 	var tex: Texture2D = null
 	if research:
 		opts["backdrop"] = "blueprint"
-		tex = Kit.icon_tex(String(RESEARCH_ICONS.get(line, "book")))
+		var rart := String(RESEARCH_ART.get(line, ""))
+		tex = load(rart) if rart != "" and ResourceLoader.exists(rart) else Kit.icon_tex(String(RESEARCH_ICONS.get(line, "book")))
 		opts["art_side"] = 72.0
 		opts["art_y"] = 40.0
 	else:
@@ -3590,13 +3646,28 @@ func _building_card(it: Dictionary) -> Control:
 				research_speedup.emit(line)
 			else:
 				building_speedup.emit(id)
-		if int(it.get("speed", 0)) == 0:
+		var sp := int(it.get("speed", 0))
+		if sp == 0:
 			opts["cta"] = {"role": "go", "caption": tr("ui.finish"), "icon": "lightning", "cb": speed_cb}
-		else:
+		elif int(it.get("stock", 0)) > 0:
+			# the speed-up stock from cases pays first: the tap is free, the time left on the info face (§4.4)
 			opts["cta"] = {"role": "info", "caption": fmt_time(int(it["left"])), "icon": "hourglass", "cb": speed_cb}
-		if int(it.get("bp", 0)) > 0:
-			# «Применить чертёж» (07 §6.1): a round button with the blueprint on the chip's corner
-			opts["chip"] = {"btn": {"icon": "blueprint", "role": "info"}}
+		else:
+			# the tap spends Raivites at once: gold with the lightning and their price on a plate (§1 rule 7, §4.1); the
+			# time left moves onto the art, over the name (it never fits beside the price); not enough — the number
+			# red, the tap says so and spends nothing
+			var rv := _stock("raivite")
+			var short := int(rv[1]) >= 0 and sp > int(rv[1])
+			opts["timer"] = fmt_time(int(it["left"]))
+			var ct := {"role": "gold", "icon": "lightning", "cb": speed_cb, "price": [["raivite", fmt_num(sp), short]]}
+			if short:
+				ct["short_reason"] = L.t("err.not_enough|res.gen.raivite")
+			opts["cta"] = ct
+		var bp := int(it.get("bp", 0))
+		if bp > 0:
+			# «Применить чертёж» (07 §6.1): a round go button with the blueprint on the chip's corner — a free item
+			# speeds the research up — and the stock on a plate under it («×3»; «−10% each» is in the tooltip)
+			opts["chip"] = {"btn": {"icon": "blueprint", "role": "go"}, "count": "×%d" % bp}
 			opts["chip_cb"] = func(): research_speedup.emit("bp:" + line)
 	elif rk[0] == "max" or cost.is_empty():
 		opts["stat"] = {"text": tr("err.max"), "check": true}

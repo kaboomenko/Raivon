@@ -373,11 +373,13 @@ toast.research_started,🔬 %s → ур. %d · %s,🔬 %s → Lv %d · %s
 toast.research_done,"🔬 Изучено: %s, ур. %d — %s",🔬 Researched: %s Lv %d: %s
 star.peace,Подпишите мир,Sign a peace
 star.goal,Возьмите цель войны,Take a war goal
-star.pocket,Котёл по договору,Pocket by treaty
+star.pocket,Заберите котёл по договору,Take a pocket by treaty
+star.pocket.short,Котёл по договору,Pocket by treaty
 star.colonize,Освойте 3 гекса,Settle 3 hexes
 star.fort,Поставьте укрепление,Build a fort
 star.convoy,Привезите 3 обоза,Bring home 3 convoys
-star.defense,Отбейте набег,Repel a raid
+star.defense,Отбейте набег или удар,Repel a raid or a strike
+star.defense.short,Отбейте набег,Repel a raid
 star.dl3,Достигните УР3,Reach DL3
 toast.star,⭐ Звезда главы: +10 Райвитов и час производства,⭐ Chapter star: +10 Raivites and 1 h of output
 inbox.all_stars.title,Все звёзды главы I,All Chapter I stars
@@ -565,9 +567,12 @@ star.c2_port,Выход к морю: присоедините порт,To the se
 star.c2_defense,Стена держит: отбейте удар ИИ в главе II,The wall holds: repel an AI strike in chapter II
 star.c2_pocket4,Клещи: заберите котёл из 4+ гексов,Pincers: take a pocket of 4+ hexes
 star.c2_ultimatum,Не на тех напали: отклоните ультиматум и победите,Picked the wrong fight: refuse an ultimatum and win
-star.c2_colonize,Освойте 4 диких гекса,Settle 4 wild hexes
-star.c2_camps,Разбейте 3 лагеря,Destroy 3 camps
-star.c2_dl5,Достигните УР5,Reach DL5
+star.c2_colonize,Освойте 4 диких гекса в главе II,Settle 4 wild hexes in chapter II
+star.c2_colonize.short,Освойте 4 диких гекса,Settle 4 wild hexes
+star.c2_camps,Разбейте 3 лагеря мародёров,Destroy 3 marauder camps
+star.c2_camps.short,Разбейте 3 лагеря,Destroy 3 camps
+star.c2_dl5,Доведите державу до УР5,Bring the realm to DL5
+star.c2_dl5.short,Достигните УР5,Reach DL5
 inbox.ai_war.title,Война соседей,Neighbours at war
 inbox.ai_war.text,%s напали на %s. Их фронт виден по штриховке; гарнизоны воюющих слабее на других границах.,%s attacked %s. Their front shows as hatching; the warring states have weaker garrisons on their other borders.
 inbox.ai_peace.title,Соседи помирились,Neighbours made peace
@@ -664,9 +669,12 @@ star.c3_oil2,Нефтяной пояс: владейте 2 нефтяными г
 star.c3_hegemon,Укротитель волков: победный мир с Альварией,Wolf tamer: a victorious peace with Alvaria
 star.c3_capital,У ворот столицы: оккупируйте вражескую столицу,At the gates: occupy an enemy capital
 star.c3_vein,Кристалл континента: присоедините жилу кольца III,Continental crystal: annex the ring III vein
-star.c3_colonize,Освойте 6 диких гексов,Settle 6 wild hexes
-star.c3_camps,Разбейте 5 лагерей,Destroy 5 camps
-star.c3_dl7,Достигните УР7,Reach DL7
+star.c3_colonize,Освойте 6 диких гексов в главе III,Settle 6 wild hexes in chapter III
+star.c3_colonize.short,Освойте 6 диких гексов,Settle 6 wild hexes
+star.c3_camps,Разбейте 5 лагерей мародёров в главе III,Destroy 5 marauder camps in chapter III
+star.c3_camps.short,Разбейте 5 лагерей,Destroy 5 camps
+star.c3_dl7,Доведите державу до УР7,Bring the realm to DL7
+star.c3_dl7.short,Достигните УР7,Reach DL7
 state.conclave,Стальной Конклав,Steel Conclave
 state.conclave.short,Конклав,Conclave
 state.veilmark,Вейлмарк,Veilmark
@@ -725,9 +733,12 @@ star.c4_ultrafence,Ультразабор: постройте укреплени
 star.c4_pocket8,Большой котёл: заберите котёл из 8+ гексов,Great pocket: take a pocket of 8+ hexes
 star.c4_cities6,Город небоскрёбов: владейте 6 городами,Skyscraper city: hold 6 cities
 star.c4_vein,Кристалл пояса: присоедините жилу кольца IV,Belt crystal: annex the ring IV vein
-star.c4_colonize,Освойте 8 диких гексов,Settle 8 wild hexes
-star.c4_camps,Разбейте 6 лагерей,Destroy 6 camps
-star.c4_dl8,Достигните УР8,Reach DL8
+star.c4_colonize,Освойте 8 диких гексов в главе IV,Settle 8 wild hexes in chapter IV
+star.c4_colonize.short,Освойте 8 диких гексов,Settle 8 wild hexes
+star.c4_camps,Разбейте 6 лагерей мародёров в главе IV,Destroy 6 marauder camps in chapter IV
+star.c4_camps.short,Разбейте 6 лагерей,Destroy 6 camps
+star.c4_dl8,Доведите державу до УР8,Bring the realm to DL8
+star.c4_dl8.short,Достигните УР8,Reach DL8
 alarm.title,Тревога соседей,Neighbours' alarm
 alarm.calm,Соседи спокойны,The neighbours are calm
 alarm.wary,"Соседи насторожены: мнение всех −10, новых союзов нет","The neighbours are wary: opinion −10 for all, no new alliances"
@@ -818,22 +829,31 @@ star.c4_landing,Высадка: удержите гекс Десанта до к
 star.c4_missile,Точный удар: выведите башню Ракетным ударом,Precision strike: knock out a tower with a Missile strike
 order.order_collect_3,Соберите доход 3 раза (раз в 30 мин),Collect income ×3 (30 min apart)
 order.order_deposits,Соберите залежи,Collect deposits
-order.order_raider_camp,Разбейте лагерь,Destroy a camp
+order.order_raider_camp,Разбейте лагерь мародёров,Destroy a marauder camp
+order.order_raider_camp.short,Разбейте лагерь,Destroy a camp
 order.order_colonize,Освойте дикий гекс,Settle a wild hex
 order.order_upgrades_2,Начните 2 улучшения,Start 2 upgrades
 order.order_fort,Улучшите укрепление,Upgrade a fort
 order.order_research,Начните изучение,Start a research
 order.order_train,Обучите армию,Train an army
-order.order_market,Обмен на Рынке,Trade at the Market
-order.order_gift,Подарок соседу,Gift a neighbour
-order.order_crates_2,Откройте 2 ящика,Open 2 War crates
+order.order_market,Обменяйте ресурсы на Рынке,Trade resources at the Market
+order.order_market.short,Обмен на Рынке,Trade at the Market
+order.order_gift,Сделайте подарок соседу,Send a neighbour a gift
+order.order_gift.short,Подарок соседу,Gift a neighbour
+order.order_crates_2,Откройте 2 Военных ящика,Open 2 War crates
+order.order_crates_2.short,Откройте 2 ящика,Open 2 crates
 order.order_offensives_2,Проведите 2 наступления,Fight 2 offensives
-order.order_stars_2,Получите 2 звезды,Earn 2 stars
-order.order_capture,Захватите гексы,Capture hexes
+order.order_stars_2,Получите 2 звезды в наступлении,Earn 2 stars in an offensive
+order.order_stars_2.short,Получите 2 звезды,Earn 2 stars
+order.order_capture,Захватите гексы в наступлениях,Capture hexes in offensives
+order.order_capture.short,Захватите гексы,Capture hexes
 order.order_cards,Разыграйте карты (кроме «Атаки»),Play cards (other than Attack)
-order.order_stars_3,Получите 3 звезды,Earn 3 stars
-order.order_pocket,Заберите котёл,Take a pocket
-order.order_peace_win,Победный мир,Win a peace
+order.order_stars_3,Получите 3 звезды в наступлении,Earn 3 stars in an offensive
+order.order_stars_3.short,Получите 3 звезды,Earn 3 stars
+order.order_pocket,Окружите и заберите котёл,Encircle and take a pocket
+order.order_pocket.short,Заберите котёл,Take a pocket
+order.order_peace_win,Подпишите победный мир,Sign a victorious peace
+order.order_peace_win.short,Победный мир,Win a peace
 pass.xp,ОП,XP
 orders.all,Все три приказа: Военный ящик + 10 Райвитов,All three orders: a War crate + 10 Raivites
 toast.order_done,Приказ выполнен: +%d ОП пропуска,Order done: +%d pass XP
@@ -857,13 +877,18 @@ pass.rw_shards,%d осколков: %s,%d shards: %s
 pass.rw_speed,Ускорение %d ч,Speed-up %d h
 toast.pass_claim,Награда пропуска: %s,Pass reward: %s
 toast.pass_bought,Премиум-ветка пропуска открыта,The pass premium track is open
-weekly.weekly_peace,За неделю: победные миры,This week: victorious peaces
-weekly.weekly_capture,За неделю: захват гексов,This week: capture hexes
-weekly.weekly_orders,За неделю: все приказы за 4 дня,This week: all orders on 4 days
+weekly.weekly_peace,За неделю: подпишите победные миры,This week: sign victorious peaces
+weekly.weekly_peace.short,Победные миры,Victorious peaces
+weekly.weekly_capture,За неделю: захватите гексы в наступлениях,This week: capture hexes in offensives
+weekly.weekly_capture.short,Захват гексов,Capture hexes
+weekly.weekly_orders,За неделю: закройте все «Приказы дня» за 4 дня,This week: finish all daily orders on 4 days
+weekly.weekly_orders.short,Все приказы за 4 дня,All orders on 4 days
 weekly.weekly_deposits,За неделю: соберите залежи,This week: collect deposits
-weekly.weekly_builds,За неделю: стройки и изучение,This week: builds and research
+weekly.weekly_builds,За неделю: начните улучшения и исследования,This week: start upgrades and research
+weekly.weekly_builds.short,Стройки и изучение,Builds and research
 weekly.weekly_forms,За неделю: заберите котлы,This week: take pockets
-weekly.weekly_camps,За неделю: лагеря и дикие гексы,This week: camps and wild hexes
+weekly.weekly_camps,За неделю: разбейте лагеря или освойте дикие гексы,This week: destroy camps or settle wild hexes
+weekly.weekly_camps.short,Лагеря и дикие гексы,Camps and wild hexes
 weekly.chest1,"Сундук недели, ступень 1 (4 из 7): 2 Военных ящика и 2 ч ускорений","Weekly chest, step 1 (4 of 7): 2 War crates and 2 h of speed-ups"
 weekly.chest2,"Сундук недели, ступень 2 (6 из 7): ресурсы 8 ч, ускорение 3 ч, 10 осколков, ящик","Weekly chest, step 2 (6 of 7): 8 h of resources, a 3 h speed-up, 10 shards, a crate"
 toast.weekly_chest,Сундук недели открыт!,The weekly chest is open!
@@ -908,7 +933,7 @@ separate.terms,Условия: %d золота контрибуции,Terms: %d 
 separate.terms_white,Условия: белый мир,Terms: a white peace
 separate.accept,Принять мир,Accept the peace
 separate.decline,Воевать дальше,Fight on
-dipl.share,Доля в счёте: %s,Score share: %s
+dipl.share,Доля: %s очка,Share: %s points
 toast.front,Следующее наступление — на «%s»,The next offensive goes against “%s”
 toast.separate_land,"«%s» вышли из коалиции: гексов отошло %d, контрибуция %d золота","“%s” left the coalition: %d hexes ceded, %d gold of contribution"
 separate.terms_land,"Условия: занятые вами гексы (%d) отходят вам, контрибуция %d золота","Terms: the hexes you hold (%d) become yours, %d gold of contribution"
