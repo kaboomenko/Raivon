@@ -3064,9 +3064,9 @@ static func _signed(v: int) -> String:
 
 
 ## A neighbour's card (§6 Соседи): the leader in their mood on the state's colour, the state's short name; the relation on
-## the left chip, the opinion on the right one (green / red); exactly one button for the moment — «Мир» at war, a
-## gift while they dislike us, «Призыв» for an ally we may call into our war, else «Пакт» (grey with the reason
-## while it cannot be signed). A tap on the card opens the leader's window with every action.
+## the left chip, the opinion on the right one (green / red); exactly one button for the moment — «Мир» at war,
+## «Призыв» for an ally we may call into our war, a gift while they dislike us (or to an ally), else «Пакт» (grey
+## with the reason while it cannot be signed). A tap on the card opens the leader's window with every action.
 func _diplomacy_card(it: Dictionary) -> Control:
 	if String(it.get("kind", "")) == "alarm":
 		return _alarm_card(it)
@@ -3117,7 +3117,8 @@ func _diplomacy_cta(it: Dictionary, rel: String) -> Dictionary:
 		return {"role": "go", "caption": tr("dipl.peace"), "icon": "dove", "cb": _peace_cb(it)}
 	if bool(it.get("can_call", false)):
 		return {"role": "info", "caption": tr("dipl.call"), "icon": "horn", "cb": func(): diplomacy_action.emit(id, "call")}
-	if float(it.get("opinion", 0.0)) < 0.0 and int(it.get("gift_left", 0)) == 0:
+	# a gift while they dislike us — or for an ally, whose goodwill (60+) lets us call them into a war
+	if (float(it.get("opinion", 0.0)) < 0.0 or rel == "ally") and int(it.get("gift_left", 0)) == 0:
 		var g := _gift_price(it)
 		var ct := {"role": "go", "caption": tr("dipl.gift"), "icon": "gift", "price": [g[0]], "cb": func(): diplomacy_action.emit(id, "gift")}
 		if String(g[1]) != "":
@@ -3203,7 +3204,7 @@ func _leader_dialog(it: Dictionary) -> void:
 	Kit.bubble(box, Rect2(bx, 106, cw, 88), tr(say), "left")
 	# the relation and the opinion under the line
 	# the relation's chip says the most telling thing: a coalition member's share of the war score (06 §14.6), an AI
-	# alliance, else the status
+	# alliance, our alliance, else the status
 	var look: Array = RELATION_LOOK[rel]
 	var st_text := String(it.get("status", ""))
 	var st_icon := String(look[0])
@@ -3212,6 +3213,8 @@ func _leader_dialog(it: Dictionary) -> void:
 	elif String(it.get("ai_ally", "")) != "":
 		st_text = tr("dipl.ai_ally") % String(it["ai_ally"])
 		st_icon = "handshake"
+	elif rel == "ally":
+		st_text = tr("dipl.ally")
 	var sc := _paper_chip(box, Vector2.ZERO, st_icon, st_text, cw * 0.58)
 	sc.name = "status"
 	sc.position = Vector2(bx, 208)
@@ -3360,7 +3363,7 @@ func _star_card(it: Dictionary) -> Control:
 	var claim_cb := func(): world_action.emit(id)
 	var title := _task_name(text)
 	var icon := "xp"
-	var opts := {"backdrop": "cream", "art_side": 68.0, "art_y": 38.0}
+	var opts := {"backdrop": "cream", "art_side": 62.0, "art_y": 34.0}  # above a two-line name
 	var tip := PackedStringArray([text])
 	var progress := {"text": "%d/%d" % [mini(prog, need), need], "bar_frac": clampf(float(prog) / need, 0.0, 1.0), "bar_role": "info"}
 	var stat := progress
@@ -3410,7 +3413,7 @@ func _star_card(it: Dictionary) -> Control:
 		var holder := Control.new()
 		holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		holder.size = Vector2(172, 104)
-		Kit.star(holder, Vector2(86, 36), 32.0, done or claimed)
+		Kit.star(holder, Vector2(86, 32), 30.0, done or claimed)
 		opts["art_node"] = holder
 	if claimed:
 		stat = stat.duplicate()
@@ -3557,11 +3560,13 @@ func _building_card(it: Dictionary) -> Control:
 			tex = Kit.icon_tex(String(BUILDING_ICONS.get(typ, "houses")))
 			opts["art_side"] = 72.0
 			opts["art_y"] = 40.0
-	# the tooltip (§4.11, 4 lines at most): the effect, the level, then the time and the price, or the time left
+	# the tooltip (§4.11, 4 lines at most): the effect, the level, the time and the price; while busy the time left,
+	# the speed-up and the blueprints
 	var tip := PackedStringArray()
 	if research:
 		tip.append(tr("rs." + line + ".desc"))  # what a level gives (Research.LINES[line].desc)
-	tip.append(tr("bld.level") % [lvl, int(it["max"])])
+	if not busy:  # while it builds the time left and the speed-up matter more than the level
+		tip.append(tr("bld.level") % [lvl, int(it["max"])])
 	if busy:
 		var sp := int(it.get("speed", 0))
 		tip.append(tr("bld.tip.left") % fmt_time(int(it["left"])))

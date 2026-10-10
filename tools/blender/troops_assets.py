@@ -449,7 +449,7 @@ def plate_xz(pts, loc, t, mt, k=1.0):
 def _roll(Z, mt, r=0.061, rt=0.011, tilt=0.72, z=0.248, n=12, m=4, side=1):
     """Blanket roll worn horseshoe-fashion from one shoulder (side +1: the +X one) over the chest to the opposite
     hip: a closed tube (m-sided) round a tilted ellipse that is a circle of radius r seen from above, so it keeps
-    clear of the torso all the way round (like _sash)."""
+    clear of the torso all the way round."""
     a, b = r / math.cos(tilt), r
     verts = []
     for k in range(n):
@@ -565,9 +565,11 @@ def _c_shaft(x, y, z0, z1, mt, r=CH_SHAFT_R):
     return rod((x, y, z0), (x, y, z1), r, mt, n=5)
 
 
-def flat_shield(outline, k_rim, k_face, eagle, loc, rim_mt, face_mt, depth=0.012):
+def flat_shield(outline, k_rim, k_face, eagle, loc, rim_mt, face_mt, depth=0.012, back_mt=None):
     """A shield as ONE flat front surface facing −Y — the rim band, the team field with the eagle cut out of it and
-    the white eagle are coplanar regions that only share their edges — and an open side wall `depth` deep behind it.
+    the white eagle are coplanar regions that only share their edges — a side wall `depth` deep behind it and a back
+    face (back_mt, default the rim's) closing it: troops.gdshader culls back faces and armies turn to face the enemy,
+    so a shield without a back vanished whenever its army faced away from the camera.
     outline: the shield's (u, v) outline (u right, v up); the rim band runs from k_face to k_rim of it; eagle = (w, h,
     du, dv). Stacked plates (a rim disc, a field disc, an eagle a few mm before it) z-fought in troops.gdshader's
     march: its swing bends a shield non-linearly, so stacked layers bent apart and the eagle sank into the field."""
@@ -613,16 +615,19 @@ def flat_shield(outline, k_rim, k_face, eagle, loc, rim_mt, face_mt, depth=0.012
         quads.append((q, (mu, 0.0, mv)))
     for q, nn in quads:  # the wall: one quad per outline edge, each wound outwards
         face_obj([q], nn, rim_mt)
+    # the back: one n-gon (the outlines are convex) on the wall's far edge, wound towards +Y
+    face_obj([[(x + u, y + depth, z + v) for u, v in outer]], (0, 1, 0), back_mt or rim_mt)
 
 
 ROUND10 = [(math.cos(math.tau * k / 10), math.sin(math.tau * k / 10)) for k in range(10)]
+SHIELD_BACK = None  # TEST
 
 
 def _c_round_shield(Z, face, rim, x=-0.024, y=-0.066, z=0.2, r=0.07):
     """Round shield ×1.2 held before the left of the chest (kept within the figure's place): a bright rim, the team
     face and the white eagle (reference frames 3–4), one flat surface (flat_shield)."""
     flat_shield(ROUND10, r, r * 0.82, (r * 1.02, r * 1.02, 0.0, 0.0), (x, y - 0.007, Z + z), F(rim, 0.4),
-                F(face, 0.7), 0.012)
+                F(face, 0.7), 0.012, F(SHIELD_BACK, 0.8) if SHIELD_BACK else None)
 
 
 # a militia axe blade in (x, z), the round edge towards −X (inwards, across the man's front)
@@ -637,7 +642,7 @@ def _c_heater(Z, team, x=-0.03, y=-0.06, z=0.2, rim=STEEL, field=None, k=1.2):
     """Heater shield ×1.2 (reference frame 3): a steel border, the team field, the white eagle — one flat surface
     (flat_shield)."""
     flat_shield(HEATER_SOFT, 1.16 * k, k, (0.05 * k, 0.056 * k, 0.0, -0.004 * k), (x, y - 0.006, Z + z),
-                F(rim, 0.35), F(field or team, 0.7), 0.01)
+                F(rim, 0.35), F(field or team, 0.7), 0.01, F(SHIELD_BACK, 0.8) if SHIELD_BACK else None)
 
 
 def _c_surcoat(Z, team, hem=0.085, waist=0.18, r=0.06, flare=0.07, k=0.78, eagle=True):
@@ -755,8 +760,8 @@ def figure(dl, team, v=0, seated=False):
         _c_legs(Z, seated, "#ece6d6", "#2e2a2a", gaiter="#3a3434")
         _c_torso(Z, coat, skirt=shade(team, 0.82), skirt_len=0.125, skirt_r=0.066)
         w = F(WHITE, 0.6)
-        for s in (-1, 1):
-            b = bx((0.016, 0.012, 0.13), (0, -0.0525, Z + 0.225), w, bev=0)
+        for s in (-1, 1):  # the second belt 2 mm proud: coplanar, the two fought where they cross (a dark diamond)
+            b = bx((0.016, 0.012, 0.13), (0, -0.0525 - 0.001 * (s + 1), Z + 0.225), w, bev=0)
             b.rotation_euler.y = s * 0.6
         ring(0.0515, 0.02, (0, 0, Z + 0.175), w, 8)  # white belt
         for sx in (-1, 1):  # gold shoulder knots
@@ -1157,8 +1162,8 @@ def assault_dl4(team):
     _c_legs(Z, True, "#ece6d6", "#2e2a2a", gaiter="#3a3434")
     _c_torso(Z, team)
     w = F(WHITE, 0.6)
-    for s in (-1, 1):
-        b = bx((0.016, 0.012, 0.13), (0, -0.0525, Z + 0.225), w, bev=0)
+    for s in (-1, 1):  # the second belt 2 mm proud: coplanar, the two fought where they cross (a dark diamond)
+        b = bx((0.016, 0.012, 0.13), (0, -0.0525 - 0.001 * (s + 1), Z + 0.225), w, bev=0)
         b.rotation_euler.y = s * 0.6
     ring(0.0515, 0.02, (0, 0, Z + 0.175), w, 8)  # white belt
     for sx in (-1, 1):  # gold epaulettes
