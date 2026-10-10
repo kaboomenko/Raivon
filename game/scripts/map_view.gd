@@ -176,19 +176,32 @@ func _build_waterfalls() -> void:
 				continue
 			any = true
 			var out := Vector3(mid.x - center.x, 0, mid.z - center.z).normalized()
-			var a2 := a + out * 0.12 + Vector3(0, -0.27, 0)
-			var b2 := b + out * 0.12 + Vector3(0, -0.27, 0)
-			for v in [[a, Vector2(0, 0)], [b, Vector2(1, 0)], [b2, Vector2(1, 1)], [a, Vector2(0, 0)], [b2, Vector2(1, 1)], [a2, Vector2(0, 1)]]:
-				st.set_uv(v[1])
-				st.set_normal(out)
-				st.add_vertex((v[0] as Vector3) + out * 0.01)
+			# the rounded coast (P4): where a land corner ends this edge, the water filling its cut corner pours
+			# too, over the land hex's edge from the corner to the arc's tangent point. One curtain with mitred
+			# joins; its UV runs on across the corner pieces, so only the curtain's outer ends fade.
+			var fa := _fall_corner(_coast_corners.get(_corner_key(Vector2(a.x, a.z)), {}))
+			var fb := _fall_corner(_coast_corners.get(_corner_key(Vector2(b.x, b.z)), {}))
+			var la := 0.0 if fa.is_empty() else ((fa["t"] as Vector3) - (fa["v"] as Vector3)).length()
+			var lb := 0.0 if fb.is_empty() else ((fb["t"] as Vector3) - (fb["v"] as Vector3)).length()
+			var ua := la / (la + 1.0 + lb)
+			var ub := (la + 1.0) / (la + 1.0 + lb)
+			var oa := out if fa.is_empty() else _miter(out, fa["n"])
+			var ob := out if fb.is_empty() else _miter(out, fb["n"])
+			_curtain(st, a, b, oa, ob, ua, ub, out)
+			if not fa.is_empty():
+				_curtain(st, (fa["t"] as Vector3) + Vector3(0, -0.07, 0), a, fa["n"], oa, 0.0, ua, fa["n"])
+			if not fb.is_empty():
+				_curtain(st, b, (fb["t"] as Vector3) + Vector3(0, -0.07, 0), ob, fb["n"], ub, 1.0, fb["n"])
+			# the mist keeps 0.2 off an end with a corner piece: its billboards would cut into the cliff there
+			var lo := 0.1 if fa.is_empty() else 0.2
+			var hi := 0.9 if fb.is_empty() else 0.8
 			if _smoke_mat == null:
 				_smoke_mat = _fx_mat(_puff_tex(), false)
 			var mist := CPUParticles3D.new()  # spray where the fall hits the fog below
 			mist.amount = 6
 			mist.lifetime = 2.2
 			mist.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
-			mist.emission_box_extents = Vector3(0.4, 0.02, 0.1)
+			mist.emission_box_extents = Vector3((hi - lo) * 0.5, 0.02, 0.1)
 			mist.direction = Vector3(0, 1, 0)
 			mist.initial_velocity_min = 0.05
 			mist.initial_velocity_max = 0.12
@@ -200,7 +213,7 @@ func _build_waterfalls() -> void:
 			q.material = _smoke_mat
 			mist.mesh = q
 			mist.preprocess = 2.2
-			mist.position = (a2 + b2) / 2.0 + Vector3(0, 0.05, 0)
+			mist.position = a.lerp(b, (lo + hi) * 0.5) + out * 0.12 + Vector3(0, -0.27 + 0.05, 0)
 			mist.rotation.y = atan2(-(b - a).z, (b - a).x)
 			mist.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			_horizon_root.add_child(mist)
@@ -214,6 +227,26 @@ func _build_waterfalls() -> void:
 	_falls_mi.material_override = m
 	_falls_mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(_falls_mi)
+
+
+## One waterfall quad under the edge p -> q at the water line: it leans out 0.12 over 0.27 down (op / oq: the
+## outward offset at each end, a mitred one at a join), UV.x up -> uq across, UV.y 0 at the top -> 1 at the foot.
+static func _curtain(st: SurfaceTool, p: Vector3, q: Vector3, op: Vector3, oq: Vector3, up: float, uq: float,
+		n: Vector3) -> void:
+	var pt := p + op * 0.01
+	var qt := q + oq * 0.01
+	var pb := p + op * 0.13 + Vector3(0, -0.27, 0)
+	var qb := q + oq * 0.13 + Vector3(0, -0.27, 0)
+	for v in [[pt, Vector2(up, 0)], [qt, Vector2(uq, 0)], [qb, Vector2(uq, 1)], [pt, Vector2(up, 0)], [qb, Vector2(uq, 1)],
+			[pb, Vector2(up, 1)]]:
+		st.set_uv(v[1])
+		st.set_normal(n)
+		st.add_vertex(v[0])
+
+
+## The offset at a join of two curtains with outward normals n1, n2: it lies 1 out from both edge lines.
+static func _miter(n1: Vector3, n2: Vector3) -> Vector3:
+	return (n1 + n2) / (1.0 + n1.dot(n2))
 
 
 ## Rivers run along hex edges (canon §5.1): a blue ribbon on every river edge with round joints.
@@ -738,25 +771,33 @@ func _build_terrain() -> void:
 			var k1 := (k + 1) % m
 			var a := _v3(fp[k])
 			var b := _v3(fp[k1])
+			var deep := nbs[fe[k]] < 0 or nbs[fe[k1]] < 0  # the world's edge: on down to the horizon
+			if k % (COAST_SEG + 1) == COAST_SEG:
+				# a straight run T2 -> T1: split at the edge midpoint like the land top, so the crease has no
+				# T-junction
+				var mid := (a + b) * 0.5
+				var nm: Vector3 = ((nrm[k] as Vector3) + (nrm[k1] as Vector3)).normalized()
+				for half in [[a, mid, nrm[k], nm], [mid, b, nm, nrm[k1]]]:
+					_wall(st, half[0], half[1], half[2], half[3], 0.0, -0.4, WALL_TOP, WALL_MID)
+					if deep:
+						_wall(st, half[0], half[1], half[2], half[3], -0.4, -1.4, WALL_MID, WALL_DEEP)
+				continue
 			_wall(st, a, b, nrm[k], nrm[k1], 0.0, -0.4, WALL_TOP, WALL_MID)
-			if nbs[fe[k]] < 0 or nbs[fe[k1]] < 0:  # the world's edge: on down to the horizon
+			if deep:
 				_wall(st, a, b, nrm[k], nrm[k1], -0.4, -1.4, WALL_MID, WALL_DEEP)
 	# a convex corner between a water hex and the world's edge (where a waterfall starts): the water that fills the
-	# cut corner (_build_water) would be open toward the edge, so the slate bed wall continues under it, from the
-	# corner to the arc's tangent point on the edge side
+	# cut corner (_build_water) would be open toward the edge, so the cliff goes on under it from the arc's tangent
+	# point T to the corner, in line with the straight cliff before T and in its colours (the §6.3 earth gradient
+	# from the water line down); the waterfall pours over its top (_build_waterfalls)
+	var c_wet: Color = WALL_TOP.lerp(WALL_MID, 0.07 / 0.4)  # the cliff's colour at the water line
 	for key in corners:
-		var e: Dictionary = corners[key]
-		var wi := _is_water(int(e["nb_in"]))
-		var wo := _is_water(int(e["nb_out"]))
-		if not e["convex"] or not ((wi and int(e["nb_out"]) < 0) or (wo and int(e["nb_in"]) < 0)):
+		var f := _fall_corner(corners[key])
+		if f.is_empty():
 			continue
-		var arc: PackedVector2Array = e["arc"]
-		var v := _v3(e["v"])
-		var a := _v3(arc[0]) if wo else v  # along the land's loop direction, so the land lies on the left
-		var b := v if wo else _v3(arc[COAST_SEG])
-		var d := (b - a).normalized()
-		var n := Vector3(d.z, 0.0, -d.x)  # the right of the direction: outward
-		_wall(st, a, b, n, n, -0.07, -1.4, WALL_DEEP, WALL_DEEP)
+		var na: Vector3 = f["na"]
+		var nb: Vector3 = f["nb"]
+		_wall(st, f["a"], f["b"], na, nb, -0.07, -0.4, c_wet, WALL_MID)
+		_wall(st, f["a"], f["b"], na, nb, -0.4, -1.4, WALL_MID, WALL_DEEP)
 	_terrain_mi = MeshInstance3D.new()
 	_terrain_mi.mesh = st.commit()
 	_terrain_mat = ShaderMaterial.new()
@@ -861,6 +902,39 @@ func _coastline() -> Dictionary:
 				"m_in": (cp[ip] + cp[i]) * 0.5, "m_out": (cp[i] + cp[iq]) * 0.5}
 		loops.append({"pts": fp, "edge": f["edge"], "nb": nbs})
 	return {"corners": corners, "loops": loops}
+
+
+## A waterfall corner of the rounded coast (P4 review): a convex corner whose two outside cells are a water hex and
+## the world's edge. The water filling its cut corner (_build_water) meets the edge along the land hex's edge, from
+## the corner V to the arc's tangent point T there. Returns {} for any other corner, else (y 0)
+##   "v", "t", "water": the water hex, "n": that edge's outward normal,
+##   "a", "b": V and T in the land loop's direction (the land on the left), "na", "nb": the normals there — at T the
+##   cliff's own smooth normal (between the straight edge and the arc), so the cliff goes on past T without a crease.
+func _fall_corner(e: Dictionary) -> Dictionary:
+	if e.is_empty() or not e["convex"]:
+		return {}
+	var arc: PackedVector2Array = e["arc"]
+	var v := _v3(e["v"])
+	var t: Vector3
+	var arc_dir: Vector2  # the arc's segment at T, in the loop's direction
+	var water: int
+	if _is_water(int(e["nb_in"])) and int(e["nb_out"]) < 0:
+		water = int(e["nb_in"])
+		t = _v3(arc[COAST_SEG])  # T2 on the outgoing edge: the loop runs V -> T2
+		arc_dir = arc[COAST_SEG] - arc[COAST_SEG - 1]
+	elif _is_water(int(e["nb_out"])) and int(e["nb_in"]) < 0:
+		water = int(e["nb_out"])
+		t = _v3(arc[0])  # T1 on the incoming edge: the loop runs T1 -> V
+		arc_dir = arc[1] - arc[0]
+	else:
+		return {}
+	var d := (t - v).normalized() if int(e["nb_out"]) < 0 else (v - t).normalized()
+	var n := Vector3(d.z, 0.0, -d.x)  # the right of the direction of travel: outward
+	var ad := arc_dir.normalized()
+	var nt := (n + Vector3(ad.y, 0.0, -ad.x)).normalized()
+	if int(e["nb_out"]) < 0:
+		return {"v": v, "t": t, "water": water, "n": n, "a": v, "b": t, "na": n, "nb": nt}
+	return {"v": v, "t": t, "water": water, "n": n, "a": t, "b": v, "na": nt, "nb": n}
 
 
 ## The ground shader by zoom (§6.7): the fine speckle only up close, the seams full close up and faint from afar.

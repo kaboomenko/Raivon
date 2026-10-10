@@ -344,6 +344,7 @@ RIDGE_R = 0.018
 RIDGE_K = 0.75
 EAVE_K = 0.7
 EAVE_MIN = 0.02
+ROLL_RISE = 0.009  # how far a gable roof's barge roll stands over its course butts (gable_roof)
 
 
 def roof_trim(roof_c=None, k=TRIM_K):
@@ -383,7 +384,7 @@ def _round_trim(loc, rz, roof_c, span, ridges=(), hips=(), eaves=(), eave_t=0.0)
         for p0, p1 in ridges:
             rod(_rt(p0, loc, rz), _rt(p1, loc, rz), r, rm, n=12)
         for p0, p1 in hips:
-            rod(_rt(p0, loc, rz), _rt(p1, loc, rz), r * 0.75, rm, n=6)
+            rod(_rt(p0, loc, rz), _rt(p1, loc, rz), r * 0.75, rm, n=6)["round"] = True  # (shaded round: lowpoly)
     if eave_t >= EAVE_MIN and eaves:
         em = flat("eave", roof_trim(roof_c, EAVE_K), 0.8)
         for p0, p1 in eaves:
@@ -813,10 +814,17 @@ class _MB:
         return o
 
 
-def course_rows(mbs, A, B, C, D, n, t, eps=0.0015, up=(0, 0, 1), butt=None, band=0.72):
+NOSE = 0.5  # «Raivon Soft» course nose: the butt's top edge is chamfered by this fraction of the course thickness
+
+
+def course_rows(mbs, A, B, C, D, n, t, eps=0.0015, up=(0, 0, 1), butt=None, band=0.72, nose=0.0, sides=True):
     """Roof courses on one roof face: eave edge A→B, top edge D→C (D above A, C above B; C == D on a hip end).
     n rows of wedges whose lower edge (the butt) stands t proud of the face: the stepped shadow lines of the tiles
-    and shingles of the reference roofs. Rows alternate between the builders in mbs (two tones)."""
+    and shingles of the reference roofs. Rows alternate between the builders in mbs (two tones).
+    nose > 0 («Raivon Soft», plan step B1): the butt's top edge is chamfered at 45° by nose × t, in the course's own
+    material, so (smoothed with the course top by lowpoly's 50° rule) each course ends in a fat rounded lip over its
+    dark butt instead of a knife step. sides=False: leave out the course ends at A→D and B→C (a gable verge whose
+    barge roll swallows them)."""
     from mathutils import Vector
     A, B, C, D = (Vector(p) for p in (A, B, C, D))
     N = (B - A).cross(D - A)
@@ -833,18 +841,27 @@ def course_rows(mbs, A, B, C, D, n, t, eps=0.0015, up=(0, 0, 1), butt=None, band
         s = ((Q0 + Q1) / 2 - (P0 + P1) / 2).normalized()
         mb = mbs[k % len(mbs)]
         p0e, p1e, p0t, p1t, q0e, q1e = P0 + N * eps, P1 + N * eps, P0 + N * t, P1 + N * t, Q0 + N * eps, Q1 + N * eps
+        c0a, c1a, c0b, c1b = p0t, p1t, p0t, p1t  # the nose: c?a on the butt, c?b on the course top
+        nz = nose * (t - eps)
+        if nz > 1e-5 and (q0e - p0t).length > 4 * nz and (q1e - p1t).length > 4 * nz:
+            # cut 1.6× further along the top than down the butt: the chamfer meets the (down-tilted) course top at
+            # ≈ 35°, under lowpoly's 50° smoothing limit, so the two shade as one rounded lip
+            c0a, c1a = p0t - N * nz, p1t - N * nz
+            c0b, c1b = p0t + (q0e - p0t).normalized() * nz * 1.6, p1t + (q1e - p1t).normalized() * nz * 1.6
+            mb.face([c0a, c1a, c1b, c0b], N - s)
         if butt is not None and k < n - 1:
             # the shadow band under the next course: the top of this row darkens just below the next row's edge,
             # so the courses read from the high game camera (which never sees the down-facing butts)
             lam = ((k + band) / n - fa) / (fb - fa)
             m0, m1 = p0t.lerp(q0e, lam), p1t.lerp(q1e, lam)
-            mb.face([p0t, p1t, m1, m0], N)
+            mb.face([c0b, c1b, m1, m0], N)
             butt.face([m0, m1, q1e, q0e], N)
         else:
-            mb.face([p0t, p1t, q1e, q0e], N)
-        (butt or mb).face([p0e, p1e, p1t, p0t], -s)
-        mb.face([p0e, p0t, q0e], -e)
-        mb.face([p1e, q1e, p1t], e)
+            mb.face([c0b, c1b, q1e, q0e], N)
+        (butt or mb).face([p0e, p1e, c1a, c0a], -s)
+        if sides:
+            mb.face([p0e, c0a, c0b, q0e] if c0a != c0b else [p0e, p0t, q0e], -e)
+            mb.face([p1e, q1e, c1b, c1a] if c1a != c1b else [p1e, q1e, p1t], e)
 
 
 def _roof_mats(roof_c, tone=0.9, kind="roof", scale=1.6):
@@ -903,15 +920,24 @@ def gable_roof(w, d, h, loc, roof_c, gable_mt, rz=0.0, oh=0.05, ohx=0.045, n=COU
         slab.face([P(-L, *eb), P(L, *eb), P(L, *et), P(-L, *et)], P(0, sy, -k * 0.2) - P(0, 0, 0))
         for sx in (-1, 1):
             slab.face([P(sx * L, *eb), P(sx * L, *et), P(sx * L, *rt), P(sx * L, *rb)], P(sx, 0, 0) - P(0, 0, 0))
-        course_rows(MBs, P(-L, *et), P(L, *et), P(L, *rt), P(-L, *rt), n, ct, butt=BUTT, band=band)
-        if barge:  # a round roll along each verge, as thick as the slab and its course (covers their ends)
-            br = (tk + ct) * 0.5 + 0.002
+        # the barge roll (see below): its axis runs mid-way up the course layer, and its radius lets its crest stand
+        # ROLL_RISE over the course butts even on a flat of the 6-sided roll (cos 30°), so it reads as a clean rolled
+        # rim over the verge rather than a rail the course lips scallop
+        ra = tk + ct * 0.5
+        br = (ct * 0.5 + ROLL_RISE) / math.cos(math.pi / 6)
+        roll = bool(barge) and br * 2 >= EAVE_MIN
+        # with barge rolls the courses end at the rolls' axes, so the rolls swallow their stepped ends (no dark
+        # notches along the verge) and the course ends are left out
+        Lc = L - br * 0.6 if roll else L
+        course_rows(MBs, P(-Lc, *et), P(Lc, *et), P(Lc, *rt), P(-Lc, *rt), n, ct, butt=BUTT, band=band, nose=NOSE,
+                    sides=not roll)
+        if roll:  # a round roll along each verge (covers the slab and course ends)
             for sx in (-1, 1):
-                mid_e = (eb[0] + ny * (tk + ct) * 0.5, eb[1] + nz * (tk + ct) * 0.5)
-                mid_r = (rb[0] + ny * (tk + ct) * 0.5, rb[1] + nz * (tk + ct) * 0.5)
-                if br * 2 >= EAVE_MIN:
-                    rod(tuple(P(sx * (L - br * 0.6), *mid_e)), tuple(P(sx * (L - br * 0.6), *mid_r)), br,
-                        flat("barge" + barge, barge, 0.8), n=6)
+                mid_e = (eb[0] + ny * ra, eb[1] + nz * ra)
+                mid_r = (rb[0] + ny * ra, rb[1] + nz * ra)
+                o = rod(tuple(P(sx * Lc, *mid_e)), tuple(P(sx * Lc, *mid_r)), br, flat("barge" + barge, barge, 0.8),
+                        n=6)
+                o["round"] = True  # (shaded round: lowpoly)
     slab.obj(tex(kind, shade(roof_c, slab_k), 1.6), "roof_slab")
     for mb, mt in zip(MBs, _roof_mats(roof_c, tone, kind)):
         mb.obj(mt, "roof_courses")
@@ -958,7 +984,7 @@ def coursed_hip(w, d, h, loc, roof_c, oh=0.045, rz=0.0, n=COURSES, ct=ROOF_T, to
     BUTT = _MB()
     for (a, ta), (_, tb), (_, b) in zip(hips, hips[1:] + hips[:1], eaves):
         course_rows(MBs, _rt(a, loc, rz), _rt(b, loc, rz), _rt(tb, loc, rz), _rt(ta, loc, rz), n, ct, butt=BUTT,
-                    band=band)
+                    band=band, nose=NOSE)
     for mb, mt in zip(MBs, _roof_mats(roof_c, tone, kind)):
         mb.obj(mt, "roof_courses")
     BUTT.obj(tex(kind, shade(roof_c, butt_k), 1.6), "roof_butts")
@@ -1035,8 +1061,9 @@ def doorway(x, y, rz, w=0.05, h=0.085, door_c=WOOD_D, hood_c=None, step=STONE_D,
     fc = frame_c(frame, wall)
 
     def b():
+        # flat arched plates (§6.1: parts thinner than 0.08 are paint, not geometry): the frame, the door 3 mm proud
         arch_slab(w + 0.018, h + 0.009, -0.006, 0.002, flat("frame" + fc, fc, 0.85), sides=False)
-        arch_slab(w, h, -0.010, 0.002, tex("wood", door_c, 3.0))
+        arch_slab(w, h, -0.009, 0.002, tex("wood", door_c, 3.0), sides=False)
         if step:
             bx((w + 0.04, 0.04, 0.016), (0, -0.026, 0.008), stone(step, 1.4), bev=0)
         if hood_c:
@@ -1264,8 +1291,9 @@ def hut(w, d, h, team, smoke=False):
     zr = h - 0.01 + rh + 0.022
     rod((0, -(d + 0.11) / 2, zr), (0, (d + 0.11) / 2, zr), 0.024, flat("ridge" + team, shade(team, 0.85)), n=12)
     for sy in (-1, 1):
-        rod((0, sy * d * 0.3 - 0.008, zr), (0, sy * d * 0.3 + 0.008, zr), 0.027, flat("withy", "#8c6a42", 0.9), n=12)
-    arch_slab(0.07 * DOOR_K, 0.11, -d / 2 - 0.011, -d / 2 + 0.003, flat("door" + team, shade(team, 0.7)), x=-w * 0.18)
+        rod((0, sy * d * 0.3 - 0.008, zr), (0, sy * d * 0.3 + 0.008, zr), 0.027, flat("withy", "#8c6a42", 0.9), n=8)
+    arch_slab(0.07 * DOOR_K, 0.11, -d / 2 - 0.005, -d / 2, flat("door" + team, shade(team, 0.7)), x=-w * 0.18,
+              sides=False)  # an arched door plate
     window(w * 0.22, -d / 2 - 0.004, h * 0.62, 0, 0.04, 0.035, WOOD_D, wall=DAUB)
     if smoke:  # a clay flue standing 7 cm out of the thatch, a quarter of the width from the ridge
         zt = h - 0.01 + roof_surface(w * 0.25, w / 2, rh, 0.04, None, 0.02, 0.022)
@@ -1298,11 +1326,13 @@ def log_house(w, d, h, team, gable_front=False, roof_k=0.85, logc=LOG, chimney=T
     top = 0
     for i in range(n):
         z = r + i * 2 * r * 0.92
+        # «Raivon Soft»: the logs are the izba's soft mass — tagged "round", lowpoly shades the 6-sided logs as
+        # smooth round logs (no extra triangles; the walls carry no bevel)
         for sy in (-1, 1):
-            cy(r, w + 0.07, (0, sy * d / 2, z), logm, 6, rot=(0, math.pi / 2, 0))
+            cy(r, w + 0.07, (0, sy * d / 2, z), logm, 6, rot=(0, math.pi / 2, 0))["round"] = True
         z2 = z + r * 0.46
         for sx in (-1, 1):
-            cy(r, d + 0.07, (sx * w / 2, 0, z2), logm, 6, rot=(math.pi / 2, 0, 0))
+            cy(r, d + 0.07, (sx * w / 2, 0, z2), logm, 6, rot=(math.pi / 2, 0, 0))["round"] = True
         top = z2 + r
     for sx in (-1, 1):
         for sy in (-1, 1):
@@ -1425,7 +1455,7 @@ def mansion(w, d, floors, wall, team, fh=0.11):
     coursed_hip(w, d, 0.14, (0, 0, H + 0.0125), slate(team, 1.00), oh=0.03)
     for sx in (-1, 1):
         chimney(sx * w * 0.3, d * 0.15, H + 0.04, H + 0.15, 0.036, stone("#b0a594", 1.4))
-    arch_slab(0.07 * DOOR_K, 0.1, -d / 2 - 0.012, -d / 2 + 0.004, tex("wood", WOOD_D))  # an arched door
+    arch_slab(0.07 * DOOR_K, 0.1, -d / 2 - 0.005, -d / 2, tex("wood", WOOD_D), sides=False)  # an arched door plate
     prism_roof("pedi", 0.03, 0.1, 0.035, (0, -d / 2 - 0.012, 0.105), flat("cornice", WHITE, 0.6), overhang=0.0, rot_z=math.pi / 2)
     return H
 
@@ -1687,14 +1717,14 @@ def mansard(w, d, h, loc, roof_c, inset=0.045, n=COURSES, oh=0.012, ct=0.014):
     mesh_obj(b + t, [(0, 1, 5, 4), (1, 2, 6, 5), (2, 3, 7, 6), (3, 0, 4, 7)], tex("roof", shade(roof_c, 0.8), 1.6))
     MBs, BUTT = [_MB(), _MB()], _MB()
     for i in range(4):
-        course_rows(MBs, b[i], b[(i + 1) % 4], t[(i + 1) % 4], t[i], n, ct, butt=BUTT, band=0.8)
+        course_rows(MBs, b[i], b[(i + 1) % 4], t[(i + 1) % 4], t[i], n, ct, butt=BUTT, band=0.8, nose=NOSE)
     for mb, mt in zip(MBs, _roof_mats(roof_c, 0.84)):
         mb.obj(mt, "mansard_courses")
     BUTT.obj(tex("roof", shade(roof_c, BUTT_K), 1.6), "mansard_butts")
     lift = lambda p: (p[0], p[1], p[2] + ct * 1.1)  # noqa: E731
     tm = flat("ridge", roof_trim(roof_c, RIDGE_K), 0.8)
     for i in range(4):
-        rod(lift(b[i]), lift(t[i]), 0.01, tm, n=8)
+        rod(lift(b[i]), lift(t[i]), 0.01, tm, n=6)["round"] = True  # (shaded round: lowpoly)
     bx((2 * Wi + 0.012, 2 * Di + 0.012, 0.012), (x0, y0, z0 + h + 0.004), flat("zinc", "#aeb3b8", 0.5), bev=0)
     bx((2 * Wi - 0.01, 2 * Di - 0.01, 0.006), (x0, y0, z0 + h + 0.0115), flat("tar", "#4a4b50", 0.9), bev=0)
     return z0 + h + 0.0145
@@ -2539,7 +2569,7 @@ def lean_to(A, B, C, D, roof_c, n=COURSES, kind="roof", tk=0.015, ct=0.015):
     slab.face([B, C, Ct, Bt], e)
     slab.obj(tex(kind, shade(roof_c, 0.72), 1.6), "lean_slab")
     MBs, BUTT = [_MB(), _MB()], _MB()
-    course_rows(MBs, At, Bt, Ct, Dt, n, ct, butt=BUTT, band=0.8)
+    course_rows(MBs, At, Bt, Ct, Dt, n, ct, butt=BUTT, band=0.8, nose=NOSE)
     for mb, mt in zip(MBs, _roof_mats(roof_c, 0.84, kind)):
         mb.obj(mt, "lean_courses")
     BUTT.obj(tex(kind, shade(roof_c, BUTT_K), 1.6), "lean_butts")
@@ -2709,7 +2739,7 @@ def residence_dl4(team):
         bx((w + 0.02, d + 0.02, 0.035), (0, 0, 0.0175), stone(STONE_D), bev=0)
         gable_roof(w, d, 0.17, (0, 0, h), roof_c, stone(WSTONE, 1.0), oh=0.03, ohx=0.02, gable_timber=None,
                    **SOFT_ROOF)
-        arch_slab(0.065 * DOOR_K, 0.11, -d / 2 - 0.011, -d / 2 + 0.003, tex("wood", WOOD_D))
+        arch_slab(0.065 * DOOR_K, 0.11, -d / 2 - 0.005, -d / 2, tex("wood", WOOD_D), sides=False)
         for sx in (-1, 1):
             window(sx * w * 0.3, -d / 2 - 0.004, h * 0.62, 0, 0.04, 0.05, WOOD_D, WSTONE)
         window(-w / 2 - 0.004, 0, h * 0.62, math.pi / 2, 0.04, 0.05, WOOD_D, WSTONE)
@@ -5709,6 +5739,9 @@ for _n in range(1, 9):
     ASSETS[f"fort_l{_n}_post"] = (lambda n: (lambda: fort_post(n)))(_n)
 
 
+ROUND_ANGLE = 65  # smooth-by-angle limit of the parts tagged "round" (lowpoly)
+
+
 def _soft_keep(objs):
     """The soft masses (bx / cy soft=...) that keep their round 3-segment bevel: those whose smallest side is at least
     SOFT_MIN, at most SOFT_MAX of them, the largest by volume (a group of equal ones at the cut is left out whole, so
@@ -5745,12 +5778,16 @@ def lowpoly(objs):
             plain.append(o)
     if keep:
         print(f"soft masses: {len(keep)} keep a round 3-segment bevel", flush=True)
-    if plain:
-        bpy.ops.object.select_all(action="DESELECT")
-        for o in plain:
-            o.select_set(True)
-        bpy.context.view_layer.objects.active = plain[0]
-        bpy.ops.object.shade_smooth_by_angle(angle=math.radians(50))
+    # «Raivon Soft»: parts tagged "round" (the 6-sided ridge, hip and barge rolls, the izba logs) shade as smooth
+    # tubes: their 60° facets fall under ROUND_ANGLE (the end caps stay crisp at 90°), at no triangle cost
+    for want, ang in ((False, 50), (True, ROUND_ANGLE)):
+        group = [o for o in plain if bool(o.get("round")) == want]
+        if group:
+            bpy.ops.object.select_all(action="DESELECT")
+            for o in group:
+                o.select_set(True)
+            bpy.context.view_layer.objects.active = group[0]
+            bpy.ops.object.shade_smooth_by_angle(angle=math.radians(ang))
 
 
 SETTLED = {"homestead", "city_dl1", "city_dl2", "city_dl3", "city_dl4", "residence_dl1", "residence_dl2",

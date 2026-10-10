@@ -186,7 +186,6 @@ army.train,Собрать,Recruit
 army.tip.refill,Видео пополнит армию сразу,A video refills the army at once
 army.tip.str,Сила: %d из %d,Strength: %d of %d
 army.tip.squads,Отрядов: %d,Squads: %d
-army.tip.ready,Готовность: %d%%,Readiness: %d%%
 army.tip.upkeep,Содержание: −%d еды/ч,Upkeep: −%d food/h
 army.tip.time,Сбор новобранцев: %s,Recruiting takes %s
 dipl.opinion,Мнение: %+d · %s,Opinion: %+d · %s

@@ -3,17 +3,15 @@ extends CanvasLayer
 ## (docs/ui_style.md §5, §6 HUD): resource plates on their own currency layer (above every modal dim), a soft top
 ## scrim instead of a dark slab, the ruler's portrait with the level hex, one family of square buttons on the
 ## left, the minimap well and the labelled round map tools on the right; at the bottom the folder tabs over the
-## slate tray that holds game_ui's card row (§4.5). The top group follows the safe area's top inset, the bottom
-## group (tabs, tray, hex panel) the visible bottom (Kit.vb), like game_ui's own bottom group.
+## slate tray that holds game_ui's card row (§4.5) and, right of them, the hex panel of the selected hex (§5). The
+## top group follows the safe area's top inset, the bottom group (tabs, tray, hex panel) the visible bottom
+## (Kit.vb), like game_ui's own bottom group.
 
 const CmdPortrait := preload("res://scripts/cmd_portrait.gd")
 const Kit := preload("res://scripts/ui_kit.gd")
 const FlagView := preload("res://scripts/flag_view.gd")
-# the bottom group keeps its legacy palette until s04 / s05 rebuild it on the kit
-const PANEL := Color(0.055, 0.085, 0.14, 0.92)
-const EDGE := Color(0.32, 0.42, 0.58, 0.55)
-const TEXT := Color(0.96, 0.97, 1.0)
-const MUTED := Color(0.62, 0.68, 0.78)
+const EDGE := Kit.INK  # the legacy _style() border argument (legacy_style maps every border to INK anyway)
+const TEXT := Kit.TEXT
 
 ## Resource plates (§4.6, §5): the icon of each resource and [x, w] in the four-plate bar (DL1–4) and in the
 ## five-plate bar once oil opens (DL5+). y 12, h 70.
@@ -30,15 +28,19 @@ const TOOLS := [["target", "swords", 356.0, "hud.tool.front"], ["pin", "pin", 46
 const TABS := [["buildings", "tab.buildings", "castle_icon"], ["army", "tab.army", "helmet"],
 	["development", "tab.development", "flask"], ["diplomacy", "tab.diplomacy", "handshake"], ["world", "tab.world", "globe"]]
 const TRAY := Rect2(12, 1464, 628, 196)
+## The hex panel (§5): right of the tray, above the big button; the stat chips' column right of the tile's render.
+const TILE_RECT := Rect2(652, 1374, 277, 152)
+const TILE_COL := Rect2(102, 52, 165, 86)  # owner chip at its top, the stat chips at y 96
 
 var world: Node3D
 var font_bold: Font
+var tile_box: Panel  # the hex panel: hidden while nothing is selected
 var tile_title: Label
-var tile_icon: Control
 var tile_pic: TextureRect
-var tile_owner: Label
-var tile_bonus: Label
-var attack_btn: Panel
+var _tile_chips: Control  # owner chip + stat chips (rebuilt when the info changes)
+var _tile_info := {}  # what the panel shows now (show_tile skips an unchanged one)
+var _tile_press := Vector2(-1, -1)
+var attack_btn: Panel  # the old HUD «Атаковать»: kept hidden and empty (game_ui's big button is the only one)
 var minimap: Control
 var res_pills := {}  # res -> Kit.KitPill
 var _free_builders := 0  # free / all builders: the green count on the Buildings tab
@@ -61,8 +63,6 @@ var _tabs := {}  # tab key -> the folder tab Panel
 var _tab_dots := {}  # tab key -> [dot, n, role]
 var _tab_sel := "army"
 var _tray: Panel
-var _attack_lbl: Label
-var _tile_set := false  # false while the tile box still shows its placeholder
 var _top: Control  # crest, portrait, left column, minimap, map tools: offset by the safe top inset
 var _bottom: Control  # tabs, tray, hex panel: offset by VB − 1672
 var _currency: CanvasLayer  # layer 3: the resource plates stay above game_ui's modal dim (layer 2)
@@ -465,50 +465,38 @@ func button_rect(name: String) -> Rect2:
 # ---------------------------------------------------------------- bottom group (tabs, tray, hex panel; s04 / s05)
 
 func _build_bottom() -> void:
-	var vh := 1672.0
-	var base_y := vh - 276.0
 	_build_tabs()
-
-	# ---- tile info + attack button
-	_panel(Rect2(652, base_y, 280, 140), _style(PANEL, 16), _bottom)
-	var tile := Icon.new("tile")
-	tile.position = Vector2(664, base_y + 14)
-	tile.size = Vector2(70, 60)
-	_bottom.add_child(tile)
-	tile_icon = tile
+	# ---- the hex panel (§5, §6 HUD): a slate surface like the tray — the name, the tile's render, the owner chip
+	# and up to two stat chips. Hidden while nothing is selected, and while the status button or the battle timer
+	# takes its slot (main.gd decides); a tap opens the tooltip with everything the chips leave out.
+	tile_box = _panel(TILE_RECT, Kit.style(Kit.SLATE, 24, 4, Kit.INK, 6, 6), _bottom)
+	tile_box.name = "hex_panel"
+	tile_box.mouse_filter = Control.MOUSE_FILTER_STOP  # a tap on the panel never reaches the map under it
+	tile_box.gui_input.connect(_on_tile_input)
+	tile_title = _label("", 30)  # H2 30, down to 24, then cut
+	tile_title.position = Vector2(16, 8)
+	tile_title.size = Vector2(245, 42)
+	tile_title.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	tile_box.add_child(tile_title)
 	tile_pic = TextureRect.new()  # the rendered hex of that land (tools/blender/card_art.py tile_*)
-	tile_pic.position = Vector2(658, base_y + 8)
+	tile_pic.position = Vector2(10, 56)
 	tile_pic.size = Vector2(84, 74)
 	tile_pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	tile_pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	tile_pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_bottom.add_child(tile_pic)
-	var tn := _label(tr("terrain.plain"), 21)
-	tile_title = tn
-	tn.position = Vector2(746, base_y + 18)
-	_bottom.add_child(tn)
-	var to := _label(tr("tile.your_territory"), 17, Color(0.45, 0.7, 1.0), false)
-	tile_owner = to
-	to.position = Vector2(746, base_y + 48)
-	_bottom.add_child(to)
-	var shield := Icon.new("plus")
-	shield.position = Vector2(674, base_y + 92)
-	shield.size = Vector2(28, 28)
-	_bottom.add_child(shield)
-	var bonus := _label(tr("hud.tile_bonus"), 18, TEXT, false)
-	tile_bonus = bonus
-	bonus.position = Vector2(712, base_y + 92)
-	_bottom.add_child(bonus)
-	var btn := _panel(Rect2(660, vh - 122, 266, 92), _style(Color(0.13, 0.4, 0.9), 16, Color(0.55, 0.75, 1.0), 3), _bottom)
-	attack_btn = btn
-	var sw := Icon.new("swords")
-	sw.position = Vector2(684, vh - 104)
-	sw.size = Vector2(54, 54)
-	_bottom.add_child(sw)
-	var at := _label(tr("hud.attack"), 28)
-	_attack_lbl = at
-	at.position = Vector2(748, vh - 98)
-	_bottom.add_child(at)
+	tile_box.add_child(tile_pic)
+	_tile_chips = Control.new()
+	_tile_chips.name = "chips"
+	_tile_chips.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tile_chips.size = TILE_RECT.size
+	tile_box.add_child(_tile_chips)
+	tile_box.visible = false
+	# the old HUD «Атаковать» button: an empty hidden member, so a script that still reaches for it does not break
+	attack_btn = Panel.new()
+	attack_btn.name = "attack_btn"
+	attack_btn.visible = false
+	attack_btn.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_bottom.add_child(attack_btn)
 
 
 ## Sets `text`, shrinking the font from `base` down through the type scale (to 20, or to `base` when a legacy
@@ -525,11 +513,6 @@ func retranslate() -> void:
 	for n in _tools:
 		var b: Kit.KitButton = _tools[n]
 		Kit.icon_caption(b, tr(String(b.get_meta("caption_key"))))
-	_attack_lbl.text = tr("hud.attack")
-	if not _tile_set:
-		tile_title.text = tr("terrain.plain")
-		tile_owner.text = tr("tile.your_territory")
-		tile_bonus.text = tr("hud.tile_bonus")
 	for k in tab_labels:
 		(tab_labels[k] as Label).text = tr(String(_tab_keys[k]))
 	_fit_tabs()
@@ -709,55 +692,137 @@ func tab_rect(key: String) -> Rect2:
 	return t.get_global_rect() if t != null else Rect2()
 
 
+# ---------------------------------------------------------------- the hex panel (§5, §6 HUD)
+
+## Shows the selected hex (main._describe): its name, the rendered tile, the owner chip and the stat chips.
+## info: title, tile (the render's key), owner (the chip's text), owner_fill (the owner's colour), chips
+## ([[icon, text, tone], …], tone pos | neg | plain | lock), details (the tooltip's lines); an older caller
+## without «chips» gets its «bonus» sentence instead. Makes the panel visible; an unchanged info is not rebuilt.
 func show_tile(info: Dictionary) -> void:
-	_tile_set = true
+	tile_box.visible = true
+	if info == _tile_info:
+		return
+	_tile_info = info.duplicate(true)
 	var key := String(info.get("tile", "plain"))
 	var pic := "res://assets/ui/cards/tile_%s.png" % key
 	if not ResourceLoader.exists(pic):  # an era tile ("capital_dl4_red") falls back to the kind's own picture
 		pic = "res://assets/ui/cards/tile_%s.png" % key.get_slice("_dl", 0)
 	if not ResourceLoader.exists(pic):
 		pic = "res://assets/ui/cards/tile_plain.png"
-	var has_pic := ResourceLoader.exists(pic)
-	tile_pic.texture = load(pic) if has_pic else null
-	tile_icon.visible = not has_pic
-	_fit(tile_title, String(info["title"]), 176.0, 21)
-	_fit(tile_owner, String(info["owner"]), 176.0, 17)
-	tile_owner.add_theme_color_override("font_color", info["owner_color"])
-	_fit(tile_bonus, String(info["bonus"]), 210.0, 18)
-	attack_btn.modulate = Color(1, 1, 1, 1.0 if info["attackable"] else 0.45)
+	tile_pic.texture = load(pic) if ResourceLoader.exists(pic) else null
+	_fit_floor(tile_title, String(info.get("title", "")), 30, 24, tile_title.size.x)
+	for c in _tile_chips.get_children():
+		c.free()
+	# the owner: the state's colour as the fill, white text (§3.2: a state's colour is never a text colour)
+	var fill: Color = info.get("owner_fill", Kit.face_of("lock"))
+	var oc := Kit.chip(_tile_chips, TILE_COL.position, "", String(info.get("owner", "")), "owner", fill, {"max_w": TILE_COL.size.x})
+	oc.name = "owner"
+	if info.has("chips"):
+		_lay_stat_chips(info["chips"])
+	elif String(info.get("bonus", "")) != "":
+		var l := _label("", 24)
+		l.position = Vector2(TILE_COL.position.x, 96)
+		l.size = Vector2(TILE_COL.size.x, 38)
+		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		_tile_chips.add_child(l)
+		_fit_floor(l, String(info["bonus"]), 24, 22, TILE_COL.size.x)
 
 
-# ====================================================================== icons
+## Hides the hex panel (nothing selected, or its slot is taken by the status button / the battle timer).
+func hide_tile() -> void:
+	tile_box.visible = false
 
-## A rendered 3D icon (tools/blender/icon_assets.py → assets/ui/icons) drawn exactly in its box (§3.5: no 1.15×
-## overflow). Only the hex panel's «tile» placeholder still has a vector stand-in (s05 removes it).
-class Icon extends Control:
-	var kind: String
-	var _tex: Texture2D
 
-	func _init(k: String) -> void:
-		kind = k
-		mouse_filter = Control.MOUSE_FILTER_IGNORE
-		var p := "res://assets/ui/icons/%s.png" % k
-		if ResourceLoader.exists(p):
-			_tex = load(p)
+## Global rect of the hex panel (for the coach); empty while it is hidden.
+func tile_rect() -> Rect2:
+	return tile_box.get_global_rect() if tile_box.visible else Rect2()
 
-	func _draw() -> void:
-		var c := size / 2
-		if _tex != null:
-			var side := minf(size.x, size.y)
-			draw_texture_rect(_tex, Rect2(c - Vector2(side, side) / 2.0, Vector2(side, side)), false)
+
+## The stat chips in the column right of the render (y 96, gap 6): both at the largest size that fits (26 → 22),
+## else the first one with a «+N» pill (the rest is in the tooltip), else the first one alone, cut to the column.
+func _lay_stat_chips(chips: Array) -> void:
+	if chips.is_empty():
+		return
+	var y := 96.0
+	var room := TILE_COL.size.x
+	var gap := 6.0
+	var tries: Array = []  # [count, size, with «+N»]
+	for s in [26, 24, 22]:
+		if chips.size() >= 2:
+			tries.append([2, s, chips.size() > 2])
+	for s in [26, 24, 22]:
+		if chips.size() >= 2:
+			tries.append([1, s, true])
+	tries.append([1, 26, false])  # the last resort: the first chip alone, its text stepped down / cut to the column
+	for k in tries.size():
+		var t: Array = tries[k]
+		var last := k == tries.size() - 1
+		var n: int = t[0]
+		var made: Array = []
+		var x := TILE_COL.position.x
+		for i in n:
+			var p := _stat_chip(chips[i], Vector2(x, y), int(t[1]), room if last else 0.0)
+			made.append(p)
+			x += p.size.x + gap
+		if t[2]:
+			var more := Kit.chip(_tile_chips, Vector2(x, y), "", "+%d" % (chips.size() - n), "stat", Color(0, 0, 0, 0), {"size": 22})
+			more.name = "more"
+			made.append(more)
+			x += more.size.x + gap
+		if last or x - gap <= TILE_COL.end.x + 0.5:
 			return
-		if kind == "tile":
-			draw_colored_polygon(_hexagon(c, size.x * .48), Kit.GRASS.darkened(0.25))
-			draw_colored_polygon(_hexagon(c + Vector2(0, size.y * .08), size.x * .4), Kit.GRASS)
+		for p in made:
+			p.free()
 
-	func _hexagon(c: Vector2, r: float) -> PackedVector2Array:
-		var p := PackedVector2Array()
-		for k in 6:
-			var a := PI / 3 * k
-			p.append(c + Vector2(cos(a), sin(a)) * r)
-		return p
+
+## One stat chip: [icon, text, tone] (tone: pos — a plus in green, neg — a shortfall in red, lock — a closed item:
+## the icon dimmed and a lock, plain — white).
+func _stat_chip(ch: Array, pos: Vector2, num: int, max_w := 0.0) -> Panel:
+	var tone := String(ch[2]) if ch.size() > 2 else "plain"
+	var opts := {"size": num, "lock": tone == "lock"}
+	if tone == "pos":
+		opts["color"] = Kit.POS
+	elif tone == "neg":
+		opts["color"] = Kit.NEG
+	if max_w > 0.0:
+		opts["max_w"] = max_w
+	var p := Kit.chip(_tile_chips, pos, String(ch[0]), String(ch[1]) if ch.size() > 1 else "", "stat", Color(0, 0, 0, 0), opts)
+	p.name = "stat_%s" % String(ch[0])
+	return p
+
+
+## `text` from `base` down the type scale to `floor_`, then cut with an ellipsis at `max_w` (§3.3: the line gets
+## shorter, never the type smaller than the floor).
+func _fit_floor(l: Label, text: String, base: int, floor_: int, max_w: float) -> void:
+	l.text = text
+	var kind := "d900" if base >= 26 else "d800"
+	var s := Kit.fit_size(text, base, max_w, kind, floor_)
+	Kit.style_label(l, s, Kit.TEXT, true)
+	l.add_theme_font_override("font", Kit.font(kind))
+	var cut := Kit.text_w(text, s, kind) > max_w
+	l.clip_text = cut
+	l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS if cut else TextServer.OVERRUN_NO_TRIMMING
+
+
+## A tap on the hex panel (not a swipe) opens the tooltip: the name and the lines the chips leave out.
+func _on_tile_input(e: InputEvent) -> void:
+	var pressed := false
+	if e is InputEventMouseButton and (e as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
+		pressed = e.pressed
+	elif e is InputEventScreenTouch:
+		pressed = e.pressed
+	else:
+		return
+	var at := Kit.screen_pos(tile_box, e)
+	if pressed:
+		_tile_press = at
+		return
+	if _tile_press.x < 0.0 or at.distance_to(_tile_press) > Kit.TAP_SLOP:
+		_tile_press = Vector2(-1, -1)
+		return
+	_tile_press = Vector2(-1, -1)
+	var text := String(_tile_info.get("details", _tile_info.get("bonus", "")))
+	Kit.tooltip(tile_box, String(_tile_info.get("title", "")), text)
 
 
 # ====================================================================== folder tab fillet

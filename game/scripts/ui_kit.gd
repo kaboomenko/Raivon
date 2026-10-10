@@ -670,7 +670,7 @@ class KitShape extends Control:
 		var ih := h - 6.0
 		var t := StyleBoxFlat.new()
 		t.anti_aliasing = true
-		t.bg_color = CREAM_DEEP if paper else SLATE_WELL
+		t.bg_color = data.get("track", CREAM_DEEP if paper else SLATE_WELL)  # a bar on a dark scrim takes a lighter one
 		t.set_corner_radius_all(int(ih * 0.5))
 		draw_style_box(t, Rect2(3, 3, w - 6.0, ih))
 		if frac <= 0.0:
@@ -1381,6 +1381,16 @@ class KitButton extends Panel:
 		queue_redraw()
 		SELF.press_out(self)
 
+	## At the release of a press: true when the press turned into a swipe (it ends without acting; the button has
+	## already sprung back). The release position counts too: the last step of a fast swipe may have no motion event.
+	func _ends_swipe(e: InputEvent) -> bool:
+		_travel = maxf(_travel, SELF.screen_pos(self, e).distance_to(_press_g))
+		_check_swipe()
+		var swiped := _void
+		_void = false
+		_scrolled = false
+		return swiped
+
 	func _on_input(e: InputEvent) -> void:
 		var is_press := false
 		var is_release := false
@@ -1933,6 +1943,9 @@ class KitCard extends Panel:
 	var chip: Control
 	var chip_cb := Callable()
 	var _press_at := Vector2(-1, -1)
+	var _press_g := Vector2.ZERO  # where the finger went down, on the screen
+	var _travel := 0.0  # how far it has moved on the screen since, at most
+	var _press_frame := -1
 	var _tap_frame := -1
 
 	func _init() -> void:
@@ -1944,6 +1957,8 @@ class KitCard extends Panel:
 		size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 		gui_input.connect(_on_input)
 
+	## A tap, not a swipe: the travel is measured on the screen, because the card scrolls along with the finger and
+	## its local positions barely change during a swipe of the row.
 	func _on_input(e: InputEvent) -> void:
 		var pos := Vector2.ZERO
 		var pressed := false
@@ -1953,16 +1968,26 @@ class KitCard extends Panel:
 		elif e is InputEventScreenTouch:
 			pos = (e as InputEventScreenTouch).position
 			pressed = e.pressed
+		elif e is InputEventMouseMotion or e is InputEventScreenDrag:
+			if _press_at.x >= 0.0:
+				_travel = maxf(_travel, SELF.screen_pos(self, e).distance_to(_press_g))
+			return
 		else:
 			return
 		if pressed:
+			var pf := Engine.get_process_frames()
+			if pf != _press_frame:  # not the emulated mouse twin of the same touch (it comes in the same frame)
+				_press_frame = pf
+				_press_g = SELF.screen_pos(self, e)
+				_travel = 0.0
 			_press_at = pos
 			return
 		var from := _press_at
 		_press_at = Vector2(-1, -1)
+		_travel = maxf(_travel, SELF.screen_pos(self, e).distance_to(_press_g))
 		var f := Engine.get_process_frames()
-		if f == _tap_frame or from.x < 0.0 or from.distance_to(pos) > 16.0 or not Rect2(Vector2.ZERO, size).has_point(pos):
-			return  # the emulated mouse twin of a touch, or a drag that scrolled the row
+		if f == _tap_frame or from.x < 0.0 or _travel > SELF.TAP_SLOP or not Rect2(Vector2.ZERO, size).has_point(pos):
+			return  # the emulated mouse twin of a touch, or a swipe of the row
 		if cta != null and cta.visible and Rect2(body.position + cta.position, cta.size).has_point(pos):
 			return  # the button acts on its own
 		_tap_frame = f
@@ -1978,7 +2003,7 @@ class KitCard extends Panel:
 ##   backdrop: "sky" (default: the sky gradient over a grass strip) | "blueprint" | "team" (+ team: Color) | "cream"
 ##   art_node: a Control laid into the art window (172×104 local coordinates) over the picture
 ##   badge: the text of the top-left hex badge (R 22, centre 16, 16); badge_role (info)
-##   tag: a short text on an INK pill at the art's top-left instead of a badge («7/12»)
+##   tag: a short text on an INK pill standing out of the top-left corner instead of a badge («7/12»)
 ##   chip: {node: Control} (a portrait, clipped round) | {plus: true} (a go «+» button) | {icon: name}; chip_cb
 ##   dot: the role of a dot on the card's corner; dot_n: its number (-1: none)
 ##   art_bar: {frac, role}: an S bar along the art's bottom, under the name
@@ -2101,7 +2126,10 @@ static func card(art_tex: Texture2D, title: String, opts := {}) -> KitCard:
 	aw.add_child(nl)
 	c.name_label = nl
 	if not bar_d.is_empty():
-		bar(aw, Rect2(8, h - 24.0, w - 16.0, 16.0), float(bar_d.get("frac", 0.0)), String(bar_d.get("role", "go")))
+		# on the INK scrim a SLATE_WELL track (and the INK contour) vanish, so an empty bar would not read: SLATE_HI
+		var ab := bar(aw, Rect2(8, h - 24.0, w - 16.0, 16.0), float(bar_d.get("frac", 0.0)), String(bar_d.get("role", "go")))
+		ab.name = "art_bar"
+		ab.data["track"] = SLATE_HI
 	var div := ColorRect.new()  # INK 3 px under the art
 	div.color = INK
 	div.position = Vector2(o, 108.0)
@@ -2132,9 +2160,10 @@ static func card(art_tex: Texture2D, title: String, opts := {}) -> KitCard:
 	if opts.has("badge"):
 		hex_badge(b, Vector2(16, 16), 22, String(opts.get("badge_role", "info")), String(opts["badge"]))
 	elif opts.has("tag"):
-		var tg := caption_pill(b, String(opts["tag"]), 32.0, alpha(INK, 0.85), 24)
+		# a counter pill standing out of the corner like the badge, so it covers little of the art
+		var tg := caption_pill(b, String(opts["tag"]), 32.0, INK, 24)
 		tg.name = "tag"
-		tg.position = Vector2(o + 4.0, o + 4.0)
+		tg.position = Vector2(-2, -6)
 	var chd: Dictionary = opts.get("chip", {})
 	var chip_r := Rect2(142, -6, 44, 44)  # Ø44 centred on (164, 16)
 	if chd.get("plus", false):
@@ -2226,8 +2255,13 @@ static func _card_stat(b: Control, st: Dictionary) -> void:
 
 
 ## Chips (§4.8). kind: status (INK pill), owner (fill = the state's colour), stat (SLATE_WELL), timer (M size),
-## timer_war (red). Returns the chip Panel sized to its content.
-static func chip(parent: Node, pos: Vector2, icon: String, text: String, kind := "status", fill := Color(0, 0, 0, 0)) -> Panel:
+## timer_war (red). Returns the chip Panel sized to its content. opts:
+## - size: a smaller text than the kind's (e.g. 22 when a row is short);
+## - max_w: the chip never gets wider — the text steps down to 22, then is cut with an ellipsis;
+## - color: the text's colour (POS for a plus, NEG for a shortfall; white by default);
+## - lock: a closed item (§3.5) — the icon dimmed, a lock icon before the text.
+## An icon-only chip (text "") is the icon with an even margin round it.
+static func chip(parent: Node, pos: Vector2, icon: String, text: String, kind := "status", fill := Color(0, 0, 0, 0), opts := {}) -> Panel:
 	var h := 34.0
 	var icon_side := 28.0
 	var size := 24
@@ -2253,32 +2287,70 @@ static func chip(parent: Node, pos: Vector2, icon: String, text: String, kind :=
 		"timer_war":
 			face = face_of("war")
 			out = 3
+	size = int(opts.get("size", size))
+	var col: Color = opts.get("color", TEXT)
+	var locked := bool(opts.get("lock", false))
+	var max_w := float(opts.get("max_w", 0.0))
 	var p := Panel.new()
 	var sb := style(face, int(h * 0.5), out, INK, 0, 0)
 	sb.set_meta("kit_kind", "")
 	p.add_theme_stylebox_override("panel", sb)
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var x := 10.0
-	if icon != "" and icon_tex(icon) != null:
+	var has_icon := icon != "" and icon_tex(icon) != null
+	if has_icon:
 		var ic := TextureRect.new()
+		ic.name = "icon"
 		ic.texture = icon_tex(icon)
 		ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		ic.size = Vector2(icon_side, icon_side)
 		ic.position = Vector2(6.0, (h - icon_side) * 0.5)
+		if locked:
+			ic.modulate = LOCK_MOD
 		p.add_child(ic)
 		x = 8.0 + icon_side
-	var l := label(text, size, TEXT, true)
+	if locked:  # the lock sits before the text, a little smaller than the item's icon
+		var ls := roundf(icon_side * 0.8)
+		var lk := TextureRect.new()
+		lk.name = "lock"
+		lk.texture = icon_tex("lock")
+		lk.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		lk.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		lk.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		lk.size = Vector2(ls, ls)
+		lk.position = Vector2(x - (2.0 if has_icon else 4.0), (h - ls) * 0.5)
+		p.add_child(lk)
+		x += ls + (0.0 if has_icon else -2.0)
+		has_icon = true
+	var l := label(text, size, col, true)
 	l.add_theme_font_override("font", font(font_kind))
-	var tw := text_w(text, size, font_kind)
 	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	l.name = "label"
+	var tw := 0.0
+	var w := 0.0
+	if text == "":
+		l.visible = false
+		w = x - 2.0 + 6.0 if has_icon else h  # the icon with the same 6 px on both sides
+	else:
+		var room := max_w - x - 12.0 if max_w > 0.0 else -1.0
+		if room > 0.0 and text_w(text, size, font_kind) > room:
+			var s := fit_size(text, size, room, font_kind, mini(22, size))
+			style_label(l, s, col, true)
+			l.add_theme_font_override("font", font(font_kind))
+			size = s
+		tw = text_w(text, size, font_kind)
+		if room > 0.0 and tw > room:  # still too long at 22: the line gets shorter, not the type
+			tw = room
+			l.clip_text = true
+			l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		w = x + tw + 12.0
 	l.position = Vector2(x, -1)
 	l.size = Vector2(tw, h)
-	l.name = "label"
 	p.add_child(l)
 	p.position = pos
-	p.size = Vector2(x + tw + 12.0, h)
+	p.size = Vector2(w, h)
 	if parent:
 		parent.add_child(p)
 	return p
