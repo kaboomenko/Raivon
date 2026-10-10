@@ -544,9 +544,12 @@ func _sync_tile() -> void:
 		hud.hide_tile()
 
 
-## The war score in the «Мир» button's chip: «+10,7» / «−3,2» (a real minus, the locale's decimal separator).
+## The war score in the «Мир» button's chip: «+10,7» / «−3,2» (a real minus, the locale's decimal separator); ""
+## (no chip) while it rounds to zero — «0,0» at the start of a war tells the player nothing.
 func _score_text(score: float) -> String:
-	return ("+" if score >= 0.05 else "") + Kit.fmt_dec(score, 1)
+	if absf(score) < 0.05:
+		return ""
+	return ("+" if score > 0.0 else "") + Kit.fmt_dec(score, 1)
 
 
 ## A cost as the big button's price plate: [[icon, amount, short], …], gold first; `short` (not enough in store)
@@ -589,7 +592,8 @@ func _primary_for_selection() -> void:
 			var why: String = econ.can_repair(sim, selected)
 			ui.set_primary("repair", tr("ui.repair"), "go", why == "", "", _price_items(econ.repair_cost(sim, selected)),
 				L.t(why) if why != "" else "")
-			ui.set_action("repair_ad", tr("ui.repair_ad"), "", "go")
+			if _ad_left("ad_repair", 3) > 0:  # once today's videos are spent the hex panel comes back instead
+				ui.set_action("repair_ad", tr("ui.repair_ad"), "", "go")
 		return
 	var dep: Dictionary = deposits.at(selected)
 	if not dep.is_empty():
@@ -641,8 +645,8 @@ func _primary_for_selection() -> void:
 		ui.set_primary("upgrade", tr("ui.upgrade"), "go", true, "", _upgrade_price(selected))
 	else:
 		ui.set_primary("", "")
-	if c["owner"] == Types.PLAYER and econ.ruin_left(now_s()) > 0:
-		ui.set_action("ruin_halve", tr("ui.ruin_halve"), GameUI.fmt_time(econ.ruin_left(now_s())), "go")
+	if c["owner"] == Types.PLAYER and econ.ruin_left(now_s()) > 0 and _ad_left("ad_ruin_halve", 1) > 0:
+		ui.set_action("ruin_halve", tr("ui.ruin_halve"), GameUI.fmt_time(econ.ruin_left(now_s())), "info")
 
 
 ## «В атаку!», or a march timer while every army is still on its way to the front (none touches the enemy). The
@@ -2104,9 +2108,10 @@ func _select(id: int) -> void:
 			ui.toast(tr("toast.occupied_hex") % [_cell_name(id), _state_name(c["controller"])])
 
 
-## What the hex panel shows for a hex (hud.show_tile): the name, the tile's render, the owner chip (owner, its
-## colour in owner_fill), the stat chips ([[icon, text, tone], …], the first two fit) and the tooltip's lines
-## (details, at most 4). The older keys (owner_color, bonus, attackable) stay for any other reader.
+## What the hex panel shows for a hex (hud.show_tile): the name, the tile's render (tile; tile_alt, the terrain's,
+## and tile_icon, the kind's 3D icon set on it, while the kind has no render of its own), the owner chip (owner, its
+## colour in owner_fill), the stat chips ([[icon, text, tone], …], as many as fit) and the tooltip's lines (details,
+## at most 4). The older keys (owner_color, bonus, attackable) stay for any other reader.
 func _describe(id: int) -> Dictionary:
 	var c: Dictionary = sim.cells[id]
 	var own: int = c["owner"]
@@ -2115,7 +2120,7 @@ func _describe(id: int) -> Dictionary:
 	if tile_key in ["capital", "city"] and own > Types.NOBODY and own < sim.states.size():  # the owner's era and colour
 		tile_key = "%s_dl%d_%s" % [tile_key, clampi(int(sim.states[own]["dev_level"]), 1, 8), map_view.faction_suffix(own)]
 	var owner_text: String = tr("tile.owner_you") if own == Types.PLAYER else (tr("tile.owner_none") if own == Types.NOBODY else _state_short(own))
-	var fill: Color = map_view.state_color(own) if own == Types.NOBODY else map_view.team_look(own)["body"]
+	var fill: Color = Kit.WILD if own == Types.NOBODY else map_view.team_look(own)["body"]  # «Ничья»: a darker sand
 	var chips: Array = []
 	var lines := PackedStringArray()
 	var title := _cell_name(id)
@@ -2123,12 +2128,17 @@ func _describe(id: int) -> Dictionary:
 		lines.append(tr("tile.occupied") % _state_name(ctrl))
 	var cm: Dictionary = camps.at(id) if camps != null else {}
 	var dep: Dictionary = deposits.at(id) if deposits != null else {}
+	var tile_icon: String = {"oil": "barrel", "dark_lake": "barrel", "raivite_vein": "raivite"}.get(String(c["kind"]), "")
 	if not cm.is_empty():
+		tile_key = "camp"
+		tile_icon = "coins"
 		title = tr("tile.camp")
 		chips.append(["coins", "%d/3" % camps.rewards_left(now_s())])
 		lines.append(tr("tile.camp_loot") % [tr("res.name." + String(cm["res"])), camps.rewards_left(now_s())])
 	elif not dep.is_empty():
-		title = "%s (%s)" % [tr(String(Deposits.NAMES.get(String(dep["res"]), "tile.deposit_name"))), dep["size"]]
+		title = tr(String(Deposits.NAMES.get(String(dep["res"]), "tile.deposit_name")))  # no «(M)» size letter (§3.7): the amount chip says how much
+		tile_key = "deposit_" + String(dep["res"])
+		tile_icon = String(Hud.RES_ICON.get(String(dep["res"]), "crate"))
 		chips.append([String(Hud.RES_ICON.get(String(dep["res"]), "crate")), GameUI.fmt_num(int(dep["amount"]))])
 		chips.append(["hourglass", GameUI.fmt_time(int(dep["gather_sec"]))])
 		lines.append(tr("tile.deposit") % [int(dep["amount"]), tr("res.gen." + String(dep["res"])), GameUI.fmt_time(int(dep["gather_sec"]))])
@@ -2168,7 +2178,7 @@ func _describe(id: int) -> Dictionary:
 			chips.append(["fort", "+%d%%" % def])
 			lines.append(tr("tile.def") % def)
 	if c["kind"] == "capital" and not chips.any(func(ch): return String(ch[0]) == "crown"):
-		chips.append(["crown", ""])  # an own capital: after what it brings
+		chips.push_front(["crown", ""])  # an own capital: the crown first (icon-only, it shares a row with the income)
 	if String(c["kind"]) in ["oil", "dark_lake"]:
 		if econ.dev_level() < Economy.OIL_DL:  # oil flows from DL5 (canon §4): a closed [barrel] chip
 			chips.push_front(["barrel", tr("dl.short") % Economy.OIL_DL, "lock"])
@@ -2185,7 +2195,9 @@ func _describe(id: int) -> Dictionary:
 		"details": details,
 		"bonus": lines[0] if lines.size() > 0 else "",
 		"attackable": own != Types.PLAYER and own != Types.NOBODY,
-		"tile": tile_key if cm.is_empty() and dep.is_empty() else String(c["terrain"]),
+		"tile": tile_key,
+		"tile_alt": String(c["terrain"]),
+		"tile_icon": tile_icon,
 	}
 
 
@@ -5574,6 +5586,15 @@ func _claim_patent_daily() -> void:
 
 
 ## Rewarded placement with a daily cap (canon §15.2). Test builds grant the reward without an SDK.
+## How many rewarded videos of `key` are still open today (the day rule of _rewarded): an ad button whose cap is
+## spent is not offered, rather than shown only to answer «limit».
+func _ad_left(key: String, cap: int) -> int:
+	var rec: Array = ad_counts.get(key, [])
+	if rec.size() < 2 or int(rec[0]) != now_s() / 86400:
+		return cap
+	return maxi(0, cap - int(rec[1]))
+
+
 func _rewarded(key: String, cap: int) -> bool:
 	var day := now_s() / 86400
 	var rec: Array = ad_counts.get(key, [day, 0])

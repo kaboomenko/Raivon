@@ -28,6 +28,7 @@ const BLUEPRINT := Color("3e7fc1")
 const SEA_WELL := Color("2a6596")
 const FULL := Color("8c5a1f")
 const MAP_ROCK := Color("a9aebb")  ## minimap mountains (the land is in the states' colours, water shows the well)
+const WILD := Color("977a4b")  ## the «Ничья» owner chip: a darker sand than the map's wild land, so its white text reads; warm, never the lock grey
 const WHITE := Color(1, 1, 1)
 const CLEAR := Color(0, 0, 0, 0)  ## "no colour" for an optional colour argument (a chip's fill, a badge's face)
 

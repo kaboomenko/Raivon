@@ -29,17 +29,20 @@ const TABS := [["buildings", "tab.buildings", "castle_icon"], ["army", "tab.army
 	["development", "tab.development", "flask"], ["diplomacy", "tab.diplomacy", "handshake"], ["world", "tab.world", "globe"]]
 const TRAY := Rect2(12, 1464, 628, 196)
 ## The hex panel (§5): right of the tray, above the big button. The owner chip sits on its top edge like a label
-## (§4.8 «ярлык»), the name under it, the tile's render at the left and two rows of stat chips right of it: 165 px is
-## too narrow for two chips side by side ([coin +150] alone is ~120 px), so they stack.
+## (§4.8 «ярлык»), the name under it, the tile's render at the left and two rows of stat chips right of it: 165 px
+## takes one income chip a row ([coin +150] alone is ~120 px), or an income and an icon-only chip side by side.
 const TILE_RECT := Rect2(652, 1374, 277, 152)
 const TILE_OWNER := Vector2(14, -17)  # the owner chip (h 34) straddles the top contour
 const TILE_COL := Rect2(102, 58, 165, 80)  # the stat chips: rows at y 58 and 100 (h 38)
+const TILE_ICON := Rect2(29, 70, 46, 46)  # a kind's 3D icon set on the terrain's tile while the kind has no render
+const CHIP_GAP := 6.0
 
 var world: Node3D
 var font_bold: Font
 var tile_box: Panel  # the hex panel: hidden while nothing is selected
 var tile_title: Label
 var tile_pic: TextureRect
+var _tile_icon: TextureRect  # the kind's icon on the terrain's tile (oil, dark lake, vein, camp, deposits)
 var _tile_chips: Control  # owner chip + stat chips (rebuilt when the info changes)
 var _tile_info := {}  # what the panel shows now (show_tile skips an unchanged one)
 var _tile_press := Vector2(-1, -1)
@@ -488,6 +491,15 @@ func _build_bottom() -> void:
 	tile_pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	tile_pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	tile_box.add_child(tile_pic)
+	_tile_icon = TextureRect.new()
+	_tile_icon.name = "tile_icon"
+	_tile_icon.position = TILE_ICON.position
+	_tile_icon.size = TILE_ICON.size
+	_tile_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_tile_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_tile_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tile_icon.visible = false
+	tile_box.add_child(_tile_icon)
 	_tile_chips = Control.new()
 	_tile_chips.name = "chips"
 	_tile_chips.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -698,21 +710,26 @@ func tab_rect(key: String) -> Rect2:
 # ---------------------------------------------------------------- the hex panel (§5, §6 HUD)
 
 ## Shows the selected hex (main._describe): its name, the rendered tile, the owner chip and the stat chips.
-## info: title, tile (the render's key), owner (the chip's text), owner_fill (the owner's colour), chips
-## ([[icon, text, tone], …], tone pos | neg | plain | lock), details (the tooltip's lines); an older caller
-## without «chips» gets its «bonus» sentence instead. Makes the panel visible; an unchanged info is not rebuilt.
+## info: title, tile (the render's key), tile_alt (the terrain's render) and tile_icon (a 3D icon), owner (the
+## chip's text), owner_fill (the owner's colour), chips ([[icon, text, tone], …], tone pos | neg | plain | lock),
+## details (the tooltip's lines); an older caller without «chips» gets its «bonus» sentence instead. A kind with no
+## render of its own (oil, a camp, …) shows the terrain's tile with the kind's icon set on it, so the panel agrees
+## with the map. Makes the panel visible; an unchanged info is not rebuilt.
 func show_tile(info: Dictionary) -> void:
 	tile_box.visible = true
 	if info == _tile_info:
 		return
 	_tile_info = info.duplicate(true)
-	var key := String(info.get("tile", "plain"))
-	var pic := "res://assets/ui/cards/tile_%s.png" % key
-	if not ResourceLoader.exists(pic):  # an era tile ("capital_dl4_red") falls back to the kind's own picture
-		pic = "res://assets/ui/cards/tile_%s.png" % key.get_slice("_dl", 0)
-	if not ResourceLoader.exists(pic):
-		pic = "res://assets/ui/cards/tile_plain.png"
-	tile_pic.texture = load(pic) if ResourceLoader.exists(pic) else null
+	var pic := _tile_path(String(info.get("tile", "plain")))
+	var ic := ""
+	if pic == "":
+		ic = String(info.get("tile_icon", ""))
+		pic = _tile_path(String(info.get("tile_alt", "")))
+	if pic == "":
+		pic = _tile_path("plain")
+	tile_pic.texture = load(pic) if pic != "" else null
+	_tile_icon.texture = Kit.icon_tex(ic)
+	_tile_icon.visible = _tile_icon.texture != null
 	_fit_floor(tile_title, String(info.get("title", "")), 30, 24, tile_title.size.x)
 	for c in _tile_chips.get_children():
 		c.free()
@@ -731,6 +748,18 @@ func show_tile(info: Dictionary) -> void:
 		_fit_floor(l, String(info["bonus"]), 24, 22, TILE_COL.size.x)
 
 
+## The render of a tile key (tools/blender/card_art.py tile_*), "" when there is none: an era tile
+## ("capital_dl4_red") falls back to the kind's own picture ("capital").
+func _tile_path(key: String) -> String:
+	if key == "":
+		return ""
+	for k in [key, key.get_slice("_dl", 0)]:
+		var p := "res://assets/ui/cards/tile_%s.png" % k
+		if ResourceLoader.exists(p):
+			return p
+	return ""
+
+
 ## Hides the hex panel (nothing selected, or its slot is taken by the status button / the battle timer).
 func hide_tile() -> void:
 	tile_box.visible = false
@@ -741,20 +770,36 @@ func tile_rect() -> Rect2:
 	return tile_box.get_global_rect() if tile_box.visible else Rect2()
 
 
-## The stat chips in the column right of the render, one a row (y 58, y 100): each at NUM_S 26, stepped down to 22
-## and then cut to the column when long. More than two: the second row also takes a «+N» pill when it fits
-## (everything is in the tooltip).
+## The stat chips in the column right of the render, flowed into two rows (y 58, y 100), in order: a chip joins its
+## row while it fits whole (its number may step down from NUM_S 26 to 22), else it starts the next row; alone in a
+## row it is cut with an ellipsis rather than dropped. The second row keeps room for a «+N» pill counting the chips
+## that do not fit, so nothing disappears without a hint (the tooltip on a tap has everything).
 func _lay_stat_chips(chips: Array) -> void:
-	var room := TILE_COL.size.x
-	for i in mini(2, chips.size()):
-		var pos := TILE_COL.position + Vector2(0, 42.0 * i)
-		var p := _stat_chip(chips[i], pos, 26, room)
-		if i == 1 and chips.size() > 2:
-			var more := Kit.chip(_tile_chips, Vector2(pos.x + p.size.x + 6.0, pos.y), "", "+%d" % (chips.size() - 2), "stat",
-				Kit.CLEAR, {"size": 22})
-			more.name = "more"
-			if more.position.x + more.size.x > TILE_COL.end.x:
-				more.free()
+	var i := 0
+	var x := 0.0
+	for row in 2:
+		x = 0.0
+		var placed := 0
+		while i < chips.size():
+			var rest := chips.size() - i - 1
+			var room := TILE_COL.size.x - x - (_more_w(rest) + CHIP_GAP if row == 1 and rest > 0 else 0.0)
+			var p := _stat_chip(chips[i], TILE_COL.position + Vector2(x, 42.0 * row), 26, room)
+			var lbl := p.get_node_or_null("label") as Label
+			if placed > 0 and (p.size.x > room + 0.5 or (lbl != null and lbl.clip_text)):
+				p.free()  # does not fit beside the others: the next row (or the «+N»)
+				break
+			x += p.size.x + CHIP_GAP
+			placed += 1
+			i += 1
+	if i < chips.size():
+		var more := Kit.chip(_tile_chips, TILE_COL.position + Vector2(x, 42.0), "", "+%d" % (chips.size() - i), "stat",
+			Kit.CLEAR, {"size": 22})
+		more.name = "more"
+
+
+## The width of the «+N» pill for `n` chips left out (0 for none): MICRO 22 in a stat chip's pill.
+func _more_w(n: int) -> float:
+	return 0.0 if n <= 0 else 10.0 + Kit.text_w("+%d" % n, 22, "d900") + 12.0
 
 
 ## One stat chip: [icon, text, tone] (tone: pos — a plus in green, neg — a shortfall in red, lock — a closed item:

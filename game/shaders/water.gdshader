@@ -9,7 +9,9 @@ shader_type spatial;
 // The foam lip starts under the beach rim (0.08 wide) and hides small mismatches between the field and the rim.
 // UV2.y shifts the shore out where the coast is a beach sloping into the water (the bay: map_view._bay_shore): the
 // shallows, the lip and the ring start at the waterline there; the deep ramp keeps the raw distance, so the bay's
-// far edges still match the open sea. lip_w widens the lip from the middle zoom out (map_view._water_zoom).
+// far edges still match the open sea. lip_w widens the lip from the middle zoom out (map_view._water_zoom), on the
+// in-map water only: the bay's lip lies on a beach sloping toward the camera and reads 5–6 px at strat as it is (wider,
+// it pushed the strategic white-hot from 0.8 to 1.35 %).
 render_mode cull_back;
 
 #include "res://shaders/hex_sdf.gdshaderinc"
@@ -54,9 +56,10 @@ void fragment() {
 	c *= 0.97 + 0.06 * n;
 	c += vec3(0.25) * smoothstep(0.74, 0.78, n);
 	// the foam lip at the shore, and the slow ring
-	float lip = 1.0 - smoothstep(0.10 + lip_w, 0.15 + 1.4 * lip_w, ds);
+	float lw = UV2.y > 0.001 ? 0.0 : lip_w;
+	float lip = 1.0 - smoothstep(0.10 + lw, 0.15 + 1.4 * lw, ds);
 	float ph = fract(TIME * 0.12);
-	float rr = 0.16 + lip_w + ph * 0.5;
+	float rr = 0.16 + lw + ph * 0.5;
 	float ring = (1.0 - smoothstep(0.02, 0.045, abs(ds - rr))) * 0.7 * (1.0 - ph);
 	c = mix(c, foam, max(lip, ring));
 	ALBEDO = c * light_k;

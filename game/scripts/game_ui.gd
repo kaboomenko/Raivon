@@ -487,18 +487,20 @@ func _input(event: InputEvent) -> void:
 
 ## The big button's look by kind (docs/ui_style.md §6 HUD): [role, icon]. It wins over the caller's colour; a kind
 ## not listed keeps the caller's role and icon. «colonize_now» is gold only while it costs Raivites (free: go); the
-## lock kinds are the disabled ones (their reason is in the tooltip).
+## lock kinds are the disabled ones (their reason is in the tooltip). «pick_target» shows swords, not the target
+## render: its crossed arrows read as a «forbidden» sign on the red face at phone size.
 const PRIMARY_LOOK := {
-	"pick_target": ["war", "target"], "declare": ["war", "swords"], "offensive": ["war", "swords"], "camp": ["war", "swords"],
+	"pick_target": ["war", "swords"], "declare": ["war", "swords"], "offensive": ["war", "swords"], "camp": ["war", "swords"],
 	"upgrade": ["go", "arrow_up"], "colonize": ["go", "orders"], "colonize_now": ["gold", "lightning"], "convoy": ["go", "cart"],
 	"repair": ["go", "hammer"], "march": ["info", "orders"], "march_cancel": ["info", "x"], "march_stop": ["info", "hourglass"],
 	"retreat": ["info", "white_flag"],
 	"truce": ["lock", "hourglass"], "core": ["lock", "lock"], "camp_far": ["lock", "lock"], "camp_wait": ["lock", "hourglass"],
 	"wait": ["lock", "hourglass"], "repairing": ["lock", "hourglass"], "convoy_status": ["lock", "hourglass"],
 }
-## The status button's look by kind: [role, icon]. The free repair for an ad is secondary (info, §2: an ad button is
-## the secondary one when a main action stands beside it — here the paid repair on the big button).
-const STATUS_LOOK := {"peace": ["go", "dove"], "repair_ad": ["info", "ad"], "ruin_halve": ["go", "ad"]}
+## The status button's look by kind: [role, icon, the plate's icon]. Both ad buttons are secondary (info, §2: an ad
+## button is the secondary one when a main action stands beside it — the paid repair / «Улучшить» on the big button),
+## so the big button stays the one loud thing (§1.1). The ruin's plate carries an hourglass: «−50%» of that time.
+const STATUS_LOOK := {"peace": ["go", "dove", ""], "repair_ad": ["info", "ad", ""], "ruin_halve": ["info", "ad", "hourglass"]}
 const BIG_RECT := Rect2(652, 1536, 277, 124)  # the big button: L, the one loud thing on the map (§1.1)
 const RETREAT_RECT := Rect2(652, 1564, 277, 96)  # «Отступить» in battle: M, a secondary action
 const STATUS_RECT := Rect2(652, 1438, 277, 88)  # the status button: M, in the hex panel's slot
@@ -590,8 +592,8 @@ func _row_tap(e: InputEvent) -> bool:
 ## The status slot (§5, §6 HUD) — kind "" hides it. Kind «timer»: the battle timer plate (hourglass, the time in
 ## TIMER 60, `sub` under it; bg "war" is the final push: the number turns red and pulses every second). Any other
 ## kind: a button M in the hex panel's slot («peace»: go + dove, `sub` the war score in a chip; «repair_ad»: info + the
-## ad icon; «ruin_halve»: go + the ad icon, `sub` the ruin's time left in a chip). `bg` is a role name or, from older
-## callers, a colour (Kit.role_of); STATUS_LOOK wins over it.
+## ad icon; «ruin_halve»: info + the ad icon, `sub` the ruin's time left in a chip with an hourglass). `bg` is a role
+## name or, from older callers, a colour (Kit.role_of); STATUS_LOOK wins over it.
 func set_action(kind: String, title: String, sub := "", bg: Variant = "go") -> void:
 	_action_kind = kind
 	_action.visible = kind != ""
@@ -630,12 +632,12 @@ func set_action(kind: String, title: String, sub := "", bg: Variant = "go") -> v
 		return
 	if kind == "":
 		return
-	var look: Array = STATUS_LOOK.get(kind, [role, ""])
+	var look: Array = STATUS_LOOK.get(kind, [role, "", ""])
 	var b := _status_btn as Kit.KitButton
 	b.role = String(look[0]) if Kit.ROLE.has(String(look[0])) else "go"
 	b.icon = String(look[1])
 	b.caption = title
-	b.price = [["", sub, sub.begins_with(Kit.MINUS)]] if sub != "" else []  # a negative war score reads red
+	b.price = [[String(look[2]), sub, sub.begins_with(Kit.MINUS)]] if sub != "" else []  # a negative war score reads red
 	b.enabled = true
 	b.rebuild()
 

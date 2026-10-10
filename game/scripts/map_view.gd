@@ -149,11 +149,13 @@ func _build_water() -> void:
 
 
 ## The foam lip by zoom (P5 review): 0.07 of it shows past the rim, 2–4 px on the strategic view, at the §6.1 rule-5
-## limit; from the middle zoom out it widens by up to 0.035 (water.gdshader lip_w), so it keeps ≈ 4–6 px.
+## limit; from the middle zoom out it widens by up to 0.03 (water.gdshader lip_w), so it keeps ≈ 4–5 px. In-map
+## water only: the bay's lip, on a beach sloping toward the camera, is 5–6 px wide as it is. (0.035 everywhere took
+## the strategic white-hot from 0.81 to 1.35 %; 0.035 in-map only, to 0.94 %, too close to the 1.0 % cap.)
 func _water_zoom() -> void:
 	if _water_mi == null:
 		return
-	(_water_mi.material_override as ShaderMaterial).set_shader_parameter("lip_w", 0.035 * smoothstep(0.2, 0.6, _zoom))
+	(_water_mi.material_override as ShaderMaterial).set_shader_parameter("lip_w", 0.03 * smoothstep(0.2, 0.6, _zoom))
 
 
 ## How much further out than on an in-map coast the waterline lies on a bay beach (w = 1, _rim_loop): there the bay
@@ -887,12 +889,13 @@ func _coastline() -> Dictionary:
 
 const RIM_W := 0.08  # the beach rim: a quarter round 0.08 out over the water and 0.08 down (§6.7)
 const TURF_K := 1.08  # the turf lip: the land colour there ×1.08 (§6.3)
-## Sand and wet sand (§6.3) scaled like the ground colours (GROUND_K), but further: the rim faces the sun, so at
-## GROUND_K (0.92) the lit sand read #F1E6BE…#FFF4BE, pale cream and brighter than the foam (P5 review). At 0.82 it
-## reads golden, near #E8D39A.
-const SAND_K := 0.82
-const SAND := Color("e8d39a") * SAND_K
-const WET_SAND := Color("c9b27a") * SAND_K
+## Sand and wet sand: the albedos that light up to the §6.3 #E8D39A / #C9B27A on screen, as the water's light_k and
+## the roads' ROAD_LIGHT_K. The rim faces the sun and the bluish sky fill (#A9C1E8) lifts blue the most: measured on
+## the strategic bay beach, an albedo comes out ×1.43 / ×1.57 / ×2.13 brighter in linear R / G / B, so the plain
+## palette colours read #F1E6BE…#FFF4BE (×0.92, P5 review: pale cream, brighter than the foam) and still #DFD4B2,
+## S 0.20 (×0.82, the first fix). These, more golden, read ≈ #E8D39A, S ≈ 0.34.
+const SAND := Color("c5ad6d")
+const WET_SAND := Color("aa8f55")
 ## The bay beach (_rim_loop): where the rim faces the bay, whose water lies 0.155 lower than the in-map water
 ## (BAY_Y), the quarter round stops at 66° and the beach runs on down its tangent to BAY_FOOT, under the bay's water.
 const BAY_PHI := PI * 66.0 / 180.0
@@ -1045,22 +1048,29 @@ func _terrain_zoom() -> void:
 
 
 var _grass_mi: MultiMeshInstance3D
-var _pebble_mi: MultiMeshInstance3D
+var _flower_mi: MultiMeshInstance3D
+var _grass_mat: ShaderMaterial  # shared by the tufts and the flowers (shaders/grass.gdshader), faded by _grass_zoom
 
-## Grass tint by biome: tufts a shade lighter than the ground, so empty land reads as a meadow, not plastic.
-const GRASS_TINT := {"meadow": Color(0.37, 0.39, 0.19), "taiga": Color(0.3, 0.5, 0.28), "steppe": Color(0.72, 0.68, 0.34), "badlands": Color(0.66, 0.55, 0.3)}
+## Grass tint by biome (§6.3, sRGB): tufts lighter than the ground, so empty land reads as a soft meadow.
+const GRASS_TINT := {"meadow": Color("8fc255"), "taiga": Color("78b068"), "steppe": Color("d8cc78"), "badlands": Color("dda56e")}
+const GRASS_SUN := Color("b8d86a")  # the sunlit tips a third of the tufts lean toward
+const FLOWER_COLS := [Color("ffffff"), Color("ffd84a"), Color("ff8fb0")]
 
 
-## Grass tufts and pebbles over the land (one MultiMesh each): a whole meadow on an empty plain, a fringe along
-## the edge of hexes with buildings (the pads stay clean), sparse ones in forests and on hills. They rise above the
-## territory fill (+0.03), so the land keeps its texture under the colour, as in the close reference frames.
+## Grass tufts and flowers over the land (one MultiMesh each, §6.7): 40 chunky rounded tufts and 6 flowers on an
+## empty plain, a fringe of tufts along the edge of hexes with buildings (the pads stay clean), a few in forests and
+## on hills. They rise above the territory fill (+0.03), so the land keeps its texture under the colour up close; from
+## the middle zoom out they sink into the lawn (_grass_zoom), which then reads clean.
+## The tints are authored in sRGB like the ground's vertex colours (terrain.gdshader takes pow 2.2) and stored
+## linear, so a tuft sits a soft step above the lawn instead of near-white.
 func _build_grass() -> void:
-	for mi in [_grass_mi, _pebble_mi]:
+	for mi in [_grass_mi, _flower_mi]:
 		if mi != null:
 			mi.queue_free()
 	var xf: Array = []
 	var cols: Array = []
-	var peb: Array = []
+	var fxf: Array = []
+	var fcols: Array = []
 	var g := RandomNumberGenerator.new()
 	g.seed = 4242
 	for c in sim.cells:
@@ -1073,11 +1083,11 @@ func _build_grass() -> void:
 		var own_g: int = int(c["owner"])
 		if empty and own_g > Types.NOBODY and own_g < sim.states.size() and int(sim.states[own_g]["dev_level"]) >= 8:
 			empty = false  # a neon district's plate covers the hex: grass only on the rim, never through the plate
-		var n := 28
+		var n := 12
 		if t == "plain" and empty:
-			n = 100  # a carpet of tufts (reference frame 3: no bare earth between the farms)
+			n = 40  # a calm meadow: fewer, bigger tufts (§6.7), the lawn shows between them
 		elif t == "hills":
-			n = 32
+			n = 14
 		if biome == "badlands":
 			n = n / 2
 		var center := axial_to_world(c["q"], c["r"])
@@ -1085,31 +1095,42 @@ func _build_grass() -> void:
 			var r := sqrt(g.randf()) * 0.86 if empty else g.randf_range(0.82, 0.93)
 			var a := g.randf() * TAU
 			var pos := center + Vector3(cos(a) * r, 0.0, sin(a) * r)
-			var sc := g.randf_range(0.75, 1.3)
-			var basis := Basis(Vector3.UP, g.randf() * TAU).scaled(Vector3(sc, sc * g.randf_range(0.8, 1.3), sc))
+			# ≈ ×1.6 the old tuft's size (§6.7): the leaf blades are already 1.3× taller and twice as wide as the
+			# old thin ones, so sc 0.85–1.35 (not the plan's 1.2–2.1, which made them ×2.1 and covered ~60 % of a
+			# meadow with lime leaves at z03) and a squat height jitter: chunky low cushions, the lawn between them
+			var sc := g.randf_range(0.85, 1.35)
+			var basis := Basis(Vector3.UP, g.randf() * TAU).scaled(Vector3(sc, sc * g.randf_range(0.75, 1.05), sc))
 			xf.append(Transform3D(basis, pos))
-			var tc := tint * g.randf_range(0.82, 1.18)
+			var tc := tint
 			if g.randf() < 0.3:  # sunlit yellow-green tips here and there
-				tc = tc.lerp(Color(0.62, 0.62, 0.26), 0.35)
-			cols.append(tc)
-		if t != "forest" and g.randf() < (0.9 if t == "hills" else 0.5):
-			for i in g.randi_range(1, 3):
-				var r2 := g.randf_range(0.3, 0.85)
-				var a2 := g.randf() * TAU
-				var s2 := g.randf_range(0.6, 1.4)
-				var bp := Basis(Vector3.UP, g.randf() * TAU).scaled(Vector3(s2, s2 * 0.55, s2 * g.randf_range(0.7, 1.0)))
-				peb.append(Transform3D(bp, center + Vector3(cos(a2) * r2, 0.0, sin(a2) * r2)))
+				tc = tc.lerp(GRASS_SUN, 0.3)
+			cols.append(tc.srgb_to_linear() * g.randf_range(0.92, 1.08))
+		if t == "plain" and empty:
+			for i in 6:  # dots of flowers on the meadow
+				var fr := sqrt(g.randf()) * 0.8
+				var fa := g.randf() * TAU
+				var fs := g.randf_range(0.85, 1.15)
+				fxf.append(Transform3D(Basis(Vector3.UP, g.randf() * TAU).scaled(Vector3(fs, 1.0, fs)), center + Vector3(cos(fa) * fr, 0.0, sin(fa) * fr)))
+				fcols.append((FLOWER_COLS[g.randi() % FLOWER_COLS.size()] as Color).srgb_to_linear())
+	if _grass_mat == null:
+		_grass_mat = ShaderMaterial.new()
+		_grass_mat.shader = load("res://shaders/grass.gdshader")
 	_grass_mi = _multi(_tuft_mesh(), xf, cols)
-	var pm := SphereMesh.new()
-	pm.radius = 0.025
-	pm.height = 0.05
-	pm.radial_segments = 6
-	pm.rings = 3
-	var stone := StandardMaterial3D.new()
-	stone.albedo_color = Color(0.6, 0.58, 0.54)
-	stone.roughness = 0.95
-	pm.material = stone
-	_pebble_mi = _multi(pm, peb, [])
+	_flower_mi = _multi(_flower_mesh(), fxf, fcols)
+	_grass_zoom()
+
+
+## The tufts and flowers by zoom (§6.7): full size close up, from zoom 0.35 to 0.45 they sink into the lawn (the
+## shader scales them by fade toward their root) instead of popping, and past it they are hidden, so the strategic
+## view draws a clean lawn and none of their primitives.
+func _grass_zoom() -> void:
+	if _grass_mat == null:
+		return
+	var fade := 1.0 - smoothstep(0.35, 0.45, _zoom)
+	_grass_mat.set_shader_parameter("fade", fade)
+	for mi in [_grass_mi, _flower_mi]:
+		if mi != null:
+			mi.visible = fade > 0.001
 
 
 func _multi(mesh: Mesh, xf: Array, cols: Array) -> MultiMeshInstance3D:
@@ -1129,26 +1150,52 @@ func _multi(mesh: Mesh, xf: Array, cols: Array) -> MultiMeshInstance3D:
 	return mi
 
 
-## One tuft: seven tapered blades fanned around the centre, dark at the root and light at the tip.
+## One tuft: five rounded blades fanned around the centre. Each blade is a leaf of three triangles: a root pair 0.03
+## apart, a shoulder pair at 75 % of its height and 0.045 wide, then the tip; it curves out as it rises. The heights
+## alternate 0.13 / 0.11; light at the root, lighter at the tip (×0.9 in grass.gdshader).
 func _tuft_mesh() -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for k in 7:
-		var a := k * TAU / 7.0 + 0.3
-		var lean := Vector3(cos(a), 0, sin(a)) * 0.03
-		var side := Vector3(-sin(a), 0, cos(a)) * 0.016
-		var h := 0.1 if k % 2 == 0 else 0.078
-		var root := Vector3(cos(a), 0, sin(a)) * 0.008
-		st.set_normal(Vector3.UP)
-		st.set_color(Color(0.62, 0.64, 0.58))
-		st.add_vertex(root - side)
-		st.add_vertex(root + side)
-		st.set_color(Color(0.95, 0.98, 0.85))
-		st.add_vertex(root + lean + Vector3(0, h, 0))
-	var mat := ShaderMaterial.new()
-	mat.shader = load("res://shaders/grass.gdshader")
+	var c_root := Color(0.78, 0.8, 0.72)
+	var c_tip := Color(1.0, 1.0, 0.92)
+	var c_sh := c_root.lerp(c_tip, 0.75)
+	st.set_normal(Vector3.UP)
+	for k in 5:
+		var a := k * TAU / 5.0 + 0.3
+		var out := Vector3(cos(a), 0, sin(a))
+		var side := Vector3(-sin(a), 0, cos(a))
+		var h := 0.13 if k % 2 == 0 else 0.11
+		var lean := out * h * 0.25  # the tip's outward lean; the shoulder leans 0.75² of it, so the blade curves
+		var root := out * 0.008
+		var sh := root + lean * 0.5625 + Vector3(0, h * 0.75, 0)
+		var r0 := root - side * 0.015
+		var r1 := root + side * 0.015
+		var s0 := sh - side * 0.0225
+		var s1 := sh + side * 0.0225
+		var tip := root + lean + Vector3(0, h, 0)
+		for v in [[r0, c_root], [r1, c_root], [s1, c_sh], [r0, c_root], [s1, c_sh], [s0, c_sh], [s0, c_sh], [s1, c_sh], [tip, c_tip]]:
+			st.set_color(v[1])
+			st.add_vertex(v[0])
 	var mesh := st.commit()
-	mesh.surface_set_material(0, mat)
+	mesh.surface_set_material(0, _grass_mat)
+	return mesh
+
+
+## One flower: a tiny flat disc (a 6-vertex fan, r 0.025) just above the lawn, the instance colour on it; the same
+## grass material, so the flowers sink with the tufts.
+func _flower_mesh() -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_normal(Vector3.UP)
+	st.set_color(Color(1, 1, 1))
+	for k in 6:
+		var a0 := k * TAU / 6.0
+		var a1 := (k + 1) * TAU / 6.0
+		st.add_vertex(Vector3(0, 0.012, 0))
+		st.add_vertex(Vector3(cos(a0) * 0.025, 0.012, sin(a0) * 0.025))
+		st.add_vertex(Vector3(cos(a1) * 0.025, 0.012, sin(a1) * 0.025))
+	var mesh := st.commit()
+	mesh.surface_set_material(0, _grass_mat)
 	return mesh
 
 
@@ -2534,6 +2581,7 @@ func set_zoom(zoom: float) -> void:
 	_rib_skirt_a = lerpf(0.2, 0.32, smoothstep(0.1, 0.6, zoom))
 	_terrain_zoom()
 	_water_zoom()
+	_grass_zoom()
 	for m in _fill_mats:
 		_fill_zoom(m)
 	for m in _ribbon_mats:

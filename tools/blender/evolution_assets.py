@@ -587,22 +587,29 @@ def front_windows(w, d, zs, n=2, frame=None, sides=True, ww=0.045, wh=0.05, wall
             window(w / 2 + 0.004, 0, z, math.pi / 2, ww, wh, frame, wall)
 
 
-def woodpile(n_rows=3):
+def woodpile(n_rows=3, k=1.0):
+    """A pyramid of logs with pale cut ends. k: the log size (plan step B3: the towns and the homestead stack fewer,
+    ×1.4 fatter logs — k=1.4 — tagged "round" so the 6-sided logs shade as smooth round logs)."""
     wm = tex("wood", "#9a6a3c", 3.0)
     cap = flat("logcut", "#d9b27a", 0.8)
+    r, L = 0.025 * k, 0.2 + 0.03 * (k - 1)
     for row in range(n_rows):
-        k = n_rows - row
-        for i in range(k):
-            y = (i - (k - 1) / 2) * 0.05
-            z = 0.025 + row * 0.043
-            cy(0.025, 0.2, (0, y, z), wm, 6, rot=(0, math.pi / 2, 0))
+        n = n_rows - row
+        for i in range(n):
+            y = (i - (n - 1) / 2) * 2 * r
+            z = r + row * r * 1.72
+            o = cy(r, L, (0, y, z), wm, 6, rot=(0, math.pi / 2, 0))
+            if k != 1.0:
+                o["round"] = True
             for sx in (-1, 1):
-                cy(0.021, 0.004, (sx * 0.1, y, z), cap, 6, rot=(0, math.pi / 2, 0))
+                cy(r * 0.84, 0.004, (sx * L / 2, y, z), cap, 6, rot=(0, math.pi / 2, 0))
 
 
 def haystack(x, y, s=1.0):
-    cy(0.085 * s, 0.07 * s, (x, y, 0.035 * s), tex("wood", THATCH, 3.0), 8)
-    cn(0.095 * s, 0.13 * s, (x, y, 0.13 * s), tex("wood", THATCH, 3.0), 8)
+    """«Raivon Soft» (plan step B3): a round beehive stack — one icosphere (subdivision 2) a little taller than wide,
+    its lower part sunk into the ground — instead of a faceted cylinder under a cone. Same footprint (r 0.095 s)."""
+    r = 0.095 * s
+    ico(r, (x, y, 0.42 * r), tex("wood", THATCH, 3.0), (1, 1, 1.2), sub=2)
 
 
 def well():
@@ -666,23 +673,28 @@ def smoke_at(x, y, z):
 
 
 def wattle(x0, y0, x1, y1, h=0.075):
-    """Woven hazel fence (плетень): stakes and three wavy withy rows between them."""
+    """Woven hazel fence (плетень): stakes and wavy withy rows between them. «Raivon Soft» (plan step B3): fat stakes
+    (0.03 across, was 0.014) with round tops (a low cone that shades as a dome), spaced 0.08, and two 0.016 × 0.022
+    withy rows (were three 0.009 hair lines) — no stick thinner than 0.016."""
     L = math.dist((x0, y0), (x1, y1))
     ang = math.atan2(y1 - y0, x1 - x0)
-    n = max(2, round(L / 0.055))
+    n = max(1, round(L / 0.08))
     st = tex("wood", WOOD_D, 3.0)
     wy = flat("withy", "#8c6a42", 0.9)
     for i in range(n + 1):
         f = i / n
-        cy(0.007, h + 0.02, (x0 + (x1 - x0) * f, y0 + (y1 - y0) * f, (h + 0.02) / 2), st, 5)
-    for k in range(3):
-        z = h * (0.3 + 0.32 * k)
-        sh = 0.006 if k % 2 == 0 else -0.006
-        bx((L, 0.009, 0.016), ((x0 + x1) / 2 - math.sin(ang) * sh, (y0 + y1) / 2 + math.cos(ang) * sh, z), wy, ang, 0)
+        px, py = x0 + (x1 - x0) * f, y0 + (y1 - y0) * f
+        cy(0.015, h + 0.008, (px, py, (h + 0.008) / 2), st, 6)
+        cn(0.015, 0.012, (px, py, h + 0.008 + 0.006), st, 6)
+    for k in range(2):
+        z = h * (0.36 + 0.36 * k)
+        sh = 0.004 if k % 2 == 0 else -0.004
+        bx((L, 0.016, 0.022), ((x0 + x1) / 2 - math.sin(ang) * sh, (y0 + y1) / 2 + math.cos(ang) * sh, z), wy, ang, 0)
 
 
-def garden(w, d, rows=4, crop="#4f9a34", fence=True):
-    """Vegetable patch: dark tilled soil, ridged beds with cabbage heads, a wattle fence with a gap for the gate."""
+def garden(w, d, rows=3, crop="#4f9a34", fence=True):
+    """Vegetable patch: dark tilled soil, ridged beds with cabbage heads, a wattle fence with a gap for the gate.
+    «Raivon Soft» (plan step B3): 3 beds (was 4) of ×1.4 bigger cabbage heads, spaced to match."""
     soil = tex("plaster", "#5b3f27", 2.5)
     bx((w, d, 0.016), (0, 0, 0.008), soil, bev=0.004)
     bed = tex("plaster", "#6e4c2e", 3.0)
@@ -690,11 +702,11 @@ def garden(w, d, rows=4, crop="#4f9a34", fence=True):
     leaf2 = flat("crop2", shade(crop, 1.25), 0.8)
     for r_ in range(rows):
         y = (r_ + 0.5) / rows * d - d / 2
-        bx((w * 0.86, d / rows * 0.5, 0.018), (0, y, 0.02), bed, bev=0.006)
-        n = max(2, int(w / 0.06))
+        bx((w * 0.86, d / rows * 0.56, 0.018), (0, y, 0.02), bed, bev=0.006)
+        n = max(2, int(w / 0.075))
         for i in range(n):
             x = (i + 0.5) / n * w * 0.82 - w * 0.41
-            ico(0.019 if r_ % 2 == 0 else 0.015, (x, y, 0.04), leaf if (i + r_) % 3 else leaf2, (1, 1, 0.75), sub=1)
+            ico(0.027 if r_ % 2 == 0 else 0.021, (x, y, 0.042), leaf if (i + r_) % 3 else leaf2, (1, 1, 0.75), sub=1)
     if fence:
         hw, hd = w / 2 + 0.02, d / 2 + 0.02
         wattle(-hw, -hd, -hw, hd)
@@ -1032,12 +1044,17 @@ def disc(r, loc, mt, n=10):
                     [tuple(range(n))], mt, loc)
 
 
-def chimney(x, y, z0, z1, w=0.044, mt=None, cap=STONE_D):
+def chimney(x, y, z0, z1, w=0.044, mt=None, cap=STONE_D, rnd=False):
     """A square chimney stack with a projecting cap and a flue mouth (the brick chimneys of reference frame 3).
     «Raivon Soft» (plan step B1): the cap is round (10 sides, rounded rim) and the flue a dark warm disc, not a
-    near-black square. Returns the mouth height (for the smoke marker)."""
+    near-black square. rnd (plan step B3, the houses of the towns and homesteads): a round stack (10 sides, a fat
+    0.56 w radius) under the same cap. Returns the mouth height (for the smoke marker)."""
     mt = mt or stone(BRICK, 1.4)
-    bx((w, w, z1 - z0), (x, y, (z0 + z1) / 2), mt, bev=0)
+    if rnd:
+        o = cy(w * 0.56, z1 - z0, (x, y, (z0 + z1) / 2), mt, 10)
+        o["round"] = True  # (shaded as a smooth tube: lowpoly)
+    else:
+        bx((w, w, z1 - z0), (x, y, (z0 + z1) / 2), mt, bev=0)
     rc = (w + 0.016) / 2 * 1.06  # the round cap still overhangs the square stack's corners a little
     round_cap(rc, 0.016, (x, y, z1 + 0.008), flat("cap" + cap, cap, 0.8))
     disc((w - 0.014) / 2, (x, y, z1 + 0.0162), flat("flue", "#3a302b", 0.9))
@@ -1176,14 +1193,16 @@ def timber_walls(w, d, z0, z1, wins=None, door=None, t=0.011, bay=0.042, rail=0.
     return zw
 
 
-def cottage(w, d, h, team, wall=PLASTER, pitch=1.15, smoke=False, chim=1, plinth=0.035, n_courses=COURSES,
+def cottage(w, d, h, team, wall=PLASTER, pitch=1.3, smoke=False, chim=1, plinth=0.035, n_courses=COURSES,
             flowers=True, side_win=True, back_win=True, door_u=-0.24, gable_win=True, gable_front=True, eave_z=None,
             plain=False):
     """The half-timbered cottage of reference frame 3 (the homesteads and the small houses of the towns): a stone
     plinth, cream plaster under a dark timber frame, a roof of team-slate courses with dark barge boards, a brick
     chimney with a cap, a hooded door with a step under the front gable, lit windows with team shutters and a
     flower box. w along X (the front), d along Y; with gable_front the ridge runs front to back.
-    plain: a back-row house that only shows its roof over the houses in front: no frame, windows or hood."""
+    plain: a back-row house that only shows its roof over the houses in front: no frame, windows or hood.
+    «Raivon Soft» (plan step B3): a fat roof, 45–60 % of the house's height (gable pitch 1.3, was 1.15), soft wall
+    corners and a round brick chimney."""
     roof_c = slate(team, 1.0)
     pm = tex("plaster", wall, 1.5)
     bx((w + 0.018, d + 0.018, plinth), (0, 0, plinth / 2), stone(STONE_D, 1.4), bev=0)
@@ -1224,17 +1243,18 @@ def cottage(w, d, h, team, wall=PLASTER, pitch=1.15, smoke=False, chim=1, plinth
         else:
             cx_, cy_ = chim * w * 0.28, d * 0.24
             zr = h + roof_surface(abs(cy_), d / 2, rh, eave_z=eave_z)
-        top = chimney(cx_, cy_, h, zr + 0.06)
+        top = chimney(cx_, cy_, h, zr + 0.06, rnd=True)
         if smoke:
             smoke_at(cx_, cy_, top + 0.01)
     return h + rh
 
 
 def town_house(w, d, h0, h1, team, wall0=STONE, plaster=PLASTER, gable_front=True, smoke=False, jetty=0.014,
-               shop=None, pitch=1.15, n_courses=COURSES, chim=1, side_win=True, gable_win=True, h2=0.0):
+               shop=None, pitch=1.3, n_courses=COURSES, chim=1, side_win=True, gable_win=True, h2=0.0):
     """A town house of the reference towns: a stone ground floor with a door and a lit shop window (with an awning
     in the shop colour), a jettied half-timbered upper storey with team shutters, a coursed team-slate roof with
-    its gable to the street and a brick chimney."""
+    its gable to the street and a brick chimney. «Raivon Soft» (plan step B3): gable pitch 1.3 (was 1.15) — with
+    the storeys the town layouts give it, the roof makes 45–60 % of the house — soft wall corners, a round chimney."""
     roof_c = slate(team, 1.0)
     bx((w, d, h0), (0, 0, h0 / 2), stone(wall0, 1.4), soft="v")  # soft mass (the jetty beam covers its top)
     doorway(-w * 0.24, -d / 2 - 0.004, 0.0, 0.046, min(0.08, h0 - 0.02), hood_c=None, wall=wall0)
@@ -1280,7 +1300,7 @@ def town_house(w, d, h0, h1, team, wall0=STONE, plaster=PLASTER, gable_front=Tru
         else:
             cx_, cy_ = chim * W1 * 0.28, D1 * 0.22
             zr = z1 + roof_surface(abs(cy_), D1 / 2, rh, eave_z=0.0)
-        top = chimney(cx_, cy_, z1, zr + 0.06)
+        top = chimney(cx_, cy_, z1, zr + 0.06, rnd=True)
         if smoke:
             smoke_at(cx_, cy_, top + 0.01)
     return z1 + rh
@@ -1291,7 +1311,8 @@ def town_house(w, d, h0, h1, team, wall0=STONE, plaster=PLASTER, gable_front=Tru
 
 def hut(w, d, h, team, smoke=False):
     """DL1 халупа: wattle and daub between rough dark posts and braces, a shaggy thatch laid in thick stepped
-    courses with a team-coloured ridge, a team door in a plank frame, a clay flue."""
+    courses with a team-coloured ridge, a team door in a plank frame, a clay flue. «Raivon Soft» (plan step B3): a
+    fat thatch (pitch 1.3, ≈ 55 % of the hut's height), soft wall corners, a round flue under a round cap."""
     dm = tex("plaster", DAUB, 1.5)
     bx((w, d, h + 0.04), (0, 0, (h - 0.04) / 2), dm, soft="v")  # soft mass (its top is under the thatch)
     for sx in (-1, 1):
@@ -1299,7 +1320,7 @@ def hut(w, d, h, team, smoke=False):
             cy(0.014, h + 0.04, (sx * w / 2, sy * d / 2, (h - 0.04) / 2), tex("wood", WOOD_D), 6)
     timber_walls(w, d, 0.0, h, {}, (-w * 0.18, 0.07, 0.11), t=0.012, bay=w * 0.3, rail=0.5, posts=False,
                  mt=flat("rough_timber", "#5a3d26", 0.9))
-    rh = w / 2 * 1.2  # the gable faces the front: the door and window stay out from under the low thatch eaves
+    rh = w / 2 * 1.3  # the gable faces the front: the door and window stay out from under the low thatch eaves
     gable_roof(d, w, rh, (0, 0, h - 0.01), THATCH, dm, rz=math.pi / 2, oh=0.04, ohx=0.04, n=3, tk=0.02, ct=0.022,
                tone=0.86, kind="wood", barge=None, ridge=None, gable_timber="#5a3d26", **SOFT_ROOF)
     # a round team-painted ridge bundle (a smooth roll, not a box) held by two withy ties
@@ -1312,18 +1333,20 @@ def hut(w, d, h, team, smoke=False):
     window(w * 0.22, -d / 2 - 0.004, h * 0.62, 0, 0.04, 0.035, WOOD_D, wall=DAUB)
     if smoke:  # a clay flue standing 7 cm out of the thatch, a quarter of the width from the ridge
         zt = h - 0.01 + roof_surface(w * 0.25, w / 2, rh, 0.04, None, 0.02, 0.022)
-        cy(0.022, 0.11, (w * 0.25, d * 0.08, zt + 0.015), tex("plaster", "#b08a62", 2.0), 7)
-        cy(0.027, 0.014, (w * 0.25, d * 0.08, zt + 0.07), tex("plaster", "#8f6c4a", 2.0), 7)
-        smoke_at(w * 0.25, d * 0.08, zt + 0.087)
+        cy(0.024, 0.11, (w * 0.25, d * 0.08, zt + 0.015), tex("plaster", "#b08a62", 2.0), 10)["round"] = True
+        round_cap(0.03, 0.016, (w * 0.25, d * 0.08, zt + 0.072), tex("plaster", "#8f6c4a", 2.0))
+        smoke_at(w * 0.25, d * 0.08, zt + 0.088)
 
 
 def laundry(x0, y0, x1, y1, team):
+    """A washing line between two posts with team and white cloths. «Raivon Soft» (plan step B3): stout 0.028 posts
+    and a 0.012 line (were 0.022 and a 0.006 hair line)."""
     wd = tex("wood", WOOD_D)
     for (x, y) in ((x0, y0), (x1, y1)):
-        cy(0.011, 0.25, (x, y, 0.125), wd, 6)
+        cy(0.014, 0.25, (x, y, 0.125), wd, 6)
     ang = math.atan2(y1 - y0, x1 - x0)
     L = math.dist((x0, y0), (x1, y1))
-    bx((L, 0.006, 0.006), ((x0 + x1) / 2, (y0 + y1) / 2, 0.235), flat("rope", "#e8dcc0"), ang, 0)
+    bx((L, 0.012, 0.012), ((x0 + x1) / 2, (y0 + y1) / 2, 0.235), flat("rope", "#e8dcc0"), ang, 0)
     cols = [team, WHITE, shade(team, 0.7), "#e8cf8e", WHITE]
     for i, f in enumerate((0.14, 0.32, 0.5, 0.68, 0.86)):
         hgt = 0.09 if i % 2 == 0 else 0.065
@@ -1332,7 +1355,9 @@ def laundry(x0, y0, x1, y1, team):
 
 
 def log_house(w, d, h, team, gable_front=False, roof_k=0.85, logc=LOG, chimney=True, n_win=2, smoke=False):
-    """DL2 изба: stacked logs with crossed corners, plank roof in the team colour, white-framed windows."""
+    """DL2 изба: stacked logs with crossed corners, plank roof in the team colour, white-framed windows.
+    «Raivon Soft» (plan step B3): the steep plank roof (roof_k 0.85 of the span) already makes 50–57 % of the izba's
+    height; the logs shade round, and the chimney is a round brick stack."""
     r = 0.023
     n = max(3, round(h / (2 * r * 0.92)))
     logm = tex("wood", logc, 3.0)
@@ -1383,7 +1408,7 @@ def log_house(w, d, h, team, gable_front=False, roof_k=0.85, logc=LOG, chimney=T
             zr = top - 0.01 + roof_surface(abs(cx_), w / 2 + r, rh, 0.045, 0.0)
         else:
             zr = top - 0.01 + roof_surface(abs(cy_), d / 2 + r, rh, 0.045, 0.0)
-        mouth = chimney_stack(cx_, cy_, top - 0.02, zr + 0.06)
+        mouth = chimney_stack(cx_, cy_, top - 0.02, zr + 0.06, rnd=True)
         if smoke:
             smoke_at(cx_, cy_, mouth + 0.01)
     return top, rh
@@ -1411,13 +1436,17 @@ def barn(team, coursed=False):
     zb.obj(flat("trim", WHITE, 0.7), "door_braces")
 
 
-def stone_house(w, d, h, team, wall=STONE, roof_k=0.8, smoke=False):
+def stone_house(w, d, h, team, wall=STONE, roof_k=1.0, smoke=False):
+    """A plain stone house under a slate prism roof (no layout uses it now). «Raivon Soft» (plan step B3): the roof
+    rises d × roof_k (1.0, was 0.8: about half the house's height), soft wall corners, a round stack with a round cap."""
     bx((w, d, h), (0, 0, h / 2), stone(wall, 1.6), soft="v")
     bx((w + 0.02, d + 0.02, 0.035), (0, 0, 0.0175), stone(STONE_D), bev=0)
-    prism_roof("roof", w, d, d * roof_k, (0, 0, h - 0.005), tex("roof", slate(team, 1.00)), overhang=0.045)
-    cy(0.028, 0.15, (w * 0.25, d * 0.15, h + d * roof_k * 0.55), stone(STONE_D), 8)
+    prism_roof("roof", w, d, d * roof_k, (0, 0, h - 0.005), tex("roof", slate(team, 1.00)), overhang=0.05)
+    zc = h + d * roof_k * 0.55
+    cy(0.028, 0.15, (w * 0.25, d * 0.15, zc), stone(STONE_D), 10)["round"] = True
+    round_cap(0.036, 0.016, (w * 0.25, d * 0.15, zc + 0.083), flat("cap" + STONE_D, STONE_D, 0.8))
     if smoke:
-        smoke_at(w * 0.25, d * 0.15, h + d * roof_k * 0.55 + 0.09)
+        smoke_at(w * 0.25, d * 0.15, zc + 0.1)
     bx((0.065, 0.014, 0.11), (0, -d / 2 - 0.004, 0.055), tex("wood", WOOD_D), bev=0)
     for sx in (-1, 1):
         window(sx * w * 0.3, -d / 2 - 0.004, h * 0.62, 0, 0.04, 0.05, WOOD_D, wall)
@@ -1467,14 +1496,18 @@ def terem_block(w, d, h_stone, h_wood, team, roof_h, dome=True, dome_team=False,
     return z1
 
 
-def mansion(w, d, floors, wall, team, fh=0.11):
+def mansion(w, d, floors, wall, team, fh=0.11, roof_h=0.14, col=0.07):
+    """A stone town mansion (DL4) under a coursed hip roof of roof_h, a painted window grid (one column every col),
+    a white cornice, two chimneys. «Raivon Soft» (plan step B3): city_dl4 builds two storeys under a fat roof
+    (≈ 45 % of the height), fewer bigger painted windows (col 0.1: ≤ 3 a face) and round chimneys."""
     H = floors * fh + 0.02
     bx((w + 0.02, d + 0.02, 0.04), (0, 0, 0.02), stone(STONE_D), bev=0)
-    bx((w, d, H), (0, 0, H / 2), facade(wall, WIN_D, 0.07, fh, 0.42, 0.5, lit_p=0.3), soft="v")  # (cornice on top)
+    bx((w, d, H), (0, 0, H / 2), facade(wall, WIN_D, col, fh, 0.42, 0.5, lit_p=0.3), soft="v")  # (cornice on top)
     bx((w + 0.03, d + 0.03, 0.025), (0, 0, H), flat("cornice", WHITE, 0.6), bev=0.006)
-    coursed_hip(w, d, 0.14, (0, 0, H + 0.0125), slate(team, 1.00), oh=0.03)
+    coursed_hip(w, d, roof_h, (0, 0, H + 0.0125), slate(team, 1.00), oh=0.03 if roof_h <= 0.14 else 0.05)
     for sx in (-1, 1):
-        chimney(sx * w * 0.3, d * 0.15, H + 0.04, H + 0.15, 0.036, stone("#b0a594", 1.4))
+        chimney(sx * w * 0.3, d * 0.15, H + 0.04, H + max(0.15, roof_h * 0.62 + 0.06), 0.036, stone("#b0a594", 1.4),
+                rnd=True)
     arch_slab(0.07 * DOOR_K, 0.1, -d / 2 - 0.005, -d / 2, tex("wood", WOOD_D), sides=False)  # an arched door plate
     prism_roof("pedi", 0.03, 0.1, 0.035, (0, -d / 2 - 0.012, 0.105), flat("cornice", WHITE, 0.6), overhang=0.0, rot_z=math.pi / 2)
     return H
@@ -1569,86 +1602,83 @@ def dark_glass():
 
 
 def city_dl1(team):
+    """The DL1 hamlet. «Raivon Soft» (plan step B3): three huts ×1.2 under fat thatch (was four), standing at least
+    0.05 apart so each silhouette reads, a garden, a haystack, a washing line, a woodpile of fat logs."""
     pad(0.66, tex("plaster", DIRT, 1.2), 0.008, 12, 0.12, 1)
-    build_at(lambda: hut(0.30, 0.24, 0.17, team, smoke=True), -0.36, 0.30, 0.25, 1, (0.05, -0.03))
-    build_at(lambda: hut(0.27, 0.22, 0.15, team), 0.35, 0.33, -0.35, 1, (-0.04, 0.05))
-    build_at(lambda: hut(0.28, 0.22, 0.16, team, smoke=True), -0.44, -0.22, 0.6, 1, (0.03, 0.05))
-    build_at(lambda: hut(0.24, 0.20, 0.14, team), 0.42, -0.2, -0.5, 1, (-0.04, -0.03))
-    laundry(-0.2, -0.03, 0.17, 0.06, team)
-    build_at(woodpile, 0.0, 0.42, 0.1)
-    cy(0.04, 0.06, (0.16, 0.36, 0.03), tex("wood", "#8a5e36"), 8)
-    build_at(lambda: garden(0.24, 0.15, 3), -0.04, -0.3, 0.12)
-    haystack(0.22, -0.46)
-    bench(0.12, 0.22, 0.4)
-    flagpole(-0.08, 0.2, 0.4, team, 0.12, "#8a6a44")
-    tree(0.62, 0.08, 0.9)
-    tree(-0.6, 0.16, 0.75, LEAF2)
-    ico(0.05, (-0.3, -0.52, 0.01), tex("plaster", "#8d8a84"), (1.3, 1, 0.6))
+    build_at(lambda: hut(0.30, 0.24, 0.17, team, smoke=True), -0.30, 0.31, 0.25, 1.2, (0.05, -0.03))
+    build_at(lambda: hut(0.27, 0.22, 0.15, team), 0.36, 0.28, -0.35, 1.2, (-0.04, 0.05))
+    build_at(lambda: hut(0.28, 0.22, 0.16, team, smoke=True), -0.39, -0.29, 0.6, 1.2, (0.03, 0.05))
+    laundry(-0.14, -0.04, 0.2, 0.0, team)
+    build_at(lambda: woodpile(2, 1.4), 0.62, -0.09, 1.45)
+    cy(0.04, 0.06, (0.27, 0.06, 0.03), tex("wood", "#8a5e36"), 8)
+    build_at(lambda: garden(0.24, 0.15, 3), 0.33, -0.28, -0.2)
+    haystack(0.03, -0.44)
+    flagpole(-0.1, 0.1, 0.4, team, 0.12, "#8a6a44")
+    tree(-0.64, 0.06, 0.75, LEAF2)
+    ico(0.05, (0.2, -0.54, 0.01), tex("plaster", "#8d8a84"), (1.3, 1, 0.6))
 
 
 def city_dl2(team):
+    """The DL2 village. «Raivon Soft» (plan step B3): two izbas ×1.2 and the barn (was three izbas and the barn),
+    at least 0.05 apart, round a well; a garden, a cart, a haystack and a woodpile of fat logs."""
     pad(0.66, tex("plaster", DIRT, 1.2), 0.008, 12, 0.1, 2)
-    build_at(lambda: log_house(0.32, 0.26, 0.2, team, smoke=True), -0.36, 0.3, 0.12)
-    build_at(lambda: log_house(0.28, 0.24, 0.18, team, gable_front=True, smoke=True), 0.36, 0.32, -0.15)
-    build_at(lambda: log_house(0.28, 0.24, 0.17, team, n_win=1), -0.42, -0.26, 0.4)
-    build_at(lambda: barn(team, coursed=True), 0.36, -0.26, -0.3)
-    build_at(well, 0.0, -0.04, 0.3)
-    well_roof(0.0, -0.04, 0.3, team)
-    build_at(lambda: garden(0.26, 0.15, 3, "#5aa63a"), -0.1, -0.5, 0.25)
-    build_at(lambda: cart(team, "sacks"), 0.17, -0.5, -0.5)
-    haystack(0.58, -0.02, 0.85)
-    build_at(lambda: woodpile(2), 0.02, 0.4, 0.0)
-    bench(-0.16, 0.12, 0.2)
-    pine(0.6, 0.22, 1.1)
-    pine(-0.66, 0.06, 1.0)
-    tree(-0.58, 0.3, 0.7, LEAF2)
-    flagpole(0.14, 0.16, 0.45, team, 0.13, "#8a6a44")
+    build_at(lambda: log_house(0.32, 0.26, 0.2, team, smoke=True), -0.33, 0.22, 0.12, 1.2)
+    build_at(lambda: log_house(0.28, 0.24, 0.18, team, gable_front=True, smoke=True), 0.37, 0.2, -0.15, 1.2)
+    build_at(lambda: barn(team, coursed=True), 0.22, -0.39, -0.15)
+    build_at(well, -0.15, -0.16, 0.3)
+    well_roof(-0.15, -0.16, 0.3, team)
+    build_at(lambda: garden(0.26, 0.15, 3, "#5aa63a"), -0.44, -0.3, 0.4)
+    haystack(0.62, -0.13, 0.85)
+    build_at(lambda: woodpile(2, 1.4), -0.69, -0.11, 1.57)
+    pine(0.02, 0.58, 1.0)
+    flagpole(0.1, 0.0, 0.45, team, 0.13, "#8a6a44")
 
 
 def market_stall(team, awn):
-    """A market stall: four posts, a striped awning, a counter with goods (reference frame 3: the town square)."""
+    """A market stall: four posts, a striped awning, a counter with goods (reference frame 3: the town square).
+    «Raivon Soft» (plan step B3): stout 0.02 posts (were 0.012), a thick 0.014 awning in three fat stripes and two
+    ×1.4 heaps of goods instead of three specks."""
     wd = tex("wood", WOOD, 3.0)
     for sx in (-1, 1):
         for sy in (-1, 1):
-            cy(0.006, 0.11, (sx * 0.05, sy * 0.035, 0.055), wd, 5)
+            cy(0.01, 0.11, (sx * 0.05, sy * 0.035, 0.055), wd, 6)
     bx((0.11, 0.08, 0.02), (0, 0, 0.05), tex("wood", WOOD_L), bev=0.003)
     for k, c in enumerate((awn, WHITE, awn)):
-        o = bx((0.13, 0.034, 0.008), (0, -0.03 + k * 0.03, 0.118 - k * 0.004), flat("awn" + c, c, 0.7), bev=0)
+        o = bx((0.13, 0.034, 0.014), (0, -0.03 + k * 0.03, 0.12 - k * 0.004), flat("awn" + c, c, 0.7), bev=0)
         o.rotation_euler.x = -0.25
-    for k, c in enumerate(("#d8452f", "#e8b84a", "#6faa3c")):
-        ico(0.014, (-0.03 + k * 0.03, 0.0, 0.07), flat("goods" + c, c, 0.7), (1, 1, 0.8))
+    for k, c in enumerate(("#d8452f", "#e8b84a")):
+        ico(0.02, (-0.022 + k * 0.044, 0.0, 0.074), flat("goods" + c, c, 0.7), (1, 1, 0.8))
 
 
 def town_props(team, spots):
-    """Barrels and crates in little heaps at the given spots."""
+    """Barrels and crates at the given spots. «Raivon Soft» (plan step B3): one ×1.4 cask and one ×1.4 crate a spot
+    (r 0.031 and 0.056, were 0.022 and 0.04), and no 0.006 dark hoop."""
     for i, (x, y) in enumerate(spots):
-        cy(0.022, 0.05, (x, y, 0.025), tex("wood", WOOD), 8)
-        cy(0.023, 0.006, (x, y, 0.04), flat("band", "#3d3f45", 0.5), 8)
-        bx((0.04, 0.04, 0.035), (x + 0.04, y + 0.01, 0.018), tex("wood", WOOD_L), 0.3 * i, 0)
+        barrel(x, y, 1.45)
+        crate(x + 0.062, y + 0.012, 0.056, 0.3 * i)
 
 
 def city_dl3(team):
+    """The DL3 market town of reference frame 3. «Raivon Soft» (plan step B3): five buildings ×1.2 (was seven) —
+    the terem at the back, two jettied town houses at the sides, two cottages in front — under fat roofs (45–60 % of
+    each house), at least 0.05 apart so each silhouette reads; two stalls on the square, one cask and crate a heap."""
     pad(0.7, stone(COBBLE, 1.8), 0.012, 14, 0.06, 3)
-    build_at(lambda: (terem_block(0.3, 0.26, 0.16, 0.18, team, 0.3),
-                      bx((0.14, 0.1, 0.02), (0, -0.18, 0.01), stone(STONE_D), bev=0)), 0.0, 0.32)
-    # the town of reference frame 3: half-timbered houses (two storeys at the sides and back, low cottages in
-    # front so the market square stays in view), coursed team roofs, brick chimneys, shop windows under awnings
-    build_at(lambda: town_house(0.28, 0.2, 0.12, 0.11, team, STONE, PLASTER, smoke=True, shop="#c0392b"), -0.46, 0.02, 0.2)
-    build_at(lambda: town_house(0.26, 0.2, 0.12, 0.11, team, "#d8cdb6", "#efe1c4", chim=-1), 0.46, -0.02, -0.25)
-    build_at(lambda: cottage(0.27, 0.19, 0.15, team, "#f2e8d4", smoke=True, pitch=1.0), -0.2, -0.43, 0.1)
-    build_at(lambda: cottage(0.24, 0.19, 0.14, team, "#ead9b8", gable_front=False, pitch=1.0, eave_z=0.0, flowers=False,
-                             side_win=False), 0.25, -0.44, -0.1)
-    tree(-0.12, 0.62, 0.9)
-    tree(0.36, 0.56, 0.8)
-    flagpole(0.05, -0.12, 0.55, team, 0.14)
-    # denser like the town of reference frame 3: two more houses at the back, a market on the square, goods in heaps
-    build_at(lambda: town_house(0.2, 0.16, 0.1, 0.09, team, "#cfc6b4", "#efe3c8", shop="#e8b84a",
-                                side_win=False, gable_win=False), -0.46, 0.42, 0.5)
-    build_at(lambda: town_house(0.2, 0.15, 0.1, 0.09, team, "#d8cdb6", "#f1e6d2", smoke=True, gable_front=False,
-                                side_win=False, gable_win=False), 0.52, 0.38, -0.5)
-    for (x, y, rz, c) in ((-0.17, -0.14, 0.2, "#c0392b"), (0.2, -0.16, -0.2, "#2f62c8"), (-0.02, -0.26, 0.0, "#e8b84a")):
-        build_at(lambda c=c: market_stall(team, c), x, y, rz)
-    town_props(team, [(-0.62, -0.18), (0.62, -0.2)])
+    build_at(lambda: (terem_block(0.3, 0.26, 0.16, 0.18, team, 0.32),
+                      bx((0.14, 0.1, 0.02), (0, -0.18, 0.01), stone(STONE_D), bev=0)), 0.0, 0.4, 0.0, 1.2)
+    # the town of reference frame 3: half-timbered houses (two storeys at the sides, low cottages in front so the
+    # market square stays in view), coursed team roofs, round brick chimneys, shop windows under awnings
+    build_at(lambda: town_house(0.28, 0.2, 0.11, 0.1, team, STONE, PLASTER, smoke=True, shop="#c0392b"),
+             -0.47, 0.08, 0.3, 1.2)
+    build_at(lambda: town_house(0.26, 0.2, 0.105, 0.095, team, "#d8cdb6", "#efe1c4", chim=-1), 0.47, 0.06, -0.3, 1.2)
+    build_at(lambda: cottage(0.27, 0.19, 0.15, team, "#f2e8d4", smoke=True), -0.3, -0.42, 0.15, 1.2)
+    build_at(lambda: cottage(0.24, 0.19, 0.14, team, "#ead9b8", gable_front=False, eave_z=0.0, flowers=False,
+                             side_win=False), 0.32, -0.4, -0.15, 1.2)
+    tree(-0.34, 0.6, 0.9)
+    tree(0.36, 0.58, 0.8)
+    flagpole(0.02, -0.02, 0.55, team, 0.14)
+    for (x, y, rz, c) in ((-0.12, -0.16, 0.2, "#c0392b"), (0.12, -0.2, -0.2, "#2f62c8")):
+        build_at(lambda c=c: market_stall(team, c), x, y, rz, 1.2)
+    town_props(team, [(-0.66, -0.2), (0.6, -0.24)])
 
 
 def city_dl4(team):
@@ -2276,7 +2306,8 @@ def residence_dl1(team):
         wd = tex("wood", WOOD_D)
         for kk in range(6):
             a = kk * math.tau / 6 + 0.3
-            beam((math.cos(a) * 0.36, math.sin(a) * 0.36, 0.0), (-math.cos(a) * 0.05, -math.sin(a) * 0.05, 0.8), 0.022, wd)
+            # (the poles end inside the round tuft: no crown of dark sticks over the thatch)
+            beam((math.cos(a) * 0.36, math.sin(a) * 0.36, 0.0), (math.cos(a) * 0.003, math.sin(a) * 0.003, 0.696), 0.022, wd)
         mesh_obj([(-0.085, -0.352, 0.0), (0.085, -0.352, 0.0), (0.0, -0.262, 0.2), (-0.085, -0.362, 0.0), (0.085, -0.362, 0.0), (0.0, -0.272, 0.2)],
                  [(0, 1, 2), (5, 4, 3), (0, 3, 4, 1), (1, 4, 5, 2), (2, 5, 3, 0)], hole)
         # a team cloth hung over the door, with a white stripe: two panels laid on the two thatch facets that meet
@@ -2310,7 +2341,7 @@ def residence_dl1(team):
         wd = tex("wood", WOOD_D)
         for kk in range(3):
             a = kk * math.tau / 3 + 0.5
-            beam((math.cos(a) * 0.15, math.sin(a) * 0.15, 0.0), (-math.cos(a) * 0.03, -math.sin(a) * 0.03, 0.4), 0.02, wd)
+            beam((math.cos(a) * 0.15, math.sin(a) * 0.15, 0.0), (math.cos(a) * 0.0096, math.sin(a) * 0.0096, 0.312), 0.02, wd)
         bx((0.066, 0.012, 0.1), (0, -0.142, 0.048), hole, bev=0, rot=(0.42, 0, 0))
     build_at(small_hut, 0.52, 0.47, 0.3)
 
@@ -2506,22 +2537,56 @@ def castle_tower(x, y, r, h, team, roof_c, rc=None, hc=None, z0=0.0, wins=(-math
     return coursed_cone(x, y, h - 0.004, rc, hc, roof_c, sides=16 if sides >= 14 else 12)
 
 
-def square_tower(x, y, w, h, team, roof_c, hr=None, finial=True, wins=((0, 0.62),)):
-    """«Raivon Soft» (plan step B2) square keep tower of reference frame 4: a plinth, a soft-cornered body, a fat
-    corbelled parapet band and a steep coursed slate pyramid (hr ≈ 1.6 w) whose eave covers the parapet, a gilt ball
-    on top (finial; off where a banner pole rises out of the roof) and big arched lit windows: wins = (face, height
-    fraction), faces 0 front (−Y), 1 right (+X), 2 back, 3 left. Returns the roof apex height."""
+def crown_merlons(x, y, wx, wy, z0, mw, mh, mt, md=0.05, gap=0.036, faces=(0, 1, 2, 3)):
+    """«Raivon Soft» crenellated crown of a square tower or a gatehouse (plan step B2, reference frame 4's corner
+    towers): round-headed merlons (round_merlons) standing on z0 round the rim of a wx × wy parapet centred at
+    (x, y) — one on each corner (mw square in plan, its round head facing front and back) and, on each face, as many
+    mid-face merlons (md deep) as fit between the corners with gaps of at least `gap`. So a 0.28 tower face shows 3
+    (corner, middle, corner). faces: the faces that get mid-face merlons (0 front −Y, 1 right +X, 2 back, 3 left).
+    Returns the half sizes of the free deck inside the corners (for an inset roof)."""
+    hx, hy = wx / 2, wy / 2
+    cx_, cy_ = hx - mw / 2, hy - mw / 2
+    for sy in (-1, 1):  # the corners, two per merlon row along X
+        round_merlons((x - hx, y + sy * cy_), (x + hx, y + sy * cy_), [mw / 2, wx - mw / 2], mw, mh, mw, z0, mt)
+    for f, (p0, p1, L) in enumerate((((x - hx, y - hy + md / 2), (x + hx, y - hy + md / 2), wx),  # front (−Y)
+                                     ((x + hx - md / 2, y - hy), (x + hx - md / 2, y + hy), wy),  # right (+X)
+                                     ((x + hx, y + hy - md / 2), (x - hx, y + hy - md / 2), wx),  # back
+                                     ((x - hx + md / 2, y + hy), (x - hx + md / 2, y - hy), wy))):  # left
+        if f not in faces:
+            continue
+        span = L - 2 * mw
+        n = int((span - gap) / (mw + gap) + 1e-6)
+        if n > 0:
+            pitch = span / n
+            round_merlons(p0, p1, [mw + pitch * (i + 0.5) for i in range(n)], mw, mh, md, z0, mt)
+    return hx - mw, hy - mw
+
+
+def square_tower(x, y, w, h, team, roof_c, hr=None, finial=True, wins=((0, 0.62),), mw=0.062, mh=0.07):
+    """«Raivon Soft» (plan step B2) square corner tower of reference frame 4: a plinth, a soft-cornered body, a fat
+    corbelled parapet band crowned with round-headed merlons (crown_merlons: 3 a face, mw × mh, ×1.6 the old 0.037 ×
+    0.04 teeth), and a coursed slate pyramid set inside the crown on a raised core, its eave just above the merlon
+    heads (hr ≈ 2.4 × its half width: a fat hat, not a needle), a gilt ball on top (finial) and big arched lit
+    windows: wins = (face, height fraction), faces 0 front (−Y), 1 right (+X), 2 back, 3 left. Returns the roof apex
+    height."""
     st = stone(WSTONE, 0.6)
     dk = stone(WSTONE_D, 0.6)
-    hr = hr or w * 1.6
     bx((w + 0.024, w + 0.024, 0.05), (x, y, 0.025), dk, bev=0.004)
     bx((w, w, h), (x, y, h / 2), st, soft="v")  # a soft mass: round corners (plinth and parapet cover its ends)
-    bx((w + 0.036, w + 0.036, 0.05), (x, y, h - 0.01), dk, bev=0.006)  # corbelled parapet band
+    wp = w + 0.036
+    bx((wp, wp, 0.05), (x, y, h - 0.01), dk, bev=0.006)  # corbelled parapet band: the crown's deck at h + 0.015
+    zd = h + 0.015
+    ix, _ = crown_merlons(x, y, wp, wp, zd, mw, mh, st)
     for sd, zf in wins:
         a = sd * math.pi / 2
         arch_window(x + math.sin(a) * (w / 2 + 0.002), y - math.cos(a) * (w / 2 + 0.002), h * zf, a, 0.046, 0.072)
-    coursed_hip(w + 0.02, w + 0.02, hr, (x, y, h + 0.015), roof_c, oh=0.02)
-    top = h + 0.015 + hr + ROOF_T * 1.1
+    core = 2 * ix - 0.006  # the roof's core fills the deck inside the corner merlons
+    zc = zd + mh + 0.016  # its eave a little above the merlon heads, so the crown reads against the slate
+    bx((core, core, zc - zd + 0.01), (x, y, (zc + zd) / 2 - 0.005), st, bev=0.004)
+    oh = 0.05
+    hr = hr or (core / 2 + oh) * 2.4
+    coursed_hip(core, core, hr, (x, y, zc), roof_c, oh=oh)
+    top = zc + hr + ROOF_T * 1.1
     if finial:
         ball(x, y, top, max(0.014, 0.085 * w))
     return top
@@ -2720,9 +2785,11 @@ def smithy(team):
 def residence_dl4(team):
     """The castle of reference frame 4 — square front towers, an arched gate, warm sandstone, eagle banners — as a
     chunky «Raivon Soft» toy (plan step B2): fewer, bigger towers (radius ×1.25) under fat coursed roofs that make
-    45–60 % of each building's height and end in gilt balls, thick soft curtain walls (×1.1) with 3–5 fat
-    round-headed merlons a side (×1.6), big arched windows (≤ 3 a face), a gate half the gatehouse wall high, banners
-    ×1.3, and no stick, slit or bar thinner than 0.02 (the hoardings, portcullis, arrow slits and pennants are gone)."""
+    45–60 % of each building's height and end in gilt balls, thick soft curtain walls (×1.1) with fat round-headed
+    merlons (×1.6) — 3 a side on the side and back walls; on the front, which the player's camera sees, crowns of 3
+    a face on the square towers and a crenellated gatehouse between the front curtain's merlons — big arched windows
+    (≤ 3 a face), a gate half the gatehouse wall high, banners ×1.3, and no stick, slit or bar thinner than 0.02 (the
+    hoardings, portcullis, arrow slits and pennants are gone)."""
     pad(0.84, stone("#a48c6c", 1.2), 0.014, 14, 0.03, 14)  # warm paved court
     # the big pale flagstones of reference frame 4's castle yard (it shows round the keep from the game camera), and
     # a flagged road out of the gate that widens towards the edge and lies almost flush, in a tone between the two
@@ -2736,7 +2803,7 @@ def residence_dl4(team):
     WT, WH = 0.088, 0.26  # curtain thickness (×1.1) and height
     MW, MH, MG = 0.115, 0.096, 0.07  # merlon width and height (×1.6), the least gap between merlons
     SQ, RT = 0.24, 0.125  # front square towers and back round towers (×1.25)
-    GW, GD, GH = 0.24, 0.18, 0.3  # the gatehouse
+    GW, GD, GH = 0.24, 0.18, 0.34  # the gatehouse (a crenellated tower over the gate, reference frame 4)
     sq, rt = SQ / 2 + 0.018, RT + 0.02  # how far the towers' parapet / crown reach along a wall from its corner
     walls = [((-H, -H), (-GW / 2, -H), [(0.0, sq)]),  # the front curtain either side of the gate
              ((GW / 2, -H), (H, -H), [(H - GW / 2 - sq, H - GW / 2)]),
@@ -2748,22 +2815,26 @@ def residence_dl4(team):
         ang = math.atan2(p1[1] - p0[1], p1[0] - p0[0])
         bx((L + WT, WT, WH), ((p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2, WH / 2), st, ang, soft=True)
         round_merlons(p0, p1, merlon_us(free_spans(L, blocked), MW, MG), MW, MH, WT, WH, st)
-    # front corners: square towers with steep slate pyramids (reference frame 4) carrying the banners; back corners
-    # round towers under fat cones
+    # front corners: square towers of reference frame 4, a crown of round-headed merlons round a slate pyramid (the
+    # player's camera sees the castle from the front, so the crenellation it shows is on these, the gatehouse and
+    # the front curtain); back corners round towers under fat cones
     for (x, y) in ((-H, -H), (H, -H)):
-        square_tower(x, y, SQ, 0.46, team, roof_c, hr=0.4, wins=((0, 0.6), (3 if x < 0 else 1, 0.6)))
+        square_tower(x, y, SQ, 0.42, team, roof_c, wins=((0, 0.6), (3 if x < 0 else 1, 0.6)))
     for (x, y) in ((H, H), (-H, H)):
         castle_tower(x, y, RT, 0.44, team, roof_c, rc=0.165, hc=0.4, wins=(-math.pi / 2, 0.0 if x > 0 else math.pi))
-    # the gatehouse: its gable to the front over a big arched gate (≈ 57 % of its wall), lit by two lanterns
+    # the gatehouse: a crenellated tower over a big arched gate (half its wall high), a parapet band crowned with
+    # round-headed merlons (3 on the front, the corner pair on each side and the back), a lit window over the gate
+    # and two lanterns; it stands low enough that the keep's eagle banner shows over it
     gy = -H - GD / 2  # its front face
     bx((GW, GD, GH), (0, -H, GH / 2), st, soft="v")  # soft masses: the gatehouse, the keep, the hall
-    gable_roof(GD, GW, 0.25, (0, -H, GH), roof_c, st, rz=math.pi / 2, oh=0.03, ohx=0.04, gable_timber=None,
-               eave_z=0.0, **SOFT_ROOF)
+    bx((GW + 0.03, GD + 0.03, 0.05), (0, -H, GH - 0.01), dk, bev=0.006)  # corbelled parapet band, deck at GH + 0.015
+    crown_merlons(0, -H, GW + 0.03, GD + 0.03, GH + 0.015, 0.064, 0.072, st, faces=(0,))  # (a back middle merlon
+    # stood right behind the front one from the game camera: a cluttered double row)
     sur = flat("gate_sur", shade(WSTONE_D, 0.92), 0.85)
     gl = mat("gate_glow", "#8a5426", 0.7, emission="#e0863a", emit_strength=0.45)  # torch-lit passage, not a lamp
     build_at(lambda: arch_slab(0.155, 0.195, -0.004, 0.0, sur, sides=False), 0, gy, 0)
     build_at(lambda: arch_slab(0.125, 0.17, -0.007, 0.0, gl, sides=False), 0, gy, 0)
-    arch_window(0, gy - 0.002, GH + 0.085, 0, 0.042, 0.06)  # a lit window in the gable
+    arch_window(0, gy - 0.002, 0.258, 0, 0.042, 0.058)  # a lit window over the gate
     for k in range(2):  # steps down to the square
         bx((0.21 - k * 0.04, 0.04, 0.016 * (k + 1)), (0, gy - 0.06 + k * 0.035, 0.008 * (k + 1)), dk, bev=0.004)
     for sx in (-1, 1):  # chunky lanterns either side of the gate
@@ -2780,9 +2851,11 @@ def residence_dl4(team):
         arch_window(KX + sx * 0.094, kf - 0.002, 0.34, 0, 0.05, 0.08)
         arch_window(KX + sx * 0.15, KY + KD / 2 + 0.002, 0.34, math.pi, 0.05, 0.08)  # the back (AI capitals face away)
         arch_window(KX + sx * (KW / 2 + 0.002), KY, 0.34, sx * math.pi / 2, 0.05, 0.08)
-    flag_at("flagt", KX, kf - 0.007, 0.47 - 0.143, 0.117, 0.286, 0.014)
-    bx((0.117, 0.012, 0.286), (KX, kf - 0.007, 0.47 - 0.143), flat("flag" + team, team, 0.7), bev=0)
-    bx((0.14, 0.02, 0.02), (KX, kf - 0.01, 0.475), flat("pole", "#d9d2c3", 0.5), bev=0)
+    # (the cloth stands 0.003 off the wall and the painted flag 0.005 in front of the cloth: no z-fighting, and the
+    # marker's back quad lies inside the wall facing in)
+    flag_at("flagt", KX, kf - 0.009, 0.47 - 0.143, 0.117, 0.286, 0.022)
+    bx((0.117, 0.012, 0.286), (KX, kf - 0.009, 0.47 - 0.143), flat("flag" + team, team, 0.7), bev=0)
+    bx((0.14, 0.02, 0.02), (KX, kf - 0.013, 0.475), flat("pole", "#d9d2c3", 0.5), bev=0)
     for sx in (-1, 1):  # dormers on the front slope, each with a lit window
         dx = KX + sx * 0.1
         bx((0.08, 0.12, 0.2), (dx, kf + 0.04, KH + 0.2), st, bev=0)
@@ -2823,9 +2896,10 @@ def residence_dl4(team):
     toy_pine(0.64, 0.2, 1.0, 1)
     toy_pine(-0.08, 0.66, 0.95, 2)
     # the great hanging banners of reference frame 4 (×1.3 in banner()), clear of the towers' silhouettes: the great
-    # one on a pole beside the central tower flying over the keep's right wing, a second one over the back-left
-    # round tower hanging outwards
-    banner(KX + 0.165, 0.19, 1.58, team, 0.3, z0=0.6)
+    # one on a pole beside the central tower flying over the keep's right wing — narrow and high enough that from
+    # the game camera (pitch 41°) its hem stays above the back-right tower's ball — and a second one over the
+    # back-left round tower hanging outwards
+    banner(KX + 0.165, 0.22, 1.59, team, 0.24, z0=0.6)
     banner(-H, H, 1.3, team, 0.2, side=-1, z0=0.8)
 
 
