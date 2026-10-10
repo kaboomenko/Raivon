@@ -1659,26 +1659,26 @@ def town_props(team, spots):
 
 
 def city_dl3(team):
-    """The DL3 market town of reference frame 3. «Raivon Soft» (plan step B3): five buildings ×1.2 (was seven) —
-    the terem at the back, two jettied town houses at the sides, two cottages in front — under fat roofs (45–60 % of
-    each house), at least 0.05 apart so each silhouette reads; two stalls on the square, one cask and crate a heap."""
+    """The DL3 market town of reference frame 3. «Raivon Soft» (plan step B3): four buildings ×1.2 (was seven: five
+    ×1.2 do not fit the hex with clear gaps) — the terem at the back, a jettied town house and two cottages round
+    the square — under fat roofs (45–60 % of each house), at least 0.05 apart so each silhouette reads; two stalls
+    on the square, one cask and crate a heap."""
     pad(0.7, stone(COBBLE, 1.8), 0.012, 14, 0.06, 3)
     build_at(lambda: (terem_block(0.3, 0.26, 0.16, 0.18, team, 0.32),
-                      bx((0.14, 0.1, 0.02), (0, -0.18, 0.01), stone(STONE_D), bev=0)), 0.0, 0.4, 0.0, 1.2)
-    # the town of reference frame 3: half-timbered houses (two storeys at the sides, low cottages in front so the
-    # market square stays in view), coursed team roofs, round brick chimneys, shop windows under awnings
+                      bx((0.14, 0.1, 0.02), (0, -0.18, 0.01), stone(STONE_D), bev=0)), 0.0, 0.45, 0.0, 1.1)
+    # the town of reference frame 3: a half-timbered town house (two storeys) and low cottages in front so the
+    # market square stays in view, coursed team roofs, round brick chimneys, a shop window under an awning
     build_at(lambda: town_house(0.28, 0.2, 0.11, 0.1, team, STONE, PLASTER, smoke=True, shop="#c0392b"),
-             -0.47, 0.08, 0.3, 1.2)
-    build_at(lambda: town_house(0.26, 0.2, 0.105, 0.095, team, "#d8cdb6", "#efe1c4", chim=-1), 0.47, 0.06, -0.3, 1.2)
-    build_at(lambda: cottage(0.27, 0.19, 0.15, team, "#f2e8d4", smoke=True), -0.3, -0.42, 0.15, 1.2)
+             -0.47, -0.07, 0.35, 1.2)
+    build_at(lambda: cottage(0.27, 0.19, 0.15, team, "#f2e8d4", smoke=True), 0.48, -0.06, -0.35, 1.2)
     build_at(lambda: cottage(0.24, 0.19, 0.14, team, "#ead9b8", gable_front=False, eave_z=0.0, flowers=False,
-                             side_win=False), 0.32, -0.4, -0.15, 1.2)
+                             side_win=False, chim=-1), 0.08, -0.5, -0.05, 1.2)
     tree(-0.34, 0.6, 0.9)
     tree(0.36, 0.58, 0.8)
-    flagpole(0.02, -0.02, 0.55, team, 0.14)
-    for (x, y, rz, c) in ((-0.12, -0.16, 0.2, "#c0392b"), (0.12, -0.2, -0.2, "#2f62c8")):
+    flagpole(0.05, 0.1, 0.55, team, 0.14)
+    for (x, y, rz, c) in ((-0.28, -0.42, 0.25, "#c0392b"), (0.01, -0.1, 0.1, "#2f62c8")):
         build_at(lambda c=c: market_stall(team, c), x, y, rz, 1.2)
-    town_props(team, [(-0.66, -0.2), (0.6, -0.24)])
+    town_props(team, [(-0.56, -0.36), (0.6, -0.3)])
 
 
 def city_dl4(team):
