@@ -6780,6 +6780,30 @@ func _demo(spec: String) -> void:
 	if what == "settings":
 		_on_hud_button("gear")
 		return
+	if what == "expansion":  # the chapter II announcement (show_info): the advisor, the new neighbours, the goal
+		await _world_expansion()
+		return
+	if what == "ally_ask":  # the Barons attack our ally the River League: it asks for gold (show_choice, two decisions)
+		await _world_expansion()
+		ui.close_modal()
+		allies = [4]
+		_ally_asks(4, MapGen.BARONS)
+		return
+	if what == "intro_offer":  # the patent's intro offer after the 3rd video (show_choice: one action, ✕ = «Не сейчас»)
+		_show_intro_offer()
+		return
+	if what == "peace_offer":  # the Barons ask for peace: the player holds their land (show_info with the leader)
+		_declare(MapGen.BARONS, War.recommend_goals(sim, MapGen.BARONS, 1)[0])
+		var bcore := MapGen.core_of(sim, MapGen.BARONS)
+		for c in sim.cells:
+			if (int(c["owner"]) == MapGen.BARONS and not bcore.has(c["id"]) or int(c["owner"]) == Types.PLAYER) and Types.is_passable(c):
+				c["controller"] = Types.PLAYER
+				map_view.refresh_hex(c["id"])
+		map_view.mark_dirty()
+		_set_mode(Mode.WAR)
+		war["battles"] = 10
+		_peace_offer()
+		return
 	if what == "dip2":
 		await _world_expansion()
 		ui.close_modal()

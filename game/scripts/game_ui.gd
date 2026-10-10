@@ -1672,6 +1672,7 @@ func show_inbox(items: Array, now: int) -> void:
 		for i in items.size():
 			if not bool((items[i] as Dictionary).get("read", false)):
 				_inbox_unread[i] = true
+	_inbox_unread.erase(_inbox_open)  # the report opened is read now: no dot, the well's colour
 	var w := 893.0
 	var rw := w - 64.0 - 12.0  # the rows leave the scroll bar's lane
 	var text_w := rw - INBOX_PAD.x * 2.0 - 72.0 - 16.0
@@ -1740,7 +1741,6 @@ func _inbox_row(host: Control, r: Rect2, it: Dictionary, now: int, idx: int, ite
 	t.size = r.size
 	t.cb = func():
 		_inbox_open = -1 if open else idx
-		_inbox_unread.erase(idx)  # opened once — read: the dot goes, the row takes the well's colour
 		show_inbox(items, now)
 	host.add_child(t)
 	var title_key := String(it["title"]).split("|")[0]
