@@ -2197,7 +2197,7 @@ def spire8(x, y, w, d, h, mats, rings=(0.62, 0.8), crown=0.12, needle=0.12, butt
     ch = h * crown
     bx((w * 0.78, d * 0.78, ch), (x, y, h + ch / 2), st, bev=0)
     bx((w * 0.8, d * 0.8, 0.012), (x, y, h + ch), plate, bev=0)
-    return d8_spire(x, y, h + ch + 0.006, min(w, d) * 0.42, min(w, d) * 1.6, tip if beacon else cap)
+    return d8_spire(x, y, h + ch + 0.006, min(w, d) * 0.42, min(w, d) * 1.6, cap, tip if beacon else cap)
 
 
 def round8(x, y, r, h, mats, rings=(0.45, 0.75)):
@@ -3221,7 +3221,7 @@ def citadel_tower(x, y, w, d, h, st, plate, neon, cap, seam=None, panel=None, ti
         bx((w + 0.012, d + 0.012, 0.02 if zf != 0.35 else 0.03), (x, y, h * zf), seam or plate, bev=0)
     bx((w * 0.78, d * 0.78, h * 0.16), (x, y, h + h * 0.08), st, bev=0.005)  # setback crown
     bx((w * 0.8 + 0.006, 0.006, 0.01 * D8_BAND), (x, y - d * 0.4 - 0.002, h + 0.008), neon, bev=0)  # a band under the crown
-    top = d8_spire(x, y, h * 1.16, min(w, d) * 0.42, h * 0.32, (tip or neon) if beacon else cap)
+    top = d8_spire(x, y, h * 1.16, min(w, d) * 0.42, h * 0.32, cap, (tip or neon) if beacon else cap)
     # the panels lie flush on all four faces (the enemy capitals stand turned half round, showing the back), below
     # the plate seams, which run proud across them so they read as insets; the light strip stands proud of both
     mb = _MB()
@@ -5327,12 +5327,12 @@ def d8_tip(x, y, z, mt, r=D8_TIP_R):
     return z + r * 1.3
 
 
-def d8_spire(x, y, zt, rb, hc, mt, rot=math.pi / 4, n=4):
+def d8_spire(x, y, zt, rb, hc, mt, cap_mt=None, rot=math.pi / 4, n=4):
     """A rounded spire (plan step B4: needles become round caps): the old needle spire — an n-sided pyramid of base
-    circumradius rb and height hc — cut at half its height (its top is then rb / 2 across) and crowned by a round cap
-    of radius 0.6 rb. Returns the height of the top."""
+    circumradius rb and height hc, in mt — cut at half its height (its top is then rb / 2 across) and crowned by a
+    round cap of radius 0.6 rb in cap_mt (mt by default; a lit material makes the cap a beacon). Returns its top."""
     cy(rb, hc * 0.5, (x, y, zt + hc * 0.25), mt, n, r2=rb * 0.5, rot=(0, 0, rot))
-    return d8_cap(x, y, zt + hc * 0.5 - rb * 0.06, rb * 0.6, mt)
+    return d8_cap(x, y, zt + hc * 0.5 - rb * 0.06, rb * 0.6, cap_mt or mt)
 
 
 def d8_dots(p0, p1, z, mt, r=D8_DOT_R, step=D8_DOT_STEP, end=0.02):

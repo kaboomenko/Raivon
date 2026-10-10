@@ -3238,7 +3238,7 @@ func _leader_dialog(it: Dictionary) -> void:
 		st_text = tr("dipl.ally")
 	# the icon on a disc of the relation's colour, as on the card's corner (a white dove on bare paper did not read)
 	var st_fill := Kit.face_of("go" if st_icon == "handshake" else String(look[1]))
-	var sc :=_paper_chip(box, Vector2.ZERO, st_icon, st_text, cw * 0.58, st_fill)
+	var sc := _paper_chip(box, Vector2.ZERO, st_icon, st_text, cw * 0.58, st_fill)
 	sc.name = "status"
 	sc.position = Vector2(bx, 208)
 	var vi := roundi(v)

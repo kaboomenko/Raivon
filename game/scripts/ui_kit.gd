@@ -27,6 +27,8 @@ const GRASS := Color("86c45e")
 const BLUEPRINT := Color("3e7fc1")
 const SEA_WELL := Color("2a6596")
 const FULL := Color("8c5a1f")
+const PREMIUM_WELL := Color("ffe7a6")  ## the War Pass's premium column: a gold-tinted well (§6 Военный пропуск)
+const PREMIUM_LIP := Color("e8c66a")
 const MAP_ROCK := Color("a9aebb")  ## minimap mountains (the land is in the states' colours, water shows the well)
 const WILD := Color("977a4b")  ## the «Ничья» owner chip: a darker sand than the map's wild land, so its white text reads; warm, never the lock grey
 const WHITE := Color(1, 1, 1)
@@ -589,6 +591,17 @@ class KitShape extends Control:
 				draw_circle(c, rr, INK, true, -1.0, true)
 				draw_circle(c, rr - 3.0, lip, true, -1.0, true)
 				draw_circle(c - Vector2(0, rr * 0.1), rr - 3.0 - rr * 0.08, face, true, -1.0, true)
+			"rays":  # the opening's sunburst behind a reward (§6 Лавка): wedges of `face` fading out from the centre
+				var c := size * 0.5
+				var rr := minf(size.x, size.y) * 0.5
+				var n: int = data.get("n", 14)
+				for i in n:
+					var a0 := TAU * i / n
+					var a1 := a0 + TAU / n * 0.5
+					var pts := PackedVector2Array([c, c + Vector2.from_angle(a0) * rr, c + Vector2.from_angle(a1) * rr])
+					var cols := PackedColorArray([Color(face, 0.55), Color(face, 0.0), Color(face, 0.0)])
+					draw_polygon(pts, cols)
+				draw_circle(c, rr * 0.42, Color(face, 0.22), true, -1.0, true)
 			"grid":  # the blueprint backdrop: white 10 % lines every data.step px
 				var step: float = data.get("step", 16.0)
 				var col := Color(1, 1, 1, 0.1)
@@ -834,7 +847,7 @@ class KitPrice extends Panel:
 		for i in shown.size():
 			var r: Dictionary = shown[i]
 			if i > 0:
-				x += 6.0
+				x += 6.0 if icon > 24.5 else 4.0  # the small icons (an XS button's two prices) sit a little closer
 			if r["ic"] != null:
 				if apply:
 					var ic: TextureRect = r["ic"]
@@ -857,7 +870,7 @@ class KitPrice extends Panel:
 			x += mw
 		elif apply:
 			_more.visible = false
-		return x + maxf(9.0, roundf(h * 0.24))
+		return x + (maxf(9.0, roundf(h * 0.24)) if icon > 24.5 else 7.0)
 
 	func _num(l: Label, num: int, col: Color, x: float, tw: float, h: float) -> void:
 		SELF.style_label(l, num, col, true)
@@ -879,6 +892,7 @@ const CHROME_KINDS := ["x", "check", "chevron_left", "chevron_right", "plus", "m
 ## A picture another script puts at the left of the face (the hand picker's card art) moves the row right of it.
 class KitButton extends Panel:
 	signal denied
+	signal released_early  ## a hold button let go before its time (the caller may say «hold it»)
 
 	## class: [R, OUT, lip, shadow y, caption size, fit floor, icon size]
 	const GEOM := {"L": [24, 5, 10, 8, 40, 30, 72], "M": [20, 4, 8, 6, 32, 26, 56], "S": [20, 4, 6, 6, 26, 22, 44], "XS": [14, 3, 5, 4, 24, 22, 32]}
@@ -1460,8 +1474,8 @@ class KitButton extends Panel:
 				if not enabled and inside:
 					SELF.shake(self)
 					denied.emit()
-				elif was:
-					pass  # released early: nothing happens
+				elif was and inside:
+					released_early.emit()  # released early: nothing happens (the caller may explain the hold)
 				return
 			if not inside:
 				return
@@ -2874,6 +2888,437 @@ static func tile(parent: Node, rect: Rect2, opts := {}) -> KitTile:
 	if parent:
 		parent.add_child(t)
 	return t
+
+
+# ------------------------------------------------------------------ rows, toggles, ribbons, links, scrolling
+
+## A list row on paper — see `row`. A tap (a release inside after a press, not a swipe, not on the right element when
+## that is a button or a toggle: those act on their own) calls `cb`; the row sinks a little while pressed.
+class KitRow extends Panel:
+	var cb := Callable()
+	var right: Control  ## the one element at the right end
+	var title_label: Label
+	var icon_node: Control
+	var _press_g := Vector2.ZERO
+	var _travel := 0.0
+	var _down := false
+	var _frame := -1
+
+	func _init() -> void:
+		name = "row"
+		mouse_filter = Control.MOUSE_FILTER_PASS  # a drag still scrolls the list around it
+		gui_input.connect(_on_input)
+
+	func _on_input(e: InputEvent) -> void:
+		if not cb.is_valid():
+			return
+		var pressed := false
+		var pos := Vector2.ZERO
+		if e is InputEventMouseButton and (e as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
+			pressed = e.pressed
+			pos = (e as InputEventMouseButton).position
+		elif e is InputEventScreenTouch:
+			pressed = e.pressed
+			pos = (e as InputEventScreenTouch).position
+		elif e is InputEventMouseMotion or e is InputEventScreenDrag:
+			if _down:
+				_travel = maxf(_travel, SELF.screen_pos(self, e).distance_to(_press_g))
+			return
+		else:
+			return
+		var on_right := right != null and right.visible and (right is KitButton or right is KitToggle) \
+			and Rect2(right.position, right.size).grow(8.0).has_point(pos)
+		var f := Engine.get_process_frames()
+		if pressed:
+			if _down or on_right:
+				return
+			_down = true
+			_press_g = SELF.screen_pos(self, e)
+			_travel = 0.0
+			pivot_offset = size * 0.5
+			scale = Vector2(0.98, 0.98)
+			return
+		if not _down or f == _frame:
+			return
+		_down = false
+		_frame = f
+		scale = Vector2.ONE
+		_travel = maxf(_travel, SELF.screen_pos(self, e).distance_to(_press_g))
+		if _travel <= SELF.TAP_SLOP and Rect2(Vector2.ZERO, size).has_point(pos) and not on_right:
+			cb.call()
+
+
+## A list row on paper (§4.9): CREAM_ROW (opts.face), R 20, lip 5 ROW_LIP, no contour, h ≥ 96. At the left an icon 72
+## (or opts.icon_node, a Control laid in that place: a portrait, a tile 80); the title (Rubik 900 30 INK_TEXT, one line,
+## fit to 26, then cut) over a muted line (Nunito 26 MUTED_CREAM) or an M bar; exactly one element at the right end,
+## centred on the face, the title stopping 16 px before it. opts:
+##   icon (a kit name) | tex (Texture2D) | icon_node (Control); icon_side (72)
+##   title; sub (a line) | bar: {frac, role, text}
+##   right: "chevron" | "check" | "lock" | a Control already sized (a button, a toggle, a tile)
+##   state: "claim" (a gold outline 4) | "done" (a check at the right unless `right` is given, the row at α 0.7) |
+##          "locked" (a lock at the right unless given, the icon at α 0.5) | "selected" (a go outline 5 + a check)
+##   new: true — a red dot on the icon's corner
+##   face (CREAM_ROW); cb: a tap on the row
+static func row(parent: Node, rect: Rect2, opts := {}) -> KitRow:
+	var r := KitRow.new()
+	var w := rect.size.x
+	var h := rect.size.y
+	var state := String(opts.get("state", ""))
+	var face: Color = opts.get("face", CREAM_ROW)
+	var line := face_of("go") if state == "selected" else (face_of("gold") if state == "claim" else INK)
+	var out := 5 if state == "selected" else (4 if state == "claim" else 0)
+	var sb := style(face, 20, out, line, 0, 5)
+	sb.set_meta("kit_kind", "")
+	sb.set_meta("kit_lip_color", ROW_LIP if face.is_equal_approx(CREAM_ROW) else face.darkened(0.2))
+	r.add_theme_stylebox_override("panel", sb)
+	r.add_child(KitDecor.new())  # the lip (child 0)
+	r.position = rect.position
+	r.size = rect.size
+	r.cb = opts.get("cb", Callable())
+	var cy := (h - 5.0) * 0.5  # the face's middle, over the lip
+	var pad := 16.0
+	var x := pad
+	# ---- the picture at the left
+	var side := float(opts.get("icon_side", 72.0))
+	var node: Control = opts.get("icon_node")
+	var tex: Texture2D = opts.get("tex", null)
+	if tex == null:
+		tex = icon_tex(String(opts.get("icon", "")))
+	if node != null:
+		node.position = Vector2(x, roundf(cy - node.size.y * 0.5))
+		r.add_child(node)
+		x += node.size.x + 16.0
+		r.icon_node = node
+	elif tex != null:
+		var ic := _card_rect(tex, Rect2(x, roundf(cy - side * 0.5), side, side))
+		ic.name = "icon"
+		ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		r.add_child(ic)
+		x += side + 16.0
+		r.icon_node = ic
+	if r.icon_node != null:
+		if state == "locked":
+			r.icon_node.modulate.a = 0.5
+		if bool(opts.get("new", false)):
+			dot(r.icon_node, -1, "war").name = "new"
+	# ---- the one element at the right
+	var rt: Variant = opts.get("right", "")
+	var rn: Control = null
+	if rt is Control:
+		rn = rt
+	else:
+		var kind := String(rt)
+		if kind == "":
+			kind = "check" if state in ["done", "selected"] else ("lock" if state == "locked" else "")
+		match kind:
+			"chevron":
+				rn = chrome(null, "chevron_right", Rect2(0, 0, 40, 40))
+			"check":
+				rn = check_badge(null, Vector2(20, 20), 40.0)
+			"lock":
+				rn = _card_rect(icon_tex("lock"), Rect2(0, 0, 44, 44))
+				(rn as TextureRect).stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	var text_r := w - pad
+	if rn != null:
+		rn.position = Vector2(roundf(w - pad - rn.size.x), roundf(cy - rn.size.y * 0.5))
+		r.add_child(rn)
+		r.right = rn
+		text_r = rn.position.x - 16.0
+	# ---- the title over a muted line or a bar
+	var tw := maxf(40.0, text_r - x)
+	var title := String(opts.get("title", ""))
+	var sub := String(opts.get("sub", ""))
+	var bd: Dictionary = opts.get("bar", {})
+	var two := sub != "" or not bd.is_empty()
+	var ts := fit_size(title, 30, tw, "d900", 26, false)
+	var tl := label(title, ts, INK_TEXT, true)
+	tl.name = "title"
+	tl.add_theme_font_size_override("font_size", ts)
+	tl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	tl.clip_text = text_w(title, ts, "d900", false) > tw
+	tl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	tl.position = Vector2(x, roundf(cy - (38.0 if two else 20.0)))
+	tl.size = Vector2(tw, 40)
+	r.add_child(tl)
+	r.title_label = tl
+	if not bd.is_empty():
+		var b := bar(r, Rect2(x, roundf(cy + 6.0), tw, 28), float(bd.get("frac", 0.0)), String(bd.get("role", "info")),
+			String(bd.get("text", "")), true)
+		b.name = "bar"
+	elif sub != "":
+		var sl := label(sub, 26, MUTED_CREAM, false)
+		sl.name = "sub"
+		sl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		sl.clip_text = true
+		sl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		sl.position = Vector2(x, roundf(cy + 2.0))
+		sl.size = Vector2(tw, 36)
+		r.add_child(sl)
+	if state == "done":
+		r.modulate.a = 0.7
+	if parent:
+		parent.add_child(r)
+	return r
+
+
+## A switch (§4.13) — see `toggle`.
+class KitToggle extends Control:
+	signal toggled(on: bool)
+	var on := false
+	var cb := Callable()  ## cb.call(on) after a tap has flipped it
+	var _k := 0.0  # the knob: 0 left (off) … 1 right (on)
+	var _down := false
+	var _frame := -1
+	var _tw: Tween
+
+	func _init() -> void:
+		name = "toggle"
+		mouse_filter = Control.MOUSE_FILTER_STOP
+		custom_minimum_size = Vector2(96, 52)
+		size = custom_minimum_size
+		gui_input.connect(_on_input)
+
+	func _has_point(p: Vector2) -> bool:
+		return Rect2(Vector2.ZERO, size).grow(22.0).has_point(p)  # a 96+ px touch zone (§1.4)
+
+	func set_on(v: bool, animate := true) -> void:
+		on = v
+		var to := 1.0 if on else 0.0
+		if _tw != null and _tw.is_valid():
+			_tw.kill()
+		var d := SELF._dur(0.14) if animate else 0.0
+		if d <= 0.0:
+			_k = to
+			queue_redraw()
+			return
+		_tw = create_tween().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+		_tw.tween_method(func(k: float):
+			_k = k
+			queue_redraw(), _k, to, d)
+
+	func _on_input(e: InputEvent) -> void:
+		var pressed := false
+		var pos := Vector2.ZERO
+		if e is InputEventMouseButton and (e as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
+			pressed = e.pressed
+			pos = (e as InputEventMouseButton).position
+		elif e is InputEventScreenTouch:
+			pressed = e.pressed
+			pos = (e as InputEventScreenTouch).position
+		else:
+			return
+		if pressed:
+			_down = true
+			return
+		var f := Engine.get_process_frames()
+		if not _down or f == _frame:
+			return  # the emulated mouse twin of a touch
+		_down = false
+		_frame = f
+		if not _has_point(pos):
+			return
+		set_on(not on)
+		toggled.emit(on)
+		if cb.is_valid():
+			cb.call(on)
+
+	func _draw() -> void:
+		var w := size.x
+		var h := size.y
+		var sb := StyleBoxFlat.new()
+		sb.anti_aliasing = true
+		sb.corner_detail = 10
+		sb.bg_color = INK
+		sb.set_corner_radius_all(int(h * 0.5))
+		draw_style_box(sb, Rect2(0, 0, w, h))
+		var face: Color = (ROLE["lock"][0] as Color).lerp(ROLE["go"][0], _k)
+		var lipc: Color = (ROLE["lock"][1] as Color).lerp(ROLE["go"][1], _k)
+		sb.bg_color = face
+		sb.set_corner_radius_all(int(h * 0.5 - 4.0))
+		sb.border_width_bottom = 4  # the face's own lip: a toy's thickness, like the buttons
+		sb.border_color = lipc
+		draw_style_box(sb, Rect2(4, 4, w - 8.0, h - 8.0))
+		var r := 20.0
+		var c := Vector2(lerpf(h * 0.5, w - h * 0.5, _k), h * 0.5)
+		draw_circle(c + Vector2(0, 3), r, Color(INK, SHADOW_A), true, -1.0, true)
+		draw_circle(c, r, INK, true, -1.0, true)
+		draw_circle(c, r - 3.0, Color.WHITE, true, -1.0, true)
+
+
+## A switch (§4.13): an INK 4 track 96×52, R 26; on — the go face, the white knob Ø40 at the right; off — the lock face,
+## the knob at the left; 140 ms. A tap flips it and calls cb.call(on).
+static func toggle(parent: Node, pos: Vector2, on: bool, cb := Callable()) -> KitToggle:
+	var t := KitToggle.new()
+	t.position = pos
+	t.cb = cb
+	t.set_on(on, false)
+	if parent:
+		parent.add_child(t)
+	return t
+
+
+## A ribbon (§4.8: «Выгодно», «Пробный», «Эпик гарантирован»): a pill h 34 of the role's face (war or gold), INK 3,
+## MICRO 22, centred at `center` — on the top edge of a button or a card. No tails, no tilt.
+static func ribbon(parent: Node, center: Vector2, text: String, role := "war") -> Panel:
+	var p := caption_pill(null, text, 34.0, face_of(role), 22, 3)
+	p.name = "ribbon"
+	p.position = (center - p.size * 0.5).round()
+	if parent:
+		parent.add_child(p)
+	return p
+
+
+## A round info «i» Ø52 (§6 Лавка): a secondary button that opens a tooltip or a window; a 96 px touch zone.
+static func info_button(parent: Node, center: Vector2, cb: Callable, d := 52.0) -> KitButton:
+	var b := button(parent, Rect2(center - Vector2(d, d) * 0.5, Vector2(d, d)), "info", "i",
+		{"round": true, "size": "XS", "cb": cb, "hit_pad": maxf(0.0, (96.0 - d) * 0.5)})
+	b.name = "info"
+	return b
+
+
+## A text link — see `links`.
+class KitLink extends Label:
+	var cb := Callable()
+	var _down := false
+	var _frame := -1
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_STOP
+		gui_input.connect(_on_input)
+
+	func _on_input(e: InputEvent) -> void:
+		var pressed := false
+		var pos := Vector2.ZERO
+		if e is InputEventMouseButton and (e as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
+			pressed = e.pressed
+			pos = (e as InputEventMouseButton).position
+		elif e is InputEventScreenTouch:
+			pressed = e.pressed
+			pos = (e as InputEventScreenTouch).position
+		else:
+			return
+		if pressed:
+			_down = true
+			return
+		var f := Engine.get_process_frames()
+		if not _down or f == _frame:
+			return
+		_down = false
+		_frame = f
+		if Rect2(Vector2.ZERO, size).grow(10.0).has_point(pos) and cb.is_valid():
+			cb.call()
+
+	func _draw() -> void:  # the underline, under the glyphs only
+		var f := get_theme_font("font")
+		var fs := get_theme_font_size("font_size")
+		var tw := minf(f.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x, size.x)
+		var x0 := (size.x - tw) * 0.5
+		var y := size.y * 0.5 + fs * 0.62
+		draw_line(Vector2(x0, y), Vector2(x0 + tw, y), get_theme_color("font_color"), 2.0, true)
+
+
+## Text links in one row (the legal links of a store screen): LINK #2266B8 Rubik 800, underlined, in equal slots
+## separated by small INK dots; all at one size — the largest scale size ≤ `size` (≥ 22) at which every one fits its
+## slot. items: [[text, cb], …]. Returns the KitLink labels.
+static func links(parent: Node, rect: Rect2, items: Array, size := 26) -> Array:
+	var n := maxi(1, items.size())
+	var gap := 24.0
+	var sw := (rect.size.x - gap * (n - 1)) / n
+	var s := size
+	for it in items:
+		s = mini(s, fit_size(String(it[0]), size, sw, "d800", 22, false))
+	var out: Array = []
+	for i in items.size():
+		var l := KitLink.new()
+		l.text = String(items[i][0])
+		l.cb = items[i][1]
+		style_label(l, s, LINK, true)
+		l.add_theme_font_override("font", font("d800"))
+		l.add_theme_font_size_override("font_size", s)
+		l.mouse_filter = Control.MOUSE_FILTER_STOP
+		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		l.clip_text = text_w(l.text, s, "d800", false) > sw
+		l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		l.position = Vector2(rect.position.x + i * (sw + gap), rect.position.y)
+		l.size = Vector2(sw, rect.size.y)
+		l.name = "link_%d" % i
+		if parent:
+			parent.add_child(l)
+		out.append(l)
+		if i > 0 and parent:
+			var d := Panel.new()  # the separator: a small INK dot, not a «·» glyph
+			var dsb := style(alpha(INK, 0.45), 4, 0, INK, 0, 0)
+			dsb.set_meta("kit_kind", "")
+			d.add_theme_stylebox_override("panel", dsb)
+			d.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			d.size = Vector2(8, 8)
+			d.position = Vector2(l.position.x - gap * 0.5 - 4.0, rect.position.y + rect.size.y * 0.5 - 4.0)
+			parent.add_child(d)
+	return out
+
+
+const FADE_H := 24.0  ## the fades of a scrolling well (§4.3)
+
+
+## Scrolling inside a well (§4.3): a ScrollContainer over the whole well holding a Control `content_h` tall (returned
+## as "inner": the content goes in it), 24 px fades of `fade` (the well's colour) at the bottom and, once scrolled, at
+## the top, and an 8 px INK α 0.4 pill bar on the right (keep 12 px free there). Returns {inner, scroll}.
+static func scroller(well: Control, content_h: float, fade := CREAM_WELL) -> Dictionary:
+	var sc := ScrollContainer.new()
+	sc.name = "scroll"
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	sc.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_SHOW_NEVER
+	sc.size = well.size
+	well.add_child(sc)
+	var inner := Control.new()
+	inner.name = "content"
+	inner.custom_minimum_size = Vector2(well.size.x, content_h)
+	inner.mouse_filter = Control.MOUSE_FILTER_PASS
+	sc.add_child(inner)
+	var fades: Array = []
+	for top in [true, false]:
+		var f := TextureRect.new()
+		f.name = "fade_top" if top else "fade_bottom"
+		f.texture = vgradient(fade, alpha(fade, 0.0)) if top else vgradient(alpha(fade, 0.0), fade)
+		f.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		f.stretch_mode = TextureRect.STRETCH_SCALE
+		f.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		f.position = Vector2(10, 0.0 if top else well.size.y - FADE_H)  # 10 in: clear of the well's round corners
+		f.size = Vector2(well.size.x - 20.0, FADE_H)
+		well.add_child(f)
+		fades.append(f)
+	var track := Rect2(well.size.x - 12.0, 12.0, 8.0, well.size.y - 24.0)
+	var bar_p := Panel.new()
+	bar_p.name = "scroll_bar"
+	var bsb := style(alpha(INK, 0.4), 8, 0, INK, 0, 0)
+	bsb.set_meta("kit_kind", "")
+	bar_p.add_theme_stylebox_override("panel", bsb)
+	bar_p.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar_p.size = Vector2(track.size.x, maxf(48.0, track.size.y * minf(1.0, well.size.y / maxf(1.0, content_h))))
+	bar_p.position = track.position
+	bar_p.visible = content_h > well.size.y + 1.0
+	well.add_child(bar_p)
+	var span := maxf(1.0, content_h - well.size.y)
+	var show_at := func(v: float) -> void:
+		var k := clampf(v / span, 0.0, 1.0)
+		bar_p.position.y = track.position.y + k * (track.size.y - bar_p.size.y)
+		(fades[0] as Control).visible = v > 1.0
+		(fades[1] as Control).visible = v < span - 1.0
+	sc.get_v_scroll_bar().value_changed.connect(show_at)
+	show_at.call(0.0)
+	return {"inner": inner, "scroll": sc}
+
+
+## Scrolls a scroller (Kit.scroller's ScrollContainer) to `y` once it has laid out its content (the range is known
+## then); `y` is clamped by the container.
+static func scroll_to(sc: ScrollContainer, y: float) -> void:
+	if y <= 0.0:
+		return
+	var go := func() -> void:
+		if is_instance_valid(sc):
+			sc.scroll_vertical = int(y)
+	go.call_deferred()
 
 
 # ------------------------------------------------------------------ icons (§3.5)

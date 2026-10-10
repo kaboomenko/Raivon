@@ -1083,8 +1083,13 @@ func _build_grass() -> void:
 		var tint: Color = GRASS_TINT.get(biome, GRASS_TINT["meadow"])
 		var empty: bool = c["kind"] == "plain" and not camp_hexes.has(int(c["id"]))
 		var own_g: int = int(c["owner"])
+		# a neon district (_place_props: a DL8+ owner's empty meadow plain) stands on a plate over the whole hex (plan
+		# step B4: the plates meet edge to edge, no gutter), so it gets no tufts at all; the draws below still run, so
+		# every other hex keeps its tufts where they were
+		var district := false
 		if empty and own_g > Types.NOBODY and own_g < sim.states.size() and int(sim.states[own_g]["dev_level"]) >= 8:
-			empty = false  # a neon district's plate covers the hex: grass only on the rim, never through the plate
+			empty = false
+			district = t == "plain" and biome == "meadow"
 		var n := 12
 		if t == "plain" and empty:
 			n = 40  # a calm meadow: fewer, bigger tufts (§6.7), the lawn shows between them
@@ -1102,11 +1107,13 @@ func _build_grass() -> void:
 			# meadow with lime leaves at z03) and a squat height jitter: chunky low cushions, the lawn between them
 			var sc := g.randf_range(0.85, 1.35)
 			var basis := Basis(Vector3.UP, g.randf() * TAU).scaled(Vector3(sc, sc * g.randf_range(0.75, 1.05), sc))
-			xf.append(Transform3D(basis, pos))
 			var tc := tint
 			if g.randf() < 0.3:  # sunlit yellow-green tips here and there
 				tc = tc.lerp(GRASS_SUN, 0.3)
-			cols.append(tc.srgb_to_linear() * g.randf_range(0.92, 1.08))
+			var k := g.randf_range(0.92, 1.08)
+			if not district:
+				xf.append(Transform3D(basis, pos))
+				cols.append(tc.srgb_to_linear() * k)
 		if t == "plain" and empty:
 			for i in 6:  # dots of flowers on the meadow
 				var fr := sqrt(g.randf()) * 0.8
