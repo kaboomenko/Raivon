@@ -290,7 +290,7 @@ def glass_mat(ctx, name, tint="#ffffff"):
     tr.inputs["Color"].default_value = rgba(tint)
     gl = nt.nodes.new("ShaderNodeEmission")
     gl.inputs["Color"].default_value = rgba("#F2ECE2")
-    gl.inputs["Strength"].default_value = 0.35
+    gl.inputs["Strength"].default_value = 0.6
     fr = nt.nodes.new("ShaderNodeFresnel")
     fr.inputs["IOR"].default_value = 1.1
     mix = nt.nodes.new("ShaderNodeMixShader")
@@ -306,7 +306,7 @@ def glass_mat(ctx, name, tint="#ffffff"):
                      node_math(nt, "LESS_THAN", add, 1.50))
     em = nt.nodes.new("ShaderNodeEmission")
     em.inputs["Color"].default_value = rgba("#ffffff")
-    em.inputs["Strength"].default_value = 0.05
+    em.inputs["Strength"].default_value = 0.3
     add_sh = nt.nodes.new("ShaderNodeAddShader")
     mix2 = nt.nodes.new("ShaderNodeMixShader")
     nt.links.new(band, mix2.inputs["Fac"])

@@ -79,7 +79,7 @@ SKIN = {"T1": "#F4B48E", "T2": "#F0A274", "T3": "#DE9A6C", "T4": "#C47A4E", "T5"
 SKIN_SAT = {"T1": 1.24, "T2": 1.15, "T3": 1.08, "T4": 1.05, "T5": 1.0, "T6": 1.0}
 
 C = {
-    "lash": "#2A1712", "pupil": "#1E1A24", "sclera": "#F7F3EE", "mouth_in": "#66222A", "teeth": "#FBF6EA",
+    "lash": "#2A1712", "pupil": "#1E1A24", "sclera": "#F7F3EE", "mouth_in": "#74282E", "teeth": "#FBF6EA",
     "tongue": "#E0606A", "blush": "#E5745E", "scar": "#D9787A", "freckle": "#C77B52", "shadow": "#5B5A8C",
     "floor": "#2A2A30", "seam": "#2A1D22",
     "gold": "#E8B23A", "brass": "#E0AD45", "silver": "#C8CCD4", "bronze": "#B0803A", "steel": "#B9C3CF",

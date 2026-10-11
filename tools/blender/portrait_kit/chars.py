@@ -62,7 +62,7 @@ CHARS = {
         mouth=dict(lip="#D9786A", line=0.185,
                    calm=dict(type="closed", w=0.26, near=0.012, far=0.004),
                    smile=dict(type="open", w=0.32, h=0.12, near=0.03, far=0.025)),
-        hair=dict(style="kerchief", color="#5A3420", dark="#3E2214", light="#7A4A30", crevice="#2A160C", fringe=0.08,
+        hair=dict(style="kerchief", color="#5A3420", dark="#4A2A1A", light="#7A4A30", crevice="#2A160C", fringe=0.08,
                   braid=dict(w=0.17, ribbon="#3E9B5A")),
         # the kerchief in her green (§7.6 gives no colour for it; palette slots only): white cloth on the light grey
         # plate melted at the rim (P-A5) and repeated the apron; the lighter leaf green still melted where the rim

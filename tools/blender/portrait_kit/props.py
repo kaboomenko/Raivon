@@ -201,10 +201,11 @@ def glasses(ctx, pr):
         bm.faces.new(vs)
         lens = core.mesh_obj("glasses_lens_" + e["tag"], bm)
         core.solidify(lens, 0.006, offset=0.0)
-        core.finish(lens, glass)
+        # flat: a smooth-shaded n-gon has only rim vertices, so its normals tilt across the whole lens and the Fresnel
+        # sheen turned the near lens grey (iris contrast 0.57)
+        core.finish(lens, glass, smooth=False)
         lens["kit_glass"] = 1
         lens.visible_shadow = False   # no caustics: a glass that casts a shadow would put the eyes in the dark
-        lens.visible_diffuse = False  # nor occlusion: the skin and eye AO saw the plate and greyed the eye behind it
         ctx.add(lens, "glass", rim, kind="embed", head=True)
         inner.append(front + rot @ Vector((-side * w, 0.0, hh * 0.25)))
         # the temple: from the outer edge back along the head side into the hair
