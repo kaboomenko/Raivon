@@ -834,8 +834,8 @@ class KitBake extends Node:
 		var e := _ref(ci, owner if owner != null else host, hh)  # (its commands are being recorded anew)
 		var slot: Variant = slots.get(full)
 		if slot != null and _squeeze and not in_sight(hh, rect, pad):
-			# the atlas is short of room: what nobody can see gives its image up (draws its vectors, culled or clipped
-			# away) so that the next eviction frees its place; it asks again once it comes into sight
+			# the atlas is short of room: what is off the screen gives its image up (draws its vectors, culled) so that
+			# the next eviction frees its place; it asks again once it comes onto the screen
 			_park(hh, rect, pad)
 			return false
 		if slot == null:
@@ -848,9 +848,9 @@ class KitBake extends Node:
 					never[full] = true
 					return false
 				if not in_sight(hh, rect, pad):
-					# nobody can see it now (off the screen, or wholly out of a scroll's clip — the rows of a long list):
-					# not baked, or such a list would fill the atlas and start it over and over; it draws its vectors
-					# (culled, or clipped away) and is drawn again once it comes into sight (_poll_parked)
+					# off the screen (the rows of a long list scrolled away below it): not baked, or such a list would fill
+					# the atlas and start it over and over; it draws its vectors (the renderer culls them) and is drawn
+					# again once it comes onto the screen (_poll_parked)
 					_park(hh, rect, pad)
 				else:
 					if hh != null and not parked.is_empty():
@@ -878,27 +878,17 @@ class KitBake extends Node:
 		_blit(ci, slot, rect, size, m, how[0], how[1], mod)
 		return true
 
-	## Whether `rect` (local to `h`, grown by `pad`) can be seen now: on the screen and inside the rect of every
-	## clipping Control above it (a ScrollContainer's view). An item of a SubViewport's canvas counts as seen.
+	## Whether `rect` (local to `h`, grown by `pad`) is on the screen now (an item of a SubViewport's canvas counts as
+	## on it). Only the screen: what a scroll's clip hides but the screen would show (a row under a window's title, a
+	## card's badge past the tray's edge) is baked as before — drawn as vectors it would cost its draw calls clipped,
+	## while off the screen the renderer culls the vectors for nothing.
 	static func in_sight(h: CanvasItem, rect: Rect2, pad: float) -> bool:
 		if h == null or not h.is_inside_tree():
 			return true
 		var vp := h.get_viewport()
 		if vp == null or vp != h.get_tree().root:
 			return true
-		var r := h.get_global_transform_with_canvas() * rect.grow(pad)
-		if not r.intersects(vp.get_visible_rect()):
-			return false
-		var n := h.get_parent()
-		var top := h.top_level
-		while not top and n is CanvasItem:
-			if n is Control and (n as Control).clip_contents:
-				var c := n as Control
-				if not r.intersects(c.get_global_transform_with_canvas() * Rect2(Vector2.ZERO, c.size)):
-					return false
-			top = (n as CanvasItem).top_level
-			n = n.get_parent()
-		return true
+		return (h.get_global_transform_with_canvas() * rect.grow(pad)).intersects(vp.get_visible_rect())
 
 	## The record of what the canvas item `ci` shows from the atlas: started anew on the first draw in a frame (a
 	## canvas item's commands are all recorded again when it is drawn).
