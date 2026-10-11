@@ -3,10 +3,12 @@ shader_type spatial;
 // map_view.gd (_plate_mat). A unit quad becomes a billboard of a fixed size on screen, exactly as Label3D / Sprite3D do
 // with billboard + fixed_size, so the plate, its number (Label3D) and its icon (Sprite3D) stay together at any zoom.
 // Everything is in design pixels (941×1672 canvas): `box` is the quad's size, `shift` its centre off the node's origin
-// (+y up), and `px_k` turns a design pixel into world units at depth 1 (2·tan(fov/2) / canvas height).
+// (+y up), and `px_k` turns a design pixel into world units at depth 1 (2·tan(fov/2) / canvas height; map_view.gd
+// resets it on every material when the window changes size).
 //   kind 0, the army plate: a pointy-top rounded hex (R hex_r, corners 0.22R) — an INK contour 4, the team face raised
 //     over its lip by 0.14R, a gloss on the top 42 % — with the strength bar under it (bar_size, INK contour 3, a dark
-//     track, the team colour filled to bar_k with round ends; bar_k < 0 hides the bar). As Kit's hex badge and Kit.bar.
+//     track, the team colour filled to bar_k with round ends; bar_k < 0 hides the bar), the hex's lower tip 3 px clear
+//     of the bar's top (hex_c 40 = bar 12 + gap 3 + the rounded tip's 25). As Kit's hex badge and Kit.bar.
 //   kind 1, the chip: a pill of the quad's size less 2 px a side, `face` (INK α 0.85 for a status chip) inside an
 //     optional contour `edge` edge_w wide.
 // Colours come in already through SoftPalette.scene(), so the tonemapped view shows the UI's own colours.
@@ -24,12 +26,12 @@ uniform vec4 track : source_color = vec4(0.09, 0.125, 0.227, 1.0);
 uniform vec4 edge : source_color = vec4(0.0);
 uniform float edge_w = 0.0;
 uniform float hex_r = 26.0;
-uniform vec2 hex_c = vec2(0.0, 34.0);
+uniform vec2 hex_c = vec2(0.0, 40.0);
 uniform vec2 bar_c = vec2(0.0, 6.0);
 uniform vec2 bar_size = vec2(64.0, 12.0);
 
-instance uniform vec2 box = vec2(72.0, 68.0);
-instance uniform vec2 shift = vec2(0.0, 31.0);
+instance uniform vec2 box = vec2(72.0, 74.0);
+instance uniform vec2 shift = vec2(0.0, 34.0);
 instance uniform float bar_k = 1.0;  // (not `k`: the hex include uses k for its own locals)
 instance uniform float fade = 1.0;
 

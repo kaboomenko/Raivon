@@ -7552,4 +7552,6 @@ func _shot(path: String) -> void:
 		vp.get_render_info(Viewport.RENDER_INFO_TYPE_SHADOW, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME),
 		vp.get_render_info(Viewport.RENDER_INFO_TYPE_CANVAS, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME)])
 	print("shot saved ", path)
+	if OS.get_cmdline_user_args().has("--perf-tree"):  # canvas draws per HUD subtree (game/tools/perf_probe.gd)
+		await load("res://tools/perf_probe.gd").run(get_tree(), path + ".tree.txt")
 	get_tree().quit()

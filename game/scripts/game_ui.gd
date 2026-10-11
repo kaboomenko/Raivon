@@ -118,7 +118,10 @@ func _panel(parent: Control, rect: Rect2, style: StyleBox, filter := Control.MOU
 	var p := Panel.new()
 	p.position = rect.position
 	p.size = rect.size
-	p.add_theme_stylebox_override("panel", style)
+	if style is StyleBoxFlat:
+		Kit.set_panel(p, style)  # drawn from the kit's bake atlas (one draw call with its neighbours)
+	else:
+		p.add_theme_stylebox_override("panel", style)
 	p.mouse_filter = filter
 	if style is StyleBoxFlat and int(style.get_meta("kit_lip", 0)) > 0 and rect.size.y >= 40.0:
 		p.add_child(Kit.KitDecor.new())  # the lip / highlight line / gloss (child 0)
@@ -244,7 +247,7 @@ func _build_control_bar() -> void:
 	var body := Panel.new()
 	var bsb := Kit.style(Kit.INK, int(BAR_RECT.size.y * 0.5), 0, Kit.INK, 4, 0)  # a pill (h/2)
 	bsb.set_meta("kit_kind", "")
-	body.add_theme_stylebox_override("panel", bsb)
+	Kit.set_panel(body, bsb)  # from the kit's bake atlas
 	body.position = BAR_RECT.position
 	body.size = BAR_RECT.size
 	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -255,7 +258,7 @@ func _build_control_bar() -> void:
 	var gloss := Panel.new()  # the bars' gloss strip (§4.7): white α 0.3 over the top 30 % of the track
 	var gsb := Kit.style(Kit.alpha(Kit.WHITE, 0.3), 8, 0, Kit.INK, 0, 0)
 	gsb.set_meta("kit_kind", "")
-	gloss.add_theme_stylebox_override("panel", gsb)
+	Kit.set_panel(gloss, gsb)
 	gloss.position = Vector2(18, 8)
 	gloss.size = Vector2(BAR_IN - 28.0, 9)
 	gloss.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -264,7 +267,7 @@ func _build_control_bar() -> void:
 	_control_lbl2 = _bar_pct(Vector2(BAR_RECT.end.x - 18.0 - 110.0, BAR_RECT.position.y), HORIZONTAL_ALIGNMENT_RIGHT)
 	_war_swords = TextureRect.new()
 	_war_swords.name = "swords"
-	_war_swords.texture = Kit.icon_tex("swords")
+	_war_swords.texture = Kit.icon_atlas("swords")
 	_war_swords.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_war_swords.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_war_swords.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -275,12 +278,12 @@ func _build_control_bar() -> void:
 		var chip := Panel.new()
 		var csb := Kit.style(Kit.SLATE, int(FLAG_D * 0.5), 4, Kit.INK, 4, 0)  # round
 		csb.set_meta("kit_kind", "")
-		chip.add_theme_stylebox_override("panel", csb)
+		Kit.set_panel(chip, csb)
 		chip.size = Vector2(FLAG_D, FLAG_D)
 		chip.position = (c as Vector2) - chip.size * 0.5
 		chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_control_bar.add_child(chip)
-		var fv := FlagView.new(FlagView.DEFAULT)
+		var fv := Kit.KitFlag.new(FlagView.DEFAULT)  # drawn from the kit's bake atlas
 		fv.position = Vector2(14, 9)
 		fv.size = Vector2(36, 46)
 		fv.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -316,7 +319,7 @@ func _set_bar_colors(colors: Array) -> void:
 		sb.anti_aliasing = true
 		sb.border_width_bottom = 6  # the darker bottom 18 % of a bar's fill (§4.7)
 		sb.border_color = face.darkened(0.22)
-		(_control_fill if i == 0 else _control_track).add_theme_stylebox_override("panel", sb)
+		Kit.set_panel(_control_fill if i == 0 else _control_track, sb)
 
 
 ## The percentage at one end of the war bar: NUM_S 26 white, outlined.
@@ -3636,6 +3639,22 @@ func _update_fade(_v := 0.0) -> void:
 		return
 	var hb := _bscroll.get_h_scroll_bar()
 	_bfade.visible = hb.max_value - hb.page - hb.value >= _bfade.size.x
+	_cull_row()
+
+
+## Cards scrolled out of the tray are not drawn: the scroll's clip hides them, but they would still cost their draw
+## calls (~50 for the fifth army card). Only the renderer is told (the cards stay visible nodes: the row keeps its
+## layout, the coach its rects); a scroll shows them again.
+func _cull_row() -> void:
+	var view := _bscroll.get_global_rect()
+	for c in _brow.get_children():
+		var card := c as Control
+		if card == null:
+			continue
+		var r := card.get_global_rect()
+		var on := card.visible and r.end.x > view.position.x and r.position.x < view.end.x
+		RenderingServer.canvas_item_set_visible(card.get_canvas_item(), on)
+		card.set_meta("kit_culled", not on)  # (game/tools/perf_probe.gd leaves it hidden)
 
 
 ## Rebuilds the card row only when its content changed, and never under a finger (a rebuild between

@@ -71,6 +71,7 @@ func _ready() -> void:
 	add_child(_horizon_root)
 	_bay_root = Node3D.new()
 	add_child(_bay_root)
+	get_viewport().size_changed.connect(_on_view_resized)
 
 
 func set_world(w) -> void:
@@ -2438,11 +2439,22 @@ class SoftLabel3D extends Label3D:
 ## A plate the map keeps clear of the others on screen (_declutter): `base` is its anchor in the parent's space, `box`
 ## its rectangle in design pixels round the projected anchor (+y down, as the screen). Plates of a higher `prio` keep
 ## their place; the others rise above whatever they would cover. `lift` is the current rise in pixels (eased).
+## `nudge` is an offset its owner animates (a floater's rise, px, +y down); `seq` orders tags at one height (the older
+## keeps its place, so two floaters on one hex never swap); `pin` keeps it on screen even when its anchor is off it (a
+## floater), where a plate is only pulled in while part of it shows.
 class MapTag extends Node3D:
+	static var _next := 0
 	var base := Vector3.ZERO
 	var box := Rect2()
 	var prio := 0
 	var lift := -1.0  # < 0: not placed yet (the first placement snaps)
+	var nudge := Vector2.ZERO
+	var pin := false
+	var seq := 0
+
+	func _init() -> void:
+		_next += 1
+		seq = _next
 
 
 ## Map plates are laid out in design pixels of the 941 × 1672 canvas (docs/ui_style.md); their texts are rasterised at
@@ -2450,11 +2462,14 @@ class MapTag extends Node3D:
 const RASTER := 1.5
 const PLATE_PRIO := MARK_PRIO + 4  # the plates' faces: over the strike arrow (+2/+3) and the income bubbles (+2..+4)
 const STACK_GAP := 4.0  # px kept between stacked plates
-## The army plate (§4.14): a hex R 26 centred 34 px over the anchor, the 64 × 12 strength bar under it (its bottom at
-## the anchor, the hex tip tucked under it); stacking reads the box up to the hex's top corners, so the roof of a
-## plate may sit under the bar of the plate stacked over it but its number never does.
-const ARMY_HEX_Y := 34.0
-const ARMY_BOX := Rect2(-32.0, -48.0, 64.0, 48.0)
+## The army plate (§4.14): a hex R 26 centred 40 px over the anchor, the 64 × 12 strength bar under it (its bottom at
+## the anchor). The hex's lower tip (25 px under its centre: the corners are rounded by 0.22 R) clears the bar by 3 px:
+## at 34 the bar's top contour cut it off (W1). Stacking reads the whole plate, up to the hex's top tip, so the bar of a
+## plate stacked over another clears that one's roof by STACK_GAP. Without its bar (a full army in peacetime, the fog,
+## a rout) a plate is the hex alone (y 14 … 66, 48 wide), so such plates stack as tightly as the hexes allow.
+const ARMY_HEX_Y := 40.0
+const ARMY_BOX := Rect2(-32.0, -66.0, 64.0, 66.0)
+const ARMY_HEX_BOX := Rect2(-24.0, -66.0, 48.0, 52.0)
 ## Chips (§4.8): S, the status chip (h 34, icon 28, LABEL 24 Rubik 800); M, the timer chip (h 52, icon 44, NUM 30).
 const CHIP := {"S": {"h": 34.0, "icon": 28.0, "px": 24, "font": "d800", "pad": 8.0, "gap": 6.0, "end": 14.0},
 	"M": {"h": 52.0, "icon": 44.0, "px": 30, "font": "d900", "pad": 8.0, "gap": 6.0, "end": 18.0}}
@@ -2464,12 +2479,31 @@ var _plate_mesh: QuadMesh
 
 
 ## World units per design pixel at depth 1 for the fixed-size billboards: 2·tan(fov/2) over the canvas height
-## (0.000343 on the 941 × 1672 canvas at the rig's fov 32°).
+## (0.000343 on the 941 × 1672 canvas at the rig's fov 32°). The canvas grows taller when the window gets narrower
+## (stretch aspect "expand"), so every plate built with the old value is rescaled then (_on_view_resized).
 func _px_k() -> float:
 	var vp := get_viewport() if is_inside_tree() else null
 	var cam := vp.get_camera_3d() if vp != null else null
 	var h := vp.get_visible_rect().size.y if vp != null else 1672.0
 	return 2.0 * tan(deg_to_rad(cam.fov if cam != null else 32.0) * 0.5) / maxf(h, 1.0)
+
+
+## The plates' fixed-size texts and icons (_plate_text, _plate_icon): rescaled together when the canvas changes size.
+const PX_GROUP := &"map_px"
+
+
+## The window changed size (a rotation, a split screen, a resized desktop window): the plates' faces, texts and icons
+## take the new pixel scale, so they keep their design size on screen. _declutter reads _px_k() live.
+func _on_view_resized() -> void:
+	var k := _px_k()
+	for key in _plate_mats:
+		(_plate_mats[key] as ShaderMaterial).set_shader_parameter("px_k", k)
+	for n in get_tree().get_nodes_in_group(PX_GROUP):
+		if n is Label3D:
+			(n as Label3D).pixel_size = k / RASTER
+		elif n is Sprite3D and (n as Sprite3D).texture != null:
+			var sp := n as Sprite3D
+			sp.pixel_size = k * float(sp.get_meta("px", 32.0)) / float(sp.texture.get_height())
 
 
 ## A plate face (map_plate.gdshader), one per look: "army:<side>" (the team hex and bar) or "chip:<face>:<edge>:<w>".
@@ -2500,10 +2534,10 @@ func _plate_mat(key: String) -> ShaderMaterial:
 	return m
 
 
-## The army plate's faces by the troops' model colour: the player's blue and the enemy's red of soft_palette.gd (body
-## over rim), the green leagues in the kit's go green, and the fog's lock grey.
-const ARMY_LOOK := {"blue": [Color("#4FA8FF"), Color("#1D4DB3")], "red": [Color("#DD3A30"), Color("#8E1D17")],
-	"green": [Color("#5CC93B"), Color("#3A8F22")], "fog": [Color("#A7AFBC"), Color("#6C7482")]}
+## The army plate's faces [face, lip] by the troops' model colour: the player's blue and the enemy's red of
+## soft_palette.gd (body over rim), the green leagues in the kit's go green, and the fog's lock grey.
+const ARMY_LOOK := {"blue": [SoftPalette.PLAYER["body"], SoftPalette.PLAYER["rim"]],
+	"red": [SoftPalette.ENEMY["body"], SoftPalette.ENEMY["rim"]], "green": Kit.ROLE["go"], "fog": Kit.ROLE["lock"]}
 
 
 func _plate_quad(box: Vector2, shift: Vector2, key: String) -> MeshInstance3D:
@@ -2528,6 +2562,7 @@ func _plate_text(px: int, kind := "d900") -> Label3D:
 	_text_size(l, px)
 	l.outline_modulate = SoftPalette.scene(Kit.INK)
 	l.pixel_size = _px_k() / RASTER
+	l.add_to_group(PX_GROUP)
 	l.fixed_size = true
 	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	l.no_depth_test = true
@@ -2551,8 +2586,10 @@ func _plate_icon(tex: Texture2D, px: float, at: Vector2, sp: Sprite3D = null) ->
 		sp.no_depth_test = true
 		sp.shaded = false
 		sp.render_priority = PLATE_PRIO + 1
+		sp.add_to_group(PX_GROUP)
 	sp.texture = tex
 	sp.visible = tex != null
+	sp.set_meta("px", px)
 	if tex != null:
 		var th := float(tex.get_height())
 		sp.pixel_size = _px_k() * px / th
@@ -2608,16 +2645,42 @@ func _set_chip(tag: MapTag, text: String, icon: String, size := "S", face := Col
 
 
 ## Keeps the map's plates from covering each other (§4.14 «метки ближе 48 px складываются столбиком»): every frame
-## each plate's box is placed round its projected anchor, highest prio first, then from the bottom of the screen up
-## (the nearer one keeps its place); a plate that would overlap a placed one rises just above it, again until it is
-## clear. The rise moves the plate along the camera's up at its depth, so it is exact on screen and keeps its size.
+## each plate's box is placed round its projected anchor (plus its `nudge`), highest prio first, then from the bottom
+## of the screen up (the nearer one keeps its place, the older of two at one height); a plate that would overlap a
+## placed one rises just above it, again until it is clear. A plate partly off the screen is first pulled SCREEN_EDGE
+## px inside it (a floater always is, `pin`), unless that would only take it under the HUD's furniture; one wholly off
+## it stays there. The rise and the pull move the plate along the camera's up and right at its depth, so it is exact
+## on screen and keeps its size.
+## A floater is also kept clear of the HUD's fixed furniture over the map (docs/ui_style.md §5, canvas px of the top
+## group, which sits under the system's top inset): the resource band, the left column with its captions, the
+## minimap, the round map tools with their captions; and of the bottom group (tabs and tray, from VB − 298). A plate
+## is not: its troops are under the HUD too, and it would have to leave them by up to 150 px.
+const SCREEN_EDGE := 24.0
+const HUD_FURNITURE := [Rect2(0, 0, 941, 96), Rect2(0, 96, 124, 784), Rect2(729, 96, 212, 200), Rect2(783, 312, 158, 452)]
+
+
+func _hud_furniture(screen: Rect2) -> Array[Rect2]:
+	var top := Kit.top_inset(self)
+	var out: Array[Rect2] = []
+	for q: Rect2 in HUD_FURNITURE:
+		out.append(Rect2(q.position.x, 0.0 if q.position.y == 0.0 else q.position.y + top, q.size.x,
+				q.size.y + (top if q.position.y == 0.0 else 0.0)))
+	var bottom := Kit.vb(self) - 298.0
+	out.append(Rect2(0.0, bottom, screen.size.x, screen.end.y - bottom))
+	return out
+
+
 func _declutter(delta: float) -> void:
 	var cam := get_viewport().get_camera_3d()
 	if cam == null or _tags.is_empty():
 		return
 	var view := cam.global_transform.affine_inverse()
+	var right := cam.global_basis.x
 	var up := cam.global_basis.y
 	var k := _px_k()
+	var screen := get_viewport().get_visible_rect()
+	var inside := screen.grow(-SCREEN_EDGE)
+	var furniture: Array[Rect2] = []
 	var items: Array = []
 	for i in range(_tags.size() - 1, -1, -1):
 		var o: Variant = _tags[i]
@@ -2630,14 +2693,36 @@ func _declutter(delta: float) -> void:
 		var p: Vector3 = (t.get_parent() as Node3D).global_transform * t.base
 		if cam.is_position_behind(p):
 			continue
-		items.append([t, cam.unproject_position(p), p])
+		items.append([t, cam.unproject_position(p) + t.nudge, p])
 	items.sort_custom(func(a: Array, b: Array) -> bool:
-		return a[0].prio > b[0].prio if a[0].prio != b[0].prio else a[1].y > b[1].y)
+		if a[0].prio != b[0].prio:
+			return a[0].prio > b[0].prio
+		var ya := floori(a[1].y)  # whole pixels: a strict order (a tolerance would not be transitive)
+		var yb := floori(b[1].y)
+		return ya > yb if ya != yb else a[0].seq < b[0].seq)
 	var placed: Array[Rect2] = []
 	var ease := 1.0 - pow(0.0005, delta)
 	for it in items:
 		var t: MapTag = it[0]
 		var r := Rect2(t.box.position + (it[1] as Vector2), t.box.size)
+		var pull := _keep_inside(r, inside) if t.pin or screen.intersects(r) else Vector2.ZERO
+		if pull != Vector2.ZERO and furniture.is_empty():
+			furniture = _hud_furniture(screen)
+		if not t.pin and pull != Vector2.ZERO:
+			var to := Rect2(r.position + pull, r.size)
+			for q in furniture:
+				if to.intersects(q):  # pulled in, it would only go under the HUD: it stays with its troops
+					pull = Vector2.ZERO
+					break
+		r.position += pull
+		if t.pin:
+			if furniture.is_empty():
+				furniture = _hud_furniture(screen)
+			for _pass in 2:
+				for q in furniture:
+					var d := _clear_of(r, q, inside)
+					r.position += d
+					pull += d
 		var want := 0.0
 		for _n in 12:
 			var hit := false
@@ -2652,8 +2737,36 @@ func _declutter(delta: float) -> void:
 				break
 		placed.append(r)
 		t.lift = want if t.lift < 0.0 or absf(t.lift - want) < 0.5 else lerpf(t.lift, want, ease)
+		var off := t.nudge + pull - Vector2(0.0, t.lift)  # on screen, px, +y down
 		var p: Vector3 = it[2]
-		t.global_position = p + up * (t.lift * -(view * p).z * k)
+		t.global_position = p + (right * off.x - up * off.y) * (-(view * p).z * k)
+
+
+## The shortest straight shift (px) that takes `r` clear of `q` (by STACK_GAP) and keeps it inside `area`; none when
+## no such shift exists.
+static func _clear_of(r: Rect2, q: Rect2, area: Rect2) -> Vector2:
+	var g := q.grow(STACK_GAP)
+	if not r.intersects(g):
+		return Vector2.ZERO
+	var best := Vector2.ZERO
+	for d: Vector2 in [Vector2(g.position.x - r.end.x, 0.0), Vector2(g.end.x - r.position.x, 0.0),
+			Vector2(0.0, g.position.y - r.end.y), Vector2(0.0, g.end.y - r.position.y)]:
+		if area.encloses(Rect2(r.position + d, r.size)) and (best == Vector2.ZERO or d.length() < best.length()):
+			best = d
+	return best
+
+
+## The shift (px) that brings `r` inside `area`, centred on an axis where it is the larger.
+static func _keep_inside(r: Rect2, area: Rect2) -> Vector2:
+	var d := Vector2.ZERO
+	for i in 2:
+		if r.size[i] >= area.size[i]:
+			d[i] = area.get_center()[i] - r.get_center()[i]
+		elif r.position[i] < area.position[i]:
+			d[i] = area.position[i] - r.position[i]
+		elif r.end[i] > area.end[i]:
+			d[i] = area.end[i] - r.end[i]
+	return d
 
 var _cloud_mat: ShaderMaterial
 var _cloud_puff: ImageTexture
@@ -3893,7 +4006,7 @@ func _army_plate(side: String) -> MapTag:
 	tag.position = tag.base
 	tag.box = ARMY_BOX
 	tag.prio = 2
-	tag.add_child(_plate_quad(Vector2(72.0, 70.0), Vector2(0.0, 32.0), "army:" + side))
+	tag.add_child(_plate_quad(Vector2(72.0, 74.0), Vector2(0.0, 34.0), "army:" + side))  # y −3 … 71: the bar to the hex's tip
 	var lbl := _plate_text(26)
 	lbl.offset = Vector2(0.0, ARMY_HEX_Y * RASTER)
 	tag.add_child(lbl)
@@ -3921,6 +4034,7 @@ func _sync_plate(node: Node3D, a: Dictionary, ready: float, hidden: bool, in_bat
 	if String(plate.get_meta("state", "")) == state:
 		return
 	plate.set_meta("state", state)
+	(plate as MapTag).box = ARMY_BOX if show_bar else ARMY_HEX_BOX
 	quad.material_override = _plate_mat("army:" + look)
 	quad.set_instance_shader_parameter("bar_k", k)
 	quad.set_instance_shader_parameter("fade", fade)
@@ -4400,7 +4514,20 @@ func strike_arrow(from: int, to: int, text: String) -> void:
 		_strike.add_child(chip)
 	var cut: Array = SoftLabel3D.split_picto(text)  # "⚔ 19:09": the swords become the chip's icon
 	_set_chip(_strike.get_node("label"), String(cut[0]), String(cut[1]) if String(cut[1]) != "" else "swords", "M",
-			Kit.face_of("war"), Kit.INK)
+			team_look(_striker(from, to))["body"], Kit.INK)
+
+
+## Whose strike it is, for the countdown chip's face (the attacker's team colour, as their army plates): the side that
+## holds the hex the arrow starts from; the enemy at war when the arrow has no hex of its own (main.gd falls back to
+## the target when no attacker's hex borders it) or starts on the defender's side.
+func _striker(from: int, to: int) -> int:
+	if sim == null or from < 0 or from >= sim.cells.size():
+		return at_war_with
+	var by: int = int(sim.cells[from].get("controller", sim.cells[from]["owner"]))
+	var def: int = int(sim.cells[to].get("controller", sim.cells[to]["owner"])) if to >= 0 and to < sim.cells.size() else -99
+	if from == to or by == def or by == Types.NOBODY:
+		return at_war_with if at_war_with >= 0 else MapGen.BARONS
+	return by
 
 
 ## The strike arrow's outline in its own frame (x from the attacker's hex toward the target, y across), counter-
@@ -5026,60 +5153,68 @@ func fireworks(pos: Vector3, volleys: int) -> void:
 		tw.tween_callback(fx.queue_free)
 
 
-## Text rising off a hex (§4.14 «+86»): an icon and NUM 32 (Rubik 900, white INK outline; `color` tints the text as
-## before), rising 40 px in 900 ms and fading out, kept 24 px inside the screen edges (_float_fx). A pictograph in the
-## text becomes the icon; `icon` names one outright (s14 passes the resource icons).
+## Text rising off a hex (§4.14 «+86»): an icon and NUM 32 (Rubik 900, the INK outline), rising 40 px in 900 ms and
+## fading out. A floater is a MapTag (prio −1, pinned): _declutter keeps it SCREEN_EDGE px inside the screen and lifts
+## it clear of the plates and of the floaters already there. A pictograph in the text becomes the icon; `icon` names one
+## outright. `color` picks the text's palette token (_float_ink).
 const FLOAT_DUR := 1.3
 const FLOAT_RISE := 40.0
-const FLOAT_EDGE := 24.0
 
 
 func floater(hex: int, text: String, color := Color.WHITE, icon := "") -> void:
 	var cut: Array = SoftLabel3D.split_picto(text)
 	var tex := SoftLabel3D.icon_tex(icon if icon != "" else String(cut[1]))
-	var root := Node3D.new()
-	var at := cell_world(hex) + Vector3(0, 1.4, 0)
-	root.position = at
-	add_child(root)
+	var tag := MapTag.new()
+	tag.prio = -1
+	tag.pin = true
+	tag.base = cell_world(hex) + Vector3(0, 1.4, 0)
+	tag.position = tag.base
+	add_child(tag)
 	var lbl := _plate_text(32)
 	lbl.text = String(cut[0])
-	lbl.modulate = Color(color, 1.0)
-	root.add_child(lbl)
+	lbl.modulate = Color(_float_ink(color), 0.0)  # shown by _float_fx once _declutter has placed it
+	lbl.outline_modulate.a = 0.0
+	tag.add_child(lbl)
 	var ic := 40.0 if tex != null else 0.0
 	var gap := 6.0 if tex != null and lbl.text != "" else 0.0
 	var tw := _text_w(lbl, lbl.text)
 	var w := ic + gap + tw
 	lbl.offset.x = (w * 0.5 - tw * 0.5) * RASTER
 	var sp := _plate_icon(tex, ic, Vector2(-w * 0.5 + ic * 0.5, 0.0))
-	root.add_child(sp)
-	_fx.append({"node": root, "t": 0.0, "dur": FLOAT_DUR, "float": true, "at": at, "w": w + 8.0, "h": 44.0, "lbl": lbl,
-		"icon": sp})
+	sp.modulate.a = 0.0
+	tag.add_child(sp)
+	var ow := float(Kit.outline_for(32))  # the outline reaches past the glyphs on both sides
+	tag.box = Rect2(-w * 0.5 - ow, -22.0, w + 2.0 * ow, 44.0)
+	_tags.append(tag)
+	_fx.append({"node": tag, "t": 0.0, "dur": FLOAT_DUR, "float": true, "lbl": lbl, "icon": sp})
 
 
-## A floater's frame: the rise (ease-out over 900 ms), the fade (the last 45 %), and the screen clamp — its box is kept
-## FLOAT_EDGE px inside the visible canvas, moved along the camera's right / up at the anchor's depth.
+## A floater's text colour, a §3.2 text token for the colour a call site asks for: gold, wheat and orange → WARN
+## #FFC531, red and pink → NEG #FF7A6E, green → POS #8BE04E, anything else (white, the pale blues, a state's colour —
+## never a text colour, §3.2) → white. The old pale tints (#BFD9FF, #FFB3B3, #FFE066 …) all read as white over the
+## sunny lawn; every token holds ≥ 6:1 against its INK outline, which keeps ≥ 6:1 against the lawn (#7FB347).
+static func _float_ink(c: Color) -> Color:
+	if c.s < 0.2:
+		return Kit.TEXT
+	if c.h < 0.04 or c.h > 0.9:
+		return Kit.NEG
+	if c.h < 0.19:
+		return Kit.WARN
+	if c.h < 0.45:
+		return Kit.POS
+	return Kit.TEXT
+
+
+## A floater's frame: the rise (ease-out over 900 ms) as the tag's nudge, and the fade (the last 45 %).
 func _float_fx(f: Dictionary, k: float) -> void:
-	var root: Node3D = f["node"]
+	var tag: MapTag = f["node"]
 	var a := 1.0 - smoothstep(0.55, 1.0, k)
 	var lbl: Label3D = f["lbl"]
 	lbl.modulate.a = a
 	lbl.outline_modulate.a = a  # the outline is drawn apart: fade it too, no navy ghost is left
 	(f["icon"] as Sprite3D).modulate.a = a
-	var cam := get_viewport().get_camera_3d()
-	var at: Vector3 = f["at"]
-	if cam == null or cam.is_position_behind(at):
-		return
 	var u := clampf(float(f["t"]) / 0.9, 0.0, 1.0)
-	var sp := cam.unproject_position(at)
-	var want := sp - Vector2(0.0, FLOAT_RISE * (1.0 - pow(1.0 - u, 3.0)))
-	var vis := get_viewport().get_visible_rect().size
-	var hw := float(f["w"]) * 0.5 + FLOAT_EDGE
-	var hh := float(f["h"]) * 0.5 + FLOAT_EDGE
-	want.x = clampf(want.x, minf(hw, vis.x * 0.5), maxf(vis.x - hw, vis.x * 0.5))
-	want.y = clampf(want.y, minf(hh, vis.y * 0.5), maxf(vis.y - hh, vis.y * 0.5))
-	var d := want - sp
-	var s := -(cam.global_transform.affine_inverse() * at).z * _px_k()
-	root.global_position = at + (cam.global_basis.x * d.x - cam.global_basis.y * d.y) * s
+	tag.nudge = Vector2(0.0, -FLOAT_RISE * (1.0 - pow(1.0 - u, 3.0)))
 
 
 func _process(delta: float) -> void:

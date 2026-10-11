@@ -6,6 +6,8 @@
 set -euo pipefail
 # Renders with the Mobile renderer — what phones run (the project's rendering_method.mobile default); pass
 # --forward-plus as an extra argument for the desktop renderer.
+# --perf-tree: after the shot, the canvas draw calls of every HUD subtree (game/tools/perf_probe.gd): printed as
+# «perf-tree» lines and written to OUT.png.tree.txt.
 # --fixed-fps=N is passed to the engine (`--fixed-fps N`): every frame then advances game time by exactly 1/N s, so
 # an animation captured part-way (e.g. --demo=ceremony:T) lands on the same moment however slow the software
 # renderer is; a --shot-delay then costs N frames a second, so use it without a delay.
@@ -37,7 +39,7 @@ flock -E 75 -o -w "$LOCK_WAIT" "$LOCK" \
   env VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/lvp_icd.json timeout "$RUN_LIMIT" xvfb-run -a -s "-screen 0 ${RES}x24" \
   "$GODOT" --path . --rendering-method "$METHOD" ${ENGINE[@]+"${ENGINE[@]}"} --resolution "$RES" \
   -- --shot="$OUT" ${ARGS[@]+"${ARGS[@]}"} 2>&1 \
-  | grep -E 'shot saved|perf |SCRIPT ERROR|SHADER ERROR|Parse Error|ERROR: .*([Ss]hader|uniform)|^E +[0-9]+->' \
+  | grep -E 'shot saved|perf |perf-tree |SCRIPT ERROR|SHADER ERROR|Parse Error|ERROR: .*([Ss]hader|uniform)|^E +[0-9]+->' \
   || rc=${PIPESTATUS[0]}
 # The exit status stays 0 (callers loop over shots); a failed run says why instead of printing nothing.
 if [ "$rc" -eq 75 ]; then

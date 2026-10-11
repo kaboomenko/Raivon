@@ -6,6 +6,7 @@ extends RefCounted
 
 const SELF := preload("res://scripts/ui_kit.gd")
 const L := preload("res://scripts/l10n.gd")
+const FlagView := preload("res://scripts/flag_view.gd")
 
 # ------------------------------------------------------------------ tokens: surfaces and ink (§3.2)
 
@@ -172,6 +173,7 @@ static func label(text: String, size: int, color := TEXT, bold := true) -> Label
 	l.text = text
 	l.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	style_label(l, size, color, bold)
+	l.add_child(KitText.new())  # its glyphs from the bake atlas once the text holds still
 	return l
 
 
@@ -443,63 +445,804 @@ static func role_of(c: Color) -> String:
 ## highlight line on slate / paper, the gloss band on role faces. Reads the parent's current style each draw,
 ## so a later restyle of the parent (set_action) is followed.
 class KitDecor extends Control:
-	var _sb := StyleBoxFlat.new()
-	var _gl := StyleBoxFlat.new()
-
 	func _init() -> void:
 		name = "KitDecor"
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 		set_anchors_preset(Control.PRESET_FULL_RECT)
-		_sb.anti_aliasing = true
-		_sb.corner_detail = 10
-		_gl.anti_aliasing = true
-		_gl.corner_detail = 8
 
 	func _enter_tree() -> void:
 		var p := get_parent() as CanvasItem
 		if p and not p.draw.is_connected(queue_redraw):
 			p.draw.connect(queue_redraw)
 
-	func _draw() -> void:
-		var p := get_parent() as Control
-		if p == null:
-			return
-		var sb := p.get_theme_stylebox("panel") as StyleBoxFlat
+	## What to draw for the parent's style at `sz` (empty: nothing): the lip box, the line or the gloss.
+	static func spec(sb: StyleBoxFlat, sz: Vector2) -> Dictionary:
 		if sb == null or not sb.has_meta("kit_lip") or sb.bg_color.a < 0.99:
-			return
+			return {}
 		var out := float(sb.border_width_left)
 		var r := float(sb.corner_radius_top_left)
 		var face := sb.bg_color
 		var lip := float(sb.get_meta("kit_lip", 0))
-		if size.y < 52.0:
+		if sz.y < 52.0:
 			lip = minf(lip, 5.0)
-		if size.y < 36.0:
+		if sz.y < 36.0:
 			lip = 0.0
-		var inner := Rect2(out, out, size.x - 2.0 * out, size.y - 2.0 * out)
-		if lip > 0.0:
-			_sb.bg_color = face
-			# concentric with each of the parent's corners (one may be square: the tray under the first tab)
-			_sb.corner_radius_top_left = int(maxf(0.0, sb.corner_radius_top_left - out))
-			_sb.corner_radius_top_right = int(maxf(0.0, sb.corner_radius_top_right - out))
-			_sb.corner_radius_bottom_left = int(maxf(0.0, sb.corner_radius_bottom_left - out))
-			_sb.corner_radius_bottom_right = int(maxf(0.0, sb.corner_radius_bottom_right - out))
-			_sb.border_width_bottom = int(lip)
-			_sb.border_color = sb.get_meta("kit_lip_color", face.darkened(0.3))
-			draw_style_box(_sb, inner)
 		var kind: String = sb.get_meta("kit_kind", "")
 		var rl := maxf(float(sb.corner_radius_top_left), 12.0)
 		var rr := maxf(float(sb.corner_radius_top_right), 12.0)
-		if kind == "slate" and size.x > rl + rr + 8.0:
-			draw_line(Vector2(rl, out + 1.0), Vector2(size.x - rr, out + 1.0), SLATE_HI, 2.0)
-		elif kind == "cream" and size.x > 64.0:
-			var inset := 24.0 if size.x > 200.0 else maxf(r, 12.0)
-			draw_line(Vector2(inset, out + 2.0), Vector2(size.x - inset, out + 2.0), Color(1, 1, 1, 0.7), 3.0)
-		elif kind == "role" and size.y >= 30.0 and not face.is_equal_approx(ROLE["lock"][0]):  # «unavailable»: no gloss
+		var d := {"out": out, "r": r, "face": face, "lip": lip, "lip_color": sb.get_meta("kit_lip_color", face.darkened(0.3)),
+			"radii": [sb.corner_radius_top_left, sb.corner_radius_top_right, sb.corner_radius_bottom_left, sb.corner_radius_bottom_right],
+			"line": "", "rl": rl, "rr": rr, "inset": 0.0, "gloss": false, "side": 0.0}
+		if kind == "slate" and sz.x > rl + rr + 8.0:
+			d["line"] = "slate"
+		elif kind == "cream" and sz.x > 64.0:
+			d["line"] = "cream"
+			d["inset"] = 24.0 if sz.x > 200.0 else maxf(r, 12.0)
+		elif kind == "role" and sz.y >= 30.0 and not face.is_equal_approx(ROLE["lock"][0]):  # «unavailable»: no gloss
+			d["gloss"] = true
+			d["side"] = 12.0 if sz.y >= 104.0 else 8.0
+		if lip <= 0.0 and d["line"] == "" and not d["gloss"]:
+			return {}
+		return d
+
+	## Draws `d` (spec) on `ci` at the size `sz`.
+	static func paint(ci: CanvasItem, d: Dictionary, sz: Vector2) -> void:
+		var out: float = d["out"]
+		var r: float = d["r"]
+		var face: Color = d["face"]
+		var lip: float = d["lip"]
+		var inner := Rect2(out, out, sz.x - 2.0 * out, sz.y - 2.0 * out)
+		if lip > 0.0:
+			var sb := StyleBoxFlat.new()
+			sb.anti_aliasing = true
+			sb.corner_detail = 10
+			sb.bg_color = face
+			# concentric with each of the parent's corners (one may be square: the tray under the first tab)
+			var rad: Array = d["radii"]
+			sb.corner_radius_top_left = int(maxf(0.0, rad[0] - out))
+			sb.corner_radius_top_right = int(maxf(0.0, rad[1] - out))
+			sb.corner_radius_bottom_left = int(maxf(0.0, rad[2] - out))
+			sb.corner_radius_bottom_right = int(maxf(0.0, rad[3] - out))
+			sb.border_width_bottom = int(lip)
+			sb.border_color = d["lip_color"]
+			ci.draw_style_box(sb, inner)
+		if d["line"] == "slate":
+			ci.draw_line(Vector2(d["rl"], out + 1.0), Vector2(sz.x - float(d["rr"]), out + 1.0), SLATE_HI, 2.0)
+		elif d["line"] == "cream":
+			ci.draw_line(Vector2(d["inset"], out + 2.0), Vector2(sz.x - float(d["inset"]), out + 2.0), Color(1, 1, 1, 0.7), 3.0)
+		elif d["gloss"]:
 			var fh := inner.size.y - lip
-			var side := 12.0 if size.y >= 104.0 else 8.0
-			_gl.bg_color = SELF.gloss(face)
-			_gl.set_corner_radius_all(int(maxf(4.0, r - out - 6.0)))
-			draw_style_box(_gl, Rect2(out + side, out + 5.0, inner.size.x - 2.0 * side, maxf(4.0, fh * 0.34)))
+			var side: float = d["side"]
+			var gl := StyleBoxFlat.new()
+			gl.anti_aliasing = true
+			gl.corner_detail = 8
+			gl.bg_color = SELF.gloss(face)
+			gl.set_corner_radius_all(int(maxf(4.0, r - out - 6.0)))
+			ci.draw_style_box(gl, Rect2(out + side, out + 5.0, inner.size.x - 2.0 * side, maxf(4.0, fh * 0.34)))
+
+	## Drawn from the bake atlas (KitBake), sliced: the lip and the line stretch both ways, the gloss (its height
+	## follows the face's) only sideways.
+	func _draw() -> void:
+		var p := get_parent() as Control
+		if p == null:
+			return
+		var d := spec(SELF.flat_of(p), size)
+		if d.is_empty():
+			return
+		var out: float = d["out"]
+		var rad: Array = d["radii"]
+		var r_top := float(maxi(rad[0], rad[1]))
+		var r_bot := float(maxi(rad[2], rad[3]))
+		var ml := maxf(float(maxi(rad[0], rad[2])), float(d["rl"]) if d["line"] == "slate" else 0.0) + 2.0
+		var mr := maxf(float(maxi(rad[1], rad[3])), float(d["rr"]) if d["line"] == "slate" else 0.0) + 2.0
+		if d["line"] == "cream":
+			ml = maxf(ml, float(d["inset"]) + 2.0)
+			mr = maxf(mr, float(d["inset"]) + 2.0)
+		if d["gloss"]:
+			var g := out + float(d["side"]) + maxf(4.0, float(d["r"]) - out - 6.0) + 2.0
+			ml = maxf(ml, g)
+			mr = maxf(mr, g)
+		var mt := maxf(r_top, out + 4.0) + 2.0
+		var mb := maxf(r_bot, out + float(d["lip"])) + 2.0
+		var key := "decor|%s|%s|%.1f,%.1f,%.1f,%.1f|%s|%s|%s|%.1f,%.1f,%.1f,%.1f" % [(d["face"] as Color).to_html(),
+			(d["lip_color"] as Color).to_html(), out, d["r"], d["lip"], d["side"], str(rad), d["line"], str(d["gloss"]),
+			d["rl"], d["rr"], d["inset"], 0.0]
+		var m := Vector4.ZERO
+		var bs := size
+		if size.x >= ml + mr + 6.0:
+			m.x = ml
+			m.z = mr
+			bs.x = ml + mr + 4.0
+		else:
+			key += "|w%.2f" % size.x
+		if not d["gloss"] and size.y >= mt + mb + 6.0:
+			m.y = mt
+			m.w = mb
+			bs.y = mt + mb + 4.0
+		else:
+			key += "|h%.2f" % size.y
+		var make := func(z: Vector2) -> Control: return KitPainter.new(func(c: CanvasItem): KitDecor.paint(c, d, z), z)
+		if not SELF.draw_baked(self, key, Rect2(Vector2.ZERO, size), bs, make, m):
+			paint(self, d, size)
+
+
+# ------------------------------------------------------------------ baked layers (draw calls, docs/dev/hud_perf_plan.json H1)
+
+## The canvas renderer batches consecutive textured rects that share a texture into one draw call, but sends every
+## polygon on its own: each StyleBoxFlat, rounded line, disc and chrome stroke is one draw call (a button cost 4–5,
+## a «+» 28, a tray card ~87). KitBake renders each distinct set of a component's static vector layers once,
+## offscreen, into one shared atlas; the component then draws texture rects from it — sliced where it stretches — so
+## neighbouring kit surfaces share one draw call. Pixel parity: a stage SubViewport renders the layers with the very
+## draw calls the component would make, at the device's canvas scale and at the component's sub-pixel offset; a
+## second pass copies them un-premultiplied into the atlas SubViewport (which is never cleared), so they blend like
+## the vectors did; and until its bake is ready (two frames) a component draws its vectors itself. Off when headless
+## (the tests): everything is drawn as vectors there.
+class KitBake extends Node:
+	const ATLAS := Vector2i(2048, 2048)
+	const STAGE := Vector2i(2048, 1024)
+	const PAD := 16.0  ## logical px of room round every bake (hard shadows, text outlines and their shadows, AA fringes)
+	const MAX_SIDE := 900  ## px: anything larger is drawn as vectors
+	const UNPREMUL := "shader_type canvas_item;\nrender_mode blend_disabled;\n" \
+		+ "void fragment() {\n\tvec2 sz = vec2(textureSize(TEXTURE, 0));\n\tivec2 p = ivec2(floor(UV * sz));\n" \
+		+ "\tvec4 c = texelFetch(TEXTURE, p, 0);\n\tif (c.a > 0.0) {\n\t\tCOLOR = vec4(c.rgb / c.a, c.a);\n\t} else {\n" \
+		+ "\t\t// a transparent texel takes the colour of its most opaque neighbour (alpha 0): filtered at a fractional\n" \
+		+ "\t\t// offset the edge then fades out instead of darkening\n\t\tvec4 b = vec4(0.0);\n" \
+		+ "\t\tfor (int i = 0; i < 4; i++) {\n\t\t\tivec2 o = ivec2(i == 0 ? 1 : (i == 1 ? -1 : 0), i == 2 ? 1 : (i == 3 ? -1 : 0));\n" \
+		+ "\t\t\tvec4 n = texelFetch(TEXTURE, clamp(p + o, ivec2(0), ivec2(sz) - 1), 0);\n\t\t\tif (n.a > b.a) {\n\t\t\t\tb = n;\n\t\t\t}\n\t\t}\n" \
+		+ "\t\tCOLOR = vec4(b.a > 0.0 ? b.rgb / b.a : vec3(0.0), 0.0);\n\t}\n}\n"
+	static var inst: KitBake
+	static var off := false
+	var stage: SubViewport
+	var atlas: SubViewport
+	var tex_rid: RID
+	var k := 1.0  ## physical px per logical px (the canvas scale; the bakes are made at it)
+	var slots := {}  ## key -> Rect2i: the baked image in the atlas
+	var jobs := {}  ## key -> {size, px, off, make}: waiting for a round
+	var never := {}  ## keys that are not baked (too large)
+	var owners := {}  ## instance id -> WeakRef: everything that drew from the atlas (redrawn when it is reset)
+	var waiting := {}  ## key -> {instance id: WeakRef}: redrawn when that bake lands
+	var _round: Array = []  # the jobs in flight: {key, at (stage px), slot}
+	var _state := 0  # 0 idle, 1 the stage renders, 2 the atlas copies
+	var _shelf := Vector3i(1, 1, 0)  # the atlas packer: x, y, row height
+	var _nodes: Array = []  # the stage / copy nodes of the round
+	var _mat: ShaderMaterial
+	var _copy: ShaderMaterial  # a straight copy (the icons: straight alpha already)
+	## The rendered icons (128 × 128, assets/ui/icons) share one texture too: each is an AtlasTexture into a CPU-built
+	## sheet (exact copies, their edge texels repeated round them like a texture's clamp), and once the sheet is
+	## copied into the bake atlas their `atlas` moves there — an icon and the kit surfaces round it then batch.
+	const ICON := 128
+	const ICON_CELL := 132  # 2 px of repeated edge texels round each icon
+	const ICON_COLS := 8
+	var icon_img: Image
+	var icon_sheet: ImageTexture
+	var icons := {}  # source texture path -> [AtlasTexture, cell origin (Vector2i)]
+	var _icon_region := Rect2i()  # the sheet's place in the atlas (size 0: not there)
+	var _icons_new: Array = []  # cells to copy into the atlas
+	var _icons_dirty := false
+	var _icon_round: Array = []  # the cells being copied
+	var _icon_round_at := Rect2i()  # where to (a reset in between moves the sheet: the copy is then wasted)
+
+	## The shared instance (made on first use; it joins the scene root a frame later). null when headless.
+	static func get_inst() -> KitBake:
+		if off:
+			return null
+		if inst == null or not is_instance_valid(inst):
+			if DisplayServer.get_name() == "headless":
+				off = true
+				return null
+			var tree := Engine.get_main_loop() as SceneTree
+			if tree == null or tree.root == null:
+				return null
+			inst = KitBake.new()
+			inst.name = "KitBake"
+			tree.root.add_child.call_deferred(inst)
+		return inst
+
+	func _init() -> void:
+		process_mode = Node.PROCESS_MODE_ALWAYS
+		stage = SubViewport.new()
+		stage.name = "stage"
+		stage.size = STAGE
+		stage.transparent_bg = true
+		stage.disable_3d = true
+		stage.render_target_update_mode = SubViewport.UPDATE_DISABLED
+		add_child(stage)
+		atlas = SubViewport.new()
+		atlas.name = "atlas"
+		atlas.size = ATLAS
+		atlas.transparent_bg = true
+		atlas.disable_3d = true
+		atlas.render_target_clear_mode = SubViewport.CLEAR_MODE_NEVER
+		atlas.render_target_update_mode = SubViewport.UPDATE_DISABLED
+		add_child(atlas)
+		tex_rid = atlas.get_texture().get_rid()
+		var sh := Shader.new()
+		sh.code = UNPREMUL
+		_mat = ShaderMaterial.new()
+		_mat.shader = sh
+		var cs := Shader.new()
+		cs.code = "shader_type canvas_item;\nrender_mode blend_disabled;\nvoid fragment() {\n" \
+			+ "\tCOLOR = texelFetch(TEXTURE, ivec2(floor(UV * vec2(textureSize(TEXTURE, 0)))), 0);\n}\n"
+		_copy = ShaderMaterial.new()
+		_copy.shader = cs
+
+	func _ready() -> void:
+		k = _scale()
+		get_tree().root.size_changed.connect(_on_resize)
+		RenderingServer.frame_post_draw.connect(_on_post_draw)
+
+	func _exit_tree() -> void:
+		if RenderingServer.frame_post_draw.is_connected(_on_post_draw):
+			RenderingServer.frame_post_draw.disconnect(_on_post_draw)
+
+	## Physical px per logical px of the main canvas (canvas_items stretch), to 1/1000.
+	func _scale() -> float:
+		var win := DisplayServer.window_get_size()
+		var vis := get_tree().root.get_visible_rect().size
+		if win.y <= 0 or vis.y <= 0.0:
+			return 1.0
+		return roundf(float(win.y) / vis.y * 1000.0) / 1000.0
+
+	func _on_resize() -> void:
+		var nk := _scale()
+		if absf(nk - k) > 0.0005:
+			k = nk
+			reset()
+
+	## Forgets every bake (the canvas scale changed, or the atlas is full): whatever drew from the atlas draws again
+	## (its vectors, then its new bake).
+	func reset() -> void:
+		slots.clear()
+		never.clear()
+		_shelf = Vector3i(1, 1, 0)
+		if _icon_region.size.x > 0:  # the icons draw from their sheet until it is in the new atlas
+			_icon_region = Rect2i()
+			_icons_new.clear()
+			for path in icons:
+				var e: Array = icons[path]
+				(e[0] as AtlasTexture).atlas = icon_sheet
+				(e[0] as AtlasTexture).region = Rect2(Vector2(e[1]) + Vector2(2, 2), Vector2(ICON, ICON))
+				_icons_new.append(e[1])
+		var all := owners
+		owners = {}
+		for id in all:
+			_poke(all[id])
+
+	func _poke(w: WeakRef) -> void:
+		var o: Object = w.get_ref()
+		if o is CanvasItem:
+			(o as CanvasItem).queue_redraw()
+		elif o is Resource:
+			(o as Resource).emit_changed()
+
+	## The sub-pixel offset (in physical px, quantised to 1/8) of a canvas item's local point `p` on the screen: a
+	## bake is made at it, so its texels land on the screen's pixels as the vectors would. Controls sit on whole
+	## logical pixels (Viewport.gui_snap_controls_to_pixels rounds each one's position), so this is the fraction of
+	## `p` itself at the canvas scale 1; a rotated or scaled item is resampled anyway (0).
+	func frac_of(ci: CanvasItem, p: Vector2) -> Vector2:
+		if ci == null or not ci.is_inside_tree():
+			return Vector2.ZERO
+		var o := p
+		var n: Node = ci
+		var snap := ci.get_viewport().gui_snap_controls_to_pixels
+		while n is CanvasItem:
+			if n is Control:
+				var c := n as Control
+				if c.rotation != 0.0 or c.scale != Vector2.ONE:
+					return Vector2.ZERO
+				o += (c.position + Vector2(0.5, 0.5)).floor() if snap else c.position
+			elif n is Node2D:
+				var n2 := n as Node2D
+				if n2.rotation != 0.0 or n2.scale != Vector2.ONE:
+					return Vector2.ZERO
+				o += n2.position
+			if (n as CanvasItem).top_level:
+				break
+			n = n.get_parent()
+		if n is CanvasLayer:
+			o += (n as CanvasLayer).offset
+		var g := o * k
+		return Vector2(roundf(fposmod(g.x, 1.0) * 8.0) / 8.0, roundf(fposmod(g.y, 1.0) * 8.0) / 8.0)
+
+	## Draws the baked layers `key` into `rect` on the canvas item `ci` (a RID). `size`: the logical size the layers
+	## are made at (`make` returns a Control that draws them, its origin at (0, 0)); `m`: slice margins (left, top,
+	## right, bottom; logical) on an axis where the layers stretch from `size` to `rect`, 0 0 on an axis where
+	## rect.size == size. `f`: the sub-pixel offset (frac_of). Returns false while the bake is not ready — it is then
+	## queued, `owner` is redrawn when it lands, and the caller draws its vectors.
+	func draw(ci: RID, key: String, rect: Rect2, size: Vector2, make: Callable, owner: Object, m := Vector4.ZERO,
+			f := Vector2.ZERO, mod := Color.WHITE) -> bool:
+		# on a sliced axis the stretch must be a whole number of pixels, or the far caps (right, bottom) would land
+		# between pixels: the size the layers are made at grows by the fraction (to 1/8 px)
+		if m.x > 0.0:
+			size.x = _base(rect.size.x, size.x)
+		if m.y > 0.0:
+			size.y = _base(rect.size.y, size.y)
+		var full := "%s@%.3f/%d,%d|%.3f,%.3f" % [key, k, int(f.x * 8.0), int(f.y * 8.0), size.x, size.y]
+		var slot: Variant = slots.get(full)
+		if slot == null:
+			if never.has(full):
+				return false
+			var pxs := Vector2i(int(ceil((size.x + 2.0 * PAD) * k + 1.0)), int(ceil((size.y + 2.0 * PAD) * k + 1.0)))
+			if pxs.x > MAX_SIDE or pxs.y > MAX_SIDE or size.x <= 0.0 or size.y <= 0.0:
+				never[full] = true
+				return false
+			if not jobs.has(full):
+				jobs[full] = {"size": size, "px": pxs, "off": f, "make": make}
+			if owner != null:
+				if not waiting.has(full):
+					waiting[full] = {}
+				waiting[full][owner.get_instance_id()] = weakref(owner)
+			return false
+		if owner != null:
+			var id := owner.get_instance_id()
+			if not owners.has(id):
+				owners[id] = weakref(owner)
+		_blit(ci, slot, rect, size, m, f, mod)
+		return true
+
+	## The size a sliced axis is made at: at least `base`, and `len` minus it a whole number of physical pixels.
+	func _base(len_: float, base: float) -> float:
+		var b := len_ - floorf((len_ - base) * k + 0.001) / k
+		return base + roundf((b - base) * 8.0) / 8.0
+
+	## The image's texels map onto the screen 1:1 from the physical pixel where the layers' origin minus the pad
+	## (PAD·k rounded up, plus the sub-pixel offset) falls.
+	func _blit(ci: RID, slot: Rect2i, rect: Rect2, size: Vector2, m: Vector4, f: Vector2, mod := Color.WHITE) -> void:
+		var pp := ceilf(PAD * k)
+		var img := Vector2(slot.size)
+		# x spans: [image x0, x1] -> [logical x0, x1]
+		var xs := _spans(rect.position.x, rect.size.x, size.x, m.x, m.z, pp + f.x, img.x)
+		var ys := _spans(rect.position.y, rect.size.y, size.y, m.y, m.w, pp + f.y, img.y)
+		var sp := Vector2(slot.position)
+		for y in ys:
+			for x in xs:
+				var dst := Rect2(x[2], y[2], x[3] - x[2], y[3] - y[2])
+				var src := Rect2(sp.x + x[0], sp.y + y[0], x[1] - x[0], y[1] - y[0])
+				if dst.size.x > 0.0 and dst.size.y > 0.0 and src.size.x > 0.0 and src.size.y > 0.0:
+					RenderingServer.canvas_item_add_texture_rect_region(ci, dst, tex_rid, src, mod)
+
+	## One axis: the image's spans and where they go. `o`: image px of the layers' origin; `w`: image px wide.
+	func _spans(pos: float, len_: float, base: float, m0: float, m1: float, o: float, w: float) -> Array:
+		var x0 := pos - o / k  # logical position of image px 0
+		if m0 <= 0.0 and m1 <= 0.0:
+			return [[0.0, w, x0, x0 + w / k]]
+		var shift := len_ - base  # the right part moves with the stretch
+		var a := roundf(o + m0 * k)
+		var b := roundf(o + (base - m1) * k)
+		return [[0.0, a, x0, x0 + a / k], [a, b, x0 + a / k, x0 + shift + b / k], [b, w, x0 + shift + b / k, x0 + shift + w / k]]
+
+	## The icon `t` (a 128 × 128 render of assets/ui/icons) as an AtlasTexture of the shared sheet; `t` itself when it
+	## cannot be (another size, unreadable, the sheet full).
+	func icon(t: Texture2D) -> Texture2D:
+		var path := t.resource_path
+		if icons.has(path):
+			return icons[path][0]
+		if icons.size() >= ICON_COLS * ICON_COLS or t.get_width() != ICON or t.get_height() != ICON:
+			return t
+		var img := t.get_image()
+		if img == null or img.is_empty():
+			return t
+		if img.is_compressed():
+			img.decompress()
+		img.convert(Image.FORMAT_RGBA8)
+		if icon_img == null:
+			icon_img = Image.create_empty(ICON_COLS * ICON_CELL, ICON_COLS * ICON_CELL, false, Image.FORMAT_RGBA8)
+			icon_sheet = ImageTexture.create_from_image(icon_img)
+		var n := icons.size()
+		var o := Vector2i((n % ICON_COLS) * ICON_CELL, (n / ICON_COLS) * ICON_CELL)
+		icon_img.blit_rect(img, Rect2i(0, 0, ICON, ICON), o + Vector2i(2, 2))
+		for d in 2:  # the edge texels repeated outwards (what a texture's clamp gives a filter at its edge)
+			icon_img.blit_rect(img, Rect2i(0, 0, ICON, 1), o + Vector2i(2, d))
+			icon_img.blit_rect(img, Rect2i(0, ICON - 1, ICON, 1), o + Vector2i(2, ICON + 2 + d))
+			icon_img.blit_rect(img, Rect2i(0, 0, 1, ICON), o + Vector2i(d, 2))
+			icon_img.blit_rect(img, Rect2i(ICON - 1, 0, 1, ICON), o + Vector2i(ICON + 2 + d, 2))
+		for c in [[Vector2i(0, 0), Vector2i(0, 0)], [Vector2i(ICON - 1, 0), Vector2i(ICON + 2, 0)],
+				[Vector2i(0, ICON - 1), Vector2i(0, ICON + 2)], [Vector2i(ICON - 1, ICON - 1), Vector2i(ICON + 2, ICON + 2)]]:
+			icon_img.fill_rect(Rect2i(o + (c[1] as Vector2i), Vector2i(2, 2)), img.get_pixelv(c[0]))
+		var at := AtlasTexture.new()
+		at.atlas = icon_sheet
+		at.region = Rect2(Vector2(o) + Vector2(2, 2), Vector2(ICON, ICON))
+		at.set_meta("kit_src", t)
+		icons[path] = [at, o]
+		_icons_new.append(o)
+		if not _icons_dirty:
+			_icons_dirty = true
+			_upload_icons.call_deferred()
+		return at
+
+	func _upload_icons() -> void:
+		_icons_dirty = false
+		icon_sheet.update(icon_img)
+
+	func _process(_d: float) -> void:
+		if _state != 0 or not is_inside_tree():
+			return
+		if not jobs.is_empty():
+			_stage_round()
+		elif not _icons_new.is_empty() and not _icons_dirty:
+			if _icon_region.size.x == 0:
+				_icon_region = _alloc(Vector2i(ICON_COLS * ICON_CELL, ICON_COLS * ICON_CELL))
+				if _icon_region.size.x == 0:
+					reset()
+					return
+			_copy_icons()
+			atlas.render_target_update_mode = SubViewport.UPDATE_ONCE
+			_state = 2
+
+	## Copies the new icon cells from the sheet into the atlas (this frame's atlas render).
+	func _copy_icons() -> void:
+		if _icon_region.size.x == 0 or _icons_dirty:
+			return
+		for o in _icons_new:
+			var c := TextureRect.new()
+			var at := AtlasTexture.new()
+			at.atlas = icon_sheet
+			at.region = Rect2(Vector2(o), Vector2(ICON_CELL, ICON_CELL))
+			c.texture = at
+			c.material = _copy
+			c.position = Vector2(_icon_region.position + (o as Vector2i))
+			atlas.add_child(c)
+			_nodes.append(c)
+			_icon_round.append(o)
+		_icon_round_at = _icon_region
+		_icons_new.clear()
+
+	## Packs waiting jobs into the stage and the atlas and renders them on the stage this frame.
+	func _stage_round() -> void:
+		if owners.size() > 4096:  # forget the freed ones
+			var live := {}
+			for id in owners:
+				if (owners[id] as WeakRef).get_ref() != null:
+					live[id] = owners[id]
+			owners = live
+		if _icon_region.size.x == 0 and not icons.is_empty():  # the icon sheet's place first
+			_icon_region = _alloc(Vector2i(ICON_COLS * ICON_CELL, ICON_COLS * ICON_CELL))
+		var x := 1
+		var y := 1
+		var row := 0
+		var done: Array = []
+		for key in jobs:
+			var j: Dictionary = jobs[key]
+			var px: Vector2i = j["px"]
+			var cell := px + Vector2i(2, 2)  # a 1 px clear gutter round each image
+			if x + cell.x > STAGE.x:
+				x = 1
+				y += row
+				row = 0
+			if y + cell.y > STAGE.y:
+				break
+			var slot := _alloc(cell)
+			if slot.size.x == 0:  # the atlas is full: start it again with what is drawn now (the jobs stay queued)
+				for n in _nodes:
+					(n as Node).queue_free()
+				_nodes.clear()
+				_round.clear()
+				reset()
+				return
+			done.append(key)
+			if not (j["make"] as Callable).is_valid():
+				continue
+			var n: Control = (j["make"] as Callable).call(j["size"])
+			if n == null:  # what it was asked for has changed since: dropped (the owner asks again)
+				continue
+			# a Node2D holds it: Controls are snapped to whole pixels, the holder keeps the sub-pixel offset
+			var pp := ceilf(PAD * k)
+			var holder := Node2D.new()
+			holder.position = Vector2(x + 1, y + 1) + Vector2(pp, pp) + (j["off"] as Vector2)
+			holder.scale = Vector2(k, k)
+			n.position = Vector2.ZERO
+			holder.add_child(n)
+			stage.add_child(holder)
+			_nodes.append(holder)
+			_round.append({"key": key, "at": Vector2i(x, y), "slot": Rect2i(slot.position, cell)})
+			x += cell.x
+			row = maxi(row, cell.y)
+		for key in done:
+			jobs.erase(key)
+		if _round.is_empty():
+			return
+		stage.render_target_update_mode = SubViewport.UPDATE_ONCE
+		_state = 1
+
+	func _alloc(cell: Vector2i) -> Rect2i:
+		if _shelf.x + cell.x > ATLAS.x:
+			_shelf = Vector3i(1, _shelf.y + _shelf.z, 0)
+		if _shelf.y + cell.y > ATLAS.y:
+			return Rect2i()
+		var r := Rect2i(_shelf.x, _shelf.y, cell.x, cell.y)
+		_shelf.x += cell.x
+		_shelf.z = maxi(_shelf.z, cell.y)
+		return r
+
+	func _on_post_draw() -> void:
+		if _state == 1:  # the stage has rendered: copy into the atlas (un-premultiplied) next frame
+			for n in _nodes:
+				(n as Node).queue_free()
+			_nodes.clear()
+			var st := stage.get_texture()
+			for r in _round:
+				var c := TextureRect.new()
+				var at := AtlasTexture.new()
+				at.atlas = st
+				at.region = Rect2(Vector2(r["at"]), Vector2((r["slot"] as Rect2i).size))
+				c.texture = at
+				c.material = _mat
+				c.position = Vector2((r["slot"] as Rect2i).position)
+				atlas.add_child(c)
+				_nodes.append(c)
+			_copy_icons()
+			atlas.render_target_update_mode = SubViewport.UPDATE_ONCE
+			_state = 2
+		elif _state == 2:  # the atlas has them: draw from it
+			for n in _nodes:
+				(n as Node).queue_free()
+			_nodes.clear()
+			for r in _round:
+				var s: Rect2i = r["slot"]
+				slots[r["key"]] = Rect2i(s.position + Vector2i(1, 1), s.size - Vector2i(2, 2))
+				var ws: Dictionary = waiting.get(r["key"], {})
+				waiting.erase(r["key"])
+				for id in ws:
+					_poke(ws[id])
+			_round.clear()
+			if not _icon_round.is_empty() and _icon_round_at == _icon_region:  # those icons draw from the atlas now
+				var moved := {}
+				for o in _icon_round:
+					moved[o] = true
+				for path in icons:
+					var e: Array = icons[path]
+					if moved.has(e[1]):
+						var at := e[0] as AtlasTexture
+						at.atlas = atlas.get_texture()
+						at.region = Rect2(Vector2(_icon_region.position + (e[1] as Vector2i)) + Vector2(2, 2), Vector2(ICON, ICON))
+			_icon_round.clear()
+			_state = 0
+
+
+## A Control that runs `paint` (a Callable(ci: CanvasItem)) as its drawing: what KitBake puts on its stage.
+class KitPainter extends Control:
+	var paint: Callable
+
+	func _init(p: Callable = Callable(), s := Vector2.ZERO) -> void:
+		paint = p
+		size = s
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _draw() -> void:
+		if paint.is_valid():
+			paint.call(self)
+
+
+## A StyleBoxFlat drawn from the bake atlas, nine-sliced (a whole panel costs no draw call of its own beside its kit
+## neighbours). The StyleBoxFlat it wraps (`flat`) stays the description: code reads and edits it (Kit.flat_of), an
+## edit redraws and re-bakes. `host`: the panel it is drawn on (its sub-pixel offset).
+class KitBox extends StyleBox:
+	var flat: StyleBoxFlat
+	var host: WeakRef
+
+	func _init(f: StyleBoxFlat = null) -> void:
+		flat = f
+		if f != null:
+			f.changed.connect(emit_changed)
+			for side in [SIDE_LEFT, SIDE_TOP, SIDE_RIGHT, SIDE_BOTTOM]:
+				set_content_margin(side, f.get_margin(side))
+
+	func _draw(ci: RID, rect: Rect2) -> void:
+		var h: Object = host.get_ref() if host != null else null
+		if not SELF.draw_flat(ci, rect, flat, h as CanvasItem, self):
+			flat.draw(ci, rect)
+
+
+## A realm's flag (FlagView: a field, a division, an emblem, a frame) drawn from the bake atlas — its polygons cost 6–8
+## draw calls a frame (the HUD's crest, the war bar's chips). Until its bake is ready the FlagView child draws it.
+## `flag`: the flag dictionary (FlagView); setting it redraws.
+class KitFlag extends Control:
+	var flag: Dictionary = FlagView.DEFAULT.duplicate():
+		set(v):
+			flag = v
+			if _vec != null:
+				_vec.set("flag", v)
+				_vec.queue_redraw()
+			queue_redraw()
+	var _vec: Control
+
+	func _init(f: Dictionary = {}) -> void:
+		if not f.is_empty():
+			flag = f
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _ready() -> void:
+		_vec = FlagView.new(flag)
+		_vec.size = size
+		_vec.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(_vec)
+		resized.connect(func(): _vec.size = size)
+
+	func _draw() -> void:
+		var f := flag.duplicate(true)
+		var sz := size
+		var make := func(_z: Vector2) -> Control:
+			var v: Control = FlagView.new(f)
+			v.size = sz
+			return v
+		var ok := SELF.draw_baked(self, "flag|%s|%.2f,%.2f" % [var_to_str(f), sz.x, sz.y], Rect2(Vector2.ZERO, sz), sz, make)
+		if _vec != null and _vec.visible == ok:
+			_vec.visible = not ok
+
+
+## The StyleBoxFlat a panel wears, through a KitBox too (null when it has none).
+static func flat_of(c: Control) -> StyleBoxFlat:
+	var sb := c.get_theme_stylebox("panel")
+	if sb is KitBox:
+		return (sb as KitBox).flat
+	return sb as StyleBoxFlat
+
+
+## Puts `sb` on `c` as its panel style, drawn from the bake atlas (KitBox).
+static func set_panel(c: Control, sb: StyleBoxFlat) -> void:
+	var b := KitBox.new(sb)
+	b.host = weakref(c)
+	c.add_theme_stylebox_override("panel", b)
+
+
+## A StyleBoxFlat's look as a bake key (everything that changes its pixels).
+static func flat_key(sb: StyleBoxFlat) -> String:
+	return "flat|%s|%s|%d,%d,%d,%d|%d,%d,%d,%d|%d%d%d%d|%.2f|%s|%d|%.1f,%.1f" % [sb.bg_color.to_html(), sb.border_color.to_html(),
+		sb.border_width_left, sb.border_width_top, sb.border_width_right, sb.border_width_bottom,
+		sb.corner_radius_top_left, sb.corner_radius_top_right, sb.corner_radius_bottom_right, sb.corner_radius_bottom_left,
+		int(sb.draw_center), int(sb.anti_aliasing), int(sb.border_blend), sb.corner_detail, sb.anti_aliasing_size, sb.shadow_color.to_html(),
+		sb.shadow_size, sb.shadow_offset.x, sb.shadow_offset.y]
+
+
+## Draws a StyleBoxFlat from the bake atlas, nine-sliced (the parts between its corners are uniform); false when it
+## cannot be (not baked yet, skewed, expanded; with `exact` false, too small to slice — a box whose size keeps
+## changing would bake again and again): draw it as it is then.
+static func draw_flat(ci: RID, rect: Rect2, sb: StyleBoxFlat, host: CanvasItem, owner: Object, exact := true) -> bool:
+	var kb := KitBake.get_inst()
+	if kb == null or sb == null or sb.skew != Vector2.ZERO or sb.expand_margin_left != 0.0 or sb.expand_margin_top != 0.0 \
+			or sb.expand_margin_right != 0.0 or sb.expand_margin_bottom != 0.0:
+		return false
+	var sh := float(sb.shadow_size) if sb.shadow_color.a > 0.0 else 0.0
+	var ox := absf(sb.shadow_offset.x) if sh > 0.0 else 0.0
+	var oy := absf(sb.shadow_offset.y) if sh > 0.0 else 0.0
+	var ml := float(maxi(maxi(sb.corner_radius_top_left, sb.corner_radius_bottom_left), sb.border_width_left)) + ox + sh + 2.0
+	var mr := float(maxi(maxi(sb.corner_radius_top_right, sb.corner_radius_bottom_right), sb.border_width_right)) + ox + sh + 2.0
+	var mt := float(maxi(maxi(sb.corner_radius_top_left, sb.corner_radius_top_right), sb.border_width_top)) + oy + sh + 2.0
+	var mb := float(maxi(maxi(sb.corner_radius_bottom_left, sb.corner_radius_bottom_right), sb.border_width_bottom)) + oy + sh + 2.0
+	var m := Vector4.ZERO
+	var size := rect.size
+	var key := flat_key(sb)
+	if rect.size.x >= ml + mr + 6.0:
+		m.x = ml
+		m.z = mr
+		size.x = ml + mr + 4.0
+	elif exact:
+		key += "|w%.2f" % rect.size.x
+	else:
+		return false
+	if rect.size.y >= mt + mb + 6.0:
+		m.y = mt
+		m.w = mb
+		size.y = mt + mb + 4.0
+	elif exact:
+		key += "|h%.2f" % rect.size.y
+	else:
+		return false
+	var snap := sb.duplicate() as StyleBoxFlat
+	var bs := size
+	var make := func(z: Vector2) -> Control: return KitPainter.new(func(c: CanvasItem): snap.draw(c.get_canvas_item(), Rect2(Vector2.ZERO, z)), z)
+	return kb.draw(ci, key, rect, size, make, owner, m, kb.frac_of(host, rect.position))
+
+
+## The glyphs of a Kit label from the bake atlas (Kit.label gives every label one): a label with the kit's outline and
+## shadow costs four draw calls (shadow, outline and fill passes over two glyph textures) and splits its neighbours'
+## batches; baked, it is one textured rect among them. A text that keeps changing (a timer, a growing stock) stays
+## live: a text bakes once it has held for STILL_MS. The label keeps everything (text, size, theme, layout); while
+## its bake shows it draws no glyph (visible_characters 0, counted after shaping so its size does not change) and
+## this child draws the image in its place, in the same draw order.
+class KitText extends Control:
+	const STILL_MS := 1200
+	var _key := ""
+	var _since := 0
+	var _armed := false
+
+	func _init() -> void:
+		name = "KitText"
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _enter_tree() -> void:
+		var l := get_parent() as Label
+		if l != null and not l.draw.is_connected(queue_redraw):
+			l.draw.connect(queue_redraw)
+
+	func _draw() -> void:
+		var l := get_parent() as Label
+		if l == null:
+			return
+		var kb := KitBake.get_inst()
+		if kb == null or l.text.strip_edges() == "" or l.size.x <= 0.0 or get_viewport() != get_tree().root:
+			_live(l)
+			return
+		var key := SELF.label_key(l)
+		var now := Time.get_ticks_msec()
+		if key != _key:
+			_key = key
+			_since = now
+		if now - _since < STILL_MS:
+			_live(l)
+			if not _armed:  # look again once it has held still
+				_armed = true
+				get_tree().create_timer(STILL_MS / 1000.0 + 0.1).timeout.connect(_rearm)
+			return
+		var make := func(_z: Vector2) -> Control:
+			if not is_instance_valid(l) or SELF.label_key(l) != key:
+				return null
+			return KitText.clone(l)
+		if kb.draw(get_canvas_item(), "text|" + key, Rect2(Vector2.ZERO, l.size), l.size, make, self, Vector4.ZERO,
+				kb.frac_of(self, Vector2.ZERO), l.self_modulate):
+			if l.visible_characters != 0:
+				l.visible_characters_behavior = TextServer.VC_CHARS_AFTER_SHAPING
+				l.visible_characters = 0
+		else:
+			_live(l)
+
+	func _rearm() -> void:
+		_armed = false
+		queue_redraw()
+
+	func _live(l: Label) -> void:
+		if l.visible_characters != -1:
+			l.visible_characters = -1
+
+	## The label as it draws itself, for the stage.
+	static func clone(l: Label) -> Label:
+		var c := l.duplicate(0) as Label
+		for ch in c.get_children():
+			c.remove_child(ch)
+			ch.free()
+		c.visible_characters = -1
+		c.set_anchors_preset(Control.PRESET_TOP_LEFT)
+		c.position = Vector2.ZERO
+		c.size = l.size
+		c.modulate = Color.WHITE
+		c.self_modulate = Color.WHITE
+		c.visible = true
+		return c
+
+
+## Everything that changes a label's pixels, as a bake key.
+static func label_key(l: Label) -> String:
+	var f := l.get_theme_font("font")
+	var fid := f.resource_path if f != null and f.resource_path != "" else str(f.get_instance_id() if f != null else 0)
+	return "%s|%s|%s|%d|%s|%s|%s|%d|%d,%d,%d|%d|%d%d|%d%d|%d|%d,%d|%d|%d" % [var_to_str(l.text), l.size, fid,
+		l.get_theme_font_size("font_size"), l.get_theme_color("font_color").to_html(),
+		l.get_theme_color("font_outline_color").to_html(), l.get_theme_color("font_shadow_color").to_html(),
+		l.get_theme_constant("outline_size"), l.get_theme_constant("shadow_offset_x"), l.get_theme_constant("shadow_offset_y"),
+		l.get_theme_constant("shadow_outline_size"), l.get_theme_constant("line_spacing"), l.horizontal_alignment,
+		l.vertical_alignment, int(l.clip_text), l.text_overrun_behavior, l.autowrap_mode, l.max_lines_visible,
+		l.lines_skipped, int(l.uppercase), l.justification_flags]
+
+
+## `t` drawn from the shared icon sheet (KitBake.icon) when it is a rendered icon, else `t`.
+static func atlas_of(t: Texture2D) -> Texture2D:
+	if t == null or not t.resource_path.begins_with("res://assets/ui/icons/"):
+		return t
+	var kb := KitBake.get_inst()
+	return kb.icon(t) if kb != null else t
+
+
+## The icon `name` (icon_tex) from the shared icon sheet: what the kit's TextureRects show.
+static func icon_atlas(name: String) -> Texture2D:
+	return atlas_of(icon_tex(name))
+
+
+## Draws layers made by `make` (a Callable returning a Control that draws them at `size`) from the bake atlas into
+## `rect` on `ci` (a CanvasItem); see KitBake.draw. False while not baked (draw the vectors).
+static func draw_baked(ci: CanvasItem, key: String, rect: Rect2, size: Vector2, make: Callable, m := Vector4.ZERO) -> bool:
+	var kb := KitBake.get_inst()
+	if kb == null:
+		return false
+	return kb.draw(ci.get_canvas_item(), key, rect, size, make, ci, m, kb.frac_of(ci, rect.position))
 
 
 # ------------------------------------------------------------------ vector chrome and shapes
@@ -508,15 +1251,56 @@ class KitDecor extends Control:
 ## hex badges, the title plate, dots, discs, bars, the blueprint grid, the tooltip tail and the coach's ring, pointer
 ## and ghost finger (§4.12). Never a font glyph.
 class KitShape extends Control:
+	## Kinds drawn as vectors every frame (they animate by redrawing); every other kind comes from the bake atlas.
+	const LIVE := ["ring", "finger", "pointer", "rays"]
 	var kind := ""
 	var face := Color.WHITE
 	var lip := Color.BLACK
 	var data := {}
+	var vector := false  ## always the vectors (KitBake's stage copy)
+	var _key := ""
+	var _since := -1  # when the look last changed (-1: never since the first draw)
+	var _armed := false
 
 	func _init(k := "", f := Color.WHITE) -> void:
 		kind = k
 		face = f
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _rearm() -> void:
+		_armed = false
+		queue_redraw()
+
+	## From the bake atlas; a shape whose look keeps changing (a bar filling up) is drawn as vectors until it holds
+	## still for KitText.STILL_MS, so it does not fill the atlas with every step.
+	func _draw() -> void:
+		if not vector and not LIVE.has(kind):
+			var key := "shape|%s|%s|%s|%.2f,%.2f|%s" % [kind, face.to_html(), lip.to_html(), size.x, size.y, var_to_str(data)]
+			if key != _key:
+				if _key != "":
+					_since = Time.get_ticks_msec()
+				_key = key
+			if _since >= 0 and Time.get_ticks_msec() - _since < KitText.STILL_MS and is_inside_tree():
+				if not _armed:
+					_armed = true
+					get_tree().create_timer(KitText.STILL_MS / 1000.0 + 0.1).timeout.connect(_rearm)
+				_paint()
+				return
+			var k_ := kind
+			var f_ := face
+			var l_ := lip
+			var d_ := data.duplicate(true)
+			var s_ := size
+			var make := func(_z: Vector2) -> Control:
+				var c := KitShape.new(k_, f_)
+				c.lip = l_
+				c.data = d_
+				c.size = s_
+				c.vector = true
+				return c
+			if SELF.draw_baked(self, key, Rect2(Vector2.ZERO, size), size, make):
+				return
+		_paint()
 
 	func _stroke(pts: PackedVector2Array, w: float, col: Color) -> void:
 		draw_polyline(pts, col, w, true)
@@ -547,7 +1331,7 @@ class KitShape extends Control:
 					[Vector2(0.8, 0.65), Vector2(0.24, 0.65)], [Vector2(0.38, 0.51), Vector2(0.22, 0.65), Vector2(0.38, 0.79)]]
 		return []
 
-	func _draw() -> void:
+	func _paint() -> void:
 		var s := minf(size.x, size.y)
 		var o := (size - Vector2(s, s)) * 0.5
 		match kind:
@@ -885,11 +1669,11 @@ class KitPrice extends Panel:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_sb = SELF.style(Color(INK, 0.85), 17, 0, INK, 0, 0)
 		_sb.set_meta("kit_kind", "")
-		add_theme_stylebox_override("panel", _sb)
+		SELF.set_panel(self, _sb)
 		for it in items:
 			var a: Array = it
 			var ic: TextureRect = null
-			var tex := SELF.icon_tex(String(a[0])) if a.size() > 0 else null
+			var tex := SELF.icon_atlas(String(a[0])) if a.size() > 0 else null
 			if tex != null:
 				ic = TextureRect.new()
 				ic.texture = tex
@@ -1096,7 +1880,7 @@ class KitButton extends Panel:
 				kind = "text"
 			elif pc.has("i"):
 				var tr_ := TextureRect.new()
-				tr_.texture = SELF.icon_tex(String(pc["i"]))
+				tr_.texture = SELF.icon_atlas(String(pc["i"]))
 				tr_.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 				tr_.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 				tr_.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1435,41 +2219,77 @@ class KitButton extends Panel:
 				n.position.y = float(part["base"]) + dy
 		queue_redraw()
 
+	## The body's layers (hard shadow → INK body → face with its lip → gloss) at `sz`, `press` 0..1, on `ci`.
+	static func paint_body(ci: CanvasItem, d: Dictionary, sz: Vector2, press_: float) -> void:
+		var r: float = d["r"]
+		var out: float = d["out"]
+		var lip: float = d["lip"]
+		var sh: float = d["sh"]
+		var w := sz.x
+		var h := sz.y
+		var lip_now := lerpf(lip, 2.0, press_)
+		var dy := lip - lip_now
+		var face: Color = d["face"]
+		var sb := StyleBoxFlat.new()
+		sb.anti_aliasing = true
+		sb.corner_detail = 10
+		if press_ < 0.5 and sh > 0.0:
+			sb.bg_color = Color(INK, SHADOW_A)
+			sb.set_corner_radius_all(int(r))
+			sb.border_width_bottom = 0
+			ci.draw_style_box(sb, Rect2(0, sh, w, h))
+		sb.bg_color = INK
+		sb.set_corner_radius_all(int(r))
+		sb.border_width_bottom = 0
+		ci.draw_style_box(sb, Rect2(0, dy, w, h - dy))
+		sb.bg_color = face
+		sb.set_corner_radius_all(int(maxf(0.0, r - out)))
+		sb.border_width_bottom = int(lip_now)
+		sb.border_color = d["lipc"]
+		var inner := Rect2(out, dy + out, w - 2.0 * out, h - dy - 2.0 * out)
+		ci.draw_style_box(sb, inner)
+		sb.border_width_bottom = 0
+		var face_h := inner.size.y - lip_now
+		if d["gloss"]:  # «unavailable» never has a gloss (§4.1), also on a lock button that answers
+			var side: float = d["side"]
+			sb.bg_color = SELF.gloss(face)
+			sb.set_corner_radius_all(int(maxf(4.0, r - out - 6.0)))
+			ci.draw_style_box(sb, Rect2(out + side, dy + out + 5.0, inner.size.x - 2.0 * side, maxf(4.0, face_h * 0.34)))
+
+	## At rest the body comes from the bake atlas (KitBake), sliced sideways; pressed (a moment) it is drawn as vectors.
 	func _draw() -> void:
 		var g := geom()
 		var r: float = g[0]
 		var out: float = g[1]
 		var lip: float = g[2]
-		var sh: float = g[3]
 		var w := size.x
 		var h := size.y
 		var lip_now := lerpf(lip, 2.0, press)
 		var dy := lip - lip_now
 		var face := face_color()
-		if press < 0.5 and sh > 0.0:
-			_sb.bg_color = Color(INK, SHADOW_A)
-			_sb.set_corner_radius_all(int(r))
-			_sb.border_width_bottom = 0
-			draw_style_box(_sb, Rect2(0, sh, w, h))
-		_sb.bg_color = INK
-		_sb.set_corner_radius_all(int(r))
-		_sb.border_width_bottom = 0
-		draw_style_box(_sb, Rect2(0, dy, w, h - dy))
-		_sb.bg_color = face
-		_sb.set_corner_radius_all(int(maxf(0.0, r - out)))
-		_sb.border_width_bottom = int(lip_now)
-		_sb.border_color = lip_color()
+		var side := 12.0 if cls() == "L" else 8.0
+		if round_btn:
+			side = maxf(side, r * 0.45)
+		var d := {"r": r, "out": out, "lip": lip, "sh": float(g[3]), "face": face, "lipc": lip_color(),
+			"gloss": enabled and role != "lock", "side": side}
+		var baked := false
+		if press == 0.0:
+			var mx := maxf(r, out + side + maxf(4.0, r - out - 6.0) if d["gloss"] else 0.0) + 2.0
+			var key := "btn|%s|%s|%.1f,%.1f,%.1f,%.1f,%.2f|%s|h%.2f" % [face.to_html(), (d["lipc"] as Color).to_html(), r, out, lip,
+				d["sh"], side, str(d["gloss"]), h]
+			var m := Vector4.ZERO
+			var bs := size
+			if w >= 2.0 * mx + 6.0:
+				m = Vector4(mx, 0.0, mx, 0.0)
+				bs.x = 2.0 * mx + 4.0
+			else:
+				key += "|w%.2f" % w
+			var make := func(z: Vector2) -> Control: return KitPainter.new(func(c: CanvasItem): KitButton.paint_body(c, d, z, 0.0), z)
+			baked = SELF.draw_baked(self, key, Rect2(Vector2.ZERO, size), bs, make, m)
+		if not baked:
+			paint_body(self, d, size, press)
 		var inner := Rect2(out, dy + out, w - 2.0 * out, h - dy - 2.0 * out)
-		draw_style_box(_sb, inner)
-		_sb.border_width_bottom = 0
 		var face_h := inner.size.y - lip_now
-		if enabled and role != "lock":  # «unavailable» never has a gloss (§4.1), also on a lock button that answers
-			var side := 12.0 if cls() == "L" else 8.0
-			if round_btn:
-				side = maxf(side, r * 0.45)
-			_sb.bg_color = SELF.gloss(face)
-			_sb.set_corner_radius_all(int(maxf(4.0, r - out - 6.0)))
-			draw_style_box(_sb, Rect2(out + side, dy + out + 5.0, inner.size.x - 2.0 * side, maxf(4.0, face_h * 0.34)))
 		if _hold_t > 0.0:
 			var k := clampf(_hold_t / maxf(0.05, hold_sec), 0.0, 1.0)
 			_sb.bg_color = Color(1, 1, 1, 0.75)
@@ -1716,7 +2536,7 @@ static func title_plate(panel: Control, text: String, role := "info", icon := ""
 	s.add_child(l)
 	if has_icon:
 		var ic := TextureRect.new()
-		ic.texture = icon_tex(icon)
+		ic.texture = icon_atlas(icon)
 		ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1802,7 +2622,7 @@ static func caption_pill(parent: Node, text: String, h := 30.0, face := Color(0,
 	var f: Color = face if face.a > 0.0 else Color(INK, 0.9)
 	var sb := style(f, int(h * 0.5), contour, INK, 0, 0)
 	sb.set_meta("kit_kind", "")
-	p.add_theme_stylebox_override("panel", sb)
+	set_panel(p, sb)
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var l := label(text, size, TEXT, true)
 	var fs := snap_size(size) if size >= 22 else size
@@ -1953,32 +2773,66 @@ class KitPill extends Control:
 			plus.position = Vector2(size.x - pb - 2.0, (h - pb) * 0.5)  # its contour on the plate's INK rim
 		queue_redraw()
 
-	func _box(r: Rect2, col: Color, rad: float) -> void:
-		_sb.draw_center = true
-		_sb.bg_color = col
-		_sb.set_border_width_all(0)
-		_sb.set_corner_radius_all(int(rad))
-		draw_style_box(_sb, r)
+	static func _box(ci: CanvasItem, r: Rect2, col: Color, rad: float) -> void:
+		var sb := StyleBoxFlat.new()
+		sb.anti_aliasing = true
+		sb.corner_detail = 12
+		sb.bg_color = col
+		sb.set_corner_radius_all(int(rad))
+		ci.draw_style_box(sb, r)
 
+	## The body: hard shadow +4 → INK (radius h/2) → the SLATE_WELL face inset 4.
+	static func paint_base(ci: CanvasItem, sz: Vector2) -> void:
+		var r := sz.y * 0.5
+		_box(ci, Rect2(0, 4, sz.x, sz.y), Color(INK, SHADOW_A), r)
+		_box(ci, Rect2(0, 0, sz.x, sz.y), INK, r)
+		_box(ci, Rect2(4, 4, sz.x - 8.0, sz.y - 8.0), SLATE_WELL, r - 4.0)
+
+	## Sunken: the rim of the body casts a shade along the top of the face (`face`, radius `rad`).
+	static func paint_shade(ci: CanvasItem, face: Rect2, rad: float) -> void:
+		var sb := StyleBoxFlat.new()
+		sb.anti_aliasing = true
+		sb.corner_detail = 12
+		sb.draw_center = false
+		sb.border_width_top = 4
+		sb.border_color = Color(INK, 0.5)
+		sb.set_corner_radius_all(int(rad))
+		ci.draw_style_box(sb, face)
+
+	## The three layers (body, storage fill, shade) come from the bake atlas (KitBake), sliced sideways; the fill's
+	## width is kept to a quarter pixel.
 	func _draw() -> void:
 		var w := size.x
 		var h := size.y
 		var r := h * 0.5
-		_box(Rect2(0, 4, w, h), Color(INK, SHADOW_A), r)
-		_box(Rect2(0, 0, w, h), INK, r)
 		var face := Rect2(4, 4, w - 8.0, h - 8.0)
-		_box(face, SLATE_WELL, r - 4.0)
+		var m := float(int(r)) + 2.0
+		var sz := size
+		var bs := Vector2(2.0 * m + 4.0, h) if w >= 2.0 * m + 6.0 else size
+		var sl := Vector4(m, 0, m, 0) if bs.x < w else Vector4.ZERO
+		var key := "pill|h%.2f" % h + ("" if sl.x > 0.0 else "|w%.2f" % w)
+		var mk := func(z: Vector2) -> Control: return KitPainter.new(func(c: CanvasItem): KitPill.paint_base(c, z), z)
+		if not SELF.draw_baked(self, key, Rect2(Vector2.ZERO, sz), bs, mk, sl):
+			paint_base(self, sz)
 		if frac > 0.0:
-			var fw := maxf(face.size.y, face.size.x * frac)
-			_box(Rect2(face.position, Vector2(fw, face.size.y)), FULL if full else SLATE_FILL, r - 4.0)
-		# sunken: the rim of the body casts a shade along the top of the face
-		_sb.draw_center = false
-		_sb.set_border_width_all(0)
-		_sb.border_width_top = 4
-		_sb.border_color = Color(INK, 0.5)
-		_sb.set_corner_radius_all(int(r - 4.0))
-		draw_style_box(_sb, face)
-		_sb.draw_center = true
+			var fw := roundf(maxf(face.size.y, face.size.x * frac) * 4.0) / 4.0
+			var col := FULL if full else SLATE_FILL
+			var rad := r - 4.0
+			var fm := float(int(rad)) + 2.0
+			var fs := Vector2(fw, face.size.y)
+			var fbs := Vector2(2.0 * fm + 4.0, fs.y) if fw >= 2.0 * fm + 6.0 else fs
+			var fsl := Vector4(fm, 0, fm, 0) if fbs.x < fw else Vector4.ZERO
+			var fkey := "pillfill|%s|h%.2f" % [col.to_html(), fs.y] + ("" if fsl.x > 0.0 else "|w%.2f" % fw)
+			var fmk := func(z: Vector2) -> Control: return KitPainter.new(func(c: CanvasItem): KitPill._box(c, Rect2(Vector2.ZERO, z), col, rad), z)
+			if not SELF.draw_baked(self, fkey, Rect2(face.position, fs), fbs, fmk, fsl):
+				_box(self, Rect2(face.position, fs), col, rad)
+		var sm := float(int(r - 4.0)) + 2.0
+		var sbs := Vector2(2.0 * sm + 4.0, face.size.y) if face.size.x >= 2.0 * sm + 6.0 else face.size
+		var ssl := Vector4(sm, 0, sm, 0) if sbs.x < face.size.x else Vector4.ZERO
+		var skey := "pillshade|h%.2f" % face.size.y + ("" if ssl.x > 0.0 else "|w%.2f" % face.size.x)
+		var smk := func(z: Vector2) -> Control: return KitPainter.new(func(c: CanvasItem): KitPill.paint_shade(c, Rect2(Vector2.ZERO, z), r - 4.0), z)
+		if not SELF.draw_baked(self, skey, face, sbs, smk, ssl):
+			paint_shade(self, face, r - 4.0)
 
 	func _gui_input(e: InputEvent) -> void:
 		var up: bool = (e is InputEventMouseButton and (e as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT \
@@ -2003,7 +2857,7 @@ static func pill(parent: Node, rect: Rect2, icon: String, opts := {}) -> KitPill
 	p.size = rect.size
 	p.ic = TextureRect.new()
 	p.ic.name = "icon"
-	p.ic.texture = icon_tex(icon)
+	p.ic.texture = icon_atlas(icon)
 	p.ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	p.ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	p.ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -2166,7 +3020,7 @@ static func card(art_tex: Texture2D, title: String, opts := {}) -> KitCard:
 	b.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	b.size = Vector2(KitCard.W, KitCard.H)
 	var sb := style(SLATE, 20, 5 if sel else 4, face_of("brass") if sel else INK, 5, 6)
-	b.add_theme_stylebox_override("panel", sb)
+	set_panel(b, sb)
 	b.position.y = -6.0 if sel else 0.0
 	c.add_child(b)
 	c.body = b
@@ -2187,7 +3041,7 @@ static func card(art_tex: Texture2D, title: String, opts := {}) -> KitCard:
 	asb.corner_detail = 8
 	asb.corner_radius_top_left = int(20.0 - o)
 	asb.corner_radius_top_right = int(20.0 - o)
-	aw.add_theme_stylebox_override("panel", asb)
+	set_panel(aw, asb)
 	b.add_child(aw)
 	c.art = aw
 	var w := aw.size.x
@@ -2235,7 +3089,7 @@ static func card(art_tex: Texture2D, title: String, opts := {}) -> KitCard:
 		var side := art_side
 		if side > 0.0:
 			var cy := art_y
-			var ic := _card_rect(art_tex, Rect2((w - side) * 0.5, cy - side * 0.5, side, side))
+			var ic := _card_rect(atlas_of(art_tex), Rect2((w - side) * 0.5, cy - side * 0.5, side, side))
 			ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 			pic.add_child(ic)
 		else:
@@ -2253,7 +3107,7 @@ static func card(art_tex: Texture2D, title: String, opts := {}) -> KitCard:
 		var lc := Vector2(w * 0.5, 42.0)
 		if side > 0.0 and art_tex != null:
 			lc = Vector2(w * 0.5, art_y) + Vector2(side * 0.36, side * 0.18)
-		var lk := _card_rect(icon_tex("lock"), Rect2(lc - Vector2(28, 28), Vector2(56, 56)))
+		var lk := _card_rect(icon_atlas("lock"), Rect2(lc - Vector2(28, 28), Vector2(56, 56)))
 		lk.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		aw.add_child(lk)
 	# ---- the name on its scrim (an S bar under it with art_bar)
@@ -2300,7 +3154,7 @@ static func card(art_tex: Texture2D, title: String, opts := {}) -> KitCard:
 		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		row.size = Vector2(26.0 + 4.0 + tw, 28.0)
 		row.position = Vector2(roundf((w - row.size.x) * 0.5), roundf(name_bottom - fh - 28.0 + 6.0))
-		var hg := _card_rect(icon_tex("hourglass"), Rect2(0, 1, 26, 26))
+		var hg := _card_rect(icon_atlas("hourglass"), Rect2(0, 1, 26, 26))
 		hg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		row.add_child(hg)
 		var tl := label(timer_t, 22, WARN, true)
@@ -2413,7 +3267,7 @@ static func _card_ring(b: Control, r: Rect2, chd: Dictionary) -> Panel:
 	ring.name = "chip"
 	var rsb := style(SLATE_WELL, 22, 3, INK, 3, 0)
 	rsb.set_meta("kit_kind", "")
-	ring.add_theme_stylebox_override("panel", rsb)
+	set_panel(ring, rsb)
 	ring.position = r.position
 	ring.size = r.size
 	ring.mouse_filter = Control.MOUSE_FILTER_PASS
@@ -2424,7 +3278,7 @@ static func _card_ring(b: Control, r: Rect2, chd: Dictionary) -> Panel:
 	isb.bg_color = fill if fill.a > 0.0 else SKY_LOW
 	isb.anti_aliasing = true
 	isb.set_corner_radius_all(19)
-	inner.add_theme_stylebox_override("panel", isb)
+	set_panel(inner, isb)
 	inner.position = Vector2(3, 3)
 	inner.size = Vector2(38, 38)
 	inner.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
@@ -2436,7 +3290,7 @@ static func _card_ring(b: Control, r: Rect2, chd: Dictionary) -> Panel:
 		pn.size = Vector2(48, 50)
 		inner.add_child(pn)
 	elif chd.has("icon"):
-		var ic := _card_rect(icon_tex(String(chd["icon"])), Rect2(3, 3, 32, 32))
+		var ic := _card_rect(icon_atlas(String(chd["icon"])), Rect2(3, 3, 32, 32))
 		ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		inner.add_child(ic)
 	return ring
@@ -2448,7 +3302,7 @@ static func _card_stat(b: Control, st: Dictionary) -> void:
 	var has_bar := st.has("bar_frac")
 	var cy := 128.0 if has_bar else 137.0
 	var x := 12.0
-	var tex := icon_tex(String(st.get("icon", "")))
+	var tex := icon_atlas(String(st.get("icon", "")))
 	if tex != null:
 		var ic := _card_rect(tex, Rect2(x, cy - 18.0, 36.0, 36.0))
 		ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -2519,14 +3373,14 @@ static func chip(parent: Node, pos: Vector2, icon: String, text: String, kind :=
 	var p := Panel.new()
 	var sb := style(face, int(h * 0.5), out, INK, 0, 0)
 	sb.set_meta("kit_kind", "")
-	p.add_theme_stylebox_override("panel", sb)
+	set_panel(p, sb)
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var x := 10.0
 	var has_icon := icon != "" and icon_tex(icon) != null
 	if has_icon:
 		var ic := TextureRect.new()
 		ic.name = "icon"
-		ic.texture = icon_tex(icon)
+		ic.texture = icon_atlas(icon)
 		ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -2540,7 +3394,7 @@ static func chip(parent: Node, pos: Vector2, icon: String, text: String, kind :=
 		var ls := roundf(icon_side * 0.8)
 		var lk := TextureRect.new()
 		lk.name = "lock"
-		lk.texture = icon_tex("lock")
+		lk.texture = icon_atlas("lock")
 		lk.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		lk.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		lk.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -2640,7 +3494,7 @@ static func well(parent: Node, rect: Rect2, face := CREAM_WELL) -> Panel:
 	p.name = "well"
 	var sb := style(face, 20, 0, INK, 0, 0)
 	sb.set_meta("kit_kind", "")
-	p.add_theme_stylebox_override("panel", sb)
+	set_panel(p, sb)
 	p.position = rect.position
 	p.size = rect.size
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -2658,7 +3512,7 @@ static func section(parent: Node, pos: Vector2, w: float, text: String, icon := 
 	c.position = pos
 	c.size = Vector2(w, 48)
 	var x := 0.0
-	var tex := icon_tex(icon)
+	var tex := icon_atlas(icon)
 	if tex != null:
 		var ic := _card_rect(tex, Rect2(0, 0, 48, 48))
 		ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -2677,7 +3531,7 @@ static func section(parent: Node, pos: Vector2, w: float, text: String, icon := 
 	var line := Panel.new()
 	var lsb := style(CREAM_DEEP, 2, 0, INK, 0, 0)
 	lsb.set_meta("kit_kind", "")
-	line.add_theme_stylebox_override("panel", lsb)
+	set_panel(line, lsb)
 	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	line.position = Vector2(x + tw + 16.0, 22)
 	line.size = Vector2(maxf(0.0, w - x - tw - 16.0), 4)
@@ -2695,7 +3549,7 @@ static func bubble(parent: Node, rect: Rect2, text: String, tail := "left") -> P
 	p.name = "bubble"
 	var sb := style(WHITE, 24, 4, INK, 4, 0)
 	sb.set_meta("kit_kind", "")
-	p.add_theme_stylebox_override("panel", sb)
+	set_panel(p, sb)
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	p.position = rect.position
 	p.size = rect.size
@@ -2779,7 +3633,7 @@ static func segmented(parent: Node, rect: Rect2, items: Array, selected: int, cb
 	p.name = "segmented"
 	var sb := style(CREAM_DEEP if on_paper else SLATE_WELL, 24, 4, INK, 0, 0)
 	sb.set_meta("kit_kind", "")
-	p.add_theme_stylebox_override("panel", sb)
+	set_panel(p, sb)
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	p.position = rect.position
 	p.size = rect.size
@@ -2895,7 +3749,7 @@ static func tile(parent: Node, rect: Rect2, opts := {}) -> KitTile:
 	var sb := style(face, 20, out, line, 0, 5)
 	sb.set_meta("kit_kind", "")
 	sb.set_meta("kit_lip_color", ROW_LIP if face.is_equal_approx(CREAM_ROW) else face.darkened(0.25))
-	t.add_theme_stylebox_override("panel", sb)
+	set_panel(t, sb)
 	t.add_child(KitDecor.new())  # the lip (child 0)
 	t.position = rect.position
 	t.size = rect.size
@@ -2904,9 +3758,9 @@ static func tile(parent: Node, rect: Rect2, opts := {}) -> KitTile:
 	var value := String(opts.get("value", ""))
 	var caption := String(opts.get("caption", ""))
 	var pill: Array = opts.get("pill", [])
-	var tex: Texture2D = opts.get("tex", null)
+	var tex: Texture2D = atlas_of(opts.get("tex", null))
 	if tex == null:
-		tex = icon_tex(String(opts.get("icon", "")))
+		tex = icon_atlas(String(opts.get("icon", "")))
 	var pic_node: Control = opts.get("pic_node")  # a drawn picture (an ink swatch) laid in the picture's box
 	if pic_node != null:
 		tex = null
@@ -2938,7 +3792,7 @@ static func tile(parent: Node, rect: Rect2, opts := {}) -> KitTile:
 			pic.modulate = LOCK_MOD
 		t.add_child(pic)
 		if locked:
-			var lk := _card_rect(icon_tex("lock"), Rect2(w * 0.5 + side * 0.18, y + side * 0.42, side * 0.5, side * 0.5))
+			var lk := _card_rect(icon_atlas("lock"), Rect2(w * 0.5 + side * 0.18, y + side * 0.42, side * 0.5, side * 0.5))
 			lk.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 			t.add_child(lk)
 		y += side - overlap
@@ -3085,7 +3939,7 @@ static func row(parent: Node, rect: Rect2, opts := {}) -> KitRow:
 	var sb := style(face, 20, out, line, 0, 5)
 	sb.set_meta("kit_kind", "")
 	sb.set_meta("kit_lip_color", ROW_LIP if face.is_equal_approx(CREAM_ROW) else face.darkened(0.2))
-	r.add_theme_stylebox_override("panel", sb)
+	set_panel(r, sb)
 	r.add_child(KitDecor.new())  # the lip (child 0)
 	r.position = rect.position
 	r.size = rect.size
@@ -3096,9 +3950,9 @@ static func row(parent: Node, rect: Rect2, opts := {}) -> KitRow:
 	# ---- the picture at the left
 	var side := float(opts.get("icon_side", 72.0))
 	var node: Control = opts.get("icon_node")
-	var tex: Texture2D = opts.get("tex", null)
+	var tex: Texture2D = atlas_of(opts.get("tex", null))
 	if tex == null:
-		tex = icon_tex(String(opts.get("icon", "")))
+		tex = icon_atlas(String(opts.get("icon", "")))
 	if node != null:
 		node.position = Vector2(x, roundf(cy - node.size.y * 0.5))
 		r.add_child(node)
@@ -3131,7 +3985,7 @@ static func row(parent: Node, rect: Rect2, opts := {}) -> KitRow:
 			"check":
 				rn = check_badge(null, Vector2(20, 20), 40.0)
 			"lock":
-				rn = _card_rect(icon_tex("lock"), Rect2(0, 0, 44, 44))
+				rn = _card_rect(icon_atlas("lock"), Rect2(0, 0, 44, 44))
 				(rn as TextureRect).stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	var text_r := w - pad
 	if rn != null:
@@ -3382,7 +4236,7 @@ static func links(parent: Node, rect: Rect2, items: Array, size := 26) -> Array:
 			var d := Panel.new()  # the separator: a small INK dot, not a «·» glyph
 			var dsb := style(alpha(INK, 0.45), 4, 0, INK, 0, 0)
 			dsb.set_meta("kit_kind", "")
-			d.add_theme_stylebox_override("panel", dsb)
+			set_panel(d, dsb)
 			d.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			d.size = Vector2(8, 8)
 			d.position = Vector2(l.position.x - gap * 0.5 - 4.0, rect.position.y + rect.size.y * 0.5 - 4.0)
@@ -3425,7 +4279,7 @@ static func scroller(well: Control, content_h: float, fade := CREAM_WELL) -> Dic
 	bar_p.name = "scroll_bar"
 	var bsb := style(alpha(INK, 0.4), 8, 0, INK, 0, 0)
 	bsb.set_meta("kit_kind", "")
-	bar_p.add_theme_stylebox_override("panel", bsb)
+	set_panel(bar_p, bsb)
 	bar_p.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar_p.size = Vector2(track.size.x, maxf(48.0, track.size.y * minf(1.0, well.size.y / maxf(1.0, content_h))))
 	bar_p.position = track.position
@@ -3512,6 +4366,8 @@ static func icon_tex(name: String) -> Texture2D:
 static func icon_vis_right(t: Texture2D) -> float:
 	if t == null:
 		return 0.97
+	if t.has_meta("kit_src"):  # a sheet icon: read its source
+		t = t.get_meta("kit_src")
 	var key := t.resource_path if t.resource_path != "" else str(t.get_instance_id())
 	if not _vis_right.has(key):
 		var f := 0.97
@@ -3846,14 +4702,14 @@ static func paperize(box) -> void:
 	_collect(box, panels, labels, false)
 	for p in panels:
 		var pc := p as Control
-		var sb := pc.get_theme_stylebox("panel") as StyleBoxFlat
+		var sb := flat_of(pc)
 		if sb == null or sb.bg_color.a < 0.05:
 			continue
 		var lum := sb.bg_color.get_luminance()
 		if sb.has_meta("kit_track"):
 			var t := style(CREAM_DEEP, sb.corner_radius_top_left, 0, INK, 0, 0)
 			t.set_meta("kit_kind", "")
-			pc.add_theme_stylebox_override("panel", t)
+			set_panel(pc, t)
 			pc.set_meta("well", true)
 		elif lum < 0.3 or (sb.bg_color.a < 0.5 and not sb.has_meta("kit_role")):
 			var accent: Color = sb.get_meta("kit_accent", Color(0, 0, 0, 0))
@@ -3863,7 +4719,7 @@ static func paperize(box) -> void:
 			var r := mini(20, int(minf(pc.size.x, pc.size.y) * 0.5)) if pc.size.y > 0 else 20
 			var w := style(face, r, 4 if accent.a > 0.0 else 0, accent if accent.a > 0.0 else INK, 0, 0)
 			w.set_meta("kit_kind", "")
-			pc.add_theme_stylebox_override("panel", w)
+			set_panel(pc, w)
 			pc.set_meta("well", true)
 	for l in labels:
 		var lb := l as Label
@@ -3897,7 +4753,7 @@ static func _collect(node: Node, panels: Array, labels: Array, in_button: bool) 
 		var is_panel := (ch is Panel or ch is PanelContainer) and not (ch is KitDecor)
 		var sub_in_button := in_button
 		if is_panel:
-			var sb := (ch as Control).get_theme_stylebox("panel") as StyleBoxFlat
+			var sb := flat_of(ch as Control)
 			var dark := sb != null and sb.bg_color.a >= 0.05 and (sb.bg_color.get_luminance() < 0.3 or sb.bg_color.a < 0.5 or sb.has_meta("kit_track"))
 			if not dark:
 				sub_in_button = true  # a coloured legacy button: its labels stay white
@@ -4000,7 +4856,7 @@ static func tooltip(source: Control, title: String, text := "", below := false) 
 			w = maxf(w, minf(text_w(ln, 26, "b800", false) + 2.0, max_w - 2.0 * pad.x))
 	w = maxf(w, 160.0)
 	var box := Panel.new()
-	box.add_theme_stylebox_override("panel", style(CREAM, 24, 4, INK, 6, 6))
+	set_panel(box, style(CREAM, 24, 4, INK, 6, 6))
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	tip.add_child(box)
 	if tl:
