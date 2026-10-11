@@ -1037,7 +1037,7 @@ func _ally_asks(ally: int, attacker: int) -> void:
 	var gold: int = econ.res["gold"]
 	var support := func():
 		if econ.res["gold"] < cost:
-			ui.toast(tr("toast.no_gold"))
+			ui.toast(tr("toast.no_gold"), "coin", "error")
 			return
 		econ.res["gold"] -= cost
 		for w in ai_wars:
@@ -1934,7 +1934,7 @@ func _swap_execute(s: int, give: Array, get_l: Array, gold: int, overpay: float)
 		if not _swappable(h, s):
 			return false
 	if econ.res["gold"] < gold:
-		ui.toast(tr("toast.no_gold"))
+		ui.toast(tr("toast.no_gold"), "coin", "error")
 		return false
 	econ.res["gold"] -= gold
 	for h in give:
@@ -2567,7 +2567,7 @@ func _colonize(id: int) -> void:
 		return
 	var cost := _colonize_cost()
 	if econ.res["gold"] < cost:
-		ui.toast(tr("toast.no_gold"))
+		ui.toast(tr("toast.no_gold"), "coin", "error")
 		return
 	econ.res["gold"] -= cost
 	colonizing[id] = now_s() + _colonize_seconds()
@@ -2583,7 +2583,7 @@ func _speedup_colonize(id: int) -> void:
 		return
 	var price := Economy.speedup_price(int(colonizing[id]) - now_s())
 	if econ.res["raivite"] < price:
-		ui.toast(tr("toast.no_raivite"))
+		ui.toast(tr("toast.no_raivite"), "raivite", "error")
 		return
 	econ.res["raivite"] -= price
 	colonizing[id] = now_s()
@@ -2639,7 +2639,7 @@ func _declare(enemy: int, goal: int) -> void:
 	map_view.burst(goal, MapView.C_WAR, true)
 	sfx.play("warn")
 	sfx.haptic(60)
-	ui.toast(tr("toast.war_declared") % [_state_name(enemy), _cell_name(goal)])
+	ui.toast(tr("toast.war_declared") % [_state_name(enemy), _cell_name(goal)], "swords")
 	if ftue == 1:
 		ftue = 2
 	elif ftue == 10:
@@ -2898,7 +2898,7 @@ func _handle_event(ev: Dictionary) -> void:
 			map_view.floater(ev["hex"], tr("floater.occupied") if mine else tr("floater.lost"), Color(0.75, 0.85, 1.0) if mine else Color(1.0, 0.7, 0.7))
 			if mine and not war.is_empty() and ev["hex"] == war["goal"]:
 				_stat("goals")
-				ui.toast(tr("toast.goal_taken"))
+				ui.toast(tr("toast.goal_taken"), "target")
 		"tower_hit":
 			map_view.tower_volley(int(ev["hex"]), int(ev["target"]))
 		"missile":
@@ -2960,7 +2960,7 @@ func _start_camp_fight(hex: int) -> void:
 		if sim.neighbors[hex].has(int(a["hex"])) and not March.is_marching(a) and int(a["str"]) * 2 >= int(a["max_str"]):
 			ready = true
 	if not ready:
-		ui.toast(tr("camp.need_army"))
+		ui.toast(tr("camp.need_army"), "orders")
 		return
 	_stop_marches()
 	var homes := {}
@@ -3595,7 +3595,7 @@ func _end_ceremony() -> void:
 	_ceremony = {}
 	_set_mode(Mode.MAP)
 	if _player_hexes() >= _chapter_goal() and not chapter_done:
-		ui.toast(tr("toast.chapter_goal"))
+		ui.toast(tr("toast.chapter_goal"), "globe")
 
 
 func _open_defeat_or_white(score: float) -> void:
@@ -3606,7 +3606,7 @@ func _open_defeat_or_white(score: float) -> void:
 			func():
 				War.white_peace(sim)
 				_opinion_add(enemy, 25.0)
-				_finish_war(enemy, tr("toast.white_peace_signed")), "dove")
+				_finish_war(enemy, tr("toast.white_peace_signed"), "dove"), "dove")
 		return
 	var lost := _defeat_losses(enemy)
 	ui.show_result(0, 0, lost.size(), score, War.war_score(sim, war)["control"], tr("result.defeat"),
@@ -3656,7 +3656,7 @@ func _apply_defeat(enemy: int, lost: Array) -> void:
 	var dmg: Array = econ.damage_buildings(sim, lvl)
 	_show_damage()
 	_post("inbox.ruin.title", L.pack("inbox.ruin.text", [RUIN_PCT[lvl], RUIN_HOURS[lvl], dmg.size()]))
-	_finish_war(enemy, L.t(msg))
+	_finish_war(enemy, L.t(msg), "white_flag")
 
 
 const AI_PLUNDER_LVL := {"wolf": 3, "raven": 2, "fox": 1, "turtle": 1, "owl": 1}
@@ -3696,7 +3696,7 @@ func _repaired(hex: int) -> void:
 	ui.toast(tr("toast.repaired"))
 
 
-func _finish_war(enemy: int, msg: String) -> void:
+func _finish_war(enemy: int, msg: String, icon := "") -> void:
 	_allies_annex(enemy)
 	ui.close_modal()
 	if ftue >= 10:
@@ -3722,7 +3722,7 @@ func _finish_war(enemy: int, msg: String) -> void:
 	map_view.refresh_props()
 	map_view.mark_dirty()
 	_set_mode(Mode.MAP)
-	ui.toast(msg)
+	ui.toast(msg, icon)
 
 
 # ====================================================================== economy (canon §4, §7)
@@ -3818,7 +3818,7 @@ func _econ_event(ev: Dictionary) -> void:
 				map_view.burst(int(b["hex"]), Color(1.0, 0.85, 0.3), true)
 		"dev_level":
 			_rescale_armies()
-			ui.toast(tr("toast.dl_up") % econ.dev_level())
+			ui.toast(tr("toast.dl_up") % econ.dev_level(), "castle_icon")
 			sfx.play("fanfare")
 			_dl_ceremony()
 			if STORY_DL.has(econ.dev_level()):  # the advisor marks the big eras (07 §3.6–3.8)
@@ -3872,7 +3872,7 @@ func _tower_action() -> void:
 		if reason != "" or not econ.start_build(sim, "tower", selected, now):
 			ui.toast(L.t(reason) if reason != "" else tr("toast.cant_build"))
 			return
-		ui.toast(tr("toast.tower_building") % GameUI.fmt_time(int(econ.buildings_at(selected)[-1]["upgrade_end"]) - now))
+		ui.toast(tr("toast.tower_building") % GameUI.fmt_time(int(econ.buildings_at(selected)[-1]["upgrade_end"]) - now), "tower")
 	else:
 		var reason2: String = econ.can_upgrade(tower, now)
 		if reason2 != "" or not econ.start_upgrade(tower["id"], now):
@@ -3880,7 +3880,7 @@ func _tower_action() -> void:
 			return
 		var to_lvl: int = int(tower["level"]) + 1
 		# from lvl 6 the tower is also air defence (canon §7)
-		ui.toast(tr("toast.tower_aa" if to_lvl == Battle.AIR_DEFENSE_LVL else "toast.tower_upgrade") % to_lvl)
+		ui.toast(tr("toast.tower_aa" if to_lvl == Battle.AIR_DEFENSE_LVL else "toast.tower_upgrade") % to_lvl, "tower")
 	sfx.play("coin")
 	map_view.burst(selected, Color(1.0, 0.85, 0.3))
 	_stat("towers")
@@ -3903,13 +3903,13 @@ func _fort_action() -> void:
 		if reason != "" or not econ.start_build(sim, "fort", selected, now):
 			ui.toast(L.t(reason) if reason != "" else tr("toast.cant_build"))
 			return
-		ui.toast(tr("toast.fort_building") % GameUI.fmt_time(int(econ.buildings_at(selected)[-1]["upgrade_end"]) - now))
+		ui.toast(tr("toast.fort_building") % GameUI.fmt_time(int(econ.buildings_at(selected)[-1]["upgrade_end"]) - now), "fort")
 	else:
 		var reason2: String = econ.can_upgrade(fort, now)
 		if reason2 != "" or not econ.start_upgrade(fort["id"], now):
 			ui.toast(L.t(reason2) if reason2 != "" else tr("toast.cant_upgrade"))
 			return
-		ui.toast(tr("toast.fort_upgrade") % (int(fort["level"]) + 1))
+		ui.toast(tr("toast.fort_upgrade") % (int(fort["level"]) + 1), "fort")
 	sfx.play("coin")
 	map_view.burst(selected, Color(1.0, 0.85, 0.3))
 	_stat("forts")
@@ -4075,7 +4075,7 @@ func _on_open_case(case_id: String, times: int, pay: String) -> void:
 		"raivite":
 			var price: int = cases.price_x10(case_id) if times == 10 else cases.price(case_id)
 			if int(econ.res["raivite"]) < price:
-				ui.toast(tr("toast.no_raivite"))
+				ui.toast(tr("toast.no_raivite"), "raivite", "error")
 				return
 			econ.res["raivite"] = int(econ.res["raivite"]) - price
 	var results: Array = cases.open_x10(case_id, _case_ctx(), now) if times == 10 else [cases.open(case_id, _case_ctx(), now)]
@@ -4239,7 +4239,7 @@ func _on_research_start(line: String) -> void:
 		return
 	_stat("research_starts")
 	sfx.play("coin")
-	ui.toast(tr("toast.research_started") % [tr(String(Research.LINES[line]["name"])), research.level(line) + 1, GameUI.fmt_time(int(research.current["end"]) - now)])
+	ui.toast(tr("toast.research_started") % [tr(String(Research.LINES[line]["name"])), research.level(line) + 1, GameUI.fmt_time(int(research.current["end"]) - now)], "flask")
 	_econ_tick()
 	_autosave()
 
@@ -4253,7 +4253,7 @@ func _on_research_speedup(line: String) -> void:
 		if research.apply_blueprint(now):
 			_stat("blueprints_used")
 			sfx.play("seal")
-			ui.toast(tr("toast.blueprint") % [GameUI.fmt_time(int(research.current["end"]) - now), research.blueprints])
+			ui.toast(tr("toast.blueprint") % [GameUI.fmt_time(int(research.current["end"]) - now), research.blueprints], "blueprint")
 		else:
 			ui.toast(tr("toast.blueprint_max"))
 		_econ_tick()
@@ -4267,7 +4267,7 @@ func _on_research_speedup(line: String) -> void:
 	else:
 		var price := Economy.speedup_price(left)
 		if int(econ.res["raivite"]) < price:
-			ui.toast(tr("toast.no_raivite"))
+			ui.toast(tr("toast.no_raivite"), "raivite", "error")
 			return
 		econ.res["raivite"] = int(econ.res["raivite"]) - price
 		research.current["end"] = now
@@ -4277,7 +4277,7 @@ func _on_research_speedup(line: String) -> void:
 
 func _on_research_done(line: String) -> void:
 	_stat("research_done")
-	ui.toast(tr("toast.research_done") % [tr(String(Research.LINES[line]["name"])), research.level(line), tr(String(Research.LINES[line]["desc"]))])
+	ui.toast(tr("toast.research_done") % [tr(String(Research.LINES[line]["name"])), research.level(line), tr(String(Research.LINES[line]["desc"]))], "flask")
 	sfx.play("capture")
 	if line == "infantry":
 		_rescale_armies()
@@ -4443,7 +4443,7 @@ func _on_world_action(id: String) -> void:
 			econ.add_resources({"gold": int(gross.get("gold", 0)), "food": int(gross.get("food", 0)), "metal": int(gross.get("metal", 0))})
 			econ.res["raivite"] = int(econ.res["raivite"]) + 10
 			sfx.play("capture")
-			ui.toast(tr("toast.star"))
+			ui.toast(tr("toast.star"), "star")
 			if stars_claimed.size() == _stars().size():
 				_post("inbox.all_stars.title", "inbox.all_stars.text")
 				ui.toast(tr("toast.all_stars"))
@@ -4886,7 +4886,7 @@ func _complete_chapter() -> void:
 	map_view.fireworks(map_view.cell_world(sim.states[Types.PLAYER]["capital_id"]), 5)
 	sfx.play("fanfare")
 	_post("inbox.chapter_done.title", "inbox.chapter_done.text")
-	ui.toast(tr("toast.chapter_done"))
+	ui.toast(tr("toast.chapter_done"), "globe")
 	_autosave()
 
 
@@ -5147,7 +5147,7 @@ func _on_diplomacy_action(s: int, kind: String) -> void:
 				return
 			var cost := _pact_cost()
 			if econ.res["gold"] < cost:
-				ui.toast(tr("toast.no_gold"))
+				ui.toast(tr("toast.no_gold"), "coin", "error")
 				return
 			econ.res["gold"] -= cost
 			pacts[s] = now_s() + PACT_SEC
@@ -5196,7 +5196,7 @@ func _on_diplomacy_action(s: int, kind: String) -> void:
 				ui.toast(tr("toast.gift_daily"))
 				return
 			if econ.res["gold"] < cost:
-				ui.toast(tr("toast.no_gold"))
+				ui.toast(tr("toast.no_gold"), "coin", "error")
 				return
 			econ.res["gold"] -= cost
 			var emb := 0
@@ -5301,7 +5301,7 @@ func _train_army() -> void:
 		return
 	var cost := _train_cost()
 	if econ.res["food"] < int(cost["food"]):
-		ui.toast(tr("toast.no_food"))
+		ui.toast(tr("toast.no_food"), "food", "error")
 		return
 	econ.res["food"] -= int(cost["food"])
 	training = {"end": now_s() + int(cost["seconds"]), "slots": int(cost["slots"])}
@@ -6187,7 +6187,7 @@ func _on_building_upgrade(id: int) -> void:
 	_stat("upgrades")
 	sfx.play("coin")
 	sfx.haptic(20)
-	ui.toast(tr("toast.upgrade_started") % [tr(String(Economy.BUILDINGS[b["type"]]["name"])), int(b["level"]) + 1, GameUI.fmt_time(int(b["upgrade_end"]) - now)])
+	ui.toast(tr("toast.upgrade_started") % [tr(String(Economy.BUILDINGS[b["type"]]["name"])), int(b["level"]) + 1, GameUI.fmt_time(int(b["upgrade_end"]) - now)], "hammer")
 	if ftue == 7 and b["type"] == "residence":
 		ftue = 8
 	_econ_tick()
@@ -6203,12 +6203,12 @@ func _on_building_speedup(id: int) -> void:
 		var use := mini(speed_minutes, int(ceil(left / 60.0)))
 		speed_minutes -= use
 		b["upgrade_end"] = int(b["upgrade_end"]) - use * 60
-		ui.toast(tr("toast.stock_used") % [use, speed_minutes])
+		ui.toast(tr("toast.stock_used") % [use, speed_minutes], "lightning")
 		_econ_tick()
 		_autosave()
 		return
 	if econ.res["raivite"] < econ.speedup_cost(b, now):
-		ui.toast(tr("toast.no_raivite"))
+		ui.toast(tr("toast.no_raivite"), "raivite", "error")
 		return
 	if econ.finish_now(id, now):
 		_econ_tick()
@@ -6356,7 +6356,7 @@ func _answer_ultimatum(kind: String) -> void:
 			_post("inbox.ceded.title", L.pack("inbox.ceded.text", [_cell_key(hex)]))
 		"pay":
 			if econ.res["gold"] < int(ultimatum["tribute"]):
-				ui.toast(tr("toast.no_gold"))
+				ui.toast(tr("toast.no_gold"), "coin", "error")
 				return
 			econ.res["gold"] -= int(ultimatum["tribute"])
 			truce[enemy] = now + 24 * 3600
@@ -6582,7 +6582,7 @@ func _war_cap() -> void:
 	elif ws["score"] > -10.0:
 		War.white_peace(sim)
 		_post("inbox.war_cap.title", "inbox.war_cap.white")
-		_finish_war(enemy, tr("toast.war_cap_white"))
+		_finish_war(enemy, tr("toast.war_cap_white"), "dove")
 	else:
 		_apply_defeat(enemy, _defeat_losses(enemy))
 
@@ -7416,6 +7416,27 @@ func _demo(spec: String) -> void:
 		econ.tick(sim, now_s())
 		econ.res.merge({"gold": 3200, "food": 4700, "metal": 900}, true)
 		_open_market()
+		return
+	if what == "toast":  # toasts (§4.10): one with an icon, then a second waiting behind it; toast:merge — the same text
+		# twice («×2»); toast:error — a refusal (war face); toast:long — two lines; toast:modal — over a window;
+		# toast:war — the declaration's own toast under the war bar
+		var v := parts[1] if parts.size() > 1 else ""
+		if v == "modal":
+			_on_hud_button("gear")
+		for i in 10:  # the shot waits 10 frames before its --shot-delay: the toast comes in with it
+			await get_tree().process_frame
+		var rs := tr(String(Research.LINES["taxes"]["name"]))
+		if v == "war":
+			_declare(MapGen.BARONS, War.recommend_goals(sim, MapGen.BARONS, 1)[0])
+		elif v == "error":
+			ui.toast(tr("toast.no_gold"), "coin", "error")
+		elif v == "long":
+			ui.toast(tr("toast.research_done") % [rs, 2, tr(String(Research.LINES["taxes"]["desc"]))], "flask")
+		else:
+			ui.toast(tr("toast.research_started") % [rs, 2, GameUI.fmt_time(300)], "flask")
+			if v == "merge":
+				ui.toast(tr("toast.research_started") % [rs, 2, GameUI.fmt_time(300)], "flask")
+			ui.toast(tr("toast.no_gold"), "coin", "error")
 		return
 	var enemy := MapGen.BARONS
 	_declare(enemy, War.recommend_goals(sim, enemy, 1)[0])

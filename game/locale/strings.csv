@@ -318,7 +318,7 @@ toast.to_battle,В бой! Тяните от армии к врагу или б�
 floater.occupied,Оккупирован!,Occupied!
 floater.lost,Потерян,Lost
 floater.air_defense,ПВО −50%,AA −50%
-toast.goal_taken,🚩 Цель войны взята: +10 к счёту,🚩 War goal taken: +10 score
+toast.goal_taken,Цель войны взята: +10 к счёту,War goal taken: +10 score
 floater.repelled,Атака отбита,Attack repelled
 floater.held,Отбились!,Held!
 floater.routed,Армия разбита,Army routed
@@ -349,22 +349,22 @@ ceremony.plunder,"Разграблено: %d золота, %d еды, %d мет�
 ceremony.indemnity,Контрибуция: +%d золота,Indemnity: +%d gold
 ceremony.reparations,Репарации: 10% производства на 24ч,Reparations: 10% of output for 24h
 toast.test_ad_double,Тестовая сборка: реклама не подключена — трофеи удвоены,Test build: ads aren't connected. Spoils doubled
-toast.chapter_goal,🌍 Цель главы выполнена — вкладка «Мир»,🌍 Chapter goal reached: open the World tab
+toast.chapter_goal,Цель главы выполнена — вкладка «Мир»,Chapter goal reached: open the World tab
 result.white_peace,Белый мир: всё вернётся владельцам,White peace: everything returns to its owners
-toast.white_peace_signed,🕊 Белый мир подписан,🕊 White peace signed
+toast.white_peace_signed,Белый мир подписан,White peace signed
 result.defeat,Грабёж 60%,60% plundered
 inbox.defeat.title,Поражение в войне,Defeat in war
 inbox.defeat.text,"Мир с потерями: −%d гекс., разграблено %d золота, %d еды, %d металла. Щит 24 ч и «Реванш» +15%%","Peace with losses: −%d hexes; %d gold, %d food and %d metal plundered. 24 h shield and “Revenge” +15%%"
 toast.convoy_back,Обоз привёз: +%d %s,Convoy brought back: +%d %s
 toast.level_done,%s: уровень %d готов!,%s: level %d ready!
-toast.dl_up,🏰 Держава достигла УР %d! Новые постройки и уровни,🏰 Your realm reached DL %d! New buildings and levels
+toast.dl_up,Уровень развития %d! Открыты новые постройки,Development level %d! New buildings unlocked
 toast.unlocked,Открыто: %s,Unlocked: %s
 toast.fort_refund,"Укрепление на потерянном гексе разобрано, металл возвращён","The fort on a lost hex was dismantled, metal refunded"
 toast.pick_own_hex,"Выберите свой гекс, чтобы поставить укрепление",Select one of your hexes to build a fort
 toast.cant_build,Нельзя построить,Can't build
 toast.fort_building,Укрепление строится: %s,Fort under construction: %s
 toast.cant_upgrade,Нельзя улучшить,Can't upgrade
-toast.fort_upgrade,Укрепление → ур. %d,Fort → Lv %d
+toast.fort_upgrade,Укрепление улучшается до ур. %d,Fort upgrading to Lv %d
 toast.convoy_sent,Обоз в пути: вернётся через %s,Convoy on its way: back in %s
 toast.storage_full,Склад полон — улучшите Склад,Storage full: upgrade the Warehouse
 toast.collected,Собрано: +%d золота · +%d еды · +%d металла,Collected: +%d gold · +%d food · +%d metal
@@ -374,8 +374,8 @@ toast.test_builder,ТЕСТ: 4-й строитель и 300 Райвитов,TES
 toast.test_starter,ТЕСТ: набор новобранца,TEST: Recruit Pack
 toast.test_no_ads,ТЕСТ: межстраничная реклама отключена,TEST: interstitial ads disabled
 toast.test_ration,ТЕСТ: паёк державы,TEST: Realm Rations
-toast.research_started,🔬 %s → ур. %d · %s,🔬 %s → Lv %d · %s
-toast.research_done,"🔬 Изучено: %s, ур. %d — %s",🔬 Researched: %s Lv %d: %s
+toast.research_started,%s: ур. %d через %s,%s: Lv %d in %s
+toast.research_done,"Изучено: %s, ур. %d — %s",Researched: %s Lv %d: %s
 star.peace,Подпишите мир,Sign a peace
 star.goal,Возьмите цель войны,Take a war goal
 star.pocket,Заберите котёл по договору,Take a pocket by treaty
@@ -386,13 +386,13 @@ star.convoy,Привезите 3 обоза,Bring home 3 convoys
 star.defense,Отбейте набег или удар,Repel a raid or a strike
 star.defense.short,Отбейте набег,Repel a raid
 star.dl3,Достигните УР3,Reach DL3
-toast.star,⭐ Звезда главы: +10 Райвитов и час производства,⭐ Chapter star: +10 Raivites and 1 h of output
+toast.star,Звезда главы: +10 Райвитов и час производства,Chapter star: +10 Raivites and 1 h of output
 inbox.all_stars.title,Все звёзды главы I,All Chapter I stars
 inbox.all_stars.text,Награда: чернила границы «Долина» (косметика).,Reward: “Valley” border ink (cosmetic).
 toast.all_stars,Все звёзды главы! Чернила границы «Долина» — ваши,All chapter stars! The “Valley” border ink is yours
 inbox.chapter_done.title,Глава I «Долина» завершена,Chapter I “The Valley” complete
 inbox.chapter_done.text,Наследие: Капитан Лира и 200 Райвитов. Глава II «Речной край» скоро — за туманом уже видны паруса.,Legacy: Captain Lira and 200 Raivites. Chapter II “Riverlands” is coming soon: sails already loom through the fog.
-toast.chapter_done,"🌍 Глава I пройдена! +200 Райвитов, Капитан Лира. Глава II — скоро","🌍 Chapter I complete! +200 Raivites, Captain Lira. Chapter II soon"
+toast.chapter_done,"Глава I пройдена! +200 Райвитов, Капитан Лира. Глава II — скоро","Chapter I complete! +200 Raivites, Captain Lira. Chapter II soon"
 leader.barons,Барон Гродек Клык,Baron Grodek the Fang
 leader.barons.desc,"Мало крепостей, много армий, частые ультиматумы","Few forts, many armies, frequent ultimatums"
 leader.hamlets,Голова Мирося Златоуст,Headwoman Mirosya Goldmouth
@@ -420,8 +420,8 @@ toast.ad_limit,Лимит просмотров на сегодня,Daily view li
 toast.test_ad_reward,Тестовая сборка: реклама не подключена — награда выдана,Test build: ads aren't connected. Reward granted
 army.name,Армия %d,Army %d
 army.new,Новая армия,New army
-toast.upgrade_started,%s → ур. %d · %s,%s → Lv %d · %s
-toast.stock_used,⏩ Ускорение из запаса: −%d мин (осталось в запасе %d мин),⏩ Speed-up from stock: −%d min (%d min left in stock)
+toast.upgrade_started,%s: ур. %d через %s,%s: Lv %d in %s
+toast.stock_used,"Ускорение из запаса: −%d мин, в запасе %d мин","Speed-up from stock: −%d min, %d min left"
 floater.raid_repelled,Набег отбит!,Raid repelled!
 inbox.raid.title,Набег мародёров,Marauder raid
 inbox.raid.text,Мародёры с диких земель налетели на «%s» и разбились о плетень. Укрепления защищают гексы и склады.,Marauders from the wildlands struck “%s” and broke against the palisade. Forts protect hexes and storage.
@@ -512,15 +512,15 @@ tile.damaged,Здание повреждено: доход −50%,Building damag
 tile.repair,Ремонт,Repair
 tile.ruin,Разорение −%d%%: ещё %s,Ruin −%d%%: %s left
 toast.tower_building,Башня строится: %s,Tower under construction: %s
-toast.tower_upgrade,Башня → ур. %d,Tower → Lv %d
-toast.tower_aa,"Башня → ур. %d: теперь и ПВО, авиаудары рядом с ней вдвое слабее","Tower → Lv %d: now also air defence, airstrikes around it deal half damage"
+toast.tower_upgrade,Башня улучшается до ур. %d,Tower upgrading to Lv %d
+toast.tower_aa,Башня ур. %d станет ПВО: авиаудары рядом вдвое слабее,Tower Lv %d adds air defence: airstrikes nearby deal half damage
 ui.ruin_halve,−50%,−50%
 ui.attack_camp,Разбить лагерь,Raid camp
 camp.approach,Подойдите границей к лагерю,Bring your border next to the camp
 camp.after_war,Лагерь — после войны,Camp: after the war
 ui.camp_far,Далеко,Too far
 ui.camp_wait,После войны,After the war
-camp.need_army,Подведите армию к лагерю (⇢ Марш),Bring an army next to the camp (⇢ March)
+camp.need_army,Подведите армию к лагерю через «Марш»,Use March to bring an army next to the camp
 camp.fight,Мародёры! Сломите их за 60 секунд,Marauders! Break them within 60 seconds
 camp.won,Лагерь разбит: +%d %s,Camp destroyed: +%d %s
 camp.won_no_loot,Лагерь разбит — награды на сегодня кончились,Camp destroyed. No more loot today
@@ -1230,7 +1230,7 @@ flagw.title3,Флаг вашей державы,Your realm's flag
 flagw.later,Изменить можно в профиле — тап по флагу,You can change it in the profile — tap the flag
 ceremony.blueprints,Трофейные чертежи: +%d (на складе %d/5),Trophy blueprints: +%d (%d/5 in store)
 ceremony.blueprints_burned,", %d сгорело — склад полон",", %d burned — the store is full"
-toast.blueprint,📜 Чертёж применён: осталось %s · чертежей %d,📜 Blueprint used: %s left · %d blueprints
+toast.blueprint,"Чертёж применён: осталось %s, чертежей %d","Blueprint used: %s left, %d blueprints"
 toast.blueprint_max,Чертежи уже сократили это исследование на 50%,Blueprints have already cut this research by 50%
 bld.blueprint,"Чертежи: %d, каждый −10%% времени","Blueprints: %d, each −10%% of the time"
 bld.tip.left,Осталось: %s,Time left: %s

@@ -723,7 +723,7 @@ func _on_card_input(event: InputEvent, card: String) -> void:
 	if _locked.has(card):
 		if event is InputEventScreenTouch or event is InputEventMouseButton:
 			if event.pressed:
-				toast(tr("err.unlock_dl") % int(_locked[card]))  # «Откроется на уровне развития 6» (no «УР6», §3.7)
+				toast(tr("err.unlock_dl") % int(_locked[card]), "lock")  # «Откроется на уровне развития 6» (no «УР6», §3.7)
 		return
 	if event is InputEventScreenTouch or event is InputEventMouseButton:
 		var pressed: bool = event.pressed
@@ -5712,9 +5712,12 @@ class CoachDim extends ColorRect:
 const COACH_GROW := 12.0  # the hole: the target grown by this; the ring (12: INK 3, gold 6, INK 3) fills that margin
 const COACH_R := 24.0
 const COACH_RING_R := 36.0  # the ring's outer radius: its inner edge keeps R 24, no less round than the target's corners
-const COACH_CLEAR := 2.0  # the ring keeps this far off a neighbour (the next card, tab, segment) and the screen edge
+const COACH_CLEAR := 2.0  # the ring keeps this far off the screen edge
+## … but it may lie on a neighbour's INK contour (the next card, tab, segment; 3 px, the kit's thinnest): its outer
+## stroke and that contour read as one line, the gold filling the gap between them
+const COACH_SHARE := 3.0
 const COACH_IN_MAX := 14.0  # how far the ring may slide in over the target's own edge where the neighbours leave no room
-const COACH_REVEAL_GROW := 3.0  # a reveal is lit to just past its own INK contour
+const COACH_REVEAL_GROW := 1.0  # a reveal is lit to its own INK contour (its antialiased edge), not a strip of map past it
 const COACH_POINT := 120.0  # a point target becomes a square this size around it (a hex on the map)
 const COACH_BAND_LOW := 1060.0  # the advisor's band: y 1060–1300 (+ the bottom group's offset) …
 const COACH_BAND_HIGH := 180.0  # … or, when that would cover the target, y 180–420 (+ the safe top inset)
@@ -5992,7 +5995,7 @@ func modal_body_rect() -> Rect2:
 	for i in _modal_buttons.size():
 		var r := modal_button_rect(i)
 		if r.size.x > 0.0:
-			bottom = minf(bottom, r.position.y - COACH_GROW - COACH_CLEAR)
+			bottom = minf(bottom, r.position.y - COACH_GROW - COACH_REVEAL_GROW)
 	var top := fr.position.y - 42.0
 	return Rect2(fr.position.x, top, fr.size.x, bottom - top)
 
@@ -6024,14 +6027,16 @@ func card_rect(card: String) -> Rect2:
 	return p.get_global_rect() if p != null and is_instance_valid(p) and p.is_visible_in_tree() else Rect2()
 
 
-## What lies around a hand card (the coach's ring keeps off it): the hand's other cards and the energy row above.
+## What lies around a hand card (the coach's ring keeps off it): the hand's other cards with their cost hexes sticking
+## out of their corners, and the energy row above.
 func hand_rects(except := "") -> Array:
 	var out: Array = []
 	for c in _cards:
 		if String(c) != except:
 			var r := card_rect(String(c))
 			if r.size.x > 0.0:
-				out.append(r)
+				var cost := card_cost_rect(String(c))
+				out.append(r.merge(cost) if cost.size.x > 0.0 else r)
 	if _battle != null and _battle.is_visible_in_tree():
 		var row := Rect2()
 		for n in _battle.get_children():  # the energy counter and its pips: hex badges along the tray's top
@@ -6211,11 +6216,13 @@ func _coach_cut(rr: Rect2) -> void:
 			mat.set_shader_parameter("cut%d" % i, Vector4.ZERO)
 
 
-## The room on each side of the target (left, top, right, bottom) for its ring: to the screen edge, and to each
-## neighbour straight across from it (the reveal beside it is one), less the 2 px the ring keeps clear.
+## The room on each side of the target (left, top, right, bottom) for its ring: to the screen edge less 2 px, and to
+## each neighbour straight across from it (the reveal beside it is one) plus the 3 px of its contour the ring may share.
 func _coach_room(vis: Rect2) -> Array:
 	var t := _coach_rect
 	var room: Array = [t.position.x - vis.position.x, t.position.y - vis.position.y, vis.end.x - t.end.x, vis.end.y - t.end.y]
+	for i in 4:
+		room[i] = float(room[i]) - COACH_CLEAR - COACH_SHARE
 	var near := _coach_near.duplicate()
 	if _coach_reveal.size.x > 0.0 and not _coach_reveal.grow(1.0).encloses(t):
 		near.append(_coach_reveal)
@@ -6232,7 +6239,7 @@ func _coach_room(vis: Rect2) -> Array:
 		elif across_x and r.position.y >= t.end.y - 1.0:
 			room[3] = minf(room[3], r.position.y - t.end.y)
 	for i in 4:
-		room[i] = float(room[i]) - COACH_CLEAR
+		room[i] = float(room[i]) + COACH_SHARE
 	return room
 
 
@@ -6401,30 +6408,216 @@ func _coach_clear(ring: Rect2, side: String, a: Rect2) -> float:
 	return a.end.y - ring.end.y + 4.0
 
 
-var _toast_nodes: Array = []
+# ------------------------------------------------------------------ toast (§4.10, motion TOAST §3.6)
+
+const TOAST_CX := 425.0  ## centred on the free column between the left column (to x 104) and the minimap (from 733)
+const TOAST_Y := 108.0  ## under the resource plates …
+const TOAST_Y_BAR := 196.0  ## … or under the war bar (its score chip ends at y 182)
+const TOAST_W_MIN := 360.0
+const TOAST_W_MAX := 590.0
+const TOAST_PAD_L := 64.0  ## the icon (60, overhanging the left end by 8) and a 12 px gap before the text
+const TOAST_PAD_R := 46.0  ## clear of the pill's round right end (TOAST_PAD_L + TOAST_PAD_R = 110)
+const TOAST_PAD := 36.0  ## each side of the text in a toast without an icon
+const TOAST_ICON := 60.0
+const TOAST_LIP := 6.0
+const TOAST_HOLD := 2.2  ## on screen 2.2 s, + 0.6 s for the second line
+const TOAST_HOLD_LINE := 0.6
+const TOAST_HOLD_BUSY := 1.2  ## while others wait, the one showing stays this long at most (a burst drains quickly)
+const TOAST_QUEUE_MAX := 3  ## waiting beyond this: the oldest waiting one is dropped (stale news)
+var _toast_nodes: Array = []  # the toast on screen: [its root Control], empty when none shows
+var _toast_queue: Array = []  # waiting toasts: {text, icon, kind, n}
+var _toast_cur := {}  # the one on screen: {text, icon, kind, n, lines}; {} when none
+var _toast_shown := 0.0  # seconds it has held (since it came in, or since the same text came again)
+var _toast_out := false  # it is fading out; the next one comes when it is gone
 
 
-## Short message under the top bar; a new toast replaces the one still showing.
-func toast(text: String) -> void:
+## A short message at the top of the free column (§4.10): a slate pill, the event's icon overhanging its left end, the
+## text Rubik 800 26 in at most two lines. One toast at a time: the rest wait in a queue; the same text again while it
+## shows (or waits) adds a «×2» hex badge instead of another toast. `icon`: a kit icon name (a legacy string's leading
+## pictograph becomes it); `kind` "error": a refusal, on the war face. Never takes input, never blocks anything.
+func toast(text: String, icon := "", kind := "info") -> void:
+	var t := text.strip_edges()
+	if Kit.has_picto(t):  # a legacy string: its first pictograph is the icon, the rest of them go
+		var parts := Kit.split_icons(t)
+		if icon == "" and not parts.is_empty() and not (parts[0] as Dictionary).has("t"):
+			icon = String(parts[0].get("i", parts[0].get("v", "")))  # a rendered icon or vector chrome (★)
+		var words := PackedStringArray()
+		for p in parts:
+			if (p as Dictionary).has("t"):
+				words.append(String(p["t"]))
+		t = " ".join(words)
+	if t == "":
+		return
+	if not _toast_cur.is_empty() and not _toast_out and String(_toast_cur["text"]) == t:
+		_toast_cur["n"] = int(_toast_cur["n"]) + 1
+		_toast_shown = 0.0  # it holds again from now
+		_toast_count(true)
+		return
+	for q in _toast_queue:
+		if String(q["text"]) == t:
+			q["n"] = int(q["n"]) + 1
+			return
+	_toast_queue.append({"text": t, "icon": icon, "kind": kind, "n": 1})
+	while _toast_queue.size() > TOAST_QUEUE_MAX:
+		_toast_queue.pop_front()
+	if _toast_cur.is_empty():
+		_show_next_toast()
+
+
+## Takes the next waiting toast onto the screen: TOAST in (from −24 px and transparent, 160 ms).
+func _show_next_toast() -> void:
+	_toast_cur = {}
+	_toast_shown = 0.0
+	_toast_out = false
+	if _toast_queue.is_empty():
+		return
+	_toast_cur = _toast_queue.pop_front()
+	var node := _toast_build(_toast_cur)
+	_toast_nodes = [node]
+	_toast_count(false)
+	var body := node.get_node("body") as Control
+	var d := Kit._dur(0.16)
+	if d > 0.0:
+		body.position.y = -24.0
+		body.modulate.a = 0.0
+		var tw := body.create_tween().set_parallel().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		tw.tween_property(body, "position:y", 0.0, d)
+		tw.tween_property(body, "modulate:a", 1.0, d)
+
+
+## The toast's nodes: a root at its place (it follows the war bar) holding the body the motion moves — the pill, the
+## icon over its left end, the text.
+func _toast_build(d: Dictionary) -> Control:
+	var text := String(d["text"])
+	var icon := String(d["icon"])
+	var has_icon := icon != "" and (Kit.icon_tex(icon) != null or Kit.CHROME_KINDS.has(icon))
+	var pad_l := TOAST_PAD_L if has_icon else TOAST_PAD
+	var pad_r := TOAST_PAD_R if has_icon else TOAST_PAD
+	var room := TOAST_W_MAX - pad_l - pad_r
+	var size := 26
+	var lines := 1
+	var tw := Kit.text_w(text, size, "d800")
+	if tw > room:  # two lines (at 26, else 24, else 22 with the second line cut)
+		lines = 2
+		for s in [26, 24, 22]:
+			size = s
+			if _toast_lines(text, s, room) <= 2:
+				break
+		tw = room
+	var w := clampf(tw + pad_l + pad_r, TOAST_W_MIN, TOAST_W_MAX)
+	var h := 72.0 if lines == 1 else 104.0
+	d["lines"] = lines
+	var node := Control.new()
+	node.name = "toast"
+	node.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	node.z_index = 60  # over a window, under the coach (§3.1)
+	node.size = Vector2(w, h)
+	node.position = Vector2(TOAST_CX - w * 0.5, _toast_y())
+	root.add_child(node)
+	var body := Control.new()
+	body.name = "body"
+	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	body.size = node.size
+	node.add_child(body)
+	var error := String(d["kind"]) == "error"
+	var sb := Kit.style(Kit.face_of("war") if error else Kit.SLATE, int(h * 0.5), 4, Kit.INK, 6, int(TOAST_LIP))
+	if error:
+		sb.set_meta("kit_kind", "")  # a surface, not a button: no gloss
+	var pill := _panel(body, Rect2(Vector2.ZERO, node.size), sb, Control.MOUSE_FILTER_IGNORE)
+	pill.name = "pill"
+	var face_h := h - TOAST_LIP
+	if has_icon:
+		var ib := Rect2(-8.0, (face_h - TOAST_ICON) * 0.5, TOAST_ICON, TOAST_ICON)
+		if Kit.icon_tex(icon) != null:
+			var ic := _icon_rect(icon, TOAST_ICON)
+			ic.name = "icon"
+			ic.position = ib.position
+			body.add_child(ic)
+		elif icon == "star" or icon == "star_empty":
+			Kit.star(body, ib.get_center(), TOAST_ICON * 0.44, icon == "star").name = "icon"
+		else:
+			Kit.chrome(body, icon, ib.grow(-6.0)).name = "icon"
+	var l := _label(text, size)
+	l.name = "text"
+	l.add_theme_font_override("font", Kit.font("d800"))  # Rubik 800 (Kit.label takes 900 from 26 up)
+	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	if lines > 1:
+		l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.max_lines_visible = 2
+		l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	l.position = Vector2(pad_l, -1.0)
+	l.size = Vector2(w - pad_l - pad_r, face_h)
+	body.add_child(l)
+	return node
+
+
+## How many lines `text` takes wrapped at `w` px in Rubik 800 at `size`.
+func _toast_lines(text: String, size: int, w: float) -> int:
+	var f := Kit.font("d800")
+	var h := f.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, w, size, -1,
+		TextServer.BREAK_MANDATORY | TextServer.BREAK_WORD_BOUND | TextServer.BREAK_ADAPTIVE).y
+	return maxi(1, roundi(h / f.get_height(size)))
+
+
+## The toast's top: under the resource plates, or under the war bar while it shows (+ the safe top inset).
+func _toast_y() -> float:
+	return (TOAST_Y_BAR if _control_bar.visible else TOAST_Y) + _top.position.y
+
+
+## The «×N» hex badge on the toast's right end once the same text came N times (`pop`: it just came again).
+func _toast_count(pop: bool) -> void:
+	if _toast_nodes.is_empty() or not is_instance_valid(_toast_nodes[0]):
+		return
+	var n := int(_toast_cur.get("n", 1))
+	var body := (_toast_nodes[0] as Control).get_node("body") as Control
+	var old := body.get_node_or_null("count")
+	if old != null:
+		old.free()
+	if n < 2:
+		return
+	var badge := Kit.hex_badge(body, Vector2(body.size.x - 18.0, 4.0), 26.0, "info", "×%d" % n)
+	badge.name = "count"
+	if pop:
+		Kit.badge_pop(badge)
+
+
+## Holds the toast on screen (TOAST_HOLD, + a line; less while others wait), keeps it under the war bar when the bar
+## comes or goes, then lets it out (fades and rises 12 px over 300 ms) and brings the next one.
+func _process_toast(delta: float) -> void:
+	if _toast_cur.is_empty() or _toast_out:
+		return
+	if _toast_nodes.is_empty() or not is_instance_valid(_toast_nodes[0]):
+		_toast_done()
+		return
+	var node := _toast_nodes[0] as Control
+	node.position.y = _toast_y()
+	_toast_shown += delta
+	var hold := TOAST_HOLD + TOAST_HOLD_LINE * (int(_toast_cur.get("lines", 1)) - 1)
+	if not _toast_queue.is_empty():
+		hold = minf(hold, TOAST_HOLD_BUSY)
+	if _toast_shown < hold:
+		return
+	_toast_out = true
+	var body := node.get_node("body") as Control
+	var d := Kit._dur(0.3)
+	if d <= 0.0:
+		_toast_done()
+		return
+	var tw := body.create_tween().set_parallel()
+	tw.tween_property(body, "modulate:a", 0.0, d)
+	tw.tween_property(body, "position:y", -12.0, d).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tw.chain().tween_callback(_toast_done)
+
+
+func _toast_done() -> void:
 	for n in _toast_nodes:
 		if is_instance_valid(n):
 			(n as Node).queue_free()
 	_toast_nodes.clear()
-	var l := _label(text, 24)
-	l.position = Vector2(40, 300)
-	l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	l.autowrap_mode = TextServer.AUTOWRAP_WORD
-	l.custom_minimum_size = Vector2(VW - 80, 0)  # autowrap needs a fixed width
-	var lines_h := font_bold.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_CENTER, VW - 80, 24).y
-	var bg := _panel(root, Rect2(30, 290, VW - 60, maxf(70.0, lines_h + 24.0)), _style(Color(0.05, 0.08, 0.14, 0.92), 14), Control.MOUSE_FILTER_IGNORE)
-	root.add_child(l)
-	_toast_nodes = [bg, l]
-	var tw := bg.create_tween()  # dies with the node when a newer toast replaces it
-	tw.tween_interval(2.0)
-	tw.tween_property(l, "modulate:a", 0.0, 0.4)
-	tw.parallel().tween_property(bg, "modulate:a", 0.0, 0.4)
-	tw.tween_callback(func(): l.queue_free(); bg.queue_free())
+	_show_next_toast()
 
 
 func _process(delta: float) -> void:
 	_process_coach(delta)
+	_process_toast(delta)
