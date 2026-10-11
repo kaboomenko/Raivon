@@ -32,9 +32,9 @@ def kerchief(ctx, hg):
     def elev(h):
         return math.degrees(math.atan2(h.z, math.hypot(h.x, h.y)))
 
-    samples, s = core.surface_samples(head, 2600, lambda h, n, d: elev(h) > edge(h))
+    samples, s = core.surface_samples(head, 3600, lambda h, n, d: elev(h) > edge(h))
     th = hg.get("thick", 0.085)
-    el = core.sheet_elems(samples, s, lambda h, n: th * (0.55 + 0.45 * core.smoothstep(0, 10, elev(h) - edge(h))),
+    el = core.sheet_elems(samples, s, lambda h, n: th * (0.7 + 0.3 * core.smoothstep(0, 10, elev(h) - edge(h))),
                           inset=0.02)
     # the folded hem: a row of balls along the edge, a little proud of the shell
     hem = []
@@ -55,21 +55,23 @@ def kerchief(ctx, hg):
     el.append(dict(co=knot + kn * 0.03 + Vector((0.03, 0, 0.0)), half=(0.05, 0.05, 0.05), stiff=2.4))
     m = core.fabric(ctx, "kerchief", hg["color"], z0=-0.2, z1=0.6, rough=0.85, sheen=0.3)
     o = core.mb_mesh(ctx, "Kerchief", el, 0.011, m, smooth_iter=2, name="kerchief")
-    ctx.add(o, "hair", head, kind="embed", head=True)   # 'hair' group: the headgear next to the face
+    ctx.add(o, "hat", head, kind="embed", head=True)    # headgear next to the face: its own group (§7.4 rule)
     ctx.objs["kerchief"] = o
     # tails: two flattened tapered ribbons from the knot, out and back (V), drooping a little
     back = (Vector((kn.x, kn.y, 0)).normalized() * 0.4 + core.world_dir(ctx, (-1.0, 0.35, 0.0), head=True)).normalized()
     tails = []
-    ln = hg.get("tail", 0.34)
-    for k, (up, sw) in enumerate(((0.55, 0.25), (-0.15, -0.25))):
+    ln = hg.get("tail", 0.36)
+    side = Vector((0, 0, 1)).cross(back).normalized()
+    for k, (up, sw) in enumerate(((0.30, 0.20), (-0.45, -0.16))):
         el2 = []
         prev = knot
-        for i in range(1, 10):
-            t = i / 9
-            p = knot + back * (ln * t) + Vector((sw * 0.25 * t, 0, (up * ln * 0.55) * t - 0.10 * t * t))
-            w = 0.075 * (1 - 0.55 * t) + 0.02
-            el2.append(dict(co=p, half=(w, 0.018, ln / 9 * 0.95), stiff=2.6,
-                            rot=core.frame_quat(p - prev, Vector((0, 0, 1)).cross(back).normalized())))
+        for i in range(1, 11):
+            t = i / 10
+            # out from the knot, then drooping: soft cloth ends that widen toward the tip (a "V" of two ends)
+            p = knot + back * (ln * t) + side * (sw * 0.3 * t) + Vector((0, 0, up * ln * 0.6 * t - 0.16 * t * t))
+            w = 0.07 + 0.06 * t
+            el2.append(dict(co=p, half=(w, 0.022, ln / 10 * 0.95), stiff=2.6,
+                            rot=core.frame_quat(p - prev, side.cross(p - prev).normalized())))
             prev = p
         tl = core.mb_mesh(ctx, "Tail%d" % k, el2, 0.008, m, smooth_iter=2, name="kerchief_tail%d" % k)
         ctx.add(tl, "detail:kerchief_tails", o, kind="surface", head=True)

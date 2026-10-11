@@ -84,7 +84,7 @@ def render_id(cid, out_png, mood="calm", era=1, size=(512, 588), samples=64, fra
         os.makedirs(os.path.join(sidecars, "ids"), exist_ok=True)
         os.makedirs(os.path.join(sidecars, "meta"), exist_ok=True)
         if getattr(ctx, "glasses", False):
-            qa.lens_contrast(ctx, size)
+            ctx.lens_paths = qa.lens_renders(ctx, size, os.path.join(sidecars, "ids"))
         ids_png = os.path.join(sidecars, "ids", name + ".png")
         sig_png = os.path.join(sidecars, "ids", name + "_sig.png")
         qa.id_pass(ctx, ids_png, os.path.join(sidecars, "ids", name + ".json"), sig_png, size)

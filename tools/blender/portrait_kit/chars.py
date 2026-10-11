@@ -14,28 +14,32 @@ CHARS = {
     # ---------------------------------------------------------------- Bram (common): §7.6
     "cmd_bram": dict(
         name="Bram", rarity="common", female=False,
-        head=dict(shape="square", wh=0.92, h_px=280, eye_line=0.48, cheeks=1.15, muzzle=1.15, brow_ridge=1.2),
-        skin=SKIN["T2"], blush=0.22,
-        eyes=dict(sclera=0.18, open=0.72, iris="#3D8FD6", tilt=0.10, arch=0.22, low=0.06,
-                  smile=dict(open=0.62, low=0.30, tilt=-0.02, arch=0.26)),
+        # eye line 0.47 (§7.3 range 0.46-0.50, "lower = friendlier"): at 0.48 with H_px 280 the chin lands at
+        # 0.654 h, past P-A6's 0.65 h
+        head=dict(shape="square", wh=0.92, h_px=280, eye_line=0.47, cheeks=1.15, muzzle=1.15, brow_ridge=1.2),
+        skin=SKIN["T2"], skin_tone="T2", blush=0.20,
+        eyes=dict(sclera=0.18, open=0.72, iris="#3D8FD6", iris_shade=0.88, tilt=0.10, arch=0.22,
+                  smile=dict(open=0.68, low=0.22, tilt=-0.02, arch=0.26)),
         brows=dict(shape="bushy", thick=0.085, color="#8A3A1A", arch=0.02, len=1.25,
                    smile=dict(lift=(0.025, 0.02), arch=0.012)),
         nose=dict(type="potato", tip="#E8857A", tip_k=0.6, drop=0.20, k=1.0),
         mouth=dict(lip="#C4675A", line=0.20,
                    calm=dict(type="closed", w=0.27, near=0.02, far=0.0),
                    smile=dict(type="open", w=0.34, h=0.14, near=0.035, far=0.03, dz=-0.012)),
-        hair=dict(style="swept", color="#B5562B", dark="#8E3A18", light="#D06A2E", crevice="#6A2A14",
+        hair=dict(style="swept", color="#B5562B", dark="#5A200C", light="#B5562B", crevice="#46180A",
                   sideburns=True),
-        beard=dict(style="pear", color="#C8652F", dark="#9C4620", light="#DE8048", crevice="#6E2E14", wider=0.12,
+        beard=dict(style="pear", color="#C8652F", dark="#C8652F", light="#E8925A", crevice="#A04A22", wider=0.12,
                    below=0.45, moustache=True),
         scar=dict(near=True, **{"from": (-0.34, 0.01), "to": (-0.23, -0.14)}),
         body=dict(shoulders=2.0),
         costume=dict(
             base=dict(color="#DCCAA0", rough=0.85, sheen=0.25),
             layers=[
-                dict(kind="collar", color="#C9B48A", z=-0.66, h=0.05, out=0.015, flare=0.01),
+                # a laced jerkin closed under the beard (the beard lies on slate: dL* >= 15, §7.4); no shirt collar —
+                # the beard covers the neck
                 dict(kind="vest", id="jerkin", color="#3F4D5E", z0=-1.32, z1=-0.645, thick=0.032, rough=0.9, sheen=0.4,
-                     open=[(-1.40, 0.16), (-1.1, 0.12), (-0.85, 0.13), (-0.66, 0.22)]),
+                     shade=(0.94, 0.80),
+                     open=[(-1.40, 0.10), (-1.15, 0.05), (-0.85, 0.05), (-0.70, 0.10), (-0.66, 0.16)]),
                 dict(kind="belt", z=-1.09, w=0.13, color="#6B4226", buckle="#E0AD45", over=0.05),
             ]),
         props=[dict(kind="spoon", x=-0.15, lean=20, bowl=0.16),
@@ -49,26 +53,28 @@ CHARS = {
     "cmd_lira": dict(
         name="Lira", rarity="common", female=True,
         head=dict(shape="oval", wh=0.80, h_px=268, eye_line=0.46, cheeks=1.0, chin=0.005),
-        skin=SKIN["T1"], blush=0.25, freckles="#C77B52",
-        eyes=dict(sclera=0.21, open=0.82, iris="#5E9E4A", tilt=0.06, arch=0.26, low=0.05, flick=0.06,
+        skin=SKIN["T1"], skin_tone="T1", blush=0.25, freckles="#C77B52",
+        eyes=dict(sclera=0.21, open=0.82, iris="#5E9E4A", tilt=0.06, arch=0.26, flick=0.06,
                   smile=dict(open=0.74, low=0.28, tilt=-0.02, arch=0.30)),
-        brows=dict(shape="arc", thick=0.055, color="#4A2818", arch=0.03, len=1.2,
-                   smile=dict(lift=(0.025, 0.025), arch=0.01)),
+        brows=dict(shape="arc", thick=0.06, color="#4A2818", arch=0.03, len=1.2, len_far=1.3,
+                   smile=dict(lift=(0.008, 0.004), arch=0.006)),
         nose=dict(type="button", tip="#F09A86", tip_k=0.45, drop=0.19, k=0.95),
         mouth=dict(lip="#D9786A", line=0.185,
                    calm=dict(type="closed", w=0.26, near=0.012, far=0.004),
                    smile=dict(type="open", w=0.32, h=0.12, near=0.03, far=0.025)),
         hair=dict(style="kerchief", color="#5A3420", dark="#3E2214", light="#7A4A30", crevice="#2A160C", fringe=0.08,
-                  braid=dict(w=0.14, ribbon="#3E9B5A")),
-        headgear=dict(kind="kerchief", color="#F2F0EA", thick=0.07, tail=0.30, knot_az=-138, knot_el=24),
+                  braid=dict(w=0.17, ribbon="#3E9B5A")),
+        # the kerchief in her leaf green (§7.6 gives no colour for it; palette slots only): white cloth on the light
+        # grey plate melted at the rim (P-A5) and repeated the apron
+        headgear=dict(kind="kerchief", color="#3E9B5A", thick=0.075, tail=0.34, knot_az=-138, knot_el=24),
         body=dict(shoulders=2.0),
         costume=dict(
             base=dict(color="#2E7A44", rough=0.85, sheen=0.35),
             layers=[
                 dict(kind="collar", color="#2E7A44", z=-0.64, h=0.045, out=0.012, flare=0.012),
-                dict(kind="bib", color="#F2F0EA", w=0.30, top=-0.82, bottom=-2.0, straps=True),
+                dict(kind="bib", color="#F2F0EA", w=0.16, top=-0.82, bottom=-2.0, straps=True),
                 dict(kind="strap", id="strap", color="#8A5A34", detail="satchel_strap", min_px=3000,
-                     **{"from": (0.46, -0.70), "to": (-0.62, -1.75)}, w=0.075),
+                     **{"from": (0.46, -0.70), "to": (-0.62, -1.75)}, w=0.10),
             ]),
         props=[dict(kind="badge", on="strap", z=-0.98, d=0.20, leaf="#3E9B5A", detail="leaf"),
                dict(kind="bandage", on="strap", z=-1.20, d=0.12)],
@@ -79,11 +85,14 @@ CHARS = {
     # ---------------------------------------------------------------- Vega (rare): §7.6
     "cmd_vega": dict(
         name="Vega", rarity="rare", female=True,
-        head=dict(shape="heart", wh=0.78, h_px=270, eye_line=0.48, cheekbones=0.03, chin=0.012),
-        skin=SKIN["T3"], blush=0.2,
-        eyes=dict(sclera=0.19, open=0.70, iris="#7C7EA8", tilt=-0.06, arch=0.30, low=0.08, flick=0.065,
-                  smile=dict(open=0.62, low=0.26, tilt=-0.08, arch=0.30)),
-        brows=dict(shape="angular", thick=0.055, color="#2A2224", arch=0.035, arch_far=0.03, lift=(0.0, 0.09), len=1.25,
+        # eye line 0.46 (§7.3 range 0.46-0.50): her chin-up pose (+4) lifts the eyes more than the chin in the
+        # level camera, and at 0.48 the chin lands at 0.659 h, past P-A6's 0.65 h
+        head=dict(shape="heart", wh=0.78, h_px=270, eye_line=0.46, cheekbones=0.03, chin=0.0),
+        skin=SKIN["T3"], skin_tone="T3", blush=0.2,
+        eyes=dict(sclera=0.19, open=0.70, iris="#7C7EA8", tilt=-0.06, arch=0.30, flick=0.065,
+                  smile=dict(open=0.70, low=0.20, tilt=-0.08, arch=0.30)),
+        brows=dict(shape="angular", thick=0.055, color="#2A2224", arch=0.035, arch_far=0.03, lift=(0.0, 0.09), len=1.3,
+                   len_far=1.4,
                    smile=dict(lift=(0.01, 0.0))),
         nose=dict(type="straight", tip="#E59A7E", tip_k=0.35, drop=0.21, k=1.0, w=0.05),
         mouth=dict(lip="#B8605A", line=0.19,
@@ -99,10 +108,10 @@ CHARS = {
                 dict(kind="placket", color="#3A3D44", w=0.05, top=-0.74),
                 dict(kind="frogging", color="#C8CCD4", z=(-0.86, -0.98, -1.10), w=0.24, t=0.028),
             ]),
-        props=[dict(kind="glasses", color="#2A2224", frame=0.025, w=1.32, h=0.86, drop=0.03, off=0.03),
+        props=[dict(kind="glasses", color="#2A2224", frame=0.025, w=1.24, h=0.78, drop=0.03, off=0.028, tint="#FFFFFF"),
                dict(kind="pointer", x=0.62, y=0.04, z=-1.02, reach=0.36, color="#8A5A34")],
         pose=dict(body=26, head=4, roll=3, nod=4),
-        pose_smile=dict(roll=-2, nod=2),
+        pose_smile=dict(roll=-2, nod=0),
         signature=dict(name="chisel bob + glasses bar; arrow right", zone="far side"),
     ),
 }

@@ -15,9 +15,10 @@ leaders' moods, which share the costume):
 - dark pixels (L* < 17, the albedo floor #2A2A30) <= 3 % of the opaque pixels.
 ID rules (only with the kit's sidecars ids/<name>.png + meta/<name>.json):
 - hair or headgear next to the face vs skin: |dL*| >= 15 or dE76 >= 30;   - brows vs skin: |dL*| >= 18;
-- iris vs sclera: dL* >= 30;   - beard vs the clothing it lies on: |dL*| >= 15;
+- iris vs sclera: dL* >= 30;   - beard vs each garment it lies on (costume:<id> groups): |dL*| >= 15;
 - signature vs plate (B, both palettes): dE76 >= 25;
-- the lit cheek (near side, between the eye line and the mouth): L* 70-82 and HSV S >= 0.35.
+- the lit cheek (the brightest 30 % of the skin pixels: the key-lit side of the face): median L* 70-82 and median
+  HSV S >= 0.35.
 A folder that holds only some of the 150 names is fine. Exit 1 with --strict when a gated rule fails.
 """
 import os
@@ -96,16 +97,18 @@ def id_rules(im, masks, m, name):
         return mk
 
     skin = med(grp("skin"))
-    hair_mask = grp("hair", "hat")
-    if skin is not None and hair_mask is not None:
-        # only the hair next to the face: within 0.15 H of a skin pixel
+    for hk in ("hair", "hat"):          # hair and headgear next to the face, each against the skin
+        hair_mask = grp(hk)
+        if skin is None or hair_mask is None or hair_mask.sum() < 12:
+            continue
+        # only the part next to the face: within 0.15 H of a skin pixel
         hp = max(3, int(0.15 * m.get("h_px", 272)))
         near_skin = np.asarray(Image.fromarray((masks["skin"] * 255).astype(np.uint8))
                                .filter(ImageFilter.MaxFilter(2 * (hp // 2) + 1))) > 127
         hair = med(hair_mask & near_skin)
         if hair is not None:
             dl, de = abs(hair[0] - skin[0]), float(Q.de76(hair, skin))
-            out.append(("hair-skin", dl, dl >= 15 or de >= 30, "|dL*| %.1f dE %.1f" % (dl, de)))
+            out.append((hk + "-skin", dl, dl >= 15 or de >= 30, "|dL*| %.1f dE %.1f" % (dl, de)))
     brow = med(grp("brow"))
     if skin is not None and brow is not None:
         dl = abs(brow[0] - skin[0])
@@ -115,15 +118,23 @@ def id_rules(im, masks, m, name):
         dl = sclera[0] - iris[0]
         out.append(("iris-sclera", dl, dl >= 30, "dL* %.1f" % dl))
     bm = grp("beard")
-    cm = grp("costume")
-    if bm is not None and cm is not None and bm.sum() > 50:
+    if bm is not None and bm.sum() > 50:
         k = max(3, int(round(6 * w / 512)))
         dil = np.asarray(Image.fromarray((bm * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(2 * k + 1))) > 127
-        under = cm & dil & ~bm
-        b, c = med(bm), med(under)
-        if b is not None and c is not None:
+        b = med(bm)
+        worst = None
+        for key, mk in masks.items():          # each garment the beard lies on, separately (costume:<id>)
+            if not (key == "costume" or key.startswith("costume:")):
+                continue
+            under = mk & dil & ~bm
+            if under.sum() < 50:
+                continue
+            c = med(under)
             dl = abs(b[0] - c[0])
-            out.append(("beard-clothes", dl, dl >= 15, "|dL*| %.1f" % dl))
+            if worst is None or dl < worst[0]:
+                worst = (dl, key)
+        if worst is not None:
+            out.append(("beard-clothes", worst[0], worst[0] >= 15, "|dL*| %.1f (vs %s)" % worst))
     sg = grp("signature")
     if sg is not None and sg.sum() > 20:
         s = med(sg)
@@ -134,20 +145,16 @@ def id_rules(im, masks, m, name):
             de = float(Q.de76(s, pl))
             out.append(("signature-plate " + tag, de, de >= 25, "dE %.1f" % de))
     sk = grp("skin")
-    if sk is not None and m and m.get("iris") and m.get("mouth"):
-        near_eye = min(m["iris"], key=lambda p: p[0])
-        mouth_y = (m["mouth"][0][1] + m["mouth"][1][1]) / 2
-        hb = m["head_box"]
-        y0, y1 = int(m["eye_y"] + 0.06 * m["h_px"]), int(mouth_y)
-        x0, x1 = int(hb[0]), int(near_eye[0] + 0.02 * m["h_px"])
-        cheek = np.zeros_like(sk)
-        cheek[max(0, y0):max(0, y1), max(0, x0):max(0, x1)] = True
-        cheek &= sk
-        if cheek.sum() > 30:
-            L = float(np.median(lab[..., 0][cheek]))
-            S = float(np.median(Q.hsv_s(im[..., :3][cheek])))
-            out.append(("lit cheek L*", L, 70 <= L <= 82, "L* %.1f (70-82)" % L))
-            out.append(("lit cheek S", S, S >= 0.35, "S %.2f (>= 0.35)" % S))
+    if sk is not None and sk.sum() > 100:
+        # the lit cheek = the brightest 30 % of the skin pixels (the key-lit side of the face; the definition the
+        # §7.4 numbers come from, design A §3.7): their median L* 70-82 and median HSV S >= 0.35
+        Ls = lab[..., 0][sk]
+        cut = np.percentile(Ls, 70)
+        lit = sk & (lab[..., 0] >= cut)
+        L = float(np.median(lab[..., 0][lit]))
+        S = float(np.median(Q.hsv_s(im[..., :3][lit])))
+        out.append(("lit cheek L*", L, 70 <= L <= 82, "L* %.1f (70-82)" % L))
+        out.append(("lit cheek S", S, S >= 0.35, "S %.2f (>= 0.35)" % S))
     return out
 
 

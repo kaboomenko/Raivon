@@ -288,6 +288,7 @@ def solve_gaze(ctx):
             ang = math.atan2(dzr, dxr) if rr > 1e-6 else math.radians(140)
             rr2 = min(max(rr, 0.35 * ri), lim)
             dxr, dzr = math.cos(ang) * rr2, math.sin(ang) * rr2
+        dzr = min(dzr, 0.30 * ri)   # not too high: a squinting lid must not hide it
         spots = [((gx + dxr / sx, gz + dzr), style.STYLE["catch_big"]),
                  ((gx - 0.85 * dxr / sx, gz - 0.85 * dzr), style.STYLE["catch_small"])]
         if ey.get("one_catch") and e["side"] < 0:

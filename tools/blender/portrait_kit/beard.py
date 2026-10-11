@@ -75,11 +75,12 @@ def _pear(ctx, bd):
                          (0.0, -0.18, 0.13, 0.05)]:
         lobes.append((x * wide, fy + 0.10 + yo, chin_z + dz * (chin_z - tip_z) - 0.06, r))
     # the two lower lobes (the pear's bottom), split by a shallow notch
-    lo = tip_z + 0.10
-    lobes += [(-0.20 * wide, fy + 0.13, lo, 0.115), (0.20 * wide, fy + 0.13, lo, 0.115),
-              (-0.12 * wide, fy + 0.12, lo + 0.08, 0.10), (0.12 * wide, fy + 0.12, lo + 0.08, 0.10)]
+    lo = tip_z + 0.105
+    lobes += [(-0.30 * wide, fy + 0.13, lo, 0.11), (0.30 * wide, fy + 0.13, lo, 0.11),
+              (-0.20 * wide, fy + 0.12, lo + 0.09, 0.11), (0.20 * wide, fy + 0.12, lo + 0.09, 0.11)]
     for x, y, z, r in lobes:
-        el.append(dict(co=(x, y, z), half=r, stiff=2.3))
+        el.append(dict(co=(x, y, z), half=r, stiff=2.2))
+    el.append(dict(co=(0.0, fy + 0.10, lo - 0.05), half=(0.05, 0.16, 0.07), stiff=3.5, neg=True))  # the notch
     tmp = core.to_mesh(core.metaball(ctx, "BeardMass", el, 0.012))
     core.update()
     lock_el = []
@@ -101,7 +102,7 @@ def _pear(ctx, bd):
             w = 0.05 + 0.03 * math.sin(math.pi * min(1.0, t * 1.15))
             if prev is not None:
                 seg = (hit - prev).length
-                lock_el.append(dict(co=(hit + prev) / 2 - nor * 0.016, half=(w, 0.026, seg * 0.85 + 0.02), stiff=2.2,
+                lock_el.append(dict(co=(hit + prev) / 2 - nor * 0.02, half=(w, 0.02, seg * 0.85 + 0.02), stiff=2.1,
                                     rot=core.frame_quat(hit - prev, nor)))
             prev = hit
     bpy.data.objects.remove(tmp)

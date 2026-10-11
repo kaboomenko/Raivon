@@ -80,14 +80,12 @@ def contacts(ctx, max_pts=900):
 # ------------------------------------------------------------------ ID pass
 def _id_color(table, group):
     if group not in table:
-        if group.startswith("detail:"):
-            used = {tuple(v) for v in table.values()}
-            for c in style.DETAIL_COLORS:
-                if c not in used:
-                    table[group] = c
-                    break
-        else:
-            table[group] = (200, 200, 200)
+        used = {tuple(v) for v in table.values()}
+        pool = style.COSTUME_COLORS if group.startswith("costume:") else style.DETAIL_COLORS
+        for c in pool + [(200, 200, 200)]:
+            if c not in used:
+                table[group] = c
+                break
     return table[group]
 
 
@@ -284,11 +282,14 @@ def landmarks_json(ctx, path, png_path, ids_png, sig_png, size, floating, rows, 
                 sclera_vis_H=[round(o / h_px / max(0.05, e["open"] - _low(ctx)), 3) for o, e in
                               zip(openings, sorted(ctx.objs["eyes"], key=lambda e: e["side"]))],
                 brows=brows, mouth=mc,
+                cheek_near=pj(rig.head_to_world(ctx, ctx.L["cheek_near"])) if ctx.L.get("cheek_near") else None,
                 mouth_open=bool(getattr(ctx, "mouth_open", False)), glasses=bool(getattr(ctx, "glasses", False)),
                 signature=ctx.ch.get("signature", {}).get("name"), floating=floating, contacts=rows,
                 details=ctx.details, frame=ctx.frame, stats=stats)
-    if getattr(ctx, "lens_iris_contrast", None) is not None:
-        meta["lens_iris_contrast"] = round(ctx.lens_iris_contrast, 3)
+    if getattr(ctx, "lens_paths", None) and ids_png:
+        r = lens_ratio(ctx.lens_paths, ids_png)
+        if r is not None:
+            meta["lens_iris_contrast"] = round(r, 3)
     with open(path, "w") as f:
         json.dump(meta, f, indent=1)
     return meta
@@ -296,67 +297,78 @@ def landmarks_json(ctx, path, png_path, ids_png, sig_png, size, floating, rows, 
 
 def _low(ctx):
     ey = ctx.ch["eyes"]
-    return ey.get(ctx.mood, {}).get("low", ey.get("low", 0.06))
+    return ey.get(ctx.mood, {}).get("low", ey.get("low", 0.0))
 
 
 # ------------------------------------------------------------------ lens contrast (glasses)
-def lens_contrast(ctx, size, samples=24):
-    """§7.5: an iris behind a lens keeps >= 70 % of its contrast. Renders the eye region twice (lenses on / hidden)
-    with a render border and compares iris-vs-sclera |dL*| measured at the projected iris and sclera points."""
-    from PIL import Image
+def lens_renders(ctx, size, tmpdir, samples=24):
+    """§7.5: an iris behind a lens keeps >= 70 % of its contrast. Renders the eye region twice with a render border
+    (lenses hidden / shown); `lens_ratio` compares them inside the ID pass's iris and sclera masks."""
     sc = bpy.context.scene
     cam = ctx.objs["cam"]
     lenses = [o for o in sc.objects if o.get("kit_glass")]
     if not lenses:
         return None
-    pts = ctx.L["iris_world"]
-    pp = rig.project(cam, [tuple(p) for p in pts], size)
-    x0, x1 = pp[:, 0].min() - 60, pp[:, 0].max() + 60
-    y0, y1 = pp[:, 1].min() - 50, pp[:, 1].max() + 50
+    pp = rig.project(cam, [tuple(p) for p in ctx.L["iris_world"]], size)
+    x0, x1 = pp[:, 0].min() - 70, pp[:, 0].max() + 70
+    y0, y1 = pp[:, 1].min() - 60, pp[:, 1].max() + 60
     sc.render.use_border = True
     sc.render.use_crop_to_border = False
     sc.render.border_min_x, sc.render.border_max_x = max(0, x0 / size[0]), min(1, x1 / size[0])
     sc.render.border_min_y, sc.render.border_max_y = max(0, 1 - y1 / size[1]), min(1, 1 - y0 / size[1])
     keep = sc.cycles.samples
     sc.cycles.samples = samples
-    tmpd = bpy.app.tempdir or "/tmp"
-    out = []
+    paths = []
     for vis in (False, True):
         for o in lenses:
             o.hide_render = not vis
-        p = os.path.join(tmpd, "lens_%d.png" % vis)
+        p = os.path.join(tmpdir, "%s_lens%d.png" % (ctx.cid, vis))
         sc.render.filepath = p
         bpy.ops.render.render(write_still=True)
-        out.append(np.asarray(Image.open(p).convert("RGB")).astype(np.float64) / 255)
+        paths.append(p)
     sc.render.use_border = False
     sc.cycles.samples = keep
     for o in lenses:
         o.hide_render = False
+    return paths
 
-    def lab_l(rgb):
+
+def lens_ratio(paths, ids_png):
+    """min over the eyes of |dL*(sclera, iris)| with the lens / without it, in the ID pass's masks."""
+    from PIL import Image
+    ids = np.asarray(Image.open(ids_png).convert("RGB")).astype(int)
+
+    def mask(k):
+        return np.abs(ids - np.array(style.ID_COLORS[k])).sum(-1) < 30
+
+    iris, scl = mask("iris"), mask("sclera")
+
+    def lab_l(path):
+        rgb = np.asarray(Image.open(path).convert("RGB")).astype(np.float64) / 255
         c = np.where(rgb <= 0.04045, rgb / 12.92, ((rgb + 0.055) / 1.055) ** 2.4)
         y = c @ np.array([0.2126, 0.7152, 0.0722])
         return np.where(y > 216 / 24389, 116 * np.cbrt(y) - 16, y * 24389 / 27)
 
+    L0, L1 = lab_l(paths[0]), lab_l(paths[1])
+    cols = np.nonzero((iris | scl).any(0))[0]
+    if not len(cols):
+        return None
+    # split the two eyes at the widest gap between eye columns
+    gaps = np.diff(cols)
+    cut = cols[int(np.argmax(gaps))] + 1 if len(gaps) and gaps.max() > 3 else None
     ratios = []
-    for e, (px, py) in zip(ctx.objs["eyes"], pp):
-        rx, ry, rz = e["radii"]
-        off = rig.project(cam, [tuple(e["obj"].matrix_world.translation + Vector((rx * 0.0, 0, 0)))], size)[0]
-        del off
-        r = 2
-        xi, yi = int(round(px)), int(round(py))
-        # sclera sample: beside the iris, toward the nose / outer corner along x at the iris height
-        dx = int(round(rx * 0.72 / (2 * rz) * (e["radii"][2] * 2) / H * ctx.frame["h_px"]))
-        vals = []
-        for img in out:
-            L = lab_l(img)
-            iris_l = L[yi - r:yi + r + 1, xi - r:xi + r + 1].mean()
-            scl = max(L[yi - r:yi + r + 1, xi + dx - r:xi + dx + r + 1].mean(),
-                      L[yi - r:yi + r + 1, xi - dx - r:xi - dx + r + 1].mean())
-            vals.append(abs(scl - iris_l))
-        ratios.append(vals[1] / max(vals[0], 1e-6))
-    ctx.lens_iris_contrast = float(min(ratios))
-    return ctx.lens_iris_contrast
+    for part in ((slice(None, cut), slice(cut, None)) if cut is not None else (slice(None),)):
+        im_, sm_ = iris.copy(), scl.copy()
+        sel = np.zeros_like(iris)
+        sel[:, part] = True
+        im_ &= sel
+        sm_ &= sel
+        if im_.sum() < 6 or sm_.sum() < 6:
+            continue
+        c0 = abs(np.median(L0[sm_]) - np.median(L0[im_]))
+        c1 = abs(np.median(L1[sm_]) - np.median(L1[im_]))
+        ratios.append(c1 / max(c0, 1e-6))
+    return float(min(ratios)) if ratios else None
 
 
 # ------------------------------------------------------------------ stats

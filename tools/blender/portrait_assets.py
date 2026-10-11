@@ -421,6 +421,7 @@ def main():
     out = args[0]
     ids = args[1:] or list(LOOK)
     os.makedirs(out, exist_ok=True)
+    failed = []
     for cid in ids:
         for era in eras:
             for mood in moods:
@@ -433,10 +434,15 @@ def main():
                     continue
                 if portrait_kit.supports(cid, era):
                     w = size_opt or 512
-                    r = portrait_kit.render_id(cid, path, mood or "calm", era,
-                                               (w, w) if frame == "face" else (w, int(w * 1.15)),
-                                               samples_opt or portrait_kit.style.RENDER["samples"], frame, sidecars,
-                                               "contacts" in opts, "stats" in opts)
+                    try:
+                        r = portrait_kit.render_id(cid, path, mood or "calm", era,
+                                                   (w, w) if frame == "face" else (w, int(w * 1.15)),
+                                                   samples_opt or portrait_kit.style.RENDER["samples"], frame, sidecars,
+                                                   "contacts" in opts, "stats" in opts)
+                    except RuntimeError as e:  # the framing solver's "does not fit": report, go on, exit 1 at the end
+                        print("FAILED", name, "-", e)
+                        failed.append(name)
+                        continue
                     print("rendered", name, "(kit v2) build %.1fs render %.1fs" % (r["build_s"], r["render_s"]))
                     if "stats" in opts and r["stats"]:
                         st = r["stats"]
@@ -459,6 +465,9 @@ def main():
                 bpy.context.scene.render.filepath = path
                 bpy.ops.render.render(write_still=True)
                 print("rendered", name)
+    if failed:
+        print("FAILED %d: %s" % (len(failed), " ".join(failed)))
+        sys.exit(1)
 
 
 if __name__ == "__main__":

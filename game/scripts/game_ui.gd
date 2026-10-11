@@ -2709,14 +2709,15 @@ func _dlg_chips(host: Control, r: Rect2, chips: Array, center := true) -> void:
 ## A leader's face for a list row: the bust on the state's colour, R 14, an INK 3 rim.
 func _mini_face(id: String, plate: Color, mood: String, side: float) -> Control:
 	# drawn from the kit's bake atlas (Kit.KitStill): one textured rect instead of the clip group, the render and the rim
-	var era := CmdPortrait.era
-	var mk := func(z: Vector2) -> Control:
-		return _mini_face_vec(id, plate, mood, z.x, true) if CmdPortrait.era == era else null
-	return Kit.KitStill.new(_mini_face_vec(id, plate, mood, side, false), "mini_face|%s|%s|%s|%d" % [id, plate.to_html(), mood, era], mk)
+	var tex: Texture2D = CmdPortrait._render(id, mood) if id != "" else null  # (the era's render now: both draw it)
+	var mk := func(z: Vector2) -> Control: return _mini_face_vec(tex, plate, z.x, true)
+	return Kit.KitStill.new(_mini_face_vec(tex, plate, side, false), "mini_face|%s|%s" % [tex.resource_path if tex != null else "crown",
+		plate.to_html()], mk)
 
 
-## The leader's face itself (see _mini_face): `raw` — its panels as plain StyleBoxFlats (the bake stage draws them).
-func _mini_face_vec(id: String, plate: Color, mood: String, side: float, raw: bool) -> Control:
+## The leader's face itself (see _mini_face): `tex` the portrait render (null: a crown); `raw` — its panels as plain
+## StyleBoxFlats (the bake stage draws them).
+func _mini_face_vec(tex: Texture2D, plate: Color, side: float, raw: bool) -> Control:
 	var fr := Panel.new()
 	fr.name = "face"
 	var sb := Kit.style(plate, 14, 0, Kit.INK, 0, 0)
@@ -2728,7 +2729,6 @@ func _mini_face_vec(id: String, plate: Color, mood: String, side: float, raw: bo
 	fr.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
 	fr.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	fr.size = Vector2(side, side)
-	var tex: Texture2D = CmdPortrait._render(id, mood) if id != "" else null
 	var t := _icon_rect("crown", side * 0.6) if tex == null else TextureRect.new()
 	if tex != null:
 		t.texture = tex
@@ -4372,17 +4372,16 @@ func _cmd_face(id: String, rarity: String, side: float, level := 0, locked := fa
 ## polygons (Kit.KitStill; the bust draws itself until its bake lands). Its look must be final when this is called.
 func _still_portrait(p: Control) -> Control:
 	var o := {"cmd": String(p.get("cmd")), "rarity": String(p.get("rarity")), "locked": bool(p.get("locked")),
-		"mood": String(p.get("mood")), "plate": p.get("plate"), "frame": bool(p.get("frame")), "era": CmdPortrait.era}
+		"mood": String(p.get("mood")), "plate": p.get("plate"), "frame": bool(p.get("frame"))}
 	var mk := func(z: Vector2) -> Control:
-		if CmdPortrait.era != int(o["era"]):  # (another era's renders since: this look is gone)
-			return null
 		var c: Control = CmdPortrait.new(String(o["cmd"]), String(o["rarity"]), bool(o["locked"]))
 		c.set("mood", o["mood"])
 		c.set("plate", o["plate"])
 		c.set("frame", o["frame"])
 		c.size = z
 		return c
-	return Kit.KitStill.new(p, "portrait|" + var_to_str(o), mk)
+	# the era's renders (CmdPortrait.era, set as the player's DL grows) are read at each draw, like the bust's own
+	return Kit.KitStill.new(p, "portrait|" + var_to_str(o), mk, func(): return CmdPortrait.era)
 
 
 ## A commander skill's icon by its passive key (sim/commanders.gd PASSIVES).

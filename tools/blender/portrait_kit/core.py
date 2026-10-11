@@ -249,13 +249,46 @@ def emit_mat(ctx, name, col="#ffffff", strength=6.0):
 
 
 def glass_mat(ctx, name, tint="#ffffff"):
-    """§7.5 lenses: transmission 0.95, roughness 0.05, IOR 1.2, tint by multiplication."""
+    """Lenses (§7.5): see-through glass with a tint by multiplication and one diagonal highlight band over ~15 % of
+    the lens. Built as transparent + glossy rather than refractive transmission: without caustics a refractive lens
+    darkens the eye behind it (measured: the iris kept 10 % of its contrast), §7.5 asks for >= 70 %."""
     if name in ctx.mats:
         return ctx.mats[name]
-    m = principled(ctx, name, tint, rough=0.05, spec=0.5)
-    b = m.node_tree.nodes["Principled BSDF"]
-    b.inputs["Transmission Weight"].default_value = 0.95
-    b.inputs["IOR"].default_value = 1.2
+    m = bpy.data.materials.new(name)
+    m.use_nodes = True
+    nt = m.node_tree
+    nt.nodes.remove(nt.nodes["Principled BSDF"])
+    tr = nt.nodes.new("ShaderNodeBsdfTransparent")
+    tr.inputs["Color"].default_value = rgba(tint)
+    gl = nt.nodes.new("ShaderNodeBsdfGlossy")
+    gl.inputs["Roughness"].default_value = 0.05
+    gl.inputs["Color"].default_value = rgba("#b0b0b0")
+    fr = nt.nodes.new("ShaderNodeFresnel")
+    fr.inputs["IOR"].default_value = 1.1
+    mix = nt.nodes.new("ShaderNodeMixShader")
+    nt.links.new(fr.outputs[0], mix.inputs["Fac"])
+    nt.links.new(tr.outputs[0], mix.inputs[1])
+    nt.links.new(gl.outputs[0], mix.inputs[2])
+    # the diagonal highlight: a band across the lens in object space (generated coordinates, x + z)
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    sep = nt.nodes.new("ShaderNodeSeparateXYZ")
+    nt.links.new(tc.outputs["Generated"], sep.inputs[0])
+    add = node_math(nt, "ADD", sep.outputs[0], sep.outputs[2])
+    band = node_math(nt, "MULTIPLY", node_math(nt, "GREATER_THAN", add, 1.32),
+                     node_math(nt, "LESS_THAN", add, 1.50))
+    em = nt.nodes.new("ShaderNodeEmission")
+    em.inputs["Color"].default_value = rgba("#ffffff")
+    em.inputs["Strength"].default_value = 0.05
+    add_sh = nt.nodes.new("ShaderNodeAddShader")
+    mix2 = nt.nodes.new("ShaderNodeMixShader")
+    nt.links.new(band, mix2.inputs["Fac"])
+    nt.links.new(mix.outputs[0], mix2.inputs[1])
+    nt.links.new(mix.outputs[0], add_sh.inputs[0])
+    nt.links.new(em.outputs[0], add_sh.inputs[1])
+    nt.links.new(add_sh.outputs[0], mix2.inputs[2])
+    nt.links.new(mix2.outputs[0], nt.nodes["Material Output"].inputs["Surface"])
+    m["kit_base"] = tint
+    ctx.mats[name] = m
     return m
 
 

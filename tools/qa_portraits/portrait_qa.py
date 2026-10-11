@@ -269,7 +269,8 @@ def readability(d, n, a, masks, m):
     pupils = _split(grp("pupil", "catch"), xs)
     brows = _split(grp("brow"), xs)
     mouth_open = bool(m.get("mouth_open")) or grp("teeth").sum() > 30
-    mouth = grp("mouth", "teeth", "tongue") if mouth_open else grp("mouth")
+    # the closed mouth is the fold: crease + lips (§7.3 "складка", lower lip 0.03 H); the open one its whole opening
+    mouth = grp("mouth", "teeth", "tongue") if mouth_open else grp("mouth", "lip")
     sig = grp("signature")
     for px in (128, 64):
         k = px / w

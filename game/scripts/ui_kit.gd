@@ -1604,15 +1604,19 @@ class KitFlag extends Control:
 ## kit neighbours. `vec`, the drawing Control, becomes its child (it takes over vec's name, place and size) and draws
 ## only until the bake has landed, or when it cannot be baked. `key`: everything that changes the picture's pixels
 ## (its size is added); `make`: (size) -> a fresh Control that draws the same picture at that size (null: the look
-## has changed since, do not bake it). The picture must not change while shown: make a new KitStill for another look.
+## has changed since, do not bake it). `keyer`: () -> what else the picture depends on that may change while it is
+## shown (the portraits' era): read at each draw, part of the key, and a bake asked for under another value is dropped.
+## Anything else must not change while shown: make a new KitStill for another look.
 class KitStill extends Control:
 	var key := ""
 	var make := Callable()
+	var keyer := Callable()
 	var vec: Control
 
-	func _init(v: Control = null, k := "", mk := Callable()) -> void:
+	func _init(v: Control = null, k := "", mk := Callable(), kr := Callable()) -> void:
 		key = k
 		make = mk
+		keyer = kr
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 		vec = v
 		if v != null:
@@ -1624,8 +1628,16 @@ class KitStill extends Control:
 		resized.connect(func(): if vec != null: vec.size = size)
 
 	func _draw() -> void:
+		var k := key
+		var mk := make
+		if keyer.is_valid():
+			var now := str(keyer.call())
+			k += "|" + now
+			var kr := keyer
+			var m0 := make
+			mk = func(z: Vector2) -> Control: return m0.call(z) if str(kr.call()) == now else null
 		var ok := key != "" and make.is_valid() and size.x > 0.0 and size.y > 0.0 \
-			and SELF.draw_baked(self, "still|%s|%.2f,%.2f" % [key, size.x, size.y], Rect2(Vector2.ZERO, size), size, make)
+			and SELF.draw_baked(self, "still|%s|%.2f,%.2f" % [k, size.x, size.y], Rect2(Vector2.ZERO, size), size, mk)
 		if vec != null and vec.visible == ok:
 			vec.visible = not ok
 

@@ -73,6 +73,10 @@ STYLE = {
 }
 
 SKIN = {"T1": "#F4B48E", "T2": "#F0A274", "T3": "#DE9A6C", "T4": "#C47A4E", "T5": "#9A5A38", "T6": "#7A4630"}
+# The rig's warm key + sky fill + AgX Punchy take saturation out of skin (§7.0: 0.66 -> 0.30); the shader puts it
+# back per tone so the lit skin keeps HSV S >= 0.35 (§7.4). Measured on the ID pass (lit cheek = brightest 30 % of
+# the skin): T2 x1.15 -> S 0.40, T1 needs more, darker tones less.
+SKIN_SAT = {"T1": 1.24, "T2": 1.15, "T3": 1.08, "T4": 1.05, "T5": 1.0, "T6": 1.0}
 
 C = {
     "lash": "#2A1712", "pupil": "#1E1A24", "sclera": "#F7F3EE", "mouth_in": "#5A1A1E", "teeth": "#FBF6EA",
@@ -83,9 +87,13 @@ C = {
 
 # §7.11 light rig and render (kit units: skull centre at the origin, H = 1.06)
 LIGHT = {
-    "key": dict(size=2.5, color="#FFF1DA", energy=220.0, loc=(-2.4, -2.8, 1.6), target=(0.0, 0.0, -0.2)),
-    "rim": dict(size=1.2, color="#CFE0FF", energy=700.0, loc=(2.3, 2.2, 1.2), target=(0.0, 0.0, -0.3)),
-    "kick": dict(size=1.2, color="#FFE2C0", energy=240.0, loc=(-2.4, 2.0, 0.6), target=(0.0, 0.0, -0.3)),
+    # key 320 W, not §7.11's 220 W: at 220 W the lit skin of T1/T2 measured L* 68.5 (gate 70-82); the research
+    # prototype's 320 W (research_chars) lands it at 70-71 with the rest of the rig unchanged
+    "key": dict(size=2.5, color="#FFF1DA", energy=320.0, loc=(-2.4, -2.8, 1.6), target=(0.0, 0.0, -0.2)),
+    # rim 2600 W and kicker 700 W, not 700 / 240: at those the silhouette's inner 4 px rim measured 37-47 % within
+    # dL* 8 of plate B on the grey plates (P-A5 gate <= 35 %): the rim must clear the plate's L* 72-77, not land on it
+    "rim": dict(size=1.2, color="#CFE0FF", energy=2600.0, loc=(2.3, 2.2, 1.2), target=(0.0, 0.0, -0.3)),
+    "kick": dict(size=1.2, color="#FFE2C0", energy=700.0, loc=(-2.4, 2.0, 0.6), target=(0.0, 0.0, -0.3)),
     "world": "#A9C1E8", "world_strength": 1.05, "reflect": "#F2ECE2", "reflect_share": 0.5,
 }
 RENDER = {
@@ -103,7 +111,10 @@ ID_COLORS = {"skin": (255, 0, 0), "hair": (0, 255, 0), "brow": (0, 0, 255), "scl
              "iris": (255, 0, 255), "pupil": (0, 255, 255), "catch": (255, 255, 255), "lash": (128, 0, 0),
              "mouth": (0, 128, 0), "teeth": (0, 0, 128), "costume": (128, 128, 0), "metal": (128, 0, 128),
              "prop": (0, 128, 128), "signature": (255, 128, 0), "beard": (128, 255, 0), "lip": (255, 0, 128),
-             "tongue": (255, 128, 128), "glass": (128, 128, 255), "nose": (255, 64, 0)}
+             "tongue": (255, 128, 128), "glass": (128, 128, 255), "nose": (255, 64, 0), "hat": (64, 255, 128),
+             "eye": (255, 255, 160)}
+COSTUME_COLORS = [(128, 128, 0), (160, 160, 0), (96, 96, 0), (128, 160, 32), (160, 128, 32), (96, 128, 0),
+                  (128, 96, 0), (176, 144, 64), (112, 112, 48)]
 DETAIL_COLORS = [(64, 0, 0), (0, 64, 0), (0, 0, 64), (64, 64, 0), (64, 0, 64), (0, 64, 64), (192, 64, 0),
                  (64, 192, 0), (0, 64, 192), (192, 0, 64), (64, 0, 192), (0, 192, 64), (192, 192, 64),
                  (64, 192, 192), (192, 64, 192), (96, 32, 160), (160, 96, 32), (32, 160, 96)]

@@ -42,7 +42,13 @@ def _mat(ctx, ly, name):
 
 
 def _group(ly):
-    return ("detail:" + ly["detail"]) if ly.get("detail") else ("metal" if ly.get("metal") else "costume")
+    """The layer's ID group: its P-A8 detail, metal, or costume:<id> (each garment its own colour, so the beard rule
+    of §7.4 can test the beard against each piece it lies on)."""
+    if ly.get("detail"):
+        return "detail:" + ly["detail"]
+    if ly.get("metal"):
+        return "metal"
+    return "costume:" + ly.get("id", ly["kind"])
 
 
 # ------------------------------------------------------------------ shells
@@ -68,7 +74,8 @@ def vest(ctx, ly, name):
     o = core.mesh_obj(name, bm)
     core.shrinkwrap(o, ctx.objs["torso"], S["layer_gap"] * H)
     core.solidify(o, max(S["layer_min"] * H, ly.get("thick", 0.03)), offset=1.0)
-    m = core.grad_mat(ctx, name, core.hex_scale(ly["color"], 1.06), core.hex_scale(ly["color"], 0.9), z0, z1,
+    top_k, bot_k = ly.get("shade", (1.06, 0.9))
+    m = core.grad_mat(ctx, name, core.hex_scale(ly["color"], top_k), core.hex_scale(ly["color"], bot_k), z0, z1,
                       rough=ly.get("rough", 0.85), sheen=ly.get("sheen", 0.35))
     core.finish(o, m, sub=2)
     ctx.add(o, _group(ly), ctx.objs["torso"], kind="surface")
@@ -127,7 +134,7 @@ def belt(ctx, ly, name):
     core.solidify(o, ly.get("thick", 0.035), offset=1.0)
     m = core.principled(ctx, name, ly["color"], rough=0.5, sheen=0.15, coat=0.1)
     core.finish(o, m, sub=2)
-    ctx.add(o, "costume", ctx.outer[-1], kind="surface")
+    ctx.add(o, "costume:belt", ctx.outer[-1], kind="surface")
     ctx.outer.append(o)
     ctx.objs["belt"] = o
     core.update()
@@ -175,7 +182,7 @@ def bib(ctx, ly, name):
     tgt = ctx.outer[-1] if ly.get("over_last") else ctx.objs["torso"]
     core.shrinkwrap(o, tgt, S["layer_gap"] * H, method="PROJECT", project_y=True)
     core.solidify(o, max(S["layer_min"] * H, 0.026), offset=1.0)
-    m = core.fabric(ctx, name, ly["color"], rough=0.85, sheen=0.25)
+    m = core.principled(ctx, name, ly["color"], rough=0.85, sheen=0.25)   # flat: a white bib stays light to the hem
     core.finish(o, m, sub=1)
     core.bevel(o, S["bevel"] * H * 1.5, 2)
     ctx.add(o, _group(ly), tgt, kind="surface")
@@ -293,6 +300,6 @@ def placket(ctx, ly, name):
     core.solidify(o, 0.02, offset=1.0)
     core.bevel(o, 0.006, 2)
     core.finish(o, _mat(ctx, ly, name))
-    ctx.add(o, "costume", ctx.objs["torso"], kind="surface")
+    ctx.add(o, _group(ly), ctx.objs["torso"], kind="surface")
     ctx.outer.append(o)
     return o

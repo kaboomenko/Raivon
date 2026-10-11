@@ -93,8 +93,8 @@ def _kerchief(ctx):
     fringe = hr.get("fringe", 0.08) * H
     # the fringe: 4 locks from under the kerchief edge, parted to the far side, tips over the forehead
     for az, w, sweep in [(-34, 0.07, -10), (-14, 0.075, 6), (6, 0.072, 12), (26, 0.065, 14)]:
-        root = core.az_el(az, 46)
-        tip_d = core.az_el(az + sweep, 28)
+        root = core.az_el(az, 48)
+        tip_d = core.az_el(az + sweep, 35)
         hit, nor = core.ray(head, tip_d * 3, -tip_d)
         if hit is None:
             continue
@@ -122,9 +122,10 @@ def build_braid(ctx):
     w = br.get("w", 0.14) * H
     col = ctx.ch["hair"]["color"]
     # the path, body space: behind the near ear -> along the neck -> over the shoulder top -> down the chest
-    p0 = Vector((-0.30 * ctx.W / 0.85, 0.16, -0.36))
-    ctrl = [p0, Vector((-0.40, 0.02, -0.62)), Vector((-0.42, -0.24, -0.80)), Vector((-0.40, -0.44, -1.10)),
-            Vector((-0.38, -0.50, -1.45)), Vector((-0.37, -0.52, -1.75))]
+    kx = ctx.W / 0.85
+    p0 = Vector((-0.33 * kx, 0.12, -0.28))
+    ctrl = [p0, Vector((-0.42 * kx, -0.02, -0.56)), Vector((-0.45 * kx, -0.24, -0.80)), Vector((-0.42, -0.44, -1.10)),
+            Vector((-0.40, -0.50, -1.45)), Vector((-0.39, -0.52, -1.75))]
     # rest the lower part on the costume: cast each low point along the front normal
     path = []
     for i, c in enumerate(ctrl):
@@ -186,7 +187,6 @@ def build_braid(ctx):
             bow.append(core.curve("braid_bow", [c + Vector((0, -w * 0.32, 0)), tip], [1.0, 0.6], w * 0.09, rm, order=2))
         for b in bow:
             ctx.add(b, "detail:braid_ribbon", o, kind="surface", head=False)
-    ctx.details["braid"] = 3000
 
 
 # ------------------------------------------------------------------ bob (Vega)
@@ -222,7 +222,7 @@ def _bob(ctx):
     def hl(h):
         az = math.degrees(math.atan2(h.x, -h.y))
         if az >= 0:
-            tbl = [(0, 0.34), (25, 0.38), (50, 0.30), (80, 0.10), (110, -0.08), (180, -0.22)]
+            tbl = [(0, 0.36), (25, 0.43), (50, 0.42), (70, 0.27), (90, 0.10), (110, -0.08), (180, -0.22)]
         else:
             tbl = [(0, 0.34), (-30, 0.28), (-60, 0.16), (-90, 0.02), (-120, -0.12), (-180, -0.22)]
             tbl = [(-a, b) for a, b in tbl]
@@ -234,12 +234,13 @@ def _bob(ctx):
     th = 0.055
     # the ring of locks, near front (-70) round the back to the far front (+72); the bob line rises from the near
     # side's jaw to the far side's cheek
-    for az in [-74, -88, -102, -116, -130, -144, -158, -172, 174, 160, 146, 132, 118, 104, 90, 78]:
+    # (the far side starts behind the temple: the raised far brow, her trait, stays clear)
+    for az in [-74, -88, -102, -116, -130, -144, -158, -172, 174, 160, 146, 132, 118, 106, 96]:
         if az < 0:
             f = core.smoothstep(-74, -172, az)
             end_z = near_end + (back_end - near_end) * f
         else:
-            f = core.smoothstep(174, 78, az)
+            f = core.smoothstep(174, 96, az)
             end_z = back_end + (far_end - back_end) * f
         el += _bob_lock(head, az, part, end_z, 0.105, th, 0.035 + 0.02 * (1 - abs(abs(az) - 120) / 60), 0.06, sx)
     # the "chisel": the near front lock comes forward and down to a point at the jaw line

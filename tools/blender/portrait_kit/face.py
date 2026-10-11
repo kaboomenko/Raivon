@@ -17,6 +17,7 @@ from mathutils import Matrix, Vector
 from . import core, head as head_mod
 from .core import H, S
 from .style import C
+from .style import SKIN_SAT as S_SAT
 
 
 # ------------------------------------------------------------------ skin
@@ -34,14 +35,15 @@ def skin_mat(ctx):
     cx = S["cheek_x"] * H * (p["hx"] / 0.48) / 0.98
     add = core.node_math(nt, "ADD", core.node_blob(nt, (-cx, -0.40, cz), S["blush_r"] * H * 1.5),
                          core.node_blob(nt, (cx, -0.40, cz), S["blush_r"] * H * 1.5), clamp=True)
+    # blush opacity at the apple's centre = the character's share (§7.3: men 15 %, women 25 %, young 30 %; a smile +10 %)
     blush = ch.get("blush", S["blush"]["f" if ctx.female else "m"]) + (0.10 if ctx.smile else 0.0)
-    fac = core.node_math(nt, "MULTIPLY", add, blush * 2.2, clamp=True)
+    fac = core.node_math(nt, "MULTIPLY", add, blush, clamp=True)
     base = core.node_mix(nt, fac, col, C["blush"])
     # the warm tone of the hollows (AO) instead of grey
     ao = nt.nodes.new("ShaderNodeAmbientOcclusion")
     ao.samples = 8
     ao.inputs["Distance"].default_value = 0.05 * H
-    warm = core.node_ramp(nt, ao.outputs["AO"], [(0.0, core.hex_mix(col, "#c0503a", 0.45)), (0.85, "#ffffff")])
+    warm = core.node_ramp(nt, ao.outputs["AO"], [(0.0, core.hex_mix(col, "#c0503a", 0.35)), (0.72, "#ffffff")])
     base = core.node_mix(nt, 1.0, base, warm, "MULTIPLY")
     nose = ch.get("nose", {})
     if nose.get("tip") and ctx.L.get("nose_tip_guess") is not None:
@@ -56,6 +58,14 @@ def skin_mat(ctx):
             acc = bl if acc is None else core.node_math(nt, "MAXIMUM", acc, bl)
         sharp = core.node_math(nt, "GREATER_THAN", acc, 0.35)
         base = core.node_mix(nt, core.node_math(nt, "MULTIPLY", sharp, k), base, colr)
+    tone = ch.get("skin_tone")
+    sat = S_SAT.get(tone, 1.0) if tone else 1.0
+    if sat != 1.0:
+        hs = nt.nodes.new("ShaderNodeHueSaturation")
+        hs.inputs["Saturation"].default_value = sat
+        hs.inputs["Value"].default_value = 1.04
+        nt.links.new(base, hs.inputs["Color"])
+        base = hs.outputs[0]
     nt.links.new(base, b.inputs["Base Color"])
     return m
 
@@ -108,10 +118,13 @@ def eye_mat(ctx, name, iris_hex, ri, sx):
     rp = ri * pupil
     lim = ri * S["limbal"]
     e = 0.012
-    dk = core.hex_scale(iris_hex, 0.42)
-    lt = core.hex_mix(iris_hex, "#ffffff", 0.38)
-    stops = [(0.0, "#e9e2da"), (1 - ri - e, C["sclera"]), (1 - ri, dk), (1 - ri + lim, core.hex_scale(iris_hex, 0.8)),
-             (1 - ri + lim + 0.04, iris_hex), (1 - rp - 0.06, lt), (1 - rp - e * 0.5, lt), (1 - rp, C["pupil"]),
+    # a saturated mid tone, darker toward the rim (iris vs sclera >= 30 L*, §7.4), a dark limbal ring, a touch lighter
+    # around the pupil
+    mid = core.hex_scale(iris_hex, 0.52)
+    dk = core.hex_scale(iris_hex, 0.25)
+    lt = core.hex_scale(iris_hex, 0.95)
+    stops = [(0.0, "#e9e2da"), (1 - ri - e, C["sclera"]), (1 - ri, dk), (1 - ri + lim, core.hex_scale(iris_hex, 0.45)),
+             (1 - ri + lim + 0.05, mid), (1 - rp - 0.06, core.hex_scale(iris_hex, 0.74)), (1 - rp - e * 0.5, lt), (1 - rp, C["pupil"]),
              (1.0, C["pupil"])]
     nt.links.new(core.node_ramp(nt, g.outputs["Fac"], stops), nt.nodes["Principled BSDF"].inputs["Base Color"])
     m["eye_ri"], m["eye_rp"], m["eye_sx"] = ri, rp, sx
@@ -158,7 +171,7 @@ def build_eyes(ctx):
         centre = h0 - fwd * (ry - prot)
         eye = core.uvsphere("eye_" + tag, centre, (rx, ry, rz), None, 48, 24)
         eye.rotation_euler = rot.to_euler()
-        core.set_mat(eye, eye_mat(ctx, "eye_" + tag, ey["iris"], ri, rx / rz))
+        core.set_mat(eye, eye_mat(ctx, "eye_" + tag, core.hex_scale(ey["iris"], ey.get("iris_shade", 1.0)), ri, rx / rz))
         ctx.add(eye, "eye", head, kind="embed", head=True)
         # lids: opening (share of the visible sclera height left open), tilt (+ lowers the inner corner), arch
         opening = mood.get("open", ey.get("open", S["lid_open"]))
@@ -178,21 +191,25 @@ def build_eyes(ctx):
         lid.scale = (rx * shell, ry * shell, rz * shell)
         core.solidify(lid, 0.10, offset=-1)
         core.finish(lid, ctx.mats["skin"], sub=1)
+        lid.visible_shadow = False   # the lid does not darken the eye white under it (readable whites, §7.4 iris rule)
         ctx.add(lid, "skin", eye, kind="embed", head=True)
         # lower lid: a thin rim over the bottom of the eye; a smile pushes it up into a happy curve
-        low = mood.get("low", ey.get("low", 0.06))          # share of the visible height it covers at the middle
-        lc = -kv + low * 2 * kv
-        bm = bmesh.new()
-        bmesh.ops.create_uvsphere(bm, u_segments=64, v_segments=40, radius=1.0)
-        bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.co.z > lc - 0.10 * kv * v.co.x * v.co.x or v.co.y > 0.3],
-                         context="VERTS")
-        lo = core.mesh_obj("lowlid_" + tag, bm)
-        lo.location = centre
-        lo.rotation_euler = rot.to_euler()
-        lo.scale = (rx * shell * 1.02, ry * shell * 1.02, rz * shell * 1.02)
-        core.solidify(lo, 0.10, offset=-1)
-        core.finish(lo, ctx.mats["skin"], sub=1)
-        ctx.add(lo, "skin", eye, kind="embed", head=True)
+        low = mood.get("low", ey.get("low", 0.0))           # share of the visible height it covers at the middle
+        if low <= 0.0:                                        # calm: the face itself is the lower rim
+            low = None
+        lc = -kv + (low or 0.0) * 2 * kv
+        if low is not None:
+            bm = bmesh.new()
+            bmesh.ops.create_uvsphere(bm, u_segments=64, v_segments=40, radius=1.0)
+            bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.co.z > lc - 0.10 * kv * v.co.x * v.co.x or v.co.y > 0.3],
+                             context="VERTS")
+            lo = core.mesh_obj("lowlid_" + tag, bm)
+            lo.location = centre
+            lo.rotation_euler = rot.to_euler()
+            lo.scale = (rx * 1.04, ry * 1.04, rz * 1.04)
+            core.solidify(lo, 0.10, offset=-1)
+            core.finish(lo, ctx.mats["skin"], sub=1)
+            ctx.add(lo, "skin", eye, kind="embed", head=True)
         # lash line along the upper lid's cut edge, thick in the middle; women get an outer flick
         pts, rad = [], []
         n = 15
@@ -232,12 +249,14 @@ def build_brows(ctx):
     mood = br.get(ctx.mood, {})
     head = ctx.objs["head"]
     eye_w = 2 * S["sclera_w"] * p["sclera_h"] / 2
-    length = br.get("len", S["brow_len"]) * eye_w
+    length0 = br.get("len", S["brow_len"]) * eye_w
     thick = br.get("thick", S["brow"]) * H
     col = br["color"]
     mat = core.principled(ctx, "brow", col, 0.7, sheen=0.2)
     for side in (-1, 1):
         tag = "near" if side < 0 else "far"
+        # the far brow turns away from the camera: a little longer so it reads as long as the near one
+        length = length0 * (br.get("len_far", 1.12) if side > 0 else 1.0)
         lift = (br.get("lift", (0.0, 0.0))[0 if side < 0 else 1] + mood.get("lift", (0.0, 0.0))[0 if side < 0 else 1]) * H
         inner_dz = mood.get("inner", 0.0) * H
         outer_dz = mood.get("outer", 0.0) * H
@@ -425,12 +444,13 @@ def build_mouth(ctx):
         fy = ctx.L["face_y"]
         cav = core.uvsphere("mouth_in", (cx, fy + 0.19, cz), (w * 1.0, 0.13, hh * 0.72), dark, 32, 16)
         ctx.add(cav, "mouth", head, kind="embed", head=True)
-        # upper teeth: a rounded slab under the upper edge, 30 % of the opening height
-        tz = max(zs) - hh * S["teeth_share"] * 0.5 - 0.004
-        teeth = core.uvsphere("teeth", (cx, fy + 0.045, tz), (w * 0.88, 0.05, hh * S["teeth_share"] * 0.6),
+        # upper teeth: a rounded slab just behind the upper edge, 30 % of the opening height (§7.3)
+        top_z = max(zs)
+        teeth = core.uvsphere("teeth", (cx, fy + 0.034, top_z - hh * 0.15), (w * 0.86, 0.025, hh * 0.17),
                               core.principled(ctx, "teeth", C["teeth"], 0.3, coat=0.3), 32, 16)
         ctx.add(teeth, "teeth", head, kind="embed", head=True)
-        tongue = core.uvsphere("tongue", (cx + 0.01, fy + 0.09, min(zs) + hh * 0.26), (w * 0.6, 0.07, hh * 0.3),
+        # the tongue in the lower third, set back
+        tongue = core.uvsphere("tongue", (cx + 0.008, fy + 0.07, min(zs) + hh * 0.17), (w * 0.56, 0.06, hh * 0.24),
                                core.principled(ctx, "tongue", C["tongue"], 0.45, sss=0.2), 32, 16)
         ctx.add(tongue, "tongue", head, kind="embed", head=True)
         lower = pts[:21]
@@ -442,7 +462,7 @@ def build_mouth(ctx):
             lp.append(hh2 + nn * 0.004)
             t = i / (len(lower) - 5)
             lr.append(0.45 + 0.8 * math.sin(math.pi * t))
-        lip = core.curve("lip_low", lp, lr, low_t * 0.62, lip_m)
+        lip = core.curve("lip_low", lp, lr, low_t * 0.42, lip_m)
         ctx.add(lip, "lip", head, kind="surface", head=True)
         if ctx.female:  # a thin upper lip along the top edge
             up = pts[21:]

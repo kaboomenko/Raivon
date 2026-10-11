@@ -14,6 +14,7 @@ the character's left (the far side in the portrait), -X its right (the near side
 import math
 
 import bmesh
+import bpy
 from mathutils import Vector
 
 from . import core
@@ -75,7 +76,8 @@ def brushes(ctx, p):
     b += [
         ((0, -0.46 * sy, ez + 0.13), 0.09, (0, -0.02, 0.0)),            # glabella
         ((0, -0.45 * sy, -0.26), 0.15, (0, -0.035 * hd.get("muzzle", 1.0), 0.0)),  # muzzle
-        ((0, -0.38 * sy, -0.44), 0.16, (0, -0.04 - chin * 0.5, -0.02 - chin)),     # chin
+        ((0, -0.38 * sy, -0.44), 0.16, (0, -0.07 - chin * 0.5, -0.02 - chin)),     # chin: forward, not receding
+        ((0, -0.30 * sy, -0.40), 0.18, (0, -0.03, 0.0)),                           # the front of the jaw
         ((0, 0.25 * sy, 0.2), 0.3, (0, 0.03, 0.02)),                      # occiput
     ]
     return b
@@ -100,9 +102,8 @@ def head_point(u, p, br):
     return q + d
 
 
-def build_head(ctx, skin):
-    p = params(ctx)
-    br = brushes(ctx, p)
+def _cage_dirs():
+    """The spherified cube's vertex directions (12x12 quads per face)."""
     bm = bmesh.new()
     bmesh.ops.create_cube(bm, size=2.0)
     bmesh.ops.subdivide_edges(bm, edges=bm.edges[:], cuts=11, use_grid_fill=True)
@@ -110,10 +111,48 @@ def build_head(ctx, skin):
         x, y, z = v.co
         v.co = Vector((x * math.sqrt(1 - y * y / 2 - z * z / 2 + y * y * z * z / 3),
                        y * math.sqrt(1 - z * z / 2 - x * x / 2 + z * z * x * x / 3),
-                       z * math.sqrt(1 - x * x / 2 - y * y / 2 + x * x * y * y / 3)))
-        v.co = head_point(v.co.normalized(), p, br)
-    head = core.mesh_obj("head", bm)
-    core.finish(head, skin, sub=2)
+                       z * math.sqrt(1 - x * x / 2 - y * y / 2 + x * x * y * y / 3))).normalized()
+    return bm
+
+
+def chin_tip(head, z_from=None):
+    """The chin as the level camera sees it: the lowest point of the head's front half (a fan of vertical rays under
+    the jaw) — the bottom of the silhouette, which is what H_px (chin to crown) is measured to."""
+    chin = None
+    for k in range(10):
+        y = -0.06 - 0.04 * k
+        h, _ = core.ray(head, (0, y, -3), (0, 0, 1))
+        if h is not None and (chin is None or h.z < chin.z):
+            chin = h
+    return chin
+
+
+def build_head(ctx, skin):
+    """The cage + Subsurf 2. §7.3 measures the eye line from the REAL chin (a pointed heart chin or a flat square one
+    moves it off the nominal -H/2): the evaluated chin tip and crown are measured and the eye line (with every brush
+    placed from it) is moved until eye-to-chin / chin-to-crown is the character's value (two passes at most)."""
+    p = params(ctx)
+    el = ctx.ch["head"].get("eye_line", S["eye_line"])
+    head = None
+    for it in range(3):
+        br = brushes(ctx, p)
+        bm = _cage_dirs()
+        for v in bm.verts:
+            v.co = head_point(v.co, p, br)
+        if head is not None:
+            bpy.data.objects.remove(head)
+        head = core.mesh_obj("head", bm)
+        core.finish(head, skin, sub=2)
+        core.update()
+        chin = chin_tip(head, p["eye_z"] - 0.30)
+        top, _ = core.ray(head, (0, 0, 3), (0, 0, -1))
+        if chin is None or top is None:
+            break
+        real = (p["eye_z"] - chin.z) / (top.z - chin.z)
+        err = el - real
+        if abs(err) < 0.002 or it == 2:
+            break
+        p["eye_z"] += err * (top.z - chin.z)
     ctx.objs["head"] = head
     ctx.P = p
     ctx.add(head, "skin", None, kind="root", head=True)
@@ -130,14 +169,8 @@ def landmarks(ctx):
     top, _ = core.ray(head, (0, 0, 3), (0, 0, -1))
     bot, _ = core.ray(head, (0, -0.15, -3), (0, 0, 1))
     L["crown"] = top
-    # the chin: the lowest front point (cast a fan of rays and keep the lowest)
-    chin = None
-    for k in range(9):
-        y = -0.1 - 0.04 * k
-        h, _ = core.ray(head, (0, y, -3), (0, 0, 1))
-        if h is not None and (chin is None or h.z < chin.z):
-            chin = h
-    L["chin"] = chin or bot
+    # the chin: the visible chin tip; H (chin to crown) and the eye line are measured from it (§7.3)
+    L["chin"] = chin_tip(head, p["eye_z"] - 0.30) or bot
     for s, tag in ((-1, "near"), (1, "far")):
         h, n = core.ray_front(head, s * p["eye_x"], p["eye_z"])
         L["eye_surf_" + tag] = (h, n)
@@ -165,6 +198,11 @@ def landmarks(ctx):
     nz = p["eye_z"] - ctx.ch.get("nose", {}).get("drop", 0.20) * H
     nh, _ = core.ray_front(head, 0, nz)
     L["nose_tip_guess"] = nh
+    # the cheek apples (the lit-cheek check of §7.4 samples a disc around the near one)
+    cz = p["eye_z"] - S["cheek_below"] * H + (S["cheek_smile"] * H if ctx.smile else 0.0)
+    for s_, tag in ((-1, "near"), (1, "far")):
+        ch_, _ = core.ray_front(head, s_ * S["cheek_x"] * H * (p["hx"] / 0.48) / 0.98, cz)
+        L["cheek_" + tag] = ch_
     L["neck_z"] = L["chin"].z - 0.05 if L["chin"] else -0.6
     del mz
     return L
