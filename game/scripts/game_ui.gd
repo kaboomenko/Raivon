@@ -1812,14 +1812,16 @@ func show_pass(info: Dictionary, on_claim: Callable, on_buy: Callable) -> void:
 	box.add_child(star)
 	# ---- the footer: the purchase
 	var fy := h - 32.0 - 116.0
-	if foot == "both":
-		var eb := Kit.button(box, Rect2(32, fy + 14.0, 300, 88), "gold", tr("pass.elite"),
-			{"size": "M", "price": [["", Kit.store_price(String(info.get("price_elite", "")))]], "cb": func(): on_buy.call("iap_pass_elite")})
-		eb.name = "buy_elite"
-		Kit.ribbon(box, Vector2(eb.position.x + eb.size.x * 0.5, eb.position.y), tr("pass.plus15"), "war")
-		var pb := Kit.button(box, Rect2(348, fy, w - 380.0, 116), "gold", tr("pass.premium"),
+	if foot == "both":  # two offers of one kind side by side: one size, one layout (owner 2026-10-11)
+		var bw := (w - 64.0 - 16.0) * 0.5
+		var pb := Kit.button(box, Rect2(32, fy, bw, 116), "gold", tr("pass.premium"),
 			{"size": "L", "icon": "medal", "price": [["", Kit.store_price(String(info.get("price", "")))]], "cb": func(): on_buy.call("iap_pass")})
 		pb.name = "buy_premium"
+		var eb := Kit.button(box, Rect2(32.0 + bw + 16.0, fy, bw, 116), "gold", tr("pass.elite"),
+			{"size": "L", "icon": "medal", "price": [["", Kit.store_price(String(info.get("price_elite", "")))]], "cb": func(): on_buy.call("iap_pass_elite")})
+		eb.name = "buy_elite"
+		Kit.unify([pb, eb])
+		Kit.ribbon(box, Vector2(eb.position.x + eb.size.x * 0.5, eb.position.y), tr("pass.plus15"), "war")
 	elif foot == "up":  # premium → elite for the difference (09 §9.12)
 		var ub := Kit.button(box, Rect2((w - 480.0) * 0.5, fy, 480, 116), "gold", tr("pass.elite"),
 			{"size": "L", "icon": "medal", "price": [["", Kit.store_price(String(info.get("price_up", "")))]], "cb": func(): on_buy.call("iap_pass_elite_up")})

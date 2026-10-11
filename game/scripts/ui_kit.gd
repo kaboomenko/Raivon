@@ -2101,6 +2101,10 @@ class KitButton extends Panel:
 	var round_btn := false
 	var icon_scale := 0.0  ## icon-only buttons: icon side as a share of the height
 	var content_left := 0.0  ## the content row starts right of this x (0: centred in the face)
+	var cap_max := 0  ## the caption's largest size (0: the class's own); set by `unify` for sibling offers
+	var price_max := 0  ## the price number's largest size (0: the class's own)
+	var force_stack := false  ## L / M: the caption over the price even when one row would fit
+	var last_plan := {}  ## the layout `_solve` picked last time (read by `unify`)
 	var cb := Callable()
 	var cap: Label
 	var press := 0.0:
@@ -2275,6 +2279,7 @@ class KitButton extends Panel:
 				l0.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
 				l0.remove_theme_constant_override("line_spacing")
 		var plan := _solve(all, avail, icon_side, gap, face_h)
+		last_plan = plan
 		var parts: Array = plan["parts"]
 		var keep := {}
 		for part in parts:
@@ -2365,6 +2370,10 @@ class KitButton extends Panel:
 			part["base"] = n.position.y
 		_apply_press()
 
+	## A size step's top under a `unify` cap (never under the floor).
+	func _top(base: int, cap_: int, floor_: int) -> int:
+		return clampi(cap_, floor_, base) if cap_ > 0 else base
+
 	func _plan(parts: Array, s: int, ph: float, pn: int, pi: float) -> Dictionary:
 		return {"parts": parts, "s": s, "ph": ph, "pn": pn, "pi": pi, "two": "", "two_w": 0.0, "stack": false, "cw": 0.0,
 			"clip_w": -1.0, "w": -1.0}
@@ -2384,7 +2393,7 @@ class KitButton extends Panel:
 		var pg: Array = PRICE_GEOM[c]
 		var ph := minf(float(pg[0]), face_h - 2.0)
 		var pi := minf(float(pg[3]), ph)
-		var p_steps := SELF.fit_steps(int(pg[1]), int(pg[2]))
+		var p_steps := SELF.fit_steps(_top(int(pg[1]), price_max, int(pg[2])), int(pg[2]))
 		var sets: Array = [all]
 		var no_picto := all.filter(func(p): return p["kind"] != "icon" and p["kind"] != "chrome")
 		if no_picto.size() < all.size():
@@ -2446,12 +2455,14 @@ class KitButton extends Panel:
 		var texts := parts.filter(func(p): return p["kind"] == "text")
 		var pw0 := pp.width_for(ph, p_steps[0], pi) if pp != null else 0.0
 		# the caption down its class steps
-		for s in SELF.fit_steps(int(g[4]), cap_floor):
-			if _row_w(parts, s, icon_side, gap, pw0) <= avail:
-				return _plan(parts, s, ph, p_steps[0], pi)
+		var stack_only := force_stack and pp != null and STACK_GEOM.has(c) and not texts.is_empty()
+		if not stack_only:
+			for s in SELF.fit_steps(_top(int(g[4]), cap_max, cap_floor), cap_floor):
+				if _row_w(parts, s, icon_side, gap, pw0) <= avail:
+					return _plan(parts, s, ph, p_steps[0], pi)
 		if pp != null:
 			# then the price's number
-			for pn in p_steps:
+			for pn in (p_steps if not stack_only else []):
 				if _row_w(parts, cap_floor, icon_side, gap, pp.width_for(ph, pn, pi)) <= avail:
 					return _plan(parts, cap_floor, ph, pn, pi)
 			# L / M: the caption over the price, beside the icon
@@ -2461,11 +2472,11 @@ class KitButton extends Panel:
 				var spi := float(sg[5])
 				var row := parts.filter(func(p): return p["kind"] != "price" and p["kind"] != "main_icon")
 				var lead := icon_side + gap if parts.any(func(p): return p["kind"] == "main_icon") else 0.0
-				for s in SELF.fit_steps(int(sg[0]), int(sg[1])):
+				for s in SELF.fit_steps(_top(int(sg[0]), cap_max, int(sg[1])), int(sg[1])):
 					if s * 1.2 + 2.0 + sph > face_h - 2.0:
 						continue
 					var cw := _row_w(row, s, icon_side, gap, 0.0)
-					for pn in SELF.fit_steps(int(sg[3]), int(sg[4])):
+					for pn in SELF.fit_steps(_top(int(sg[3]), price_max, int(sg[4])), int(sg[4])):
 						var w := lead + maxf(cw, pp.width_for(sph, pn, spi))
 						if w <= avail:
 							var pl := _plan(parts, s, sph, pn, spi)
@@ -2734,6 +2745,36 @@ static func button(parent: Node, rect: Rect2, role: String, caption: String, opt
 		parent.add_child(b)
 	b.rebuild()
 	return b
+
+
+## Sibling offers (two passes, ×1 / ×10, two packs side by side) read as one set: after each button fits itself,
+## all of them take the smallest caption and price sizes any of them needed, and the stacked layout if any needed it.
+static func unify(buttons: Array) -> void:
+	var bs: Array = buttons.filter(func(b): return b is KitButton and is_instance_valid(b))
+	for _pass in 3:
+		var s := 999
+		var pn := 999
+		var stack := false
+		for b in bs:
+			var pl: Dictionary = (b as KitButton).last_plan
+			if pl.is_empty():
+				continue
+			s = mini(s, int(pl["s"]))
+			pn = mini(pn, int(pl["pn"]))
+			stack = stack or bool(pl["stack"])
+		var same := true
+		for b in bs:
+			var pl: Dictionary = (b as KitButton).last_plan
+			if pl.is_empty() or int(pl["s"]) != s or int(pl["pn"]) != pn or bool(pl["stack"]) != stack:
+				same = false
+		if same or s == 999:
+			return
+		for b in bs:
+			var kb := b as KitButton
+			kb.cap_max = s
+			kb.price_max = pn
+			kb.force_stack = stack
+			kb._layout()
 
 
 ## A square (opens a screen) or round (acts on the map) icon button; optional caption plate under it.
