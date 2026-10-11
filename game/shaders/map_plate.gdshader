@@ -12,6 +12,8 @@ shader_type spatial;
 //   kind 1, the chip: a pill of the quad's size less 2 px a side, `face` (INK α 0.85 for a status chip) inside an
 //     optional contour `edge` edge_w wide.
 // Colours come in already through SoftPalette.scene(), so the tonemapped view shows the UI's own colours.
+// The instance `fade` scales the whole plate's alpha: a routed army's 0.85 times map_view's on-screen fade (a plate
+// whose troops went past the screen's edge or under the HUD fades out, MapTag.paint).
 render_mode unshaded, blend_mix, depth_test_disabled, depth_draw_never, cull_disabled, shadows_disabled, fog_disabled;
 
 #include "res://shaders/hex_sdf.gdshaderinc"
