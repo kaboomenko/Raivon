@@ -1101,7 +1101,7 @@ func _pop_later(node: Control, delay: float) -> void:
 	tw.tween_property(node, "scale", Vector2.ONE, 0.1)
 
 
-var _result_peace: Control  # the result's «К миру» (the FTUE points at it)
+var _modal_buttons: Array = []  # the result's / the treaty's footer buttons [secondary, main] (the coach points at them)
 
 
 ## Offensive results (§6 «Итоги наступления»): a decision window M without ✕. The plate: gold «Успех!» (a star and land
@@ -1148,15 +1148,9 @@ func show_result(stars: int, captured: int, lost: int, score: float, control: in
 		nl.size = Vector2(w - 64.0, 44)
 		box.add_child(nl)
 	var fy := h - 32.0 - 116.0
-	Kit.button(box, Rect2(32, fy, 280, 116), "info", tr("result.continue"), {"icon": "swords", "size": "L", "cb": on_continue})
-	_result_peace = Kit.button(box, Rect2(328, fy, w - 360.0, 116), "go", tr("result.peace"), {"icon": "treaty", "size": "L", "cb": on_peace})
-
-
-## The centre of the result's «К миру» on the screen (where the FTUE points); the old spot when it is not shown.
-func result_peace_center() -> Vector2:
-	if is_instance_valid(_result_peace) and _result_peace.is_inside_tree():
-		return _coach_point(_result_peace.get_global_rect().get_center())
-	return Vector2(655, 998)
+	var more := Kit.button(box, Rect2(32, fy, 280, 116), "info", tr("result.continue"), {"icon": "swords", "size": "L", "cb": on_continue})
+	var peace := Kit.button(box, Rect2(328, fy, w - 360.0, 116), "go", tr("result.peace"), {"icon": "treaty", "size": "L", "cb": on_peace})
+	_modal_buttons = [more, peace]
 
 
 const PLUNDER_NAMES := ["plunder.spare", "plunder.light", "plunder.medium", "plunder.heavy"]
@@ -1313,13 +1307,14 @@ func show_peace(enemy: String, budget: float, control: int, demands: Array, chos
 		box.add_child(hl)
 	var fy := h - 32.0 - 116.0
 	# «К войне»: secondary, a step quieter than the L beside it, still a full thumb target (§1.4: ≥ 84 standalone)
-	Kit.button(box, Rect2(32, fy + 14.0, 240, 88), "info", tr("peace.back"), {"size": "M", "hit_pad": 6.0,
+	var back := Kit.button(box, Rect2(32, fy + 14.0, 240, 88), "info", tr("peace.back"), {"size": "M", "hit_pad": 6.0,
 		"cb": func(): action_pressed.emit("back_to_war")})
 	var sb := Kit.button(box, Rect2(288, fy, w - 320.0, 116), "go", tr("peace.seal"), {"icon": "treaty", "size": "L",
 		"hold": true, "hold_sec": 0.8, "enabled": not over, "cb": _on_seal})
 	sb.name = "seal"
 	sb.denied.connect(func(): Kit.tooltip(sb, tr("peace.seal"), tr("peace.over")))
 	_seal_btn = sb
+	_modal_buttons = [back, sb]
 
 
 func _on_seal() -> void:
@@ -1388,27 +1383,6 @@ func _peace_scroller(well: Control, content_h: float, at: int) -> Control:
 				show_at.call(float(sc.scroll_vertical))
 		restore.call_deferred()
 	return inner
-
-
-## The centre of «Подписать мир» / of the plunder segments on the screen (where the FTUE points).
-func peace_seal_center() -> Vector2:
-	if is_instance_valid(_seal_btn) and _seal_btn.is_inside_tree():
-		return _coach_point(_seal_btn.get_global_rect().get_center())
-	return Vector2(470, 1488)
-
-
-func peace_plunder_center() -> Vector2:
-	if is_instance_valid(_plunder_seg) and _plunder_seg.is_inside_tree():
-		var r := _plunder_seg.get_global_rect()
-		return _coach_point(Vector2(r.position.x + r.size.x * 0.125, r.get_center().y))  # «Нет»: sparing is the choice taught
-	return Vector2(274, 1380)
-
-
-## A point on the screen as the coach takes its targets: on the 1672 canvas inside the bottom band (the coach adds
-## the bottom group's offset back there, _process_coach).
-func _coach_point(p: Vector2) -> Vector2:
-	var dy := _bottom.position.y
-	return p - Vector2(0, dy) if p.y - dy >= VH - 332.0 else p
 
 
 ## A tile's render (tools/blender/card_art.py tile_*) by its key; an era tile («capital_dl4_red») falls back to the
@@ -5644,55 +5618,244 @@ func _market_card(it: Dictionary) -> Control:
 		"cta": {"role": "info", "caption": tr("market.open"), "icon": "swap", "cb": func(): market_open.emit()}})
 
 
-# ------------------------------------------------------------------ coach (FTUE, canon §14.3)
+# ------------------------------------------------------------------ coach (FTUE, canon §14.3; docs/ui_style.md §4.12)
+
+## The spotlight: INK α 0.6 over the visible rect with up to two round-box holes — the target (+12) and what it is
+## about (a reveal: the hex panel beside «Война!», a window's body above its footer). Their union is cut out with an
+## antialiased edge (sdRoundBox).
+const COACH_SHADER := """
+shader_type canvas_item;
+uniform vec2 size = vec2(941.0, 1672.0);
+uniform vec4 hole = vec4(0.0);
+uniform float hole_r = 24.0;
+uniform vec4 hole2 = vec4(0.0);
+uniform float hole2_r = 24.0;
+uniform vec4 dim : source_color = vec4(0.106, 0.129, 0.251, 0.6);
+
+float sd_box(vec2 p, vec4 h, float r) {
+	if (h.z <= 0.0) {
+		return 1e6;
+	}
+	vec2 b = h.zw * 0.5;
+	r = min(r, min(b.x, b.y));
+	vec2 q = abs(p - h.xy - b) - b + vec2(r);
+	return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+}
+
+void fragment() {
+	vec2 p = UV * size;
+	float d = min(sd_box(p, hole, hole_r), sd_box(p, hole2, hole2_r));
+	COLOR = vec4(dim.rgb, dim.a * smoothstep(-0.75, 0.75, d));
+}
+"""
+
+
+## The spotlight's input. On a mandatory step (`block`) a press outside the holes stops here — the map and the HUD
+## under it stay shut, and the coach nudges (`on_refused`) — while a press inside a hole falls through to the target:
+## _has_point is false there, so Godot looks for the control under it. Not blocking, it takes nothing at all.
+class CoachDim extends ColorRect:
+	var holes: Array = []  # [Rect2 in local px, radius]
+	var block := false
+	var on_refused := Callable()
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_STOP
+
+	func _has_point(p: Vector2) -> bool:
+		if not block:
+			return false
+		for h in holes:
+			if (h[0] as Rect2).has_point(p):
+				return false
+		return true
+
+	func _gui_input(e: InputEvent) -> void:
+		if (e is InputEventMouseButton and e.pressed) or (e is InputEventScreenTouch and e.pressed):
+			accept_event()
+			if on_refused.is_valid():
+				on_refused.call()
+
+
+const COACH_GROW := 12.0  # the hole: the target grown by this; the ring fills that margin
+const COACH_R := 24.0
+const COACH_POINT := 120.0  # a point target becomes a square this size around it (a hex on the map)
+const COACH_BAND_LOW := 1060.0  # the advisor's band: y 1060–1300 (+ the bottom group's offset) …
+const COACH_BAND_HIGH := 180.0  # … or, when that would cover the target, y 180–420 (+ the safe top inset)
+const COACH_BAND_H := 240.0
+const COACH_BUST := Vector2(160, 184)
+const COACH_TEXT_W := 560.0  # BODY 28 in two lines at most (§4.12: the bubble 600 wide at most)
+const COACH_PAD := 20.0  # the bubble's side padding
+const COACH_TEXT_Y := 30.0  # the text's top: clear of the name plate standing on the bubble's top edge
+const COACH_PLATE_H := 44.0
+const COACH_ARROW := 64.0
+const COACH_BOB := 12.0
+const COACH_MAX_PUSH := 72.0  # how far the pointer may step back out of the window / the bottom-left block
+## The tabs with the tray, or the battle tray (§5, the same rect): a pointer at a target in there stands above it
+## rather than on the next card or tab.
+const COACH_BOTTOM_LEFT := Rect2(12, 1374, 628, 286)
+const COACH_MINIMAP := Rect2(733, 96, 196, 196)  # the upper band's bubble keeps under it on the map
 
 var _coach: Control
+var _coach_dim: CoachDim
+var _coach_ring: Kit.KitShape
+var _coach_arrow: Kit.KitShape
+var _coach_adv: Control  # the advisor: the bust, the bubble with its tail and the name plate
+var _coach_bust: Panel
+var _coach_bubble: Panel
+var _coach_tail: Kit.KitShape
 var _coach_lbl: Label
-var _coach_ring: Panel
-var _coach_arrow: Label
-var _coach_target := Vector2(-1, -1)
+var _coach_plate: Panel
+var _coach_plate_lbl: Label
+var _coach_chip: Panel
+var _coach_target := Vector2(-1, -1)  # the last point target (screen px)
+var _coach_rect := Rect2()  # the target on the canvas (no size: none)
+var _coach_reveal := Rect2()  # lit with it: what the target is about
+var _coach_mode := "dim"  # "block": dim + only the holes take taps; "dim": dim, taps pass; "ring": ring and pointer
 var _ghost_from := Vector2(-1, -1)
 var _ghost_to := Vector2(-1, -1)
-var _ghost_dot: Panel
+var _ghost_dot: Kit.KitShape
 var _coach_t := 0.0
-## Rects (on the 1672 canvas) of the buttons the coach points at — the big button, the status button: framed
-## instead of circled.
-const COACH_FRAMES := [BIG_RECT, STATUS_RECT]
+var _coach_kick := 0.0  # a refused tap: the ring jumps for a moment
 
 
 func _build_coach() -> void:
 	_coach = Control.new()
+	_coach.name = "coach"
 	_coach.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_coach.z_index = 40
+	_coach.z_index = 80  # over a window (§3.1)
 	root.add_child(_coach)
-	var box := _panel(_coach, Rect2(108, 166, 612, 96), _style(Color(0.98, 0.93, 0.78, 0.97), 16, Color(0.75, 0.55, 0.2), 3), Control.MOUSE_FILTER_IGNORE)
-	_coach_lbl = _label("", 23, Color(0.22, 0.14, 0.05), false)
-	_coach_lbl.position = Vector2(18, 10)
-	_coach_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD
-	_coach_lbl.custom_minimum_size = Vector2(576, 0)  # autowrap needs a fixed width
-	_coach_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	box.add_child(_coach_lbl)
-	var ring_sb := _style(Color(1, 1, 1, 0.0), 60, Color(1.0, 0.85, 0.3), 6)
-	ring_sb.shadow_size = 0  # through the empty middle the shadow darkened the very button it points at
-	_coach_ring = _panel(_coach, Rect2(0, 0, 120, 120), ring_sb, Control.MOUSE_FILTER_IGNORE)
-	_coach_arrow = _label("▼", 56, Color(1.0, 0.85, 0.3))
+	_coach_dim = CoachDim.new()
+	_coach_dim.name = "spotlight"
+	var mat := ShaderMaterial.new()
+	var sh := Shader.new()
+	sh.code = COACH_SHADER
+	mat.shader = sh
+	mat.set_shader_parameter("dim", Kit.alpha(Kit.INK, Kit.DIM_A))
+	_coach_dim.material = mat
+	_coach_dim.on_refused = func(): _coach_kick = 0.35
+	_coach.add_child(_coach_dim)
+	_coach_ring = Kit.KitShape.new("ring")
+	_coach_ring.name = "ring"
+	_coach.add_child(_coach_ring)
+	_coach_adv = Control.new()
+	_coach_adv.name = "advisor"
+	_coach_adv.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_coach.add_child(_coach_adv)
+	_coach_bust = _coach_bust_frame()
+	_coach_adv.add_child(_coach_bust)
+	_coach_bubble = Panel.new()
+	_coach_bubble.name = "bubble"
+	_coach_bubble.add_theme_stylebox_override("panel", Kit.style(Kit.CREAM, Kit.R_BUBBLE, 5, Kit.INK, 6, 6))
+	_coach_bubble.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_coach_bubble.add_child(Kit.KitDecor.new())  # the lip and the white line along the top
+	_coach_adv.add_child(_coach_bubble)
+	_coach_tail = Kit.KitShape.new("tail", Kit.CREAM)
+	_coach_tail.name = "tail"
+	_coach_tail.size = Vector2(24, 34)
+	_coach_bubble.add_child(_coach_tail)
+	_coach_lbl = Kit.label("", 28, Kit.INK_TEXT, false)  # BODY 28
+	_coach_lbl.name = "text"
+	_coach_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_coach_bubble.add_child(_coach_lbl)
+	_coach_plate = Panel.new()  # «Сержант Брам»: an info plate (a name, not a button: the lip without the gloss)
+	_coach_plate.name = "plate"
+	var psb := Kit.style(Kit.face_of("info"), 14, 3, Kit.INK, 4, 5)
+	psb.set_meta("kit_kind", "")
+	_coach_plate.add_theme_stylebox_override("panel", psb)
+	_coach_plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_coach_plate.add_child(Kit.KitDecor.new())
+	_coach_plate_lbl = Kit.label("", 26)  # BTN_S 26, white with the INK outline
+	_coach_plate_lbl.name = "name"
+	_coach_plate_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_coach_plate_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_coach_plate.add_child(_coach_plate_lbl)
+	_coach_adv.add_child(_coach_plate)
+	_ghost_dot = Kit.KitShape.new("finger")
+	_ghost_dot.name = "finger"
+	_ghost_dot.size = Vector2(88, 88)
+	_coach.add_child(_ghost_dot)
+	_coach_arrow = Kit.KitShape.new("pointer")
+	_coach_arrow.name = "pointer"
+	_coach_arrow.size = Vector2(COACH_ARROW, COACH_ARROW)
 	_coach.add_child(_coach_arrow)
-	_ghost_dot = _panel(_coach, Rect2(0, 0, 64, 64), _style(Color(1, 1, 1, 0.7), 32, Color(1.0, 0.85, 0.3), 5), Control.MOUSE_FILTER_IGNORE)
 	_coach.visible = false
 
 
-## Shows an advisor line; `target` (screen px) gets a pulsing ring and a bouncing arrow.
-func coach(text: String, target := Vector2(-1, -1)) -> void:
+## The advisor's bust (§4.12): Sergeant Bram smiling (the portraits' era), cover-cropped on the sky, R 20, an INK 4
+## contour, a hard shadow.
+func _coach_bust_frame() -> Panel:
+	var fr := Panel.new()
+	fr.name = "bust"
+	var sb := Kit.style(Kit.SKY_TOP, 20, 0, Kit.INK, 6, 0)
+	sb.set_meta("kit_kind", "")
+	fr.add_theme_stylebox_override("panel", sb)
+	fr.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
+	fr.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fr.size = COACH_BUST
+	var sky := TextureRect.new()
+	sky.texture = Kit.vgradient(Kit.SKY_TOP, Kit.SKY_LOW)
+	sky.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	sky.stretch_mode = TextureRect.STRETCH_SCALE
+	sky.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	sky.size = fr.size
+	fr.add_child(sky)
+	var tex: Texture2D = CmdPortrait._render("cmd_bram", "smile")
+	if tex != null:
+		var pic := TextureRect.new()
+		pic.name = "portrait"
+		pic.texture = tex
+		pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		pic.size = fr.size
+		fr.add_child(pic)
+	var rim := Panel.new()  # over the picture: clipping would hide a contour drawn by the frame itself
+	var rsb := Kit.style(Kit.CLEAR, 20, 4, Kit.INK, 0, 0)
+	rsb.draw_center = false
+	rsb.set_meta("kit_kind", "")
+	rim.add_theme_stylebox_override("panel", rsb)
+	rim.size = fr.size
+	rim.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fr.add_child(rim)
+	return fr
+
+
+## Shows an advisor line — `chip`: a paper chip with an hourglass at its end (the offensive's «1:00») — and points
+## at `target` (screen px; coach_rect / coach_target move the target every frame).
+func coach(text: String, target := Vector2(-1, -1), chip := "") -> void:
 	if _coach == null:
 		_build_coach()
+	var was := _coach.visible
 	_coach.visible = true
-	_coach_lbl.text = text
-	_coach_target = target
+	_coach_mode = "dim"
+	_coach_reveal = Rect2()
 	_ghost_from = Vector2(-1, -1)
+	coach_target(target)
+	_coach_say(text, chip)
+	if not was:
+		Kit.fade_in(_coach, 0.16)
 
 
+## A point target: a COACH_POINT square around it (a hex on the map) — a circle ring; x < 0: none.
 func coach_target(target: Vector2) -> void:
 	_coach_target = target
+	if target.x < 0.0:
+		_coach_rect = Rect2()
+	else:
+		_coach_rect = Rect2(target - Vector2(COACH_POINT, COACH_POINT) * 0.5, Vector2(COACH_POINT, COACH_POINT))
+
+
+## The target as a node's rect on the canvas (get_global_rect(); no size: none), and `reveal`: lit beside it —
+## the hex panel next to «Война!», a window's body above the footer it points into.
+func coach_rect(rect: Rect2, reveal := Rect2()) -> void:
+	_coach_rect = rect if rect.size.x > 0.0 and rect.size.y > 0.0 else Rect2()
+	_coach_reveal = reveal if reveal.size.x > 0.0 and reveal.size.y > 0.0 else Rect2()
+
+
+## "block" — a mandatory step: the screen is dimmed and only the holes take taps; "dim" — dimmed, every tap passes
+## (a target on the map among others); "ring" — no dim (a live battle, a two-part step): the ring and the pointer only.
+func coach_mode(m: String) -> void:
+	_coach_mode = m
 
 
 ## Ghost finger dragging from → to (screen px), looping; call every frame while the camera moves.
@@ -5706,42 +5869,352 @@ func coach_hide() -> void:
 		_coach.visible = false
 
 
+## Lays the line out (§4.12): BODY 28 in two lines at most (26 when a translation runs longer), the bubble hugging
+## it — a one-liner as wide as its text, two lines evened out — with the chip at its end; the name plate on top.
+func _coach_say(text: String, chip: String) -> void:
+	var name_t := tr("ftue.advisor")
+	var pw := Kit.text_w(name_t, 26, "d900") + 32.0
+	_coach_plate_lbl.text = name_t
+	_coach_plate.size = Vector2(pw, COACH_PLATE_H)
+	_coach_plate_lbl.position = Vector2(0, -1)
+	_coach_plate_lbl.size = Vector2(pw, COACH_PLATE_H - 5.0)
+	if is_instance_valid(_coach_chip):
+		_coach_chip.queue_free()
+	_coach_chip = null
+	var cw := _paper_chip_w("hourglass", chip) if chip != "" else 0.0
+	var room := COACH_TEXT_W - (cw + 16.0 if chip != "" else 0.0)
+	var two := _line_h("A\nA", 999.0, 28) + 1.0
+	var fs := 28 if _line_h(text, room, 28) <= two else 26
+	var th := _line_h(text, room, fs)
+	var tw := room
+	if th <= _line_h("A", 999.0, fs) + 1.0:
+		tw = minf(room, ceilf(Kit.text_w(text, fs, "b800", false)) + 4.0)
+	else:
+		tw = _balanced_w(text, room, fs)
+	_coach_lbl.text = text
+	_coach_lbl.add_theme_font_size_override("font_size", fs)
+	_coach_lbl.position = Vector2(COACH_PAD, COACH_TEXT_Y)
+	_coach_lbl.size = Vector2(tw, th)
+	var bw := maxf(tw + (cw + 16.0 if chip != "" else 0.0) + 2.0 * COACH_PAD, pw + 72.0)
+	var bh := COACH_TEXT_Y + th + 18.0 + 6.0  # the bottom padding over the 6 px lip
+	_coach_bubble.size = Vector2(bw, bh)
+	if chip != "":
+		_coach_chip = _paper_chip(_coach_bubble, Vector2(bw - COACH_PAD - cw * 0.5, COACH_TEXT_Y + th * 0.5), "hourglass", chip, cw)
+
+
+## The current window's frame on the canvas (the paper panel; its title plate stands 42 above it); Rect2() without one.
+func modal_rect() -> Rect2:
+	if _modal == null:
+		return Rect2()
+	for ch in _modal.get_children():
+		if ch is Control and (ch as Control).has_meta("paper"):
+			return (ch as Control).get_global_rect()
+	return Rect2()
+
+
+## The current window from its title plate down to its footer buttons (the coach keeps it lit around the button it
+## points at: its reveal, grown by the hole's margin, meets the target's hole and leaves the other button dimmed).
+func modal_body_rect() -> Rect2:
+	var fr := modal_rect()
+	if fr.size.x <= 0.0:
+		return Rect2()
+	var bottom := fr.end.y
+	for i in _modal_buttons.size():
+		var r := modal_button_rect(i)
+		if r.size.x > 0.0:
+			bottom = minf(bottom, r.position.y - 2.0 * COACH_GROW)
+	var top := fr.position.y - 42.0
+	return Rect2(fr.position.x, top, fr.size.x, bottom - top)
+
+
+## The footer buttons of the result (0 «Ещё бой», 1 «К миру») or of the treaty (0 «К войне», 1 «Подписать мир»)
+## while that window is open; Rect2() otherwise.
+func modal_button_rect(i: int) -> Rect2:
+	if _modal == null or i < 0 or i >= _modal_buttons.size():
+		return Rect2()
+	var b: Control = _modal_buttons[i]
+	if not is_instance_valid(b) or not _modal.is_ancestor_of(b) or not b.is_visible_in_tree():
+		return Rect2()
+	return b.get_global_rect()
+
+
+## The big button (§5) while it shows.
+func action_rect() -> Rect2:
+	return _action2.get_global_rect() if _action2.is_visible_in_tree() else Rect2()
+
+
+## The status button (§5: «Мир», the ad repair) while it shows.
+func status_rect() -> Rect2:
+	return _status_btn.get_global_rect() if _status_btn.is_visible_in_tree() else Rect2()
+
+
+## A card of the battle hand (§5) while the hand shows.
+func card_rect(card: String) -> Rect2:
+	var p: Control = _cards.get(card)
+	return p.get_global_rect() if p != null and is_instance_valid(p) and p.is_visible_in_tree() else Rect2()
+
+
+## The button of a card in the tray's row: the card titled `title` (the Residence), else the first one. A card
+## scrolled out of the row's view is brought into it.
+func first_card_cta_rect(title := "") -> Rect2:
+	if _brow == null or not _bpanel.is_visible_in_tree():
+		return Rect2()
+	var pick: Kit.KitCard = null
+	for ch in _brow.get_children():
+		var kc := ch as Kit.KitCard
+		if kc == null or kc.cta == null or kc.is_queued_for_deletion():
+			continue
+		if pick == null:
+			pick = kc
+		if title != "" and kc.title == title:
+			pick = kc
+			break
+	if pick == null:
+		return Rect2()
+	var r := pick.cta.get_global_rect()
+	if not _bscroll.get_global_rect().grow(1.0).encloses(r):
+		_bscroll.ensure_control_visible(pick)
+	return r
+
+
+## «Подписать мир» while the treaty is open.
+func seal_rect() -> Rect2:
+	if _modal == null or not is_instance_valid(_seal_btn) or not _modal.is_ancestor_of(_seal_btn):
+		return Rect2()
+	return _seal_btn.get_global_rect()
+
+
+## One plunder segment of the treaty (0 «Нет» … 3), while the treaty is open.
+func plunder_rect(i := 0) -> Rect2:
+	if _modal == null or not is_instance_valid(_plunder_seg) or not _modal.is_ancestor_of(_plunder_seg):
+		return Rect2()
+	var r := _plunder_seg.get_global_rect()
+	var w := r.size.x / float(PLUNDER_NAMES.size())
+	return Rect2(r.position.x + w * i, r.position.y, w, r.size.y)
+
+
 func _process_coach(delta: float) -> void:
 	if _coach == null or not _coach.visible:
 		return
 	_coach_t += delta
-	var has_t := _coach_target.x >= 0
-	_coach_ring.visible = has_t
-	_coach_arrow.visible = has_t
-	if has_t:
-		var k := 1.0 + 0.12 * sin(_coach_t * 6.0)
-		var sb := _coach_ring.get_theme_stylebox("panel") as StyleBoxFlat
-		# targets given on the 1672 canvas inside the bottom band (tabs, cards, big button) follow the bottom group
-		# down to the visible bottom on a tall screen
-		var dy := _bottom.position.y
-		var tgt := _coach_target + Vector2(0, dy if _coach_target.y >= VH - 332.0 else 0.0)
-		var frame := Rect2()
-		for f in COACH_FRAMES:
-			if (f as Rect2).has_point(_coach_target):
-				frame = Rect2((f as Rect2).position + Vector2(0, dy), (f as Rect2).size)
-		if frame.size != Vector2.ZERO:  # a button: a pulsing frame around it, not a circle across its label
-			var g := 8.0 + 6.0 * (k - 1.0) / 0.12
-			_coach_ring.position = frame.position - Vector2(g, g)
-			_coach_ring.size = frame.size + Vector2(g, g) * 2.0
-			sb.set_corner_radius_all(22)
-		else:
-			_coach_ring.size = Vector2(120, 120) * k
-			_coach_ring.position = tgt - _coach_ring.size / 2
-			sb.set_corner_radius_all(int(60 * k))
-		_coach_arrow.position = tgt + Vector2(-20, -150 + 14 * sin(_coach_t * 5.0))
-	var has_g := _ghost_from.x >= 0
+	_coach_kick = maxf(0.0, _coach_kick - delta)
+	if _coach.get_index() != root.get_child_count() - 1:
+		root.move_child(_coach, -1)  # first in the input order: a window opened after the coach would take the taps
+	var vis := get_viewport().get_visible_rect()
+	var has_t := _coach_rect.size.x > 0.0
+	var frame := modal_rect()
+	# a window that is not about the target (an announcement over a map step): the coach waits until it closes
+	var away := has_modal() and (not has_t or not frame.grow(4.0).encloses(_coach_rect))
+	var lit := has_t and not away
+	_coach_dim.visible = lit and _coach_mode != "ring"
+	_coach_dim.block = false
+	_coach_ring.visible = lit
+	_coach_arrow.visible = false
+	_coach_adv.visible = not away
+	var holes: Array = []
+	if lit:
+		var hole := _coach_rect.grow(COACH_GROW)
+		var round := absf(_coach_rect.size.x - _coach_rect.size.y) < 2.0 and _coach_rect.size.x <= 140.0
+		var hr := hole.size.x * 0.5 if round else COACH_R
+		holes.append([hole, hr])
+		if _coach_reveal.size.x > 0.0:
+			holes.append([_coach_reveal.grow(COACH_GROW), COACH_R])
+		_coach_light(vis, holes)
+		_coach_dim.block = _coach_mode == "block" and vis.intersects(hole)  # never shut the screen around a target off it
+		# the pulse: the ring's outer edge 1.0 → 1.05 of its size every 800 ms (a refused tap kicks it further); its
+		# inner edge stays on the target, the gold widening — scaled whole, it would lift off and bare the hole's margin
+		var k := 0.025 * (1.0 - cos(_coach_t * TAU / 0.8)) + 0.05 * _coach_kick / 0.35
+		var g := (hole.size * k * 0.5).round()
+		var rr := Rect2(hole.position - g, hole.size + g * 2.0)
+		var look := {"r": hr + minf(g.x, g.y), "gx": g.x, "gy": g.y}
+		if _coach_ring.data != look or _coach_ring.size != rr.size:
+			_coach_ring.data = look
+			_coach_ring.size = rr.size
+			_coach_ring.queue_redraw()
+		_coach_ring.position = rr.position
+	if not away:
+		_coach_place_advisor(vis, holes, frame)
+	if lit:
+		_coach_place_arrow(vis, holes, frame)
+	var has_g := _ghost_from.x >= 0.0 and not away
 	_ghost_dot.visible = has_g
 	if has_g:
 		var u := fmod(_coach_t, 1.6) / 1.2
 		var e := clampf(u, 0.0, 1.0)
 		e = e * e * (3.0 - 2.0 * e)
-		_ghost_dot.position = _ghost_from.lerp(_ghost_to, e) - Vector2(32, 32)
-		_ghost_dot.modulate.a = 1.0 if u <= 1.05 else 0.35
+		_ghost_dot.position = _ghost_from.lerp(_ghost_to, e) - _ghost_dot.size * 0.5
+		var a := 1.0 if u <= 1.05 else 0.35  # lifted between two drags
+		if float(_ghost_dot.data.get("a", 1.0)) != a:
+			_ghost_dot.data["a"] = a
+			_ghost_dot.queue_redraw()
+
+
+## The spotlight over the visible rect with the holes cut out; the same holes let taps through.
+func _coach_light(vis: Rect2, holes: Array) -> void:
+	_coach_dim.position = vis.position
+	_coach_dim.size = vis.size
+	var mat := _coach_dim.material as ShaderMaterial
+	mat.set_shader_parameter("size", vis.size)
+	var local: Array = []
+	for i in 2:
+		var key := "hole" if i == 0 else "hole2"
+		if i < holes.size():
+			var r: Rect2 = holes[i][0]
+			var lr := Rect2(r.position - vis.position, r.size)
+			local.append([lr, holes[i][1]])
+			mat.set_shader_parameter(key, Vector4(lr.position.x, lr.position.y, lr.size.x, lr.size.y))
+			mat.set_shader_parameter(key + "_r", float(holes[i][1]))
+		else:
+			mat.set_shader_parameter(key, Vector4.ZERO)
+	_coach_dim.holes = local
+
+
+## The advisor's place (§4.12): the band y 1060–1300 (with the bottom group) — right above the bottom group for a
+## target down there, the opposite half for a target above the middle, and clear of the battlefield's front with no
+## target — the bust at the screen edge away from the target, the bubble beside it with its tail toward the bust. It
+## never covers a hole or the ghost finger's path: then the band y 180–420 (with the top group). A window the coach
+## points into keeps it out too (else the gap above or under the window); a window that leaves no room (a long
+## treaty) takes it over its title plate, above the leader — still clear of the target.
+func _coach_place_advisor(vis: Rect2, holes: Array, frame: Rect2) -> void:
+	var has_t := _coach_rect.size.x > 0.0
+	var left := not has_t or _coach_rect.get_center().x >= vis.get_center().x
+	var centres: Array = [COACH_BAND_LOW + COACH_BAND_H * 0.5 + _bottom.position.y,
+		COACH_BAND_HIGH + COACH_BAND_H * 0.5 + _top.position.y]
+	var hard: Array = []  # never covered: the target and the ghost finger's path
+	if not holes.is_empty():
+		hard.append((holes[0][0] as Rect2).grow(8.0))
+	if _ghost_from.x >= 0.0:
+		hard.append(Rect2(_ghost_from, Vector2.ZERO).expand(_ghost_to).grow(56.0))
+	var soft: Array = []  # kept clear when there is room: the reveal and the window
+	for i in range(1, holes.size()):
+		soft.append((holes[i][0] as Rect2).grow(8.0))
+	var map := frame.size.x <= 0.0
+	var fallback: Array = []
+	if not map:
+		var win := frame.grow_individual(0, 42.0 + 8.0, 0, 16.0)  # with its title plate and its shadow
+		soft.append(win)
+		var top := vis.position.y + 170.0 + _top.position.y  # under the plates and the war bar
+		if win.position.y - top >= COACH_BUST.y:
+			centres.append((top + win.position.y) * 0.5)
+		if vis.end.y - 12.0 - win.end.y >= COACH_BUST.y:
+			centres.append((win.end.y + vis.end.y - 12.0) * 0.5)
+		# over the title plate, its bottom above the window's first row (a leader's portrait at +64), under the plates
+		fallback.append(maxf(frame.position.y + 56.0 - COACH_BUST.y * 0.5, vis.position.y + 90.0 + _top.position.y + COACH_BUST.y * 0.5))
+	for pass_ in [[centres, hard + soft], [fallback + centres, hard]]:
+		for cy in pass_[0]:
+			var rs := _coach_group(vis, float(cy), left, map)
+			var hit := false
+			for r in rs:
+				for o in pass_[1]:
+					hit = hit or (r as Rect2).intersects(o)
+			if not hit:
+				return
+	_coach_group(vis, float(centres[0]), left, map)
+
+
+## Places the advisor around the band centre `cy` (the bust at the left edge when `left`); on the map (`map`) the
+## upper band's bubble steps down under the minimap. Returns the bust's, the bubble's and the plate's rects.
+func _coach_group(vis: Rect2, cy: float, left: bool, map: bool) -> Array:
+	var bw := _coach_bubble.size.x
+	var bh := _coach_bubble.size.y
+	var bx := vis.position.x + 12.0 + COACH_BUST.x + 18.0 if left else vis.end.x - 12.0 - COACH_BUST.x - 18.0 - bw
+	var by := cy + 6.0 - bh * 0.5
+	var mm := Rect2(COACH_MINIMAP.position + Vector2(0, _top.position.y), COACH_MINIMAP.size)
+	if map and Rect2(bx, by, bw, bh).grow(8.0).intersects(mm):
+		var dy := mm.end.y + 8.0 - by
+		cy += dy
+		by += dy
+	cy = clampf(cy, vis.position.y + COACH_BUST.y * 0.5 + 12.0, vis.end.y - COACH_BUST.y * 0.5 - 12.0)
+	by = cy + 6.0 - bh * 0.5
+	var bust := Rect2(vis.position.x + 12.0 if left else vis.end.x - 12.0 - COACH_BUST.x, cy - COACH_BUST.y * 0.5, COACH_BUST.x, COACH_BUST.y)
+	_coach_bust.position = bust.position
+	_coach_bubble.position = Vector2(bx, by)
+	_coach_tail.data["dir"] = "left" if left else "right"
+	_coach_tail.position = Vector2(-18.0 if left else bw - 6.0, bh * 0.5 - _coach_tail.size.y * 0.5 - 3.0)
+	_coach_tail.queue_redraw()
+	var px := bx + 24.0 if left else bx + bw - 24.0 - _coach_plate.size.x
+	_coach_plate.position = Vector2(px, by - COACH_PLATE_H * 0.5)
+	return [bust, Rect2(bx - 18.0, by, bw + 18.0, bh + 6.0), Rect2(_coach_plate.position, _coach_plate.size)]
+
+
+## The pointer (§4.12): on the target's side with the most room — the side toward the screen's middle first
+## (horizontal, then vertical), then the others — in the dimmed area, bobbing 12 px toward the target. It never
+## covers a hole, the advisor or the screen's edge; at a target inside a window or in the bottom-left block (tabs and
+## tray, the battle hand) it steps back out of that container (at most COACH_MAX_PUSH), so it never lies on the
+## window's other button or on the next card. No side fits: no pointer — the ring alone shows the way.
+func _coach_place_arrow(vis: Rect2, holes: Array, frame: Rect2) -> void:
+	var hole: Rect2 = holes[0][0]
+	var ring := hole.grow_individual(hole.size.x * 0.025, hole.size.y * 0.025, hole.size.x * 0.025, hole.size.y * 0.025)
+	var c := hole.get_center()
+	var mid := vis.get_center()
+	var hx := "left" if c.x >= mid.x else "right"
+	var vy := "top" if c.y >= mid.y else "bottom"
+	var order := [hx, vy, "right" if hx == "left" else "left", "bottom" if vy == "top" else "top"]
+	var avoid: Array = []
+	if frame.size.x > 0.0 and frame.grow(4.0).encloses(_coach_rect):
+		avoid.append(frame.grow_individual(0, 42.0, 0, 0))  # the window with its title plate
+	var bl := Rect2(COACH_BOTTOM_LEFT.position + Vector2(0, _bottom.position.y), COACH_BOTTOM_LEFT.size)
+	if frame.size.x <= 0.0 and bl.has_point(_coach_rect.get_center()):
+		avoid.append(bl)
+	var blockers: Array = []
+	for h in holes:
+		blockers.append((h[0] as Rect2).grow(4.0))
+	if _coach_adv.visible:
+		for n in [_coach_bust, _coach_bubble, _coach_plate]:
+			blockers.append((n as Control).get_global_rect().grow(8.0))
+		blockers.append(Rect2(_coach_tail.global_position, _coach_tail.size).grow(4.0))
+	var area := vis.grow(-8.0)
+	for side in order:
+		var d := 10.0
+		for a in avoid:
+			if _coach_sweep(ring, side, d, vis).intersects(a):
+				d = maxf(d, _coach_clear(ring, side, a))
+		if d > 10.0 + COACH_MAX_PUSH:
+			continue
+		var sw := _coach_sweep(ring, side, d, vis)
+		if not area.encloses(sw):
+			continue
+		var hit := false
+		for b in blockers + avoid:
+			hit = hit or sw.intersects(b)
+		if hit:
+			continue
+		var t := d + COACH_BOB * (0.5 + 0.5 * cos(_coach_t * TAU / 0.8))  # farthest, then 12 px in, every 800 ms
+		var box := _coach_sweep(ring, side, t, vis)
+		_coach_arrow.position = box.position + (Vector2(COACH_BOB, 0) if side == "left" else (Vector2(0, COACH_BOB) if side == "top" else Vector2.ZERO))
+		var dir: Vector2 = {"left": Vector2.RIGHT, "right": Vector2.LEFT, "top": Vector2.DOWN, "bottom": Vector2.UP}[side]
+		if _coach_arrow.data.get("dir", Vector2.ZERO) != dir:
+			_coach_arrow.data["dir"] = dir
+			_coach_arrow.queue_redraw()
+		_coach_arrow.visible = true
+		return
+
+
+## The area the pointer sweeps on `side` of `ring` with its tip `d` px off it and 12 px of bob further out.
+func _coach_sweep(ring: Rect2, side: String, d: float, vis: Rect2) -> Rect2:
+	var a := COACH_ARROW
+	var cy := clampf(ring.get_center().y, vis.position.y + a, vis.end.y - a)
+	var cx := clampf(ring.get_center().x, vis.position.x + a, vis.end.x - a)
+	match side:
+		"left":
+			return Rect2(ring.position.x - d - COACH_BOB - a, cy - a * 0.5, a + COACH_BOB, a)
+		"right":
+			return Rect2(ring.end.x + d, cy - a * 0.5, a + COACH_BOB, a)
+		"top":
+			return Rect2(cx - a * 0.5, ring.position.y - d - COACH_BOB - a, a, a + COACH_BOB)
+	return Rect2(cx - a * 0.5, ring.end.y + d, a, a + COACH_BOB)
+
+
+## How far off `ring` the pointer's tip goes to clear the container `a` it stands in.
+func _coach_clear(ring: Rect2, side: String, a: Rect2) -> float:
+	match side:
+		"left":
+			return ring.position.x - a.position.x + 4.0
+		"right":
+			return a.end.x - ring.end.x + 4.0
+		"top":
+			return ring.position.y - a.position.y + 4.0
+	return a.end.y - ring.end.y + 4.0
 
 
 var _toast_nodes: Array = []

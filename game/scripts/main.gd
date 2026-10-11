@@ -582,7 +582,10 @@ func _refresh_ui() -> void:
 			ui.set_action("", "")
 			_primary_for_selection()
 		Mode.WAR:
-			ui.set_action("peace", tr("ui.peace_btn"), _score_text(ws.get("score", 0.0)), "go")
+			if ftue == 2 or ftue == 11:  # «Начните наступление!»: one lit action, the big button (§6 «Обучение»)
+				ui.set_action("", "")
+			else:
+				ui.set_action("peace", tr("ui.peace_btn"), _score_text(ws.get("score", 0.0)), "go")
 			if not _march_primary():
 				_offensive_primary()
 		Mode.BATTLE:
@@ -2761,7 +2764,7 @@ func _start_offensive() -> void:
 	if ftue > 0:
 		# tutorial offensives are short and the enemy plays no cards (canon §14.3)
 		opts["ai_energy_mult"] = 0
-		opts["ticks"] = 60 * Battle.TICKS_PER_SEC
+		opts["ticks"] = FTUE_OFFENSIVE_SEC * Battle.TICKS_PER_SEC
 		ftue = 12 if ftue >= 10 else 3
 	opts.merge(_apply_commanders())
 	ui.cost_discount = {"landing": int(opts.get("landing_discount", 0))}
@@ -6584,6 +6587,8 @@ func _war_cap() -> void:
 
 # ====================================================================== FTUE (canon §14.3)
 
+const FTUE_OFFENSIVE_SEC := 60  # the tutorial's offensives are short (canon §14.3); the coach shows it in a chip
+
 ## Coach lines by FTUE step (translation keys).
 const FTUE_TEXT := {
 	1: "ftue.1",
@@ -6666,20 +6671,36 @@ func _ftue_tick(delta: float) -> void:
 			_ftue_shown = 0
 			ui.coach_hide()
 		return
-	var target := Vector2(-1, -1)
+	# what the coach lights — node rects (docs/ui_style.md §4.12) — what it keeps lit beside it, and how it holds the
+	# player to it: "block" — the one tap the step waits for, the rest of the screen shut; "dim" — dimmed, every tap
+	# passes; "ring" — no dim (a live battle, a step done in two places)
+	var target := Rect2()
+	var point := Vector2(-1, -1)  # a hex on the map: the coach frames a square around it
+	var reveal := Rect2()
+	var cm := "block"
 	match ftue:
 		1:
 			if selected < 0 and mode == Mode.MAP:
 				_pick_target()
-			target = Vector2(793, GameUI.VH - 76)
-		2:
-			target = Vector2(793, GameUI.VH - 76) if mode == Mode.WAR else Vector2(285, 998)
+			target = ui.action_rect()
+			reveal = hud.tile_rect()  # the goal's hex stays readable beside «Война!»
+		2, 11:
+			if mode == Mode.RESULT:  # a failed offensive: «Ещё бой»
+				target = ui.modal_button_rect(0)
+				reveal = ui.modal_body_rect()
+			else:
+				target = ui.action_rect()
+		3, 13:
+			cm = "ring"
 		4:
-			target = Vector2(70, GameUI.VH - 124)
+			target = ui.card_rect("attack")
+			cm = "ring"
 		5:
-			target = ui.result_peace_center()
+			target = ui.modal_button_rect(1)
+			reveal = ui.modal_body_rect()
 		6:
-			target = ui.peace_seal_center()
+			target = ui.seal_rect()
+			reveal = ui.modal_body_rect()
 		7:
 			if econ.dev_level() >= 2 or _residence_busy():
 				ftue = 8
@@ -6688,15 +6709,21 @@ func _ftue_tick(delta: float) -> void:
 			if why.begins_with("err.need_hexes"):
 				ftue = 8  # not enough land for DL2 yet — the convoy step comes first
 				return
-			target = Vector2(70, 1440) if tab != "buildings" else Vector2(83, GameUI.VH - 35)
+			target = hud.tab_rect("buildings") if tab != "buildings" \
+				else ui.first_card_cta_rect(tr(String(Economy.BUILDINGS["residence"]["name"])))
+			cm = "block" if why == "" else "dim"  # short of something: the screen is never shut around a tap that fails
 		8:
 			var dh := _ftue_deposit()
 			if dh >= 0 and _ftue_shown != 8:
 				rig.focus(map_view.cell_world(dh))
-			if dh >= 0:
-				target = rig.cam.unproject_position(map_view.cell_world(dh) + Vector3(0, 0.8, 0))
+			if dh >= 0 and selected == dh and ui._action2_kind == "convoy":
+				target = ui.action_rect()  # the vein picked: now the convoy
+			elif dh >= 0:
+				point = rig.cam.unproject_position(map_view.cell_world(dh) + Vector3(0, 0.8, 0))
+			cm = "dim"
 		9:
-			target = hud.tool_rect("fort").get_center()
+			target = hud.tool_rect("fort", true)
+			cm = "ring"  # a border hex first, then the fort: both stay in reach
 		10:
 			var ht := _hamlets_target()
 			if ht < 0 and mode == Mode.MAP:
@@ -6705,21 +6732,32 @@ func _ftue_tick(delta: float) -> void:
 			if mode == Mode.MAP and (selected < 0 or sim.cells[selected]["owner"] != MapGen.HAMLETS) and ht >= 0:
 				rig.focus(map_view.cell_world(ht))
 				_select(ht)
-			target = Vector2(793, GameUI.VH - 76)
-		11:
-			target = Vector2(793, GameUI.VH - 76) if mode == Mode.WAR else Vector2(285, 998)
+			target = ui.action_rect()
+			reveal = hud.tile_rect()
 		12:
-			target = Vector2(445, GameUI.VH - 124)
+			target = ui.card_rect("encircle")
+			cm = "ring"
 		14:
-			target = ui.result_peace_center() if mode == Mode.RESULT else Vector2(793, GameUI.VH - 200)
+			if mode == Mode.RESULT:
+				target = ui.modal_button_rect(1)
+				reveal = ui.modal_body_rect()
+			else:
+				target = ui.status_rect()  # «Мир»
 		15:
-			target = ui.peace_plunder_center()
+			target = ui.plunder_rect(0)  # «Нет»: sparing is the choice taught …
+			var fr: Rect2 = ui.modal_rect()  # … and the whole treaty stays in reach: the choice, then «Подписать мир»
+			reveal = fr.grow_individual(0, 42.0, 0, 0) if fr.size.x > 0.0 else Rect2()
 	if _ftue_shown != ftue:
 		_ftue_shown = ftue
 		_ftue_t = 0.0
-		ui.coach(tr(String(FTUE_TEXT[ftue])), target)
+		var chip := GameUI.fmt_time(FTUE_OFFENSIVE_SEC) if ftue == 2 or ftue == 11 else ""  # «Начните наступление!» [1:00]
+		ui.coach(tr(String(FTUE_TEXT[ftue])), point, chip)
 	_ftue_t += delta
-	ui.coach_target(target)
+	if point.x >= 0.0:
+		ui.coach_target(point)
+	else:
+		ui.coach_rect(target, reveal)
+	ui.coach_mode(cm)
 	if (ftue == 4 or ftue == 13) and _ftue_t > 6.0:
 		ui.coach_hide()
 	if ftue == 3 and battle != null:
@@ -6832,14 +6870,43 @@ func _hex_dist(a: int, b: int) -> int:
 func _demo(spec: String) -> void:
 	var parts := spec.split(":")
 	var what := parts[0]
-	if what.begins_with("ftue"):
+	if what.begins_with("ftue"):  # ftue:N — the tutorial at step N (war 2's steps on war 1's screens)
 		ftue = 1
 		_burned_mill()
 		var step := int(parts[1]) if parts.size() > 1 else 1
-		if step >= 2:
+		var base: int = {4: 3, 11: 2, 12: 3, 13: 3, 14: 5, 15: 6}.get(step, step)
+		if base in [2, 3, 5, 6, 7]:
 			_declare(MapGen.BARONS, War.recommend_goals(sim, MapGen.BARONS, 1)[0])
-		if step >= 3:
+		if base in [3, 5, 6, 7]:
 			_start_offensive()
+		if base in [5, 6, 7]:  # the offensive played out by the bot: the result (5), the treaty (6)
+			while battle != null and not battle.over:
+				if battle.tick % 20 == 0:
+					_bot_move()
+				_battle_step()
+			_end_offensive()
+		if base in [6, 7]:
+			ui.close_modal()
+			_open_peace()
+		if base == 7 and ftue == 6:  # the first peace, its ceremony, the flag and the name: the tour resumes
+			_sign_peace()
+			for i in 80:
+				_step_ceremony(0.1)
+			_end_ceremony()
+			_finish_flag_wizard(FlagView.random_flag(3))
+			_finish_name_editor("")
+			for _n in 12:  # short of land for DL2 after this war: wild hexes beside the realm are settled, as in play
+				if not econ.can_upgrade(econ.buildings[0], now_s()).begins_with("err.need_hexes"):
+					break
+				for c in sim.cells:
+					if c["owner"] == Types.NOBODY and Types.is_passable(c) and _touches_player(c["id"]):
+						c["owner"] = Types.PLAYER
+						c["controller"] = Types.PLAYER
+						map_view.refresh_hex(c["id"])
+						break
+				_econ_tick()
+		if step != 7:  # step 7 comes as in play (it skips to 8 when the land is short of DL2)
+			ftue = step
 		for i in 3:
 			_ftue_tick(0.4)
 		return

@@ -455,10 +455,17 @@ func set_currency_input(on: bool) -> void:
 			p.plus.mouse_filter = Control.MOUSE_FILTER_STOP if on else Control.MOUSE_FILTER_IGNORE
 
 
-## Global rect of a round map tool (target / pin / fort / tower), for the coach.
-func tool_rect(name: String) -> Rect2:
+## Global rect of a round map tool (target / pin / fort / tower), for the coach; empty while it is hidden. With
+## `caption`, its caption plate too (the coach's ring would cross «Форт» otherwise).
+func tool_rect(name: String, caption := false) -> Rect2:
 	var b: Control = _tools.get(name)
-	return b.get_global_rect() if b != null else Rect2()
+	if b == null or not b.is_visible_in_tree():
+		return Rect2()
+	var r := b.get_global_rect()
+	var cap: Variant = b.get_meta("kit_caption", null)
+	if caption and is_instance_valid(cap) and (cap as Control).visible:
+		r = r.merge((cap as Control).get_global_rect())
+	return r
 
 
 ## Global rect of a frame element: trophy / book / mail / gear / shop / orders, profile (the crest), ruler, minimap,
@@ -701,10 +708,10 @@ func set_tab_badge(key: String, n := -1, role := "war") -> void:
 	_show_dot(d, true)
 
 
-## Global rect of a folder tab (for the coach).
+## Global rect of a folder tab (for the coach); empty while the tabs are hidden (a battle, a docked window).
 func tab_rect(key: String) -> Rect2:
 	var t: Control = _tabs.get(key)
-	return t.get_global_rect() if t != null else Rect2()
+	return t.get_global_rect() if t != null and t.is_visible_in_tree() else Rect2()
 
 
 # ---------------------------------------------------------------- the hex panel (§5, §6 HUD)
@@ -767,7 +774,7 @@ func hide_tile() -> void:
 
 ## Global rect of the hex panel (for the coach); empty while it is hidden.
 func tile_rect() -> Rect2:
-	return tile_box.get_global_rect() if tile_box.visible else Rect2()
+	return tile_box.get_global_rect() if tile_box.is_visible_in_tree() else Rect2()
 
 
 ## The stat chips in the column right of the render, flowed into two rows (y 58, y 100), in order: a chip joins its

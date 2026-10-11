@@ -71,6 +71,8 @@ const RADII: Array[int] = [0, 8, 14, 20, 24, 34]
 const FIT_FLOOR := 20  ## legacy _fit floor; new screens stop at 22 (24 for regular text)
 const SHADOW_A := 0.35
 const DIM_A := 0.6
+## The advisor's speech bubble (§3.4 table «Подсказка / пузырь»: R 24 / 30, OUT 4 / 5) — the one radius off RADII.
+const R_BUBBLE := 30
 const LOCK_MOD := Color(0.55, 0.57, 0.62)  ## a closed item's icon (§3.5)
 ## How far a finger may travel on the screen and still tap (≈ 7 dp): past it a press inside a scrolling row is a
 ## swipe, and a swipe never spends (§2: «иначе при прокрутке возможны случайные траты»).
@@ -500,7 +502,8 @@ class KitDecor extends Control:
 # ------------------------------------------------------------------ vector chrome and shapes
 
 ## Draws kit shapes: vector chrome (x, check, chevron_left/right, plus, minus, arrow_up, arrow_right, swap), stars,
-## hex badges, the title plate, dots, discs, bars, the blueprint grid and the tooltip tail. Never a font glyph.
+## hex badges, the title plate, dots, discs, bars, the blueprint grid, the tooltip tail and the coach's ring, pointer
+## and ghost finger (§4.12). Never a font glyph.
 class KitShape extends Control:
 	var kind := ""
 	var face := Color.WHITE
@@ -630,6 +633,67 @@ class KitShape extends Control:
 				draw_line(p[0], p[2], INK, 4.0, true)
 				draw_line(p[1], p[2], INK, 4.0, true)
 				draw_circle(p[2], 2.0, INK, true, -1.0, true)
+			"ring":  # the coach's ring: gold 6 between INK 3 strokes, its outer edge on the box (data.r its radius);
+				# data.gx / gy: how far it has swollen out — the gold widens by as much, the inner edge stays put
+				var rr := minf(float(data.get("r", 24.0)), minf(size.x, size.y) * 0.5)
+				var gx := float(data.get("gx", 0.0))
+				var gy := float(data.get("gy", 0.0))
+				var sb := StyleBoxFlat.new()
+				sb.draw_center = false
+				sb.anti_aliasing = true
+				sb.corner_detail = 16
+				sb.border_color = INK
+				sb.border_width_left = int(roundf(12.0 + gx))
+				sb.border_width_right = sb.border_width_left
+				sb.border_width_top = int(roundf(12.0 + gy))
+				sb.border_width_bottom = sb.border_width_top
+				sb.set_corner_radius_all(int(rr))
+				draw_style_box(sb, Rect2(Vector2.ZERO, size))
+				sb.border_color = ROLE["gold"][0]
+				sb.border_width_left = int(roundf(6.0 + gx))
+				sb.border_width_right = sb.border_width_left
+				sb.border_width_top = int(roundf(6.0 + gy))
+				sb.border_width_bottom = sb.border_width_top
+				sb.set_corner_radius_all(int(maxf(0.0, rr - 3.0)))
+				draw_style_box(sb, Rect2(Vector2(3, 3), size - Vector2(6, 6)))
+			"pointer":
+				_pointer()
+			"finger":  # the ghost finger: a white disc Ø64 in an INK 4 contour inside a gold ring (data.a: its alpha)
+				var c := size * 0.5
+				var a := float(data.get("a", 1.0))
+				draw_arc(c, 38.0, 0.0, TAU, 64, Color(INK, a), 10.0, true)
+				draw_arc(c, 38.0, 0.0, TAU, 64, Color(ROLE["gold"][0], a), 5.0, true)
+				draw_circle(c, 32.0, Color(INK, a), true, -1.0, true)
+				draw_circle(c, 28.0, Color(1, 1, 1, a), true, -1.0, true)
+
+	## The coach's pointer: a chunky arrow toward data.dir — a gold face in an INK 4 contour over a 6 px lip of the
+	## gold's lip colour (the lip stays below whatever way it points, as on every raised kit shape). No gloss: it is no
+	## button. A head and a shaft, each a rounded convex polygon (round_poly takes no concave corners).
+	func _pointer() -> void:
+		var dir: Vector2 = data.get("dir", Vector2.DOWN)
+		var k := minf(size.x, size.y) - 14.0  # the shape inside its contour (4 a side) and the lip (6)
+		var c := size * 0.5 - Vector2(0, 3)
+		var a := dir.angle()
+		var parts: Array = []
+		for unit in [[Vector2(-0.02, -0.44), Vector2(0.46, 0.0), Vector2(-0.02, 0.44)],
+				[Vector2(-0.46, -0.16), Vector2(0.06, -0.16), Vector2(0.06, 0.16), Vector2(-0.46, 0.16)]]:
+			var pts := PackedVector2Array()
+			for v in unit:
+				pts.append(c + (v as Vector2).rotated(a) * k)
+			parts.append(SELF.round_poly(pts, 5.0))
+		var lips: Array = []
+		for p in parts:
+			var q := PackedVector2Array()
+			for v in p:
+				q.append(v + Vector2(0, 6))
+			lips.append(q)
+		for p in lips + parts:
+			for o in Geometry2D.offset_polygon(p, 4.0, Geometry2D.JOIN_ROUND):
+				draw_colored_polygon(o, INK)
+		for p in lips:
+			draw_colored_polygon(p, ROLE["gold"][1])
+		for p in parts:
+			draw_colored_polygon(p, ROLE["gold"][0])
 
 	func _star(c: Vector2, rr: float, full: bool) -> void:
 		var body := SELF.star_points(c, rr)

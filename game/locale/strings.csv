@@ -441,21 +441,22 @@ inbox.war_cap.title,Кап войны,War cap
 inbox.war_cap.peace,Война длилась 2 ч — подписан рекомендованный мир.,The war lasted 2 h: the recommended peace was signed.
 inbox.war_cap.white,Война длилась 2 ч — белый мир.,The war lasted 2 h: white peace.
 toast.war_cap_white,Кап войны: белый мир,War cap: white peace
-ftue.1,Бароны сожгли нашу пограничную мельницу! Объявите им войну.,The Barons burned our border mill! Declare war on them.
-ftue.2,Начните наступление: у вас 60 секунд.,Launch an offensive: you have 60 seconds.
-ftue.3,Тяните от своей армии на вражеский гекс — армия пойдёт в атаку.,Drag from your army onto an enemy hex to attack.
-ftue.4,Отлично! Карта «Атака» бросает в бой все армии рядом. Захватите ещё!,Great! The “Attack” card throws every nearby army into battle. Take more!
-ftue.5,Захваченное пока лишь оккупировано. Подпишите мир — и граница сдвинется.,Captured land is only occupied for now. Sign a peace and the border will move.
+ftue.1,Бароны сожгли нашу мельницу! Объявите им войну.,The Barons burned our mill! Declare war on them.
+ftue.2,Начните наступление!,Launch an offensive!
+ftue.3,Тяните от своей армии на вражеский гекс — она пойдёт в атаку.,Drag from your army onto an enemy hex to attack.
+ftue.4,Отлично! «Атака» бросает в бой все армии рядом. Захватите ещё!,Great! “Attack” sends every army nearby into battle. Take more!
+ftue.5,Земля пока лишь занята. Подпишите мир — и граница сдвинется.,Captured land is only occupied. Sign a peace to move the border.
 ftue.6,"Удерживайте «Подписать мир», чтобы заключить договор.",Hold “Sign peace” to sign the treaty.
-ftue.7,Держава растёт! Откройте «Здания» и улучшите Резиденцию — халупы станут избами.,Your realm is growing! Open “Buildings” and upgrade the Residence: huts will become cottages.
-ftue.8,Жёлтый контур — бесплатные ресурсы. Коснитесь жилы и отправьте обоз.,A yellow outline means free resources. Tap the vein and send a convoy.
-ftue.9,Укрепите границу: выберите свой гекс у Баронов и нажмите кнопку «форт» справа.,Fortify the border: select your hex next to the Barons and tap the “fort” button on the right.
+ftue.7,Откройте «Здания» и улучшите Резиденцию — халупы станут избами.,Open “Buildings” and upgrade the Residence: huts become cottages.
+ftue.8,Жёлтый контур — даровые ресурсы. Коснитесь жилы и пошлите обоз.,"A yellow outline means free resources. Tap the vein, send a convoy."
+ftue.9,Укрепите границу: выберите гекс у Баронов и нажмите «Форт».,Fortify the border: pick a hex by the Barons and tap “Fort”.
 ftue.10,Вольные Хутора заняли шахту у нашей границы. Объявите им войну!,The Free Hamlets seized a mine on our border. Declare war on them!
-ftue.11,Начните наступление.,Launch an offensive.
-ftue.12,Карта «Котёл» режет снабжение: перетащите её на вражеский гекс у ваших армий.,The “Encircle” card cuts supply: drag it onto an enemy hex next to your armies.
+ftue.11,Начните наступление!,Launch an offensive!
+ftue.12,«Котёл» режет снабжение: бросьте его на врага рядом с вашей армией.,“Encircle” cuts supply: drop it on an enemy hex next to your army.
 ftue.13,Отлично! Окружённые гексы сдаются быстрее. Захватите шахту!,Great! Encircled hexes fall faster. Capture the mine!
 ftue.14,Подпишите мир с Хуторами.,Sign a peace with the Hamlets.
-ftue.15,Пощадить Хутора (+20 к мнению) или разграбить? Выберите и удерживайте «Подписать мир».,"Spare the Hamlets (+20 opinion) or plunder them? Choose, then hold “Sign peace”."
+ftue.15,Пощадить Хутора (+20 к мнению) или разграбить? Выберите и подпишите.,"Spare the Hamlets (+20 opinion) or plunder them? Choose, then sign."
+ftue.advisor,Сержант Брам,Sergeant Bram
 toast.cloud_loaded,Загружено облачное сохранение,Cloud save restored
 res.name.gold,Золото,Gold
 res.name.food,Еда,Food
