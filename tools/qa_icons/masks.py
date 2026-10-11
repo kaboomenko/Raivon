@@ -7,7 +7,9 @@ Builds each icon with tools/blender/icon_assets.py (read-only), frames it with t
 emission colours at the raw size (256) instead of the materials:
 - OUT_DIR/<name>_ids.png    red = the lock (parts named lock*, keyhole*, keyslot*, hole*, slot*, gem*), green = dark
                             iron (materials named iron*), blue = everything else;
-- OUT_DIR/<name>_units.png  (only when parts carry o["unit"], the crate's boxes) unit 0 red, 1 green, 2 blue.
+- OUT_DIR/<name>_units.png  (only when parts carry o["unit"], the crate's boxes) unit 0 red, 1 green, 2 blue;
+- OUT_DIR/<name>_body.png   (the four chests) the body alone, white: its width is the family size of C-3, free of the
+                            silhouette breakers (rings, finials, feet).
 The masks match the shipped icon pixel for pixel before its 256 → 128 downscale and ink rim (chest_qa.py --masks=DIR).
 """
 import os
@@ -22,6 +24,7 @@ from measure_lean import build, camera  # noqa: E402  (imports tools/blender/ico
 
 LOCK = ("lock", "keyhole", "keyslot", "hole", "slot", "gem")
 DEFAULT = ["chest_wood", "chest_silver", "chest_royal", "chest_cards", "crate", "gift"]
+FAMILY = ("chest_wood", "chest_silver", "chest_royal", "chest_cards")
 
 
 def flat(name, rgb):
@@ -90,6 +93,14 @@ def main():
             camera(n)
             paint(lambda o: colours[int(o.get("unit", 0)) % 3])
             shoot(os.path.join(out, n + "_units.png"))
+        if n in FAMILY:
+            build(n)
+            camera(n)  # framed with every part present (the open chest's frame slides on its full outline)
+            for o in bpy.context.scene.objects:
+                if o.type == "MESH":
+                    o.hide_render = o.name.split(".")[0] != "body"
+            paint(lambda o: (1.0, 1.0, 1.0))
+            shoot(os.path.join(out, n + "_body.png"))
         print("MASK", n, flush=True)
 
 

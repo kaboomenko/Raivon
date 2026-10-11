@@ -1,6 +1,6 @@
 """C-1 / C-2 / C-3 of docs/art_direction.md §7.14 on the shipped chest and crate icons (image-based, numpy + Pillow).
 
-Usage: python3 -I tools/qa_icons/qa_chest.py ICON_DIR [names ...] [--strict]
+Usage: python3 -I tools/qa_icons/qa_chest.py ICON_DIR [names ...] [--masks=DIR] [--strict]
        (default names: chest_wood chest_silver chest_royal chest_cards crate gift)
 
 Per icon, on the alpha mask (alpha > 0.5; the ink rim is part of it — it is symmetric, so it biases nothing):
@@ -12,8 +12,10 @@ Per icon, on the alpha mask (alpha > 0.5; the ink rim is part of it — it is sy
   chest the band runs from the lid's lip overhang in to the flared body and out to the boots, so it measures the
   shape, not the camera (the research prototype of §7.13 reads 13.8–16.3 deg here). The camera keystone — §7.14's
   «symmetric keystone <= 12 deg per side» — is measured geometrically by measure_lean.py (the tapered body edge).
-- body width at 75 % of the bbox height (px at 128): the closed chests and the open card chest within +-2 px of each
-  other (C-3; spread <= 4 px).
+- body width (px at 128): the closed chests and the open card chest within +-2 px of each other (C-3; spread <= 4 px),
+  measured on the body alone — <name>_body.png from masks.py (--masks=DIR). The outline of the image cannot give it:
+  the wood chest's ring «ears» stand beside the body over half its height. Without --masks the outline width at 75 %
+  of the bbox height is printed for information only.
 Prints one line per icon and RESULT PASS|FAIL <count>; exit 1 with --strict on any FAIL.
 """
 import os
@@ -37,6 +39,15 @@ def path_of(d, name):
         if os.path.exists(p):
             return p
     return None
+
+
+def body_width(masks, name):
+    p = os.path.join(masks, name + "_body.png") if masks else ""
+    if not os.path.exists(p):
+        return None
+    bm = load(p)[..., 3] > 0.5
+    xs = np.where(bm.any(0))[0]
+    return float((xs.max() - xs.min() + 1) * 128.0 / bm.shape[1])
 
 
 def measure(path):
@@ -68,6 +79,7 @@ def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     d, names = args[0], args[1:] or DEFAULT
     strict = "--strict" in sys.argv
+    masks = dict(a[2:].split("=", 1) for a in sys.argv[1:] if a.startswith("--") and "=" in a).get("masks")
     fails, widths = 0, {}
     for n in names:
         p = path_of(d, n)
@@ -77,10 +89,14 @@ def main():
         mi, lean, conv, wd = measure(p)
         bad = mi < IOU_MIN or abs(lean) > LEAN_MAX
         fails += bad
-        if n in FAMILY:
-            widths[n] = wd
-        print("%-14s mirror IoU %.3f  lean %+5.2f deg  (conv %+5.2f deg, info)  body width %5.1f px@128 %s"
-              % (n, mi, lean, conv, wd, "FAIL" if bad else "ok"))
+        bw = body_width(masks, n)
+        if n in FAMILY and bw is not None:
+            widths[n] = bw
+        print("%-14s mirror IoU %.3f  lean %+5.2f deg  (conv %+5.2f deg, info)  %s %s"
+              % (n, mi, lean, conv, "body width %5.1f px@128" % bw if bw is not None else
+                 "outline width at 75 %% %5.1f px@128 (info)" % wd, "FAIL" if bad else "ok"))
+    if len(widths) < 2 and any(n in FAMILY for n in names):
+        print("chest family body width: no body masks (pass --masks=DIR from masks.py for C-3)")
     if len(widths) > 1:
         spread = max(widths.values()) - min(widths.values())
         print("chest family body width spread %.1f px@128 (gate <= %.0f) %s"

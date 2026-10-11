@@ -19,7 +19,7 @@ Pipeline, per icon (reproducible: Cycles seed 0; the rim is applied exactly once
 1. render 256 × 256, transparent, into a temp dir (--raw=DIR, default a fresh dir under the system temp — never the
    repo); the camera is fitted to the model's silhouette (ortho scale or the perspective distance, and the shift), so
    every icon fills the same share of its square (FILL) and leaves room for the rim — except the chest family, which
-   shares the closed wood chest's frame so all four bodies come out the same size;
+   shares one frame fitted on the closed chests so all four bodies come out the same size;
 2. downscale to 128 × 128 (Lanczos);
 3. tools/ui/ink_rim.py bakes the 3 px INK rim into the final file.
 Portraits and card art (tools/blender/card_art.py) get no rim.
@@ -1095,10 +1095,27 @@ LID_N, LID_OVER = 2.6, 0.028  # the lid's superellipse exponent and its overhang
 STRAP_X, STRAP_W, STRAP_OUT = 0.245, 0.095, 0.018
 SEAM_INK, CHEST_IN, LID_IN = "#2a1d22", "#3c1c26", "#b8423c"
 LID_OPEN = 148  # degrees, the card chest's lid thrown back about the rear hinge
-# The wood chest's ring handles: centre height and depth. Forward of the end's middle: from 25° above a ring at mid-depth
-# projects at the height of the lid's lip and hides behind it; at y −0.13 it stands out of the body's front edge.
-RING_Z, RING_Y = -0.13, -0.13
+# The wood chest's ring handles (torus RING_R, tube RING_T, §7.13), facing the camera: centre height and depth. Forward
+# of the end's middle: from 25° above a ring at mid-depth projects at the height of the lid's lip and hides behind it,
+# and nearer the camera the perspective widens it.
+RING_Z, RING_Y = -0.13, -0.17
+RING_R, RING_T = 0.075, 0.03
+# The rings' outer edge stands RING_PAST beyond the widest outline above them — the lid's lip (lw + 0.01), not the
+# body's end: 0.07 past the body's end cleared the lip by 1 px at 128 and the «ears» read as lumps. At 0.09 they stand
+# 5.4 px past the lip per side at 128 (2 px at 48); the centre lands 0.03 outside the end face, so the ring's inner arc
+# sinks into the end and a window of its hole stands free beside the body.
+RING_PAST = 0.09
+# The card chest's hand: four cards 0.34 × 0.5 fanned ±12° / ±36° about one axis inside the chest (§7.13). CARD_AXIS is
+# the axis (x, the front card's y, z): at z −0.12 the top 75 % (±12°) and 70 % (±36°) of each card stand above the rim
+# (§7.13: ≥ 60 %); at y −0.18 the hand stands near the front, so only a strip of the dark inside shows in front of it
+# (5.6 % of the icon; 8.9 % with the hand sunk at the back). Depth order (CARD_DEPTH, slots CARD_STEP apart: a card
+# with its face and star is 0.034 thick, so 0.006 clear): the gold card in front (the legendary tier's colour), the
+# green one behind it, the two outer cards at the back — the hand stays centred and the outer pair shows the same area
+# (a left-to-right stack sank the right-hand cards: 5 : 1 between the outer two).
 CARD_FAN = ((-36, "#3f86f0"), (-12, "#4cb050"), (12, "#ffc531"), (36, "#a65bf2"))
+CARD_AXIS = (0.0, -0.18, -0.12)
+CARD_STEP = 0.04
+CARD_DEPTH = {12: 0, -12: 1, -36: 2, 36: 3}
 # Tiers by character, not only by colour (§7.13): body / lid, the metal, the lip, the lock and the silhouette breaker.
 CHEST_TIERS = {
     "wood": dict(body="#b8763f", lid="#cf8f52", metal="#4f5768", iron=True, lip="#7d4c27", lock="#e8b23e",
@@ -1107,9 +1124,10 @@ CHEST_TIERS = {
                    lid_h=0.31, foot=True, ends=True, rivets=True, balls=True),
     # Royal: §7.13's #4A2A96 / #5C38B4 with gold on every metal part measured L* 58.8 at 48 px, level with the wood
     # chest (58.2) — the violet is half the model, the gold the other half at L* 78. For the tier ladder (silver > wood
-    # > royal, ≥ 8 apart) the violet goes a step deeper and the foot rim and lid end trims turn deep violet; the gold
-    # stays on the straps, lip, boots, rivets, lock, crest and finials (L* 49.6).
-    "royal": dict(body="#361f78", lid="#442796", metal="#f2b234", trim="#2f1c6c", lip=None, lock="#f2b234",
+    # > royal, ≥ 8 apart) the violet goes two steps deeper (body L* 18.3, lid 23.3: just above the #2A2A30 floor, 17.3)
+    # and the foot rim and lid end trims turn deep violet (#2F1C6C, L* 18.0); the gold stays on the straps, lip, boots,
+    # rivets, lock, crest and finials. L* about 48 at 48 px: §7.13's 40–46 would take the gold off half the parts.
+    "royal": dict(body="#301b70", lid="#3a228a", metal="#f2b234", trim="#2f1c6c", lip=None, lock="#f2b234",
                   gem="#3a8dff", lid_h=0.34, foot=True, ends=True, rivets=True, crest=True, finials=True),
     "cards": dict(body="#c23f3a", lid="#d65148", metal="#f2b234", lip=None, lock="#f2b234", lid_h=0.31,
                   foot=True, ends=True, open=True),
@@ -1211,8 +1229,11 @@ def _chest_v2(tier):
         fixed.append(box("foot", (W + 0.034, D + 0.034, 0.065), (0, 0, zb + 0.005 + 0.0325), trim, 0.014))
     if t.get("planks"):
         groove = mat("c_groove", t["planks"], 0.7)
-        for z in (-0.145, -0.268):  # the lower one 0.003 under §7.13's −0.265: its top stays 0.005 under the boots' tops
-            fixed.append(box("groove", (W + 0.012, D + 0.012, 0.016), (0, 0, z), groove, 0.0))
+        # Plank lines on the front, 0.006 proud, ending where the body's corner bevel begins: a band wrapped round
+        # the body put square corners outside the rounded ones and ticks on the outline. The lower one 0.003 under
+        # §7.13's −0.265: its top stays 0.005 under the boots' tops.
+        for z in (-0.145, -0.268):
+            fixed.append(box("groove", (W - 0.06, 0.02, 0.016), (0, -(D / 2 + 0.006) + 0.01, z), groove, 0.0))
     for sx in (-1, 1):
         fixed.append(box("strap", (STRAP_W, D + 2 * STRAP_OUT, zt - 0.01 - strap_lo), (sx * STRAP_X, 0, (strap_lo + zt - 0.01) / 2),
                          metal, 0.012))
@@ -1222,17 +1243,15 @@ def _chest_v2(tier):
         if t.get("rivets"):  # four per strap
             for z in (-0.06, -0.137, -0.213, -0.29):
                 fixed.append(sphere("rivet", 0.02, (sx * STRAP_X, -(D / 2 + STRAP_OUT + 0.004), z), lockm, (1, 0.5, 1), 2))
-        if t.get("rings"):  # iron ring handles through the ends, 0.07 proud: «ears» that break the silhouette
-            _torus("ring", 0.075, 0.03, (sx * (W / 2 + 0.07 - 0.105), RING_Y, RING_Z), metal, (math.pi / 2, 0, 0), seg=24)
     if t.get("open"):  # the dark inside, seen through the open top
         fixed.append(box("inside", (W - 0.08, D - 0.08, 0.012), (0, 0, zt + 0.002), mat("c_in", CHEST_IN, 0.85), 0.0))
         fixed.append(_hex_plate("lock", 0.18, 0.15, 0.035, (0, -(D / 2 + 0.03), -0.085), lockm, 0.025, 0.01))
     for o in fixed:
         _taper(o, zb, zt, CHEST_FLARE)
-    if t.get("rings"):
-        for o in bpy.context.scene.objects:  # the rings sit on the tapered end faces
-            if o.name.startswith("ring"):
-                o.location.x *= CHEST_FLARE + (1 - CHEST_FLARE) * (RING_Z - zb) / (zt - zb)
+    if t.get("rings"):  # iron ring handles through the ends, facing the camera: «ears» that break the silhouette
+        xr = lw + 0.01 + RING_PAST - RING_R - RING_T  # the outer edge RING_PAST beyond the lid's lip
+        for sx in (-1, 1):
+            _torus("ring", RING_R, RING_T, (sx * xr, RING_Y, RING_Z), metal, (math.pi / 2, 0, 0), seg=24)
     if t.get("balls"):  # silver: four ball feet under the boots, a light gap under the chest
         for sx in (-1, 1):
             for sy in (-1, 1):
@@ -1249,7 +1268,8 @@ def _chest_v2(tier):
         groove = mat("c_groove", t["planks"], 0.7)
         for deg in (52, 128):
             y, z = _arch_point(a, h, zl, deg)
-            g = box("lid_groove", (2 * lw + 0.01, 0.016, 0.016), (0, y * 1.012, z + 0.002), groove, 0.0)
+            # 0.015 short of each lid end, inside its 0.03 bevel: no square stub out of the rounded end
+            g = box("lid_groove", (2 * lw - 0.03, 0.016, 0.016), (0, y * 1.012, z + 0.002), groove, 0.0)
             g.rotation_euler.x = math.radians(90 - deg)
     for sx in (-1, 1):  # the straps follow the lid's own arch, 0.018 out
         _prism_yz("strap_lid", _lid_profile(a + STRAP_OUT, h + STRAP_OUT, zp), sx * STRAP_X - STRAP_W / 2,
@@ -1281,14 +1301,13 @@ def _chest_v2(tier):
             k = cyl("hinge_knuckle", 0.035, STRAP_W - 0.01, (sx * STRAP_X, D / 2 + 0.01, zl / 2), metal, 16, 0.008)
             k.rotation_euler.y = math.pi / 2
         white = mat("card_white", "#fbf8f0", 0.5)
-        for k, (ang, col) in enumerate(CARD_FAN):  # a hand of cards fanned from an axis inside the chest
+        px, py, pz = CARD_AXIS
+        for ang, col in CARD_FAN:  # a hand of cards fanned about one axis inside the chest (CARD_AXIS, CARD_DEPTH)
             before = set(bpy.context.scene.objects)
             box("card", (0.34, 0.02, 0.5), (0, 0, 0.25), white, 0.02)
             box("card_face", (0.26, 0.02, 0.42), (0, -0.007, 0.25), mat("cf" + col, col, 0.5), 0.012)  # 0.04 white edge
             _star_mesh("star", 0.085, 0.036, 0.0, 0.28, -0.024, -0.004, white)
-            # each card 0.045 further back (no two share a plane); from 25° above that would lift it on screen, so
-            # its pivot drops by the same depth × tan 25°: the fan stands level
-            _group(before, (0.0, -0.07 + k * 0.045, -0.19 - k * 0.045 * math.tan(math.radians(90 - OBJ_PITCH))), (0, ang, 0))
+            _group(before, (px, py + CARD_STEP * CARD_DEPTH[ang], pz), (0, ang, 0))
         return
     # ---- the lock straddles the seam on the front: our rounded hex, a keyhole or a raivite gem
     yf = -(a + 0.01) + 0.013  # sunk 0.013 into the lip
@@ -1619,9 +1638,12 @@ RIM_BY = {"metal": 420}
 # converges ±7.9° (too wide), 135 mm ±2.9° (flat), ortho reads the lid's dome as a box. The distance is solved so the
 # silhouette fills FILL of the frame, centred with shift_x / shift_y.
 OBJECT_ICONS = ("chest_wood", "chest_silver", "chest_royal", "chest_cards", "crate", "gift")
-# The chest family shares ONE distance and shift, fitted on the closed wood chest, so all bodies come out the same size;
-# the open card chest may grow upwards (its frame slides up, same distance) but never shrinks its body.
+# The chest family shares ONE distance and shift, so all bodies come out the same size; the open card chest may grow
+# upwards (its frame slides up, same distance) but never shrinks its body. The frame is fitted on the union of the
+# closed chests' silhouettes (FAMILY_FIT): fitted on the wood chest alone, the royal chest's finials ran 6 px (of 256)
+# wider and its ink rim touched the canvas edge.
 CHEST_FAMILY = ("chest_wood", "chest_silver", "chest_royal", "chest_cards")
+FAMILY_FIT = ("chest_wood", "chest_silver", "chest_royal")
 OBJ_LENS, OBJ_SENSOR, OBJ_PITCH = 85.0, 36.0, 65.0
 _FAMILY = {}
 
@@ -1664,9 +1686,10 @@ def _object_axes():
     return np.array([1.0, 0.0, 0.0]), np.array([0.0, math.cos(t), math.sin(t)]), np.array([0.0, math.sin(t), -math.cos(t)])
 
 
-def _object_frame(fill):
-    """Solve the object camera for the model in the scene: its aim point, distance and shift (a dict)."""
-    pts = _model_points()
+def _object_frame(fill, pts=None):
+    """Solve the object camera for the model in the scene (or the world points pts): its aim point, distance and shift
+    (a dict)."""
+    pts = _model_points() if pts is None else pts
     ctr = (pts.min(0) + pts.max(0)) / 2
     fwd = _object_axes()[2]
     dist, sx, sy = 3.0, 0.0, 0.0
@@ -1698,12 +1721,16 @@ def _object_cam(frame):
 
 
 def build(name):
-    """Reset the scene and build icon `name`. The chest family first solves its shared frame on the closed wood chest
-    (once per process)."""
+    """Reset the scene and build icon `name`. The chest family first solves its shared frame on the closed chests
+    (FAMILY_FIT, once per process)."""
     if name in CHEST_FAMILY and "frame" not in _FAMILY:
-        reset()
-        chest_wood()
-        _FAMILY["frame"] = _object_frame(FILL_BY.get("chest_wood", FILL))
+        import numpy as np
+        pts = []
+        for n in FAMILY_FIT:
+            reset()
+            ICONS[n]()
+            pts.append(_model_points())
+        _FAMILY["frame"] = _object_frame(FILL_BY.get("chest_wood", FILL), np.concatenate(pts))
     reset()
     ICONS[name]()
 
@@ -1719,11 +1746,13 @@ def setup_camera(name, fill=None):
         if name in CHEST_FAMILY:
             frame = dict(_FAMILY["frame"])
             x, y = _object_ndc(_model_points(), _object_cam_loc(frame), *frame["shift"])
-            top = 1 - (1 - fill) / 2
-            if y.max() > top:  # the open chest grows upwards: slide the frame up, keep the distance (and the body)
-                frame["shift"] = (frame["shift"][0], frame["shift"][1] + y.max() - top)
-                if y.min() - (y.max() - top) < (1 - fill) / 2 - 1e-6:
-                    print("WARNING %s does not fit the chest family frame" % name, flush=True)
+            m = (1 - fill) / 2
+            if y.max() > 1 - m:  # the open chest grows upwards: slide the frame up, keep the distance (and the body)
+                frame["shift"] = (frame["shift"][0], frame["shift"][1] + y.max() - (1 - m))
+                if y.min() - (y.max() - (1 - m)) < m - 1e-6:
+                    print("WARNING %s does not fit the chest family frame (vertically)" % name, flush=True)
+            if x.min() < m - 1e-6 or x.max() > 1 - m + 1e-6:  # wider than the family's margin: the rim would touch
+                print("WARNING %s does not fit the chest family frame (x %.3f..%.3f)" % (name, x.min(), x.max()), flush=True)
             cam = _object_cam(frame)
         else:
             cam = _object_cam(_object_frame(fill))

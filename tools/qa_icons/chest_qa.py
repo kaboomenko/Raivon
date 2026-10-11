@@ -18,6 +18,10 @@ With --masks=DIR (tools/qa_icons/masks.py, renders <icon>_ids.png / <icon>_units
   also, for information, the share of those pixels that render darker than L* 40 («visibly dark iron»)
 - crates: each box's own pixels at 48 px (>= 150, C-5: three crates distinct) and, for information, the seam
   between touching boxes (L* of the boundary pixels below the boxes' median) — judge the read on the sheet
+- body: the width of the chest's body alone (<icon>_body.png: no lid, straps, rings or feet) at 128 px; the four
+  chests within +-2 px of each other (C-3: spread <= 4 px). The outline width above is the family size and includes
+  the silhouette breakers (the wood chest's ring «ears», the royal finials), so it is not the C-3 measure
+Also, for information: the 48 px silhouette IoU between the closed tiers (lower = more distinct by silhouette).
 Names: wood silver royal cards crate gift (the tier tile follows the name: Kit.RARITY common, rare, epic, legendary).
 Writes OUT_DIR/chest_report.txt and OUT_DIR/chest_sheet.png (128/64/48 on cream and on the tier tile, the 48 px
 black silhouette). Exit 1 with --strict on any FAIL.
@@ -32,7 +36,7 @@ from PIL import Image, ImageDraw
 CREAM = np.array([0xF7, 0xEE, 0xDC]) / 255
 TILE = {"wood": "a7afbc", "silver": "3e9bf0", "royal": "a65bf2", "cards": "ff9a1f"}  # ui_kit.gd Kit.RARITY
 ICON = {"wood": "chest_wood", "silver": "chest_silver", "royal": "chest_royal", "cards": "chest_cards"}
-IOU_MIN, LEAN_MAX, LADDER_GAP, LOCK_PX, IRON_MAX = 0.98, 0.5, 8.0, 5, 0.15
+IOU_MIN, LEAN_MAX, LADDER_GAP, LOCK_PX, IRON_MAX, SPREAD_MAX = 0.98, 0.5, 8.0, 5, 0.15, 4.0
 
 
 def hexc(h):
@@ -215,6 +219,25 @@ def main():
     for name, path in items:
         if "masks" in opts:
             fails += mask_checks(name, load(path), opts["masks"], lines)
+    bodies = {}
+    for name, _ in items:
+        pb = os.path.join(opts.get("masks", ""), ICON.get(name, name) + "_body.png")
+        if "masks" in opts and name in ICON and os.path.exists(pb):
+            bm = np.asarray(Image.open(pb).convert("RGBA"))[..., 3] > 127
+            xs = np.where(bm.any(0))[0]
+            bodies[name] = (xs.max() - xs.min() + 1) * 128.0 / bm.shape[1]
+    if len(bodies) > 1:
+        spread = max(bodies.values()) - min(bodies.values())
+        bad = spread > SPREAD_MAX
+        fails += bad
+        lines.append("%s family body width at 128 px (body mask): %s; spread %.1f px (gate <= %.0f)" % (
+            "FAIL" if bad else "PASS", ", ".join("%s %.1f" % kv for kv in bodies.items()), spread, SPREAD_MAX))
+    sil = {n: resize(a, 48, 48)[..., 3] > 0.5 for n, a in rows if n in ("wood", "silver", "royal")}
+    if len(sil) > 1:
+        pairs = []
+        for x, y in itertools.combinations(sorted(sil), 2):
+            pairs.append("%s/%s %.3f" % (x, y, (sil[x] & sil[y]).sum() / (sil[x] | sil[y]).sum()))
+        lines.append("INFO 48 px silhouette IoU between closed tiers: %s (lower = more distinct)" % ", ".join(pairs))
     ladder = [n for n in ("silver", "wood", "royal") if n in lstar]
     if len(ladder) == 3:
         order = lstar["silver"] > lstar["wood"] > lstar["royal"]
