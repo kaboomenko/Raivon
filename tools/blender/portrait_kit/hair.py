@@ -292,28 +292,27 @@ def _bob(ctx):
 
 def _streak(ctx, head, part, streak_path, col, sx):
     """Vega's silver lock (§7.6: one ribbon lock 0.12 H, only hers): cast onto the dark hair's own surface (as a beard's
-    locks onto its mass), so it follows every bump of the hair under it instead of poking through; narrow where it
-    leaves the hair at the top front (no white patch on the crown), widest at the temple, tapering past the near brow
-    toward the cheek; two strands side by side, so a groove runs down it with the hair's AO, and a crevice tone well
-    under #C8CCD4."""
+    locks onto its mass), so it follows every bump of the hair under it instead of poking through. It leaves the hair
+    narrow by the parting at the front top, falls nearly straight down across the fringe (a sweep along the head's
+    outline read as a white headband at 64-128 px, review r3) to a free tip by the near brow; two strands side by
+    side below the root, so a groove runs down it with the hair's AO. Its value sits a step under the #C8CCD4 slot and
+    darkest at the root (it grows out of the dark hair), lightest at the tip (#B8BCC4)."""
     hair = ctx.objs["hair"]
     core.update()
     el = []
     wmax = 0.12 * H * 0.5
-    # the route: out of the hair at the front top beside the parting, then down across the fringe in the fringe's
-    # own flow to a free tip by the near brow, toward the cheek — it crosses the dark mass, it never traces the
-    # head's outline (a light arc along the outline reads as a headband or a goggles strap: Olm's, Irma's and Hawk's
-    # shape language)
-    tip_d = core.az_el(-44, 26)
+    tip_d = core.az_el(-30, 24)
     th_, tn_ = core.ray(hair, tip_d * 3, -tip_d)
-    for k, da in enumerate((-3.0, 3.0)):     # two strands ~0.06 apart: 0.12 H together, a groove between
-        free = th_ + tn_ * 0.012 + Vector((-0.02 + da * 0.003, -0.02, -0.07 - abs(da) * 0.002))
-        p_ = [core.az_el(12 + da * 0.3, 60), core.az_el(-6 + da * 0.8, 52), core.az_el(-28 + da, 41),
-              core.az_el(-42 + da * 0.8, 30), free]
-        el += core.ribbon_lock(hair, p_, 0.012, wmax * 0.55, 0.034, n=40, lift=0.12, free_tail=1, taper_at=0.6,
-                               wmin=0.026)
-    mat = core.hair_mat(ctx, "hair_streak", col, 0.1, 0.62, dark=core.hex_scale(col, 0.74),
-                        light=core.hex_mix(col, "#ffffff", 0.25), crevice="#5E626C")
+    for k, da in enumerate((-2.5, 2.5)):     # two strands ~0.06 apart: 0.12 H together, a groove between
+        free = th_ + tn_ * 0.012 + Vector((-0.012 + da * 0.003, -0.02, -0.075 - abs(da) * 0.002))
+        p_ = [core.az_el(6 + da * 0.15, 63), core.az_el(-4 + da * 0.5, 54), core.az_el(-14 + da * 0.9, 43),
+              core.az_el(-24 + da * 0.9, 32), free]
+        el += core.ribbon_lock(hair, p_, 0.006, wmax * 0.55, 0.032, n=40, lift=0.12, free_tail=1, taper_at=0.65,
+                               wmin=0.022)
+    stk = ctx.ch["hair"]
+    mat = core.hair_mat(ctx, "hair_streak", stk.get("streak_mid", core.hex_scale(col, 0.92)), 0.1, 0.62,
+                        dark=stk.get("streak_tip", col), light=stk.get("streak_root", core.hex_scale(col, 0.78)),
+                        crevice=stk.get("streak_crevice", "#5E626C"))
     o = core.mb_mesh(ctx, "Streak", el, 0.006, mat, smooth_iter=2, name="streak")
     ctx.add(o, "detail:streak", hair, kind="surface", head=True)
     ctx.details["streak"] = 400

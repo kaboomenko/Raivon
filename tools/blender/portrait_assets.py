@@ -14,7 +14,9 @@ Flags: --size=N (width; height = int(N × 1.15), the 0.8707 aspect), --samples=N
 square face crop, not shipped), --sidecars=DIR (kit: DIR/ids/NAME.png part-ID pass + NAME.json colours + NAME_sig.png
 signature mask, DIR/meta/NAME.json projected landmarks and the contact report; read by tools/qa_portraits), --contacts
 (kit: print the P-A7 contact report), --stats (kit: triangles, build and render seconds), --force (re-render files
-that exist; without it finished files are skipped, so an interrupted batch resumes).
+that exist; without it finished files are skipped, so an interrupted batch resumes). `python3
+tools/blender/portrait_assets.py --selftest` (no OUTDIR) builds every kit character with the open mouths and lids later
+steps need, renders nothing, and exits 1 when a build fails (portrait_kit.qa.build_regression).
 """
 import math
 import os
@@ -414,6 +416,8 @@ def main():
     import portrait_kit  # noqa: E402  (tools/blender is on sys.path above)
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     opts = _opts()
+    if "selftest" in opts:  # build-only regression of the kit (no OUTDIR, nothing written)
+        sys.exit(0 if portrait_kit.qa.build_regression() else 1)
     size_opt = int(opts["size"]) if "size" in opts else None
     eras = [int(x) for x in opts["eras"].split(",")] if "eras" in opts else [1]
     moods = ["" if m == "calm" else m for m in opts["moods"].split(",")] if "moods" in opts else [""]
@@ -446,6 +450,8 @@ def main():
                         failed.append(name)
                         continue
                     print("rendered", name, "(kit v2) build %.1fs render %.1fs" % (r["build_s"], r["render_s"]))
+                    for nt in r.get("notes") or []:
+                        print("NOTE", name, "-", nt)
                     if "stats" in opts and r["stats"]:
                         st = r["stats"]
                         print("STATS %s triangles %d objects %d build %.1fs render %.1fs samples %d" % (

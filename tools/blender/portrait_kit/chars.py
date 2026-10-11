@@ -17,13 +17,20 @@ CHARS = {
         # eye line 0.47 (§7.3 range 0.46-0.50, "lower = friendlier"): at 0.48 with H_px 280 the chin lands at
         # 0.654 h, past P-A6's 0.65 h
         head=dict(shape="square", wh=0.92, h_px=280, eye_line=0.47, cheeks=1.15, muzzle=1.15, brow_ridge=1.2),
-        skin=SKIN["T2"], skin_tone="T2", blush=0.20,
-        eyes=dict(sclera=0.18, open=0.72, iris="#3D8FD6", iris_shade=0.88, tilt=0.10, arch=0.22,
+        # "T2 румяный" (§7.6) beside ginger hair (art director note 1): T2's lightness moved toward peach-pink (hue
+        # 22 -> 12 deg: rendered skin 12-13 deg against the hair's 17-19, not orange on orange), its saturation
+        # boost a little higher than T2's 1.15 so the lit cheek keeps HSV S >= 0.35 (§7.4)
+        skin="#FFA08D", skin_tone="T2", skin_sat=1.22, blush=0.25,
+        # calm: the stern half-smile (§7.6 "суровая полуулыбка") — a heavy, flat upper lid (arch 0.10), its inner end
+        # a little lower than the outer (tilt -0.04: a lid falling toward the temple read as worried), the brows'
+        # inner ends 0.01 H down
+        eyes=dict(sclera=0.18, open=0.72, iris="#3D8FD6", iris_shade=0.88, tilt=-0.04, arch=0.10,
                   # the laugh squints (§7.6 "веки 0.55, глаза щурятся"): the cheek pushes the lower lid up into an
-                  # arch; (open - low) x sclera stays >= 0.09 H so the eye keeps 3 px at 64 px (P-A3)
-                  smile=dict(open=0.64, low=0.10, bow=0.30, tilt=-0.02, arch=0.26)),
-        brows=dict(shape="bushy", thick=0.085, color="#8A3A1A", arch=0.02, len=1.25,
-                   smile=dict(lift=(0.025, 0.02), arch=0.012)),
+                  # arch (low >= 0.2: below that the almond's own curve takes over and the lid stays a flat U);
+                  # (open - low) x sclera = 0.086 H keeps >= 3 px of opening at 64 px (P-A3)
+                  smile=dict(open=0.68, low=0.20, bow=0.30, tilt=-0.04, arch=0.22)),
+        brows=dict(shape="bushy", thick=0.085, color="#8A3A1A", arch=0.02, len=1.25, inner=-0.01,
+                   smile=dict(lift=(0.025, 0.02), arch=0.012, inner=0.01)),
         nose=dict(type="potato", tip="#E8857A", tip_k=0.6, drop=0.20, k=1.0),
         mouth=dict(lip="#C4675A", line=0.20,
                    calm=dict(type="closed", w=0.27, near=0.02, far=0.0),
@@ -107,8 +114,11 @@ CHARS = {
                    # the closed smile's corners rise >= 6 px over the calm ones on the master (P-A4), the
                    # expression alone (pose held), not only the head's tilt
                    smile=dict(type="closed", w=0.30, near=0.068, far=0.045, sag=0.012)),
+        # the streak a step under the #C8CCD4 silver slot (it read as a white headband at 64-128 px, review r3):
+        # lightest at the tip, darkest where it grows out of the dark hair at the root
         hair=dict(style="bob", color="#2E2A2A", dark="#1E1A1C", light="#4A4446", crevice="#121012", near_len=0.10,
-                  far_len=0.26, streak="#C8CCD4"),
+                  far_len=0.26, streak="#C8CCD4", streak_tip="#B8BCC4", streak_mid="#A9ADB5", streak_root="#8E929A",
+                  streak_crevice="#8E929A"),
         body=dict(shoulders=1.95),
         costume=dict(
             base=dict(color="#44484F", rough=0.8, sheen=0.3),
@@ -117,12 +127,16 @@ CHARS = {
                 dict(kind="placket", color="#3A3D44", w=0.05, top=-0.74),
                 dict(kind="frogging", color="#C8CCD4", z=(-0.86, -0.98, -1.10), w=0.24, t=0.028),
             ]),
-        # glasses w / h: the rim's half size in units of the visible eye's half width / half height (the almond)
-        props=[dict(kind="glasses", color="#44484F", frame=0.025, w=2.0, h=1.26, drop=0.03, off=0.028, tint="#FFFFFF"),
-               dict(kind="pointer", x=0.62, y=0.04, z=-1.02, reach=0.345, tip_w=1.4, color="#8A5A34")],
+        # glasses w / h: the rim's half size in units of the visible eye's half width / half height (the almond).
+        # The pointer (§7.6 "стрела-указка ... ближняя кисть на древке") waits for P2's hand module: without a hand
+        # the rod could only leave the body at the far side's contour (the far arm is fused into the torso and seen
+        # edge-on in the 3/4 view), and it read as an arrow stuck through her side — "no prop may enter the body
+        # without a visible holder" (art director note 2, review r3). The raised brow and the glasses carry her in
+        # P1; P2 adds back: dict(kind="pointer", x=0.62, y=0.04, z=-1.02, reach=0.345, tip_w=1.8, color="#8A5A34")
+        props=[dict(kind="glasses", color="#44484F", frame=0.025, w=2.0, h=1.26, drop=0.03, off=0.028, tint="#FFFFFF")],
         pose=dict(body=26, head=4, roll=3, nod=4),
         pose_smile=dict(roll=-2, nod=0),
-        signature=dict(name="chisel bob + glasses bar; arrow right", zone="far side"),
+        signature=dict(name="chisel bob + glasses bar; arrow right", zone="far side"),   # the arrow: with P2's hand
     ),
 }
 

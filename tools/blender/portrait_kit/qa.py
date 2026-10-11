@@ -14,12 +14,16 @@
                         mouth_local); the floating list and contact
                         report; the P-A8 detail thresholds; for glasses the iris contrast behind the lens; stats
 --contacts: the BVH contact test of P-A7 — each attached part against its parent: the gap must be <= 0.01 H, a part
-  on a surface is buried <= 0.04 H over <= 60 % of its points; "embed" parts (eyes, nose, ears, beards, a pointer
-  clamped in the arm, glasses temples under the hair: inside their parent by design) are checked for the gap only;
+  on a surface is buried <= 0.04 H over <= 60 % of its points; "embed" parts (eyes, nose, ears, beards, glasses
+  temples under the hair: inside their parent by design) are checked for the gap only;
   glasses rims and bridges are registered on what they rest on (nose or face), their pads on the nose. "free" parts
   (none in P1) are skipped.
 --stats: triangles per object, build and render seconds.
+build_regression (portrait_assets.py --selftest): build-only runs of every kit character with the open mouths and lid
+  settings later steps need (§7.3 ranges, §7.9 moods) — fails on an exception, an open mouth without its lip, teeth
+  or dark pocket, or a lens with no faces; prints the build notes (fallbacks the kit took).
 """
+import copy
 import json
 import os
 import time
@@ -197,8 +201,15 @@ def id_pass(ctx, path_png, path_json, path_sig, size):
             if grp not in cache:
                 cache[grp] = _flat("id_" + grp, _id_color(table, grp))
             m = cache[grp]
+        n_slots = len(o.data.materials)
         o.data.materials.clear()
         o.data.materials.append(m)
+        if o.name == "head" and n_slots > 1:
+            # slot 1 of the head: an open mouth's pocket walls (face.carve_mouth transfers the dark interior onto
+            # the cut), the "mouth" group
+            if "mouth" not in cache:
+                cache["mouth"] = _flat("id_mouth", _id_color(table, "mouth"))
+            o.data.materials.append(cache["mouth"])
     for L in [o for o in sc.objects if o.type == "LIGHT"]:
         L.hide_render = True
     sc.world.node_tree.nodes["Background"].inputs["Strength"].default_value = 0.0
@@ -401,3 +412,57 @@ def stats(ctx):
 
 def now():
     return time.time()
+
+
+# ------------------------------------------------------------------ build-only regression
+REGRESSION_MOUTHS = [dict(type="open", w=0.32, h=0.12, near=0.04, far=0.03, dz=-0.012),   # the usual open smile
+                     dict(type="open", w=0.38, h=0.14, near=0.05, far=0.04, dz=-0.012),   # the widest (§7.3)
+                     dict(type="open", w=0.26, h=0.10, near=0.0, far=0.0, dz=-0.012),     # a small shout
+                     dict(type="open", w=0.24, h=0.06, near=0.0, far=0.0)]                # barely open
+REGRESSION_LIDS = [dict(open=0.30), dict(open=[0.42, 0.62]), dict(open=0.50, low=0.02), dict(open=0.85),
+                   dict(open=0.62, low=0.24, bow=0.35)]
+
+
+def build_regression(log=print):
+    """Build (no render) every kit character calm and smile, then with each REGRESSION_MOUTHS open mouth and each
+    REGRESSION_LIDS lid setting as its smile; True when every build passes."""
+    from . import build, chars
+    ok = True
+    for cid in sorted(chars.KIT_IDS):
+        runs = [("calm", None), ("smile", None)]
+        runs += [("smile", ("mouth", m)) for m in REGRESSION_MOUTHS]
+        runs += [("smile", ("eyes", e)) for e in REGRESSION_LIDS]
+        for mood, patch in runs:
+            saved = copy.deepcopy(chars.CHARS[cid])
+            label = "%s %s %s" % (cid, mood, "" if patch is None else "%s=%s" % (patch[0], patch[1]))
+            try:
+                if patch is not None:
+                    chars.CHARS[cid][patch[0]]["smile"] = dict(patch[1])
+                ctx = build(cid, mood, log=lambda *a: None)
+                errs = []
+                if getattr(ctx, "mouth_open", False):
+                    lip = bpy.data.objects.get("lip_low")
+                    if lip is None or len(lip.data.splines[0].points) < 3:
+                        errs.append("no lower lip")
+                    if bpy.data.objects.get("teeth") is None:
+                        errs.append("no teeth")
+                    dg = bpy.context.evaluated_depsgraph_get()
+                    head = ctx.objs["head"].evaluated_get(dg)
+                    me = head.to_mesh()
+                    if not any(pl.material_index == 1 for pl in me.polygons):
+                        errs.append("no dark pocket")
+                    head.to_mesh_clear()
+                for e in ctx.objs["eyes"]:
+                    if not e["obj"].data.polygons:
+                        errs.append("empty lens " + e["tag"])
+                if errs:
+                    ok = False
+                log("%s %s%s%s" % ("FAIL" if errs else "ok  ", label, (" — " + ", ".join(errs)) if errs else "",
+                                   "".join("\n      note: " + n for n in ctx.notes)))
+            except Exception as ex:  # noqa: BLE001  (report every failure, keep going)
+                ok = False
+                log("FAIL %s — %s: %s" % (label, type(ex).__name__, ex))
+            finally:
+                chars.CHARS[cid] = saved
+    log("REGRESSION %s" % ("PASS" if ok else "FAIL"))
+    return ok

@@ -76,7 +76,7 @@ def head_pose_matrix(ctx, with_body=False):
 def head_to_world(ctx, p):
     """A head-local landmark (before the pose) -> world, through the posed pivot."""
     pivot = ctx.objs["pivot"]
-    rest = Matrix.Translation(Vector((0, 0.05, -0.45)))
+    rest = Matrix.Translation(Vector(PIVOT))
     return pivot.matrix_world @ (rest.inverted() @ Vector(p))
 
 

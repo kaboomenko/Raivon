@@ -24,7 +24,11 @@ Checks (PASS / FAIL / INFO with numbers, one line each, into OUT_DIR/report.txt)
                   closed mouth >= 2 px, open mouth >= 40 px²; at 64 px: brows >= 2 px thick and >= 6 px long, eye
                   opening >= 3 px, pupil >= 2 px, open mouth >= 6 px², signature >= 20 px; at 48 px the signature
                   alone >= 8 % of the head-zone mask; irises behind glasses keep >= 70 % of their contrast; seated
-                  eyes: <= 2 % of each eye's sclera / iris / pupil pixels outside the lids' outline (meta eye_almond)
+                  eyes: <= 2 % of each eye's sclera / iris / pupil pixels outside the lids' outline (meta eye_almond).
+                  What "seated" covers: eye_almond comes from the same face.Almond that clips the lens, so this is a
+                  regression guard — it catches a lid shell that no longer covers the lens top, an eye drawn over
+                  the face's outline or a shifted almond; it cannot prove the eye sits in its lids (a white sliver
+                  under the rim inside the outline passes): judge that on the face crops at 512
   P-A4 smile      calm / smile pairs with meta: both mouth corners >= 6 px higher, in the picture and with the pose
                   held (head-local corners); open smiles: cavity >= 900 px² on the master, teeth visible
   P-A7            meta "floating" empty; one alpha island; every detail:* at least its P-A8 pixel count
@@ -315,7 +319,8 @@ def readability(d, n, a, masks, m):
         out.append(("iris contrast behind glass", m["lens_iris_contrast"], 0.70))
     res = [(lab, v, g, v >= g) for lab, v, g in out]
     # seated eyes: the white, iris and pupil stay inside the outline the lids draw (meta eye_almond: under the lash
-    # line, over the lower rim); at most 2 % of each eye's pixels outside it (1.5 px tolerance at 512)
+    # line, over the lower rim); at most 2 % of each eye's pixels outside it (1.5 px tolerance at 512). A regression
+    # guard, not proof: the outline and the lens come from the same Almond (see the module docstring)
     for i, poly in enumerate(m.get("eye_almond", [])[:2]):
         if i >= len(eyes) or not eyes[i].any():
             continue

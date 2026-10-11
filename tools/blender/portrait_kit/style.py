@@ -16,9 +16,10 @@ STYLE = {
     "sclera_w": 0.85,          # sclera width / height
     "sclera_protrude": 0.015,  # the eye stands out of the face plane, in H
     "eye_fit": 1.35,           # the lens is eye_fit x the visible sclera, so the curved face (brow ridge, cheek, the
-                               # far eye's outer orbit) never clips inside the almond: the almond (face.eye_almond, drawn
-                               # by the eye shader) is the outline, not the face; calibrated on the ID pass (meta
-                               # eye_open_H = (open - low) x sclera_h)
+                               # far eye's outer orbit) never clips inside the almond: only the almond (face.Almond) is
+                               # built out of that lens — its geometry is clipped to the outline, which the lid shell and
+                               # the lower rim cover — so the almond, not the face, is the outline; calibrated on the ID
+                               # pass (meta eye_open_H = (open - low) x sclera_h)
     "rim": 0.010,              # the lower lid rim tube (radius, in H): every eye sits in a lid, calm included
     "rim_smile": 0.014,        # a smile's pushed-up lower lid, a little fuller
     "socket_depth": 0.022,     # a shallow seat: the socket brush flattens the face where the eye lens sits, in H
@@ -52,6 +53,8 @@ STYLE = {
     "lower_lip_f": 0.036,
     "mouth_open": (0.34, 0.12),  # open D mouth width x height, in H
     "teeth_share": 0.30,       # upper teeth: share of the open mouth height
+    "mouth_depth": 0.18,       # the open mouth's pocket: its back this far behind the face at the mouth line, in H
+                               # (Bram's tuned pocket; a fixed back plane made it half as deep on narrow faces)
     "ear_h": 0.23,             # C-shaped ears, height in H; stand out 0.05 H
     "ear_out": 0.05,
     "cheek_r": 0.12,           # cheek volumes r 0.12 H at +-0.19–0.24 H, 0.10–0.12 H below the eye line

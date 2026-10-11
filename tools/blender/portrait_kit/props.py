@@ -1,7 +1,8 @@
 """Props and personal gear (§7.5 steps 7 and 9), placed on their parents by ray casts: P1 has what Bram, Lira and
 Vega need in era 1 — the spoon, the millstone amulet on its cord and the sleeve chevrons (Bram); the leaf badge and
-the bandage roll on the satchel strap (Lira); the glasses with nose pads and the pointer clamped under the far arm,
-a fold of the sleeve rolled over it (Vega). The creatures, hands and the rest of §7.6's props column come with P2.
+the bandage roll on the satchel strap (Lira); the glasses with nose pads (Vega). The pointer is here for P2 (Vega's
+hand holds it; hand-free it read as stuck through her side). The creatures, hands and the rest of §7.6's props
+column come with P2.
 
 A character's props are data (chars.py "props": [{"kind": ...}, ...]); every prop registers its parent (contacts)
 and, when §14 P-A8 lists it, its detail name and minimum visible pixel count.
@@ -233,16 +234,19 @@ def glasses(ctx, pr):
         lens.visible_shadow = False   # no caustics: a glass that casts a shadow would put the eyes in the dark
         ctx.add(lens, "glass", rim, kind="embed", head=True)
         inner.append(front + rot @ Vector((-side * w, 0.0, hh * 0.25)))
-        # the pad: a small flattened bead on the rim's inner lower corner, resting on the side of the nose
+        # the pad: a small clear bead behind the rim's inner lower corner, resting on the side of the nose (dark
+        # frame-coloured pads read as two dots on the nose, review r3: half the size, the lens's clear material,
+        # set back from the rim)
         if nose is not None:
-            corner = front + rot @ Vector((-side * w * 0.92, 0.0, -hh * 0.35))
+            corner = front + rot @ Vector((-side * w * 0.92, 0.03, -hh * 0.35))
             hp, np_ = core.ray(nose, corner, Vector((-side, 0.0, 0.0)), dist=0.6)    # toward the nose
             if hp is not None and (hp - corner).length < 0.25:
-                pr_ = t * 0.75
-                pad = core.uvsphere("glasses_pad_" + e["tag"], hp + np_ * pr_ * 0.6, (pr_, pr_ * 0.55, pr_ * 1.3), fm, 16, 8)
+                pr_ = t * 0.38
+                pad = core.uvsphere("glasses_pad_" + e["tag"], hp + np_ * pr_ * 0.6, (pr_, pr_ * 0.55, pr_ * 1.3),
+                                    glass, 16, 8)
                 core.align_z(pad, np_)
                 ctx.add(pad, grp, nose, kind="surface", head=True)
-                arm_ = core.curve("glasses_padarm_" + e["tag"], [corner, hp + np_ * pr_], [1.0, 0.8], t * 0.22, fm,
+                arm_ = core.curve("glasses_padarm_" + e["tag"], [corner, hp + np_ * pr_], [1.0, 0.8], t * 0.16, fm,
                                   order=2)
                 ctx.add(arm_, grp, rim, kind="surface", head=True)
         # the temple: from the outer edge back along the head side into the hair
@@ -267,10 +271,11 @@ def glasses(ctx, pr):
 
 
 def pointer(ctx, pr):
-    """The pointer (§7.6; P1's hand-free pose, §7.5 "указка — под рукой"): a wooden rod with an iron tip clamped under
-    the far arm, horizontal and pointing to the right of the frame at chest level. It reads as tucked, not stuck in:
-    the shaft enters under the sleeve, and a fold of the sleeve rolls over it where it leaves the arm (the arm presses
-    down on it; the fold's shadow lies on the rod); the tip is slim (0.16 H long, §7.6), not an arrowhead."""
+    """The pointer (§7.6, §7.5 "указка — под рукой"): a wooden rod with an iron tip under the far arm, horizontal and
+    pointing to the right of the frame at chest level, a fold of the sleeve over it where it leaves the arm; the tip
+    is slim: 0.16 H long (§7.6), its base tip_w x the shaft's radius (1.8: a leaf a little wider than the shaft, not an
+    arrowhead). NOT USED in P1 (chars.py, Vega): hand-free, the rod could only leave the body at the far side's
+    contour and read as stuck through her side (art director note 2); P2's hand module holds it."""
     k = ctx.shoulder_k
     d = core.world_dir(ctx, (1.0, pr.get("toward", -0.15), 0.0))
     p0 = Vector((pr.get("x", 0.60) * k, pr.get("y", 0.02), pr.get("z", -1.0)))
@@ -285,7 +290,7 @@ def pointer(ctx, pr):
     ctx.add(rod, grp, arm, kind="embed")      # clamped in the arm: its back half is inside the sleeve by design
     iron = core.principled(ctx, "pointer_tip", pr.get("tip_color", "#8A929C"), 0.32, metal=0.5)
     bm = bmesh.new()
-    bmesh.ops.create_cone(bm, cap_ends=True, segments=24, radius1=shaft * pr.get("tip_w", 1.05), radius2=0.004,
+    bmesh.ops.create_cone(bm, cap_ends=True, segments=24, radius1=shaft / 2 * pr.get("tip_w", 1.8), radius2=0.004,
                           depth=tip_l)
     tip = core.mesh_obj("pointer_tip", bm)
     tip.location = b + d * (tip_l / 2)

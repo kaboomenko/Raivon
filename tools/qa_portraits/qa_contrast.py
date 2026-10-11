@@ -16,6 +16,9 @@ leaders' moods, which share the costume):
   the exempt groups of §7.4 — pupils, lash lines, mouth, glasses — vs the rest).
 ID rules (only with the kit's sidecars ids/<name>.png + meta/<name>.json):
 - hair, headgear or beard next to the face vs skin: |dL*| >= 15 or dE76 >= 30;   - brows vs skin: |dL*| >= 18;
+- hair / beard vs skin AT THE EDGE (art director note 1): a 3 px band each side of the boundary, the mouth region
+  (within 0.2 H of the mouth) and the rest apart: skin L* - hair L* >= 12 in each, where the hair is darker than the
+  skin (platinum or white hair: INFO); INFO line: the hue of the skin (all / lit) against the hair and the beard;
 - iris vs sclera: dL* >= 30;   - beard vs each garment it lies on (costume:<id> groups): |dL*| >= 15;
 - signature vs plate (B, both palettes): dE76 >= 25;
 - the lit cheek (the brightest 30 % of the skin pixels: the key-lit side of the face): median L* 70-82 and median
@@ -113,6 +116,65 @@ def id_rules(im, masks, m, name):
         if hair is not None:
             dl, de = abs(hair[0] - skin[0]), float(Q.de76(hair, skin))
             out.append((hk + "-skin", dl, dl >= 15 or de >= 30, "|dL*| %.1f dE %.1f" % (dl, de)))
+    # the boundary itself (art director note 1, 2026-10-11: "beard vs skin dL* >= 12 measured at the boundary", the
+    # same for ginger / brown hair): a 3 px band (at 512) on each side of the hair / beard edge with the skin (nose
+    # included), split into the mouth region (within 0.2 H of the mouth: moustache, lips, chin) and the rest (the
+    # cheek line, the hairline); median skin L* minus median hair L* per region. Gated where the hair is darker than
+    # the skin; platinum or white hair (lighter than the skin) is reported as INFO
+    skin_any = grp("skin", "nose")
+    if skin is not None and skin_any is not None:
+        hpx = m.get("h_px", 272)
+        k = max(1, int(round(3 * w / 512)))
+        mc = m.get("mouth")
+        near_mouth = np.zeros((h, w), bool)
+        if mc and len(mc) == 2:
+            yy, xx = np.mgrid[0:h, 0:w]
+            cx_, cy_ = (mc[0][0] + mc[1][0]) / 2, (mc[0][1] + mc[1][1]) / 2
+            near_mouth = (xx - cx_) ** 2 + (yy - cy_) ** 2 <= (0.2 * hpx) ** 2
+        sk_d = np.asarray(Image.fromarray((skin_any * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(2 * k + 1))) > 127
+        for hk in ("hair", "beard"):
+            hm = grp(hk)
+            if hm is None or hm.sum() < 50:
+                continue
+            hm_d = np.asarray(Image.fromarray((hm * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(2 * k + 1))) > 127
+            a_side, b_side = skin_any & hm_d, hm & sk_d
+            parts = []
+            for reg, rm in (("mouth", near_mouth), ("face", ~near_mouth)):
+                if (a_side & rm).sum() >= 30 and (b_side & rm).sum() >= 30:
+                    dl = float(np.median(lab[..., 0][a_side & rm]) - np.median(lab[..., 0][b_side & rm]))
+                    parts.append((reg, dl))
+            if not parts:
+                continue
+            worst = min(parts, key=lambda q: q[1])
+            gated = med(hm)[0] < skin[0]
+            txt = ", ".join("%s %.1f" % q for q in parts) + ("" if gated else " (INFO: lighter than the skin)")
+            out.append((hk + "-skin edge", worst[1], (worst[1] >= 12) if gated else True, "dL* " + txt))
+        # INFO: the hues (the skin must read peach-pink beside ginger hair, not orange on orange)
+        def hue_of(mask):
+            rgb = np.median(im[..., :3][mask], axis=0)
+            mx, mn = rgb.max(), rgb.min()
+            if mx - mn < 1e-6:
+                return 0.0, 0.0
+            r, g, b = rgb
+            if mx == r:
+                hh = ((g - b) / (mx - mn)) % 6
+            elif mx == g:
+                hh = (b - r) / (mx - mn) + 2
+            else:
+                hh = (r - g) / (mx - mn) + 4
+            return 60.0 * hh, (mx - mn) / mx
+        Ls_ = lab[..., 0][masks["skin"]] if "skin" in masks else None
+        if Ls_ is not None and Ls_.size > 100:
+            lit_ = masks["skin"] & (lab[..., 0] >= np.percentile(Ls_, 70))
+            sh, ss = hue_of(masks["skin"])
+            lh, _ = hue_of(lit_)
+            hs = ["skin %.0f° S %.2f (lit %.0f°)" % (sh, ss, lh)]
+            for hk in ("hair", "beard"):
+                hm = grp(hk)
+                if hm is not None and hm.sum() >= 50:
+                    hh_, hs_ = hue_of(hm)
+                    hs.append("%s %.0f° S %.2f" % (hk, hh_, hs_))
+            out.append(("hue (INFO)", 0.0, True, ", ".join(hs)))
     brow = med(grp("brow"))
     if skin is not None and brow is not None:
         dl = abs(brow[0] - skin[0])
@@ -220,6 +282,8 @@ def main():
                                                                          100.0 * (dark & ~ex).sum() / tot))
             for rule, v, ok, txt in id_rules(im, masks, Q.meta(d, n) or {}, n):
                 idl.append("%s %s%s" % (rule, txt, "" if ok else " FAIL"))
+                if rule.endswith("(INFO)"):
+                    continue
                 key = rule.split(" ")[0] if rule.startswith("signature") else rule
                 tally.setdefault(key, [0, 0])
                 tally[key][0] += ok

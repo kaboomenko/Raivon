@@ -699,6 +699,45 @@ def ribbon_lock(obj, pts3, w0, w1, th, n=12, lift=0.5, free_tail=0, centre=(0, 0
     return el
 
 
+def catmull(pts, n):
+    """n points along a Catmull-Rom spline through pts (Vectors)."""
+    out = []
+    m = len(pts)
+    for k in range(n):
+        t = k / (n - 1) * (m - 1)
+        i = min(int(t), m - 2)
+        f = t - i
+        a, b = pts[i], pts[i + 1]
+        pa = pts[max(i - 1, 0)]
+        pb = pts[min(i + 2, m - 1)]
+        out.append(0.5 * ((2 * a) + (-pa + b) * f + (2 * pa - 5 * a + 4 * b - pb) * f * f
+                          + (-pa + 3 * a - 3 * b + pb) * f ** 3))
+    return out
+
+
+def clump(path, normals, w0, w1, th, n=24, lift=0.35, taper_at=0.55, tip=0.30, stiff=2.4, flat=1.0, root=0.0):
+    """A broad, smooth clump (beards, fur): a Catmull-Rom spline through the control points `path` with the normals
+    `normals` interpolated, so it follows a smooth guide surface, not small bumps. Each sample is a flattened
+    ellipsoid (w across, th thick, overlapping along): w0 -> w1, the last part tapering to `tip` x w; `flat` thins it
+    toward the end (a strand group thins as it hangs); `root` > 0 fades the first part in (thin and narrower at the
+    root, so the clump grows out of the surface under it instead of starting with a rounded end)."""
+    pts = catmull([Vector(p) for p in path], n)
+    nrm = catmull([Vector(q) for q in normals], n)
+    el = []
+    for i, p in enumerate(pts):
+        t = i / (n - 1)
+        q = pts[min(i + 1, n - 1)] - pts[max(i - 1, 0)]
+        if q.length < 1e-6:
+            continue
+        nn = nrm[i].normalized()
+        fade = 1.0 if root <= 0 else 0.35 + 0.65 * smoothstep(0.0, root, t)
+        w = (w0 + (w1 - w0) * t) * (1 - (1 - tip) * smoothstep(taper_at, 1.0, t)) * (0.6 + 0.4 * fade)
+        seg = q.length / 2
+        el.append(dict(co=p + nn * th * lift, half=(w, th * (1.0 - (1.0 - flat) * t) * fade, max(seg * 1.6, w * 0.8)),
+                       stiff=stiff, rot=frame_quat(q, nn)))
+    return el
+
+
 # ------------------------------------------------------------------ body geometry
 def superellipse_ring(bm, z, hx, hy, n, yoff, seg=40, xoff=0.0):
     ring = []

@@ -70,7 +70,7 @@ def skin_color(ctx, nt):
         sharp = core.node_math(nt, "GREATER_THAN", acc, 0.35)
         base = core.node_mix(nt, core.node_math(nt, "MULTIPLY", sharp, k), base, colr)
     tone = ch.get("skin_tone")
-    sat = S_SAT.get(tone, 1.0) if tone else 1.0
+    sat = ch.get("skin_sat", S_SAT.get(tone, 1.0) if tone else 1.0)
     if sat != 1.0:
         hs = nt.nodes.new("ShaderNodeHueSaturation")
         hs.inputs["Saturation"].default_value = sat
@@ -334,15 +334,20 @@ def build_eyes(ctx):
         # never a plate standing off the face past the corners); its cut, seen along the eye's axis, is the almond's
         # top
         def shell_k(xl, z):
-            rho = math.hypot((xl - al.x0) / al.xc0, z / kh)
-            return shell - (shell - 0.80) * core.smoothstep(1.0, 1.35, rho)
+            # (the fade reaches a little sooner toward the corners: the lid is back in the face where its edge starts
+            # to rise, so the rise draws no fold up from the corner — review r3)
+            rho = math.hypot((xl - al.x0) / al.xc0 * 1.08, z / kh)
+            return shell - (shell - 0.72) * core.smoothstep(1.0, 1.26, rho)
 
         def shell_cut(xl):
-            """The shell's lower edge: the almond's top, then rising past the corners (no flap below the corner)."""
+            """The shell's lower edge: the almond's top, then rising past the corners (no flap below the corner) —
+            easing in (quadratic over the first 0.3, then straight), so the lash line's curve runs on into the rise
+            instead of turning up at a sharp angle."""
             u = (xl - al.x0) / al.xc0
             if abs(u) <= 1.0:
                 return al.top(u)
-            return al.top(math.copysign(1.0, u)) + 2.5 * kh * (abs(u) - 1.0)
+            d = abs(u) - 1.0
+            return al.top(math.copysign(1.0, u)) + 2.5 * kh * (d * d / 0.6 if d < 0.3 else d - 0.15)
 
         bm = bmesh.new()
         bmesh.ops.create_uvsphere(bm, u_segments=96, v_segments=56, radius=1.0)
@@ -446,8 +451,8 @@ def build_brows(ctx):
         # the far brow turns away from the camera: a little longer so it reads as long as the near one
         length = length0 * (br.get("len_far", 1.12) if side > 0 else 1.0)
         lift = (br.get("lift", (0.0, 0.0))[0 if side < 0 else 1] + mood.get("lift", (0.0, 0.0))[0 if side < 0 else 1]) * H
-        inner_dz = mood.get("inner", 0.0) * H
-        outer_dz = mood.get("outer", 0.0) * H
+        inner_dz = (br.get("inner", 0.0) + mood.get("inner", 0.0)) * H
+        outer_dz = (br.get("outer", 0.0) + mood.get("outer", 0.0)) * H
         arch = (br.get("arch", 0.025) + mood.get("arch", 0.0)
                 + (br.get("arch_far", 0.0) if side > 0 else 0.0)) * H
         # the far brow starts nearer the nose: its outer end turns away with the face, the inner part carries it
@@ -594,7 +599,12 @@ def mouth_outline(w, top, depth, near_lift=0.0, far_lift=0.0):
 
 
 def carve_mouth(ctx):
-    """Smile: an EXACT boolean on the head (a D prism, after Subsurf) — the dark cavity, teeth and tongue go in."""
+    """Open mouths: an EXACT boolean on the head (a D prism, after Subsurf). The prism's faces carry the mouth's dark
+    interior material into the head (material transfer): the pocket the cut leaves IS the dark cavity, exactly the
+    opening's shape on every face — a separate cavity shape poked through a narrow cheek in the 3/4 view. Its back
+    stands STYLE["mouth_depth"] behind the face at the mouth line (the same pocket on every head; a fixed y made it
+    shallow on narrow faces). A copy of the uncut face is kept for build_mouth: the real rim is where it meets the
+    prism's slanted walls."""
     mp = ctx.ch["mouth"].get(ctx.mood, {})
     if mp.get("type") != "open":
         return
@@ -603,11 +613,20 @@ def carve_mouth(ctx):
     pts = mouth_outline(w, top, hgt, mp.get("near", 0.02) * H, mp.get("far", 0.02) * H)
     xoff = mp.get("x", 0.0) * H
     pts = [(x + xoff, z) for x, z in pts]
-    bm = bmesh.new()
-    front = [bm.verts.new((x, -0.95, z)) for x, z in pts]
+    head = ctx.objs["head"]
+    fy = ctx.L["face_y"]
+    core.update()
+    dg = bpy.context.evaluated_depsgraph_get()
+    ref = core.link(bpy.data.objects.new("mouth_ref", bpy.data.meshes.new_from_object(head.evaluated_get(dg))))
+    ref.matrix_world = head.matrix_world.copy()
+    ref.hide_render = True
+    ref.hide_viewport = False
+    y0, y1, k = -0.95, fy + mp.get("depth", S["mouth_depth"]) * H, 0.8
     cx = sum(q[0] for q in pts) / len(pts)
     cz = sum(q[1] for q in pts) / len(pts)
-    back = [bm.verts.new((cx + (x - cx) * 0.8, -0.30, cz + (z - cz) * 0.8)) for x, z in pts]
+    bm = bmesh.new()
+    front = [bm.verts.new((x, y0, z)) for x, z in pts]
+    back = [bm.verts.new((cx + (x - cx) * k, y1, cz + (z - cz) * k)) for x, z in pts]
     bm.faces.new(front[::-1])
     bm.faces.new(back)
     n = len(pts)
@@ -616,16 +635,68 @@ def carve_mouth(ctx):
         bm.faces.new((front[i], front[j], back[j], back[i]))
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
     cutter = core.mesh_obj("mouth_cutter", bm)
+    dark = core.principled(ctx, "mouth_in", C["mouth_in"], 0.6)
+    cutter.data.materials.append(dark)
     cutter.hide_render = True
     cutter.display_type = "WIRE"
-    head = ctx.objs["head"]
+    head.data.materials.append(dark)          # slot 1: the pocket's walls (qa.id_pass maps it to the "mouth" group)
     mod = head.modifiers.new("mouth", "BOOLEAN")
     mod.operation = "DIFFERENCE"
     mod.solver = "EXACT"
+    mod.material_mode = "TRANSFER"
     mod.object = cutter
     ctx.objs["mouth_cutter"] = cutter
+    ctx.objs["mouth_ref"] = ref
     ctx.mouth_pts = pts
+    ctx.mouth_cut = dict(cx=cx, cz=cz, y0=y0, y1=y1, k=k)
     ctx.mouth_open = True
+
+
+def _in_poly(x, z, poly):
+    inside = False
+    for (x1, z1), (x2, z2) in zip(poly, poly[1:] + poly[:1]):
+        if (z1 > z) != (z2 > z) and x < x1 + (z - z1) * (x2 - x1) / (z2 - z1):
+            inside = not inside
+    return inside
+
+
+class _Opening:
+    """The open mouth's real rim (§7.3 "губа-трубка по краю"): the uncut face (carve_mouth's copy) crosses the
+    cutter's slanted walls there. A face point is cut when it lies inside the prism's cross-section at its depth
+    (the outline scaled toward its centroid from 1 at the front to k at the back); the rim along a vertical line is
+    the height where that turns false — found by bisection, with no thresholds, so a pointed chin, a receding lip or a
+    narrow face cannot fool it."""
+
+    def __init__(self, ctx):
+        self.ref = ctx.objs["mouth_ref"]
+        self.pts = ctx.mouth_pts
+        c = ctx.mouth_cut
+        self.cx, self.cz, self.y0, self.y1, self.k = c["cx"], c["cz"], c["y0"], c["y1"], c["k"]
+
+    def face(self, x, z):
+        h, n = core.ray_front(self.ref, x, z)
+        return (h, n) if h is not None else (None, None)
+
+    def cut(self, x, z):
+        h, _ = self.face(x, z)
+        if h is None or not (self.y0 <= h.y <= self.y1):
+            return False
+        sc = 1.0 - (1.0 - self.k) * (h.y - self.y0) / (self.y1 - self.y0)
+        return _in_poly(self.cx + (x - self.cx) / sc, self.cz + (z - self.cz) / sc, self.pts)
+
+    def rim(self, x, z_in, z_out):
+        """The rim's height at x between z_in (inside the opening) and z_out (on the face), or None when the opening
+        does not reach this x."""
+        if not self.cut(x, z_in) or self.cut(x, z_out):
+            return None
+        lo, hi = z_in, z_out
+        for _ in range(24):
+            mid = (lo + hi) / 2
+            if self.cut(x, mid):
+                lo = mid
+            else:
+                hi = mid
+        return (lo + hi) / 2
 
 
 def build_mouth(ctx):
@@ -637,106 +708,7 @@ def build_mouth(ctx):
     dark = core.principled(ctx, "mouth_in", C["mouth_in"], 0.6)
     low_t = (S["lower_lip_f"] if ctx.female else S["lower_lip_m"]) * H
     if getattr(ctx, "mouth_open", False):
-        pts = ctx.mouth_pts
-        xs = [q[0] for q in pts]
-        zs = [q[1] for q in pts]
-        cx, cz = (min(xs) + max(xs)) / 2, (min(zs) + max(zs)) / 2
-        w = (max(xs) - min(xs)) / 2
-        hh = max(zs) - min(zs)
-        fy = ctx.L["face_y"]
-        bottom_tbl = sorted((q[0], q[1]) for q in pts[:21])               # the outline's lower arc, by x
-        top_tbl = sorted([(q[0], q[1]) for q in pts[21:]] + [(pts[0][0], pts[0][1]), (pts[20][0], pts[20][1])])
-
-        def rim(x, z_out, z_in):
-            """The real edge of the boolean opening at x (the cutter's walls slant in, so on a receding chin the edge is
-            higher than the outline): step from inside the opening toward z_out; the edge is where the ray leaves the
-            steep cutter wall (depth changing fast) for the face (depth changing slowly), well in front of the pocket's
-            back — no absolute depth, so a receding chin or the chin's underside cannot fool it."""
-            n = 80
-            h0, _ = core.ray_front(head, x, z_in)
-            y_back = h0.y if h0 is not None else fy + 0.2
-            prev_y, prev_z = y_back, z_in
-            for i in range(1, n + 1):
-                z = z_in + (z_out - z_in) * i / n
-                h_, _ = core.ray_front(head, x, z)
-                if h_ is None:
-                    continue
-                if h_.y < y_back - 0.04 and abs(h_.y - prev_y) < 4.0 * abs(z - prev_z):
-                    return prev_z
-                prev_y, prev_z = h_.y, z
-            return None          # no opening at this x (a corner thinner than the slanted cutter): skip it
-
-        # the cavity stays inside the opening's height: a deeper one pokes through the chin in the 3/4 view
-        cav = core.uvsphere("mouth_in", (cx, fy + 0.19, cz), (w * 1.0, 0.13, hh * 0.56), dark, 32, 16)
-        ctx.add(cav, "mouth", head, kind="embed", head=True)
-        # upper teeth (§7.3: #FBF6EA over the top 30 % of the opening): a slab bent to follow the face's curve just
-        # behind the top rim, off the corners (0.72 of the width) — a straight slab poked out through the cheeks at the
-        # corners and hid behind the lip in the middle
-        tw = w * 0.72
-        th = hh * S["teeth_share"]
-        samples = []
-        for i in range(9):
-            x = cx - tw * 1.05 + 2.1 * tw * i / 8
-            zt = core.lerp_table(top_tbl, x)
-            ze = rim(x, zt + 0.05, zt - hh * 0.4)
-            if ze is None:
-                continue
-            hf, _ = core.ray_front(head, x, ze + 0.012)
-            samples.append((x, ze, (hf.y if hf is not None else fy)))
-        bm = bmesh.new()
-        bmesh.ops.create_uvsphere(bm, u_segments=32, v_segments=16, radius=1.0)
-        for v in bm.verts:
-            x = cx + v.co.x * tw
-            ze = core.lerp_table([(q[0], q[1]) for q in samples], x)
-            yf = core.lerp_table([(q[0], q[2]) for q in samples], x)
-            v.co = Vector((x, yf + 0.016 + (v.co.y + 1.0) * 0.018, ze + 0.004 - th * 0.5 + v.co.z * th * 0.62))
-        teeth = core.mesh_obj("teeth", bm)
-        core.finish(teeth, core.principled(ctx, "teeth", C["teeth"], 0.3, coat=0.3))
-        ctx.add(teeth, "teeth", head, kind="embed", head=True)
-        # the tongue in the lower third, set back behind the lower lip (face_y is the surface at the mouth line; the
-        # chin below it recedes, so a tongue at face_y + 0.01 reads as stuck out)
-        tongue = core.uvsphere("tongue", (cx + 0.008, fy + 0.11, min(zs) + hh * 0.25), (w * 0.55, 0.055, hh * 0.20),
-                               core.principled(ctx, "tongue", C["tongue"], 0.45, sss=0.2), 32, 16)
-        ctx.add(tongue, "tongue", head, kind="embed", head=True)
-        # the lower lip: a tube laid on the opening's real lower rim (ray-cast edge), not up the corners
-        lower = pts[:21]
-        lr_t = low_t * 0.42
-        lp, lr = [], []
-        for i, (x, z) in enumerate(lower[3:-3]):
-            zt = core.lerp_table(top_tbl, x)
-            ze = rim(x, z - 0.06, (z + zt) / 2)
-            if ze is None:
-                continue
-            hh2, nn = core.ray_front(head, x, ze - lr_t * 0.55)
-            if hh2 is None:
-                continue
-            lp.append(hh2 + nn * lr_t * 0.35)
-            t = i / (len(lower) - 7)
-            lr.append(0.45 + 0.8 * math.sin(math.pi * t))
-        lip = core.curve("lip_low", lp, lr, lr_t, lip_m)
-        ctx.add(lip, "lip", head, kind="surface", head=True)
-        if ctx.female:  # a thin upper lip along the real top rim
-            upp, upr = [], []
-            up = pts[21:]
-            for i, (x, z) in enumerate(up):
-                zb = core.lerp_table(bottom_tbl, x)
-                ze = rim(x, z + 0.05, (z + zb) / 2)
-                if ze is None:
-                    continue
-                hh2, nn = core.ray_front(head, x, ze + low_t * 0.4 * 0.55)
-                if hh2 is None:
-                    continue
-                upp.append(hh2 + nn * low_t * 0.4 * 0.35)
-                upr.append(0.5 + 0.5 * math.sin(math.pi * (i + 1) / (len(up) + 1)))
-            if len(upp) > 2:
-                ctx.add(core.curve("lip_up", upp, upr, low_t * 0.4, lip_m), "lip", head, kind="surface", head=True)
-        # the corners: the outline's two ends (pts[20] the near one, x = -w; pts[0] the far one), on the face
-        corners = []
-        for q in (pts[20], pts[0]):
-            hc, _ = core.ray_front(head, q[0], q[1] + 0.004)
-            corners.append(hc if hc is not None else Vector((q[0], fy, q[1])))
-        ctx.L["mouth_corners"] = corners
-        ctx.L["mouth_top"] = top_tbl
+        _open_mouth(ctx, head, lip_m, low_t)
         return
     # closed: a dark crease (>= 0.035 H) with its corners set by the expression, the lower lip under it, a thin upper
     # lip for women; a moustache may hide part of it (Bram)
@@ -777,6 +749,122 @@ def build_mouth(ctx):
                                            * (1 - 0.45 * ((k + 1) / (len(upp) + 1)) ** 2) for k in range(len(upp))],
                            low_t * 0.32, lip_m), "lip", head, kind="surface", head=True)
     ctx.L["mouth_corners"] = [cp[0], cp[-1]]
+
+
+def _open_mouth(ctx, head, lip_m, low_t):
+    """The open mouth's parts on the real rim (_Opening): upper teeth (§7.3 #FBF6EA over the top 30 % of the
+    opening) bent to the face's curve just behind the top rim, off the corners (0.72 of the width); the tongue in
+    the lower third, set back behind the lower rim; the lower lip tube on the lower rim (and a thin upper lip for
+    women). When the rim cannot be found at enough samples (an unusual face), each part falls back to the outline
+    drawn on the face (the old placement) and says so in ctx.notes — never a silent empty curve."""
+    pts = ctx.mouth_pts
+    op = _Opening(ctx)
+    xs = [q[0] for q in pts]
+    zs = [q[1] for q in pts]
+    cx = (min(xs) + max(xs)) / 2
+    w = (max(xs) - min(xs)) / 2
+    hh = max(zs) - min(zs)
+    fy = ctx.L["face_y"]
+    bottom_tbl = sorted((q[0], q[1]) for q in pts[:21])               # the outline's lower arc, by x
+    top_tbl = sorted([(q[0], q[1]) for q in pts[21:]] + [(pts[0][0], pts[0][1]), (pts[20][0], pts[20][1])])
+
+    def face_y(x, z):
+        h_, _ = op.face(x, z)
+        return h_.y if h_ is not None else fy
+
+    # upper teeth: a slab bent to the face's curve behind the top rim
+    tw = w * 0.72
+    th = hh * S["teeth_share"]
+    tx = [cx - tw * 1.05 + 2.1 * tw * i / 8 for i in range(9)]
+    samples = []
+    for x in tx:
+        zt = core.lerp_table(top_tbl, x)
+        ze = op.rim(x, zt - hh * 0.4, zt + 0.05)
+        if ze is not None:
+            samples.append((x, ze, face_y(x, ze + 0.012)))
+    if len(samples) < 3:
+        ctx.notes.append("%s %s: open-mouth top rim found at %d of 9 teeth samples; teeth on the outline instead"
+                         % (ctx.cid, ctx.mood, len(samples)))
+        samples = [(x, core.lerp_table(top_tbl, x) - 0.004, face_y(x, core.lerp_table(top_tbl, x) + 0.012)) for x in tx]
+    bm = bmesh.new()
+    bmesh.ops.create_uvsphere(bm, u_segments=32, v_segments=16, radius=1.0)
+    ze_t = [(q[0], q[1]) for q in samples]
+    yf_t = [(q[0], q[2]) for q in samples]
+    for v in bm.verts:
+        x = cx + v.co.x * tw
+        ze = core.lerp_table(ze_t, x)
+        yf = core.lerp_table(yf_t, x)
+        v.co = Vector((x, yf + 0.016 + (v.co.y + 1.0) * 0.018, ze + 0.004 - th * 0.5 + v.co.z * th * 0.62))
+    teeth = core.mesh_obj("teeth", bm)
+    core.finish(teeth, core.principled(ctx, "teeth", C["teeth"], 0.3, coat=0.3))
+    ctx.add(teeth, "teeth", head, kind="embed", head=True)
+    # the tongue: its bottom just under the lower rim's middle, its front behind the face there (on a receding chin a
+    # tongue placed from the mouth line's depth stuck out under the lip)
+    zb = core.lerp_table(bottom_tbl, cx)
+    zr = op.rim(cx, (zb + core.lerp_table(top_tbl, cx)) / 2, zb - 0.06)
+    if zr is None:
+        zr = zb
+    ty, tz = (0.055, hh * 0.20)
+    tongue = core.uvsphere("tongue", (cx + 0.008, face_y(cx, zr - 0.004) + 0.02 + ty, zr + tz * 0.6),
+                           (w * 0.55, ty, tz), core.principled(ctx, "tongue", C["tongue"], 0.45, sss=0.2), 32, 16)
+    ctx.add(tongue, "tongue", head, kind="embed", head=True)
+    # the lower lip: a tube on the lower rim, not up the corners
+    lower = pts[:21][3:-3]
+    lr_t = low_t * 0.42
+    lp, lr = [], []
+
+    def lip_pt(x, z):
+        h_, n_ = op.face(x, z)
+        return None if h_ is None else h_ + n_ * lr_t * 0.35
+
+    for i, (x, z) in enumerate(lower):
+        ze = op.rim(x, (z + core.lerp_table(top_tbl, x)) / 2, z - 0.06)
+        q = lip_pt(x, ze - lr_t * 0.55) if ze is not None else None
+        if q is not None:
+            lp.append(q)
+            lr.append(0.45 + 0.8 * math.sin(math.pi * i / (len(lower) - 1)))
+    if len(lp) < 5:
+        ctx.notes.append("%s %s: open-mouth lower rim found at %d of %d samples; lower lip on the outline instead"
+                         % (ctx.cid, ctx.mood, len(lp), len(lower)))
+        lp, lr = [], []
+        for i, (x, z) in enumerate(lower):
+            q = lip_pt(x, z - 0.016)
+            if q is not None:
+                lp.append(q)
+                lr.append(0.45 + 0.8 * math.sin(math.pi * i / (len(lower) - 1)))
+    if len(lp) < 3:
+        raise ValueError("%s %s: the open mouth's lower lip has %d points (the outline misses the face)"
+                         % (ctx.cid, ctx.mood, len(lp)))
+    ctx.add(core.curve("lip_low", lp, lr, lr_t, lip_m), "lip", head, kind="surface", head=True)
+    if ctx.female:  # a thin upper lip along the real top rim
+        up = pts[21:]
+        ut = low_t * 0.4
+        upp, upr = [], []
+        for i, (x, z) in enumerate(up):
+            ze = op.rim(x, (z + core.lerp_table(bottom_tbl, x)) / 2, z + 0.05)
+            h_, n_ = op.face(x, ze + ut * 0.55) if ze is not None else (None, None)
+            if h_ is not None:
+                upp.append(h_ + n_ * ut * 0.35)
+                upr.append(0.5 + 0.5 * math.sin(math.pi * (i + 1) / (len(up) + 1)))
+        if len(upp) < 3:
+            ctx.notes.append("%s %s: open-mouth top rim found at %d of %d samples; upper lip on the outline instead"
+                             % (ctx.cid, ctx.mood, len(upp), len(up)))
+            upp, upr = [], []
+            for i, (x, z) in enumerate(up):
+                h_, n_ = op.face(x, z + 0.012)
+                if h_ is not None:
+                    upp.append(h_ + n_ * ut * 0.35)
+                    upr.append(0.5 + 0.5 * math.sin(math.pi * (i + 1) / (len(up) + 1)))
+        if len(upp) > 2:
+            ctx.add(core.curve("lip_up", upp, upr, ut, lip_m), "lip", head, kind="surface", head=True)
+    # the corners: the outline's two ends (pts[20] the near one, x = -w; pts[0] the far one), on the face
+    corners = []
+    for q in (pts[20], pts[0]):
+        hc, _ = op.face(q[0], q[1] + 0.004)
+        corners.append(hc if hc is not None else Vector((q[0], fy, q[1])))
+    ctx.L["mouth_corners"] = corners
+    ctx.L["mouth_top"] = top_tbl
+    bpy.data.objects.remove(ctx.objs.pop("mouth_ref"))
 
 
 # ------------------------------------------------------------------ marks

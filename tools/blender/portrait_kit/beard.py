@@ -33,14 +33,25 @@ def _beard_line(ctx, bd):
     sx = ctx.P["hx"] / 0.48
     if getattr(ctx, "mouth_open", False):
         zs = min(q[1] for q in ctx.mouth_pts) - 0.028
-        mid = [(0.0, zs), (0.08, zs + 0.004), (0.16, zs + 0.03), (0.22, mz - 0.01)]
+        # (up to the corners' height at the sides: no bare skin between the moustache's tips, the corners and the
+        # beard)
+        mid = [(0.0, zs), (0.08, zs + 0.006), (0.15, zs + 0.045), (0.20, mz + 0.0), (0.24, mz + 0.012)]
     else:
-        mid = [(0.0, mz - 0.07), (0.08, mz - 0.064), (0.16, mz - 0.04), (0.22, mz - 0.012)]
+        # closed: right under the lower lip, so no bare chin shows between the lip and the beard
+        mid = [(0.0, mz - 0.046), (0.08, mz - 0.044), (0.16, mz - 0.032), (0.22, mz - 0.012)]
     tbl = mid + [(0.28, mz + 0.035), (0.34, mz + 0.085), (0.40, mz + 0.15), (0.44, mz + 0.23), (0.5, mz + 0.27)]
     return lambda x: core.lerp_table([(a * sx, b) for a, b in tbl], abs(x))
 
 
 def _pear(ctx, bd):
+    """Bram's pear (§7.6, art director note 3): 8 broad, smooth strand groups over a hidden backing mass.
+
+    A guide surface defines the pear: on the face from the beard line down to the jaw (the head itself, ray cast),
+    then an analytic shape hanging below the chin — widest at the jaw line (`wider` W past the jaw on each side),
+    narrowing to two rounded lower lobes `below` H under the chin, split by a notch. The clumps run down it along
+    lines of constant u (their share of the width at each height), so they converge into the lobes; neighbours touch,
+    and the AO crevice tone marks a soft groove between them. The backing (a sparse sheet of large balls on the face
+    and a chain of big soft volumes inside the pear) fills the inside and never reaches the surface."""
     head = ctx.objs["head"]
     sx = ctx.P["hx"] / 0.48
     line = _beard_line(ctx, bd)
@@ -48,81 +59,94 @@ def _pear(ctx, bd):
     jaw_x = abs(ctx.L["jaw_near"].x) if ctx.L.get("jaw_near") else 0.4 * sx
     wide = jaw_x + bd.get("wider", 0.12) * ctx.W          # half width of the beard's widest row
     tip_z = chin_z - bd.get("below", 0.45) * H              # the lowest point (lobe bottoms)
+    fy = ctx.L["face_y"]
+    zj = chin_z + 0.07                                      # the widest row, at the jaw line
+    th = bd.get("clump_th", 0.06)
 
+    def half_w(z):
+        """The pear's half width at z: the sideburns' width up on the cheek, widest at the jaw, two lobes at the tip."""
+        t = (zj - z) / (zj - tip_z)
+        return wide * core.lerp_table([(-1.0, 0.78), (0.0, 1.0), (0.3, 0.90), (0.6, 0.68), (0.85, 0.50), (1.0, 0.42)], t)
+
+    def guide(x, z):
+        """A point of the guide surface and its normal: on the face above the chin (the beard's own thickness in
+        front of it), the analytic pear below and past the head's outline (a front that wraps back to the sides)."""
+        w = half_w(z)
+        u = x / max(w, 1e-6)
+        t = max(0.0, (zj - z) / (zj - tip_z))
+        if z > chin_z - 0.02:
+            hit, nor = core.ray_front(head, x, z)
+            if hit is not None:
+                return hit + nor * 0.05, nor
+        ya = fy - 0.01 + 0.03 * t + 0.40 * w * u * u
+        return Vector((x, ya, z)), Vector((0.8 * u / max(w, 0.2), -1.0, -0.15 * t)).normalized()
+
+    # the backing: a sparse face sheet under the beard line and big soft volumes inside the pear
     def keep(h, n, d):
-        if h.z > line(h.x):
+        if h.z > line(h.x) - 0.01:
             return False
         if abs(h.x) > 0.36 * sx and h.z > -0.25:          # the sideburn stays in front of the ear
             return h.y < -0.06
         return h.y < 0.12
 
-    samples, s = core.surface_samples(head, 2400, keep)
-
-    def thick(h, n):
-        depth = line(h.x) - h.z
-        side = core.smoothstep(0.25 * sx, 0.46 * sx, abs(h.x))
-        full = core.smoothstep(0.0, 0.25, depth)
-        # a real edge at the beard line (0.7 of the full thickness there, not a feathered film): the beard reads as a
-        # mass on the face with a groove where it meets the cheek
-        return (0.022 + 0.085 * full) * (1 - 0.55 * side) * (0.70 + 0.30 * core.smoothstep(0.0, 0.05, depth))
-
-    el = core.sheet_elems(samples, s, thick)
-    # the pear: lobes swelling out to `wide` at the jaw line and down to two rounded lower lobes
-    fy = ctx.L["face_y"]
-    lobes = []
-    for x, dz, r, yo in [(-0.78, 0.18, 0.12, 0.25), (0.78, 0.18, 0.12, 0.25),          # widest row (in units of wide)
-                         (-0.55, 0.0, 0.14, 0.12), (0.55, 0.0, 0.14, 0.12),
-                         (-0.22, -0.02, 0.15, 0.06), (0.22, -0.02, 0.15, 0.06),
-                         (-0.40, -0.22, 0.13, 0.08), (0.40, -0.22, 0.13, 0.08),
-                         (0.0, -0.18, 0.13, 0.05)]:
-        lobes.append((x * wide, fy + 0.10 + yo, chin_z + dz * (chin_z - tip_z) - 0.06, r))
-    # the two lower lobes (the pear's bottom), split by a shallow notch
-    lo = tip_z + 0.105
-    lobes += [(-0.30 * wide, fy + 0.13, lo, 0.11), (0.30 * wide, fy + 0.13, lo, 0.11),
-              (-0.20 * wide, fy + 0.12, lo + 0.09, 0.11), (0.20 * wide, fy + 0.12, lo + 0.09, 0.11)]
-    for x, y, z, r in lobes:
-        el.append(dict(co=(x, y, z), half=r, stiff=2.2))
-    el.append(dict(co=(0.0, fy + 0.10, lo - 0.05), half=(0.05, 0.16, 0.07), stiff=3.5, neg=True))  # the notch
-    tmp = core.to_mesh(core.metaball(ctx, "BeardMass", el, 0.012))
-    core.update()
-    lock_el = []
-    strands = [(-0.3, -0.27, -0.24, -0.62), (-0.15, -0.40, -0.12, -0.92), (0.0, -0.42, -0.01, -0.88),
-               (0.15, -0.40, 0.12, -0.92), (0.3, -0.27, 0.24, -0.62), (-0.40, -0.12, -0.42, -0.52),
-               (0.40, -0.12, 0.42, -0.52), (-0.52, -0.32, -0.36, -0.70), (0.52, -0.32, 0.36, -0.70)]
-    for x0, z0, x1, z1 in strands:
-        x0, x1 = x0 * wide / 0.52, x1 * wide / 0.52
-        z0 = chin_z + (z0 + 0.53) * 1.0
-        z1 = chin_z + (z1 + 0.53) * (chin_z - tip_z) / 0.45
-        prev = None
-        for k in range(9):
-            t = k / 8
-            x = x0 + (x1 - x0) * t
-            z = z0 + (z1 - z0) * t
-            hit, nor = core.ray_front(tmp, x, z)
-            if hit is None:
-                continue
-            w = 0.05 + 0.03 * math.sin(math.pi * min(1.0, t * 1.15))
-            if prev is not None:
-                seg = (hit - prev).length
-                lock_el.append(dict(co=(hit + prev) / 2 - nor * 0.02, half=(w, 0.02, seg * 0.85 + 0.02), stiff=2.1,
-                                    rot=core.frame_quat(hit - prev, nor)))
-            prev = hit
-    bpy.data.objects.remove(tmp)
-    el += lock_el
+    samples, s = core.surface_samples(head, 1300, keep)
+    el = core.sheet_elems(samples, s, lambda h, n: 0.036 + 0.026 * core.smoothstep(0.0, 0.2, line(h.x) - h.z))
+    for k in range(7):
+        t = k / 6
+        z = zj - (zj - tip_z) * (0.05 + 0.80 * t)
+        w = half_w(z)
+        for sd in (-1, 1):
+            g, _ = guide(sd * 0.50 * w, z)
+            el.append(dict(co=(sd * 0.50 * w, g.y + 0.13, z), half=(0.42 * w, 0.12, 0.12), stiff=2.0))
+    # the clumps: 4 per side at u = 0.13, 0.38, 0.63, 0.88 of the width; roots on the face under the beard line,
+    # ends on the lobe outline (rounded: the middle of each lobe hangs lowest)
+    lobe_x = 0.24 * wide
+    for sd in (-1, 1):
+        # (the tips converge: each side's four end close together, overlapping, so the side closes into one rounded
+        # lobe, not four little points)
+        for u, (w0, w1), xe in [(0.13, (0.095, 0.07), 0.42), (0.38, (0.105, 0.075), 0.72),
+                                (0.63, (0.11, 0.075), 1.0), (0.88, (0.10, 0.07), 1.28)]:
+            x_root = sd * u * half_w(-0.10)
+            # (the outer clump starts at the jaw: higher up, the sideburn's edge turns away and its round root would
+            # stand out of the face's outline as a horn)
+            z_root = min(line(x_root) - 0.035, -0.16 if u < 0.8 else -0.25)
+            if abs(x_root) < 0.30 * sx:                     # under the mouth: just below the beard line there
+                z_root = line(x_root) - 0.04
+            xe_ = sd * xe * lobe_x
+            # the lobe outline: lowest under the lobe's middle, rising to the notch between the two lobes and outward
+            d_ = (abs(xe_) - lobe_x) / lobe_x
+            ze = tip_z + 0.035 + (0.15 if d_ < 0 else 0.09) * d_ * d_
+            ctrl = [(x_root, z_root), (sd * u * half_w(zj), zj)]
+            for t in (0.35, 0.68):
+                z = zj - (zj - tip_z) * t
+                x = sd * u * half_w(z)
+                ctrl.append((x + (xe_ - x) * t * 0.35, z))
+            ctrl.append((xe_, ze))
+            pts, nrs = [], []
+            for x, z in ctrl:
+                g, n_ = guide(x, z)
+                pts.append(g)
+                nrs.append(n_)
+            el += core.clump(pts, nrs, w0, w1, th, n=26, lift=0.0, taper_at=0.6, tip=0.7, stiff=2.8, flat=0.75,
+                             root=0.22)
     if getattr(ctx, "mouth_open", False):
         pts = ctx.mouth_pts
         zs = [q[1] for q in pts]
         el.append(dict(co=(0.0, fy - 0.08, (min(zs) + max(zs)) / 2 - 0.01), half=(0.16 * sx, 0.12, 0.09), stiff=4.0,
                        neg=True))
     else:
-        el.append(dict(co=(0.0, fy - 0.08, ctx.L["mouth_z"] - 0.006), half=(0.07 * sx, 0.12, 0.026), stiff=4.0,
+        # the closed mouth: a flat window over the lower lip only (a taller one bared the chin at its two ends — cream
+        # "fangs" under the lip, review r3)
+        el.append(dict(co=(0.0, fy - 0.08, ctx.L["mouth_z"] - 0.024), half=(0.10 * sx, 0.12, 0.02), stiff=4.0,
                        neg=True))
     # shaded the other way up from hair (§7.4 "волосы у лица — кожа"): light lobe tips where the beard lies on the
     # costume, a darker root band along the face (the "edge" attribute: 1 at the beard line, 0 from 0.08 below it)
-    mat = core.hair_mat(ctx, "beard", bd["color"], tip_z, ctx.L["mouth_z"] + 0.1, dark=bd.get("tip"),
+    # (the root colour reaches down to the jaw line: the beard next to the skin is the darker part, the light tips lie
+    # on the jerkin)
+    mat = core.hair_mat(ctx, "beard", bd["color"], tip_z, ctx.L["mouth_z"] - 0.04, dark=bd.get("tip"),
                         light=bd.get("root"), crevice=bd.get("crevice"),
                         edge=("beard_edge", bd["edge"], 0.85) if bd.get("edge") else None)
-    o = core.mb_mesh(ctx, "Beard", el, 0.011, mat, smooth_iter=3, name="beard")
+    o = core.mb_mesh(ctx, "Beard", el, 0.012, mat, smooth_iter=4, name="beard")
     if bd.get("edge"):
         attr = o.data.color_attributes.new("beard_edge", "FLOAT_COLOR", "POINT")
         for i, v in enumerate(o.data.vertices):
