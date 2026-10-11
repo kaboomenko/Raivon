@@ -415,8 +415,8 @@ def _fringe(ctx):
     samples, s = core.surface_samples(head, 2000, lambda h, n, d: h.z > hl(h) + 0.015)
     el = core.sheet_elems(samples, s, lambda h, n: 0.035)
     tip_el = hr.get("tip_el", 30)
-    locks = hr.get("locks", [(-42, 0.070, -8, 0.8), (-26, 0.082, 2, 1.1), (-9, 0.088, 8, 1.25), (8, 0.085, 12, 1.05),
-                             (25, 0.078, 16, 1.2), (42, 0.068, 18, 0.85)])
+    locks = hr.get("locks", [(-42, 0.088, -4, 0.75), (-26, 0.098, 4, 1.1), (-10, 0.10, 10, 1.25), (6, 0.098, 14, 1.0),
+                             (22, 0.092, 18, 1.15), (38, 0.085, 20, 0.85)])
     for az, w, sweep, length in locks:
         root = core.az_el(az * 0.8, 62)
         mid = core.az_el(az + sweep * 0.5, 48)
@@ -425,8 +425,8 @@ def _fringe(ctx):
         if hit is None:
             continue
         hang = hit + nor * 0.035 + Vector((math.sin(math.radians(az + sweep)) * 0.03, -0.02, -0.07 * length))
-        el += core.ribbon_lock(head, [root, mid, tip_d, hang], w * sx, w * 0.62 * sx, 0.045, n=14, lift=0.45,
-                               free_tail=1, taper_at=0.78, wmin=0.04)
+        el += core.ribbon_lock(head, [root, mid, tip_d, hang], w * sx, w * 0.78 * sx, 0.048, n=16, lift=0.45,
+                               free_tail=1, taper_at=0.86, wmin=0.05)
     for s_ in (-1, 1):
         el += core.ribbon_lock(head, [core.az_el(s_ * 60, 44), core.az_el(s_ * 74, 22), core.az_el(s_ * 80, 4)],
                                0.07 * sx, 0.045 * sx, 0.04, n=10, lift=0.4, taper_at=0.6)
@@ -477,7 +477,7 @@ def _flattop(ctx):
             # thickness (a forward-tilted normal near the hairline would otherwise push a brim over the forehead)
             horiz = math.sqrt(max(1e-4, 1 - n.z * n.z))
             t = max(t, min((z_top - h.z) / max(n.z, 0.3), 1.5 * side_t / horiz, hr.get("max_t", 0.2)))
-        return t * (0.8 + 0.2 * core.smoothstep(0.0, 0.025, h.z - hl(h)))
+        return t * (0.45 + 0.55 * core.smoothstep(0.0, 0.05, h.z - hl(h)))
     el = core.sheet_elems(samples, s, thick)
     o = _finish_hair(ctx, el, hr["color"], res=0.010, signature=True, smooth_iter=3)
     return o
@@ -553,7 +553,7 @@ def _ponytail(ctx):
                           stiff=2.8, flat=0.75)
     mat = _hair_mat(ctx, "hair_tail", hr["color"], -0.6, 0.62)
     tail = core.mb_mesh(ctx, "Tail", tel, 0.011, mat, smooth_iter=3, name="ponytail")
-    ctx.add(tail, "hair", o, kind="embed", head=True)
+    ctx.add(tail, "detail:ponytail", o, kind="embed", head=True)       # P-A8 "хвост 3000": its own ID group
     ctx.sig_objs.append(tail)
     ctx.objs["ponytail"] = tail
     band = core.torus("pony_band", (pts[3] + pts[4]) / 2, 0.06, 0.018,
@@ -611,8 +611,8 @@ def _bun(ctx):
         bel += core.clump(cp[::2], nrm[::2], bun.get("w", 0.085), bun.get("w", 0.085) * 0.7, 0.06, n=70, lift=0.0,
                           taper_at=0.85, tip=0.5, stiff=2.8, flat=0.9)
     mat = _hair_mat(ctx, "hair_bun", hr["color"], 0.1, crown.z + height)
-    b = core.mb_mesh(ctx, "Bun", bel, 0.010, mat, smooth_iter=3, name="bun")
-    ctx.add(b, "hair", o, kind="embed", head=True)
+    b = core.mb_mesh(ctx, "Bun", bel, 0.010, mat, smooth_iter=2, name="bun")
+    ctx.add(b, "detail:bun", o, kind="embed", head=True)               # P-A8 "пучок 3500": its own ID group
     ctx.sig_objs.append(b)
     ctx.objs["bun"] = b
     ctx.details["bun"] = 3500

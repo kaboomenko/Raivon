@@ -205,7 +205,7 @@ def _moustache(ctx, bd):
                 xs_ = s_ * x * sx
                 if mtop[0][0] - 0.01 <= xs_ <= mtop[-1][0] + 0.01:
                     zc = max(zc, core.lerp_table(mtop, xs_) + 0.012 + r * k * 0.8)
-            el.append(dict(co=(s_ * x * sx, ys + dy, zc), half=r * k, stiff=2.4))
+            el.append(dict(co=(s_ * x * sx, ys + dy + (0.006 if mtop else 0.0), zc), half=r * k, stiff=2.4))
     # the moustache in the hair's rust (darker than the beard top, §7.6 palette slots): it reads as hair over the lip,
     # not as a fleshy upper lip on a beard the skin's own hue
     mat = core.hair_mat(ctx, "moustache", bd.get("moustache_color", bd["color"]), mz - 0.04, mz + 0.1,
@@ -309,7 +309,7 @@ def _short(ctx, bd):
             return False
         if abs(h.x) > 0.36 * sx and h.z > -0.25:
             return h.y < -0.06
-        return h.y < 0.12 and h.z > ctx.L["chin"].z - 0.2
+        return h.y < 0.12 and h.z > ctx.L["chin"].z - bd.get("under", 0.06)
     samples, s = core.surface_samples(head, 1800, keep)
     el = core.sheet_elems(samples, s, lambda h, n: t * (0.55 + 0.45 * core.smoothstep(0.0, 0.05, line(h.x) - h.z)))
     chin_z = ctx.L["chin"].z
@@ -318,10 +318,10 @@ def _short(ctx, bd):
             x = sd * u * 0.40 * sx
             z0 = line(x) - 0.03
             h0, n0 = core.ray_front(head, x, z0)
-            h1, n1 = core.ray_front(head, x * 1.02, max(chin_z + 0.02, z0 - 0.12))
+            h1, n1 = core.ray_front(head, x * 1.02, max(chin_z + 0.03, z0 - 0.10))
             if h0 is None or h1 is None:
                 continue
-            tip = h1 + Vector((0, -0.005, -0.04 - 0.02 * (1 - u)))
+            tip = h1 + Vector((0, -0.005, -0.025 - 0.015 * (1 - u)))
             el += core.clump([h0 + n0 * t * 0.4, h1 + n1 * t * 0.5, tip], [n0, n1, n1], 0.06, 0.055, t * 0.6, n=12,
                              lift=0.0, taper_at=0.6, tip=0.6, stiff=2.6, flat=0.8)
     if open_m:
@@ -445,7 +445,7 @@ def _thin(ctx, bd):
             h, nn = core.ray_front(head, x, z)
             if h is None:
                 continue
-            pts.append(h + nn * t * 0.4)
+            pts.append(h + nn * t * 0.25)
             rad.append(0.55 + 0.45 * math.sin(math.pi * min(1.0, 0.25 + f * 0.9)) * (1 - 0.6 * f ** 3))
         o = core.curve("moustache%+d" % sd, pts, rad, t / 2, mat)
         ctx.add(o, "beard", head, kind="surface", head=True)

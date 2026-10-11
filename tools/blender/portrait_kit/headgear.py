@@ -300,7 +300,7 @@ def tricorn(ctx, hg):
 
 
 # ------------------------------------------------------------------ aviator cap (Hawk)
-AVIATOR_EDGE = [(0, 36), (35, 32), (60, 20), (78, 2), (92, -18), (120, -24), (180, -26)]
+AVIATOR_EDGE = [(0, 47), (35, 42), (60, 28), (78, 6), (92, -16), (120, -24), (180, -26)]
 
 
 def aviator(ctx, hg):
@@ -336,16 +336,16 @@ def aviator(ctx, hg):
             continue
         hh_, nh_ = core.ray(cap, Vector((side * 2.0, ear.y + 0.02, ear.z + 0.05)), (-side, 0, 0))
         hinge = (hh_ - nh_ * 0.02) if hh_ is not None else Vector((ear.x + side * 0.08, ear.y, ear.z + 0.05))
-        ang = math.radians(fl.get("out", 24))
+        ang = math.radians(fl.get("out", 48))
         outv = Vector((side * math.cos(ang), 0.10, math.sin(ang))).normalized()
         L_, W_ = fl.get("len", 0.25), fl.get("w", 0.19)
         el2 = []
+        face_n = Vector((0.0, -1.0, 0.0))            # the flap's flat side toward the front: a wing, not a stick
         for k in range(7):
             t = k / 6
             c = hinge + outv * (L_ * t)
             w_ = W_ * (0.75 + 0.25 * math.sin(math.pi * min(1.0, t * 1.2)))
-            el2.append(dict(co=c, half=(w_ * 0.5, 0.022, 0.05), stiff=2.4,
-                            rot=core.frame_quat(outv, Vector((side * -math.sin(ang), 0.0, math.cos(ang))))))
+            el2.append(dict(co=c, half=(w_ * 0.5, 0.024, 0.05), stiff=2.4, rot=core.frame_quat(outv, face_n)))
         flap = core.mb_mesh(ctx, "Flap%+d" % side, el2, 0.008, leather, smooth_iter=2, name="flap%+d" % side)
         ctx.add(flap, "hat", cap, kind="surface", head=True)
         ctx.sig_objs.append(flap)
@@ -353,9 +353,8 @@ def aviator(ctx, hg):
         el3 = []
         for k in range(6):
             t = (k + 0.5) / 6
-            c = hinge + outv * (L_ * t) + Vector((side * -math.sin(ang), 0.0, math.cos(ang))) * 0.022
-            el3.append(dict(co=c, half=(W_ * 0.36, 0.02, 0.04), stiff=2.4,
-                            rot=core.frame_quat(outv, Vector((side * -math.sin(ang), 0.0, math.cos(ang))))))
+            c = hinge + outv * (L_ * t) + face_n * 0.024
+            el3.append(dict(co=c, half=(W_ * 0.36, 0.02, 0.04), stiff=2.4, rot=core.frame_quat(outv, face_n)))
         fm = core.hair_mat(ctx, "cap_fur", hg.get("fur", "#EDE3D0"), -0.3, 0.5, crevice=hg.get("fur_crevice", "#B8A890"))
         lin = core.mb_mesh(ctx, "Lin%+d" % side, el3, 0.008, fm, smooth_iter=2, name="flapfur%+d" % side)
         ctx.add(lin, "detail:" + hg.get("fur_detail", "fur"), flap, kind="embed", head=True)
@@ -394,7 +393,7 @@ def goggles_hg(ctx, hg):
     el0 = hg.get("el", 42)
     spread = hg.get("spread", 17)
     rim_col = hg.get("rim_color", "#C9A24A" if style != "rubber" else "#2E2E34")
-    rim_m = (core.principled(ctx, "goggle_rim", rim_col, rough=0.32, metal=0.55) if style != "rubber"
+    rim_m = (core.principled(ctx, "goggle_rim", rim_col, rough=0.32, metal=hg.get("metallic", 0.55)) if style != "rubber"
              else core.principled(ctx, "goggle_rim", rim_col, rough=0.55, coat=0.2))
     lens_col = hg.get("lens_color", "#BFE0EE")
     lens_m = core.principled(ctx, "goggle_lens", lens_col, rough=0.08, coat=0.6, spec=0.8)
@@ -436,23 +435,25 @@ def goggles_hg(ctx, hg):
         br = core.curve("goggle_bridge", [a, top, b], [1, 1, 1], rim_t * 0.45, rim_m, order=3)
         ctx.add(br, grp, cups[0], kind="embed", head=True)
         # the strap round the head through the cups' outer sides, over the hair
-        pts, nrs = [], []
+        pts, nrs, hosts = [], [], []
         zc = (centres[0][2].z + centres[1][2].z) / 2 - 0.02
         for k in range(40):
             az = hg.get("az", 0.0) + spread + 22 + (360 - 2 * spread - 44) * k / 39
             dd = Vector((math.sin(math.radians(az)), -math.cos(math.radians(az)), 0.0))
             el_ = el0 - 6 - 18 * math.sin(math.pi * k / 39) * hg.get("strap_drop", 1.0)
             d3 = core.az_el(az, el_)
-            h, n, _ = core.ray_any(surf, d3 * 3, -d3)
+            h, n, ob_ = core.ray_any(surf, d3 * 3, -d3)
             if h is not None:
                 pts.append(h + n * 0.012)
                 nrs.append(n)
+                hosts.append(ob_)
         if len(pts) > 4:
             st = core.ribbon_mesh("goggle_strap", pts, hg.get("strap_w", 0.055), normals=[Vector((0, 0, 1))] * len(pts))
             core.solidify(st, 0.016, offset=0.0)
             core.finish(st, core.principled(ctx, "goggle_strap", hg.get("strap", "#5A3A22"), rough=0.5, coat=0.1),
                         sub=1)
-            ctx.add(st, grp, head, kind="embed", head=True)
+            host = max(set(hosts), key=hosts.count) if hosts else head
+            ctx.add(st, grp, host, kind="embed", head=True)
     if hg.get("loupe") and centres:
         # the flip-up loupe: a small lens on a hinge at the near cup's top, folded up over it
         f, nrm, c = centres[0]
@@ -464,13 +465,14 @@ def goggles_hg(ctx, hg):
         hg_ = core.cylinder("goggle_hinge", hinge, rim_t * 0.35, 0.05, rim_m, nrm=nrm.cross(upv).normalized(), verts=12)
         ctx.add(hg_, grp, cups[0], kind="embed", head=True)
         lp = core.torus("goggle_loupe", lc, lr, rim_t * 0.38, rim_m, nrm=ln_n, seg=32, rseg=10)
-        ctx.add(lp, grp, hg_, kind="embed", head=True)
         ln = core.uvsphere("goggle_loupe_lens", lc, (lr * 0.9, lr * 0.9, 0.012), lens_m, 24, 8)
         core.align_z(ln, ln_n)
         ctx.add(ln, grp, lp, kind="embed", head=True)
-        arm = core.curve("goggle_loupe_arm", [hinge, lc - (lc - hinge).normalized() * lr], [1, 1], rim_t * 0.3, rim_m,
-                         order=2)
+        v_ = hinge - lc
+        v_ = (v_ - ln_n * v_.dot(ln_n)).normalized() * lr        # the point of the ring nearest the hinge
+        arm = core.curve("goggle_loupe_arm", [hinge, lc + v_], [1, 1], rim_t * 0.3, rim_m, order=2)
         ctx.add(arm, grp, hg_, kind="embed", head=True)
+        ctx.add(lp, grp, arm, kind="embed", head=True)
     ctx.details[hg.get("detail", "goggles")] = hg.get("min_px", 1200)
     if hg.get("signature"):
         ctx.sig_objs += [o for o in bpy.context.scene.objects if o.name.startswith("goggle_cup") or

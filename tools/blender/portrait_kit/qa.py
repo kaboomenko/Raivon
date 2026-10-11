@@ -314,6 +314,7 @@ def landmarks_json(ctx, path, png_path, ids_png, sig_png, size, floating, rows, 
                 brows=brows, mouth=mc, mouth_local=mouth_local,
                 cheek_near=pj(rig.head_to_world(ctx, ctx.L["cheek_near"])) if ctx.L.get("cheek_near") else None,
                 mouth_open=bool(getattr(ctx, "mouth_open", False)), glasses=bool(getattr(ctx, "glasses", False)),
+                top_exempt=next((p.group for p in ctx.parts if p.obj in getattr(ctx, "skyline_exempt", [])), None),
                 wink=ctx.L.get("wink"), lids=[e["open"] for e in sorted(ctx.objs["eyes"], key=lambda e: e["side"])],
                 signature=ctx.ch.get("signature", {}).get("name"), floating=floating, contacts=rows,
                 details=ctx.details, detail_groups=getattr(ctx, "detail_groups", {}), frame=ctx.frame, stats=stats)

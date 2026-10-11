@@ -106,7 +106,7 @@ def check_files(d, have, miss, rep):
 
 
 def check_framing(d, imgs, rep):
-    tops, side, metas = [], [], []
+    tops, side, metas, ex_rows = [], [], [], []
     for n, a in imgs.items():
         al = a[..., 3] > 0.5
         h, w = al.shape
@@ -114,6 +114,18 @@ def check_framing(d, imgs, rep):
         if not len(rows):
             continue
         tmin = Q.TOP_MIN if n.startswith("cmd_") else Q.TOP_MIN_HEADGEAR
+        m0 = Q.meta(d, n) or {}
+        ex = m0.get("top_exempt")
+        if ex:
+            # a designed overflow of the top (Rai's banner, §7.2 "знамя за верх кадра"): the gate reads the rest of
+            # the figure (the ID pass's other groups), the overflow is reported
+            masks, _ = Q.ids(d, n)
+            if masks is not None and ex in masks:
+                rest = al & ~masks[ex]
+                rows_r = np.where(rest.sum(1) >= 2)[0]
+                if len(rows_r):
+                    ex_rows.append("%s %s from %.3f h, the rest from %.3f h" % (n, ex, rows[0] / h, rows_r[0] / h))
+                    rows = rows_r
         tops.append((rows[0] / h, n, tmin))
         cols = np.where(al[: int(h * Q.SIDE_ROWS)].any(0))[0]
         if len(cols) and (cols[0] < Q.SIDE_FREE * w or cols[-1] > w - 1 - Q.SIDE_FREE * w):
@@ -126,6 +138,8 @@ def check_framing(d, imgs, rep):
     lo = [t for t in tops if t[0] < t[2]]
     rep.add("FAIL" if lo else "PASS", "P-A6 top", "highest point %.3f h (%s); %d files above their minimum%s" % (
         tops[0][0], tops[0][1], len(lo), (": " + " ".join(t[1] for t in lo[:6])) if lo else ""))
+    if ex_rows:
+        rep.add("INFO", "P-A6 top overflow", "designed (meta top_exempt): " + "; ".join(ex_rows))
     rep.add("FAIL" if side else "PASS", "P-A6 side band", "%d files within %.3f w of a side above %.2f h%s" % (
         len(side), Q.SIDE_FREE, Q.SIDE_ROWS, (": " + " ".join(side[:6])) if side else ""))
     if not metas:

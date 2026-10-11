@@ -356,14 +356,20 @@ def _chain(ctx, name, a, b, sag, m, link=0.022, parent=None, grp="metal", wire=0
     L = (b - a).length
     n = max(4, int(L / link))
     pts = []
+    free = max(1, n // 6)
     for i in range(n + 1):
         t = i / n
         p = a.lerp(b, t) + Vector((0, -0.004, -sag * 4 * t * (1 - t)))
         # the chain lies on the costume: each link cast onto what is under it
         h, nn, _ = core.ray_any(ctx.outer, (p.x, -2.0, p.z), (0, 1, 0))
-        if h is not None and 0 < i < n:
+        if h is not None and 0 < i < n - free:      # (the last links hang free to the end ring)
             p = h + nn * (wire + 0.004)
         pts.append(p)
+    k0 = n - free - 1                                # straight from the last link on the costume to the end
+    if k0 > 0:
+        for i in range(k0 + 1, n):
+            f = (i - k0) / (n - k0)
+            pts[i] = pts[k0].lerp(pts[n], f)
     for i in range(n):
         p0, p1 = pts[i], pts[i + 1]
         c = (p0 + p1) / 2
@@ -375,7 +381,9 @@ def _chain(ctx, name, a, b, sag, m, link=0.022, parent=None, grp="metal", wire=0
         nrm = side if i % 2 else d.cross(side).normalized()
         lk = core.torus("%s_link%d" % (name, i), c, link * 0.45, wire, m, nrm=nrm, seg=12, rseg=6)
         lk.scale = (1.0, 1.0, 1.0)
-        ctx.add(lk, grp, parent, kind="embed")
+        # each link hangs in the one before it (the first on the button / the host)
+        ctx.add(lk, grp, parent if i == 0 else prev, kind="embed")
+        prev = lk
     return pts
 
 
@@ -755,23 +763,24 @@ def spyglass(ctx, pr):
 # ------------------------------------------------------------------ earrings (Seir, Frey)
 def earring(ctx, pr):
     """An earring on the near ear's lobe: "ring" (Seir: gold, 0.10 H across, a 0.03 H tube) or "stud" (Frey)."""
-    ear = ctx.L["ear_" + pr.get("ear", "near")][0]
-    if ear is None:
+    tag = pr.get("ear", "near")
+    side = -1 if tag == "near" else 1
+    lb = ctx.L.get("lobe_" + tag)
+    if lb is None:
         return
-    side = -1 if pr.get("ear", "near") == "near" else 1
-    eh = core.S["ear_h"] * H * ctx.ch.get("ear_k", 1.0)
-    lobe = ear + Vector((side * core.S["ear_out"] * H * 0.6, -0.012, -eh * 0.40 - 0.01))
+    lobe, lr, ear_o = lb
     m = core.principled(ctx, "earring", pr.get("color", "#E8B23A"), rough=0.28, metal=0.55)
     grp = _detail(ctx, pr, "earring", 60)
-    head = ctx.objs["head"]
     if pr.get("style", "ring") == "ring":
+        # a ring through the lobe: hanging from its bottom
         R = pr.get("d", 0.10) * H / 2
         t = pr.get("tube", 0.03) * H / 2
-        o = core.torus("earring", lobe + Vector((0, 0, -R * 0.85)), R, t, m,
+        o = core.torus("earring", lobe + Vector((side * lr * 0.3, -0.01, -lr * 0.6 - R * 0.8)), R, t, m,
                        nrm=Vector((1.0, -0.35, 0.0)).normalized(), seg=32, rseg=10)
     else:
-        o = core.uvsphere("earring", lobe + Vector((side * 0.006, -0.004, 0.0)), (0.018, 0.018, 0.018), m, 16, 8)
-    ctx.add(o, grp, head, kind="free", head=True)
+        # a stud on the lobe's outer face, toward the camera
+        o = core.uvsphere("earring", lobe + Vector((side * lr * 0.95, -lr * 0.35, 0.0)), (0.026, 0.026, 0.026), m, 16, 8)
+    ctx.add(o, grp, ear_o, kind="surface", head=True)
 
 
 # ------------------------------------------------------------------ relief badges (Frey's tower, Hawk's wings)
@@ -788,7 +797,7 @@ def badge_relief(ctx, pr):
     rt = nn.cross(up_).normalized() * -1
     metal = core.principled(ctx, pr.get("kind_mat", "badge_metal"), pr.get("color", "#C8CCD4"), rough=0.3, metal=0.55)
     grp = _detail(ctx, pr, pr.get("detail", "badge"), 500)
-    base = h + nn * 0.012
+    base = h + nn * 0.004
 
     def at(u, v, w=0.0):
         return base + rt * u * size + up_ * v * size + nn * w
@@ -799,17 +808,17 @@ def badge_relief(ctx, pr):
         dark = core.principled(ctx, "badge_dark", pr.get("dark", "#3B5A44"), rough=0.4, coat=0.3)
         inner = core.cylinder("badge_enamel", at(0, 0, 0.014), size * 0.43, 0.012, dark, nrm=nn, verts=40, bev=0.003)
         ctx.add(inner, grp, plate, kind="embed")
-        tw = core.box("badge_tower", at(0, -0.04, 0.03), (size * 0.30, 0.024, size * 0.46), metal, bev=0.004)
+        tw = core.box("badge_tower", at(0, -0.04, 0.026), (size * 0.34, size * 0.50, 0.026), metal, bev=0.005)
         tw.rotation_mode = "QUATERNION"
         tw.rotation_quaternion = core.frame_quat(up_, nn)
         tw.rotation_quaternion = (Matrix((rt, up_, nn)).transposed().to_quaternion())
         ctx.add(tw, grp, plate, kind="embed")
         for j in (-1, 0, 1):
-            mr = core.box("badge_merlon", at(j * 0.11, 0.24, 0.03), (size * 0.075, 0.024, size * 0.09), metal, bev=0.003)
+            mr = core.box("badge_merlon", at(j * 0.125, 0.26, 0.026), (size * 0.085, size * 0.10, 0.026), metal, bev=0.004)
             mr.rotation_mode = "QUATERNION"
             mr.rotation_quaternion = tw.rotation_quaternion
             ctx.add(mr, grp, plate, kind="embed")
-        door = core.box("badge_door", at(0, -0.17, 0.044), (size * 0.09, 0.01, size * 0.13), dark, bev=0.003)
+        door = core.box("badge_door", at(0, -0.18, 0.040), (size * 0.11, size * 0.16, 0.016), dark, bev=0.003)
         door.rotation_mode = "QUATERNION"
         door.rotation_quaternion = tw.rotation_quaternion
         ctx.add(door, grp, plate, kind="embed")
@@ -861,8 +870,10 @@ def scarf(ctx, pr):
     pts, nrs, ws = [], [], []
     for i in range(n):
         t = i / (n - 1)
-        p = knot + right * (ln * t) + Vector((0, 0, pr.get("rise", -0.10) * t + 0.07 * math.sin(2 * math.pi * t * 1.0)))
-        p += cam * (0.05 * math.sin(math.pi * t))
+        # an S: out to the right, lifting and dipping once and a quarter, drooping toward its end
+        p = knot + right * (ln * t) + Vector((0, 0, pr.get("rise", -0.10) * t - 0.08 * t * t
+                                                 + 0.085 * math.sin(2 * math.pi * t * 1.25)))
+        p += cam * (0.06 * math.sin(math.pi * t))
         pts.append(p)
         tw = math.radians(pr.get("twist", 50) * math.sin(math.pi * t * 1.5))
         nrs.append((cam * math.cos(tw) + Vector((0, 0, 1)) * math.sin(tw)).normalized())

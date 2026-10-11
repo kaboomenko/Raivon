@@ -14,6 +14,12 @@ into an arch); the lid cut is calibrated from that bottom and the camera's persp
 is (open - low) x sclera_h (§7.6); a tapered lash line runs along the lid's edge (a flick for women). The brows sit
 brow_gap above the calm lash line (+ the mood's lift). The two catchlights are added by rig.solve_gaze.
 
+P2 additions: age lines, tan / ruddy patches, an oil smear and a scar through the brow (plan_skin_paint: soft paint
+with a bump, or sharp paint with its own ID detail group); a glowing iris (eyes "glow", Rai) and a lighter iris
+gradient ("iris_lift"); eyeshadow on the upper lid ("shadow", Vance); a closed winking eye (a mood's "wink": a skin
+bulge and a lash arc bowed up, no catchlights — Hawk's laugh); a brow split by the scar ("gap"); the aquiline nose
+(Olm, Kort, Seir, Rai); a gap tooth ("gap") and a fang ("fang") in an open mouth.
+
 Open mouths (carve_mouth, _open_mouth): an EXACT boolean whose cut carries the dark interior material (the pocket is
 the cavity, on any face), a pocket STYLE["mouth_depth"] deep behind the face; teeth, tongue and lips sit on the real
 rim (_Opening: where the uncut face meets the cutter's walls, by bisection), with an outline fallback that is
@@ -104,10 +110,11 @@ def skin_color(ctx, nt):
         base = core.node_mix(nt, core.node_math(nt, "MULTIPLY", sharp, k), base, colr)
     tone = ch.get("skin_tone")
     sat = ch.get("skin_sat", S_SAT.get(tone, 1.0) if tone else 1.0)
-    if sat != 1.0:
+    val = ch.get("skin_value", 1.04)       # a hooded face (Vik) is lifted a little out of the hood's shade
+    if sat != 1.0 or val != 1.04:
         hs = nt.nodes.new("ShaderNodeHueSaturation")
         hs.inputs["Saturation"].default_value = sat
-        hs.inputs["Value"].default_value = 1.04
+        hs.inputs["Value"].default_value = val
         nt.links.new(base, hs.inputs["Color"])
         base = hs.outputs[0]
     return base
@@ -250,12 +257,14 @@ def eye_mat(ctx, name, iris_hex, ri, sx):
     e = 0.012
     # a saturated mid tone, darker toward the rim (iris vs sclera >= 30 L*, §7.4), a dark limbal ring, a touch lighter
     # around the pupil
-    mid = core.hex_scale(iris_hex, 0.52)
-    dk = core.hex_scale(iris_hex, 0.25)
-    lt = core.hex_scale(iris_hex, 0.95)
-    stops = [(0.0, "#e9e2da"), (1 - ri - e, C["sclera"]), (1 - ri, dk), (1 - ri + lim, core.hex_scale(iris_hex, 0.45)),
-             (1 - ri + lim + 0.05, mid), (1 - rp - 0.06, core.hex_scale(iris_hex, 0.74)), (1 - rp - e * 0.5, lt), (1 - rp, C["pupil"]),
-             (1.0, C["pupil"])]
+    lift = ctx.ch["eyes"].get("iris_lift", 0.0)    # a light iris (Rai's raivite: P-A8 iris L* 70-85)
+    mid = core.hex_mix(core.hex_scale(iris_hex, 0.52), iris_hex, lift)
+    dk = core.hex_mix(core.hex_scale(iris_hex, 0.25), core.hex_scale(iris_hex, 0.55), lift)
+    lt = core.hex_mix(core.hex_scale(iris_hex, 0.95), "#ffffff", lift * 0.35)
+    stops = [(0.0, "#e9e2da"), (1 - ri - e, C["sclera"]), (1 - ri, dk),
+             (1 - ri + lim, core.hex_mix(core.hex_scale(iris_hex, 0.45), iris_hex, lift * 0.7)),
+             (1 - ri + lim + 0.05, mid), (1 - rp - 0.06, core.hex_mix(core.hex_scale(iris_hex, 0.74), iris_hex, lift)),
+             (1 - rp - e * 0.5, lt), (1 - rp, C["pupil"]), (1.0, C["pupil"])]
     col = core.node_ramp(nt, g.outputs["Fac"], stops)
     nt.links.new(col, nt.nodes["Principled BSDF"].inputs["Base Color"])
     glow = ctx.ch["eyes"].get("glow")
@@ -635,7 +644,7 @@ def build_brows(ctx):
     length0 = br.get("len", S["brow_len"]) * eye_w
     thick = br.get("thick", S["brow"]) * H
     col = br["color"]
-    mat = core.principled(ctx, "brow", col, 0.7, sheen=0.2)
+    mat = core.principled(ctx, "brow", col, br.get("rough", 0.7), sheen=br.get("sheen", 0.2))
     for side in (-1, 1):
         tag = "near" if side < 0 else "far"
         # the far brow turns away from the camera: a little longer so it reads as long as the near one
@@ -809,6 +818,7 @@ def build_ears(ctx):
                    neg=True, rot=rot)]
         ear = core.mb_mesh(ctx, "Ear" + tag, el, 0.007, ctx.mats["skin"], smooth_iter=2, name="ear_" + tag)
         ctx.add(ear, "skin", head, kind="embed", head=True)
+        ctx.L["lobe_" + tag] = (base + Vector((s * out * 0.7, -0.01, -eh * 0.36)), eh * 0.17, ear)
 
 
 # ------------------------------------------------------------------ mouths

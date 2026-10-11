@@ -3,6 +3,10 @@ deltoids. Proportions from §7.3: shoulders 2.0 W (character 1.75–2.6 W; women
 over ~60 % of the half width with a slope under 15 deg (epaulettes and pauldrons need a flat seat), the neck
 0.50–0.60 W (women 0.36 W), the arms visible down to the bottom edge of the frame.
 
+Hands (§7.5, `hand`): a metaball palm and fingers gripping a prop ("wrap" round a rod, "pinch" of a small piece),
+the forearm entering from the bottom of the frame in its sleeve, a cuff; used by the props of Vega, Seir, Vance and
+Irma when the character's hands are on (their hand-free fallbacks otherwise).
+
 Body space = head-local units before the pose: the skull centre at the origin, the neck base around z -0.62, the
 frame's bottom edge around z -1.3 (the framing solver decides).
 """

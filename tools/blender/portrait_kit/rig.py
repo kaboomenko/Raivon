@@ -5,8 +5,9 @@
 - camera: 85 mm, sensor 36 mm fitted VERTICAL (23.9 deg), level (no tilt) at the eye height; the framing solver
   sets shift_x, shift_y and the distance from projected landmarks so that on the 512×588 master the eye line is at
   y 250 +- 2, the head centre at x 256 +- 12 and the head height H_px at the character's value +- 3; it then checks the
-  skyline (>= 30 px; 50 for crowns and leader headgear) and the side band (above y 412 nothing within 28 px of a
-  side); a frame that does not fit steps H_px down by 4 to 256, below that the build fails with a message;
+  skyline (>= 30 px; 50 for crowns and leader headgear; a designed overflow such as Rai's banner is exempt), the side
+  band (above y 412 nothing within 28 px of a side) and the chin (<= 0.65 h, P-A6); a frame that does not fit steps
+  H_px down by 4 to 256, below that the build fails with a message;
 - gaze: once the pose and the camera are known, each iris is aimed at the camera (a shader offset) and its two
   catchlights are placed where the key light would glint (big one) and opposite (small one), emission 6, no shadow;
 - light: key / rim / kicker area lights and the sky world whose glossy rays see a warm neutral (§7.11);
@@ -71,6 +72,21 @@ def head_pose_matrix(ctx, with_body=False):
     if with_body:
         m = Matrix.Rotation(math.radians(po["body"]), 4, "Z") @ m
     return m
+
+
+def upright_points(ctx, pts):
+    """Head-local points -> world through the pose without its nod and roll (the head's turn and the body's only),
+    placed where the posed head's pivot is."""
+    po = ctx.ch["pose"]
+    md = ctx.ch.get("pose_" + ctx.mood, {})
+    turn = po.get("head", 0.0) + md.get("head", 0.0)
+    rot = Matrix.Rotation(math.radians(turn), 4, "Z")
+    m = Matrix.Rotation(math.radians(po["body"]), 4, "Z") @ Matrix.Translation(Vector(PIVOT)) @ rot @ \
+        Matrix.Translation(-Vector(PIVOT))
+    root = ctx.objs.get("root")
+    base = root.matrix_world if root is not None else Matrix.Identity(4)
+    body0 = Matrix.Rotation(math.radians(po["body"]), 4, "Z")
+    return [base @ body0.inverted() @ m @ Vector(p) for p in pts]
 
 
 def head_to_world(ctx, p):
@@ -193,11 +209,12 @@ def frame_targets(ctx, size, frame="bust"):
     if frame == "face":
         w = size[0]
         return dict(eye_y=0.50 * w, head_x=0.5 * w, h_px=0.62 * w, sky=None, side_band=None, side_rows=None,
-                    step=R["h_step"] * w / 512, h_min=0.5 * w)
+                    step=R["h_step"] * w / 512, h_min=0.5 * w, chin_max=None)
     k = size[1] / 588.0
     sky = R["skyline_headgear"] if ctx.ch.get("tall_headgear") else R["skyline"]
     return dict(eye_y=R["eye_y"] * k, head_x=R["head_x"] * k, h_px=float(ctx.ch["head"]["h_px"]) * k, sky=sky * k,
-                side_band=R["side_band"] * k, side_rows=R["side_rows"] * k, step=R["h_step"] * k, h_min=R["h_min"] * k)
+                side_band=R["side_band"] * k, side_rows=R["side_rows"] * k, step=R["h_step"] * k, h_min=R["h_min"] * k,
+                chin_max=R["chin_max"] * k)
 
 
 def solve_frame(ctx, size, frame="bust", log=print):
@@ -212,6 +229,10 @@ def solve_frame(ctx, size, frame="bust", log=print):
     eye_z = sum(e.z for e in eyes) / 2
     chin = head_to_world(ctx, ctx.L["chin"])
     crown = head_to_world(ctx, ctx.L["crown"])
+    # the head's size on the picture is measured on the head held upright (its turn and the body's, no nod or roll):
+    # a nod or a roll shortens the projected chin-crown line, and holding that to H_px would zoom a tilted head in
+    # (a smile's chin-up put the chin past P-A6's 0.65 h); the size stays the character's, the tilt stays a tilt
+    up = upright_points(ctx, (ctx.L["chin"], ctx.L["crown"]))
     target_h = t["h_px"]
     allpts = visible_points(ctx)
     # a designed overflow of the top (Rai's banner, §7.2 "знамя за верх кадра") is left out of the skyline check;
@@ -226,8 +247,9 @@ def solve_frame(ctx, size, frame="bust", log=print):
             core.update()
             pe = project(cam, eyes, size)
             ph = project(cam, [chin, crown], size)
+            pu = project(cam, up, size)
             hp = project(cam, hpts, size)
-            h_px = abs(ph[0, 1] - ph[1, 1])
+            h_px = abs(pu[0, 1] - pu[1, 1])
             eye_y = pe[:, 1].mean()
             head_x = (hp[:, 0].min() + hp[:, 0].max()) / 2
             err_h = h_px / target_h
@@ -249,20 +271,24 @@ def solve_frame(ctx, size, frame="bust", log=print):
             side_l = float(upper[:, 0].min()) if len(upper) else float(size[0])
             side_r = float(size[0] - upper[:, 0].max()) if len(upper) else float(size[0])
             ok = sky >= t["sky"] and side_l >= t["side_band"] and side_r >= t["side_band"]
+        chin_y = float(ph[0, 1])
+        if t.get("chin_max") is not None and chin_y > t["chin_max"]:
+            ok = False
         ctx.frame = dict(mode=frame, h_px=round(h_px / k, 2), eye_y=round(eye_y / k, 2), head_x=round(head_x / k, 2),
+                         chin_y=round(float(ph[0, 1]) / k, 1),
                          skyline=round(sky / k, 1), side=(round(side_l / k, 1), round(side_r / k, 1)),
                          dist=round(-cam.location.y, 4), shift=(round(cam.data.shift_x, 5), round(cam.data.shift_y, 5)),
                          target_h=round(target_h / k, 1))
         if ok:
             return ctx.frame
-        log("frame: H_px %.0f does not fit (skyline %.1f, sides %.1f / %.1f) -> H_px %.0f" % (
-            target_h / k, sky / k, side_l / k, side_r / k, (target_h - t["step"]) / k))
+        log("frame: H_px %.0f does not fit (skyline %.1f, sides %.1f / %.1f, chin %.1f) -> H_px %.0f" % (
+            target_h / k, sky / k, side_l / k, side_r / k, chin_y / k, (target_h - t["step"]) / k))
         target_h -= t["step"]
         if target_h < t["h_min"] - 1e-6:
             raise RuntimeError("%s: the portrait does not fit the frame even at H_px %.0f (skyline %.1f px, sides "
-                               "%.1f / %.1f px; need >= %.0f and >= %.0f on the 512x588 master)" % (
-                                   ctx.cid, t["h_min"] / k, sky / k, side_l / k, side_r / k, t["sky"] / k,
-                                   t["side_band"] / k))
+                               "%.1f / %.1f px, chin %.1f px; need >= %.0f, >= %.0f and chin <= %.0f on the 512x588 "
+                               "master)" % (ctx.cid, t["h_min"] / k, sky / k, side_l / k, side_r / k, chin_y / k,
+                                            t["sky"] / k, t["side_band"] / k, (t.get("chin_max") or 0) / k))
 
 
 # ------------------------------------------------------------------ gaze and catchlights

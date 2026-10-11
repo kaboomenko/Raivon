@@ -110,6 +110,7 @@ def collar(ctx, ly, name):
             j = (i + 1) % seg
             bm.faces.new((r0[i], r0[j], r1[j], r1[i]))
     gap = ly.get("gap", 0.0)
+    top_ring = [v.co.copy() for v in rings[-1]]          # (before the bmesh is freed: the piping follows it)
     if gap:
         kill = [f for f in bm.faces if f.calc_center_median().y < 0 and abs(f.calc_center_median().x) < gap]
         bmesh.ops.delete(bm, geom=kill, context="FACES")
@@ -121,8 +122,7 @@ def collar(ctx, ly, name):
     if ly.get("piping"):
         # a coloured piping along the collar's top edge (Irma's orange, §7.6 "оранжевый кант"), from end to end of
         # the opening when the collar is open in front
-        top = rings[-1]
-        pts = [v.co.copy() for v in top]
+        pts = top_ring
         order = sorted(range(len(pts)), key=lambda i: (math.atan2(pts[i].x, -pts[i].y) + 2 * math.pi) % (2 * math.pi))
         seq = [pts[i] for i in order]
         if gap:
@@ -489,7 +489,7 @@ def quilt(ctx, ly, name):
                 ctx.add(c, "costume:" + ly.get("id", "quilt"), tgt, kind="surface")
             x += dx
             col += 1
-        for row, zz in enumerate(ly.get("seams", (-0.80, -1.12))):
+        for row, zz in enumerate(ly.get("seams", ())):
             pts = []
             for i in range(25):
                 x = -xw + 2 * xw * i / 24
@@ -540,10 +540,11 @@ def pauldrons(ctx, ly, name):
         out = Vector((s, 0, 0))
         fwd = Vector((0, -1, 0))
         up = Vector((0, 0, 1))
-        bands = ly.get("bands", [(92, 40), (52, 8), (20, -26)])[:n]
+        bands = ly.get("bands", [(96, 44), (56, 10), (22, -24)])[:n]
         parent = arm
-        for i, (e1, e0) in enumerate(bands):
-            R = r_arm + 0.035 + 0.016 * (n - 1 - i)
+        # bottom-up: the lowest lame rests on the arm, each plate above overlaps (and rests on) the one under it
+        for i, (e1, e0) in reversed(list(enumerate(bands))):
+            R = r_arm + 0.026 + 0.014 * (n - 1 - i)
             a_max = math.radians(ly.get("spread", 95) - 8 * i)
             bm = bmesh.new()
             nu, ne = 28, 10
@@ -744,7 +745,7 @@ def clasp(ctx, ly, name):
     k = ctx.shoulder_k
     m = core.principled(ctx, name, ly.get("color", "#B0803A"), rough=0.32, metal=0.55)
     z = ly.get("z", -0.72)
-    pos = []
+    pos, plates = [], []
     for s_ in (-1, 1):
         h, nn, ob = core.ray_any(ctx.outer, (s_ * ly.get("x", 0.07) * k, -2.0, z), (0, 1, 0))
         if h is None:
@@ -753,13 +754,14 @@ def clasp(ctx, ly, name):
         core.align_z(o, nn)
         ctx.add(o, "metal", ob, kind="surface")
         pos.append(h + nn * 0.026)
+        plates.append(o)
     if len(pos) == 2:
         mid = (pos[0] + pos[1]) / 2
         h, nn, ob = core.ray_any(ctx.outer, (mid.x, -2.0, mid.z - 0.01), (0, 1, 0))
         if h is not None:
             mid = Vector((mid.x, min(mid.y, h.y - 0.016), mid.z - 0.01))
         bar = core.curve(name + "_bar", [pos[0], mid, pos[1]], [1, 1, 1], 0.012, m, order=3)
-        ctx.add(bar, "metal", ob or ctx.objs["torso"], kind="embed")
+        ctx.add(bar, "metal", plates[0], kind="embed")      # it runs from plate to plate
 
 
 def pocket(ctx, ly, name):

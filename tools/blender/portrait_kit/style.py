@@ -103,10 +103,12 @@ LIGHT = {
     # key 320 W, not §7.11's 220 W: at 220 W the lit skin of T1/T2 measured L* 68.5 (gate 70-82); the research
     # prototype's 320 W (research_chars) lands it at 70-71 with the rest of the rig unchanged
     "key": dict(size=2.5, color="#FFF1DA", energy=320.0, loc=(-2.4, -2.8, 1.6), target=(0.0, 0.0, -0.2)),
-    # rim 2600 W and kicker 700 W, not 700 / 240: at those the silhouette's inner 4 px rim measured 37-47 % within
-    # dL* 8 of plate B on the grey plates (P-A5 gate <= 35 %): the rim must clear the plate's L* 72-77, not land on it
-    "rim": dict(size=1.2, color="#CFE0FF", energy=2600.0, loc=(2.3, 2.2, 1.2), target=(0.0, 0.0, -0.3)),
-    "kick": dict(size=1.2, color="#FFE2C0", energy=700.0, loc=(-2.4, 2.0, 0.6), target=(0.0, 0.0, -0.3)),
+    # rim 5200 W and kicker 1300 W, not 700 / 240 (§7.11): the silhouette's inner 4 px rim must clear plate B's
+    # L* 72-78, not land on it (P-A5 gate <= 35 % within dL* 8). P1 measured 37-47 % at 700 / 240 and set 2600 / 700;
+    # P2's mid-value hoods, coats and domes (Vik's green hood, Kort's dome on the teal plate) still measured 36-48 %
+    # at 2600 / 700, and 15-31 % at 5200 / 1300 — the edges go past the plate's band, the faces keep the key's L*
+    "rim": dict(size=1.2, color="#CFE0FF", energy=5200.0, loc=(2.3, 2.2, 1.2), target=(0.0, 0.0, -0.3)),
+    "kick": dict(size=1.2, color="#FFE2C0", energy=1300.0, loc=(-2.4, 2.0, 0.6), target=(0.0, 0.0, -0.3)),
     # world 1.45, not 1.05: §7.11 sets the sky fill for key : cheek shadow = 2.3 : 1 at a 220 W key; the 320 W key
     # needs 1.05 x 320 / 220 = 1.5 for the same ratio. At 1.05 the shadows went past the albedo floor (P-A5 "dark
     # <= 3 %": Bram 3.3 %, Lira 4.1 %); at 1.45 they measure 1.9 / 2.7 % and still read blue (#5B5A8C side, §7.4)
@@ -119,6 +121,8 @@ RENDER = {
     # framing solver on the 512x588 master (§7.11)
     "eye_y": 250.0, "eye_tol": 2.0, "head_x": 256.0, "head_tol": 12.0, "h_tol": 3.0, "skyline": 30.0,
     "skyline_headgear": 50.0, "side_band": 28.0, "side_rows": 412.0, "h_step": 4.0, "h_min": 256.0,
+    # P-A6 "подбородок <= 0.65 h" (382 px of 588): a frame whose chin lands lower steps H_px down like the skyline does
+    "chin_max": 381.0,
 }
 
 # Part-ID colours (flat emission pass for tools/qa_portraits): groups -> 8-bit sRGB. detail:<name> colours are
