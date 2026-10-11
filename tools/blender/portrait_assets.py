@@ -4,6 +4,8 @@ draws the rarity plate and frame). Run: python3 tools/blender/portrait_assets.py
 - the commanders: OUTDIR cmd_bram cmd_lira ... cmd_rai --eras=1,2,3,4 --moods=calm,smile
 - the AI leaders: OUTDIR ldr_barons ... ldr_lakes --moods=calm,angry,cunning,smile,tired
 - the ruler: OUTDIR ruler --eras=1,2,3,4
+Add --force to regenerate into an existing folder (game/assets/ui/portraits included): without it every file that
+already exists is skipped, so these three commands do nothing there.
 Two builders. The ids (and eras) listed in portrait_kit/chars.py (KIT_IDS, KIT_ERAS — in P1 cmd_bram, cmd_lira and
 cmd_vega in era 1) go through the portrait kit v2 (tools/blender/portrait_kit/, §7.5): 512×588 by default (§7.12),
 Cycles 64 samples, AgX Punchy. Every other id and era keeps the old primitive builder below (256×294, 40 samples)

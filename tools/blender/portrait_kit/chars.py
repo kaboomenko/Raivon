@@ -117,8 +117,9 @@ CHARS = {
                 dict(kind="placket", color="#3A3D44", w=0.05, top=-0.74),
                 dict(kind="frogging", color="#C8CCD4", z=(-0.86, -0.98, -1.10), w=0.24, t=0.028),
             ]),
-        props=[dict(kind="glasses", color="#44484F", frame=0.025, w=1.24, h=0.78, drop=0.03, off=0.028, tint="#FFFFFF"),
-               dict(kind="pointer", x=0.62, y=0.04, z=-1.02, reach=0.36, tip_w=1.25, color="#8A5A34")],
+        # glasses w / h: the rim's half size in units of the visible eye's half width / half height (the almond)
+        props=[dict(kind="glasses", color="#44484F", frame=0.025, w=2.0, h=1.26, drop=0.03, off=0.028, tint="#FFFFFF"),
+               dict(kind="pointer", x=0.62, y=0.04, z=-1.02, reach=0.345, tip_w=1.4, color="#8A5A34")],
         pose=dict(body=26, head=4, roll=3, nod=4),
         pose_smile=dict(roll=-2, nod=0),
         signature=dict(name="chisel bob + glasses bar; arrow right", zone="far side"),

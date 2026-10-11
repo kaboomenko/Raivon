@@ -3762,7 +3762,10 @@ func _army_card(it: Dictionary) -> Control:
 	var cid: String = it.get("cmd", "")
 	if cid != "" or bool(it.get("cmd_free", false)):
 		# the commander frame (04 §15.6): a portrait, or «+» while the army has none
-		opts["chip"] = {"node": CmdPortrait.new(cid, String(it.get("cmd_rarity", "common")))} if cid != "" else {"plus": true}
+		var cp: Control = CmdPortrait.new(cid, String(it.get("cmd_rarity", "common"))) if cid != "" else null
+		if cp != null:
+			cp.add_to_group("kit_era")  # (redrawn when the era's renders change: set_portrait_era)
+		opts["chip"] = {"node": cp} if cp != null else {"plus": true}
 		opts["chip_cb"] = func(): army_action.emit(id, "cmd")
 	if it["refilling"]:
 		# [ad] +29%: what the video gives (the word «Пополнить» does not fit an XS button beside the ad icon); the
@@ -4026,8 +4029,11 @@ var _flag_tab := "div"
 
 ## The commander portraits follow the player's DL era (04 §15.4).
 func set_portrait_era(dl: int) -> void:
+	var was := CmdPortrait.era
 	CmdPortrait.era = CmdPortrait.era_of(dl)
 	_trim = "steel" if dl >= 5 else "brass"  # the leader frames switch with the era too (§3.2)
+	if CmdPortrait.era != was and is_inside_tree():  # the busts on show take the new era's renders now
+		get_tree().call_group("kit_era", "queue_redraw")
 
 
 ## The flag constructor (10 §4.23, docs/ui_style.md §6 «Флаг, имя, мастер флага»): a paper window L with the info plate.
@@ -4381,7 +4387,10 @@ func _still_portrait(p: Control) -> Control:
 		c.size = z
 		return c
 	# the era's renders (CmdPortrait.era, set as the player's DL grows) are read at each draw, like the bust's own
-	return Kit.KitStill.new(p, "portrait|" + var_to_str(o), mk, func(): return CmdPortrait.era)
+	var st := Kit.KitStill.new(p, "portrait|" + var_to_str(o), mk, func(): return CmdPortrait.era)
+	st.add_to_group("kit_era")  # (set_portrait_era redraws it: a bust shown when the era changes)
+	p.add_to_group("kit_era")
+	return st
 
 
 ## A commander skill's icon by its passive key (sim/commanders.gd PASSIVES).

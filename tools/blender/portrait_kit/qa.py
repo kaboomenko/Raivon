@@ -3,16 +3,21 @@
 --sidecars=DIR writes, next to a render NAME.png:
   DIR/ids/NAME.png      flat-emission part-ID pass: every material replaced by an emission colour of its group
                         (style.ID_COLORS; detail:<name> colours from style.DETAIL_COLORS), the eyeball's own
-                        sclera / iris / pupil split by the same gradient as its shader; 1 sample, box filter,
+                        sclera / iris / pupil split by the same gradient as its shader (the eyeball is built only
+                        inside its almond, so the white never shows outside the lids); 1 sample, box filter,
                         Standard view, transparent film; glass lenses hidden (the irises behind them count)
   DIR/ids/NAME.json     {"colors": {group: [r, g, b]}}
   DIR/ids/NAME_sig.png  the signature mask (the signature objects white, everything else a holdout)
   DIR/meta/NAME.json    projected landmarks in PNG px: eye_y, chin_y, crown_y, skyline_y, head_box, sig_box, h_px,
-                        iris centres, eye openings, brow end points, mouth corners; the floating list and contact
+                        iris centres, eye openings (and the design opening), the eyes' almond outlines (eye_almond),
+                        brow end points and the brows' gap to the calm lash line (brow_gap_H), mouth corners (and head-local, pose-free, in H:
+                        mouth_local); the floating list and contact
                         report; the P-A8 detail thresholds; for glasses the iris contrast behind the lens; stats
 --contacts: the BVH contact test of P-A7 — each attached part against its parent: the gap must be <= 0.01 H, a part
-  on a surface is buried <= 0.04 H over <= 60 % of its points; "embed" parts (eyes, nose, ears, beards: one fused
-  surface by design) are checked for the gap only, "free" parts (glasses rims) not at all.
+  on a surface is buried <= 0.04 H over <= 60 % of its points; "embed" parts (eyes, nose, ears, beards, a pointer
+  clamped in the arm, glasses temples under the hair: inside their parent by design) are checked for the gap only;
+  glasses rims and bridges are registered on what they rest on (nose or face), their pads on the nose. "free" parts
+  (none in P1) are skipped.
 --stats: triangles per object, build and render seconds.
 """
 import json

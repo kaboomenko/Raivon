@@ -1,7 +1,7 @@
 """Props and personal gear (§7.5 steps 7 and 9), placed on their parents by ray casts: P1 has what Bram, Lira and
 Vega need in era 1 — the spoon, the millstone amulet on its cord and the sleeve chevrons (Bram); the leaf badge and
-the bandage roll on the satchel strap (Lira); the glasses and the pointer tucked under the far arm (Vega). The
-creatures, hands and the rest of §7.6's props column come with P2.
+the bandage roll on the satchel strap (Lira); the glasses with nose pads and the pointer clamped under the far arm,
+a fold of the sleeve rolled over it (Vega). The creatures, hands and the rest of §7.6's props column come with P2.
 
 A character's props are data (chars.py "props": [{"kind": ...}, ...]); every prop registers its parent (contacts)
 and, when §14 P-A8 lists it, its detail name and minimum visible pixel count.
@@ -164,10 +164,32 @@ def bandage(ctx, pr):
 
 
 # ------------------------------------------------------------------ Vega
+def _closest_parent(ctx, obj, cands):
+    """The candidate an attached part really touches (smallest gap): the contact test (qa.contacts) checks it there."""
+    core.update()
+    best, bd = cands[0], 1e9
+    verts = core.eval_verts(obj)[::4]
+    for c in cands:
+        if c is None:
+            continue
+        tree = core.bvh_of(c)
+        inv = c.matrix_world.inverted()
+        dmin = min((tree.find_nearest(inv @ v)[3] or 1e9) for v in verts)
+        if dmin < bd:
+            best, bd = c, dmin
+    return best
+
+
 def glasses(ctx, pr):
     """Rectangular glasses with rounded corners (§7.5, §7.6): a frame 0.025 H, a bridge over the nose, temples running
-    back under the hair, pads on the nose; glass lenses (transmission 0.95, IOR 1.2, a tint by multiplication)."""
+    back under the hair, two pads resting on the nose. The lenses are not refractive glass (a refractive lens without
+    caustics kept 10 % of the iris contrast behind it, §7.5 asks >= 70 %): core.glass_mat — transparent with a tint by
+    multiplication, a flat warm Fresnel sheen and one diagonal highlight band; flat-shaded, casting no shadow. For the
+    contact test (P-A7) the rims and the bridge are registered on what they rest on (the nose or the face), the pads on
+    the nose, the temples embedded in the hair."""
     head = ctx.objs["head"]
+    nose = ctx.objs.get("nose")
+    hair = ctx.objs.get("hair") or head
     t = pr.get("frame", 0.025) * H
     fm = core.principled(ctx, "glasses_frame", pr.get("color", "#2A2A30"), rough=0.3, metal=pr.get("metal", 0.0), coat=0.4)
     glass = core.glass_mat(ctx, "glasses_lens", pr.get("tint", "#F4F8FF"))
@@ -176,11 +198,14 @@ def glasses(ctx, pr):
     rims = []
     for e in ctx.objs["eyes"]:
         rx, ry, rz = e["radii"]
-        c = e["centre"]
         side = e["side"]
-        rot = e["obj"].rotation_euler.to_matrix()
-        w = rx * pr.get("w", 1.55)
-        hh = rz * pr.get("h", 1.05)
+        # the frame is sized and centred on the visible eye (the almond: half width xc0 rx, half height kh rz =
+        # sclera_h / 2), not on the lens behind it, and stands level with the face (the eye's yaw, not its pitch)
+        lens_rot = e["obj"].rotation_euler.to_matrix()
+        rot = Matrix.Rotation(e["obj"].rotation_euler.z, 3, "Z")
+        c = e["centre"] + lens_rot @ Vector((e["x0"] * rx, 0.0, 0.0))
+        w = e["xc0"] * rx * pr.get("w", 2.0)
+        hh = e["kh"] * rz * pr.get("h", 1.26)
         drop = pr.get("drop", 0.02) * H
         front = c + rot @ Vector((0, -(ry + pr.get("off", 0.04)), -drop))
         ex = pr.get("square", 5.0)        # superellipse exponent: a rectangle with rounded corners
@@ -192,7 +217,7 @@ def glasses(ctx, pr):
             z = hh * math.copysign(abs(cz) ** (2 / ex), cz)
             pts.append(front + rot @ Vector((x, 0.0, z)))
         rim = core.curve("glasses_rim_" + e["tag"], pts, [1.0] * len(pts), t / 2, fm, order=2, kind="POLY", cyclic=True)
-        ctx.add(rim, grp, head, kind="free", head=True)
+        ctx.add(rim, grp, _closest_parent(ctx, rim, [nose, head]), kind="surface", head=True)
         rims.append(rim)
         # the lens: a thin plate filling the rim
         bm = bmesh.new()
@@ -208,6 +233,18 @@ def glasses(ctx, pr):
         lens.visible_shadow = False   # no caustics: a glass that casts a shadow would put the eyes in the dark
         ctx.add(lens, "glass", rim, kind="embed", head=True)
         inner.append(front + rot @ Vector((-side * w, 0.0, hh * 0.25)))
+        # the pad: a small flattened bead on the rim's inner lower corner, resting on the side of the nose
+        if nose is not None:
+            corner = front + rot @ Vector((-side * w * 0.92, 0.0, -hh * 0.35))
+            hp, np_ = core.ray(nose, corner, Vector((-side, 0.0, 0.0)), dist=0.6)    # toward the nose
+            if hp is not None and (hp - corner).length < 0.25:
+                pr_ = t * 0.75
+                pad = core.uvsphere("glasses_pad_" + e["tag"], hp + np_ * pr_ * 0.6, (pr_, pr_ * 0.55, pr_ * 1.3), fm, 16, 8)
+                core.align_z(pad, np_)
+                ctx.add(pad, grp, nose, kind="surface", head=True)
+                arm_ = core.curve("glasses_padarm_" + e["tag"], [corner, hp + np_ * pr_], [1.0, 0.8], t * 0.22, fm,
+                                  order=2)
+                ctx.add(arm_, grp, rim, kind="surface", head=True)
         # the temple: from the outer edge back along the head side into the hair
         outer = front + rot @ Vector((side * w, 0.0, hh * 0.25))
         back = []
@@ -218,14 +255,14 @@ def glasses(ctx, pr):
                 p = hh2 + nn * (t * 0.8 + 0.035)
             back.append(p)
         tm = core.curve("glasses_temple_" + e["tag"], back, [1.0] * len(back), t * 0.42, fm, order=3)
-        ctx.add(tm, grp, rim, kind="surface", head=True)
+        ctx.add(tm, grp, hair, kind="embed", head=True)       # runs back under the hair by design
     # the bridge over the nose
     if len(inner) == 2:
         mid = (inner[0] + inner[1]) / 2
         hb, nb = core.ray_front(head, mid.x, mid.z)
         top = (hb + nb * (t * 0.8 + 0.01)) if hb is not None else mid
         br = core.curve("glasses_bridge", [inner[0], top, inner[1]], [1, 1, 1], t / 2, fm, order=3)
-        ctx.add(br, grp, rims[0], kind="surface", head=True)
+        ctx.add(br, grp, _closest_parent(ctx, br, [nose, head]), kind="surface", head=True)
     ctx.glasses = True
 
 
@@ -260,19 +297,18 @@ def pointer(ctx, pr):
     ctx.add(ferrule, grp, rod, kind="surface")
     ctx.sig_objs += [rod, tip, ferrule]
     ctx.L["pointer_tip"] = b + d * tip_l
-    # the sleeve fold over the rod where it leaves the arm: a soft roll of the sleeve's own cloth, overhanging the
-    # shaft toward the camera, and a smaller one under it (the rod pinched between the arm and the side)
+    # the sleeve fold over the rod where it leaves the arm: a soft roll of the sleeve's own cloth along the arm,
+    # standing just outside its surface across the shaft (the rod comes out from under it; its shadow lies on the rod)
     hit, nor = core.ray(arm, b + d * 0.05, -d, dist=1.0)
     if hit is not None and pr.get("fold", True):
         cloth = arm.data.materials[0]
-        up = Vector((0, 0, 1))
-        side = d.cross(up).normalized()
-        if side.y > 0:
-            side = -side                                  # toward the camera
-        q = core.frame_quat(side, -d)
-        el = [dict(co=hit + up * shaft * 0.95 - d * shaft * 0.6 + side * shaft * 0.35,
-                   half=(shaft * 2.2, shaft * 1.2, shaft * 0.95), stiff=2.4, rot=q),
-              dict(co=hit - up * shaft * 0.85 - d * shaft * 0.9 + side * shaft * 0.15,
-                   half=(shaft * 1.5, shaft * 0.9, shaft * 0.7), stiff=2.4, rot=q)]
+        top_, bot_ = (Vector(v) for v in ctx.objs["arm_axis+1"])
+        axis = (top_ - bot_).normalized()
+        q = core.frame_quat(axis, d)
+        cam = core.world_dir(ctx, (0.0, -1.0, 0.0))          # toward the camera, in body space
+        el = [dict(co=hit + d * shaft * 0.45 + axis * shaft * 0.6 + cam * shaft * 0.9,
+                   half=(shaft * 1.7, shaft * 1.05, shaft * 2.8), stiff=2.4, rot=q),
+              dict(co=hit + d * shaft * 0.25 - axis * shaft * 1.9 + cam * shaft * 0.6,
+                   half=(shaft * 1.3, shaft * 0.75, shaft * 1.5), stiff=2.4, rot=q)]
         fold = core.mb_mesh(ctx, "Fold", el, 0.006, cloth, smooth_iter=2, name="pointer_fold")
         ctx.add(fold, "costume", arm, kind="embed")

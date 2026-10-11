@@ -3,12 +3,12 @@ ring, brims and visors come with P2 (§7.5: 24 rim samples 0.01 H into the hair,
 
 kerchief — a soft cloth shell over the hair (a metaball sheet sampled on the head above an edge line that runs high
            over the forehead, over the ears and low at the nape; its thickness clears the hair cap), a folded hem
-           along its front edge (one clean rounded rim — no torn hairline), a knot at the back of the head and two
-           knot tails sticking out back (her "top back" signature zone, §7.2).
+           along its front edge (one clean, smooth rolled rim — no torn hairline, no ribbing), a knot at the back of
+           the head and two flat cloth tails with a soft fold sticking out back (her "top back" signature zone, §7.2).
 """
 import math
 
-from mathutils import Vector
+from mathutils import Matrix, Vector
 
 from . import core
 
@@ -35,16 +35,17 @@ def kerchief(ctx, hg):
     th = hg.get("thick", 0.085)
     el = core.sheet_elems(samples, s, lambda h, n: th * (0.7 + 0.3 * core.smoothstep(0, 10, elev(h) - edge(h))),
                           inset=0.02)
-    # the folded hem: a row of balls along the edge, a little proud of the shell
+    # the folded hem: a soft rolled edge — balls packed closer than their radius, so they fuse into one smooth roll
+    # (48 spaced balls read as a ribbed knit band)
     hem = []
-    for k in range(48):
-        az = -180 + 360 * k / 48
+    for k in range(160):
+        az = -180 + 360 * k / 160
         e = core.lerp_table(edge_tbl, abs(az)) + 2.0
         d = core.az_el(az, e)
         h, n = core.ray(head, d * 3, -d)
         if h is None:
             continue
-        hem.append(dict(co=h + n * (th * 0.75), half=th * 0.62, stiff=2.4))
+        hem.append(dict(co=h + n * (th * 0.72), half=th * 0.50, stiff=2.0))
     el += hem
     # the knot at the back of the head (top back) and its two tails, out toward the back (screen left)
     kd = core.az_el(hg.get("knot_az", 178), hg.get("knot_el", 18))
@@ -64,13 +65,18 @@ def kerchief(ctx, hg):
     for k, (up, sw) in enumerate(((0.30, 0.20), (-0.45, -0.16))):
         el2 = []
         prev = knot
-        for i in range(1, 11):
-            t = i / 10
-            # out from the knot, then drooping: soft cloth ends that widen toward the tip (a "V" of two ends)
+        n_ = 30
+        for i in range(1, n_ + 1):
+            t = i / n_
+            # out from the knot, then drooping: soft flat cloth ends that widen toward the tip (a "V" of two ends),
+            # with one fold (the end twists a little); samples overlapping, so the cloth is smooth, not ribbed
             p = knot + back * (ln * t) + side * (sw * 0.3 * t) + Vector((0, 0, up * ln * 0.6 * t - 0.16 * t * t))
-            w = 0.07 + 0.06 * t
-            el2.append(dict(co=p, half=(w, 0.022, ln / 10 * 0.95), stiff=2.6,
-                            rot=core.frame_quat(p - prev, side.cross(p - prev).normalized())))
+            w = 0.065 + 0.065 * t
+            fwd_ = (p - prev).normalized()
+            nrm = side.cross(fwd_).normalized()
+            twist = Matrix.Rotation(math.radians(28 * math.sin(math.pi * t) * (1 if k else -1)), 4, "Z").to_quaternion()
+            el2.append(dict(co=p, half=(w, 0.016, ln / n_ * 1.6), stiff=2.2,
+                            rot=core.frame_quat(fwd_, nrm) @ twist))
             prev = p
         tl = core.mb_mesh(ctx, "Tail%d" % k, el2, 0.008, m, smooth_iter=2, name="kerchief_tail%d" % k)
         ctx.add(tl, "detail:kerchief_tails", o, kind="surface", head=True)

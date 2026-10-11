@@ -12,7 +12,8 @@ leaders' moods, which share the costume):
   plate_image): median |dL*| >= 15 and pixels with |dL*| < 8 ("melting") <= 25 %;
 - silhouette rim (opaque pixels within 4 px of transparency at 512, scaled; rows < 0.92 h, the bottom edge cuts the
   body): <= 35 % within dL* 8 of the plate;
-- dark pixels (L* < 17, the albedo floor #2A2A30) <= 3 % of the opaque pixels.
+- dark pixels (L* < 17, the albedo floor #2A2A30) <= 3 % of the opaque pixels (with the ID pass, also split INFO:
+  the exempt groups of §7.4 — pupils, lash lines, mouth, glasses — vs the rest).
 ID rules (only with the kit's sidecars ids/<name>.png + meta/<name>.json):
 - hair, headgear or beard next to the face vs skin: |dL*| >= 15 or dE76 >= 30;   - brows vs skin: |dL*| >= 18;
 - iris vs sclera: dL* >= 30;   - beard vs each garment it lies on (costume:<id> groups): |dL*| >= 15;
@@ -206,6 +207,17 @@ def main():
         masks, _ = Q.ids(d, n)
         idl = []
         if masks is not None:
+            # INFO for the owner's call on the dark gate (§7.4 lets pupils, lash lines, mouth interiors, seams and
+            # glasses sit below the floor): the dark pixels split by part — exempt groups vs the rest (shadow sides)
+            op = im[..., 3] > 0.9
+            dark = op & (Q.srgb_to_lab(im[..., :3])[..., 0] < 17)
+            ex = np.zeros_like(dark)
+            for kk, v in masks.items():
+                if kk in ("lash", "pupil", "mouth", "glass", "catch") or kk.startswith("detail:glasses"):
+                    ex |= v
+            tot = max(1, int(op.sum()))
+            idl.append("dark by part (INFO): exempt %.1f%%, other %.1f%%" % (100.0 * (dark & ex).sum() / tot,
+                                                                         100.0 * (dark & ~ex).sum() / tot))
             for rule, v, ok, txt in id_rules(im, masks, Q.meta(d, n) or {}, n):
                 idl.append("%s %s%s" % (rule, txt, "" if ok else " FAIL"))
                 key = rule.split(" ")[0] if rule.startswith("signature") else rule

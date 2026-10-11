@@ -2,11 +2,17 @@
 freckles), all placed from the head's landmarks and ray casts. Sizes come from STYLE (§7.3) and the character's
 face table (§7.6); the mood (§7.9) changes shapes, angles and lids, never where a feature sits.
 
-Eyes: an ellipsoid eyeball in a socket dimple, standing STYLE["sclera_protrude"] out of the face plane; iris,
-limbal ring and pupil are a radial gradient in its shader (the gaze is a shader offset set by rig.solve_gaze once the
-pose and the camera are known); an upper-lid skin shell 1.1x the eye cut by an arched plane (opening and tilt =
-character and mood), a lower-lid shell, a tapered lash line along the lid's cut edge (a flick for women). The two
-catchlights are added by rig.solve_gaze (they must sit on the posed iris).
+Eyes (build_eyes): a shallow convex lens set in a shallow socket (its lower half deeper), leaning a little up with
+the face under the eye and standing STYLE["sclera_protrude"] out of it — but only the lens's ALMOND is built (an
+ellipse sclera_h tall and 0.85 of that wide, centred where a forward-looking eye shows its iris), its edges tucked
+under the upper lid shell and the lower rim, so the white can never drip below the lid line or run past the corners
+whatever the face's curvature. Iris, limbal ring and pupil are a radial gradient in its shader (the gaze is a shader
+offset set by rig.solve_gaze, kept inside the almond); the upper lid is a skin shell over the lens that bulges only
+inside the almond and sinks back into it outside (opening and tilt = character and mood); the lower rim is a thin
+skin tube along the visible bottom (the designed lower lid, or the cheek where it covers more; a smile pushes it up
+into an arch); the lid cut is calibrated from that bottom and the camera's perspective so the opening on the picture
+is (open - low) x sclera_h (§7.6); a tapered lash line runs along the lid's edge (a flick for women). The brows sit
+brow_gap above the calm lash line (+ the mood's lift). The two catchlights are added by rig.solve_gaze.
 """
 import math
 
@@ -30,17 +36,16 @@ def skin_mat(ctx):
     return m
 
 
-def skin_color(ctx, nt, obj=None):
-    """The skin's base colour network (blush, warm hollows, nose tip, painted marks, per-tone saturation) -> socket.
-    obj: read the paint in that object's space (the head's), for skin drawn on another object (the eyes' rims)."""
+def skin_color(ctx, nt):
+    """The skin's base colour network (blush, warm hollows, nose tip, painted marks, per-tone saturation) -> socket."""
     ch = ctx.ch
     col = ch["skin"]
     p = head_mod.params(ctx)
     ez = p["eye_z"]
     cz = ez - S["cheek_below"] * H + (S["cheek_smile"] * H if ctx.smile else 0.0)
     cx = S["cheek_x"] * H * (p["hx"] / 0.48) / 0.98
-    add = core.node_math(nt, "ADD", core.node_blob(nt, (-cx, -0.40, cz), S["blush_r"] * H * 1.5, obj=obj),
-                         core.node_blob(nt, (cx, -0.40, cz), S["blush_r"] * H * 1.5, obj=obj), clamp=True)
+    add = core.node_math(nt, "ADD", core.node_blob(nt, (-cx, -0.40, cz), S["blush_r"] * H * 1.5),
+                         core.node_blob(nt, (cx, -0.40, cz), S["blush_r"] * H * 1.5), clamp=True)
     # blush opacity at the apple's centre = the character's share (§7.3: men 15 %, women 25 %, young 30 %; a smile +10 %)
     blush = ch.get("blush", S["blush"]["f" if ctx.female else "m"]) + (0.10 if ctx.smile else 0.0)
     fac = core.node_math(nt, "MULTIPLY", add, blush, clamp=True)
@@ -54,13 +59,13 @@ def skin_color(ctx, nt, obj=None):
     nose = ch.get("nose", {})
     if nose.get("tip") and ctx.L.get("nose_tip_guess") is not None:
         tp = ctx.L["nose_tip_guess"]
-        fac = core.node_math(nt, "MULTIPLY", core.node_blob(nt, (tp.x, tp.y - 0.04, tp.z), nose.get("tip_r", 0.075),
-                                                            obj=obj), nose.get("tip_k", 0.55), clamp=True)
+        fac = core.node_math(nt, "MULTIPLY", core.node_blob(nt, (tp.x, tp.y - 0.04, tp.z), nose.get("tip_r", 0.075)),
+                             nose.get("tip_k", 0.55), clamp=True)
         base = core.node_mix(nt, fac, base, nose["tip"])
     for nm, (pts, rad, colr, k) in ctx.skin_paint.items():
         acc = None
         for q in pts:
-            bl = core.node_blob(nt, q, rad, obj=obj)
+            bl = core.node_blob(nt, q, rad)
             acc = bl if acc is None else core.node_math(nt, "MAXIMUM", acc, bl)
         sharp = core.node_math(nt, "GREATER_THAN", acc, 0.35)
         base = core.node_mix(nt, core.node_math(nt, "MULTIPLY", sharp, k), base, colr)
@@ -156,9 +161,9 @@ class Almond:
     pushes it up into a soft arch) or the face, where the face covers more of the lens than D (the cheek). U0 is set so
     the visible opening — below the lash line, above the lower rim — is (open - low) x sclera_h."""
 
-    def __init__(self, ctx, side, rz, x0):
+    def __init__(self, ctx, side, rz, x0, mood=None):
         ey = ctx.ch["eyes"]
-        mood = ey.get(ctx.mood, {})
+        mood = ey.get(ctx.mood if mood is None else mood, {})
         self.kh = ctx.P["sclera_h"] / 2 / rz
         self.xc0 = self.kh * ey.get("almond_w", 1.0)
         self.x0 = x0
@@ -237,7 +242,6 @@ def build_eyes(ctx):
         al = Almond(ctx, side, rz, x0)
         kh = al.kh
         persp = d_ref / (d_ref + (pw @ centre).y - y_ref)
-        inv = (Matrix.Translation(centre) @ rot @ Matrix.Diagonal((rx, ry, rz, 1.0))).inverted()
 
         def lens_pt(u, z, out=0.0):
             xl = al.x(u)
@@ -274,18 +278,23 @@ def build_eyes(ctx):
         target = 2 * kh * (al.open - al.low) / persp
         us = [i / 40 for i in range(-40, 41)]
 
-        def widest(u0_):
-            al.U0 = u0_
-            return max(al.top(u) - lc - al.bot(u) - rc for u in us)
+        def calibrate(a_, tgt):
+            lo_, hi_ = -kh, 3 * kh
+            for _ in range(30):
+                mid = (lo_ + hi_) / 2
+                a_.U0 = mid
+                if max(a_.top(u) - lc - a_.bot(u) - rc for u in us) < tgt:
+                    lo_ = mid
+                else:
+                    hi_ = mid
+            a_.U0 = (lo_ + hi_) / 2
 
-        lo_, hi_ = -kh, 3 * kh
-        for _ in range(30):
-            mid = (lo_ + hi_) / 2
-            if widest(mid) < target:
-                lo_ = mid
-            else:
-                hi_ = mid
-        al.U0 = (lo_ + hi_) / 2
+        calibrate(al, target)
+        # the calm lid, for the brows: they sit on the character's calm lid line plus the mood's own lift — a squint
+        # must not pull them down with the lid
+        al_c = Almond(ctx, side, rz, x0, mood="calm")
+        al_c.clip = clip
+        calibrate(al_c, 2 * kh * (al_c.open - al_c.low) / persp)
         ri = S["iris"] * ey.get("iris_k", 1.0) * kh     # iris radius in units of rz (diameter = 0.65 x sclera height)
         # the lens: a grid over the almond (corner to corner, the full ellipse height above its bottom: the shell hides
         # what is above the lid), in unit-lens coordinates (the object is scaled to rx, ry, rz)
@@ -389,13 +398,19 @@ def build_eyes(ctx):
                 rad.insert(0, 0.25)
         lash = core.curve("lash_" + tag, pts, rad, lash_t / 2, core.principled(ctx, "lash", C["lash"], 0.5))
         ctx.add(lash, "lash", lid, kind="surface", head=True)
+        calm_pts = []
+        for i in range(n):
+            u = (u0 - ext) + (u1 - u0 + 2 * ext) * i / (n - 1)
+            xl, zl = al_c.x(u), al_c.top(u)
+            yy = 1 - xl * xl - zl * zl
+            if yy > 0.02:
+                calm_pts.append(centre + r3 @ Vector((xl * rx, -math.sqrt(yy) * ry * shell_k(xl, zl), zl * rz)))
         # the almond outline for the QA (head-local, before the pose): under the lash line, over the rim
         us = [u0 + (u1 - u0) * i / 16 for i in range(17)]
         outline = [lens_pt(u, al.top(u) - lc) for u in us] + [lens_pt(u, al.bot(u) + rc) for u in us[::-1]]
         ctx.objs["eyes"].append(dict(obj=eye, side=side, centre=centre, radii=(rx, ry, rz), ri=ri, tag=tag,
-                                     open=al.open, low=al.low, kv=kv, kh=kh, x0=al.x0, xc0=al.xc0, almond=outline,
-                                     inv=inv, al=al))
-        ctx.L["lash_" + tag] = (pts, lash_t / 2)
+                                     open=al.open, low=al.low, kv=kv, kh=kh, x0=al.x0, xc0=al.xc0, almond=outline))
+        ctx.L["lash_" + tag] = (calm_pts or pts, lash_t / 2)        # the calm lash line (the brows' base)
     ctx.L["sclera_top"] = p["eye_z"] + p["sclera_h"] / 2
 
 
@@ -531,6 +546,7 @@ def build_nose(ctx):
     m = ctx.mats["skin"]          # the same skin (blush, warm hollows, the tip colour) as the head: one surface
     obj = core.mb_mesh(ctx, "Nose", el, 0.007, m, smooth_iter=2, name="nose")
     ctx.add(obj, "nose", head, kind="embed", head=True)
+    ctx.objs["nose"] = obj
     ctx.L["nose_tip"] = Vector((0, ys - 0.06, nz))
 
 

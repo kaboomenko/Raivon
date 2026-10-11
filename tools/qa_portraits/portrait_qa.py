@@ -23,7 +23,10 @@ Checks (PASS / FAIL / INFO with numbers, one line each, into OUT_DIR/report.txt)
   P-A3 (ids)      at 128 px: brows >= 3 px thick, eye opening >= 6 px, iris >= 4 px, a catchlight pixel > 0.85,
                   closed mouth >= 2 px, open mouth >= 40 px²; at 64 px: brows >= 2 px thick and >= 6 px long, eye
                   opening >= 3 px, pupil >= 2 px, open mouth >= 6 px², signature >= 20 px; at 48 px the signature
-                  alone >= 8 % of the head-zone mask; irises behind glasses keep >= 70 % of their contrast
+                  alone >= 8 % of the head-zone mask; irises behind glasses keep >= 70 % of their contrast; seated
+                  eyes: <= 2 % of each eye's sclera / iris / pupil pixels outside the lids' outline (meta eye_almond)
+  P-A4 smile      calm / smile pairs with meta: both mouth corners >= 6 px higher, in the picture and with the pose
+                  held (head-local corners); open smiles: cavity >= 900 px² on the master, teeth visible
   P-A7            meta "floating" empty; one alpha island; every detail:* at least its P-A8 pixel count
 Exit 1 with --strict if any FAIL.
 """
@@ -32,7 +35,7 @@ import os
 import sys
 
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))  # works under python3 -I too
 import qa_common as Q  # noqa: E402
@@ -310,7 +313,19 @@ def readability(d, n, a, masks, m):
         out.append(("48 signature share", sm[:hz].sum() / max(1, am[:hz].sum()), 0.08))
     if "lens_iris_contrast" in m:
         out.append(("iris contrast behind glass", m["lens_iris_contrast"], 0.70))
-    return [(lab, v, g, v >= g) for lab, v, g in out]
+    res = [(lab, v, g, v >= g) for lab, v, g in out]
+    # seated eyes: the white, iris and pupil stay inside the outline the lids draw (meta eye_almond: under the lash
+    # line, over the lower rim); at most 2 % of each eye's pixels outside it (1.5 px tolerance at 512)
+    for i, poly in enumerate(m.get("eye_almond", [])[:2]):
+        if i >= len(eyes) or not eyes[i].any():
+            continue
+        im = Image.new("L", (w, h), 0)
+        ImageDraw.Draw(im).polygon([tuple(q) for q in poly], fill=255)
+        tol = max(1, int(round(1.5 * w / 512)))
+        inside = np.asarray(im.filter(ImageFilter.MaxFilter(2 * tol + 1))) > 127
+        share = float((eyes[i] & ~inside).sum()) / float(eyes[i].sum())
+        res.append(("eye %s outside lids" % ("near" if i == 0 else "far"), share, 0.02, share <= 0.02))
+    return res
 
 
 def check_ids(d, imgs, rep):
@@ -338,6 +353,58 @@ def check_ids(d, imgs, rep):
             badd = [x for x in dl if x[1] < x[2]]
             rep.add("FAIL" if badd else "PASS", "P-A8 details " + n, "; ".join(
                 "%s %d/%d%s" % (x[0], x[1], x[2], "" if x[1] >= x[2] else " FAIL") for x in dl))
+
+
+def check_smiles(d, imgs, rep):
+    """P-A4 smile, from the ID pass and the landmarks of a calm / smile pair: both mouth corners >= 6 px higher on the
+    master — in the picture and with the pose held (the expression alone, from the head-local corners in meta
+    mouth_local), so a head tilt cannot carry the mood; an open smile's cavity (mouth + teeth + tongue) >= 900 px² on
+    the master (scaled by the file's own size) with its teeth visible. A closed smile (§7.6 gives some characters
+    one: Vega) is reported for the cavity and teeth as INFO. Eye opening and brow lift changes are INFO."""
+    for n in sorted(imgs):
+        if not n.endswith("_smile"):
+            continue
+        base = n[:-len("_smile")]
+        ms, mc = Q.meta(d, n), Q.meta(d, base)
+        if not ms or not mc or len(ms.get("mouth", [])) < 2 or len(mc.get("mouth", [])) < 2:
+            continue
+        k = imgs[n].shape[1] / 512.0
+        img_d = [mc["mouth"][i][1] - ms["mouth"][i][1] for i in (0, 1)]
+        held = []
+        if ms.get("mouth_local") and mc.get("mouth_local"):
+            held = [(ms["mouth_local"][i][1] - mc["mouth_local"][i][1]) * ms["h_px"] for i in (0, 1)]
+        bad = [v for v in img_d + held if v < 6 * k]
+        txt = "corners up (near, far): picture %.1f / %.1f px" % tuple(img_d)
+        if held:
+            txt += ", pose held %.1f / %.1f px" % tuple(held)
+        masks, _ = Q.ids(d, n)
+        info = []
+        if masks is not None:
+            def grp(*names):
+                mk = None
+                for kk, v in masks.items():
+                    if kk in names:
+                        mk = v if mk is None else (mk | v)
+                return mk
+            cav = grp("mouth", "teeth", "tongue")
+            teeth = grp("teeth")
+            area = (float(cav.sum()) if cav is not None else 0.0) / (k * k)
+            tpx = (float(teeth.sum()) if teeth is not None else 0.0) / (k * k)
+            if ms.get("mouth_open"):
+                if area < 900 or tpx < 60:
+                    bad.append(0)
+                txt += "; cavity %.0f px² (>= 900), teeth %.0f px²" % (area, tpx)
+            else:
+                info.append("closed smile (§7.6): cavity %.0f px², teeth %.0f px² — the >= 900 px² rule is for open "
+                            "smiles" % (area, tpx))
+        eo = [ms["eye_open_px"][i] - mc["eye_open_px"][i] for i in range(min(len(ms.get("eye_open_px", [])),
+                                                                              len(mc.get("eye_open_px", []))))]
+        if eo:
+            info.append("eye opening change %s px" % "/".join("%+d" % v for v in eo))
+        if ms.get("brows") and mc.get("brows"):
+            bl = [mc["brows"][i][0][1] - ms["brows"][i][0][1] for i in range(min(len(ms["brows"]), len(mc["brows"])))]
+            info.append("brow inner ends up %s px" % "/".join("%.1f" % v for v in bl))
+        rep.add("FAIL" if bad else "PASS", "P-A4 smile " + base, txt + ("; " + "; ".join(info) if info else ""))
 
 
 def check_meta(d, imgs, rep):
@@ -371,6 +438,7 @@ def main():
         check_contrast(imgs, rep)
         check_moods(imgs, rep, out)
         check_ids(src, imgs, rep)
+        check_smiles(src, imgs, rep)
         check_meta(src, imgs, rep)
     txt = "\n".join(rep.lines)
     with open(os.path.join(out, "report.txt"), "w") as f:

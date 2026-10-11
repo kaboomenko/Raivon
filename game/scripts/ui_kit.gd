@@ -592,6 +592,7 @@ class KitBake extends Node:
 	const MAX_SIDE := 900  ## px: anything larger is drawn as vectors
 	const SETTLE_MS := 200  ## a moved owner is drawn again once it has held still this long
 	const POLL_N := 48  ## owners whose place is looked at per frame (in turn)
+	const OPAQUE := 0.999  ## a modulate α below this: seen through, drawn as vectors (draw, chain_alpha)
 	const PHASES := 8.0  ## sub-pixel offsets a bake is made at, per pixel and axis
 	## Logical px of straight edge a sliced bake keeps past each corner: what is stretched must be uniform, and the
 	## antialiased edge of a StyleBoxFlat is not, for a few px past where its corner arc ends (the half-pixel offsets
@@ -633,11 +634,13 @@ class KitBake extends Node:
 	var refs := {}  ## canvas item RID id -> [frame, {full key: true}, WeakRef owner]: the images its commands show now
 	var placed := {}  ## host instance id -> [WeakRef, origin on the canvas, moved at (ms)]: what drew from the atlas there
 	var parked := {}  ## host instance id -> [WeakRef, rect, pad]: what was out of sight when it asked (not baked yet)
+	var faded := {}  ## host instance id -> WeakRef: drew its vectors under a modulate α < 1 (drawn again once opaque)
 	var resets := 0
 	var evicted := 0  ## images dropped to make room (they were no longer shown)
 	var _moving := {}  # host ids that moved, until they hold still (then they are drawn again)
 	var _poll: Array = []  # host ids still to look at in this pass
 	var _poll_p: Array = []  # parked host ids still to look at in this pass
+	var _poll_f: Array = []  # faded host ids still to look at in this pass
 	var _later: Array = []  # [WeakRef, due ms]: owners to redraw then (later())
 	var _round: Array = []  # the jobs in flight: {key, base, off, pp, at (stage px), slot, gen}
 	var _state := 0  # 0 idle, 1 the stage renders, 2 the atlas copies
@@ -832,6 +835,17 @@ class KitBake extends Node:
 		var full := "%s/%d,%d" % [base, roundi(f.x * PHASES), roundi(f.y * PHASES)]
 		var hh: CanvasItem = host if host != null else owner as CanvasItem
 		var e := _ref(ci, owner if owner != null else host, hh)  # (its commands are being recorded anew)
+		if hh != null:
+			var ca := chain_alpha(hh)
+			if ca < OPAQUE or mod.a < OPAQUE:
+				# seen through a modulate α < 1 (a claimed row, a taken calendar day, a fade): the vectors, each layer at
+				# that α as always — an image would fade as one piece, lighter (the layers under its face no longer show
+				# through); drawn again once it is opaque (_poll_faded; a change of `mod` redraws its owner anyway)
+				if ca < OPAQUE:
+					faded[hh.get_instance_id()] = weakref(hh)
+				return false
+			if not faded.is_empty():
+				faded.erase(hh.get_instance_id())
 		var slot: Variant = slots.get(full)
 		if slot != null and _squeeze and not in_sight(hh, rect, pad):
 			# the atlas is short of room: what is off the screen gives its image up (draws its vectors, culled) so that
@@ -889,6 +903,18 @@ class KitBake extends Node:
 		if vp == null or vp != h.get_tree().root:
 			return true
 		return (h.get_global_transform_with_canvas() * rect.grow(pad)).intersects(vp.get_visible_rect())
+
+	## The α `h`'s own commands are drawn at: its self_modulate times the modulate of it and of every canvas item above
+	## it (a top-level item does not inherit its parents').
+	static func chain_alpha(h: CanvasItem) -> float:
+		var a := h.self_modulate.a
+		var n: Node = h
+		while n is CanvasItem:
+			a *= (n as CanvasItem).modulate.a
+			if a < OPAQUE or (n as CanvasItem).top_level:
+				break
+			n = n.get_parent()
+		return a
 
 	## The record of what the canvas item `ci` shows from the atlas: started anew on the first draw in a frame (a
 	## canvas item's commands are all recorded again when it is drawn).
@@ -957,6 +983,8 @@ class KitBake extends Node:
 				e[1] = o
 				e[2] = now
 				_moving[id] = true
+			if not faded.has(id) and chain_alpha(h) < OPAQUE:
+				h.queue_redraw()  # (a parent faded it since it drew from the atlas: its vectors now)
 		if _moving.is_empty():
 			return
 		for id in _moving.keys():
@@ -979,6 +1007,24 @@ class KitBake extends Node:
 	func _park(h: CanvasItem, rect: Rect2, pad: float) -> void:
 		_place(h)
 		parked[h.get_instance_id()] = [weakref(h), rect, pad]
+
+	## Looks at POLL_N faded hosts a frame: one that is opaque again draws again (from the atlas).
+	func _poll_faded() -> void:
+		if faded.is_empty():
+			return
+		if _poll_f.is_empty():
+			_poll_f = faded.keys()
+		for i in mini(POLL_N, _poll_f.size()):
+			var id: int = _poll_f.pop_back()
+			var w: Variant = faded.get(id)
+			if w == null:
+				continue
+			var h := (w as WeakRef).get_ref() as CanvasItem
+			if h == null or not h.is_inside_tree():
+				faded.erase(id)
+			elif chain_alpha(h) >= OPAQUE:
+				faded.erase(id)
+				h.queue_redraw()
 
 	## Looks at POLL_N parked hosts a frame: one that has come into sight draws again (and asks for its bakes).
 	func _poll_parked() -> void:
@@ -1084,6 +1130,7 @@ class KitBake extends Node:
 			_later = keep
 		_poll_moves()
 		_poll_parked()
+		_poll_faded()
 		if _state != 0 or not is_inside_tree():
 			return
 		if not jobs.is_empty():

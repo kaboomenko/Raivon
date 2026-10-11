@@ -181,12 +181,9 @@ def node_obj_axis(nt, axis, v0, v1, space="Object"):
     return mr.outputs[0]
 
 
-def node_blob(nt, centre, radius, scale=(1.0, 1.0, 1.0), obj=None):
-    """Soft spherical falloff 0..1 around an object-space point (procedural paint); with `obj`, in that object's space
-    (the eye's skin rim reads the head's paint)."""
+def node_blob(nt, centre, radius, scale=(1.0, 1.0, 1.0)):
+    """Soft spherical falloff 0..1 around an object-space point (procedural paint)."""
     tc = nt.nodes.new("ShaderNodeTexCoord")
-    if obj is not None:
-        tc.object = obj
     mp = nt.nodes.new("ShaderNodeMapping")
     mp.inputs["Scale"].default_value = tuple(s / radius for s in scale)
     mp.inputs["Location"].default_value = tuple(-c * s / radius for c, s in zip(centre, scale))
