@@ -443,12 +443,13 @@ inbox.war_cap.white,Война длилась 2 ч — белый мир.,The wa
 toast.war_cap_white,Кап войны: белый мир,War cap: white peace
 ftue.1,Бароны сожгли нашу мельницу! Объявите им войну.,The Barons burned our mill! Declare war on them.
 ftue.2,Начните наступление!,Launch an offensive!
-ftue.3,Тяните от своей армии на вражеский гекс — она пойдёт в атаку.,Drag from your army onto an enemy hex to attack.
+ftue.3,Тяните от своей армии на вражеский гекс — она пойдёт в атаку.,Drag from your army onto an enemy hex to attack.
 ftue.4,Отлично! «Атака» бросает в бой все армии рядом. Захватите ещё!,Great! “Attack” sends every army nearby into battle. Take more!
-ftue.5,Земля пока лишь занята. Подпишите мир — и граница сдвинется.,Captured land is only occupied. Sign a peace to move the border.
+ftue.5,Земля пока лишь занята. Подпишите мир — и граница сдвинется.,Captured land is only occupied. Sign a peace to move the border.
 ftue.6,"Удерживайте «Подписать мир», чтобы заключить договор.",Hold “Sign peace” to sign the treaty.
-ftue.7,Откройте «Здания» и улучшите Резиденцию — халупы станут избами.,Open “Buildings” and upgrade the Residence: huts become cottages.
-ftue.8,Жёлтый контур — даровые ресурсы. Коснитесь жилы и пошлите обоз.,"A yellow outline means free resources. Tap the vein, send a convoy."
+ftue.7,Откройте «Здания» и улучшите Резиденцию — халупы станут избами.,Open “Buildings” and upgrade the Residence: huts become cottages.
+ftue.7b,Улучшите Резиденцию — халупы станут избами.,Upgrade the Residence: huts become cottages.
+ftue.8,Жёлтый контур — ресурсы даром. Коснитесь жилы и пошлите обоз.,"A yellow outline means free resources. Tap the vein, send a convoy."
 ftue.9,Укрепите границу: выберите гекс у Баронов и нажмите «Форт».,Fortify the border: pick a hex by the Barons and tap “Fort”.
 ftue.10,Вольные Хутора заняли шахту у нашей границы. Объявите им войну!,The Free Hamlets seized a mine on our border. Declare war on them!
 ftue.11,Начните наступление!,Launch an offensive!

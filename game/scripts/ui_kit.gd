@@ -74,6 +74,9 @@ const DIM_A := 0.6
 ## The advisor's speech bubble (§3.4 table «Подсказка / пузырь»: R 24 / 30, OUT 4 / 5) — the one radius off RADII.
 const R_BUBBLE := 30
 const LOCK_MOD := Color(0.55, 0.57, 0.62)  ## a closed item's icon (§3.5)
+## A control on the currency layer (above every dim) while the coach's spotlight shuts the screen (§4.12): about
+## what INK α 0.6 makes of it.
+const SHUT_MOD := Color(0.42, 0.45, 0.55)
 ## How far a finger may travel on the screen and still tap (≈ 7 dp): past it a press inside a scrolling row is a
 ## swipe, and a swipe never spends (§2: «иначе при прокрутке возможны случайные траты»).
 const TAP_SLOP := 16.0
@@ -634,28 +637,23 @@ class KitShape extends Control:
 				draw_line(p[1], p[2], INK, 4.0, true)
 				draw_circle(p[2], 2.0, INK, true, -1.0, true)
 			"ring":  # the coach's ring: gold 6 between INK 3 strokes, its outer edge on the box (data.r its radius);
-				# data.gx / gy: how far it has swollen out — the gold widens by as much, the inner edge stays put
-				var rr := minf(float(data.get("r", 24.0)), minf(size.x, size.y) * 0.5)
-				var gx := float(data.get("gx", 0.0))
-				var gy := float(data.get("gy", 0.0))
+				# data.w: its band on each side (left, top, right, bottom; 12 at rest) — swollen out, the gold widens by
+				# as much and the inner edge stays put
+				var rr := minf(float(data.get("r", 36.0)), minf(size.x, size.y) * 0.5)
+				var w: Array = data.get("w", [12.0, 12.0, 12.0, 12.0])
 				var sb := StyleBoxFlat.new()
 				sb.draw_center = false
 				sb.anti_aliasing = true
 				sb.corner_detail = 16
-				sb.border_color = INK
-				sb.border_width_left = int(roundf(12.0 + gx))
-				sb.border_width_right = sb.border_width_left
-				sb.border_width_top = int(roundf(12.0 + gy))
-				sb.border_width_bottom = sb.border_width_top
-				sb.set_corner_radius_all(int(rr))
-				draw_style_box(sb, Rect2(Vector2.ZERO, size))
-				sb.border_color = ROLE["gold"][0]
-				sb.border_width_left = int(roundf(6.0 + gx))
-				sb.border_width_right = sb.border_width_left
-				sb.border_width_top = int(roundf(6.0 + gy))
-				sb.border_width_bottom = sb.border_width_top
-				sb.set_corner_radius_all(int(maxf(0.0, rr - 3.0)))
-				draw_style_box(sb, Rect2(Vector2(3, 3), size - Vector2(6, 6)))
+				for layer in [[0.0, INK], [3.0, ROLE["gold"][0]]]:
+					var d: float = layer[0]
+					sb.border_color = layer[1]
+					sb.border_width_left = int(roundf(float(w[0]) - 2.0 * d))
+					sb.border_width_top = int(roundf(float(w[1]) - 2.0 * d))
+					sb.border_width_right = int(roundf(float(w[2]) - 2.0 * d))
+					sb.border_width_bottom = int(roundf(float(w[3]) - 2.0 * d))
+					sb.set_corner_radius_all(int(maxf(0.0, rr - d)))
+					draw_style_box(sb, Rect2(Vector2(d, d), size - Vector2(d, d) * 2.0))
 			"pointer":
 				_pointer()
 			"finger":  # the ghost finger: a white disc Ø64 in an INK 4 contour inside a gold ring (data.a: its alpha)

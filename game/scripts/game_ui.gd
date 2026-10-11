@@ -5620,16 +5620,20 @@ func _market_card(it: Dictionary) -> Control:
 
 # ------------------------------------------------------------------ coach (FTUE, canon §14.3; docs/ui_style.md §4.12)
 
-## The spotlight: INK α 0.6 over the visible rect with up to two round-box holes — the target (+12) and what it is
-## about (a reveal: the hex panel beside «Война!», a window's body above its footer). Their union is cut out with an
-## antialiased edge (sdRoundBox).
+## The spotlight: INK α 0.6 over the visible rect with up to four round-box holes — the target (+ its ring's margin),
+## what it is about (a reveal: the hex panel beside «Война!», a window's body above its footer) and the target's own
+## badges (lifts: the tab's dot). Their union is cut out with an antialiased edge (sdRoundBox).
 const COACH_SHADER := """
 shader_type canvas_item;
 uniform vec2 size = vec2(941.0, 1672.0);
-uniform vec4 hole = vec4(0.0);
-uniform float hole_r = 24.0;
+uniform vec4 hole0 = vec4(0.0);
+uniform float r0 = 24.0;
+uniform vec4 hole1 = vec4(0.0);
+uniform float r1 = 24.0;
 uniform vec4 hole2 = vec4(0.0);
-uniform float hole2_r = 24.0;
+uniform float r2 = 24.0;
+uniform vec4 hole3 = vec4(0.0);
+uniform float r3 = 24.0;
 uniform vec4 dim : source_color = vec4(0.106, 0.129, 0.251, 0.6);
 
 float sd_box(vec2 p, vec4 h, float r) {
@@ -5644,8 +5648,37 @@ float sd_box(vec2 p, vec4 h, float r) {
 
 void fragment() {
 	vec2 p = UV * size;
-	float d = min(sd_box(p, hole, hole_r), sd_box(p, hole2, hole2_r));
+	float d = min(min(sd_box(p, hole0, r0), sd_box(p, hole1, r1)), min(sd_box(p, hole2, r2), sd_box(p, hole3, r3)));
 	COLOR = vec4(dim.rgb, dim.a * smoothstep(-0.75, 0.75, d));
+}
+"""
+
+## The ring passes under the target's badges (the tab's dot, the card's cost hex): its pixels inside up to two
+## round boxes (local px) are cut out, so the badge reads as lying on top of it.
+const COACH_RING_SHADER := """
+shader_type canvas_item;
+uniform vec4 cut0 = vec4(0.0);
+uniform float cut_r0 = 0.0;
+uniform vec4 cut1 = vec4(0.0);
+uniform float cut_r1 = 0.0;
+varying vec2 local;
+
+float sd_box(vec2 p, vec4 h, float r) {
+	if (h.z <= 0.0) {
+		return 1e6;
+	}
+	vec2 b = h.zw * 0.5;
+	r = min(r, min(b.x, b.y));
+	vec2 q = abs(p - h.xy - b) - b + vec2(r);
+	return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+}
+
+void vertex() {
+	local = VERTEX;
+}
+
+void fragment() {
+	COLOR.a *= smoothstep(-0.75, 0.75, min(sd_box(local, cut0, cut_r0), sd_box(local, cut1, cut_r1)));
 }
 """
 
@@ -5676,8 +5709,12 @@ class CoachDim extends ColorRect:
 				on_refused.call()
 
 
-const COACH_GROW := 12.0  # the hole: the target grown by this; the ring fills that margin
+const COACH_GROW := 12.0  # the hole: the target grown by this; the ring (12: INK 3, gold 6, INK 3) fills that margin
 const COACH_R := 24.0
+const COACH_RING_R := 36.0  # the ring's outer radius: its inner edge keeps R 24, no less round than the target's corners
+const COACH_CLEAR := 2.0  # the ring keeps this far off a neighbour (the next card, tab, segment) and the screen edge
+const COACH_IN_MAX := 14.0  # how far the ring may slide in over the target's own edge where the neighbours leave no room
+const COACH_REVEAL_GROW := 3.0  # a reveal is lit to just past its own INK contour
 const COACH_POINT := 120.0  # a point target becomes a square this size around it (a hex on the map)
 const COACH_BAND_LOW := 1060.0  # the advisor's band: y 1060–1300 (+ the bottom group's offset) …
 const COACH_BAND_HIGH := 180.0  # … or, when that would cover the target, y 180–420 (+ the safe top inset)
@@ -5710,12 +5747,18 @@ var _coach_chip: Panel
 var _coach_target := Vector2(-1, -1)  # the last point target (screen px)
 var _coach_rect := Rect2()  # the target on the canvas (no size: none)
 var _coach_reveal := Rect2()  # lit with it: what the target is about
+var _coach_near: Array = []  # Rect2s beside the target the ring keeps off (the hand's other cards, the other tabs)
+var _coach_lift: Array = []  # Rect2s of the target's badges: lit with it, the ring passing under them
+var _coach_round := false  # a point target on the map: a round hole and ring
+var _coach_ring_out := Rect2()  # the ring at the top of its pulse (the pointer keeps off it)
 var _coach_mode := "dim"  # "block": dim + only the holes take taps; "dim": dim, taps pass; "ring": ring and pointer
 var _ghost_from := Vector2(-1, -1)
 var _ghost_to := Vector2(-1, -1)
 var _ghost_dot: Kit.KitShape
 var _coach_t := 0.0
 var _coach_kick := 0.0  # a refused tap: the ring jumps for a moment
+var _coach_scrolled: Control  # the card the coach last scrolled the row to
+var _coach_bw := 0.0  # the bubble's own width (hugging the line); over a window's title it takes the full 600
 
 
 func _build_coach() -> void:
@@ -5736,6 +5779,11 @@ func _build_coach() -> void:
 	_coach.add_child(_coach_dim)
 	_coach_ring = Kit.KitShape.new("ring")
 	_coach_ring.name = "ring"
+	var rmat := ShaderMaterial.new()
+	var rsh := Shader.new()
+	rsh.code = COACH_RING_SHADER
+	rmat.shader = rsh
+	_coach_ring.material = rmat
 	_coach.add_child(_coach_ring)
 	_coach_adv = Control.new()
 	_coach_adv.name = "advisor"
@@ -5828,7 +5876,6 @@ func coach(text: String, target := Vector2(-1, -1), chip := "") -> void:
 	var was := _coach.visible
 	_coach.visible = true
 	_coach_mode = "dim"
-	_coach_reveal = Rect2()
 	_ghost_from = Vector2(-1, -1)
 	coach_target(target)
 	_coach_say(text, chip)
@@ -5839,17 +5886,39 @@ func coach(text: String, target := Vector2(-1, -1), chip := "") -> void:
 ## A point target: a COACH_POINT square around it (a hex on the map) — a circle ring; x < 0: none.
 func coach_target(target: Vector2) -> void:
 	_coach_target = target
+	_coach_reveal = Rect2()
+	_coach_near = []
+	_coach_lift = []
+	_coach_round = target.x >= 0.0
 	if target.x < 0.0:
 		_coach_rect = Rect2()
 	else:
 		_coach_rect = Rect2(target - Vector2(COACH_POINT, COACH_POINT) * 0.5, Vector2(COACH_POINT, COACH_POINT))
 
 
-## The target as a node's rect on the canvas (get_global_rect(); no size: none), and `reveal`: lit beside it —
-## the hex panel next to «Война!», a window's body above the footer it points into.
-func coach_rect(rect: Rect2, reveal := Rect2()) -> void:
+## The target as a node's rect on the canvas (get_global_rect(); no size: none); `reveal`: lit beside it — the hex
+## panel next to «Война!», a window's body above the footer it points into; `near`: the rects beside the target its
+## ring keeps 2 px off (the hand's other cards, the other tabs, the next segment — the reveal and the screen edge
+## count by themselves), sliding in over the target's own edge where they leave less than its 12 px; `lift` (two at
+## most): badges sticking out of the target or the reveal (a tab's dot, a card's cost hex, the hex panel's owner
+## chip), lit with them and lying over the ring.
+func coach_rect(rect: Rect2, reveal := Rect2(), near := [], lift := []) -> void:
 	_coach_rect = rect if rect.size.x > 0.0 and rect.size.y > 0.0 else Rect2()
 	_coach_reveal = reveal if reveal.size.x > 0.0 and reveal.size.y > 0.0 else Rect2()
+	_coach_round = false
+	_coach_near = []
+	for r in near:
+		if r is Rect2 and (r as Rect2).size.x > 0.0 and (r as Rect2).size.y > 0.0:
+			_coach_near.append(r)
+	_coach_lift = []
+	for r in lift:
+		if r is Rect2 and (r as Rect2).size.x > 0.0 and (r as Rect2).size.y > 0.0 and _coach_lift.size() < 2:
+			_coach_lift.append(r)
+
+
+## True while a mandatory step shuts the screen around its target (main switches the currency layer's taps off).
+func coach_blocking() -> bool:
+	return _coach != null and _coach.visible and _coach_dim.visible and _coach_dim.block
 
 
 ## "block" — a mandatory step: the screen is dimmed and only the holes take taps; "dim" — dimmed, every tap passes
@@ -5898,6 +5967,7 @@ func _coach_say(text: String, chip: String) -> void:
 	var bw := maxf(tw + (cw + 16.0 if chip != "" else 0.0) + 2.0 * COACH_PAD, pw + 72.0)
 	var bh := COACH_TEXT_Y + th + 18.0 + 6.0  # the bottom padding over the 6 px lip
 	_coach_bubble.size = Vector2(bw, bh)
+	_coach_bw = bw
 	if chip != "":
 		_coach_chip = _paper_chip(_coach_bubble, Vector2(bw - COACH_PAD - cw * 0.5, COACH_TEXT_Y + th * 0.5), "hourglass", chip, cw)
 
@@ -5913,7 +5983,7 @@ func modal_rect() -> Rect2:
 
 
 ## The current window from its title plate down to its footer buttons (the coach keeps it lit around the button it
-## points at: its reveal, grown by the hole's margin, meets the target's hole and leaves the other button dimmed).
+## points at: lit just past its edge, it meets the top of the button's ring and leaves the other button dimmed).
 func modal_body_rect() -> Rect2:
 	var fr := modal_rect()
 	if fr.size.x <= 0.0:
@@ -5922,7 +5992,7 @@ func modal_body_rect() -> Rect2:
 	for i in _modal_buttons.size():
 		var r := modal_button_rect(i)
 		if r.size.x > 0.0:
-			bottom = minf(bottom, r.position.y - 2.0 * COACH_GROW)
+			bottom = minf(bottom, r.position.y - COACH_GROW - COACH_CLEAR)
 	var top := fr.position.y - 42.0
 	return Rect2(fr.position.x, top, fr.size.x, bottom - top)
 
@@ -5954,11 +6024,54 @@ func card_rect(card: String) -> Rect2:
 	return p.get_global_rect() if p != null and is_instance_valid(p) and p.is_visible_in_tree() else Rect2()
 
 
+## What lies around a hand card (the coach's ring keeps off it): the hand's other cards and the energy row above.
+func hand_rects(except := "") -> Array:
+	var out: Array = []
+	for c in _cards:
+		if String(c) != except:
+			var r := card_rect(String(c))
+			if r.size.x > 0.0:
+				out.append(r)
+	if _battle != null and _battle.is_visible_in_tree():
+		var row := Rect2()
+		for n in _battle.get_children():  # the energy counter and its pips: hex badges along the tray's top
+			var hb := n as Kit.KitShape
+			if hb != null and hb.kind == "hex" and hb.visible:
+				row = hb.get_global_rect() if row.size.x <= 0.0 else row.merge(hb.get_global_rect())
+		if row.size.x > 0.0:
+			out.append(row)
+	return out
+
+
+## A hand card's cost hex (it sticks out of the card's corner: the coach lifts it over its ring).
+func card_cost_rect(card: String) -> Rect2:
+	var look: Dictionary = _card_look.get(card, {})
+	var cost: Control = look.get("cost")
+	return cost.get_global_rect() if cost != null and is_instance_valid(cost) and cost.is_visible_in_tree() else Rect2()
+
+
 ## The button of a card in the tray's row: the card titled `title` (the Residence), else the first one. A card
-## scrolled out of the row's view is brought into it.
+## scrolled out of the row's view is brought into it (once).
 func first_card_cta_rect(title := "") -> Rect2:
-	if _brow == null or not _bpanel.is_visible_in_tree():
+	var pick := _tray_card(title)
+	if pick == null:
 		return Rect2()
+	var r := pick.cta.get_global_rect()
+	if _coach_scrolled != pick and not _bscroll.get_global_rect().grow(1.0).encloses(r):
+		_bscroll.ensure_control_visible(pick)  # once: the player may scroll the row away again
+		_coach_scrolled = pick
+	return r
+
+
+## That card whole (the coach keeps it lit around its button: which building it is).
+func tray_card_rect(title := "") -> Rect2:
+	var pick := _tray_card(title)
+	return pick.get_global_rect() if pick != null else Rect2()
+
+
+func _tray_card(title: String) -> Kit.KitCard:
+	if _brow == null or not _bpanel.is_visible_in_tree():
+		return null
 	var pick: Kit.KitCard = null
 	for ch in _brow.get_children():
 		var kc := ch as Kit.KitCard
@@ -5967,14 +6080,8 @@ func first_card_cta_rect(title := "") -> Rect2:
 		if pick == null:
 			pick = kc
 		if title != "" and kc.title == title:
-			pick = kc
-			break
-	if pick == null:
-		return Rect2()
-	var r := pick.cta.get_global_rect()
-	if not _bscroll.get_global_rect().grow(1.0).encloses(r):
-		_bscroll.ensure_control_visible(pick)
-	return r
+			return kc
+	return pick
 
 
 ## «Подписать мир» while the treaty is open.
@@ -6013,25 +6120,46 @@ func _process_coach(delta: float) -> void:
 	_coach_adv.visible = not away
 	var holes: Array = []
 	if lit:
-		var hole := _coach_rect.grow(COACH_GROW)
-		var round := absf(_coach_rect.size.x - _coach_rect.size.y) < 2.0 and _coach_rect.size.x <= 140.0
-		var hr := hole.size.x * 0.5 if round else COACH_R
+		# the ring's margin: 12 px round the target, less on an axis where a neighbour or the screen edge is nearer
+		# (it then slides in over the target's own edge, by as much on both sides, so it stays centred on it)
+		var room := _coach_room(vis)
+		var lo := COACH_GROW - COACH_IN_MAX
+		var mx := clampf(minf(room[0], room[2]), lo, COACH_GROW)
+		var my := clampf(minf(room[1], room[3]), lo, COACH_GROW)
+		if _coach_round:
+			mx = minf(mx, my)
+			my = mx
+		var hole := _coach_rect.grow_individual(mx, my, mx, my)
+		var hr := hole.size.x * 0.5 if _coach_round else COACH_RING_R
 		holes.append([hole, hr])
 		if _coach_reveal.size.x > 0.0:
-			holes.append([_coach_reveal.grow(COACH_GROW), COACH_R])
+			holes.append([_coach_reveal.grow(COACH_REVEAL_GROW), COACH_R])
+		for l in _coach_lift:
+			holes.append([l, minf((l as Rect2).size.x, (l as Rect2).size.y) * 0.5])
 		_coach_light(vis, holes)
 		_coach_dim.block = _coach_mode == "block" and vis.intersects(hole)  # never shut the screen around a target off it
-		# the pulse: the ring's outer edge 1.0 → 1.05 of its size every 800 ms (a refused tap kicks it further); its
-		# inner edge stays on the target, the gold widening — scaled whole, it would lift off and bare the hole's margin
+		# the pulse: the ring's outer edge 1.0 → 1.05 of its size every 800 ms (a refused tap kicks it further), only
+		# where there is room for it; its inner edge stays on the target, the gold widening — scaled whole, it would
+		# lift off and bare the hole's margin
 		var k := 0.025 * (1.0 - cos(_coach_t * TAU / 0.8)) + 0.05 * _coach_kick / 0.35
-		var g := (hole.size * k * 0.5).round()
-		var rr := Rect2(hole.position - g, hole.size + g * 2.0)
-		var look := {"r": hr + minf(g.x, g.y), "gx": g.x, "gy": g.y}
+		var spare := [room[0] - mx, room[1] - my, room[2] - mx, room[3] - my]
+		var g: Array = []
+		var gm: Array = []
+		for i in 4:
+			var ax := hole.size.x if i % 2 == 0 else hole.size.y
+			var cap := maxf(0.0, float(spare[i]))
+			g.append(minf(roundf(ax * k * 0.5), cap))
+			gm.append(minf(roundf(ax * 0.025), cap))
+		var rr := hole.grow_individual(g[0], g[1], g[2], g[3])
+		_coach_ring_out = hole.grow_individual(gm[0], gm[1], gm[2], gm[3])
+		var r_out := rr.size.x * 0.5 if _coach_round else hr + minf(minf(g[0], g[1]), minf(g[2], g[3]))
+		var look := {"r": r_out, "w": [COACH_GROW + g[0], COACH_GROW + g[1], COACH_GROW + g[2], COACH_GROW + g[3]]}
 		if _coach_ring.data != look or _coach_ring.size != rr.size:
 			_coach_ring.data = look
 			_coach_ring.size = rr.size
 			_coach_ring.queue_redraw()
 		_coach_ring.position = rr.position
+		_coach_cut(rr)
 	if not away:
 		_coach_place_advisor(vis, holes, frame)
 	if lit:
@@ -6049,24 +6177,63 @@ func _process_coach(delta: float) -> void:
 			_ghost_dot.queue_redraw()
 
 
-## The spotlight over the visible rect with the holes cut out; the same holes let taps through.
+## The spotlight over the visible rect with the holes cut out; the target's and the reveal's holes let taps through
+## (a lifted badge's does not: the tab's dot lies over the next tab).
 func _coach_light(vis: Rect2, holes: Array) -> void:
 	_coach_dim.position = vis.position
 	_coach_dim.size = vis.size
 	var mat := _coach_dim.material as ShaderMaterial
 	mat.set_shader_parameter("size", vis.size)
 	var local: Array = []
-	for i in 2:
-		var key := "hole" if i == 0 else "hole2"
+	var taps := 1 + (1 if _coach_reveal.size.x > 0.0 else 0)
+	for i in 4:
 		if i < holes.size():
 			var r: Rect2 = holes[i][0]
 			var lr := Rect2(r.position - vis.position, r.size)
-			local.append([lr, holes[i][1]])
-			mat.set_shader_parameter(key, Vector4(lr.position.x, lr.position.y, lr.size.x, lr.size.y))
-			mat.set_shader_parameter(key + "_r", float(holes[i][1]))
+			if i < taps:
+				local.append([lr, holes[i][1]])
+			mat.set_shader_parameter("hole%d" % i, Vector4(lr.position.x, lr.position.y, lr.size.x, lr.size.y))
+			mat.set_shader_parameter("r%d" % i, float(holes[i][1]))
 		else:
-			mat.set_shader_parameter(key, Vector4.ZERO)
+			mat.set_shader_parameter("hole%d" % i, Vector4.ZERO)
 	_coach_dim.holes = local
+
+
+## The ring's cut-outs under the lifted badges (in the ring's own px, a pixel of air round each).
+func _coach_cut(rr: Rect2) -> void:
+	var mat := _coach_ring.material as ShaderMaterial
+	for i in 2:
+		if i < _coach_lift.size():
+			var l: Rect2 = (_coach_lift[i] as Rect2).grow(1.0)
+			mat.set_shader_parameter("cut%d" % i, Vector4(l.position.x - rr.position.x, l.position.y - rr.position.y, l.size.x, l.size.y))
+			mat.set_shader_parameter("cut_r%d" % i, minf(l.size.x, l.size.y) * 0.5)
+		else:
+			mat.set_shader_parameter("cut%d" % i, Vector4.ZERO)
+
+
+## The room on each side of the target (left, top, right, bottom) for its ring: to the screen edge, and to each
+## neighbour straight across from it (the reveal beside it is one), less the 2 px the ring keeps clear.
+func _coach_room(vis: Rect2) -> Array:
+	var t := _coach_rect
+	var room: Array = [t.position.x - vis.position.x, t.position.y - vis.position.y, vis.end.x - t.end.x, vis.end.y - t.end.y]
+	var near := _coach_near.duplicate()
+	if _coach_reveal.size.x > 0.0 and not _coach_reveal.grow(1.0).encloses(t):
+		near.append(_coach_reveal)
+	for n in near:
+		var r: Rect2 = n
+		var across_y := r.position.y < t.end.y - 1.0 and r.end.y > t.position.y + 1.0
+		var across_x := r.position.x < t.end.x - 1.0 and r.end.x > t.position.x + 1.0
+		if across_y and r.end.x <= t.position.x + 1.0:
+			room[0] = minf(room[0], t.position.x - r.end.x)
+		elif across_y and r.position.x >= t.end.x - 1.0:
+			room[2] = minf(room[2], r.position.x - t.end.x)
+		elif across_x and r.end.y <= t.position.y + 1.0:
+			room[1] = minf(room[1], t.position.y - r.end.y)
+		elif across_x and r.position.y >= t.end.y - 1.0:
+			room[3] = minf(room[3], r.position.y - t.end.y)
+	for i in 4:
+		room[i] = float(room[i]) - COACH_CLEAR
+	return room
 
 
 ## The advisor's place (§4.12): the band y 1060–1300 (with the bottom group) — right above the bottom group for a
@@ -6102,20 +6269,25 @@ func _coach_place_advisor(vis: Rect2, holes: Array, frame: Rect2) -> void:
 		fallback.append(maxf(frame.position.y + 56.0 - COACH_BUST.y * 0.5, vis.position.y + 90.0 + _top.position.y + COACH_BUST.y * 0.5))
 	for pass_ in [[centres, hard + soft], [fallback + centres, hard]]:
 		for cy in pass_[0]:
-			var rs := _coach_group(vis, float(cy), left, map)
+			var over := frame.position.y + 42.0 + 10.0 if fallback.has(cy) and pass_[1] == hard else -1.0
+			var rs := _coach_group(vis, float(cy), left, map, over)
 			var hit := false
 			for r in rs:
 				for o in pass_[1]:
 					hit = hit or (r as Rect2).intersects(o)
 			if not hit:
+				_coach_group(vis, float(cy), left, map, over, true)
 				return
-	_coach_group(vis, float(centres[0]), left, map)
+	_coach_group(vis, float(centres[0]), left, map, -1.0, true)
 
 
-## Places the advisor around the band centre `cy` (the bust at the left edge when `left`); on the map (`map`) the
-## upper band's bubble steps down under the minimap. Returns the bust's, the bubble's and the plate's rects.
-func _coach_group(vis: Rect2, cy: float, left: bool, map: bool) -> Array:
-	var bw := _coach_bubble.size.x
+## The advisor around the band centre `cy` (the bust at the left edge when `left`); on the map (`map`) the upper
+## band's bubble steps down under the minimap; `cover` (≥ 0): the bubble at its full 600 and down to that y, covering
+## a window's title plate whole. Returns the bust's, the bubble's and the plate's rects; only with `apply` does it
+## move the nodes there (the candidates are weighed first, the chosen one placed once).
+func _coach_group(vis: Rect2, cy: float, left: bool, map: bool, cover := -1.0, apply := false) -> Array:
+	var wide := cover >= 0.0
+	var bw := maxf(_coach_bw, COACH_TEXT_W + 2.0 * COACH_PAD) if wide else _coach_bw
 	var bh := _coach_bubble.size.y
 	var bx := vis.position.x + 12.0 + COACH_BUST.x + 18.0 if left else vis.end.x - 12.0 - COACH_BUST.x - 18.0 - bw
 	var by := cy + 6.0 - bh * 0.5
@@ -6126,25 +6298,37 @@ func _coach_group(vis: Rect2, cy: float, left: bool, map: bool) -> Array:
 		by += dy
 	cy = clampf(cy, vis.position.y + COACH_BUST.y * 0.5 + 12.0, vis.end.y - COACH_BUST.y * 0.5 - 12.0)
 	by = cy + 6.0 - bh * 0.5
+	if wide:  # a one-liner is shorter than the title plate it covers: its bottom goes down to the plate's
+		by = maxf(by, cover - bh)
 	var bust := Rect2(vis.position.x + 12.0 if left else vis.end.x - 12.0 - COACH_BUST.x, cy - COACH_BUST.y * 0.5, COACH_BUST.x, COACH_BUST.y)
-	_coach_bust.position = bust.position
-	_coach_bubble.position = Vector2(bx, by)
-	_coach_tail.data["dir"] = "left" if left else "right"
-	_coach_tail.position = Vector2(-18.0 if left else bw - 6.0, bh * 0.5 - _coach_tail.size.y * 0.5 - 3.0)
-	_coach_tail.queue_redraw()
-	var px := bx + 24.0 if left else bx + bw - 24.0 - _coach_plate.size.x
-	_coach_plate.position = Vector2(px, by - COACH_PLATE_H * 0.5)
-	return [bust, Rect2(bx - 18.0, by, bw + 18.0, bh + 6.0), Rect2(_coach_plate.position, _coach_plate.size)]
+	var plate := Rect2(Vector2(bx + 24.0 if left else bx + bw - 24.0 - _coach_plate.size.x, by - COACH_PLATE_H * 0.5), _coach_plate.size)
+	if apply:
+		if _coach_bubble.size.x != bw:  # the line centred in the wider bubble, the chip kept at its end
+			_coach_bubble.size.x = bw
+			var cw := _coach_chip.size.x + 16.0 if is_instance_valid(_coach_chip) else 0.0
+			_coach_lbl.position.x = COACH_PAD if not wide else roundf((bw - cw - _coach_lbl.size.x) * 0.5)
+			if is_instance_valid(_coach_chip):
+				_coach_chip.position.x = bw - COACH_PAD - _coach_chip.size.x
+		_coach_bust.position = bust.position
+		_coach_bubble.position = Vector2(bx, by)
+		var dir := "left" if left else "right"
+		if _coach_tail.data.get("dir", "") != dir:
+			_coach_tail.data["dir"] = dir
+			_coach_tail.queue_redraw()
+		_coach_tail.position = Vector2(-18.0 if left else bw - 6.0, bh * 0.5 - _coach_tail.size.y * 0.5 - 3.0)
+		_coach_plate.position = plate.position
+	return [bust, Rect2(bx - 18.0, by, bw + 18.0, bh + 6.0), plate]
 
 
 ## The pointer (§4.12): on the target's side with the most room — the side toward the screen's middle first
 ## (horizontal, then vertical), then the others — in the dimmed area, bobbing 12 px toward the target. It never
 ## covers a hole, the advisor or the screen's edge; at a target inside a window or in the bottom-left block (tabs and
 ## tray, the battle hand) it steps back out of that container (at most COACH_MAX_PUSH), so it never lies on the
-## window's other button or on the next card. No side fits: no pointer — the ring alone shows the way.
+## window's other button or on the next card. No side fits: no pointer — the ring alone shows the way (a card's button
+## deep in the tray: an arrow above the tabs would point at the open tab rather than at it).
 func _coach_place_arrow(vis: Rect2, holes: Array, frame: Rect2) -> void:
 	var hole: Rect2 = holes[0][0]
-	var ring := hole.grow_individual(hole.size.x * 0.025, hole.size.y * 0.025, hole.size.x * 0.025, hole.size.y * 0.025)
+	var ring := _coach_ring_out
 	var c := hole.get_center()
 	var mid := vis.get_center()
 	var hx := "left" if c.x >= mid.x else "right"
@@ -6169,7 +6353,7 @@ func _coach_place_arrow(vis: Rect2, holes: Array, frame: Rect2) -> void:
 		for a in avoid:
 			if _coach_sweep(ring, side, d, vis).intersects(a):
 				d = maxf(d, _coach_clear(ring, side, a))
-		if d > 10.0 + COACH_MAX_PUSH:
+		if d > 10.0 + COACH_MAX_PUSH:  # far off, it would point at whatever lies between (the open tab over a card)
 			continue
 		var sw := _coach_sweep(ring, side, d, vis)
 		if not area.encloses(sw):

@@ -73,6 +73,8 @@ var save_enabled := true  # tests switch it off before adding the scene
 var ftue := 0  # first-war tutorial step (canon §14.3); 0 = finished / off
 var _ftue_shown := -1
 var _ftue_t := 0.0
+var _ftue_line := ""  # the coach's line on screen (a step may change it halfway: «Здания» open → the Residence)
+var _ftue_shut := false  # the currency layer's taps are off while a mandatory step shuts the screen
 var _mill := -1
 var _flak_tick := -1
 var stats_base3 := {}  # stats at the opening of chapter III (its stars count from there)
@@ -6670,6 +6672,9 @@ func _ftue_tick(delta: float) -> void:
 		if _ftue_shown != 0:
 			_ftue_shown = 0
 			ui.coach_hide()
+		if _ftue_shut:
+			_ftue_shut = false
+			hud.set_currency_input(true)
 		return
 	# what the coach lights — node rects (docs/ui_style.md §4.12) — what it keeps lit beside it, and how it holds the
 	# player to it: "block" — the one tap the step waits for, the rest of the screen shut; "dim" — dimmed, every tap
@@ -6677,6 +6682,9 @@ func _ftue_tick(delta: float) -> void:
 	var target := Rect2()
 	var point := Vector2(-1, -1)  # a hex on the map: the coach frames a square around it
 	var reveal := Rect2()
+	var near: Array = []  # beside the target: its ring keeps off them
+	var lift: Array = []  # the target's badges: lit with it, over its ring
+	var line := String(FTUE_TEXT.get(ftue, ""))
 	var cm := "block"
 	match ftue:
 		1:
@@ -6684,6 +6692,7 @@ func _ftue_tick(delta: float) -> void:
 				_pick_target()
 			target = ui.action_rect()
 			reveal = hud.tile_rect()  # the goal's hex stays readable beside «Война!»
+			lift = [hud.tile_chip_rect()]  # with its owner chip on the panel's top edge
 		2, 11:
 			if mode == Mode.RESULT:  # a failed offensive: «Ещё бой»
 				target = ui.modal_button_rect(0)
@@ -6694,6 +6703,8 @@ func _ftue_tick(delta: float) -> void:
 			cm = "ring"
 		4:
 			target = ui.card_rect("attack")
+			near = ui.hand_rects("attack")
+			lift = [ui.card_cost_rect("attack")]
 			cm = "ring"
 		5:
 			target = ui.modal_button_rect(1)
@@ -6709,8 +6720,15 @@ func _ftue_tick(delta: float) -> void:
 			if why.begins_with("err.need_hexes"):
 				ftue = 8  # not enough land for DL2 yet — the convoy step comes first
 				return
-			target = hud.tab_rect("buildings") if tab != "buildings" \
-				else ui.first_card_cta_rect(tr(String(Economy.BUILDINGS["residence"]["name"])))
+			var res_name := tr(String(Economy.BUILDINGS["residence"]["name"]))
+			if tab != "buildings":
+				target = hud.tab_rect("buildings")
+				near = hud.tab_rects("buildings")
+				lift = [hud.tab_dot_rect("buildings")]  # the free builders: the reason to open it
+			else:
+				target = ui.first_card_cta_rect(res_name)
+				reveal = ui.tray_card_rect(res_name)  # the Residence's card stays lit around its button
+				line = "ftue.7b"  # «Здания» is open: the Residence is all that is left
 			cm = "block" if why == "" else "dim"  # short of something: the screen is never shut around a tap that fails
 		8:
 			var dh := _ftue_deposit()
@@ -6723,6 +6741,8 @@ func _ftue_tick(delta: float) -> void:
 			cm = "dim"
 		9:
 			target = hud.tool_rect("fort", true)
+			near = hud.tool_rects("fort", true)
+			lift = [hud.tool_badge_rect("fort")]
 			cm = "ring"  # a border hex first, then the fort: both stay in reach
 		10:
 			var ht := _hamlets_target()
@@ -6734,8 +6754,11 @@ func _ftue_tick(delta: float) -> void:
 				_select(ht)
 			target = ui.action_rect()
 			reveal = hud.tile_rect()
+			lift = [hud.tile_chip_rect()]
 		12:
 			target = ui.card_rect("encircle")
+			near = ui.hand_rects("encircle")
+			lift = [ui.card_cost_rect("encircle")]
 			cm = "ring"
 		14:
 			if mode == Mode.RESULT:
@@ -6743,21 +6766,29 @@ func _ftue_tick(delta: float) -> void:
 				reveal = ui.modal_body_rect()
 			else:
 				target = ui.status_rect()  # «Мир»
+				near = [ui.action_rect()]
 		15:
 			target = ui.plunder_rect(0)  # «Нет»: sparing is the choice taught …
+			near = [ui.plunder_rect(1)]
 			var fr: Rect2 = ui.modal_rect()  # … and the whole treaty stays in reach: the choice, then «Подписать мир»
 			reveal = fr.grow_individual(0, 42.0, 0, 0) if fr.size.x > 0.0 else Rect2()
-	if _ftue_shown != ftue:
+	if _ftue_shown != ftue or _ftue_line != line:
+		if _ftue_shown != ftue:
+			_ftue_t = 0.0
 		_ftue_shown = ftue
-		_ftue_t = 0.0
+		_ftue_line = line
 		var chip := GameUI.fmt_time(FTUE_OFFENSIVE_SEC) if ftue == 2 or ftue == 11 else ""  # «Начните наступление!» [1:00]
-		ui.coach(tr(String(FTUE_TEXT[ftue])), point, chip)
+		ui.coach(tr(line), point, chip)
 	_ftue_t += delta
 	if point.x >= 0.0:
 		ui.coach_target(point)
 	else:
-		ui.coach_rect(target, reveal)
+		ui.coach_rect(target, reveal, near, lift)
 	ui.coach_mode(cm)
+	var shut: bool = ui.coach_blocking()  # the raivite «+» would be a second bright button and a way out of the step
+	if shut != _ftue_shut:
+		_ftue_shut = shut
+		hud.set_currency_input(not shut)
 	if (ftue == 4 or ftue == 13) and _ftue_t > 6.0:
 		ui.coach_hide()
 	if ftue == 3 and battle != null:

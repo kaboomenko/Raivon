@@ -453,6 +453,7 @@ func set_currency_input(on: bool) -> void:
 		p.mouse_filter = Control.MOUSE_FILTER_STOP if on else Control.MOUSE_FILTER_IGNORE
 		if p.plus != null:
 			p.plus.mouse_filter = Control.MOUSE_FILTER_STOP if on else Control.MOUSE_FILTER_IGNORE
+			p.plus.modulate = Color.WHITE if on else Kit.SHUT_MOD  # the shop's «+» dims with the screen it shuts
 
 
 ## Global rect of a round map tool (target / pin / fort / tower), for the coach; empty while it is hidden. With
@@ -466,6 +467,24 @@ func tool_rect(name: String, caption := false) -> Rect2:
 	if caption and is_instance_valid(cap) and (cap as Control).visible:
 		r = r.merge((cap as Control).get_global_rect())
 	return r
+
+
+## The other map tools' rects (with their captions): the coach's ring keeps off them.
+func tool_rects(except := "", caption := false) -> Array:
+	var out: Array = []
+	for n in _tools:
+		if String(n) != except:
+			var r := tool_rect(String(n), caption)
+			if r.size.x > 0.0:
+				out.append(r)
+	return out
+
+
+## A map tool's charge badge while it shows (it sticks out of the button: the coach lifts it over its ring).
+func tool_badge_rect(name: String) -> Rect2:
+	var b: Control = _tools.get(name)
+	var hb: Control = b.get_node_or_null("charges") if b != null else null
+	return hb.get_global_rect() if hb != null and hb.is_visible_in_tree() else Rect2()
 
 
 ## Global rect of a frame element: trophy / book / mail / gear / shop / orders, profile (the crest), ruler, minimap,
@@ -714,6 +733,27 @@ func tab_rect(key: String) -> Rect2:
 	return t.get_global_rect() if t != null and t.is_visible_in_tree() else Rect2()
 
 
+## The other folder tabs' rects: the coach's ring keeps off them.
+func tab_rects(except := "") -> Array:
+	var out: Array = []
+	for k in _tabs:
+		if String(k) != except:
+			var r := tab_rect(String(k))
+			if r.size.x > 0.0:
+				out.append(r)
+	return out
+
+
+## A tab's dot while it shows (the free builders on «Здания»): it sticks out of the tab's corner, so the coach lifts
+## it over its ring.
+func tab_dot_rect(key: String) -> Rect2:
+	var rec: Array = _tab_dots.get(key, [])
+	if rec.is_empty() or not is_instance_valid(rec[0]):
+		return Rect2()
+	var d: Control = rec[0]
+	return d.get_global_rect() if d.is_visible_in_tree() else Rect2()
+
+
 # ---------------------------------------------------------------- the hex panel (§5, §6 HUD)
 
 ## Shows the selected hex (main._describe): its name, the rendered tile, the owner chip and the stat chips.
@@ -775,6 +815,13 @@ func hide_tile() -> void:
 ## Global rect of the hex panel (for the coach); empty while it is hidden.
 func tile_rect() -> Rect2:
 	return tile_box.get_global_rect() if tile_box.is_visible_in_tree() else Rect2()
+
+
+## Global rect of the hex panel's owner chip (it straddles the panel's top contour: the coach lights it with the
+## panel); empty while it is hidden.
+func tile_chip_rect() -> Rect2:
+	var oc := _tile_chips.get_node_or_null("owner") as Control
+	return oc.get_global_rect() if oc != null and oc.is_visible_in_tree() else Rect2()
 
 
 ## The stat chips in the column right of the render, flowed into two rows (y 58, y 100), in order: a chip joins its
