@@ -805,7 +805,7 @@ func _step_marches() -> void:
 			paths[id] = [int(a["hex"])] + (a["march"]["path"] as Array)
 			var dest: int = (a["march"]["path"] as Array).back()
 			_march_dest[id] = dest
-			map_view.hex_label(dest, "⇢ " + GameUI.fmt_time(March.seconds_left(sim, a, now)), Color(0.6, 0.85, 1.0))
+			map_view.hex_label(dest, GameUI.fmt_time(March.seconds_left(sim, a, now)), Kit.face_of("info"), "pin")
 		elif _march_dest.has(id):
 			map_view.hex_label(int(_march_dest[id]), "")
 			_march_dest.erase(id)
@@ -2209,7 +2209,7 @@ func _ai_colonize(now: int) -> void:
 				map_view.mark_dirty()
 				map_view.burst(h, map_view.state_color(s), false)
 			else:
-				map_view.hex_label(h, "⛳ " + GameUI.fmt_time(int(cur["at"]) - now), map_view.state_color(s).lightened(0.35))
+				map_view.hex_label(h, GameUI.fmt_time(int(cur["at"]) - now), map_view.state_color(s).lightened(0.35), "orders")
 			continue
 		var best := -1
 		var best_s := -1000
@@ -3772,7 +3772,7 @@ func _econ_tick() -> void:
 		if now >= int(colonizing[h]):
 			_finish_colonize(h)
 		else:
-			map_view.hex_label(h, "⛳ " + GameUI.fmt_time(int(colonizing[h]) - now))
+			map_view.hex_label(h, GameUI.fmt_time(int(colonizing[h]) - now), Kit.INK, "orders")  # an INK ring: the plain chip
 	# in battle the folder tabs lie under the battle tray: no free-builders count on them (it would peek over the tray)
 	var free_builders: int = econ.builders + econ.bonus_builders - econ.busy_builders(now) if mode != Mode.BATTLE else 0
 	hud.set_resources(econ.res, econ.income_per_hour(sim), econ.storage_cap(), free_builders, econ.builders + econ.bonus_builders)
@@ -4386,13 +4386,13 @@ func _world_items() -> Array:
 		"can_expand": _player_hexes() >= _chapter_goal() and war.is_empty() and not chapter_done}]
 	if _orders_open():
 		bp.refresh(now_s())
-		items.append({"kind": "star", "id": "pass", "icon": "🎖", "open": true, "claimed": false,
+		items.append({"kind": "star", "id": "pass", "icon": "medal", "open": true, "claimed": false,
 			"title": tr("pass.card") % bp.level(), "progress": bp.xp % BattlePass.XP_LEVEL, "need": BattlePass.XP_LEVEL})
 		if patent.active(now_s()):
-			items.append({"kind": "star", "id": "patent_daily", "icon": "📜", "title": tr("patent.card") % Patent.DAILY_RAIVITE,
+			items.append({"kind": "star", "id": "patent_daily", "icon": "charter", "title": tr("patent.card") % Patent.DAILY_RAIVITE,
 				"progress": 1 if patent.daily_ready(now_s()) else 0, "need": 1, "claimed": not patent.daily_ready(now_s())})
 		var cd: int = maxi(1, calendar.credited)
-		items.append({"kind": "star", "id": "calendar", "icon": "🗓", "open": true, "claimed": false, "ready": calendar.pending,
+		items.append({"kind": "star", "id": "calendar", "icon": "calendar", "open": true, "claimed": false, "ready": calendar.pending,
 			"title": tr("cal.card") % Calendar.day_in_cycle(cd), "progress": Calendar.day_in_cycle(cd), "need": Calendar.LENGTH})
 	items.append_array(_order_items())
 	items.append_array(_weekly_items())
@@ -4618,14 +4618,14 @@ func _order_items() -> Array:
 	var out: Array = []
 	for i in orders.list.size():
 		var o: Dictionary = orders.list[i]
-		out.append({"kind": "star", "id": "order:%d" % i, "icon": "⚑", "title": "%s · +%d %s" % [tr("order." + String(o["code"])), int(o["xp"]), tr("pass.xp")],
+		out.append({"kind": "star", "id": "order:%d" % i, "icon": "orders", "title": "%s · +%d %s" % [tr("order." + String(o["code"])), int(o["xp"]), tr("pass.xp")],
 			"progress": orders.progress(i, stats), "need": int(o["need"]), "claimed": bool(o["claimed"]),
 			"swap": not orders.swapped and not o["claimed"] and not orders.done(i, stats)})
 	var claimed_n := 0
 	for o in orders.list:
 		if o["claimed"]:
 			claimed_n += 1
-	out.append({"kind": "star", "id": "orders_all", "icon": "🎁", "title": tr("orders.all"), "progress": claimed_n, "need": 3,
+	out.append({"kind": "star", "id": "orders_all", "icon": "chest_wood", "title": tr("orders.all"), "progress": claimed_n, "need": 3,
 		"claimed": orders.all_claimed})
 	return out
 
@@ -4657,10 +4657,10 @@ func _weekly_items() -> Array:
 	var out: Array = []
 	for i in Weekly.TASKS.size():
 		var t: Array = Weekly.TASKS[i]
-		out.append({"kind": "star", "id": "weekly:%d" % i, "icon": "📅", "title": "%s · +%d %s" % [tr("weekly." + String(t[0])), int(t[3]), tr("pass.xp")],
+		out.append({"kind": "star", "id": "weekly:%d" % i, "icon": "medal_silver", "title": "%s · +%d %s" % [tr("weekly." + String(t[0])), int(t[3]), tr("pass.xp")],
 			"progress": weekly.progress(i, stats), "need": int(weekly.need[i]), "claimed": weekly.claimed.has(i)})
 	for step in 2:
-		out.append({"kind": "star", "id": "weekly_chest:%d" % step, "icon": "🎁", "title": tr(["weekly.chest1", "weekly.chest2"][step]),
+		out.append({"kind": "star", "id": "weekly_chest:%d" % step, "icon": "chest_wood", "title": tr(["weekly.chest1", "weekly.chest2"][step]),
 			"progress": weekly.done_count(), "need": int(Weekly.STEP_NEED[step]), "claimed": weekly.chest.has(step)})
 	return out
 
@@ -5409,7 +5409,7 @@ func _open_chronicle() -> void:
 	for row in Chronicle.LIST:
 		var code: String = row[0]
 		var cos: String = row[5]
-		var reward := "+%d 💎" % int(row[4])
+		var reward := "+%d" % int(row[4])  # raivites (the row draws the crystal itself)
 		if cos != "":
 			var co: Dictionary = Cases.cosmetic(cos)
 			reward += " · «%s»" % String(co.get("name_en" if Cases.is_english() else "name", cos))
@@ -5678,16 +5678,21 @@ func _apply_commanders() -> Dictionary:
 	return opts
 
 
-## « ★» after a forecast when a commander's attack passive works in this attack (04 §15.6: the effect is seen).
+## The forecast's commander mark: the drag label is a MapView.soft_label (SoftLabel3D), which has no icon argument and
+## draws this code point as the gold-star icon (MapView.MAP_PICTO: U+2605 → xp) beside the text — never as a glyph.
+const CMD_MARK := " \u2605"
+
+
+## CMD_MARK after a forecast when a commander's attack passive works in this attack (04 §15.6: the effect is seen).
 func _cmd_mark(army_ids: Array, target: int) -> String:
 	for id in army_ids:
 		var a := _army_by_id(int(id))
 		if a.is_empty():
 			continue
 		if int(a.get("cmd_atk", 0)) > 0 or int(a.get("cmd_forms", 0)) > 0 or (int(a.get("cmd_wedge", 0)) > 0 and army_ids.size() > 1):
-			return " ★"
+			return CMD_MARK
 		if int(a.get("cmd_forts", 0)) > 0 and int(sim.cells[target]["fort"]) >= 1:
-			return " ★"
+			return CMD_MARK
 	return ""
 
 
@@ -6264,7 +6269,7 @@ func _ai_tick(now: int) -> void:
 		if left <= 0 and mode in [Mode.MAP, Mode.WAR]:
 			_resolve_strike()
 		elif left > 0:
-			map_view.strike_arrow(int(war["strike_from"]), int(war["strike_hex"]), "⚔ " + GameUI.fmt_time(left))
+			map_view.strike_arrow(int(war["strike_from"]), int(war["strike_hex"]), GameUI.fmt_time(left))  # the chip shows the swords
 	_member_strikes(now)
 	if war.has("started") and now - int(war["started"]) >= WAR_CAP_SEC and mode in [Mode.MAP, Mode.WAR]:
 		_war_cap()

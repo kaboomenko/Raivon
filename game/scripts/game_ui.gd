@@ -17,10 +17,9 @@ signal plunder_selected(level: int)
 signal research_speedup(line: String)
 signal market_open
 
-const PANEL := Color(0.055, 0.085, 0.14, 0.95)
-const EDGE := Color(0.32, 0.42, 0.58, 0.6)
-const TEXT := Color(0.96, 0.97, 1.0)
-const MUTED := Color(0.62, 0.68, 0.78)
+const Kit := preload("res://scripts/ui_kit.gd")
+const EDGE := Kit.INK  # the legacy _style() border argument (legacy_style maps every plain border to INK anyway)
+const TEXT := Kit.TEXT
 const VW := 941.0
 const VH := 1672.0
 const CARD_ORDER := ["attack", "breakthrough", "airstrike", "encircle", "defense"]
@@ -31,7 +30,6 @@ const L := preload("res://scripts/l10n.gd")
 const CmdPortrait := preload("res://scripts/cmd_portrait.gd")
 const HudScript := preload("res://scripts/hud.gd")
 const FlagView := preload("res://scripts/flag_view.gd")
-const Kit := preload("res://scripts/ui_kit.gd")
 const OrdersSim := preload("res://scripts/sim/orders.gd")  ## the order codes (World cards' short names)
 const WeeklySim := preload("res://scripts/sim/weekly.gd")  ## the week's task codes
 const ChronicleSim := preload("res://scripts/sim/chronicle.gd")  ## the Chronicle's goals (rewards, ladders)
@@ -134,11 +132,6 @@ func _at(l: Control, parent: Control, pos: Vector2, size := Vector2.ZERO) -> Con
 		l.size = size
 	parent.add_child(l)
 	return l
-
-
-## Pictographs that are drawn as the rendered 3D icons inside rows (paths kept for the call sites that use them;
-## the full mapping, vector chrome included, is Kit.PICTO / Kit.split_icons).
-const INLINE_ICONS := {"💎": "res://assets/ui/raivite.png", "🔒": "res://assets/ui/icons/lock.png", "🎬": "res://assets/ui/icons/ad.png"}
 
 
 ## A rendered icon in a square box. `path` is a res:// path or a kit icon name (Kit.icon_tex, with stand-ins).
@@ -996,7 +989,8 @@ func _modal_box(rect: Rect2, parchment := false, title := "", icon := "", role :
 	_modal.mouse_filter = Control.MOUSE_FILTER_STOP
 	root.add_child(_modal)
 	var dim := ColorRect.new()
-	dim.color = Color(Kit.INK, 0.0)
+	dim.color = Kit.INK
+	dim.color.a = 0.0
 	dim.size = _modal.size
 	dim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_modal.add_child(dim)
@@ -1019,12 +1013,10 @@ func _modal_box(rect: Rect2, parchment := false, title := "", icon := "", role :
 	return frame
 
 
-## A kit button (§4.1) whose role follows the legacy colour; returns the KitButton (a Panel). A lone «✕» is a
-## close button: role war with the vector cross.
+## A kit button (§4.1) whose role follows the legacy colour; returns the KitButton (a Panel). A window's close is
+## Kit.close_button (the round war ✕), never a caption.
 func _button(parent: Control, rect: Rect2, text: String, color: Color, cb: Callable) -> Panel:
-	var close := text.strip_edges() == "✕"
-	return Kit.button(parent, rect, "war" if close else Kit.role_of(color), text,
-		{"cb": cb, "hit_pad": maxf(0.0, (96.0 - rect.size.y) * 0.5) if close else 0.0})
+	return Kit.button(parent, rect, Kit.role_of(color), text, {"cb": cb})
 
 
 ## A window's rect by width class (§4.3: L 893 at x 24, M 781 at x 80, S 661 at x 140), `h` tall (at most the band),

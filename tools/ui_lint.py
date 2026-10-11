@@ -15,6 +15,7 @@ Rules:
 Scans game/scripts/{game_ui,hud,shop_ui,main,map_view}.gd and game/locale/strings.csv.
 Output: one `file:line RULE message` per finding, then the count per rule.
 Usage: python3 tools/ui_lint.py [--strict]   (--strict: exit 1 when anything is found)
+CI (.github/workflows/tests.yml, step «UI lint») runs it with --strict: the tree must stay at total 0.
 """
 import csv
 import re

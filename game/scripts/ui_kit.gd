@@ -3827,13 +3827,20 @@ static func count_up(l: Label, from: int, to: int, ms := 450) -> void:
 	l.create_tween().tween_method(func(v: float): l.text = fmt_num(roundi(v)), float(from), float(to), d)
 
 
-# ------------------------------------------------------------------ paper shim for screens not rebuilt yet
+# ------------------------------------------------------------------ paper shim (legacy windows; a no-op since s14)
 
-## Not-yet-migrated modals are cream now: legacy light text becomes ink, dark inner panels become wells.
-## Screens rebuilt on the kit set meta `kit_native` on their frame and are skipped.
+## Since s14 every modal is rebuilt on the kit and sets meta `kit_native` on its frame, so this is a no-op; it stays
+## as the safety net for a future legacy window: its light text becomes ink, its dark inner panels become wells, and
+## the first such window is logged once (paper_count counts them all, 0 in a healthy build).
+static var paper_count := 0
+
+
 static func paperize(box) -> void:
 	if not is_instance_valid(box) or not (box is Control) or (box as Control).has_meta("kit_native"):
 		return
+	paper_count += 1
+	if paper_count == 1:
+		push_warning("Kit.paperize: a modal without meta kit_native was recoloured by the legacy shim (%s); rebuild it on the kit" % (box as Control).name)
 	var panels: Array = []
 	var labels: Array = []
 	_collect(box, panels, labels, false)

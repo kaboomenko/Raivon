@@ -247,7 +247,7 @@ shop.rw_res,Ресурсы: %s,Resources: %s
 shop.rw_speedup,Ускорение %d мин,Speed-up %d min
 shop.rw_shards,%d осколков: %s,%d shards: %s
 shop.rw_cosmetic,Косметика: %s,Cosmetic: %s
-shop.rw_glitter,Повтор → %d Блёсток,Duplicate → %d Glitter
+shop.rw_glitter,Повтор: Блёстки +%d,Duplicate: Glitter +%d
 shop.no_payments,"Покупки за деньги недоступны в вашем регионе.\nРайвиты зарабатываются в игре: задания, ящики, жилы.","Real-money purchases aren't available in your region.\nEarn Raivites in the game: quests, crates, veins."
 shop.first_x2,Первая покупка ×2,First purchase ×2
 shop.no_packs,Наборы за деньги недоступны в вашем регионе.,Paid packs aren't available in your region.

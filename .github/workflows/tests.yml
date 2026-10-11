@@ -40,6 +40,8 @@ jobs:
           unzip -q godot.zip
       - name: Strings (every UI text translated, keys exist)
         run: python3 tools/check_strings.py
+      - name: UI lint (docs/ui_style.md §8.1, no colour literals / pictographs / off-scale sizes)
+        run: python3 tools/ui_lint.py --strict
       - name: Import
         run: ./Godot_v${GODOT_VERSION}-stable_linux.x86_64 --headless --path game --import || true
       - name: Test suites
