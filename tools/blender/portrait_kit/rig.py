@@ -18,7 +18,7 @@ import time
 
 import bpy
 import numpy as np
-from mathutils import Matrix, Vector
+from mathutils import Euler, Matrix, Vector
 
 from . import core, style
 
@@ -30,7 +30,7 @@ def pose(ctx):
     po = ctx.ch["pose"]
     md = ctx.ch.get("pose_" + ctx.mood, {})
     pivot = core.link(bpy.data.objects.new("head_pivot", None))
-    pivot.location = (0, 0.05, -0.45)
+    pivot.location = PIVOT
     core.update()
     for p in ctx.parts:
         if p.head and p.obj.parent is None:
@@ -52,6 +52,25 @@ def pose(ctx):
     root.rotation_euler.z = math.radians(po["body"])
     ctx.objs["pivot"], ctx.objs["root"] = pivot, root
     core.update()
+
+
+PIVOT = (0.0, 0.05, -0.45)
+
+
+def head_pose_matrix(ctx, with_body=False):
+    """The pose of `pose` as a matrix, known before the pose is applied: head-local -> body space (the head turns,
+    rolls and nods on the neck pivot), and with with_body the body's turn too (-> world). Used to anchor body-side
+    parts to head landmarks (the braid's root at the nape) and to foresee the camera's perspective."""
+    po = ctx.ch["pose"]
+    md = ctx.ch.get("pose_" + ctx.mood, {})
+    nod = po.get("nod", 0.0) + md.get("nod", 0.0)
+    roll = po.get("roll", 0.0) + md.get("roll", 0.0)
+    turn = po.get("head", 0.0) + md.get("head", 0.0)
+    rot = Euler((math.radians(-nod), math.radians(roll), math.radians(turn)), "XYZ").to_matrix().to_4x4()
+    m = Matrix.Translation(Vector(PIVOT)) @ rot @ Matrix.Translation(-Vector(PIVOT))
+    if with_body:
+        m = Matrix.Rotation(math.radians(po["body"]), 4, "Z") @ m
+    return m
 
 
 def head_to_world(ctx, p):
@@ -258,6 +277,13 @@ def solve_gaze(ctx):
         mat = eye.data.materials[0]
         sx = mat["eye_sx"]
         ri = mat["eye_ri"]
+        if "al_x0" in eye:
+            # the cartoon cheat: the iris turns toward the camera from where a forward-looking eye has it (the almond's
+            # centre), 80 % of the way and never past the almond's side (the far eye of a 3/4 face looks ~55 deg off
+            # its lens axis; a true aim would put half its iris under the corner)
+            x0, room = eye["al_x0"], max(0.0, eye["al_xc0"] - ri / sx) * 0.8
+            gx = x0 + max(-room, min(room, (gx - x0) * 0.8))
+            gz = max(-0.45 * eye["al_kh"], min(0.25 * eye["al_kh"], gz))
         mat.node_tree.nodes["gaze"].inputs["Location"].default_value = (-gx * sx, 0.0, -gz)
         e["gaze"] = (gx, gz)
         gy = -math.sqrt(max(0.0, 1 - gx * gx - gz * gz))

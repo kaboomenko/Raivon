@@ -14,7 +14,7 @@ leaders' moods, which share the costume):
   body): <= 35 % within dL* 8 of the plate;
 - dark pixels (L* < 17, the albedo floor #2A2A30) <= 3 % of the opaque pixels.
 ID rules (only with the kit's sidecars ids/<name>.png + meta/<name>.json):
-- hair or headgear next to the face vs skin: |dL*| >= 15 or dE76 >= 30;   - brows vs skin: |dL*| >= 18;
+- hair, headgear or beard next to the face vs skin: |dL*| >= 15 or dE76 >= 30;   - brows vs skin: |dL*| >= 18;
 - iris vs sclera: dL* >= 30;   - beard vs each garment it lies on (costume:<id> groups): |dL*| >= 15;
 - signature vs plate (B, both palettes): dE76 >= 25;
 - the lit cheek (the brightest 30 % of the skin pixels: the key-lit side of the face): median L* 70-82 and median
@@ -98,7 +98,9 @@ def id_rules(im, masks, m, name):
         return mk
 
     skin = med(grp("skin"))
-    for hk in ("hair", "hat"):          # hair and headgear next to the face, each against the skin
+    # hair, headgear and beard (moustache included) next to the face, each against the skin: §7.4 "волосы или шапка
+    # у лица — кожа" (a beard on the face is hair at the face; a melting beard passed every tool before)
+    for hk in ("hair", "hat", "beard"):
         hair_mask = grp(hk)
         if skin is None or hair_mask is None or hair_mask.sum() < 12:
             continue

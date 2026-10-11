@@ -14,7 +14,7 @@ import bmesh
 import bpy  # noqa: F401  (bpy before bmesh, everywhere in the kit)
 from mathutils import Matrix, Vector
 
-from . import core, head as head_mod
+from . import core, style, head as head_mod
 from .core import H, S
 from .style import C
 from .style import SKIN_SAT as S_SAT
@@ -24,17 +24,23 @@ from .style import SKIN_SAT as S_SAT
 def skin_mat(ctx):
     """Skin (§7.11): SSS 0.25, roughness 0.5, a warm AO tone in the hollows, painted blush on the cheek apples and,
     when the character has them, freckles (level D: shader paint only) and the scar's pinker band."""
+    m = core.principled(ctx, "skin", ctx.ch["skin"], rough=0.5, sss=0.25, spec=0.35)
+    nt = m.node_tree
+    nt.links.new(skin_color(ctx, nt), nt.nodes["Principled BSDF"].inputs["Base Color"])
+    return m
+
+
+def skin_color(ctx, nt, obj=None):
+    """The skin's base colour network (blush, warm hollows, nose tip, painted marks, per-tone saturation) -> socket.
+    obj: read the paint in that object's space (the head's), for skin drawn on another object (the eyes' rims)."""
     ch = ctx.ch
     col = ch["skin"]
-    m = core.principled(ctx, "skin", col, rough=0.5, sss=0.25, spec=0.35)
-    nt = m.node_tree
-    b = nt.nodes["Principled BSDF"]
     p = head_mod.params(ctx)
     ez = p["eye_z"]
     cz = ez - S["cheek_below"] * H + (S["cheek_smile"] * H if ctx.smile else 0.0)
     cx = S["cheek_x"] * H * (p["hx"] / 0.48) / 0.98
-    add = core.node_math(nt, "ADD", core.node_blob(nt, (-cx, -0.40, cz), S["blush_r"] * H * 1.5),
-                         core.node_blob(nt, (cx, -0.40, cz), S["blush_r"] * H * 1.5), clamp=True)
+    add = core.node_math(nt, "ADD", core.node_blob(nt, (-cx, -0.40, cz), S["blush_r"] * H * 1.5, obj=obj),
+                         core.node_blob(nt, (cx, -0.40, cz), S["blush_r"] * H * 1.5, obj=obj), clamp=True)
     # blush opacity at the apple's centre = the character's share (§7.3: men 15 %, women 25 %, young 30 %; a smile +10 %)
     blush = ch.get("blush", S["blush"]["f" if ctx.female else "m"]) + (0.10 if ctx.smile else 0.0)
     fac = core.node_math(nt, "MULTIPLY", add, blush, clamp=True)
@@ -48,13 +54,13 @@ def skin_mat(ctx):
     nose = ch.get("nose", {})
     if nose.get("tip") and ctx.L.get("nose_tip_guess") is not None:
         tp = ctx.L["nose_tip_guess"]
-        fac = core.node_math(nt, "MULTIPLY", core.node_blob(nt, (tp.x, tp.y - 0.04, tp.z), nose.get("tip_r", 0.075)),
-                             nose.get("tip_k", 0.55), clamp=True)
+        fac = core.node_math(nt, "MULTIPLY", core.node_blob(nt, (tp.x, tp.y - 0.04, tp.z), nose.get("tip_r", 0.075),
+                                                            obj=obj), nose.get("tip_k", 0.55), clamp=True)
         base = core.node_mix(nt, fac, base, nose["tip"])
     for nm, (pts, rad, colr, k) in ctx.skin_paint.items():
         acc = None
         for q in pts:
-            bl = core.node_blob(nt, q, rad)
+            bl = core.node_blob(nt, q, rad, obj=obj)
             acc = bl if acc is None else core.node_math(nt, "MAXIMUM", acc, bl)
         sharp = core.node_math(nt, "GREATER_THAN", acc, 0.35)
         base = core.node_mix(nt, core.node_math(nt, "MULTIPLY", sharp, k), base, colr)
@@ -66,8 +72,7 @@ def skin_mat(ctx):
         hs.inputs["Value"].default_value = 1.04
         nt.links.new(base, hs.inputs["Color"])
         base = hs.outputs[0]
-    nt.links.new(base, b.inputs["Base Color"])
-    return m
+    return base
 
 
 def plan_skin_paint(ctx):
@@ -131,16 +136,10 @@ def eye_mat(ctx, name, iris_hex, ri, sx):
     return m
 
 
-def _lid_cut(c0, tilt, arch, side):
-    def cut(x):
-        return c0 + tilt * (-side * x) - arch * x * x   # -side*x > 0 toward the nose
-    return cut
-
-
 def eye_geometry(ctx):
-    """The eye as a shallow convex lens set flush in a shallow seat of the face (§7.3): it stands
-    STYLE["sclera_protrude"] out of the face, and its visible outline (the cap outside the face) is the sclera:
-    `sclera_h` tall and 0.85 of that wide. -> (rx, ry, rz, k) where k is the visible half height in unit-sphere z."""
+    """The eye's lens (§7.3): a shallow convex ellipsoid set in a shallow seat of the face, standing
+    STYLE["sclera_protrude"] out of it; eye_fit x the visible sclera, so the almond cut out of it lies on its front
+    dome. -> (rx, ry, rz, k), k = the dome's half height on a flat face in unit-sphere z."""
     hv = ctx.P["sclera_h"] / 2 * S["eye_fit"]
     ry = 0.42 * hv
     prot = S["sclera_protrude"] * H
@@ -150,85 +149,238 @@ def eye_geometry(ctx):
     return rx, ry, rz, k
 
 
+class Almond:
+    """The visible eye in lens units (§7.3), in the eye's local frame around x0 (the lens point a forward-looking eye
+    shows its iris at): an ellipse sclera_h tall and 0.85 of that wide (u = (x - x0) / xc0 spans it), cut by the upper
+    lid U(u) = U0 + kh (tilt (-side u) - arch u^2) and the designed lower lid D(u) = kh (2 low - 1 - bow u^2) (a smile
+    pushes it up into a soft arch) or the face, where the face covers more of the lens than D (the cheek). U0 is set so
+    the visible opening — below the lash line, above the lower rim — is (open - low) x sclera_h."""
+
+    def __init__(self, ctx, side, rz, x0):
+        ey = ctx.ch["eyes"]
+        mood = ey.get(ctx.mood, {})
+        self.kh = ctx.P["sclera_h"] / 2 / rz
+        self.xc0 = self.kh * ey.get("almond_w", 1.0)
+        self.x0 = x0
+        op = mood.get("open", ey.get("open", S["lid_open"]))
+        self.open = op[0 if side < 0 else 1] if isinstance(op, (list, tuple)) else op
+        self.low = mood.get("low", ey.get("low", 0.0))
+        tilt = mood.get("tilt", ey.get("tilt", 0.08))
+        arch = mood.get("arch", ey.get("arch", 0.24))
+        bow = mood.get("bow", ey.get("bow", 0.0))
+        self.a1, self.a2 = -self.kh * tilt * side, -self.kh * arch
+        self.b0, self.b2 = self.kh * (2 * self.low - 1), -self.kh * bow
+        self.U0 = self.kh * (2 * self.open - 1)
+        self.clip = None          # face clip: [(u, z)] where the face covers the lens above D
+
+    def ell(self, u):
+        return self.kh * math.sqrt(max(0.0, 1 - u * u))
+
+    def top(self, u):
+        return min(self.U0 + self.a1 * u + self.a2 * u * u, self.ell(u))
+
+    def design_bot(self, u):
+        return max(self.b0 + self.b2 * u * u, -self.ell(u))
+
+    def bot(self, u):
+        b = self.design_bot(u)
+        if self.clip:
+            b = max(b, core.lerp_table(self.clip, u))
+        return b
+
+    def span(self, lc=0.0, rc=0.0):
+        vis = [i / 200 for i in range(-200, 201) if self.top(i / 200) - lc - self.bot(i / 200) - rc > 0.03 * self.kh]
+        return (vis[0], vis[-1]) if vis else (-0.5, 0.5)
+
+    def x(self, u):
+        return self.x0 + u * self.xc0
+
+
 def build_eyes(ctx):
+    """Per eye: the lens (only its almond is built: its edges tuck under the upper lid shell and the lower rim, so the
+    white can never drip below the lid line or run past the corners, whatever the face's curvature), the upper lid
+    shell, the lower rim tube along the visible bottom (the designed lid, or the cheek where it covers more), the
+    lash line. The lid cut is calibrated from the measured bottom so the opening is exact (§7.6 lids x sclera)."""
     ch, p = ctx.ch, ctx.P
     ey = ch["eyes"]
-    mood = ey.get(ctx.mood, {})
     rx, ry, rz, kv = eye_geometry(ctx)
     prot = S["sclera_protrude"] * H
-    ri = S["iris"] * ey.get("iris_k", 1.0) * kv      # iris radius in units of rz (diameter = 0.65 x sclera height)
     head = ctx.objs["head"]
     ctx.objs["eyes"] = []
     lash_t = (S["lash_f"] if ctx.female else S["lash_m"]) * H
+    rim_t = (S["rim_smile"] if ctx.smile else S["rim"]) * H
+    shell = S["lid_shell"]
+    lc, rc = lash_t * 0.5 / rz, rim_t / rz            # what the lash line and the rim tube cover, in lens z
+    # §7.6 numbers are measured in H on the picture (chin to crown): the eyes stand ~0.4 nearer the camera than that
+    # reference, so the perspective shows them larger; foresee it from the pose and the framing's distance
+    from . import rig
+    pw = rig.head_pose_matrix(ctx, with_body=True)
+    chin, crown = ctx.L["chin"], ctx.L["crown"]
+    d_ref = (crown.z - chin.z) * 588.0 * style.RENDER["lens"] / style.RENDER["sensor"] / ch["head"]["h_px"]
+    y_ref = ((pw @ chin).y + (pw @ crown).y) / 2
     for side in (-1, 1):
         tag = "near" if side < 0 else "far"
         x = side * p["eye_x"]
         h0, n0 = core.ray_front(head, x, p["eye_z"])
         n_flat = Vector((n0.x, n0.y, 0.0)).normalized()
         yaw = math.atan2(n_flat.x, -n_flat.y) * 0.8
-        rot = Matrix.Rotation(yaw, 4, "Z")
-        fwd = rot.to_3x3() @ Vector((0, -1, 0))
+        # the lens faces a little up with the face under the eye (the cheek comes forward below it): its lower half
+        # comes forward over the cheek, the upper half goes back under the lid and the brow ridge
+        rot = Matrix.Rotation(yaw, 4, "Z") @ Matrix.Rotation(math.radians(S["eye_pitch"]), 4, "X")
+        r3 = rot.to_3x3()
+        fwd = r3 @ Vector((0, -1, 0))
         centre = h0 - fwd * (ry - prot)
-        eye = core.uvsphere("eye_" + tag, centre, (rx, ry, rz), None, 48, 24)
-        eye.rotation_euler = rot.to_euler()
-        core.set_mat(eye, eye_mat(ctx, "eye_" + tag, core.hex_scale(ey["iris"], ey.get("iris_shade", 1.0)), ri, rx / rz))
-        ctx.add(eye, "eye", head, kind="embed", head=True)
-        # lids: opening (share of the visible sclera height left open), tilt (+ lowers the inner corner), arch
-        opening = mood.get("open", ey.get("open", S["lid_open"]))
-        if isinstance(opening, (list, tuple)):
-            opening = opening[0 if side < 0 else 1]
-        c0 = -kv + opening * 2 * kv
-        tilt = mood.get("tilt", ey.get("tilt", 0.08))
-        arch = mood.get("arch", ey.get("arch", 0.24))
-        cut = _lid_cut(c0, tilt, arch, side)
-        shell = S["lid_shell"]
+        # the almond is centred where a forward-looking eye shows its iris (the head's -Y on the lens), not on the
+        # lens axis (which follows the face's curvature outward)
+        dl = r3.inverted() @ Vector((0, -1, 0))
+        x0 = Vector((dl.x / rx, dl.y / ry, dl.z / rz)).normalized().x
+        al = Almond(ctx, side, rz, x0)
+        kh = al.kh
+        persp = d_ref / (d_ref + (pw @ centre).y - y_ref)
+        inv = (Matrix.Translation(centre) @ rot @ Matrix.Diagonal((rx, ry, rz, 1.0))).inverted()
+
+        def lens_pt(u, z, out=0.0):
+            xl = al.x(u)
+            yy = max(0.0, 1 - xl * xl - z * z)
+            return centre + r3 @ Vector((xl * rx, -(math.sqrt(yy) * ry + out), z * rz))
+
+        def covered(u, z):
+            """Is the lens point inside the head (the face covers it)? A short ray out along the eye's forward axis
+            that leaves the head's surface (the hit normal along the ray) says so."""
+            q = lens_pt(u, z, 0.0005)
+            hit, nor = core.ray(head, q, fwd, dist=0.08)
+            return hit is not None and nor.dot(fwd) > 0.0
+
+        # the face clip: where the cheek covers the lens above the designed lower lid, the visible bottom follows it
+        clip = []
+        for i in range(21):
+            u = -1 + 2 * i / 20
+            b = al.design_bot(u)
+            t = al.ell(u)
+            z = b
+            if covered(u, z):
+                lo_, hi_ = b, t
+                for _ in range(10):
+                    mid = (lo_ + hi_) / 2
+                    if covered(u, mid):
+                        lo_ = mid
+                    else:
+                        hi_ = mid
+                z = hi_
+            clip.append((u, z))
+        al.clip = clip
+        # the lid calibrated from the measured bottom: the widest column between the lash line and the rim (what
+        # P-A3 measures) is (open - low) x sclera_h — tilt, arch and the smile's bow move it off the middle
+        target = 2 * kh * (al.open - al.low) / persp
+        us = [i / 40 for i in range(-40, 41)]
+
+        def widest(u0_):
+            al.U0 = u0_
+            return max(al.top(u) - lc - al.bot(u) - rc for u in us)
+
+        lo_, hi_ = -kh, 3 * kh
+        for _ in range(30):
+            mid = (lo_ + hi_) / 2
+            if widest(mid) < target:
+                lo_ = mid
+            else:
+                hi_ = mid
+        al.U0 = (lo_ + hi_) / 2
+        ri = S["iris"] * ey.get("iris_k", 1.0) * kh     # iris radius in units of rz (diameter = 0.65 x sclera height)
+        # the lens: a grid over the almond (corner to corner, the full ellipse height above its bottom: the shell hides
+        # what is above the lid), in unit-lens coordinates (the object is scaled to rx, ry, rz)
+        u0, u1 = al.span()
         bm = bmesh.new()
-        bmesh.ops.create_uvsphere(bm, u_segments=64, v_segments=40, radius=1.0)
-        bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.co.z < cut(v.co.x) or v.co.y > 0.3], context="VERTS")
+        nu, nv = 40, 18
+        grid = []
+        for i in range(nu + 1):
+            u = u0 - 0.03 + (u1 - u0 + 0.06) * i / nu
+            zb = al.bot(u) - rc * 0.7
+            zt = max(al.ell(u), al.top(u)) + 0.04 * kh
+            row = []
+            for j in range(nv + 1):
+                z = zb + (zt - zb) * j / nv
+                xl = al.x(u)
+                yy = max(0.0, 1 - xl * xl - z * z)
+                row.append(bm.verts.new((xl, -math.sqrt(yy), z)))
+            grid.append(row)
+        for i in range(nu):
+            for j in range(nv):
+                bm.faces.new((grid[i][j], grid[i + 1][j], grid[i + 1][j + 1], grid[i][j + 1]))
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+        eye = core.mesh_obj("eye_" + tag, bm)
+        eye.location = centre
+        eye.rotation_euler = rot.to_euler()
+        eye.scale = (rx, ry, rz)
+        core.finish(eye, eye_mat(ctx, "eye_" + tag, core.hex_scale(ey["iris"], ey.get("iris_shade", 1.0)), ri,
+                                 rx / rz))
+        if eye.data.polygons and eye.data.polygons[len(eye.data.polygons) // 2].normal.y > 0:
+            for f in eye.data.polygons:
+                f.flip()
+        eye["al_x0"], eye["al_xc0"], eye["al_kh"] = al.x0, al.xc0, kh
+        ctx.add(eye, "eye", head, kind="embed", head=True)
+
+        # the upper lid: a skin shell over the lens, `lid_shell` x its depth inside the almond's ellipse and sinking
+        # back into it just outside (so the lid is a soft bulge over the eye, its crease following the eye's outline,
+        # never a plate standing off the face past the corners); its cut, seen along the eye's axis, is the almond's
+        # top
+        def shell_k(xl, z):
+            rho = math.hypot((xl - al.x0) / al.xc0, z / kh)
+            return shell - (shell - 0.80) * core.smoothstep(1.0, 1.35, rho)
+
+        def shell_cut(xl):
+            """The shell's lower edge: the almond's top, then rising past the corners (no flap below the corner)."""
+            u = (xl - al.x0) / al.xc0
+            if abs(u) <= 1.0:
+                return al.top(u)
+            return al.top(math.copysign(1.0, u)) + 2.5 * kh * (abs(u) - 1.0)
+
+        bm = bmesh.new()
+        bmesh.ops.create_uvsphere(bm, u_segments=96, v_segments=56, radius=1.0)
+        bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.co.z < shell_cut(v.co.x) or v.co.y > 0.3], context="VERTS")
+        for v in bm.verts:
+            v.co.y *= shell_k(v.co.x, v.co.z)
         lid = core.mesh_obj("lid_" + tag, bm)
         lid.location = centre
         lid.rotation_euler = rot.to_euler()
-        lid.scale = (rx * shell, ry * shell, rz * shell)
+        lid.scale = (rx, ry, rz)
         core.solidify(lid, 0.10, offset=-1)
         core.finish(lid, ctx.mats["skin"], sub=1)
         lid.visible_shadow = False   # the lid does not darken the eye white under it (readable whites, §7.4 iris rule)
         ctx.add(lid, "skin", eye, kind="embed", head=True)
-        # lower lid: a thin rim over the bottom of the eye; a smile pushes it up into a happy curve
-        low = mood.get("low", ey.get("low", 0.0))           # share of the visible height it covers at the middle
-        if low <= 0.0:                                        # calm: the face itself is the lower rim
-            low = None
-        lc = -kv + (low or 0.0) * 2 * kv
-        if low is not None:
-            bm = bmesh.new()
-            bmesh.ops.create_uvsphere(bm, u_segments=64, v_segments=40, radius=1.0)
-            bmesh.ops.delete(bm, geom=[v for v in bm.verts if v.co.z > lc - 0.10 * kv * v.co.x * v.co.x or v.co.y > 0.3],
-                             context="VERTS")
-            lo = core.mesh_obj("lowlid_" + tag, bm)
-            lo.location = centre
-            lo.rotation_euler = rot.to_euler()
-            lo.scale = (rx * 1.04, ry * 1.04, rz * 1.04)
-            core.solidify(lo, 0.10, offset=-1)
-            core.finish(lo, ctx.mats["skin"], sub=1)
-            ctx.add(lo, "skin", eye, kind="embed", head=True)
-        # lash line along the upper lid's cut edge, thick in the middle; women get an outer flick
-        pts, rad = [], []
+        u0, u1 = al.span(lc, rc)
+        # the lower rim: a thin skin tube along the visible bottom on the lens (every mood: the eye sits in a lid, never
+        # on the cheek; where the cheek covers the lens it follows the cheek); a smile's pushed-up lid is fuller
+        rp_, rr_ = [], []
         n = 15
         for i in range(n):
-            u = -0.97 + 1.94 * i / (n - 1)
-            z = cut(u)
-            yy = 1 - u * u - z * z
+            t = i / (n - 1)
+            u = u0 + (u1 - u0) * t
+            rp_.append(lens_pt(u, al.bot(u), rim_t * 0.15))
+            rr_.append(0.35 + 0.65 * min(1.0, 1.7 * math.sin(math.pi * t)))   # full over the middle 2/3
+        rim = core.curve("lowrim_" + tag, rp_, rr_, rim_t, ctx.mats["skin"])
+        ctx.add(rim, "skin", eye, kind="surface", head=True)
+        # lash line along the upper lid's cut edge (the shell's edge), corner to corner, thick in the middle; women get
+        # an outer flick
+        pts, rad = [], []
+        n = 17
+        ext = 0.06
+        for i in range(n):
+            t = i / (n - 1)
+            u = (u0 - ext) + (u1 - u0 + 2 * ext) * t
+            xl = al.x(u)
+            zl = al.top(u)
+            yy = 1 - xl * xl - zl * zl
             if yy <= 0.02:
                 continue
-            loc = Vector((u * rx * shell, -math.sqrt(yy) * ry * shell, z * rz * shell))
-            pts.append(centre + rot.to_3x3() @ loc + fwd * 0.003 + Vector((0, 0, 0.002)))
-            t = (u + 0.97) / 1.94
+            loc = Vector((xl * rx, -math.sqrt(yy) * ry * shell_k(xl, zl), zl * rz))
+            pts.append(centre + r3 @ loc + fwd * 0.003 + Vector((0, 0, 0.002)))
             rad.append(0.45 + 0.65 * math.sin(math.pi * t))
         if ctx.female and len(pts) > 2:
             fl, ang = S["lash_flick"]
             ln = ey.get("flick", fl) * H
             o_end = pts[-1] if side > 0 else pts[0]
-            d = Vector((side * math.cos(math.radians(ang)), 0.0, math.sin(math.radians(ang)))) * ln
-            d = rot.to_3x3() @ d
+            d = r3 @ (Vector((side * math.cos(math.radians(ang)), 0.0, math.sin(math.radians(ang)))) * ln)
             if side > 0:
                 pts.append(o_end + d)
                 rad.append(0.25)
@@ -237,13 +389,34 @@ def build_eyes(ctx):
                 rad.insert(0, 0.25)
         lash = core.curve("lash_" + tag, pts, rad, lash_t / 2, core.principled(ctx, "lash", C["lash"], 0.5))
         ctx.add(lash, "lash", lid, kind="surface", head=True)
+        # the almond outline for the QA (head-local, before the pose): under the lash line, over the rim
+        us = [u0 + (u1 - u0) * i / 16 for i in range(17)]
+        outline = [lens_pt(u, al.top(u) - lc) for u in us] + [lens_pt(u, al.bot(u) + rc) for u in us[::-1]]
         ctx.objs["eyes"].append(dict(obj=eye, side=side, centre=centre, radii=(rx, ry, rz), ri=ri, tag=tag,
-                                     open=opening, cut=(c0, tilt, arch), kv=kv))
+                                     open=al.open, low=al.low, kv=kv, kh=kh, x0=al.x0, xc0=al.xc0, almond=outline,
+                                     inv=inv, al=al))
+        ctx.L["lash_" + tag] = (pts, lash_t / 2)
     ctx.L["sclera_top"] = p["eye_z"] + p["sclera_h"] / 2
 
 
 # ------------------------------------------------------------------ brows
+def _lash_top(lash, x):
+    """The top of a lash line (head-local z) at x: its points interpolated, flat beyond its ends."""
+    pts, r = lash
+    ps = sorted(pts, key=lambda q: q.x)
+    if x <= ps[0].x:
+        return ps[0].z + r
+    for a, b in zip(ps, ps[1:]):
+        if a.x <= x <= b.x:
+            f = (x - a.x) / max(b.x - a.x, 1e-9)
+            return a.z + (b.z - a.z) * f + r
+    return ps[-1].z + r
+
+
 def build_brows(ctx):
+    """Brows (§7.3): thick at the inner third, tapering x0.45, 1.15-1.3 eye widths long, 0.05 H above the eye: placed
+    from the eye's measured lash line (the visible top of the eye), not the nominal sclera top, so the gap holds for
+    every lid opening — the brow's lowest edge clears the lash line by exactly brow_gap (+ the character's lift)."""
     ch, p = ctx.ch, ctx.P
     br = ch["brows"]
     mood = br.get(ctx.mood, {})
@@ -262,28 +435,41 @@ def build_brows(ctx):
         outer_dz = mood.get("outer", 0.0) * H
         arch = (br.get("arch", 0.025) + mood.get("arch", 0.0)
                 + (br.get("arch_far", 0.0) if side > 0 else 0.0)) * H
-        base_z = ctx.L["sclera_top"] + S["brow_gap"] * H + thick * 0.5 + lift
         # the far brow starts nearer the nose: its outer end turns away with the face, the inner part carries it
         x_in = side * (p["eye_x"] - eye_w * (br.get("in_far", 0.66) if side > 0 else 0.5) - 0.02 * H)
         shape = br.get("shape", "arc")
-        pts, rad = [], []
-        n = 8
-        for i in range(n):
-            t = i / (n - 1)                          # inner -> outer
-            x = x_in + side * length * t
-            if shape == "straight":
-                z = base_z + arch * 0.4 * math.sin(math.pi * t) + 0.01 * H * t
-            elif shape == "angular":
-                z = base_z + arch * (t / 0.62 if t < 0.62 else (1 - t) / 0.38 * 0.6 + 0.4) - 0.01 * H
-            else:  # arc, bushy
-                z = base_z + arch * math.sin(math.pi * min(1.0, t * 1.05))
-            z += inner_dz * (1 - t) + outer_dz * t
-            hit, nor = core.ray_front(head, x, z)
-            if hit is None:
-                continue
-            pts.append(hit + nor * thick * 0.42)
-            taper = 1.0 if t < 0.33 else 1 - (1 - S["brow_taper"]) * (t - 0.33) / 0.67
-            rad.append(taper * (0.75 if t == 0 else 1.0))
+
+        def sample(base_z):
+            pts, rad = [], []
+            n = 8
+            for i in range(n):
+                t = i / (n - 1)                          # inner -> outer
+                x = x_in + side * length * t
+                if shape == "straight":
+                    z = base_z + arch * 0.4 * math.sin(math.pi * t) + 0.01 * H * t
+                elif shape == "angular":
+                    z = base_z + arch * (t / 0.62 if t < 0.62 else (1 - t) / 0.38 * 0.6 + 0.4) - 0.01 * H
+                else:  # arc, bushy
+                    z = base_z + arch * math.sin(math.pi * min(1.0, t * 1.05))
+                z += inner_dz * (1 - t) + outer_dz * t
+                hit, nor = core.ray_front(head, x, z)
+                if hit is None:
+                    continue
+                pts.append(hit + nor * thick * 0.42)
+                taper = 1.0 if t < 0.33 else 1 - (1 - S["brow_taper"]) * (t - 0.33) / 0.67
+                rad.append(taper * (0.75 if t == 0 else 1.0))
+            return pts, rad
+
+        base_z = ctx.L["sclera_top"] + S["brow_gap"] * H + thick * 0.5 + lift
+        lash = ctx.L.get("lash_" + tag)
+        if lash:
+            for _ in range(3):
+                pts, rad = sample(base_z)
+                gap = min(q.z - thick * 0.5 * r - _lash_top(lash, q.x) for q, r in zip(pts, rad))
+                base_z += S["brow_gap"] * H + lift - gap
+        pts, rad = sample(base_z)
+        if lash:
+            ctx.L["brow_gap_" + tag] = min(q.z - thick * 0.5 * r - _lash_top(lash, q.x) for q, r in zip(pts, rad)) / H
         if shape == "bushy":
             obj = _bushy_brow(ctx, pts, rad, thick, mat, tag)
         else:
@@ -442,42 +628,99 @@ def build_mouth(ctx):
         w = (max(xs) - min(xs)) / 2
         hh = max(zs) - min(zs)
         fy = ctx.L["face_y"]
+        bottom_tbl = sorted((q[0], q[1]) for q in pts[:21])               # the outline's lower arc, by x
+        top_tbl = sorted([(q[0], q[1]) for q in pts[21:]] + [(pts[0][0], pts[0][1]), (pts[20][0], pts[20][1])])
+
+        def rim(x, z_out, z_in):
+            """The real edge of the boolean opening at x (the cutter's walls slant in, so on a receding chin the edge is
+            higher than the outline): step from inside the opening toward z_out; the edge is where the ray leaves the
+            steep cutter wall (depth changing fast) for the face (depth changing slowly), well in front of the pocket's
+            back — no absolute depth, so a receding chin or the chin's underside cannot fool it."""
+            n = 80
+            h0, _ = core.ray_front(head, x, z_in)
+            y_back = h0.y if h0 is not None else fy + 0.2
+            prev_y, prev_z = y_back, z_in
+            for i in range(1, n + 1):
+                z = z_in + (z_out - z_in) * i / n
+                h_, _ = core.ray_front(head, x, z)
+                if h_ is None:
+                    continue
+                if h_.y < y_back - 0.04 and abs(h_.y - prev_y) < 4.0 * abs(z - prev_z):
+                    return prev_z
+                prev_y, prev_z = h_.y, z
+            return None          # no opening at this x (a corner thinner than the slanted cutter): skip it
+
         # the cavity stays inside the opening's height: a deeper one pokes through the chin in the 3/4 view
         cav = core.uvsphere("mouth_in", (cx, fy + 0.19, cz), (w * 1.0, 0.13, hh * 0.56), dark, 32, 16)
         ctx.add(cav, "mouth", head, kind="embed", head=True)
-        # upper teeth: a rounded slab just behind the upper edge, 30 % of the opening height (§7.3)
-        top_z = max(zs)
-        teeth = core.uvsphere("teeth", (cx, fy + 0.034, top_z - hh * 0.15), (w * 0.86, 0.025, hh * 0.17),
-                              core.principled(ctx, "teeth", C["teeth"], 0.3, coat=0.3), 32, 16)
+        # upper teeth (§7.3: #FBF6EA over the top 30 % of the opening): a slab bent to follow the face's curve just
+        # behind the top rim, off the corners (0.72 of the width) — a straight slab poked out through the cheeks at the
+        # corners and hid behind the lip in the middle
+        tw = w * 0.72
+        th = hh * S["teeth_share"]
+        samples = []
+        for i in range(9):
+            x = cx - tw * 1.05 + 2.1 * tw * i / 8
+            zt = core.lerp_table(top_tbl, x)
+            ze = rim(x, zt + 0.05, zt - hh * 0.4)
+            if ze is None:
+                continue
+            hf, _ = core.ray_front(head, x, ze + 0.012)
+            samples.append((x, ze, (hf.y if hf is not None else fy)))
+        bm = bmesh.new()
+        bmesh.ops.create_uvsphere(bm, u_segments=32, v_segments=16, radius=1.0)
+        for v in bm.verts:
+            x = cx + v.co.x * tw
+            ze = core.lerp_table([(q[0], q[1]) for q in samples], x)
+            yf = core.lerp_table([(q[0], q[2]) for q in samples], x)
+            v.co = Vector((x, yf + 0.016 + (v.co.y + 1.0) * 0.018, ze + 0.004 - th * 0.5 + v.co.z * th * 0.62))
+        teeth = core.mesh_obj("teeth", bm)
+        core.finish(teeth, core.principled(ctx, "teeth", C["teeth"], 0.3, coat=0.3))
         ctx.add(teeth, "teeth", head, kind="embed", head=True)
         # the tongue in the lower third, set back behind the lower lip (face_y is the surface at the mouth line; the
         # chin below it recedes, so a tongue at face_y + 0.01 reads as stuck out)
         tongue = core.uvsphere("tongue", (cx + 0.008, fy + 0.11, min(zs) + hh * 0.25), (w * 0.55, 0.055, hh * 0.20),
                                core.principled(ctx, "tongue", C["tongue"], 0.45, sss=0.2), 32, 16)
         ctx.add(tongue, "tongue", head, kind="embed", head=True)
+        # the lower lip: a tube laid on the opening's real lower rim (ray-cast edge), not up the corners
         lower = pts[:21]
+        lr_t = low_t * 0.42
         lp, lr = [], []
-        for i, (x, z) in enumerate(lower[3:-3]):     # not up the corners: there it reads as a drip
-            hh2, nn = core.ray_front(head, x, z - 0.016)
+        for i, (x, z) in enumerate(lower[3:-3]):
+            zt = core.lerp_table(top_tbl, x)
+            ze = rim(x, z - 0.06, (z + zt) / 2)
+            if ze is None:
+                continue
+            hh2, nn = core.ray_front(head, x, ze - lr_t * 0.55)
             if hh2 is None:
                 continue
-            lp.append(hh2 + nn * 0.004)
+            lp.append(hh2 + nn * lr_t * 0.35)
             t = i / (len(lower) - 7)
             lr.append(0.45 + 0.8 * math.sin(math.pi * t))
-        lip = core.curve("lip_low", lp, lr, low_t * 0.42, lip_m)
+        lip = core.curve("lip_low", lp, lr, lr_t, lip_m)
         ctx.add(lip, "lip", head, kind="surface", head=True)
-        if ctx.female:  # a thin upper lip along the top edge
-            up = pts[21:]
+        if ctx.female:  # a thin upper lip along the real top rim
             upp, upr = [], []
+            up = pts[21:]
             for i, (x, z) in enumerate(up):
-                hh2, nn = core.ray_front(head, x, z + 0.012)
+                zb = core.lerp_table(bottom_tbl, x)
+                ze = rim(x, z + 0.05, (z + zb) / 2)
+                if ze is None:
+                    continue
+                hh2, nn = core.ray_front(head, x, ze + low_t * 0.4 * 0.55)
                 if hh2 is None:
                     continue
-                upp.append(hh2 + nn * 0.004)
+                upp.append(hh2 + nn * low_t * 0.4 * 0.35)
                 upr.append(0.5 + 0.5 * math.sin(math.pi * (i + 1) / (len(up) + 1)))
             if len(upp) > 2:
                 ctx.add(core.curve("lip_up", upp, upr, low_t * 0.4, lip_m), "lip", head, kind="surface", head=True)
-        ctx.L["mouth_corners"] = [Vector((min(xs), fy, pts[-1][1])), Vector((max(xs), fy, pts[0][1]))]
+        # the corners: the outline's two ends (pts[20] the near one, x = -w; pts[0] the far one), on the face
+        corners = []
+        for q in (pts[20], pts[0]):
+            hc, _ = core.ray_front(head, q[0], q[1] + 0.004)
+            corners.append(hc if hc is not None else Vector((q[0], fy, q[1])))
+        ctx.L["mouth_corners"] = corners
+        ctx.L["mouth_top"] = top_tbl
         return
     # closed: a dark crease (>= 0.035 H) with its corners set by the expression, the lower lip under it, a thin upper
     # lip for women; a moustache may hide part of it (Bram)

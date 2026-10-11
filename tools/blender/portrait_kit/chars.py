@@ -19,17 +19,23 @@ CHARS = {
         head=dict(shape="square", wh=0.92, h_px=280, eye_line=0.47, cheeks=1.15, muzzle=1.15, brow_ridge=1.2),
         skin=SKIN["T2"], skin_tone="T2", blush=0.20,
         eyes=dict(sclera=0.18, open=0.72, iris="#3D8FD6", iris_shade=0.88, tilt=0.10, arch=0.22,
-                  smile=dict(open=0.68, low=0.22, tilt=-0.02, arch=0.26)),
+                  # the laugh squints (§7.6 "веки 0.55, глаза щурятся"): the cheek pushes the lower lid up into an
+                  # arch; (open - low) x sclera stays >= 0.09 H so the eye keeps 3 px at 64 px (P-A3)
+                  smile=dict(open=0.64, low=0.10, bow=0.30, tilt=-0.02, arch=0.26)),
         brows=dict(shape="bushy", thick=0.085, color="#8A3A1A", arch=0.02, len=1.25,
                    smile=dict(lift=(0.025, 0.02), arch=0.012)),
         nose=dict(type="potato", tip="#E8857A", tip_k=0.6, drop=0.20, k=1.0),
         mouth=dict(lip="#C4675A", line=0.20,
                    calm=dict(type="closed", w=0.27, near=0.02, far=0.0),
-                   smile=dict(type="open", w=0.34, h=0.14, near=0.035, far=0.03, dz=-0.012)),
+                   smile=dict(type="open", w=0.34, h=0.14, near=0.045, far=0.03, dz=-0.012)),
         hair=dict(style="swept", color="#B5562B", dark="#5A200C", light="#B5562B", crevice="#46180A",
                   sideburns=True),
-        beard=dict(style="pear", color="#C8652F", dark="#C8652F", light="#E8925A", crevice="#A04A22", wider=0.12,
-                   below=0.45, moustache=True),
+        # the beard #C8652F (§7.6) shaded hair-like but the other way up: lit lobe tips #D88048 on the slate jerkin
+        # (dL* >= 15), roots #A04A22 and a #7A3216 band along the cheek (it no longer melts into the T2 skin); the
+        # moustache in a darker rust, so it reads as hair over the lip, not a fleshy upper lip
+        beard=dict(style="pear", color="#C8652F", tip="#D88048", root="#A04A22", edge="#7A3216", crevice="#5A220C",
+                   wider=0.12, below=0.45, moustache=True, moustache_color="#A04A22", moustache_dark="#6A2810",
+                   moustache_light="#B5562B"),
         scar=dict(near=True, **{"from": (-0.34, 0.01), "to": (-0.23, -0.14)}),
         body=dict(shoulders=2.0),
         costume=dict(
@@ -55,7 +61,7 @@ CHARS = {
         head=dict(shape="oval", wh=0.80, h_px=268, eye_line=0.46, cheeks=1.0, chin=0.005),
         skin=SKIN["T1"], skin_tone="T1", blush=0.25, freckles="#C77B52",
         eyes=dict(sclera=0.21, open=0.82, iris="#5E9E4A", tilt=0.06, arch=0.26, flick=0.06,
-                  smile=dict(open=0.74, low=0.28, tilt=-0.02, arch=0.30)),
+                  smile=dict(open=0.78, low=0.26, bow=0.35, tilt=-0.02, arch=0.30)),
         brows=dict(shape="arc", thick=0.06, color="#4A2818", arch=0.03, len=1.2, len_far=1.42,
                    smile=dict(lift=(0.004, 0.0), arch=0.004)),
         nose=dict(type="button", tip="#F09A86", tip_k=0.45, drop=0.19, k=0.95),
@@ -91,14 +97,16 @@ CHARS = {
         head=dict(shape="heart", wh=0.78, h_px=270, eye_line=0.46, cheekbones=0.03, chin=0.0),
         skin=SKIN["T3"], skin_tone="T3", blush=0.2,
         eyes=dict(sclera=0.19, open=0.70, iris="#7C7EA8", tilt=-0.06, arch=0.30, flick=0.065,
-                  smile=dict(open=0.70, low=0.20, tilt=-0.08, arch=0.30)),
+                  smile=dict(open=0.72, low=0.20, bow=0.30, tilt=-0.08, arch=0.30)),
         brows=dict(shape="angular", thick=0.055, color="#2A2224", arch=0.035, arch_far=0.03, lift=(0.0, 0.09), len=1.3,
                    len_far=1.95, in_far=0.84,   # the raised far brow ends at the face edge: it starts nearer the nose
                    smile=dict(lift=(0.01, 0.0))),
         nose=dict(type="straight", tip="#E59A7E", tip_k=0.35, drop=0.21, k=1.0, w=0.05),
         mouth=dict(lip="#B8605A", line=0.19,
                    calm=dict(type="closed", w=0.25, near=0.025, far=0.0),
-                   smile=dict(type="closed", w=0.29, near=0.045, far=0.03, sag=0.012)),
+                   # the closed smile's corners rise >= 6 px over the calm ones on the master (P-A4), the
+                   # expression alone (pose held), not only the head's tilt
+                   smile=dict(type="closed", w=0.30, near=0.068, far=0.045, sag=0.012)),
         hair=dict(style="bob", color="#2E2A2A", dark="#1E1A1C", light="#4A4446", crevice="#121012", near_len=0.10,
                   far_len=0.26, streak="#C8CCD4"),
         body=dict(shoulders=1.95),
@@ -110,7 +118,7 @@ CHARS = {
                 dict(kind="frogging", color="#C8CCD4", z=(-0.86, -0.98, -1.10), w=0.24, t=0.028),
             ]),
         props=[dict(kind="glasses", color="#44484F", frame=0.025, w=1.24, h=0.78, drop=0.03, off=0.028, tint="#FFFFFF"),
-               dict(kind="pointer", x=0.62, y=0.04, z=-1.02, reach=0.33, tip_w=1.6, color="#8A5A34")],
+               dict(kind="pointer", x=0.62, y=0.04, z=-1.02, reach=0.36, tip_w=1.25, color="#8A5A34")],
         pose=dict(body=26, head=4, roll=3, nod=4),
         pose_smile=dict(roll=-2, nod=0),
         signature=dict(name="chisel bob + glasses bar; arrow right", zone="far side"),

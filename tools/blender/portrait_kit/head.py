@@ -62,6 +62,10 @@ def brushes(ctx, p):
         b += [
             ((s * (ex - 0.005), face_y, ez + 0.17), 0.11, (0, -0.022 * hd.get("brow_ridge", 1.0), 0.012)),  # brow ridge
             ((s * ex, face_y - 0.02, ez + 0.005), sock_r, (0, sock_d, 0.0)),                     # eye socket
+            # the socket's lower half deeper: the cheek apple must not cover the bottom of the almond (the eye shows
+            # its full lower curve over the cheek, its rim follows the cheek)
+            ((s * (ex + 0.1 * p["sclera_h"]), face_y - 0.02, ez - S["socket_low_z"] * p["sclera_h"]),
+             S["socket_low_r"] * p["sclera_h"], (0, S["socket_low"] * H, 0.0)),
             ((s * 0.27 * sx, -0.33 * sy, ez - 0.04), 0.11,
              (s * (0.025 + hd.get("cheekbones", 0.0)), -0.015 - hd.get("cheekbones", 0.0) * 0.5, 0.0)),  # cheekbone
             ((s * S["cheek_x"] * H * sx / 0.98, -0.36 * sy, cheek_z), S["cheek_r"] * H,

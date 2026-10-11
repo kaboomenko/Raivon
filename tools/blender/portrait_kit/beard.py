@@ -62,7 +62,9 @@ def _pear(ctx, bd):
         depth = line(h.x) - h.z
         side = core.smoothstep(0.25 * sx, 0.46 * sx, abs(h.x))
         full = core.smoothstep(0.0, 0.25, depth)
-        return (0.022 + 0.085 * full) * (1 - 0.55 * side) * (0.45 + 0.55 * core.smoothstep(0.0, 0.05, depth))
+        # a real edge at the beard line (0.7 of the full thickness there, not a feathered film): the beard reads as a
+        # mass on the face with a groove where it meets the cheek
+        return (0.022 + 0.085 * full) * (1 - 0.55 * side) * (0.70 + 0.30 * core.smoothstep(0.0, 0.05, depth))
 
     el = core.sheet_elems(samples, s, thick)
     # the pear: lobes swelling out to `wide` at the jaw line and down to two rounded lower lobes
@@ -115,9 +117,17 @@ def _pear(ctx, bd):
     else:
         el.append(dict(co=(0.0, fy - 0.08, ctx.L["mouth_z"] - 0.006), half=(0.07 * sx, 0.12, 0.026), stiff=4.0,
                        neg=True))
-    mat = core.hair_mat(ctx, "beard", bd["color"], tip_z, ctx.L["mouth_z"] + 0.1, dark=bd.get("dark"),
-                        light=bd.get("light"), crevice=bd.get("crevice"))
+    # shaded the other way up from hair (§7.4 "волосы у лица — кожа"): light lobe tips where the beard lies on the
+    # costume, a darker root band along the face (the "edge" attribute: 1 at the beard line, 0 from 0.08 below it)
+    mat = core.hair_mat(ctx, "beard", bd["color"], tip_z, ctx.L["mouth_z"] + 0.1, dark=bd.get("tip"),
+                        light=bd.get("root"), crevice=bd.get("crevice"),
+                        edge=("beard_edge", bd["edge"], 0.85) if bd.get("edge") else None)
     o = core.mb_mesh(ctx, "Beard", el, 0.011, mat, smooth_iter=3, name="beard")
+    if bd.get("edge"):
+        attr = o.data.color_attributes.new("beard_edge", "FLOAT_COLOR", "POINT")
+        for i, v in enumerate(o.data.vertices):
+            e = 1.0 - core.smoothstep(0.0, 0.08, line(v.co.x) - v.co.z)
+            attr.data[i].color = (e, e, e, 1.0)
     ctx.add(o, "beard", head, kind="embed", head=True)
     ctx.objs["beard"] = o
     ctx.L["beard_tip"] = Vector((0, fy + 0.1, tip_z))
@@ -142,9 +152,19 @@ def _moustache(ctx, bd):
                  (0.19, 0.0, -0.03, 0.046), (0.232, 0.024, -0.05, 0.034), (0.258, 0.042, -0.072, 0.024)]
         if ctx.smile:
             chain = [(x * 1.06, dy, z + 0.026 + 0.07 * core.smoothstep(0.1, 0.26, x), r) for x, dy, z, r in chain]
+        mtop = ctx.L.get("mouth_top") if getattr(ctx, "mouth_open", False) else None
         for x, dy, z, r in chain:
-            el.append(dict(co=(s_ * x * sx, ys + dy, top + z), half=r * k, stiff=2.4))
-    mat = core.hair_mat(ctx, "moustache", bd["color"], mz - 0.04, mz + 0.1, dark=bd.get("dark"), light=bd.get("light"),
+            zc = top + z
+            if mtop:
+                # an open mouth: the lower edge clears the opening's top by 0.012 (its teeth show, §7.6 "с зубами")
+                xs_ = s_ * x * sx
+                if mtop[0][0] - 0.01 <= xs_ <= mtop[-1][0] + 0.01:
+                    zc = max(zc, core.lerp_table(mtop, xs_) + 0.012 + r * k * 0.8)
+            el.append(dict(co=(s_ * x * sx, ys + dy, zc), half=r * k, stiff=2.4))
+    # the moustache in the hair's rust (darker than the beard top, §7.6 palette slots): it reads as hair over the lip,
+    # not as a fleshy upper lip on a beard the skin's own hue
+    mat = core.hair_mat(ctx, "moustache", bd.get("moustache_color", bd["color"]), mz - 0.04, mz + 0.1,
+                        dark=bd.get("moustache_dark", bd.get("dark")), light=bd.get("moustache_light", bd.get("light")),
                         crevice=bd.get("crevice"))
     o = core.mb_mesh(ctx, "Mous", el, 0.008, mat, smooth_iter=2, name="moustache")
     ctx.add(o, "beard", head, kind="embed", head=True)

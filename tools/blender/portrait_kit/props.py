@@ -230,19 +230,22 @@ def glasses(ctx, pr):
 
 
 def pointer(ctx, pr):
-    """The pointer (§7.6, P1 pose without a hand): a wooden rod with an iron tip tucked between the far arm and the
-    torso, horizontal and pointing to the right of the frame at chest level."""
+    """The pointer (§7.6; P1's hand-free pose, §7.5 "указка — под рукой"): a wooden rod with an iron tip clamped under
+    the far arm, horizontal and pointing to the right of the frame at chest level. It reads as tucked, not stuck in:
+    the shaft enters under the sleeve, and a fold of the sleeve rolls over it where it leaves the arm (the arm presses
+    down on it; the fold's shadow lies on the rod); the tip is slim (0.16 H long, §7.6), not an arrowhead."""
     k = ctx.shoulder_k
     d = core.world_dir(ctx, (1.0, pr.get("toward", -0.15), 0.0))
     p0 = Vector((pr.get("x", 0.60) * k, pr.get("y", 0.02), pr.get("z", -1.0)))
     shaft = pr.get("d", 0.045) * H
     tip_l = pr.get("tip", 0.16) * H
     reach = pr.get("reach", 0.42)
-    a, b = p0 - d * 0.30, p0 + d * reach
+    a, b = p0 - d * 0.40, p0 + d * reach
+    arm = ctx.objs["arm+1"]
     wood = core.principled(ctx, "pointer_wood", pr.get("color", "#8A5A34"), 0.55, coat=0.1)
     grp = _detail(ctx, pr, "pointer", 1200)
     rod = core.curve("pointer_rod", [a, (a + b) / 2, b], [1, 1, 1], shaft / 2, wood, order=2)
-    ctx.add(rod, grp, ctx.objs["arm+1"], kind="free")
+    ctx.add(rod, grp, arm, kind="embed")      # clamped in the arm: its back half is inside the sleeve by design
     iron = core.principled(ctx, "pointer_tip", pr.get("tip_color", "#8A929C"), 0.32, metal=0.5)
     bm = bmesh.new()
     bmesh.ops.create_cone(bm, cap_ends=True, segments=24, radius1=shaft * pr.get("tip_w", 1.05), radius2=0.004,
@@ -257,3 +260,19 @@ def pointer(ctx, pr):
     ctx.add(ferrule, grp, rod, kind="surface")
     ctx.sig_objs += [rod, tip, ferrule]
     ctx.L["pointer_tip"] = b + d * tip_l
+    # the sleeve fold over the rod where it leaves the arm: a soft roll of the sleeve's own cloth, overhanging the
+    # shaft toward the camera, and a smaller one under it (the rod pinched between the arm and the side)
+    hit, nor = core.ray(arm, b + d * 0.05, -d, dist=1.0)
+    if hit is not None and pr.get("fold", True):
+        cloth = arm.data.materials[0]
+        up = Vector((0, 0, 1))
+        side = d.cross(up).normalized()
+        if side.y > 0:
+            side = -side                                  # toward the camera
+        q = core.frame_quat(side, -d)
+        el = [dict(co=hit + up * shaft * 0.95 - d * shaft * 0.6 + side * shaft * 0.35,
+                   half=(shaft * 2.2, shaft * 1.2, shaft * 0.95), stiff=2.4, rot=q),
+              dict(co=hit - up * shaft * 0.85 - d * shaft * 0.9 + side * shaft * 0.15,
+                   half=(shaft * 1.5, shaft * 0.9, shaft * 0.7), stiff=2.4, rot=q)]
+        fold = core.mb_mesh(ctx, "Fold", el, 0.006, cloth, smooth_iter=2, name="pointer_fold")
+        ctx.add(fold, "costume", arm, kind="embed")

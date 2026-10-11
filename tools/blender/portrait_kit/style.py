@@ -15,9 +15,18 @@ STYLE = {
     "sclera_h": 0.20,          # visible sclera height with the lids open, in H (0.18–0.22; never below 0.18)
     "sclera_w": 0.85,          # sclera width / height
     "sclera_protrude": 0.015,  # the eye stands out of the face plane, in H
-    "eye_fit": 1.18,           # the lens is sized up so its cap left visible by the curved face (brow ridge above,
-                               # cheek below) measures sclera_h: calibrated on the ID pass (meta sclera_vis_H)
+    "eye_fit": 1.35,           # the lens is eye_fit x the visible sclera, so the curved face (brow ridge, cheek, the
+                               # far eye's outer orbit) never clips inside the almond: the almond (face.eye_almond, drawn
+                               # by the eye shader) is the outline, not the face; calibrated on the ID pass (meta
+                               # eye_open_H = (open - low) x sclera_h)
+    "rim": 0.010,              # the lower lid rim tube (radius, in H): every eye sits in a lid, calm included
+    "rim_smile": 0.014,        # a smile's pushed-up lower lid, a little fuller
     "socket_depth": 0.022,     # a shallow seat: the socket brush flattens the face where the eye lens sits, in H
+    "eye_pitch": -12.0,        # the eye lens faces a little up with the face under the eye (the cheek comes forward
+                               # below it, its normal tilts up), in degrees about the lens x axis
+    "socket_low": 0.016,       # the socket's lower half, deeper (in H), centred socket_low_z sclera heights under the
+    "socket_low_z": 0.45,      # eye centre with a radius of socket_low_r sclera heights: the cheek apple stays clear of
+    "socket_low_r": 0.55,      # the almond's lower curve
     "iris": 0.65,              # iris diameter / sclera height (0.60–0.70)
     "limbal": 0.12,            # dark limbal ring, share of the iris radius
     "pupil": 0.58,             # pupil / iris (0.48 angry – 0.62 smile)

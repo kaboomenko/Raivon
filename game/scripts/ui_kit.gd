@@ -901,7 +901,7 @@ class KitBake extends Node:
 			refs[id] = e
 		return e
 
-	## Asks every canvas item that shows atlas images but cannot be seen now (scrolled out of a list, off the screen) to
+	## Asks every canvas item that shows atlas images but is off the screen now (a long list's rows scrolled away) to
 	## draw again — its vectors, while _squeeze is on — so its images are no longer shown and the next eviction frees
 	## their room. Returns how many were asked.
 	func _release_unseen() -> int:
@@ -974,8 +974,8 @@ class KitBake extends Node:
 				_moving.erase(id)
 				h.queue_redraw()
 
-	## Remembers `h`, out of sight when it asked for a bake: it is drawn again once `rect` (local, grown by `pad`) can be
-	## seen (a scroll brought it in, its clip grew), or once it has moved and held still.
+	## Remembers `h`, off the screen when it asked for a bake: it is drawn again once `rect` (local, grown by `pad`) is on
+	## the screen (a scroll brought it in), or once it has moved and held still.
 	func _park(h: CanvasItem, rect: Rect2, pad: float) -> void:
 		_place(h)
 		parked[h.get_instance_id()] = [weakref(h), rect, pad]

@@ -104,27 +104,38 @@ def _kerchief(ctx):
     for s_ in (-1, 1):
         el += core.ribbon_lock(head, [core.az_el(s_ * 66, 40), core.az_el(s_ * 80, 14), core.az_el(s_ * 92, -4)],
                                0.07 * sx, 0.05 * sx, 0.04, n=10, lift=0.4)
-    # nape: hair gathered toward the near side where the braid starts
+    # nape: hair gathered toward the near side where the braid starts (the braid's root landmark)
+    gather = core.az_el(-130, -18)
     for az in (-150, -175, 160):
-        el += core.ribbon_lock(head, [core.az_el(az, 40), core.az_el(az * 0.9 - 20, 0), core.az_el(-130, -18)],
+        el += core.ribbon_lock(head, [core.az_el(az, 40), core.az_el(az * 0.9 - 20, 0), gather],
                                0.08 * sx, 0.07 * sx, 0.045, n=10, lift=0.4)
+    gh, gn = core.ray(head, gather * 3, -gather)
+    if gh is not None:
+        ctx.L["braid_root"] = (gh + gn * 0.03, gn)
     _finish_hair(ctx, el, hr["color"])
 
 
 def build_braid(ctx):
-    """Lira's braid (§7.6): 6 plaited lobes 0.14 H wide (ribbons at +-25 deg, not beads) from behind the near ear
-    over the near shoulder and out of the frame, a green ribbon tied around it. Built after the body: its lower
-    part lies on the costume (ray casts onto the torso)."""
+    """Lira's braid (§7.6): plaited lobes 0.14 H wide — flat leaf-shaped ribbons leaning +-25 deg in turn, a groove
+    notched between each lobe and the next on its side (a three-strand plait, not a chain of beads) — from the nape
+    gather behind the near ear (the hair's landmark, carried through the head pose: the braid hangs on the body) over
+    the near shoulder and out of the frame, a green ribbon tied around it. Built after the body: its lower part lies on
+    the costume (ray casts onto the torso)."""
     br = ctx.ch["hair"].get("braid")
     if not br:
         return
+    from . import rig
     torso = ctx.objs.get("outer") or ctx.objs["torso"]
     w = br.get("w", 0.14) * H
     col = ctx.ch["hair"]["color"]
-    # the path, body space: behind the near ear -> along the neck -> over the shoulder top -> down the chest
     kx = ctx.W / 0.85
-    p0 = Vector((-0.33 * kx, 0.12, -0.28))
-    ctrl = [p0, Vector((-0.42 * kx, -0.02, -0.56)), Vector((-0.45 * kx, -0.24, -0.80)), Vector((-0.42, -0.44, -1.10)),
+    # the root: the nape gather (head landmark) in body space, after the head's turn, roll and nod
+    root_h, root_n = ctx.L.get("braid_root", (Vector((-0.33 * kx, 0.12, -0.28)), Vector((-1, 0, 0))))
+    m = rig.head_pose_matrix(ctx)
+    p0 = m @ root_h
+    n0 = (m.to_3x3() @ root_n).normalized()
+    p1 = p0 + n0 * 0.05 + Vector((0.0, -0.06, -0.16))
+    ctrl = [p0, p1, Vector((-0.45 * kx, -0.20, -0.78)), Vector((-0.42, -0.44, -1.10)),
             Vector((-0.40, -0.50, -1.45)), Vector((-0.39, -0.52, -1.75))]
     # rest the lower part on the costume: cast each low point along the front normal
     path = []
@@ -134,10 +145,9 @@ def build_braid(ctx):
             if hit is not None:
                 c = hit + nor * (w * 0.32)
         path.append(c)
-    # resample
     pts = []
-    for k in range(60):
-        t = k / 59 * (len(path) - 1)
+    for k in range(80):
+        t = k / 79 * (len(path) - 1)
         i = min(int(t), len(path) - 2)
         f = t - i
         a, b = path[i], path[i + 1]
@@ -145,14 +155,12 @@ def build_braid(ctx):
         pb = path[min(i + 2, len(path) - 1)]
         # Catmull-Rom
         pts.append(0.5 * ((2 * a) + (-pa + b) * f + (2 * pa - 5 * a + 4 * b - pb) * f * f + (-pa + 3 * a - 3 * b + pb) * f ** 3))
-    # lobes
     seglen = sum((pts[i + 1] - pts[i]).length for i in range(len(pts) - 1))
-    lobe = br.get("lobe", 0.17) * H / 0.14 * 0.14
-    n_lobes = int(seglen / (lobe * 0.62))
-    el = []
-    acc, j = 0.0, 0
-    targets = [lobe * 0.62 * (k + 0.5) for k in range(n_lobes)]
+    step = br.get("lobe", 0.115) * H            # along the braid from one lobe to the next (the other side)
+    n_lobes = int(seglen / step)
+    targets = [step * (k + 0.6) for k in range(n_lobes)]
     lobes = []
+    acc, j = 0.0, 0
     for i in range(len(pts) - 1):
         d = (pts[i + 1] - pts[i]).length
         while j < len(targets) and acc + d >= targets[j]:
@@ -160,23 +168,31 @@ def build_braid(ctx):
             lobes.append((pts[i].lerp(pts[i + 1], f), (pts[i + 1] - pts[i]).normalized()))
             j += 1
         acc += d
+    el = []
     for k, (c, tang) in enumerate(lobes):
         nor = Vector((0, -1, 0.15)).normalized()
+        if k < 2:   # the first lobes hang behind the jaw: they face out sideways
+            nor = (nor + n0).normalized()
         side = 1 if k % 2 else -1
-        taper = 1.0 - 0.25 * core.smoothstep(0.7, 1.0, k / max(1, len(lobes) - 1))
+        across = tang.cross(nor).normalized()
+        taper = (0.72 + 0.28 * core.smoothstep(0.0, 2.0, k)) * (1.0 - 0.22 * core.smoothstep(0.7, 1.0, k / max(1, len(lobes) - 1)))
         q = core.frame_quat(tang, nor)
         spin = Matrix.Rotation(math.radians(25 * side), 4, "Y").to_quaternion()
-        el.append(dict(co=c + tang.cross(nor).normalized() * side * w * 0.12,
-                       half=(w * 0.36 * taper, w * 0.22, lobe * 0.42), stiff=2.4, rot=q @ spin))
+        # a flat leaf: long along its own (leaning) axis, a third of the braid wide, thin; centred off the middle
+        el.append(dict(co=c + across * side * w * 0.17, half=(w * 0.27 * taper, w * 0.16, step * 1.02), stiff=3.0,
+                       rot=q @ spin))
+        # the groove: a notch on the lobe's outer edge where the next lobe of this side begins
+        el.append(dict(co=c + tang * step * 1.0 + across * side * w * 0.47 + nor * w * 0.05, half=w * 0.13,
+                       stiff=3.0, neg=True))
     mat = _hair_mat(ctx, "hair_braid", col, -1.6, -0.3)
-    o = core.mb_mesh(ctx, "Braid", el, 0.010, mat, smooth_iter=2, name="braid")
+    o = core.mb_mesh(ctx, "Braid", el, 0.008, mat, smooth_iter=2, name="braid")
     ctx.add(o, "hair", torso, kind="surface", head=False)
     ctx.sig_objs.append(o)
     ctx.objs["braid"] = o
-    # the ribbon: a flat band around the braid at the 4th lobe
+    # the ribbon: a flat band around the braid at the 5th lobe
     rib = br.get("ribbon")
-    if rib and len(lobes) > 4:
-        c, tang = lobes[min(4, len(lobes) - 1)]
+    if rib and len(lobes) > 5:
+        c, tang = lobes[min(5, len(lobes) - 1)]
         rm = core.principled(ctx, "braid_ribbon", rib, 0.6, sheen=0.3)
         ring = core.torus("braid_ribbon", c, w * 0.40, w * 0.07, rm, nrm=tang, seg=32, rseg=10)
         ring.scale = (1.0, 0.75, 1.6)
@@ -250,25 +266,40 @@ def _bob(ctx):
     el += core.ribbon_lock(head, [part, core.az_el(-26, 54), core.az_el(-56, 22), core.az_el(-64, -2),
                                   jaw + Vector((0.0, 0.03, 0.12)), jaw], 0.13 * sx, 0.05 * sx, th, n=18, lift=0.45,
                            free_tail=2, taper_at=0.7)
-    # a fringe swept from the parting across the forehead to the near temple (it leaves the far brow free)
-    fringe = []
-    for az, w, el_tip in [(6, 0.085, 46), (-12, 0.095, 40), (-28, 0.095, 32), (-44, 0.09, 24)]:
+    # a fringe swept from the parting across the forehead to the near temple (it leaves the far brow free); with a
+    # streak, its second lock is the silver one (built below, not part of the dark mass)
+    stk = hr.get("streak")
+    streak_path = None
+    for i, (az, w, el_tip) in enumerate([(6, 0.085, 46), (-12, 0.095, 40), (-28, 0.095, 32), (-44, 0.09, 24)]):
         tip_d = core.az_el(az - 24, el_tip)
         hit, nor = core.ray(head, tip_d * 3, -tip_d)
         if hit is None:
             continue
         path = [part, core.az_el(az + 8, 56), tip_d, hit + nor * 0.05 + Vector((-0.035, -0.015, -0.035))]
-        fringe.append((path, w))
+        if stk and i == 1:
+            streak_path = (az, el_tip, path)
+            continue
         el += core.ribbon_lock(head, path, w * sx, w * 0.7 * sx, 0.05, n=14, lift=0.45, free_tail=1)
     _finish_hair(ctx, el, hr["color"], signature=True)
-    # the streak: one silver lock (a ribbon 0.12 H wide, §7.6) laid on top of the fringe's front lock — only hers
-    stk = hr.get("streak")
-    if stk and fringe:
-        path, w = fringe[1]
-        tip = path[-1] + (path[-1] - Vector((0, 0, 0))).normalized() * 0.02
-        sel = core.ribbon_lock(head, path[:-1] + [tip], 0.12 * H * 0.5, 0.042, 0.026, n=14, lift=2.9, free_tail=1,
-                               taper_at=0.7)
-        mat = core.hair_mat(ctx, "hair_streak", stk, 0.1, 0.62, dark=core.hex_scale(stk, 0.8))
-        o = core.mb_mesh(ctx, "Streak", sel, 0.008, mat, smooth_iter=2, name="streak")
-        ctx.add(o, "detail:streak", ctx.objs["hair"], kind="surface", head=True)
-        ctx.details["streak"] = 400
+    if stk and streak_path:
+        _streak(ctx, head, part, streak_path, stk, sx)
+
+
+def _streak(ctx, head, part, streak_path, col, sx):
+    """Vega's silver lock (§7.6: one ribbon lock 0.12 H, only hers): it leaves the parting narrow (its root stays
+    under the dark hair at the crown: no white patch there), widens over the forehead and tapers toward the near brow
+    and cheek; two strands side by side so a groove runs down it, the hair's AO in the groove and a crevice tone well
+    under #C8CCD4 — a lock in the fringe, not a sheet laid over the hair."""
+    az, el_tip, path = streak_path
+    el = []
+    wmax = 0.12 * H * 0.5
+    for k, da in enumerate((-3.5, 3.5)):     # two strands, ~0.06 apart: 0.12 H together, a groove between
+        tip = path[-1] + Vector((da * 0.004, 0.0, -abs(da) * 0.002))
+        p_ = [part, core.az_el(az + 8 + da * 0.6, 56), core.az_el(az - 24 + da, el_tip - 2), tip + Vector((0, 0, -0.03))]
+        el += core.ribbon_lock(head, p_, 0.016, wmax * 0.5, 0.042, n=16, lift=1.15, free_tail=1, taper_at=0.62,
+                               wmin=0.02)
+    mat = core.hair_mat(ctx, "hair_streak", col, 0.1, 0.62, dark=core.hex_scale(col, 0.78),
+                        light=core.hex_mix(col, "#ffffff", 0.25), crevice="#5E626C")
+    o = core.mb_mesh(ctx, "Streak", el, 0.007, mat, smooth_iter=2, name="streak")
+    ctx.add(o, "detail:streak", ctx.objs["hair"], kind="surface", head=True)
+    ctx.details["streak"] = 400

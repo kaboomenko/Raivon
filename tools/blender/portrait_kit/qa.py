@@ -267,21 +267,30 @@ def landmarks_json(ctx, path, png_path, ids_png, sig_png, size, floating, rows, 
                 m[:, :int(cut)] = False
             col = m.sum(0)
             openings.append(int(col.max()) if col.any() else 0)
-    for e in ctx.objs["eyes"]:
+    almonds = []
+    for e in sorted(ctx.objs["eyes"], key=lambda e: e["side"]):
         rz = e["radii"][2]
         c = e["obj"].matrix_world.translation
         top = rig.project(cam, [tuple(c + Vector((0, 0, rz)))], size)[0][1]
         bot = rig.project(cam, [tuple(c - Vector((0, 0, rz)))], size)[0][1]
         sclera_full.append(round(float(abs(bot - top)), 1))
+        if e.get("almond"):
+            almonds.append([pj(rig.head_to_world(ctx, q)) for q in e["almond"]])
     h_px = abs(chin[1] - crown[1])
+    # the mouth corners in head units (pose-free: the expression alone, for the mood check's pose-held delta)
+    mouth_local = sorted([[round(q.x / H, 4), round(q.z / H, 4)] for q in ctx.L.get("mouth_corners", [])])
     meta = dict(name=os.path.splitext(os.path.basename(png_path))[0], size=list(size), cid=ctx.cid, mood=ctx.mood,
                 era=ctx.era, eye_y=round(sum(p[1] for p in iris) / len(iris), 1), chin_y=chin[1], crown_y=crown[1],
                 skyline_y=skyline, head_box=[round(v, 1) for v in head_box], sig_box=sig_box, h_px=round(h_px, 1),
                 iris=iris, eye_open_px=openings, sclera_full_px=sorted(sclera_full),
                 eye_open_H=[round(o / h_px, 3) for o in openings],
-                sclera_vis_H=[round(o / h_px / max(0.05, e["open"] - _low(ctx)), 3) for o, e in
+                sclera_vis_H=[round(o / h_px / max(0.05, e["open"] - e.get("low", 0.0)), 3) for o, e in
                               zip(openings, sorted(ctx.objs["eyes"], key=lambda e: e["side"]))],
-                brows=brows, mouth=mc,
+                eye_design_H=[round(ctx.P["sclera_h"] / H * (e["open"] - e.get("low", 0.0)), 3) for e in
+                              sorted(ctx.objs["eyes"], key=lambda e: e["side"])],
+                eye_almond=almonds,
+                brow_gap_H=[round(ctx.L[k], 4) for k in ("brow_gap_near", "brow_gap_far") if k in ctx.L],
+                brows=brows, mouth=mc, mouth_local=mouth_local,
                 cheek_near=pj(rig.head_to_world(ctx, ctx.L["cheek_near"])) if ctx.L.get("cheek_near") else None,
                 mouth_open=bool(getattr(ctx, "mouth_open", False)), glasses=bool(getattr(ctx, "glasses", False)),
                 signature=ctx.ch.get("signature", {}).get("name"), floating=floating, contacts=rows,
@@ -293,11 +302,6 @@ def landmarks_json(ctx, path, png_path, ids_png, sig_png, size, floating, rows, 
     with open(path, "w") as f:
         json.dump(meta, f, indent=1)
     return meta
-
-
-def _low(ctx):
-    ey = ctx.ch["eyes"]
-    return ey.get(ctx.mood, {}).get("low", ey.get("low", 0.0))
 
 
 # ------------------------------------------------------------------ lens contrast (glasses)

@@ -322,7 +322,7 @@ static func _live_nodes(n: Node, out: Array) -> void:
 		_live_nodes(c, out)
 
 
-## A label the bake atlas would bake now (KitBake.in_sight: on the screen, inside its scroll's view).
+## A label the bake atlas would bake now (KitBake.in_sight: on the screen — a scroll's clip does not count).
 static func _seen(l: Label) -> bool:
 	var kit: Script = load("res://scripts/ui_kit.gd")
 	if not (kit.KitBake as Script).get_script_method_list().any(func(m): return m["name"] == "in_sight"):
