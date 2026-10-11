@@ -7,7 +7,10 @@ Shapes (chars.py "head"):
   square — round cranium -> square jaw (superball 2.1 -> 3.5), jaw +6 % (Bram, Frey, Kort);
   oval   — 2.0 -> 2.4, rounded chin (Lira, Vance);
   heart  — wide cheekbones (+0.03 H), the jaw tapers to a narrow pointed chin (Vega);
-  long   — a taller cranium, narrower jaw (Olm, Vik, Rai).
+  long   — a taller cranium, narrower jaw (Olm, Vik, Rai);
+  round  — a ball from crown to chin, full cheeks (Hawk).
+Character extras (chars.py "head"): jowls (Kort's heavy jaw folds), jaw (+ wider), chin, cheekbones, muzzle,
+brow_ridge, cheeks.
 Head-local kit units: the skull centre at the origin, chin z = -H/2, crown z = +H/2, the face looks along -Y; +X is
 the character's left (the far side in the portrait), -X its right (the near side, toward the camera).
 """
@@ -26,6 +29,7 @@ SHAPES = {
     "oval": (2.0, 2.4, -0.02, 0.10, 0.88, 0.45),
     "heart": (2.25, 2.15, -0.02, 0.34, 0.95, 0.45),
     "long": (2.1, 2.6, -0.04, 0.12, 0.85, 0.45),
+    "round": (2.0, 2.15, 0.03, 0.02, 0.92, 0.46),
 }
 
 
@@ -76,6 +80,9 @@ def brushes(ctx, p):
             b.append(((s * 0.36 * sx, -0.12 * sy, -0.33), 0.2, (s * 0.05, -0.02, -0.01)))   # square jaw corner
         else:
             b.append(((s * 0.33 * sx, -0.14 * sy, -0.30), 0.16, (s * 0.012, -0.012, 0.0)))  # soft jaw
+        jw = hd.get("jowls", 0.0)
+        if jw:   # heavy jowls: the jaw's lower corners hang out and down (Kort)
+            b.append(((s * 0.36 * sx, -0.22 * sy, -0.40), 0.15, (s * 0.06 * jw, -0.03 * jw, -0.035 * jw)))
     chin = hd.get("chin", 0.0)
     b += [
         ((0, -0.46 * sy, ez + 0.13), 0.09, (0, -0.02, 0.0)),            # glabella

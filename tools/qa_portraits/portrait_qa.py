@@ -31,7 +31,11 @@ Checks (PASS / FAIL / INFO with numbers, one line each, into OUT_DIR/report.txt)
                   under the rim inside the outline passes): judge that on the face crops at 512
   P-A4 smile      calm / smile pairs with meta: both mouth corners >= 6 px higher, in the picture and with the pose
                   held (head-local corners); open smiles: cavity >= 900 px² on the master, teeth visible
-  P-A7            meta "floating" empty; one alpha island; every detail:* at least its P-A8 pixel count
+  P-A7            meta "floating" empty; one alpha island; every detail:* at least its P-A8 pixel count (a detail the
+                  kit measures on another group says so in meta "detail_groups": Hawk's helmet = the "hat")
+  P-A8 extra      Vega's raised brow >= 15 px, Kort's lids <= 0.6, Rai's iris L* 70-85, Irma's orange >= 3 %
+  P-A9            the mean dE76 of the four largest colour groups (hair + beard, clothes, hat or skin, signature)
+                  between any two era-1 commanders >= 15 (matrix in OUT_DIR/de76_matrix.txt); signatures unique
 Exit 1 with --strict if any FAIL.
 """
 import itertools
@@ -279,9 +283,18 @@ def readability(d, n, a, masks, m):
     # the closed mouth is the fold: crease + lips (§7.3 "складка", lower lip 0.03 H); the open one its whole opening
     mouth = grp("mouth", "teeth", "tongue") if mouth_open else grp("mouth", "lip")
     sig = grp("signature")
+    # a winking eye (meta "wink": "near" / "far", Hawk's laugh) is closed by design: its opening, iris, pupil and
+    # catchlight are not gated (the other eye is)
+    wink_i = {"near": 0, "far": 1}.get(m.get("wink"), -1)
     for px in (128, 64):
         k = px / w
         for i, side in enumerate(("near", "far")):
+            if i == wink_i:
+                if px == 128:
+                    out.append(("eye %s closed (wink)" % side, 1, 0))
+                if i < len(brows):
+                    out.append(("%d brow %s thick" % (px, side), _thick(brows[i]) * k, 3 if px == 128 else 2))
+                continue
             if i < len(brows):
                 out.append(("%d brow %s thick" % (px, side), _thick(brows[i]) * k, 3 if px == 128 else 2))
                 if px == 64:
@@ -350,9 +363,10 @@ def check_ids(d, imgs, rep):
         rep.add("FAIL" if badc else "PASS", "P-A5 ids " + n, "; ".join(
             "%s %s%s" % (r[0], r[3], "" if r[2] else " FAIL") for r in cr))
         det = m.get("details", {})
+        alias = m.get("detail_groups", {})     # a detail measured on another group (Hawk's helmet = the "hat")
         dl = []
         for name, need in det.items():
-            got = int(masks.get("detail:" + name, np.zeros(1, bool)).sum())
+            got = int(masks.get(alias.get(name, "detail:" + name), np.zeros(1, bool)).sum())
             dl.append((name, got, need))
         if dl:
             badd = [x for x in dl if x[1] < x[2]]
@@ -430,11 +444,123 @@ def check_meta(d, imgs, rep):
         len(bad), (": " + ", ".join("%s %d" % (b[1], b[0]) for b in bad[:6])) if bad else ""))
 
 
+def _group_lab(rgba, masks, names, prefixes=()):
+    """Mean Lab of the render under the union of ID groups (alpha > 0.5), or None when it covers < 200 px."""
+    mk = np.zeros(rgba.shape[:2], bool)
+    for k, v in masks.items():
+        if k in names or any(k.startswith(p) for p in prefixes):
+            mk |= v
+    mk &= rgba[..., 3] > 0.5
+    if mk.sum() < 200:
+        return None, 0
+    return Q.srgb_to_lab(rgba[..., :3][mk]).mean(0), int(mk.sum())
+
+
+def colour_groups(rgba, masks):
+    """§7.14 P-A9's four largest colour groups of a portrait: hair with beard (and sideburns), clothes (every costume
+    group), headgear or skin (the hat when it covers >= 2 % of the figure, else the skin), the signature."""
+    fig = max(1, int((rgba[..., 3] > 0.5).sum()))
+    out = {}
+    out["hair"] = _group_lab(rgba, masks, ("hair", "beard", "detail:sideburns"))[0]
+    out["clothes"] = _group_lab(rgba, masks, ("costume",), ("costume:",))[0]
+    hat, n_hat = _group_lab(rgba, masks, ("hat",))
+    out["hat_or_skin"] = hat if (hat is not None and n_hat >= 0.02 * fig) else _group_lab(rgba, masks, ("skin",))[0]
+    out["signature"] = _group_lab(rgba, masks, ("signature",))[0]
+    return out
+
+
+def check_distinct(d, imgs, rep):
+    """P-A9: the mean dE76 of the four largest colour groups between any two era-1 calm commanders >= 15; the
+    signatures unique (the kit's registry, meta "signature")."""
+    names = [n for n in imgs if n.startswith("cmd_") and n.count("_") == 1]
+    groups, sigs = {}, {}
+    for n in names:
+        masks, _ = Q.ids(d, n)
+        if masks is None:
+            continue
+        groups[n] = colour_groups(imgs[n], masks)
+        sigs[n] = (Q.meta(d, n) or {}).get("signature")
+    if len(groups) < 2:
+        rep.add("INFO", "P-A9 colour groups", "fewer than 2 era-1 commanders with ids/ sidecars")
+        return
+    rows = []
+    for a, b in itertools.combinations(sorted(groups), 2):
+        des = [float(Q.de76(groups[a][k], groups[b][k])) for k in ("hair", "clothes", "hat_or_skin", "signature")
+               if groups[a][k] is not None and groups[b][k] is not None]
+        if des:
+            rows.append((sum(des) / len(des), a, b))
+    rows.sort()
+    bad = [r for r in rows if r[0] < 15]
+    rep.add("FAIL" if bad else "PASS", "P-A9 colour groups", "mean dE76 min %.1f (%s/%s), median %.1f; %d of %d pairs "
+            "< 15%s" % (rows[0][0], rows[0][1], rows[0][2], rows[len(rows) // 2][0], len(bad), len(rows),
+                        "".join("; %s/%s %.1f" % (r[1], r[2], r[0]) for r in bad[:6])))
+    seen, dup = {}, []
+    for n, sg in sigs.items():
+        if not sg:
+            dup.append("%s has none" % n)
+        elif sg in seen:
+            dup.append("%s = %s" % (n, seen[sg]))
+        else:
+            seen[sg] = n
+    rep.add("FAIL" if dup else "PASS", "P-A9 signatures", "%d unique of %d%s" % (len(seen), len(sigs),
+                                                                              ("; " + ", ".join(dup)) if dup else ""))
+    with open(os.path.join(rep.out, "de76_matrix.txt"), "w") as f:
+        ks = sorted(groups)
+        f.write("mean dE76 of hair / clothes / hat-or-skin / signature\n%-10s" % "" +
+                "".join("%7s" % k[4:9] for k in ks) + "\n")
+        lut = {(a, b): v for v, a, b in rows}
+        for a in ks:
+            f.write("%-10s" % a[4:] + "".join("%7s" % ("" if a == b else "%.1f" % lut.get((a, b), lut.get((b, a), 0)))
+                                               for b in ks) + "\n")
+
+
+def check_extra_details(d, imgs, rep):
+    """P-A8 rows that are not a pixel count of a detail group (§7.14): Vega's raised brow >= 15 px higher than the
+    near one (from the lash line, meta brow_gap_H), Kort's lids <= 0.6 (meta lids), Rai's iris L* 70-85 (render under
+    the iris mask), Irma's orange >= 3 % of the costume (render pixels of hue 15-45 deg, S >= 0.5, under the costume,
+    metal and detail groups below the chin)."""
+    for n in sorted(imgs):
+        if n.count("_") != 1:
+            continue
+        m = Q.meta(d, n) or {}
+        masks, _ = Q.ids(d, n)
+        rgba = imgs[n]
+        if n == "cmd_vega" and len(m.get("brow_gap_H", [])) == 2:
+            dpx = (m["brow_gap_H"][1] - m["brow_gap_H"][0]) * m.get("h_px", 272)
+            rep.add("PASS" if dpx >= 15 else "FAIL", "P-A8 extra " + n, "far brow %.1f px higher than the near (>= 15)"
+                    % dpx)
+        if n == "cmd_kort" and m.get("lids"):
+            lid = max(m["lids"])
+            rep.add("PASS" if lid <= 0.6 else "FAIL", "P-A8 extra " + n, "lids %.2f (<= 0.6)" % lid)
+        if n == "cmd_rai" and masks is not None:
+            mk = masks.get("iris", np.zeros(1, bool)) & (rgba[..., 3] > 0.5)
+            if mk.sum() > 20:
+                L = float(np.median(Q.srgb_to_lab(rgba[..., :3][mk])[..., 0]))
+                rep.add("PASS" if 70 <= L <= 85 else "FAIL", "P-A8 extra " + n, "iris L* %.1f (70-85)" % L)
+        if n == "cmd_irma" and masks is not None and m.get("chin_y"):
+            mk = np.zeros(rgba.shape[:2], bool)
+            for k, v in masks.items():
+                if k in ("costume", "metal") or k.startswith("costume:") or (k.startswith("detail:") and k not in (
+                        "detail:oil", "detail:goggles")):
+                    mk |= v
+            mk[: int(m["chin_y"])] = False
+            mk &= rgba[..., 3] > 0.5
+            px = rgba[..., :3][mk]
+            mx, mn = px.max(-1), px.min(-1)
+            sat = (mx - mn) / np.maximum(mx, 1e-6)
+            r, g, b = px[:, 0], px[:, 1], px[:, 2]
+            hue = (np.degrees(np.arctan2(np.sqrt(3) * (g - b), 2 * r - g - b)) + 360) % 360
+            share = float(((hue >= 15) & (hue <= 45) & (sat >= 0.5) & (mx > 0.35)).mean()) if len(px) else 0.0
+            rep.add("PASS" if share >= 0.03 else "FAIL", "P-A8 extra " + n, "orange %.1f %% of the costume (>= 3 %%)"
+                    % (share * 100))
+
+
 def main():
     pos, opts = Q.parse(sys.argv[1:])
     src, out = pos[0], pos[1]
     os.makedirs(out, exist_ok=True)
     rep = Report()
+    rep.out = out
     have, miss = Q.present(src)
     imgs = check_files(src, have, miss, rep)
     if imgs:
@@ -445,6 +571,8 @@ def main():
         check_ids(src, imgs, rep)
         check_smiles(src, imgs, rep)
         check_meta(src, imgs, rep)
+        check_distinct(src, imgs, rep)
+        check_extra_details(src, imgs, rep)
     txt = "\n".join(rep.lines)
     with open(os.path.join(out, "report.txt"), "w") as f:
         f.write(txt + "\n")

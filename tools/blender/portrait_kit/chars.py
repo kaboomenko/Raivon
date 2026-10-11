@@ -2,8 +2,10 @@
 each portrait of docs/art_direction.md §7.6, plus the signature registry and its lint (no two ids share a
 signature; no two commanders wear the same headgear in one era).
 
-P1 (the kit proof): Bram, Lira and Vega in era 1, calm and smile. Every other id keeps the old builder in
-portrait_assets.py until P2/P3 add its entry here.
+P1 (the kit proof): Bram, Lira and Vega in era 1, calm and smile. P2: all twelve commanders in era 1 (eras 2–4,
+the leaders and the ruler keep the old builder in portrait_assets.py until P3 adds them here). A prop with a "hand"
+pose (§7.5: Vega's pointer, Seir's spyglass, Vance's queen, Irma's gauntlet) builds the hand when the character's
+"hands" is on (default) and its hand-free fallback otherwise (KIT_HANDS=0 forces it, for the review of §7.15 q3).
 
 Units: lengths in H (head height without hair) unless noted; x / z offsets of marks are in head units relative to
 the eye line; colours are albedo sRGB. Moods are deltas over the calm face (§7.9).
@@ -138,26 +140,360 @@ CHARS = {
         # edge-on in the 3/4 view), and it read as an arrow stuck through her side — "no prop may enter the body
         # without a visible holder" (art director note 2, review r3). The raised brow and the glasses carry her in
         # P1; P2 adds back: dict(kind="pointer", x=0.62, y=0.04, z=-1.02, reach=0.345, tip_w=1.8, color="#8A5A34")
-        props=[dict(kind="glasses", color="#44484F", frame=0.025, w=2.0, h=1.26, drop=0.03, off=0.028, tint="#FFFFFF")],
+        props=[dict(kind="glasses", color="#44484F", frame=0.025, w=2.0, h=1.26, drop=0.03, off=0.028, tint="#FFFFFF"),
+               # P2: the pointer held by the near hand across the chest (hand-free: none, as in P1 — the brow and
+               # the glasses carry her)
+               dict(kind="pointer", grip=(-0.16, -1.0), reach_hand=0.62, back=0.07, color="#8A5A34", tip_w=1.8, free="none",
+                    hand=dict(grip="wrap", curl=0.95, face="fingers", elbow=(-0.30, -0.55, -1.75), sleeve="#44484F",
+                              cuff="#F2F2F2"))],
         pose=dict(body=26, head=4, roll=3, nod=4),
         pose_smile=dict(roll=-2, nod=0),
         signature=dict(name="chisel bob + glasses bar; arrow right", zone="far side"),   # the arrow: with P2's hand
+    ),
+    # ---------------------------------------------------------------- Kort (rare): §7.6
+    "cmd_kort": dict(
+        name="Kort", rarity="rare", female=False,
+        # "массивный квадрат 1.0, 284 (самая крупная), брыли, большие уши"; eye line 0.50 (§7.3: Kort)
+        head=dict(shape="square", wh=1.0, h_px=284, eye_line=0.50, jowls=1.0, cheeks=1.2, muzzle=1.1, brow_ridge=1.3,
+                  jaw=0.02),
+        ear_k=1.25,
+        skin="#F2A07E", skin_tone="T2", blush=0.28,
+        # heavy lids 0.50 with a crease, grey-blue, small "spark" catchlights; the smile opens them to 0.70
+        eyes=dict(sclera=0.18, open=0.50, iris="#8AA0B4", iris_shade=0.85, tilt=-0.10, arch=0.06, catch_k=0.75,
+                  smile=dict(open=0.70, low=0.16, bow=0.25, tilt=-0.08, arch=0.16)),
+        brows=dict(shape="bushy", thick=0.085, color="#F0EEF2", arch=0.03, len=1.3, outer=-0.035, inner=0.005,
+                   smile=dict(lift=(0.02, 0.012))),
+        nose=dict(type="aquiline", len=0.24, w=0.068, proj=0.075, hump=0.022, drop=0.21, tip="#E8806E", tip_k=0.55),
+        mouth=dict(lip="#C4675A", line=0.20,
+                   calm=dict(type="closed", w=0.26, near=-0.005, far=-0.005),
+                   smile=dict(type="open", w=0.32, h=0.12, near=0.035, far=0.03, dz=-0.012)),
+        hair=dict(style="tufts", bald=True, color="#F0EEF2", dark="#C8C8D0", light="#FFFFFF", crevice="#8A8E9E",
+                  tufts=dict(band_az=100, band_lo=-26, band_hi=4, out=0.09, up=0.30,
+                             fans=[(108, 6, 1.0, 0.06, 5), (130, -2, 0.85, 0.055, 4)])),
+        # the walrus moustache, white #EDEDF2, 0.85 W wide, hanging 0.25 H below the mouth (§7.6)
+        beard=dict(style="walrus", color="#EDEDF2", tip="#FFFFFF", root="#D4D6DE", crevice="#7E8496", w=0.85,
+                   drop=0.30, smile_lift=0.04),
+        age=dict(forehead=3, crows=3, nasolabial=False, k=0.45, smile_k=0.55),
+        body=dict(shoulders=2.15, neck=0.55),
+        costume=dict(
+            base=dict(color="#5D6236", rough=0.85, sheen=0.3),
+            layers=[
+                dict(kind="placket", color="#4E5330", w=0.045, top=-0.80, x=0.0),
+                dict(kind="buttons", id="button", at=[(0.0, -0.98), (0.0, -1.16)], r=0.032, color="#B0803A"),
+                # the dark karakul collar #6B5040 in ribbons: wide over the shoulders (his "shoulder width" zone),
+                # open in front down to the clasp
+                dict(kind="fur", id="fur", color="#6B5040", dark="#4E3A2E", light="#8A6850", crevice="#2E221C",
+                     r=0.70, r_in=0.30, t=0.11, front_z=-1.05, side_z=-0.94, back_z=-0.86, open=0.10,
+                     clumps=dict(n=120, len=0.09, w=0.042, th=0.032), detail="fur", min_px=8000, signature=True),
+                dict(kind="clasp", color="#B0803A", z=-0.90, x=0.075),
+            ]),
+        props=[dict(kind="hourglass", at=(-0.23, -0.93), h=0.22, button="button_0", sag=0.02)],
+        pose=dict(body=16, head=2, roll=0, nod=-4),
+        pose_smile=dict(roll=-2, nod=0),
+        signature=dict(name="dome + walrus moustache + dark fur collar", zone="lower face width; shoulders"),
+    ),
+    # ---------------------------------------------------------------- Olm (common): §7.6
+    "cmd_olm": dict(
+        name="Olm", rarity="common", female=False,
+        head=dict(shape="long", wh=0.75, h_px=276, eye_line=0.48, brow_ridge=1.3, cheeks=0.95, muzzle=1.05),
+        skin="#EE9A76", skin_tone="T2", blush=0.24,
+        # the squint (§7.6: near 0.55, far 0.68, the lower lid +0.02): "смотрит поверх носа"
+        eyes=dict(sclera=0.18, open=[0.55, 0.68], low=0.02, iris="#6F8FA8", iris_shade=0.85, tilt=0.0, arch=0.14,
+                  smile=dict(open=[0.52, 0.62], low=0.16, bow=0.25, arch=0.18)),
+        brows=dict(shape="angular", thick=0.065, color="#74727C", arch=0.03, lift=(0.0, 0.03), len=1.25,
+                   smile=dict(lift=(0.02, 0.03))),
+        nose=dict(type="aquiline", len=0.28, w=0.06, proj=0.085, hump=0.026, drop=0.25, tip="#DE7868", tip_k=0.6),
+        mouth=dict(lip="#B8645A", line=0.19,
+                   calm=dict(type="closed", w=0.26, near=-0.015, far=0.0),
+                   # the crooked grin: the far corner higher, a gap in the teeth (§7.6 "щербинка")
+                   smile=dict(type="open", w=0.30, h=0.10, near=0.02, far=0.055, dz=-0.01, gap=0.22)),
+        hair=dict(style="tufts", bald=True, color="#D0D0D4", dark="#A8A8B0", light="#ECECF0", crevice="#6E6E7A",
+                  tufts=dict(band_az=95, band_lo=-20, band_hi=10, out=0.10, up=0.35,
+                             fans=[(90, 20, 1.0, 0.06, 5), (110, 13, 0.85, 0.055, 4)])),
+        beard=dict(style="chops", color="#D0D0D4", tip="#E4E4E8", root="#B0B0B8", crevice="#6E6E7A", w=0.16,
+                   thick=0.05),
+        age=dict(forehead=3, crows=3, nasolabial=True, k=0.4, smile_k=0.5),
+        headgear=dict(kind="goggles", id="brass_goggles", style="brass", lens=0.22, rim=0.03, el=47, spread=19, tilt=0.35, depth=0.10,
+                      loupe=0.10, rim_color="#C9A24A", lens_color="#9FD0DC", strap="#7A4E2D", detail="goggles",
+                      min_px=1500, signature=True),
+        body=dict(shoulders=1.95),
+        costume=dict(
+            base=dict(color="#E8DCC0", rough=0.85, sheen=0.25),
+            layers=[
+                dict(kind="collar", color="#E8DCC0", z=-0.64, h=0.06, out=0.01, flare=0.012, gap=0.06),
+                # the leather apron >= 50 % of the shoulder band (§7.6), on neck straps
+                dict(kind="bib", id="apron", color="#7A4E2D", leather=True, w=0.30, top=-0.80, bottom=-2.0,
+                     straps=True, detail="apron", min_px=6000),
+                dict(kind="pocket", id="pocket", on="apron", at=(0.15, -1.04), w=0.10, h=0.13, color="#6B4426"),
+            ]),
+        props=[dict(kind="wrench", pocket="pocket", len=0.70, jaw=0.22, ang=10, color="#9AA4B0"),
+               dict(kind="pencil", color="#C9A24A")],
+        pose=dict(body=24, head=10, roll=-4, nod=3),
+        pose_smile=dict(roll=-6, nod=3),
+        signature=dict(name="brass goggles on a bald dome + fluffy sides", zone="double bump on top"),
+    ),
+    # ---------------------------------------------------------------- Vik (common): §7.6
+    "cmd_vik": dict(
+        name="Vik", rarity="common", female=False,
+        head=dict(shape="long", wh=0.80, h_px=264, eye_line=0.46, cheeks=1.0),
+        skin="#F2A276", skin_tone="T2", blush=0.30,
+        paint=[dict(at=(0.0, -0.13), r=0.13, color="#D9825A", k=0.32)],          # the tan across the nose
+        eyes=dict(sclera=0.22, open=0.85, iris="#C98A2E", iris_shade=0.85, tilt=0.06, arch=0.26,
+                  smile=dict(open=0.74, low=0.22, bow=0.3, arch=0.3)),
+        brows=dict(shape="straight", thick=0.055, color="#9A7A3A", arch=0.015, outer=0.025, len=1.2),
+        nose=dict(type="straight", w=0.05, drop=0.19, k=0.85, tip="#E89070", tip_k=0.4),
+        mouth=dict(lip="#C4675A", line=0.20,
+                   calm=dict(type="closed", w=0.25, near=0.03, far=0.005),
+                   smile=dict(type="open", w=0.32, h=0.11, near=0.05, far=0.02, dz=-0.01, fang="near")),
+        hair=dict(style="fringe", color="#EBD27A", dark="#C8A850", light="#F6E6A8", crevice="#8A6A2A"),
+        headgear=dict(kind="hood", color="#4E6B3A", thick=0.075, peak=0.25, edge_r=0.05),
+        body=dict(shoulders=1.75),
+        costume=dict(
+            base=dict(color="#6B4A2A", rough=0.6, sheen=0.15),
+            layers=[
+                dict(kind="cloak", id="cloak", color="#4E6B3A", z1=-0.64, gap=0.03, flare=0.10,
+                     open=[(-1.9, 0.34), (-1.2, 0.26), (-0.85, 0.18), (-0.66, 0.14)]),
+                dict(kind="strap", id="strap", color="#3E2A18", **{"from": (0.40, -0.72), "to": (-0.45, -1.6)},
+                     w=0.07),
+            ]),
+        props=[dict(kind="raven", x=-0.70, y=0.10, size=0.55, turn=30),
+               dict(kind="bow", x0=0.66, y=0.26, z0=-0.86, len=0.6, lean=10)],
+        pose=dict(body=18, head=14, roll=-6, nod=2),
+        pose_smile=dict(roll=-8, nod=3),
+        signature=dict(name="raven on the near shoulder + hood peak back", zone="near shoulder; top back"),
+    ),
+    # ---------------------------------------------------------------- Seir (rare): §7.6
+    "cmd_seir": dict(
+        name="Seir", rarity="rare", female=False,
+        head=dict(shape="square", wh=0.88, h_px=272, eye_line=0.48, jaw=-0.03, cheeks=1.1),
+        skin=SKIN["T4"], skin_tone="T4", blush=0.32,
+        paint=[dict(at=(0.0, -0.20), r=0.07, color="#D0604A", k=0.35)],          # the ruddy nose
+        eyes=dict(sclera=0.18, open=0.58, low=0.10, iris="#2F8FB0", iris_shade=0.9, tilt=0.02, arch=0.16,
+                  smile=dict(open=0.56, low=0.24, bow=0.3, arch=0.22)),
+        brows=dict(shape="arc", thick=0.065, color="#6E6E74", arch=0.02, outer=-0.025, len=1.25),
+        nose=dict(type="aquiline", len=0.22, w=0.075, proj=0.07, hump=0.016, drop=0.21, tip="#C8604A", tip_k=0.5),
+        mouth=dict(lip="#A85A4A", line=0.20,
+                   calm=dict(type="closed", w=0.27, near=0.012, far=0.006),
+                   smile=dict(type="open", w=0.34, h=0.13, near=0.045, far=0.04, dz=-0.012)),
+        hair=dict(style="short", color="#CFCFD4", dark="#A8A8B0", light="#E8E8EC", crevice="#6E6E7A"),
+        beard=dict(style="short", color="#CFCFD4", tip="#E0E0E4", root="#B4B4BC", crevice="#6E6E7A", thick=0.06,
+                   moustache=True, moustache_color="#C4C4CA", moustache_dark="#A0A0A8", moustache_light="#DADADE",
+                   moustache_k=0.72),
+        age=dict(forehead=2, crows=3, nasolabial=True, k=0.4, smile_k=0.65),
+        headgear=dict(kind="tricorn", color="#134B5F", trim="#F2F2F2", rim_dz=0.0, crown=0.20, wall=0.19,
+                      corner=0.24, mid=0.02),
+        body=dict(shoulders=2.0),
+        costume=dict(
+            base=dict(color="#175A72", rough=0.85, sheen=0.3),
+            layers=[
+                dict(kind="neckerchief", color="#F2F2F2", z=-0.60),
+                dict(kind="lapels", color="#175A72",
+                     shape=[(0.10, -0.66), (0.30, -0.70), (0.42, -0.80), (0.36, -0.86), (0.30, -1.02), (0.05, -1.20)]),
+                dict(kind="buttons", id="btn", r=0.036, color="#E0AD45",
+                     at=[(-0.22, -0.98), (0.22, -0.98), (-0.20, -1.14), (0.20, -1.14)]),
+            ]),
+        props=[dict(kind="spyglass", len=0.8, d=0.11, ang=50, dir_world=(-0.8, 0.6, 0.0), rest=(-0.48, None),
+                    dir_world_hand=(-0.5, 0.86, 0.0), rest_hand=(-0.58, None),
+                    rest_y=0.06, below=0.30, strap_from=(-0.42, -0.70), strap_to=(0.55, -1.6), grip_t=0.10,
+                    below_hand=0.48,
+                    hand=dict(grip="wrap", curl=1.0, elbow=(-0.45, -0.40, -1.75), sleeve="#175A72",
+                              cuff="#F2F2F2")),
+               dict(kind="earring", style="ring", d=0.10, tube=0.03, color="#E8B23A")],
+        pose=dict(body=24, head=10, roll=-3, nod=3),
+        pose_smile=dict(roll=-5, nod=4),
+        signature=dict(name="tricorn + spyglass diagonal behind the head", zone="hat line; near shoulder"),
+    ),
+    # ---------------------------------------------------------------- Frey (rare): §7.6
+    "cmd_frey": dict(
+        name="Frey", rarity="rare", female=True,
+        # she keeps the square jaw (§7.3: "Фрей сохраняет квадратную челюсть"): +0.06 cancels the women's -6 %
+        head=dict(shape="square", wh=0.95, h_px=278, eye_line=0.48, chin=0.01, jaw=0.06, cheeks=1.05),
+        skin=SKIN["T5"], skin_tone="T5", blush=0.2,
+        eyes=dict(sclera=0.19, open=0.72, iris="#8A5A2E", tilt=0.0, arch=0.18, flick=0.028,
+                  smile=dict(open=0.62, low=0.20, bow=0.3, arch=0.24)),
+        brows=dict(shape="straight", thick=0.075, color="#2A2020", arch=0.01, len=1.25, inner=-0.01, gap=0.04,
+                   smile=dict(lift=(0.015, 0.01))),
+        brow_scar=dict(x=0.12, color="#C88A6A", w=0.025),
+        nose=dict(type="straight", w=0.07, drop=0.21, k=1.05, tip="#A8603E", tip_k=0.3),
+        mouth=dict(lip="#A0524A", line=0.20,
+                   calm=dict(type="closed", w=0.28, near=0.01, far=0.0),
+                   smile=dict(type="open", w=0.30, h=0.10, near=0.035, far=0.025, dz=-0.01)),
+        hair=dict(style="flattop", color="#2E2622", dark="#2A2420", light="#5A4A40", crevice="#1A1412", side=0.035,
+                  top=0.07, stubble=0.45),
+        # 2.6 W across the pauldrons (§7.6 "самые широкие плечи (2.6 W, наплечники из 3 пластин)"): the bust 2.25 W,
+        # the plates add the rest (a 2.6 W torso alone runs past the frame's side band at every head size)
+        body=dict(shoulders=2.15, absolute=True),
+        costume=dict(
+            base=dict(color="#3B5A44", rough=0.85, sheen=0.3),
+            layers=[
+                dict(kind="collar", color="#3B5A44", z=-0.64, h=0.08, out=0.016, flare=0.02),
+                dict(kind="quilt", on="torso", color="#324E3B", z=(-1.45, -0.74), dx=0.12, w=0.70, seams=(-0.86, -1.12)),
+                dict(kind="pauldrons", color="#C8D0DA", stripe="#3B7A52", n=3, spread=80, detail="pauldrons", min_px=10000),
+            ]),
+        props=[dict(kind="badge_relief", style="tower", at=(-0.26, -0.96), size=0.20, color="#C8CCD4", dark="#2C4434",
+                    detail="badge"),
+               dict(kind="earring", style="stud", color="#C8D0DA")],
+        pose=dict(body=14, head=0, roll=0, nod=-2),
+        pose_smile=dict(roll=-2, nod=1),
+        signature=dict(name="flat square top + widest shoulders", zone="top centre; shoulder width"),
+    ),
+    # ---------------------------------------------------------------- Irma (epic): §7.6
+    "cmd_irma": dict(
+        name="Irma", rarity="epic", female=True,
+        head=dict(shape="heart", wh=0.80, h_px=268, eye_line=0.47, cheekbones=0.04, chin=0.005),
+        skin=SKIN["T1"], skin_tone="T1", blush=0.22,
+        eyes=dict(sclera=0.20, open=0.70, low=0.02, iris="#7FC4E8", iris_shade=0.8, tilt=0.10, arch=0.22, flick=0.07,
+                  smile=dict(open=0.62, low=0.20, bow=0.3, tilt=0.06, arch=0.26)),
+        brows=dict(shape="straight", thick=0.055, color="#7A7060", arch=0.01, outer=0.035, len=1.25,
+                   smile=dict(lift=(0.0, 0.06))),
+        nose=dict(type="straight", w=0.045, drop=0.19, k=0.85, tip="#F0A088", tip_k=0.35),
+        mouth=dict(lip="#C86A6A", line=0.19,
+                   calm=dict(type="closed", w=0.26, near=0.02, far=0.0, sag=0.004),
+                   smile=dict(type="open", w=0.31, h=0.11, near=0.045, far=0.03, dz=-0.01)),
+        oil=dict(**{"from": (-0.31, -0.13), "to": (-0.19, -0.19)}, color="#5A4A44", k=0.7, w=0.05),
+        hair=dict(style="ponytail", color="#EFE9DC", dark="#C8C0B0", light="#FFFDF6", crevice="#8E8676",
+                  tail=dict(up=0.15, band="#3A3C46")),
+        headgear=dict(kind="goggles", id="motor_goggles", style="rubber", lens=0.15, rim=0.035, el=40, spread=18, tilt=0.45, oval=0.78,
+                      depth=0.06, rim_color="#2E2E34", lens_color="#F5A050", strap="#2E2E34", detail="goggles",
+                      min_px=1200),
+        body=dict(shoulders=1.9),
+        costume=dict(
+            base=dict(color="#3A3C46", rough=0.45, sheen=0.1),
+            layers=[
+                dict(kind="collar", color="#3A3C46", z=-0.66, h=0.20, out=0.02, flare=0.07, gap=0.10, thick=0.03,
+                     piping="#F08A24", piping_r=0.018),
+                dict(kind="placket", color="#F08A24", w=0.026, top=-0.76, x=0.03),
+                dict(kind="strap", id="strap", color="#2E2E34", **{"from": (-0.40, -0.72), "to": (0.45, -1.6)},
+                     w=0.075),
+            ]),
+        props=[dict(kind="gauntlet", on="strap", z=(-0.95, -1.06), color="#3A3C46", piping="#F08A24",
+                    hand=dict(grip="wrap", curl=0.85, target=(-0.20, -0.36, -0.62), axis=(0.25, 0.4, 1.0),
+                              radius=0.03, elbow=(-0.40, -0.45, -1.75), sleeve="#3A3C46"))],
+        pose=dict(body=28, head=12, roll=-5, nod=5),
+        pose_smile=dict(roll=-7, nod=5),
+        signature=dict(name="platinum ponytail hook", zone="top back"),
+    ),
+    # ---------------------------------------------------------------- Hawk (epic): §7.6
+    "cmd_hawk": dict(
+        name="Hawk", rarity="epic", female=False,
+        head=dict(shape="round", wh=0.90, h_px=270, eye_line=0.48, cheeks=1.15),
+        skin=SKIN["T3"], skin_tone="T3", blush=0.22,
+        paint=[dict(at=(-0.20, -0.36), r=0.022, color="#B86A48", k=0.5)],        # the dimple by the near corner
+        eyes=dict(sclera=0.20, open=0.75, iris="#9A6A2E", tilt=0.04, arch=0.22,
+                  smile=dict(open=0.62, low=0.20, bow=0.3, arch=0.26, wink="near")),
+        brows=dict(shape="arc", thick=0.06, color="#3A2414", arch=0.025, lift=(0.05, 0.0), len=1.2),
+        nose=dict(type="button", k=1.1, drop=0.20, tip="#E0906A", tip_k=0.35),
+        mouth=dict(lip="#B8645A", line=0.20,
+                   calm=dict(type="closed", w=0.27, near=0.04, far=0.005),
+                   smile=dict(type="open", w=0.34, h=0.13, near=0.05, far=0.035, dz=-0.012)),
+        hair=dict(style="quiff", color="#4A3424", dark="#3A2818", light="#6A4C34", crevice="#24160C"),
+        beard=dict(style="thin", color="#3A2414", tip="#3A2414", root="#2E1C10", crevice="#1E120A", thick=0.04,
+                   curl=0.02),
+        headgear=dict(kind="aviator", color="#7A5133", fur="#EDE3D0", fur_detail="fur",
+                      extra=[dict(kind="goggles", style="aviator", lens=0.15, rim=0.028, el=48, spread=17, tilt=0.6,
+                                  depth=0.055, rim_color="#E0AD45", lens_color="#6FA8DC", strap="#5A3A24",
+                                  detail="cap_goggles", min_px=200)]),
+        body=dict(shoulders=2.05),
+        costume=dict(
+            base=dict(color="#5A3A24", rough=0.5, sheen=0.1),
+            layers=[
+                dict(kind="fur", id="fur", color="#EDE3D0", dark="#C8BCA6", light="#FFFAF0", crevice="#9A8C76",
+                     r=0.60, r_in=0.22, t=0.10, front_z=-0.98, side_z=-0.88, back_z=-0.80, open=0.12,
+                     clumps=dict(n=60, len=0.10, w=0.06, th=0.045), detail="fur", min_px=2500, smooth=3),
+            ]),
+        props=[dict(kind="scarf", len=0.9, w=(0.10, 0.19), rise=-0.10, twist=50, detail="scarf"),
+               dict(kind="badge_relief", style="wings", at=(-0.24, -1.02), size=0.24, color="#E8B23A", hex="#6FA8DC",
+                    detail="wings")],
+        pose=dict(body=22, head=10, roll=7, nod=3),
+        pose_smile=dict(roll=4, nod=4),
+        signature=dict(name="round cap with flaps + scarf to the right", zone="hat line; far side"),
+    ),
+    # ---------------------------------------------------------------- Vance (epic): §7.6
+    "cmd_vance": dict(
+        name="Vance", rarity="epic", female=True,
+        head=dict(shape="oval", wh=0.78, h_px=266, eye_line=0.47, cheeks=0.95, chin=0.005),
+        skin="#F6BE9C", skin_tone="T1", blush=0.2,
+        eyes=dict(sclera=0.20, open=[0.62, 0.59], iris="#8A7AB8", iris_shade=0.9, tilt=0.06, arch=0.2, flick=0.07,
+                  shadow="#D9A0A8", smile=dict(open=[0.60, 0.57], low=0.16, bow=0.25, arch=0.24)),
+        brows=dict(shape="arc", thick=0.055, color="#5A5664", arch=0.045, lift=(0.0, 0.03), len=1.25),
+        nose=dict(type="straight", w=0.042, drop=0.19, k=0.9, tip="#F0A090", tip_k=0.3),
+        mouth=dict(lip="#B85A6A", line=0.19,
+                   calm=dict(type="closed", w=0.27, near=0.03, far=0.01),
+                   smile=dict(type="open", w=0.31, h=0.11, near=0.045, far=0.035, dz=-0.01)),
+        age=dict(nasolabial=True, k=0.22, smile_k=0.32),
+        hair=dict(style="bun", color="#D9D6E2", dark="#B4B0C4", light="#F0EEF6", crevice="#7A7690",
+                  bun=dict(h=0.28, r=(0.12, 0.085), turns=3.0, w=0.095)),
+        body=dict(shoulders=1.75, neck=0.42),
+        costume=dict(
+            base=dict(color="#4B2C78", rough=0.8, sheen=0.4),
+            layers=[
+                dict(kind="collar", color="#4B2C78", z=-0.64, h=0.07, out=0.014, flare=0.012, gap=0.08),
+                dict(kind="lapels", color="#8E5BD0",
+                     shape=[(0.08, -0.66), (0.24, -0.70), (0.33, -0.78), (0.28, -0.84), (0.20, -0.98), (0.04, -1.14)]),
+                dict(kind="jabot", color="#F4F2F6", top=-0.66, tiers=3, r=0.12),
+            ]),
+        props=[dict(kind="brooch", at=(0.0, -0.69), d=0.10),
+               dict(kind="queen", h=0.30, color="#5A3A26", pendant_at=(0.0, -0.92), offset=(-0.26, -0.20, -0.22),
+                    hand=dict(grip="pinch", elbow=(-0.30, -0.45, -1.75), sleeve="#4B2C78", cuff="#F4F2F6")),
+               dict(kind="hairpin", t=0.35)],
+        pose=dict(body=26, head=6, roll=4, nod=5),
+        pose_smile=dict(roll=2, nod=8),
+        signature=dict(name="tall vertical bun + queen at the chin", zone="top centre; chin"),
+    ),
+    # ---------------------------------------------------------------- Rai (legendary): §7.6
+    "cmd_rai": dict(
+        name="Rai", rarity="legendary", female=False,
+        head=dict(shape="long", wh=0.82, h_px=274, eye_line=0.46, cheeks=1.0),
+        skin="#BE8256", skin_tone="T4", blush=0.15,
+        eyes=dict(sclera=0.19, open=0.70, iris="#5AA8FF", iris_shade=0.95, glow=0.5, tilt=0.0, arch=0.18,
+                  smile=dict(open=0.60, low=0.18, bow=0.25, arch=0.22)),
+        brows=dict(shape="arc", thick=0.06, color="#E8EAF0", arch=0.02, outer=-0.03, len=1.35),
+        nose=dict(type="aquiline", len=0.24, w=0.058, proj=0.075, hump=0.012, drop=0.22, tip="#C87A58", tip_k=0.3),
+        mouth=dict(lip="#A86050", line=0.20,
+                   calm=dict(type="closed", w=0.26, near=0.012, far=0.008),
+                   smile=dict(type="open", w=0.30, h=0.09, near=0.035, far=0.03, dz=-0.008)),
+        hair=dict(style="long", color="#EEF0F5", dark="#C4CCDC", light="#FFFFFF", crevice="#7E8CA8"),
+        beard=dict(style="long", color="#EEF0F5", tip="#FFFFFF", root="#C8D0E0", crevice="#6E7EA0", below=0.6,
+                   moustache=True, moustache_color="#E4E8F0", moustache_dark="#B8C2D4", moustache_light="#F6F8FC",
+                   moustache_k=0.85),
+        age=dict(forehead=2, crows=2, nasolabial=False, k=0.3),
+        headgear=dict(kind="circlet", color="#C8CCD4", w=0.06, el=(34, 14), stone=0.12, emit=1.6),
+        body=dict(shoulders=2.0),
+        costume=dict(
+            base=dict(color="#EEF1F6", rough=0.85, sheen=0.3),
+            layers=[
+                dict(kind="cloak", id="cloak", color="#1E4FA8", z1=-0.64, gap=0.03, flare=0.06,
+                     open=[(-1.9, 0.40), (-1.2, 0.34), (-0.85, 0.28), (-0.66, 0.22)]),
+                dict(kind="cape_collar", color="#1E4FA8", z0=-0.72, top_z=-0.12, r0=0.30, r1=0.50, open=60,
+                     piping="#C8CCD4", detail="collar", min_px=4000),
+                dict(kind="bib", id="stole", color="#2B5FD9", w=0.24, top=-0.70, bottom=-2.0, straps=False,
+                     over_last=False),
+            ]),
+        props=[dict(kind="banner", x=0.50, y=0.32, top=0.80, w=0.40, h=0.60)],
+        pose=dict(body=18, head=4, roll=0, nod=2),
+        pose_smile=dict(roll=-2, nod=3),
+        signature=dict(name="stand cape collar + banner over the far shoulder", zone="head frame; far side"),
     ),
 }
 
 KIT_IDS = set(CHARS)
 KIT_ERAS = {cid: {1} for cid in CHARS}      # eras the kit builds; the rest falls back to the old builder
 
-# headgear per era for the uniqueness lint (§7.6: «Головные уборы в одной эпохе не повторяются»)
-HEADGEAR = {cid: {1: (c.get("headgear") or {}).get("kind")} for cid, c in CHARS.items()}
+# headgear per era for the uniqueness lint (§7.6: «Головные уборы в одной эпохе не повторяются»): a headgear's id
+# (the builder kind unless it says otherwise: Olm's brass goggles and Irma's motor goggles share the goggles builder)
+HEADGEAR = {cid: {1: (c.get("headgear") or {}).get("id", (c.get("headgear") or {}).get("kind"))}
+            for cid, c in CHARS.items()}
 
 
 def lint():
-    """Fail the build when two ids share a signature or two commanders share a headgear in one era."""
+    """Fail the build when an id has no signature or no signature zone, two ids share a signature, or two commanders
+    share a headgear in one era (runs at every build, portrait_kit.build)."""
     errs = []
     seen = {}
     for cid, c in CHARS.items():
         s = c.get("signature", {}).get("name")
+        if not c.get("signature", {}).get("zone"):
+            errs.append("%s has no signature zone" % cid)
         if not s:
             errs.append("%s has no signature" % cid)
         elif s in seen:

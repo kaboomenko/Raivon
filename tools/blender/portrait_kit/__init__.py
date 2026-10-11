@@ -46,6 +46,7 @@ def build(cid, mood="calm", era=1, log=print):
     face.build_mouth(ctx)
     face.build_scar(ctx)
     core.update()
+    headgear.plan(ctx)
     hair.build_hair(ctx)
     headgear.build_headgear(ctx)
     beard.build_beard(ctx)

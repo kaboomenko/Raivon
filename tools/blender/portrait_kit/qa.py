@@ -9,10 +9,13 @@
   DIR/ids/NAME.json     {"colors": {group: [r, g, b]}}
   DIR/ids/NAME_sig.png  the signature mask (the signature objects white, everything else a holdout)
   DIR/meta/NAME.json    projected landmarks in PNG px: eye_y, chin_y, crown_y, skyline_y, head_box, sig_box, h_px,
-                        iris centres, eye openings (and the design opening), the eyes' almond outlines (eye_almond),
+                        iris centres, eye openings (and the design opening), the lids' opening per eye (lids), a
+                        winking eye (wink: "near" / "far"), the eyes' almond outlines (eye_almond),
                         brow end points and the brows' gap to the calm lash line (brow_gap_H), mouth corners (and head-local, pose-free, in H:
                         mouth_local); the floating list and contact
-                        report; the P-A8 detail thresholds; for glasses the iris contrast behind the lens; stats
+                        report; the P-A8 detail thresholds (details) and the details measured on another ID group
+                        (detail_groups, e.g. Hawk's helmet = "hat"); for glasses the iris contrast behind the lens;
+                        stats
 --contacts: the BVH contact test of P-A7 — each attached part against its parent: the gap must be <= 0.01 H, a part
   on a surface is buried <= 0.04 H over <= 60 % of its points; "embed" parts (eyes, nose, ears, beards, glasses
   temples under the hair: inside their parent by design) are checked for the gap only;
@@ -185,7 +188,7 @@ def id_pass(ctx, path_png, path_json, path_sig, size):
     for p in ctx.parts:
         by_obj[p.obj.name] = p.group
     cache = {}
-    eyes = {e["obj"].name: e for e in ctx.objs["eyes"]}
+    eyes = {e["obj"].name: e for e in ctx.objs["eyes"] if not e.get("closed")}
     for o in sc.objects:
         if o.type not in ("MESH", "CURVE"):
             continue
@@ -293,8 +296,7 @@ def landmarks_json(ctx, path, png_path, ids_png, sig_png, size, floating, rows, 
         top = rig.project(cam, [tuple(c + Vector((0, 0, rz)))], size)[0][1]
         bot = rig.project(cam, [tuple(c - Vector((0, 0, rz)))], size)[0][1]
         sclera_full.append(round(float(abs(bot - top)), 1))
-        if e.get("almond"):
-            almonds.append([pj(rig.head_to_world(ctx, q)) for q in e["almond"]])
+        almonds.append([pj(rig.head_to_world(ctx, q)) for q in e.get("almond") or []])
     h_px = abs(chin[1] - crown[1])
     # the mouth corners in head units (pose-free: the expression alone, for the mood check's pose-held delta)
     mouth_local = sorted([[round(q.x / H, 4), round(q.z / H, 4)] for q in ctx.L.get("mouth_corners", [])])
@@ -312,8 +314,9 @@ def landmarks_json(ctx, path, png_path, ids_png, sig_png, size, floating, rows, 
                 brows=brows, mouth=mc, mouth_local=mouth_local,
                 cheek_near=pj(rig.head_to_world(ctx, ctx.L["cheek_near"])) if ctx.L.get("cheek_near") else None,
                 mouth_open=bool(getattr(ctx, "mouth_open", False)), glasses=bool(getattr(ctx, "glasses", False)),
+                wink=ctx.L.get("wink"), lids=[e["open"] for e in sorted(ctx.objs["eyes"], key=lambda e: e["side"])],
                 signature=ctx.ch.get("signature", {}).get("name"), floating=floating, contacts=rows,
-                details=ctx.details, frame=ctx.frame, stats=stats)
+                details=ctx.details, detail_groups=getattr(ctx, "detail_groups", {}), frame=ctx.frame, stats=stats)
     if getattr(ctx, "lens_paths", None) and ids_png:
         r = lens_ratio(ctx.lens_paths, ids_png)
         if r is not None:

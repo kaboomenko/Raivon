@@ -86,6 +86,11 @@ class Ctx:
         self.details = {}           # P-A8: detail name -> minimum visible px on the master
         self.sig_objs = []          # the objects that make the signature (§7.2): the sig mask of the QA pass
         self.notes = []
+        # hands (§7.5, §7.15 q3): a prop with a "hand" pose builds it when hands are on (the character's "hands", or the
+        # environment's KIT_HANDS=0/1 for the side-by-side review of the hand pose and its hand-free fallback)
+        import os
+        env = os.environ.get("KIT_HANDS")
+        self.hands = char.get("hands", True) if env is None else env not in ("0", "", "no")
 
     def add(self, obj, group, parent=None, detail=None, kind="surface", head=False):
         self.parts.append(Part(obj, group, parent, detail, kind, head))
@@ -153,6 +158,12 @@ def node_ramp(nt, fac, stops, interp="LINEAR"):
         e.color = rgba(c)
     nt.links.new(fac, r.inputs[0])
     return r.outputs[0]
+
+
+def node_ramp_value(nt, fac, a, b):
+    """A scalar from a (fac 0) to b (fac 1), fac clamped."""
+    f = node_math(nt, "MINIMUM", node_math(nt, "MAXIMUM", fac, 0.0), 1.0)
+    return node_math(nt, "ADD", node_math(nt, "MULTIPLY", f, b - a), a)
 
 
 def node_math(nt, op, a, b=None, clamp=False):
@@ -228,7 +239,7 @@ def floor_albedo(nt, sock, floor="#2A2A30"):
     return sc.outputs["Vector"]
 
 
-def hair_mat(ctx, name, col, z0, z1, dark=None, light=None, rough=0.6, crevice=None, edge=None):
+def hair_mat(ctx, name, col, z0, z1, dark=None, light=None, rough=0.6, crevice=None, edge=None, stubble=0.0):
     """Hair, fur, beards: object-Z gradient (`dark` at z0, `light` at z1; hair: +8 % L* on top) x AO crevice tint
     (§7.11), held at the albedo floor (§7.4: the crevice tint multiplies, so dark hair would otherwise drop far below
     it). edge = (point attribute, colour, strength): a tone painted where the attribute is 1 (a beard's root band
@@ -245,6 +256,19 @@ def hair_mat(ctx, name, col, z0, z1, dark=None, light=None, rough=0.6, crevice=N
         at = nt.nodes.new("ShaderNodeAttribute")
         at.attribute_name = edge[0]
         base = node_mix(nt, node_math(nt, "MULTIPLY", at.outputs["Fac"], edge[2], clamp=True), base, edge[1])
+    if stubble:
+        # a cropped coat (Frey's flat top, §7.6 "щетина в шейдере"): fine speckles of the light tone and a fine bump,
+        # so the shell reads as short hair, not a cap
+        nz = nt.nodes.new("ShaderNodeTexNoise")
+        nz.inputs["Scale"].default_value = 900.0
+        nz.inputs["Detail"].default_value = 2.0
+        sp = node_math(nt, "GREATER_THAN", nz.outputs["Fac"], 0.56)
+        base = node_mix(nt, node_math(nt, "MULTIPLY", sp, stubble), base, light or hex_mix(col, "#ffffff", 0.25))
+        bn = nt.nodes.new("ShaderNodeBump")
+        bn.inputs["Strength"].default_value = 0.35
+        bn.inputs["Distance"].default_value = 0.002
+        nt.links.new(nz.outputs["Fac"], bn.inputs["Height"])
+        nt.links.new(bn.outputs["Normal"], b.inputs["Normal"])
     nt.links.new(floor_albedo(nt, ao_crevice(nt, base, crevice or hex_scale(col, 0.5))), b.inputs["Base Color"])
     return m
 

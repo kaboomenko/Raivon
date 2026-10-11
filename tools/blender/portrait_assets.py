@@ -6,10 +6,12 @@ draws the rarity plate and frame). Run: python3 tools/blender/portrait_assets.py
 - the ruler: OUTDIR ruler --eras=1,2,3,4
 Add --force to regenerate into an existing folder (game/assets/ui/portraits included): without it every file that
 already exists is skipped, so these three commands do nothing there.
-Two builders. The ids (and eras) listed in portrait_kit/chars.py (KIT_IDS, KIT_ERAS — in P1 cmd_bram, cmd_lira and
-cmd_vega in era 1) go through the portrait kit v2 (tools/blender/portrait_kit/, §7.5): 512×588 by default (§7.12),
-Cycles 64 samples, AgX Punchy. Every other id and era keeps the old primitive builder below (256×294, 40 samples)
-until P2/P3 move it to the kit.
+Two builders. The ids (and eras) listed in portrait_kit/chars.py (KIT_IDS, KIT_ERAS — since P2 all twelve
+commanders in era 1) go through the portrait kit v2 (tools/blender/portrait_kit/, §7.5): 512×588 by default (§7.12),
+Cycles 64 samples, AgX Punchy. Every other id and era (the commanders' eras 2–4, the AI leaders, the ruler) keeps the
+old primitive builder below (256×294, 40 samples) until P3 moves it to the kit. The hand poses of §7.5 (Vance, Seir,
+Irma, Vega) follow chars.py ("hands"); the environment's KIT_HANDS=0/1 forces the hand-free fallbacks / the hands for
+the side-by-side review (§7.15 q3).
 Flags: --size=N (width; height = int(N × 1.15), the 0.8707 aspect), --samples=N, --frame=bust|face (kit: face = a
 square face crop, not shipped), --sidecars=DIR (kit: DIR/ids/NAME.png part-ID pass + NAME.json colours + NAME_sig.png
 signature mask, DIR/meta/NAME.json projected landmarks and the contact report; read by tools/qa_portraits), --contacts

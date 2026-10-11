@@ -12,7 +12,18 @@ Styles (chars.py "hair": {"style": ...}):
              `build_braid` (Lira);
   bob      — an asymmetric bob: a side parting on the far side, the near side longer with a "chisel" point at the
              jaw, the ends turned in; an optional streak (`_streak`): one two-strand lock in its own colour cast onto
-             the dark hair, from the top front across the fringe to the near brow (Vega).
+             the dark hair, from the top front across the fringe to the near brow (Vega);
+  tufts    — a bald dome (glossy, face.skin_mat) with a low horseshoe band and soft fans of clumps at the sides (Olm
+             over the ears, Kort behind them);
+  fringe   — only what a hood shows: shaggy locks over the brows and at the temples (Vik);
+  short    — short hair swept back, culled under a hat, escape locks below its rim (Seir);
+  flattop  — a cropped shell filled up to a flat plane with near-vertical walls, a crisp hairline and stubble in
+             the shader (Frey);
+  ponytail — hair drawn up to a high gather, a fringe to the far side and a tail of 7 clumps arcing over and behind
+             the head (Irma);
+  bun      — hair swept up to a tall vertical bun coiled round its axis (Vance);
+  long     — long hair swept back from a high forehead down behind the shoulders (Rai);
+  quiff    — a quiff curling out from under a cap's front edge (Hawk).
 """
 import math
 
@@ -32,17 +43,29 @@ def hairline_fn(table):
 def _hair_mat(ctx, name, col, z0=0.1, z1=0.62):
     hr = ctx.ch["hair"]
     return core.hair_mat(ctx, name, col, z0, z1, dark=hr.get("dark"), light=hr.get("light"),
-                         crevice=hr.get("crevice"))
+                         crevice=hr.get("crevice"), stubble=hr.get("stubble", 0.0))
 
 
 def build_hair(ctx):
     st = ctx.ch["hair"]["style"]
-    {"swept": _swept, "kerchief": _kerchief, "bob": _bob}[st](ctx)
+    {"swept": _swept, "kerchief": _kerchief, "bob": _bob, "tufts": _tufts, "fringe": _fringe, "short": _short,
+     "flattop": _flattop, "ponytail": _ponytail, "bun": _bun, "long": _long, "quiff": _quiff}[st](ctx)
 
 
-def _finish_hair(ctx, el, col, name="hair", res=0.011, signature=False):
+def _cut(ctx, el):
+    """Drop the hair elements a headgear covers (§7.5 step 3: locks rooted inside the hat are culled; what lies below
+    the rim stays — the escape locks). headgear.plan sets ctx.hair_cut (a predicate on a point) before the hair."""
+    f = getattr(ctx, "hair_cut", None)
+    if f is None:
+        return el
+    return [e for e in el if not f(Vector(e["co"]))]
+
+
+def _finish_hair(ctx, el, col, name="hair", res=0.011, signature=False, cut=True, smooth_iter=2):
+    if cut:
+        el = _cut(ctx, el)
     mat = _hair_mat(ctx, "hair_" + name, col)
-    o = core.mb_mesh(ctx, "Hair" + name, el, res, mat, smooth_iter=2, name=name)
+    o = core.mb_mesh(ctx, "Hair" + name, el, res, mat, smooth_iter=smooth_iter, name=name)
     ctx.add(o, "hair", ctx.objs["head"], kind="embed", head=True)
     if signature:
         ctx.sig_objs.append(o)
@@ -319,3 +342,354 @@ def _streak(ctx, head, part, streak_path, col, sx):
     o = core.mb_mesh(ctx, "Streak", el, 0.006, mat, smooth_iter=2, name="streak")
     ctx.add(o, "detail:streak", hair, kind="surface", head=True)
     ctx.details["streak"] = 400
+
+
+# ------------------------------------------------------------------ helpers for P2 styles
+def _tuft(head, d, out_dir, ln, w, th, n, rng, spread=14.0, up=0.35, back=0.25, sx=1.0):
+    """A soft tuft: a few broad clumps fanning out of the scalp at direction d (from the head centre), each a short
+    flattened ribbon leaving the surface and curling up/back at a rounded tip (fluffy sides of a bald head)."""
+    el = []
+    hit, nor = core.ray(head, d * 3, -d)
+    if hit is None:
+        return el
+    tang = Vector((0, 0, 1)).cross(nor)
+    if tang.length < 1e-6:
+        tang = Vector((1, 0, 0))
+    tang.normalize()
+    for k in range(n):
+        f = (k - (n - 1) / 2) / max(1, (n - 1) / 2)
+        a = math.radians(spread * f)
+        dd = (nor * math.cos(a) + Vector((0, 0, 1)) * math.sin(a) * 1.2).normalized()
+        root = hit - nor * 0.01 + Vector((0, 0, f * w * 0.9))
+        l_ = ln * (0.75 + 0.25 * (1 - abs(f))) * rng.uniform(0.9, 1.1)
+        p1 = root + dd * l_ * 0.45 + out_dir * l_ * 0.15
+        tip = root + dd * l_ * 0.85 + out_dir * l_ * 0.45 + Vector((0, 0, up * l_ * (0.4 + 0.6 * (f + 1) / 2)))
+        nrm = [tang, tang, tang]
+        el += core.clump([root, p1, tip], nrm, w, w * 0.9, th, n=10, lift=0.0, taper_at=0.55, tip=0.45, stiff=2.6,
+                         flat=0.85)
+    # a soft core under the fan, so the clumps grow from one mass, not from bare skin
+    el.append(dict(co=hit + nor * th * 0.3, half=(w * 1.3, th * 1.1, w * 1.5), stiff=2.2,
+                   rot=core.frame_quat(Vector((0, 0, 1)), nor)))
+    return el
+
+
+# ------------------------------------------------------------------ tufts: a bald dome (Olm, Kort)
+def _tufts(ctx):
+    """A bald dome (§7.6 Olm "лысый купол с бликом", Kort "лысый купол") with soft tufts at the sides: a low
+    horseshoe band round the back from ear to ear (sheet) and a fan of broad clumps on each side — over the ears and
+    sticking out sideways (Olm: 0.10 W, the "fluffy sides") or behind them (Kort). The skin shader makes the dome
+    glossy (face.skin_mat: "bald")."""
+    head = ctx.objs["head"]
+    hr = ctx.ch["hair"]
+    tf = hr.get("tufts", {})
+    sx = ctx.P["hx"] / 0.48
+    el = []
+    band_az = tf.get("band_az", 95)
+    lo, hi = tf.get("band_lo", -24), tf.get("band_hi", 8)
+
+    def keep(h, n, d):
+        az = abs(math.degrees(math.atan2(h.x, -h.y)))
+        e = math.degrees(math.atan2(h.z, math.hypot(h.x, h.y)))
+        top = hi + 8 * core.smoothstep(band_az, 180, az)
+        return az > band_az and lo < e < top
+    samples, s = core.surface_samples(head, 2400, keep)
+    el += core.sheet_elems(samples, s, lambda h, n: tf.get("band_t", 0.035))
+    out_w = tf.get("out", 0.10) * ctx.W
+    for side in (-1, 1):
+        for az, e, ln, w, n in tf.get("fans", [(100, 14, 1.0, 0.055, 5), (122, 6, 0.85, 0.05, 4)]):
+            d = core.az_el(side * az, e)
+            out_dir = Vector((side, 0.25, 0.0)).normalized()
+            el += _tuft(head, d, out_dir, out_w * ln + 0.06, w, 0.04, n, ctx.rng, up=tf.get("up", 0.35), sx=sx)
+    _finish_hair(ctx, el, hr["color"], smooth_iter=3)
+
+
+# ------------------------------------------------------------------ fringe: only what shows under a hood (Vik)
+def _fringe(ctx):
+    """Shaggy hair seen only at a hood's opening (§7.6 Vik: "5–7 прядей из капюшона на брови"): a scalp sheet over
+    the front (the hood hides the rest) and 5–7 broad locks of uneven length from under the hood's front edge down
+    over the forehead to the brows, their tips free and separated; two locks at the temples."""
+    head = ctx.objs["head"]
+    hr = ctx.ch["hair"]
+    sx = ctx.P["hx"] / 0.48
+    hl = hairline_fn([(0, 0.26), (40, 0.22), (70, 0.12), (90, 0.02), (130, -0.10), (180, -0.20)])
+    samples, s = core.surface_samples(head, 2000, lambda h, n, d: h.z > hl(h) + 0.015)
+    el = core.sheet_elems(samples, s, lambda h, n: 0.035)
+    tip_el = hr.get("tip_el", 30)
+    locks = hr.get("locks", [(-42, 0.070, -8, 0.8), (-26, 0.082, 2, 1.1), (-9, 0.088, 8, 1.25), (8, 0.085, 12, 1.05),
+                             (25, 0.078, 16, 1.2), (42, 0.068, 18, 0.85)])
+    for az, w, sweep, length in locks:
+        root = core.az_el(az * 0.8, 62)
+        mid = core.az_el(az + sweep * 0.5, 48)
+        tip_d = core.az_el(az + sweep, tip_el + 6 * (1.1 - length))
+        hit, nor = core.ray(head, tip_d * 3, -tip_d)
+        if hit is None:
+            continue
+        hang = hit + nor * 0.035 + Vector((math.sin(math.radians(az + sweep)) * 0.03, -0.02, -0.07 * length))
+        el += core.ribbon_lock(head, [root, mid, tip_d, hang], w * sx, w * 0.62 * sx, 0.045, n=14, lift=0.45,
+                               free_tail=1, taper_at=0.78, wmin=0.04)
+    for s_ in (-1, 1):
+        el += core.ribbon_lock(head, [core.az_el(s_ * 60, 44), core.az_el(s_ * 74, 22), core.az_el(s_ * 80, 4)],
+                               0.07 * sx, 0.045 * sx, 0.04, n=10, lift=0.4, taper_at=0.6)
+    _finish_hair(ctx, el, hr["color"], cut=False)
+
+
+# ------------------------------------------------------------------ short (Seir; under hats)
+def _short(ctx):
+    """Short hair (§7.6 Seir "короткие седые, пряди из-под шляпы с ближней стороны"): a scalp sheet and broad locks
+    swept back from the hairline; a headgear culls what it covers (ctx.hair_cut) and `escape` locks grow below its
+    rim at the near temple and over the ears."""
+    head = ctx.objs["head"]
+    hr = ctx.ch["hair"]
+    sx = ctx.P["hx"] / 0.48
+    hl = hairline_fn([(0, 0.30), (30, 0.28), (60, 0.2), (80, 0.12), (100, 0.06), (140, -0.12), (180, -0.22)])
+    samples, s = core.surface_samples(head, 2400, lambda h, n, d: h.z > hl(h) + 0.015)
+    el = core.sheet_elems(samples, s, lambda h, n: 0.035 + 0.02 * core.smoothstep(0.1, 0.45, h.z))
+    crown = core.az_el(180, 70)
+    for az in range(-150, 181, 30):
+        e0 = core.lerp_table([(0, 44), (60, 34), (90, 20), (130, 6), (180, -4)], abs(az))
+        el += core.ribbon_lock(head, [core.az_el(az, e0), core.az_el(az * 0.9 + (12 if az >= 0 else -12), (e0 + 70) / 2),
+                                      crown], 0.085 * sx, 0.07 * sx, 0.042, n=12, lift=0.4)
+    for az, e_root, e_tip, w in hr.get("escape", [(-70, 26, 2, 0.07), (-86, 22, -6, 0.065), (-102, 16, -10, 0.06),
+                                                    (78, 24, 4, 0.06), (96, 18, -6, 0.06)]):
+        el += core.ribbon_lock(head, [core.az_el(az + 6, e_root + 14), core.az_el(az, e_root), core.az_el(az - 4, e_tip)],
+                               w * sx, w * 0.6 * sx, 0.04, n=10, lift=0.45, taper_at=0.55)
+    _finish_hair(ctx, el, hr["color"])
+
+
+# ------------------------------------------------------------------ flat top (Frey)
+def _flattop(ctx):
+    """A flat-top crop (§7.6 Frey: "площадка", a 0.035 H shell with a flat top, a crisp hairline, stubble in the
+    shader): a sheet whose thickness fills the head's dome up to a flat plane (the square top of her "T"
+    signature) and is 0.035 H on the sides; full thickness right up to the hairline (no fade: a crisp edge)."""
+    head = ctx.objs["head"]
+    hr = ctx.ch["hair"]
+    crown = ctx.L["crown"]
+    side_t = hr.get("side", 0.035) * H
+    z_top = crown.z + hr.get("top", 0.07) * H
+    hl = hairline_fn(hr.get("hairline", [(0, 0.31), (30, 0.30), (55, 0.24), (75, 0.15), (95, 0.07), (130, -0.08),
+                                         (180, -0.20)]))
+    samples, s = core.surface_samples(head, 3200, lambda h, n, d: h.z > hl(h))
+
+    def thick(h, n):
+        t = side_t
+        if n.z > 0.2:
+            # up to the flat plane, but the walls stay near-vertical: the outward reach is held to 1.5 x the side
+            # thickness (a forward-tilted normal near the hairline would otherwise push a brim over the forehead)
+            horiz = math.sqrt(max(1e-4, 1 - n.z * n.z))
+            t = max(t, min((z_top - h.z) / max(n.z, 0.3), 1.5 * side_t / horiz, hr.get("max_t", 0.2)))
+        return t * (0.8 + 0.2 * core.smoothstep(0.0, 0.025, h.z - hl(h)))
+    el = core.sheet_elems(samples, s, thick)
+    o = _finish_hair(ctx, el, hr["color"], res=0.010, signature=True, smooth_iter=3)
+    return o
+
+
+# ------------------------------------------------------------------ ponytail (Irma)
+def _ponytail(ctx):
+    """A high ponytail (§7.6 Irma: platinum, 7 ribbons, gathered 0.15 H above the crown, arcing back and down to the
+    shoulder — the "hook" over and behind the head): a scalp sheet; locks from all round the hairline drawn up to the
+    gather at the top back; a fringe swept to the far side; the tail — 7 broad clumps around one arcing path, fanning
+    out toward their tips; a band at the gather."""
+    head = ctx.objs["head"]
+    hr = ctx.ch["hair"]
+    sx = ctx.P["hx"] / 0.48
+    hl = hairline_fn([(0, 0.32), (30, 0.30), (60, 0.22), (85, 0.10), (110, 0.0), (150, -0.14), (180, -0.20)])
+    samples, s = core.surface_samples(head, 2400, lambda h, n, d: h.z > hl(h) + 0.012)
+    el = core.sheet_elems(samples, s, lambda h, n: 0.038 + 0.012 * core.smoothstep(0.2, 0.5, h.z))
+    g_az, g_el = hr.get("gather", (180, 52))
+    gd = core.az_el(g_az, g_el)
+    gh, gn = core.ray(head, gd * 3, -gd)
+    gather = gh + gn * 0.07
+    for az in range(-150, 181, 25):
+        e0 = core.lerp_table([(0, 40), (60, 30), (90, 18), (130, 4), (180, -8)], abs(az))
+        if abs(az) < 50:
+            continue        # the front goes under the fringe
+        el += core.ribbon_lock(head, [core.az_el(az, e0), core.az_el(az * 0.6 + g_az * 0.4 * (1 if az >= 0 else -1),
+                                                                     (e0 + g_el) / 2), gd],
+                               0.09 * sx, 0.06 * sx, 0.042, n=12, lift=0.4)
+    # the fringe: from a parting on the near side, swept over the forehead to the far temple
+    for az, w, el_tip in hr.get("fringe", [(-30, 0.095, 40), (-8, 0.10, 36), (14, 0.095, 30), (34, 0.085, 24)]):
+        tip_d = core.az_el(az + 30, el_tip)
+        hit, nor = core.ray(head, tip_d * 3, -tip_d)
+        if hit is None:
+            continue
+        path = [core.az_el(-40, 64), core.az_el(az + 10, 54), tip_d,
+                hit + nor * 0.04 + Vector((0.03, -0.015, -0.03))]
+        el += core.ribbon_lock(head, path, w * sx, w * 0.6 * sx, 0.048, n=14, lift=0.45, free_tail=1)
+    # back over the crown to the gather (no bare scalp between the fringe's roots and the tail)
+    for az in (-30, 0, 30):
+        el += core.ribbon_lock(head, [core.az_el(az - 40, 62), core.az_el(az * 0.5 + 120, 80), gd], 0.10 * sx,
+                               0.08 * sx, 0.045, n=12, lift=0.4)
+    o = _finish_hair(ctx, el, hr["color"])
+    # the tail: an arc over and behind the head, down to the shoulder (head-local, +Y is the back of the head)
+    crown = ctx.L["crown"]
+    tl = hr.get("tail", {})
+    up = tl.get("up", 0.15) * H
+    path = [gather, Vector((gather.x, gather.y + 0.08, crown.z + up)),
+            Vector((gather.x, gather.y + 0.32, crown.z + up * 0.8)),
+            Vector((gather.x - 0.02, gather.y + 0.52, crown.z - 0.18)),
+            Vector((gather.x - 0.05, gather.y + 0.56, crown.z - 0.55)),
+            Vector((gather.x - 0.08, gather.y + 0.48, crown.z - 0.92))]
+    path = [Vector(p) + Vector(tl.get("shift", (0, 0, 0))) * (i / 5) for i, p in enumerate(path)]
+    pts = core.catmull(path, 40)
+    tel = []
+    n_c = tl.get("n", 7)
+    for k in range(n_c):
+        a = 2 * math.pi * k / n_c
+        cp, nrm = [], []
+        for i, p in enumerate(pts):
+            t = i / (len(pts) - 1)
+            tang = (pts[min(i + 1, len(pts) - 1)] - pts[max(i - 1, 0)]).normalized()
+            side = tang.cross(Vector((1, 0, 0))).normalized()
+            if side.length < 1e-6:
+                side = Vector((0, 0, 1))
+            b2 = tang.cross(side).normalized()
+            r = 0.04 + 0.06 * math.sin(math.pi * min(1.0, t * 1.4)) + 0.09 * core.smoothstep(0.6, 1.0, t)
+            off = side * math.cos(a + t * 1.2) * r + b2 * math.sin(a + t * 1.2) * r * 0.8
+            cp.append(p + off)
+            nrm.append((side * math.cos(a + t * 1.2) + b2 * math.sin(a + t * 1.2)).normalized())
+        ln_k = 0.88 + 0.12 * math.cos(a * 2)
+        cut_n = int(len(cp) * ln_k)
+        tel += core.clump(cp[:cut_n:2], nrm[:cut_n:2], 0.062, 0.05, 0.042, n=40, lift=0.0, taper_at=0.65, tip=0.3,
+                          stiff=2.8, flat=0.75)
+    mat = _hair_mat(ctx, "hair_tail", hr["color"], -0.6, 0.62)
+    tail = core.mb_mesh(ctx, "Tail", tel, 0.011, mat, smooth_iter=3, name="ponytail")
+    ctx.add(tail, "hair", o, kind="embed", head=True)
+    ctx.sig_objs.append(tail)
+    ctx.objs["ponytail"] = tail
+    band = core.torus("pony_band", (pts[3] + pts[4]) / 2, 0.06, 0.018,
+                      core.principled(ctx, "pony_band", tl.get("band", "#3A3C46"), 0.5, sheen=0.2),
+                      nrm=(pts[5] - pts[2]).normalized(), seg=32, rseg=10)
+    ctx.add(band, "costume:band", tail, kind="embed", head=True)
+    ctx.details["ponytail"] = 3000
+    ctx.L["gather"] = gather
+
+
+# ------------------------------------------------------------------ bun (Vance)
+def _bun(ctx):
+    """A tall vertical bun (§7.6 Vance: 0.28 H over the crown, "витки лент вокруг вертикали"; her "hat"): a scalp
+    sheet; broad locks swept up from all round the hairline to the bun's base; the bun — two ribbon clumps coiling up
+    around a vertical axis, narrowing toward the top, over a soft core; a silver pin with a pearl."""
+    head = ctx.objs["head"]
+    hr = ctx.ch["hair"]
+    sx = ctx.P["hx"] / 0.48
+    hl = hairline_fn([(0, 0.32), (30, 0.30), (60, 0.22), (85, 0.10), (110, 0.0), (150, -0.14), (180, -0.20)])
+    samples, s = core.surface_samples(head, 2400, lambda h, n, d: h.z > hl(h) + 0.012)
+    el = core.sheet_elems(samples, s, lambda h, n: 0.036 + 0.01 * core.smoothstep(0.2, 0.5, h.z))
+    b_az, b_el = hr.get("base", (175, 86))
+    bd = core.az_el(b_az, b_el)
+    bh, bn = core.ray(head, bd * 3, -bd)
+    base = bh + bn * 0.02
+    for az in range(-160, 181, 20):
+        e0 = core.lerp_table([(0, 42), (50, 36), (90, 20), (130, 4), (180, -8)], abs(az))
+        el += core.ribbon_lock(head, [core.az_el(az, e0), core.az_el(az, (e0 + b_el) / 2 + 4), bd],
+                               0.09 * sx, 0.07 * sx, 0.042, n=14, lift=0.42)
+    o = _finish_hair(ctx, el, hr["color"])
+    bun = hr.get("bun", {})
+    height = bun.get("h", 0.28) * H
+    crown = ctx.L["crown"]
+    axis_top = Vector((base.x, base.y + bun.get("lean", 0.03), crown.z + height))
+    r0, r1 = bun.get("r", (0.13, 0.05))
+    turns = bun.get("turns", 2.6)
+    bel = []
+    # the core: soft balls up the axis
+    for k in range(5):
+        t = k / 4
+        c = base.lerp(axis_top, t * 0.9)
+        r = r0 * (1 - t) + r1 * t
+        bel.append(dict(co=c, half=r * 0.7, stiff=2.0))
+    for strand in range(bun.get("strands", 1)):
+        cp, nrm = [], []
+        n_ = 90
+        for i in range(n_):
+            t = i / (n_ - 1)
+            a = 2 * math.pi * turns * t + strand * math.pi
+            c = base.lerp(axis_top, t)
+            r = r0 * (1 - t ** 1.5) + r1 * t ** 1.5
+            off = Vector((math.cos(a), math.sin(a), 0.0)) * r
+            cp.append(c + off + Vector((0, 0, 0.0)))
+            nrm.append(off.normalized())
+        bel += core.clump(cp[::2], nrm[::2], bun.get("w", 0.085), bun.get("w", 0.085) * 0.7, 0.06, n=70, lift=0.0,
+                          taper_at=0.85, tip=0.5, stiff=2.8, flat=0.9)
+    mat = _hair_mat(ctx, "hair_bun", hr["color"], 0.1, crown.z + height)
+    b = core.mb_mesh(ctx, "Bun", bel, 0.010, mat, smooth_iter=3, name="bun")
+    ctx.add(b, "hair", o, kind="embed", head=True)
+    ctx.sig_objs.append(b)
+    ctx.objs["bun"] = b
+    ctx.details["bun"] = 3500
+    ctx.L["bun_axis"] = (base, axis_top)
+
+
+# ------------------------------------------------------------------ long (Rai)
+def _long(ctx):
+    """Long hair swept back (§7.6 Rai: "длинные белые назад, за плечи"): a high forehead line; broad locks from the
+    hairline straight back over the head and down past the nape, their free tails falling behind the neck and over
+    the shoulders' back; side locks behind the ears down to the shoulders."""
+    head = ctx.objs["head"]
+    hr = ctx.ch["hair"]
+    sx = ctx.P["hx"] / 0.48
+    hl = hairline_fn([(0, 0.36), (30, 0.33), (60, 0.24), (85, 0.12), (110, 0.0), (150, -0.14), (180, -0.20)])
+    samples, s = core.surface_samples(head, 2400, lambda h, n, d: h.z > hl(h) + 0.012)
+    el = core.sheet_elems(samples, s, lambda h, n: 0.040 + 0.015 * core.smoothstep(0.2, 0.5, h.z))
+    drop = hr.get("drop", -0.80)
+    for az in range(-150, 151, 20):
+        sg = 1 if az > 0 else (-1 if az < 0 else (1 if ctx.rng.random() < 0.5 else -1))
+        e0 = core.lerp_table([(0, 52), (40, 44), (70, 32), (100, 16), (150, 2)], abs(az))
+        b_az = sg * (180 - 0.6 * min(abs(az), 70)) if abs(az) <= 100 else sg * (abs(az) + 12)
+        mid = core.az_el(b_az * 0.85, 72) if abs(az) < 40 else core.az_el((az + b_az) / 2, 46)
+        back = core.az_el(b_az, 2)
+        hb, nb = core.ray(head, back * 3, -back)
+        if hb is None:
+            continue
+        r_ = math.hypot(hb.x, hb.y) + 0.05
+        ang = math.atan2(hb.x, hb.y)
+        fall = Vector((math.sin(ang) * r_ * 1.05, math.cos(ang) * r_ * 1.05, (hb.z + drop) / 2))
+        tail = Vector((math.sin(ang) * r_ * 1.15, math.cos(ang) * r_ * 1.0 + 0.04, drop))
+        el += core.ribbon_lock(head, [core.az_el(az, e0), mid, back, fall, tail], 0.10 * sx, 0.08 * sx, 0.05, n=18,
+                               lift=0.42, free_tail=2, taper_at=0.8)
+    for s_ in (-1, 1):
+        for az, e0 in ((70, 26), (88, 18)):
+            d0 = core.az_el(s_ * az, e0)
+            h0, n0 = core.ray(head, d0 * 3, -d0)
+            if h0 is None:
+                continue
+            hb = Vector((s_ * (abs(h0.x) + 0.06), h0.y + 0.16, -0.30))
+            tail = Vector((s_ * (abs(h0.x) + 0.10), h0.y + 0.24, drop + 0.1))
+            el += core.ribbon_lock(head, [d0, core.az_el(s_ * (az + 22), 0), hb, tail], 0.09 * sx, 0.07 * sx, 0.05,
+                                   n=16, lift=0.42, free_tail=2, taper_at=0.8)
+    _finish_hair(ctx, el, hr["color"])
+
+
+# ------------------------------------------------------------------ quiff (Hawk, under the cap)
+def _quiff(ctx):
+    """A quiff from under a cap's front edge (§7.6 Hawk: "тёмно-каштановый кок из-под края шлема"): the scalp sheet
+    (culled under the cap) and three broad locks rooted under the cap's front edge, rising and curling forward and to
+    the far side over the forehead, their tips free; short locks at the temples below the cap."""
+    head = ctx.objs["head"]
+    hr = ctx.ch["hair"]
+    sx = ctx.P["hx"] / 0.48
+    hl = hairline_fn([(0, 0.30), (30, 0.28), (60, 0.2), (80, 0.12), (100, 0.06), (140, -0.12), (180, -0.22)])
+    samples, s = core.surface_samples(head, 2000, lambda h, n, d: h.z > hl(h) + 0.015)
+    el = _cut(ctx, core.sheet_elems(samples, s, lambda h, n: 0.04))
+    q = hr.get("quiff", {})
+    e_root = q.get("root_el", 40)
+    for az, w, sweep, up in q.get("locks", [(-26, 0.12, 30, 1.0), (-4, 0.13, 34, 1.2), (18, 0.11, 30, 0.95)]):
+        root = core.az_el(az, e_root + 8)
+        hit, nor = core.ray(head, root * 3, -root)
+        if hit is None:
+            continue
+        mid_d = core.az_el(az + sweep * 0.4, e_root - 2)
+        hm, nm = core.ray(head, mid_d * 3, -mid_d)
+        if hm is None:
+            continue
+        lift_p = hm + nm * (0.09 * up) + Vector((0, -0.04, 0.03 * up))
+        tip_d = core.az_el(az + sweep, e_root - 16)
+        ht, nt = core.ray(head, tip_d * 3, -tip_d)
+        if ht is None:
+            continue
+        tip = ht + nt * 0.05 + Vector((math.sin(math.radians(az + sweep)) * 0.03, -0.05, -0.02))
+        el += core.ribbon_lock(head, [root, mid_d, lift_p, tip], w * sx, w * 0.5 * sx, 0.05, n=16, lift=0.45,
+                               free_tail=2, taper_at=0.55)
+    for s_ in (-1, 1):
+        el += core.ribbon_lock(head, [core.az_el(s_ * 66, 30), core.az_el(s_ * 76, 14), core.az_el(s_ * 80, 2)],
+                               0.065 * sx, 0.04 * sx, 0.035, n=10, lift=0.4, taper_at=0.6)
+    _finish_hair(ctx, el, hr["color"], cut=False)

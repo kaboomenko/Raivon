@@ -135,12 +135,13 @@ def project(cam, pts, size):
     return np.c_[u * W, (1 - v) * Hh]
 
 
-def visible_points(ctx):
-    """World positions of every render-visible vertex (meshes, curves, metaball meshes)."""
+def visible_points(ctx, skip=()):
+    """World positions of every render-visible vertex (meshes, curves, metaball meshes), less the objects in skip."""
     dg = bpy.context.evaluated_depsgraph_get()
     out = []
+    names = {o.name for o in skip}
     for o in bpy.context.scene.objects:
-        if o.type not in ("MESH", "CURVE") or o.hide_render:
+        if o.type not in ("MESH", "CURVE") or o.hide_render or o.name in names:
             continue
         ev = o.evaluated_get(dg)
         try:
@@ -213,6 +214,10 @@ def solve_frame(ctx, size, frame="bust", log=print):
     crown = head_to_world(ctx, ctx.L["crown"])
     target_h = t["h_px"]
     allpts = visible_points(ctx)
+    # a designed overflow of the top (Rai's banner, §7.2 "знамя за верх кадра") is left out of the skyline check;
+    # it still keeps the side band
+    exempt = getattr(ctx, "skyline_exempt", [])
+    skypts = visible_points(ctx, exempt) if exempt else allpts
     hpts = head_points(ctx)
     while True:
         cam.location = (0.0, -6.0, eye_z)
@@ -236,7 +241,7 @@ def solve_frame(ctx, size, frame="bust", log=print):
             cam.data.shift_x += dx / size[1]
         core.update()
         pa = project(cam, allpts, size)
-        sky = float(pa[:, 1].min())
+        sky = float(project(cam, skypts, size)[:, 1].min())
         ok = True
         side_l = side_r = float(size[0])
         if t["side_rows"] is not None:
@@ -272,6 +277,9 @@ def solve_gaze(ctx):
         eye = e["obj"]
         mw = eye.matrix_world
         c = mw.translation
+        if e.get("closed"):        # a winking eye: no iris, no catchlights (its position stands in for the iris)
+            ctx.L["iris_world"].append(c.copy())
+            continue
         local = (mw.inverted().to_3x3() @ (cam.location - c)).normalized()
         gx, gz = local.x + off[0], local.z + off[1]
         mat = eye.data.materials[0]
@@ -314,8 +322,9 @@ def solve_gaze(ctx):
             rr2 = min(max(rr, 0.35 * ri), lim)
             dxr, dzr = math.cos(ang) * rr2, math.sin(ang) * rr2
         dzr = min(dzr, 0.30 * ri)   # not too high: a squinting lid must not hide it
-        spots = [((gx + dxr / sx, gz + dzr), style.STYLE["catch_big"]),
-                 ((gx - 0.85 * dxr / sx, gz - 0.85 * dzr), style.STYLE["catch_small"])]
+        ck = ey.get("catch_k", 1.0)       # Kort's small "sparks" (§7.6 "мелкие блики-искры")
+        spots = [((gx + dxr / sx, gz + dzr), style.STYLE["catch_big"] * ck),
+                 ((gx - 0.85 * dxr / sx, gz - 0.85 * dzr), style.STYLE["catch_small"] * max(ck, 0.8))]
         if ey.get("one_catch") and e["side"] < 0:
             spots = spots[:1]
         rz = e["radii"][2]
