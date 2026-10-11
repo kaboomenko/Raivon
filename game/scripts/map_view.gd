@@ -4521,13 +4521,12 @@ func strike_arrow(from: int, to: int, text: String) -> void:
 ## holds the hex the arrow starts from; the enemy at war when the arrow has no hex of its own (main.gd falls back to
 ## the target when no attacker's hex borders it) or starts on the defender's side.
 func _striker(from: int, to: int) -> int:
+	var enemy := at_war_with if at_war_with >= 0 else MapGen.BARONS
 	if sim == null or from < 0 or from >= sim.cells.size():
-		return at_war_with
+		return enemy
 	var by: int = int(sim.cells[from].get("controller", sim.cells[from]["owner"]))
 	var def: int = int(sim.cells[to].get("controller", sim.cells[to]["owner"])) if to >= 0 and to < sim.cells.size() else -99
-	if from == to or by == def or by == Types.NOBODY:
-		return at_war_with if at_war_with >= 0 else MapGen.BARONS
-	return by
+	return enemy if from == to or by == def or by == Types.NOBODY else by
 
 
 ## The strike arrow's outline in its own frame (x from the attacker's hex toward the target, y across), counter-

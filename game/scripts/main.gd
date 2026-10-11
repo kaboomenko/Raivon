@@ -781,7 +781,7 @@ func _march_to(hex: int) -> void:
 		return
 	_march_dest[int(a["id"])] = hex
 	sfx.play("attack")
-	ui.toast(tr("march.started") % GameUI.fmt_time(int(r["seconds"])))
+	ui.toast(tr("march.started") % GameUI.fmt_time(int(r["seconds"])), "orders")
 	_select(hex)
 	_autosave()
 
@@ -2607,7 +2607,7 @@ func _finish_colonize(id: int) -> void:
 	map_view.pop_hex(id)
 	_autosave()
 	map_view.mark_dirty()
-	ui.toast(tr("toast.colonized") % [_cell_name(id), _player_hexes(), _chapter_goal()])
+	ui.toast(tr("toast.colonized") % _cell_name(id), "hex_tile")  # the chapter count: the cup button / World tab
 	_select(id)
 
 
@@ -2676,7 +2676,7 @@ func _deploy_to_front(enemy: int) -> void:
 				moved += 1
 				break
 	if longest > 0:
-		ui.toast(tr("toast.armies_marching") % GameUI.fmt_time(longest))
+		ui.toast(tr("toast.armies_marching") % GameUI.fmt_time(longest), "orders")
 	elif moved > 0:
 		ui.toast(tr("toast.armies_deployed"))
 
@@ -3162,14 +3162,14 @@ func _battle_tap(id: int) -> void:
 	var a = battle.army_at(id, Types.PLAYER)
 	if a == null:
 		var c: Dictionary = sim.cells[id]
-		ui.toast(tr("toast.hex_info") % [_cell_name(id), c["value"], _state_name(c["controller"])])
+		ui.toast(tr("toast.hex_info") % [_cell_name(id), c["value"]], "crown")  # whose it is: the hex's colour
 		return
 	var now := Time.get_ticks_msec()
 	if _last_tap["army"] == a["id"] and now - int(_last_tap["t"]) < 350:
 		battle.issue(Types.PLAYER, {"t": "hold", "army": a["id"]})
 		ui.toast(tr("toast.hold_on") if not a["hold"] else tr("toast.hold_off"))
 	else:
-		ui.toast(tr("toast.army_info") % [roundi(a["str"] / 1000.0), roundi(a["max_str"] / 1000.0)])
+		ui.toast(tr("toast.army_info"), "shield")  # its strength is on its plate (number + bar)
 	_last_tap = {"army": a["id"], "t": now}
 
 
@@ -3684,7 +3684,7 @@ func _repair(hex: int, free: bool) -> void:
 			ui.toast(L.t(reason) if reason != "" else tr("toast.cant_upgrade"))
 			return
 		sfx.play("coin")
-		ui.toast(tr("toast.repair_started") % GameUI.fmt_time(Economy.REPAIR_SEC))
+		ui.toast(tr("toast.repair_started") % GameUI.fmt_time(Economy.REPAIR_SEC), "hammer")
 	_econ_tick()
 	_refresh_ui()
 	_autosave()
@@ -4007,7 +4007,13 @@ func _collect_all() -> void:
 			map_view.floater(int(h), "+%d" % int(st[best]), Color(1.0, 0.88, 0.4) if best == "gold" else (Color(0.95, 0.85, 0.5) if best == "food" else Color(0.85, 0.9, 1.0)))
 	sfx.play("coin")
 	sfx.haptic(15)
-	ui.toast(tr("toast.collected") % [int(gained.get("gold", 0)), int(gained.get("food", 0)), int(gained.get("metal", 0))])
+	var got := gained.duplicate()  # the toast names the biggest haul; the rest fly off the hexes and land on the plates
+	got["raivite"] = crystals
+	var top := "gold"
+	for r in got:
+		if int(got[r]) > int(got.get(top, 0)):
+			top = String(r)
+	ui.toast(tr("toast.collected") % [GameUI.fmt_num(int(got[top])), tr("res.gen." + top)], String(Hud.RES_ICON.get(top, "coin")))
 	_econ_tick()
 	_autosave()
 
@@ -7425,7 +7431,7 @@ func _demo(spec: String) -> void:
 		return
 	if what == "toast":  # toasts (§4.10): one with an icon, then a second waiting behind it; toast:merge — the same text
 		# twice («×2»); toast:error — a refusal (war face); toast:long — two lines; toast:modal — over a window;
-		# toast:war — the declaration's own toast under the war bar
+		# toast:war — the declaration's own toast under the war bar; toast:sheet — the event toasts stacked at once
 		var v := parts[1] if parts.size() > 1 else ""
 		if v == "modal":
 			_on_hud_button("gear")
@@ -7438,6 +7444,21 @@ func _demo(spec: String) -> void:
 			ui.toast(tr("toast.no_gold"), "coin", "error")
 		elif v == "long":
 			ui.toast(tr("toast.research_done") % [rs, 2, tr(String(Research.LINES["taxes"]["desc"]))], "flask")
+		elif v == "sheet":  # a specimen: the queue shows them one at a time; these hold still, one under another
+			var hx: int = sim.neighbors[sim.states[Types.PLAYER]["capital_id"]][0]
+			var hc: Dictionary = sim.cells[hx]
+			var sheet := [
+				[tr("toast.collected") % [GameUI.fmt_num(1240), tr("res.gen.gold")], "coin"],
+				[tr("toast.army_info"), "shield"],
+				[tr("toast.hex_info") % [_cell_name(hx), hc["value"]], "crown"],
+				[tr("toast.colonized") % _cell_name(hx), "hex_tile"],
+				[tr("march.started") % GameUI.fmt_time(66), "orders"],
+				[tr("toast.armies_marching") % GameUI.fmt_time(160), "orders"],
+				[tr("toast.repair_started") % GameUI.fmt_time(Economy.REPAIR_SEC), "hammer"],
+			]
+			for i in sheet.size():
+				var tn: Control = ui._toast_build({"text": sheet[i][0], "icon": sheet[i][1], "kind": "info", "n": 1})
+				tn.position.y += i * 120.0
 		else:
 			ui.toast(tr("toast.research_started") % [rs, 2, GameUI.fmt_time(300)], "flask")
 			if v == "merge":
@@ -7537,6 +7558,9 @@ func _shot(path: String) -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--shot-delay="):  # capture an animation part-way (seconds)
 			await get_tree().create_timer(float(a.substr(13))).timeout
+	if OS.get_cmdline_user_args().has("--hud-only"):  # the canvas alone (no 3D world): HUD parity checks
+		get_viewport().disable_3d = true
+		await RenderingServer.frame_post_draw
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png(path)
 	# the frame's rendering cost, for checking the scene against the phone budget (docs/dev/how_to_run.md). The total

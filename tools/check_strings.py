@@ -8,6 +8,8 @@ Fails (exit 1) when:
     "err.need_hexes|%d" or "bld.farm" (sim modules return keys), is missing from strings.csv;
   * strings.csv is malformed: header other than keys,ru,en, a non-ASCII or duplicate key, an empty ru or
     en cell, or ru / en with different printf placeholders (%d, %s, %+.1f, …);
+  * an English cell of strings.csv, or an English (`*_en`) string of game/data/*.json, uses Russian quotation
+    marks « » „ (English quotes are “ ” — or none);
   * an entry of game/data/cases.json with a Russian name has no name_en (and categories /
     res_names have no _en twin).
 
@@ -30,6 +32,7 @@ ALLOW = {
 }
 
 CYR = re.compile(r"[Ѐ-ӿ]")
+RU_QUOTES = re.compile(r"[«»„]")  # in English text: write “ ” instead
 KEY_RE = re.compile(r"^[a-z0-9_]+(\.[a-z0-9_]+)+$")
 CALL_RE = re.compile(r"(?:\btr|\bL\.t|TranslationServer\.translate)\(\s*$")
 # GDScript format specifiers (flags -, +, 0; conversions s c d o x X f v)
@@ -106,6 +109,9 @@ def main() -> int:
         if placeholders(ru) != placeholders(en):
             errors.append("strings.csv:%d: %s placeholders differ: ru %s vs en %s"
                           % (num, k, placeholders(ru), placeholders(en)))
+        if RU_QUOTES.search(en):
+            errors.append("strings.csv:%d: %s (en) uses Russian quotes %s: write “ ” in English"
+                          % (num, k, " ".join(sorted(set(RU_QUOTES.findall(en))))))
         keys[k] = (ru, en)
     prefixes = {k.split(".")[0] for k in keys}
 
@@ -157,6 +163,21 @@ def main() -> int:
     if "set_name_ru" in data.get("cases", {}).get("case_collection", {}) and \
             "set_name_en" not in data["cases"]["case_collection"]:
         errors.append("cases.json: case_collection has no set_name_en")
+
+    # English strings of the data files (anything under a *_en key): no Russian quotes
+    def walk_en(node, where, fname, en):
+        if isinstance(node, str):
+            if en and RU_QUOTES.search(node):
+                errors.append("%s %s: Russian quotes in English text %r: write “ ”" % (fname, where, node))
+        elif isinstance(node, dict):
+            for k, v in node.items():
+                walk_en(v, where + "." + k, fname, en or str(k).endswith("_en"))
+        elif isinstance(node, list):
+            for i, v in enumerate(node):
+                walk_en(v, "%s[%d]" % (where, i), fname, en)
+
+    for path in sorted((GAME / "data").glob("*.json")):
+        walk_en(json.loads(path.read_text(encoding="utf-8")), "", path.name, False)
 
     for w in warnings:
         print("warning:", w)

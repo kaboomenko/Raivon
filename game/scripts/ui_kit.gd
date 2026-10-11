@@ -578,8 +578,9 @@ class KitDecor extends Control:
 ## the vectors did; and until its bake is ready (two frames) a component draws its vectors itself. Off when headless
 ## (the tests): everything is drawn as vectors there.
 class KitBake extends Node:
-	const ATLAS := Vector2i(2048, 2048)
+	const ATLAS := Vector2i(2048, 2048)  ## at the canvas scale 1; it grows with the scale's square (to 4096)
 	const STAGE := Vector2i(2048, 1024)
+	const RESET_GAP_MS := 5000  ## a full atlas starts again at most this often (else what does not fit stays vectors)
 	const PAD := 16.0  ## logical px of room round every bake (hard shadows, text outlines and their shadows, AA fringes)
 	const MAX_SIDE := 900  ## px: anything larger is drawn as vectors
 	const UNPREMUL := "shader_type canvas_item;\nrender_mode blend_disabled;\n" \
@@ -601,9 +602,14 @@ class KitBake extends Node:
 	var never := {}  ## keys that are not baked (too large)
 	var owners := {}  ## instance id -> WeakRef: everything that drew from the atlas (redrawn when it is reset)
 	var waiting := {}  ## key -> {instance id: WeakRef}: redrawn when that bake lands
+	var seen := {}  ## volatile key -> [first asked for, last asked for] (ms; held())
+	var _later: Array = []  # [WeakRef, due ms]: owners to redraw then (later())
 	var _round: Array = []  # the jobs in flight: {key, at (stage px), slot}
 	var _state := 0  # 0 idle, 1 the stage renders, 2 the atlas copies
 	var _shelf := Vector3i(1, 1, 0)  # the atlas packer: x, y, row height
+	var _asize := ATLAS  # the atlas's size now
+	var resets := 0
+	var _reset_at := -100000
 	var _nodes: Array = []  # the stage / copy nodes of the round
 	var _mat: ShaderMaterial
 	var _copy: ShaderMaterial  # a straight copy (the icons: straight alpha already)
@@ -635,6 +641,8 @@ class KitBake extends Node:
 				return null
 			inst = KitBake.new()
 			inst.name = "KitBake"
+			inst.k = inst._scale(tree.root)  # the bakes asked for before it joins the tree are made at it too
+			inst._fit_atlas()
 			tree.root.add_child.call_deferred(inst)
 		return inst
 
@@ -667,7 +675,7 @@ class KitBake extends Node:
 		_copy.shader = cs
 
 	func _ready() -> void:
-		k = _scale()
+		_on_resize()
 		get_tree().root.size_changed.connect(_on_resize)
 		RenderingServer.frame_post_draw.connect(_on_post_draw)
 
@@ -675,23 +683,34 @@ class KitBake extends Node:
 		if RenderingServer.frame_post_draw.is_connected(_on_post_draw):
 			RenderingServer.frame_post_draw.disconnect(_on_post_draw)
 
-	## Physical px per logical px of the main canvas (canvas_items stretch), to 1/1000.
-	func _scale() -> float:
+	## Physical px per logical px of the main canvas (canvas_items stretch).
+	func _scale(root: Window) -> float:
 		var win := DisplayServer.window_get_size()
-		var vis := get_tree().root.get_visible_rect().size
+		var vis := root.get_visible_rect().size
 		if win.y <= 0 or vis.y <= 0.0:
 			return 1.0
-		return roundf(float(win.y) / vis.y * 1000.0) / 1000.0
+		return float(win.y) / vis.y
 
 	func _on_resize() -> void:
-		var nk := _scale()
+		var nk := _scale(get_tree().root)
 		if absf(nk - k) > 0.0005:
 			k = nk
+			_fit_atlas()
 			reset()
+
+	## The atlas holds the same bakes at any canvas scale: its side grows with the scale. The stage rasterises text at
+	## the scale too (the main canvas oversamples its fonts by it), so a baked label is as sharp as a live one.
+	func _fit_atlas() -> void:
+		var side := clampi(int(ceil(ATLAS.x * maxf(1.0, k) / 256.0)) * 256, ATLAS.x, 4096)
+		_asize = Vector2i(side, side)
+		atlas.size = _asize
+		stage.oversampling_override = k
 
 	## Forgets every bake (the canvas scale changed, or the atlas is full): whatever drew from the atlas draws again
 	## (its vectors, then its new bake).
 	func reset() -> void:
+		resets += 1
+		_reset_at = Time.get_ticks_msec()
 		slots.clear()
 		never.clear()
 		_shelf = Vector3i(1, 1, 0)
@@ -750,7 +769,7 @@ class KitBake extends Node:
 	## rect.size == size. `f`: the sub-pixel offset (frac_of). Returns false while the bake is not ready — it is then
 	## queued, `owner` is redrawn when it lands, and the caller draws its vectors.
 	func draw(ci: RID, key: String, rect: Rect2, size: Vector2, make: Callable, owner: Object, m := Vector4.ZERO,
-			f := Vector2.ZERO, mod := Color.WHITE) -> bool:
+			f := Vector2.ZERO, mod := Color.WHITE, queue := true) -> bool:
 		# on a sliced axis the stretch must be a whole number of pixels, or the far caps (right, bottom) would land
 		# between pixels: the size the layers are made at grows by the fraction (to 1/8 px)
 		if m.x > 0.0:
@@ -760,7 +779,7 @@ class KitBake extends Node:
 		var full := "%s@%.3f/%d,%d|%.3f,%.3f" % [key, k, int(f.x * 8.0), int(f.y * 8.0), size.x, size.y]
 		var slot: Variant = slots.get(full)
 		if slot == null:
-			if never.has(full):
+			if never.has(full) or not queue:
 				return false
 			var pxs := Vector2i(int(ceil((size.x + 2.0 * PAD) * k + 1.0)), int(ceil((size.y + 2.0 * PAD) * k + 1.0)))
 			if pxs.x > MAX_SIDE or pxs.y > MAX_SIDE or size.x <= 0.0 or size.y <= 0.0:
@@ -779,6 +798,24 @@ class KitBake extends Node:
 				owners[id] = weakref(owner)
 		_blit(ci, slot, rect, size, m, f, mod)
 		return true
+
+	## True once `key` has been asked for (by any owner) for STILL_MS: a volatile look (a label's text, a bar's fill)
+	## is baked only then, so a timer or a growing number does not fill the atlas with every step — while a row of
+	## cards rebuilt every second keeps its unchanging texts baked.
+	func held(key: String) -> bool:
+		var now := Time.get_ticks_msec()
+		if seen.size() > 2048:  # forget what was asked for only a while ago
+			var keep := {}
+			for k_ in seen:
+				if now - int(seen[k_][1]) < 20000:
+					keep[k_] = seen[k_]
+			seen = keep
+		var e: Variant = seen.get(key)
+		if e == null or now - int(e[1]) > 10000:  # first asked for, or not for a long while: (re)start its clock
+			seen[key] = [now, now]
+			return false
+		e[1] = now
+		return now - int(e[0]) >= KitText.STILL_MS
 
 	## The size a sliced axis is made at: at least `base`, and `len` minus it a whole number of physical pixels.
 	func _base(len_: float, base: float) -> float:
@@ -854,7 +891,24 @@ class KitBake extends Node:
 		_icons_dirty = false
 		icon_sheet.update(icon_img)
 
+	## Redraws `owner` (a CanvasItem) in `ms` milliseconds: a volatile look asks again whether it has held still.
+	func later(owner: CanvasItem, ms: int) -> void:
+		_later.append([weakref(owner), Time.get_ticks_msec() + ms])
+
 	func _process(_d: float) -> void:
+		if not _later.is_empty():
+			var now := Time.get_ticks_msec()
+			var keep: Array = []
+			for e in _later:
+				if now < int(e[1]):
+					keep.append(e)
+					continue
+				var o: Object = (e[0] as WeakRef).get_ref()
+				if o != null and o.has_method("_rearm"):
+					o.call("_rearm")  # (it redraws and may ask for another look later)
+				else:
+					_poke(e[0])
+			_later = keep
 		if _state != 0 or not is_inside_tree():
 			return
 		if not jobs.is_empty():
@@ -912,7 +966,17 @@ class KitBake extends Node:
 			if y + cell.y > STAGE.y:
 				break
 			var slot := _alloc(cell)
-			if slot.size.x == 0:  # the atlas is full: start it again with what is drawn now (the jobs stay queued)
+			if slot.size.x == 0:
+				if Time.get_ticks_msec() - _reset_at < RESET_GAP_MS:
+					# full again right after a reset: what does not fit now stays vectors (until the next reset)
+					never[key] = true
+					done.append(key)
+					var ws: Dictionary = waiting.get(key, {})
+					waiting.erase(key)
+					for id in ws:
+						_poke.call_deferred(ws[id])
+					continue
+				# the atlas is full: start it again with what is drawn now (the jobs stay queued)
 				for n in _nodes:
 					(n as Node).queue_free()
 				_nodes.clear()
@@ -947,9 +1011,9 @@ class KitBake extends Node:
 		_state = 1
 
 	func _alloc(cell: Vector2i) -> Rect2i:
-		if _shelf.x + cell.x > ATLAS.x:
+		if _shelf.x + cell.x > _asize.x:
 			_shelf = Vector3i(1, _shelf.y + _shelf.z, 0)
-		if _shelf.y + cell.y > ATLAS.y:
+		if _shelf.y + cell.y > _asize.y:
 			return Rect2i()
 		var r := Rect2i(_shelf.x, _shelf.y, cell.x, cell.y)
 		_shelf.x += cell.x
@@ -1144,8 +1208,6 @@ static func draw_flat(ci: RID, rect: Rect2, sb: StyleBoxFlat, host: CanvasItem, 
 ## this child draws the image in its place, in the same draw order.
 class KitText extends Control:
 	const STILL_MS := 1200
-	var _key := ""
-	var _since := 0
 	var _armed := false
 
 	func _init() -> void:
@@ -1166,22 +1228,20 @@ class KitText extends Control:
 			_live(l)
 			return
 		var key := SELF.label_key(l)
-		var now := Time.get_ticks_msec()
-		if key != _key:
-			_key = key
-			_since = now
-		if now - _since < STILL_MS:
-			_live(l)
-			if not _armed:  # look again once it has held still
-				_armed = true
-				get_tree().create_timer(STILL_MS / 1000.0 + 0.1).timeout.connect(_rearm)
-			return
 		var make := func(_z: Vector2) -> Control:
 			if not is_instance_valid(l) or SELF.label_key(l) != key:
 				return null
 			return KitText.clone(l)
-		if kb.draw(get_canvas_item(), "text|" + key, Rect2(Vector2.ZERO, l.size), l.size, make, self, Vector4.ZERO,
-				kb.frac_of(self, Vector2.ZERO), l.self_modulate):
+		var r := Rect2(Vector2.ZERO, l.size)
+		var f := kb.frac_of(self, Vector2.ZERO)
+		# baked already (by this label or another one with the same look): at once; else once the text has held
+		var ok := kb.draw(get_canvas_item(), "text|" + key, r, l.size, make, self, Vector4.ZERO, f, l.self_modulate, false)
+		if not ok and kb.held("text|" + key):
+			ok = kb.draw(get_canvas_item(), "text|" + key, r, l.size, make, self, Vector4.ZERO, f, l.self_modulate)
+		elif not ok and not _armed:  # look again once it may have held still
+			_armed = true
+			kb.later(self, STILL_MS + 100)
+		if ok:
 			if l.visible_characters != 0:
 				l.visible_characters_behavior = TextServer.VC_CHARS_AFTER_SHAPING
 				l.visible_characters = 0
@@ -1240,11 +1300,12 @@ static func icon_atlas(name: String) -> Texture2D:
 
 ## Draws layers made by `make` (a Callable returning a Control that draws them at `size`) from the bake atlas into
 ## `rect` on `ci` (a CanvasItem); see KitBake.draw. False while not baked (draw the vectors).
-static func draw_baked(ci: CanvasItem, key: String, rect: Rect2, size: Vector2, make: Callable, m := Vector4.ZERO) -> bool:
+static func draw_baked(ci: CanvasItem, key: String, rect: Rect2, size: Vector2, make: Callable, m := Vector4.ZERO,
+		queue := true) -> bool:
 	var kb := KitBake.get_inst()
 	if kb == null:
 		return false
-	return kb.draw(ci.get_canvas_item(), key, rect, size, make, ci, m, kb.frac_of(ci, rect.position))
+	return kb.draw(ci.get_canvas_item(), key, rect, size, make, ci, m, kb.frac_of(ci, rect.position), Color.WHITE, queue)
 
 
 # ------------------------------------------------------------------ vector chrome and shapes
@@ -1260,8 +1321,6 @@ class KitShape extends Control:
 	var lip := Color.BLACK
 	var data := {}
 	var vector := false  ## always the vectors (KitBake's stage copy)
-	var _key := ""
-	var _since := -1  # when the look last changed (-1: never since the first draw)
 	var _armed := false
 
 	func _init(k := "", f := Color.WHITE) -> void:
@@ -1273,21 +1332,10 @@ class KitShape extends Control:
 		_armed = false
 		queue_redraw()
 
-	## From the bake atlas; a shape whose look keeps changing (a bar filling up) is drawn as vectors until it holds
-	## still for KitText.STILL_MS, so it does not fill the atlas with every step.
+	## From the bake atlas.
 	func _draw() -> void:
 		if not vector and not LIVE.has(kind):
 			var key := "shape|%s|%s|%s|%.2f,%.2f|%s" % [kind, face.to_html(), lip.to_html(), size.x, size.y, var_to_str(data)]
-			if key != _key:
-				if _key != "":
-					_since = Time.get_ticks_msec()
-				_key = key
-			if _since >= 0 and Time.get_ticks_msec() - _since < KitText.STILL_MS and is_inside_tree():
-				if not _armed:
-					_armed = true
-					get_tree().create_timer(KitText.STILL_MS / 1000.0 + 0.1).timeout.connect(_rearm)
-				_paint()
-				return
 			var k_ := kind
 			var f_ := face
 			var l_ := lip
@@ -1300,8 +1348,14 @@ class KitShape extends Control:
 				c.size = s_
 				c.vector = true
 				return c
-			if SELF.draw_baked(self, key, Rect2(Vector2.ZERO, size), size, make):
+			# a look that keeps changing (a bar filling up) is baked only once it holds still (KitBake.held)
+			var kb := KitBake.get_inst()
+			var settled := kind != "bar" or kb == null or kb.held(key)
+			if SELF.draw_baked(self, key, Rect2(Vector2.ZERO, size), size, make, Vector4.ZERO, settled):
 				return
+			if not settled and not _armed and is_inside_tree():
+				_armed = true
+				kb.later(self, KitText.STILL_MS + 100)
 		_paint()
 
 	func _stroke(pts: PackedVector2Array, w: float, col: Color) -> void:

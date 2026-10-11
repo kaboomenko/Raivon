@@ -7,7 +7,8 @@ set -euo pipefail
 # Renders with the Mobile renderer — what phones run (the project's rendering_method.mobile default); pass
 # --forward-plus as an extra argument for the desktop renderer.
 # --perf-tree: after the shot, the canvas draw calls of every HUD subtree (game/tools/perf_probe.gd): printed as
-# «perf-tree» lines and written to OUT.png.tree.txt.
+# «perf-tree» lines and written to OUT.png.tree.txt. --hud-only: the shot without the 3D world (the canvas alone, on
+# the clear colour) — two builds' HUDs compare pixel for pixel (tools/hud_diff.py).
 # --fixed-fps=N is passed to the engine (`--fixed-fps N`): every frame then advances game time by exactly 1/N s, so
 # an animation captured part-way (e.g. --demo=ceremony:T) lands on the same moment however slow the software
 # renderer is; a --shot-delay then costs N frames a second, so use it without a delay.

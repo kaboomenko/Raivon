@@ -311,7 +311,7 @@ toast.no_gold,Не хватает золота,Not enough gold
 toast.settlers,Поселенцы в пути: «%s» станет вашим через %s,Settlers on the way: “%s” will be yours in %s
 toast.no_raivite,Не хватает Райвитов,Not enough Raivites
 floater.plus_hex,+1 гекс,+1 hex
-toast.colonized,Колонизирован «%s» · Глава I: %d / %d,“%s” colonized · Chapter I: %d / %d
+toast.colonized,«%s» — теперь ваша земля,“%s” is your land now
 toast.war_declared,Война объявлена: %s! Цель — «%s» (+10 к счёту),War declared on the %s! Goal: “%s” (+10 score)
 toast.armies_deployed,Армии выдвинулись к границе,Armies moved up to the border
 toast.to_battle,В бой! Тяните от армии к врагу или бросьте карту на гекс,Charge! Drag from an army to the enemy or drop a card on a hex
@@ -328,10 +328,10 @@ result.timeout,Время вышло,Time's up
 toast.adjacent_only,Только на соседний гекс,Adjacent hexes only
 toast.no_energy,Не хватает энергии (нужно %d),Not enough energy (need %d)
 toast.hex_busy,Гекс занят,Hex is taken
-toast.hex_info,%s · ценность %d · %s,%s · value %d · %s
+toast.hex_info,%s: ценность %d,%s: value %d
 toast.hold_on,Держать позицию: +10% к защите,Holding position: +10% defense
 toast.hold_off,Позиция снята,Hold released
-toast.army_info,Армия: сила %d / %d · двойной тап — держать позицию,Army: strength %d / %d · double-tap to hold position
+toast.army_info,Двойной тап — держать позицию,Double-tap to hold position
 toast.card_cooldown,Карта перезаряжается,Card is recharging
 toast.cant_target,Сюда нельзя: %s,Can't play here: %s
 card.need_own,нужен свой гекс,needs your own hex
@@ -367,7 +367,7 @@ toast.cant_upgrade,Нельзя улучшить,Can't upgrade
 toast.fort_upgrade,Укрепление улучшается до ур. %d,Fort upgrading to Lv %d
 toast.convoy_sent,Обоз в пути: вернётся через %s,Convoy on its way: back in %s
 toast.storage_full,Склад полон — улучшите Склад,Storage full: upgrade the Warehouse
-toast.collected,Собрано: +%d золота · +%d еды · +%d металла,Collected: +%d gold · +%d food · +%d metal
+toast.collected,Собрано +%s %s,Collected +%s %s
 toast.purchases_soon,Покупки появятся в релизной версии,Purchases arrive in the release version
 toast.test_raivite,ТЕСТ: +%d Райвитов без оплаты,"TEST: +%d Raivites, no payment"
 toast.test_builder,ТЕСТ: 4-й строитель и 300 Райвитов,TEST: 4th builder and 300 Raivites
@@ -491,11 +491,11 @@ ui.march,Марш,March
 ui.march_cancel,Отмена,Cancel
 ui.march_stop,Стоп,Stop
 march.pick,Выберите гекс — куда идти армии,Pick a hex for the army to march to
-march.started,Армия выступила · в пути %s,The army sets out · %s on the road
+march.started,Армия дойдёт через %s,The army arrives in %s
 march.no_route,Туда армии не пройти,The army can't get there
 march.busy,Там уже стоит армия,Another army is already there
 march.arrived,Армия прибыла на место,The army has arrived
-toast.armies_marching,Армии выступили к фронту · %s в пути,Armies march to the front · %s on the road
+toast.armies_marching,Армии дойдут до фронта через %s,The armies reach the front in %s
 ui.armies_marching,Армии дойдут до фронта через %s,The armies reach the front in %s
 ui.wait,Марш,Marching
 err.not_damaged,Здание не повреждено,The building isn't damaged
@@ -506,7 +506,7 @@ ui.repair,Починить,Repair
 ui.repairing,Ремонт,Repairing
 ui.repairing_tip,Ремонт закончится через %s,Repair done in %s
 ui.repair_ad,Починить сразу,Repair now
-toast.repair_started,Ремонт начат · %s,Repair started · %s
+toast.repair_started,Ремонт займёт %s,The repair takes %s
 toast.repaired,Здание отремонтировано,Building repaired
 tile.damaged,Здание повреждено: доход −50%,Building damaged: income −50%
 tile.repair,Ремонт,Repair
@@ -903,7 +903,7 @@ toast.weekly_chest,Сундук недели открыт!,The weekly chest is o
 toast.order_swapped,Приказ заменён (бесплатная замена на сегодня потрачена),Order swapped (today's free swap is used)
 toast.pass_owned,Этот пропуск уже открыт в текущем сезоне,This pass is already open this season
 cal.card,Календарь входа · день %d,Login calendar · day %d
-cal.title1,Календарь «Новобранец»,«Recruit» calendar
+cal.title1,Календарь «Новобранец»,“Recruit” calendar
 cal.title2,Державный календарь,Sovereign calendar
 cal.rule,День засчитывается при первом входе в сутки (сброс в 04:00). Пропуск ставит календарь на паузу — серия не сгорает. Золотые дни — главные призы недели.,A day counts on your first visit of the day (reset at 04:00). Missing a day only pauses the calendar — the streak never burns. The gold days hold the week's big prizes.
 cal.double,×2 за рекламу,×2 for an ad
@@ -959,8 +959,8 @@ hand.title,Рука карт,Card hand
 hand.title_full,Рука на наступление,Offensive hand
 hand.deck,Колода,Deck
 hand.tip,В руке: %s,In hand: %s
-hand.rule,«Атака» всегда в руке. Слотов занято: %d из %d — тап добавляет или убирает карту.,«Attack» is always in hand. Slots used: %d of %d — tap to add or remove a card.
-hand.attack_fixed,«Атака» закреплена в руке,«Attack» is fixed in the hand
+hand.rule,«Атака» всегда в руке. Слотов занято: %d из %d — тап добавляет или убирает карту.,“Attack” is always in hand. Slots used: %d of %d — tap to add or remove a card.
+hand.attack_fixed,«Атака» закреплена в руке,“Attack” is fixed in the hand
 hand.min_one,Хотя бы одна карта в слотах,Keep at least one card in the slots
 hand.full,Все %d слотов заняты — уберите карту,All %d slots are used — remove a card first
 star.c4_two_fronts,Война на два фронта: два победных мира в одной коалиционной войне,War on two fronts: two victorious treaties in one coalition war
@@ -981,7 +981,7 @@ patent.p_collect,Доход собирается сам,Income is collected auto
 patent.p_timers,Таймеры до 10 минут завершаются бесплатно,Timers up to 10 minutes finish for free
 patent.p_raivite,40 Райвитов каждый день (забирать ежедневно),40 Raivites every day (claim daily)
 patent.p_key,Ключ Королевского кейса каждую неделю,A Royal case key every week
-patent.p_frame,Анимированная рамка «Патент месяца» за каждый месяц,An animated «Patent of the Month» frame for every month
+patent.p_frame,Анимированная рамка «Патент месяца» за каждый месяц,An animated “Patent of the Month” frame for every month
 patent.trial,"7 дней за %s, затем %s в месяц","7 days for %s, then %s a month"
 patent.unavailable,Подписка недоступна в вашем регионе,The subscription is not available in your region
 patent.renewal,"Подписка продлевается автоматически, пока вы её не отмените. Отменить можно в настройках App Store / Google Play не позднее чем за 24 ч до конца периода.",The subscription renews automatically until you cancel it. Cancel in the App Store / Google Play settings at least 24 h before the period ends.
@@ -1051,7 +1051,7 @@ chr.ach_offensive_500.d,500 наступлений,500 offensives
 chr.ach_perfect_25,Безупречно,Flawless
 chr.ach_perfect_25.d,25 наступлений на три звезды,25 three-star offensives
 chr.ach_wedge_100,Мастер клина,Master of the Wedge
-chr.ach_wedge_100.d,100 атак «Клином» — с двух и более гексов,100 «Wedge» attacks — from 2+ hexes
+chr.ach_wedge_100.d,100 атак «Клином» — с двух и более гексов,100 “Wedge” attacks — from 2+ hexes
 chr.ach_pocket_50,Окружи 50 гексов,Encircle 50 Hexes
 chr.ach_pocket_50.d,Суммарно 50 гексов во взятых котлах,50 hexes taken in pockets in total
 chr.ach_capitals_5,У стен столиц,At the Capitals' Walls
@@ -1067,7 +1067,7 @@ chr.ach_peace_25.d,25 победных договоров,25 victorious treaties
 chr.ach_peace_60,Миротворец,Peacemaker
 chr.ach_peace_60.d,60 победных договоров,60 victorious treaties
 chr.ach_mercy_5,Великодушный правитель,Magnanimous Ruler
-chr.ach_mercy_5.d,5 раз выберите «Пощадить» в победном договоре,Choose «Spare» in a victorious treaty 5 times
+chr.ach_mercy_5.d,5 раз выберите «Пощадить» в победном договоре,Choose “Spare” in a victorious treaty 5 times
 chr.ach_blueprints_25,Трофейный архив,Trophy Archive
 chr.ach_blueprints_25.d,Получите 25 трофейных чертежей,Obtain 25 trophy blueprints
 chr.ach_first_alliance,Слово чести,Word of Honour
@@ -1137,23 +1137,23 @@ cmdr.pp,+%s%%,+%s%%
 cmdr.p.inf,Сила Пехоты,Infantry strength
 cmdr.p.refill,Пополнение армии,Army refill
 cmdr.p.forts,Урон по укреплённым гексам,Damage to fortified hexes
-cmdr.p.scout,"Обзор +1, первая «Разведка» в бою бесплатна","Vision +1, the first «Scout» in a battle is free"
+cmdr.p.scout,"Обзор +1, первая «Разведка» в бою бесплатна","Vision +1, the first “Scout” in a battle is free"
 cmdr.p.power,Сила армии,Army strength
 cmdr.p.wedge,Клин сильнее,Stronger Wedge
 cmdr.p.pocket,Котлы слабеют и сдаются быстрее,Pockets weaken and surrender faster
-cmdr.p.landing,«Десант» дешевле на 1 энергию,«Landing» costs 1 energy less
+cmdr.p.landing,«Десант» дешевле на 1 энергию,“Landing” costs 1 energy less
 cmdr.p.port,Сила у портов,Strength near ports
 cmdr.p.home,Защита на своих гексах,Defense on your own hexes
-cmdr.p.breach,«Прорыв» на 1 гекс дальше,«Breakthrough» reaches 1 hex further
+cmdr.p.breach,«Прорыв» на 1 гекс дальше,“Breakthrough” reaches 1 hex further
 cmdr.p.attack,Атака армии,Army attack
-cmdr.p.air,Урон «Авиаудара»,«Airstrike» damage
+cmdr.p.air,Урон «Авиаудара»,“Airstrike” damage
 cmdr.p.energy,+1 энергия на старте боя,+1 energy at the start of a battle
 cmdr.p.forms,Все формы фронта,All front forms
 cmdr.p.regen,Восполнение энергии,Energy regeneration
-cmdr.album.valley,Альбом «Люди Долины»,Album «People of the Valley»
-cmdr.album.staff,Альбом «Генеральный штаб»,Album «The General Staff»
-cmdr.album.steel,"Альбом «Сталь, крыло и волна»","Album «Steel, Wing and Wave»"
-cmdr.album.founder,Альбом «Основатель»,Album «The Founder»
+cmdr.album.valley,Альбом «Люди Долины»,Album “People of the Valley”
+cmdr.album.staff,Альбом «Генеральный штаб»,Album “The General Staff”
+cmdr.album.steel,"Альбом «Сталь, крыло и волна»","Album “Steel, Wing and Wave”"
+cmdr.album.founder,Альбом «Основатель»,Album “The Founder”
 cmdr.src.cmd_bram,первая война обучения,the tutorial's first war
 cmdr.src.cmd_lira,награда главы I,the chapter I reward
 cmdr.src.cmd_olm,"Военные ящики, Арена","War crates, the Arena"
@@ -1164,18 +1164,18 @@ cmdr.src.cmd_seir,"боевой пропуск, Военные ящики","the 
 cmdr.src.cmd_frey,"награда главы II, Военные ящики","the chapter II reward, War crates"
 cmdr.src.cmd_irma,"календарь (день 7), Королевский кейс","the calendar (day 7), the Royal case"
 cmdr.src.cmd_hawk,"награда главы III, Королевский кейс","the chapter III reward, the Royal case"
-cmdr.src.cmd_vance,"«Набор новобранца», события, Королевский кейс","the «Recruit pack», events, the Royal case"
+cmdr.src.cmd_vance,"«Набор новобранца», события, Королевский кейс","the “Recruit pack”, events, the Royal case"
 cmdr.src.cmd_rai,"награда главы IV, календарь (день 28), пропуск, кейсы","the chapter IV reward, the calendar (day 28), the pass, cases"
 cmdr.bio.cmd_bram,"Мельник с пограничья. В первый день Кремнёвые Бароны сожгли его мельницу — он собрал соседей с вилами и отбил её. Верит в плотный строй и горячую похлёбку.",A miller from the borderlands. On the first day the Flint Barons burned his mill — he gathered his neighbours with pitchforks and led them to take it back. No speeches: a tight line and a hot stew.
 cmdr.bio.cmd_lira,"Деревенская лекарка, ставшая капитаном, когда в Долине не осталось офицеров. Устроила первый лазарет в амбаре и вернула в строй больше солдат, чем потеряла.",A village healer who became a captain when the Valley ran out of officers. She set up the first infirmary in a barn and sent back more soldiers than she ever lost.
-cmdr.bio.cmd_olm,"Сапёр-самоучка, разбирающий любую стену «по кирпичику». Слабое место забора он находит раньше, чем забор успевают достроить.",A self-taught sapper who takes any wall apart «brick by brick». He finds the weak spot of a fence before it is even finished.
+cmdr.bio.cmd_olm,"Сапёр-самоучка, разбирающий любую стену «по кирпичику». Слабое место забора он находит раньше, чем забор успевают достроить.",A self-taught sapper who takes any wall apart “brick by brick”. He finds the weak spot of a fence before it is even finished.
 cmdr.bio.cmd_vik,"Охотник из лесов Вольных Хуторов, видит дым костра за три холма. Водит армии тропами, которых нет на картах.",A hunter from the Free Farmsteads' woods who spots campfire smoke three hills away. He leads armies down paths no map shows.
-cmdr.bio.cmd_vega,"Выпускница военной академии Речной Лиги, автор учебника «Острие и древко». Уверена: армия, бьющая с одной стороны, просто тратит время.",A River League academy graduate and the author of «Point and Shaft». To her an army striking from one side is just wasting time.
-cmdr.bio.cmd_kort,"Старый мастер осад, который никогда не штурмует то, что можно взять голодом. Солдаты зовут его «Маршал Терпение».",An old master of sieges who never storms what hunger can take. His soldiers call him «Marshal Patience».
+cmdr.bio.cmd_vega,"Выпускница военной академии Речной Лиги, автор учебника «Острие и древко». Уверена: армия, бьющая с одной стороны, просто тратит время.",A River League academy graduate and the author of “Point and Shaft”. To her an army striking from one side is just wasting time.
+cmdr.bio.cmd_kort,"Старый мастер осад, который никогда не штурмует то, что можно взять голодом. Солдаты зовут его «Маршал Терпение».",An old master of sieges who never storms what hunger can take. His soldiers call him “Marshal Patience”.
 cmdr.bio.cmd_seir,"Капитан речных барж, ставший адмиралом единственного флота Райвона — десантного. Говорит, что вода не граница, а дорога.","A river barge captain who became admiral of Raivon's only fleet — a landing fleet. Water, he says, is not a border but a road."
 cmdr.bio.cmd_frey,"Комендант пограничной крепости, которая 20 лет не сдавала ворот. Каждый камень своих стен знает по имени.",The commandant of a border fortress that kept its gates shut for 20 years. She knows every stone of her walls by name.
 cmdr.bio.cmd_irma,"Первой пересадила кавалерию на броневики, и спорить с ней об этом уже некому. Ведёт прорывы сама, в головной машине.","The first to move the cavalry into armoured cars — nobody argues with her about it any more. She leads breakthroughs herself, in the lead vehicle."
-cmdr.bio.cmd_hawk,"Ас, который первым поднял биплан над полем боя, когда все смеялись над «летающими телегами». Теперь смеётся он.",The ace who first took a biplane over a battlefield while everyone laughed at «flying carts». Now he is the one laughing.
+cmdr.bio.cmd_hawk,"Ас, который первым поднял биплан над полем боя, когда все смеялись над «летающими телегами». Теперь смеётся он.",The ace who first took a biplane over a battlefield while everyone laughed at “flying carts”. Now he is the one laughing.
 cmdr.bio.cmd_vance,"Аристократка-стратег, выигрывающая сражения за чаем ещё до их начала. Её армии выходят на поле с готовым планом и лишним патроном.",An aristocrat strategist who wins battles over tea before they begin. Her armies take the field with a plan ready and a spare cartridge.
 cmdr.bio.cmd_rai,"Основатель первой державы Райвона, чьё имя носит сама земля. По легенде, он чувствовал фронт, как пульс, и знал, когда ударить, а когда подписать мир.","The founder of Raivon's first realm, whose name the land itself bears. Legend says he felt the front like a pulse and knew when to strike and when to sign the peace."
 cmdr.rarity.common,Обычный,Common
