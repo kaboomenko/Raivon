@@ -9,7 +9,6 @@ extends CanvasLayer
 
 const CmdPortrait := preload("res://scripts/cmd_portrait.gd")
 const Kit := preload("res://scripts/ui_kit.gd")
-const FlagView := preload("res://scripts/flag_view.gd")
 const EDGE := Kit.INK  # the legacy _style() border argument (legacy_style maps every border to INK anyway)
 const TEXT := Kit.TEXT
 
@@ -119,7 +118,10 @@ func _panel(rect: Rect2, style: StyleBox, parent: Node = null) -> Panel:
 	var p := Panel.new()
 	p.position = rect.position
 	p.size = rect.size
-	p.add_theme_stylebox_override("panel", style)
+	if style is StyleBoxFlat:
+		Kit.set_panel(p, style)  # drawn from the kit's bake atlas (one draw call with its neighbours)
+	else:
+		p.add_theme_stylebox_override("panel", style)
 	if style is StyleBoxFlat and int(style.get_meta("kit_lip", 0)) > 0 and rect.size.y >= 40.0:
 		p.add_child(Kit.KitDecor.new())  # the lip / highlight line / gloss (child 0)
 	(parent if parent != null else self).add_child(p)
@@ -269,7 +271,7 @@ func _rate_text(ph: int, form: int) -> String:
 # ---------------------------------------------------------------- crest, ruler portrait, left column
 
 func _build_crest() -> void:
-	crest_flag = FlagView.new()
+	crest_flag = Kit.KitFlag.new()  # drawn from the kit's bake atlas
 	crest_flag.position = Vector2(12, 4)
 	crest_flag.size = Vector2(92, 118)
 	crest_flag.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -293,7 +295,7 @@ func _build_crest() -> void:
 	well.size = Vector2(74, 72)
 	var wsb := Kit.style(Kit.SKY_LOW, 14, 0, Kit.INK, 0, 0)
 	wsb.set_meta("kit_kind", "")
-	well.add_theme_stylebox_override("panel", wsb)
+	Kit.set_panel(well, wsb)
 	well.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW  # the art takes the well's rounded corners
 	well.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	fr.add_child(well)
@@ -317,7 +319,7 @@ func _build_crest() -> void:
 	var rsb := Kit.style(Kit.alpha(Kit.INK, 0.0), 14, 3, Kit.INK, 0, 0)
 	rsb.draw_center = false
 	rsb.set_meta("kit_kind", "")
-	rim.add_theme_stylebox_override("panel", rsb)
+	Kit.set_panel(rim, rsb)
 	rim.position = well.position
 	rim.size = well.size
 	rim.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -333,7 +335,7 @@ func _set_trim(kind: String) -> void:
 	_trim = kind
 	var sb := Kit.style(Kit.face_of(kind), 20, 4, Kit.INK, 6, 6)
 	sb.set_meta("kit_kind", "")  # a frame, not a button: the lip without the gloss
-	_ruler_frame.add_theme_stylebox_override("panel", sb)
+	Kit.set_panel(_ruler_frame, sb)
 	_ruler_frame.queue_redraw()
 
 
@@ -361,7 +363,7 @@ func _build_left() -> void:
 	cnt.name = "counter"
 	var csb := Kit.style(Kit.SLATE_WELL, int(ch * 0.5), 3, Kit.INK, 0, 0)
 	csb.set_meta("kit_kind", "")
-	cnt.add_theme_stylebox_override("panel", csb)
+	Kit.set_panel(cnt, csb)
 	cnt.position = Vector2(4, 84.0 - 14.0)
 	cnt.size = Vector2(76, ch)
 	cnt.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -394,25 +396,19 @@ func _build_minimap() -> void:
 	fr.name = "minimap"
 	fr.position = Vector2(733, 96)
 	fr.size = Vector2(196, 196)
-	fr.add_theme_stylebox_override("panel", Kit.style(Kit.SLATE, 24, 4, Kit.INK, 6, 6))
+	Kit.set_panel(fr, Kit.style(Kit.SLATE, 24, 4, Kit.INK, 6, 6))
 	_top.add_child(fr)
 	fr.add_child(Kit.KitDecor.new())
 	_buttons["minimap"] = fr
-	var well := Panel.new()
-	well.position = Vector2(8, 8)
-	well.size = Vector2(180, 174)
-	var r_in := 24 - 8  # concentric with the frame's corners
-	var wsb := Kit.style(Kit.SEA_WELL, r_in, 0, Kit.INK, 0, 0)
-	wsb.set_meta("kit_kind", "")
-	well.add_theme_stylebox_override("panel", wsb)
-	well.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
-	well.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	fr.add_child(well)
+	# the map on its sea well is rendered into a texture once and again only when the map changes (Minimap); the
+	# camera's view frame is drawn live over it
 	var mm := Minimap.new()
 	mm.world = world
-	mm.size = well.size
+	mm.under = [Kit.flat_of(fr), Rect2(Vector2(-8, -8), fr.size)]  # the frame under the well's corners
+	mm.position = Vector2(8, 8)
+	mm.size = Vector2(180, 174)
 	mm.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	well.add_child(mm)
+	fr.add_child(mm)
 	minimap = mm
 
 
@@ -606,7 +602,7 @@ func select_tab(key: String) -> void:
 		if (k == key) == behind:
 			_bottom.move_child(t, _tray.get_index())
 	# the first tab, selected, runs straight into the tray's left side: no rounded corner there
-	var sb := _tray.get_theme_stylebox("panel") as StyleBoxFlat
+	var sb := Kit.flat_of(_tray)
 	sb.corner_radius_top_left = 0 if key == String(TABS[0][0]) else 24
 	_tray.queue_redraw()
 
@@ -637,7 +633,7 @@ func _build_tabs() -> void:
 			t.add_child(f)
 		var ic := TextureRect.new()
 		ic.name = "icon"
-		ic.texture = Kit.icon_tex(String(TABS[i][2]))
+		ic.texture = Kit.icon_atlas(String(TABS[i][2]))
 		ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -669,7 +665,7 @@ func _style_tab(key: String, sel: bool) -> void:
 		sb.border_width_bottom = 0
 	else:
 		sb.set_meta("kit_kind", "")  # no highlight line on the well
-	t.add_theme_stylebox_override("panel", sb)
+	Kit.set_panel(t, sb)
 	(t.get_node("fillet_l") as Control).visible = sel and int(t.get_meta("i")) > 0  # the first tab is flush with the tray
 	(t.get_node("fillet_r") as Control).visible = sel
 	var br := t.get_node("bridge") as ColorRect
@@ -775,7 +771,7 @@ func show_tile(info: Dictionary) -> void:
 	if pic == "":
 		pic = _tile_path("plain")
 	tile_pic.texture = load(pic) if pic != "" else null
-	_tile_icon.texture = Kit.icon_tex(ic)
+	_tile_icon.texture = Kit.icon_atlas(ic)
 	_tile_icon.visible = _tile_icon.texture != null
 	_fit_floor(tile_title, String(info.get("title", "")), 30, 24, tile_title.size.x)
 	for c in _tile_chips.get_children():
@@ -914,6 +910,7 @@ func _on_tile_input(e: InputEvent) -> void:
 class Fillet extends Control:
 	const R := 8.0
 	var flip := false
+	var vector := false  # the bake's stage copy draws its polygons
 
 	func _init() -> void:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -932,38 +929,146 @@ class Fillet extends Control:
 				pts[i].x = s - pts[i].x
 		return pts
 
+	## From the kit's bake atlas (two polygons a frame otherwise).
 	func _draw() -> void:
-		draw_colored_polygon(_region(R), Kit.INK)
-		draw_colored_polygon(_region(R + 4.0), Kit.SLATE)
+		var fl := flip
+		var make := func(_z: Vector2) -> Control:
+			var f := Fillet.new()
+			f.flip = fl
+			f.size = Vector2(R + 4.0, R + 4.0)
+			f.vector = true
+			return f
+		if vector or not Kit.draw_baked(self, "fillet|%s" % str(flip), Rect2(Vector2.ZERO, Vector2(R + 4.0, R + 4.0)), Vector2(R + 4.0, R + 4.0), make):
+			draw_colored_polygon(_region(R), Kit.INK)
+			draw_colored_polygon(_region(R + 4.0), Kit.SLATE)
 
 
 # ====================================================================== minimap
 
-## The whole open world in the states' colours on the sea well, each hex with a light top edge; the camera's view
-## is a rounded white frame over an INK one, kept inside the well.
+## The whole open world in the states' colours on the sea well (its corners concentric with the frame's), each hex
+## with a light top edge; the camera's view is a rounded white frame over an INK one, kept inside the well. The well
+## and the map are drawn by MinimapMap inside a SubViewport that renders only when the map changes (its cells cost
+## ~230 draw calls); this control draws that texture and the view frame (from the kit's bake atlas) over it. The
+## SubViewport is made at the device's canvas scale over a copy of the frame (`under`: its StyleBoxFlat and its rect in
+## this control's coordinates; the frame's INK contour shows at the well's corners), so the texture lands on the
+## screen pixel for pixel as the vectors did.
 class Minimap extends Control:
 	var world: Node3D  # map_view.gd
 	var view_rect := Rect2()
-	var _sb := StyleBoxFlat.new()
+	var under: Array = []
+	var _vp: SubViewport
+	var _map: MinimapMap
+	var _sig := 0
+	var _k := 0.0
 
-	func _init() -> void:
-		_sb.draw_center = false
-		_sb.anti_aliasing = true
-		_sb.corner_detail = 8
+	func _ready() -> void:
+		_vp = SubViewport.new()
+		_vp.name = "map"
+		_vp.disable_3d = true
+		_vp.transparent_bg = false
+		_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+		add_child(_vp)
+		var bg := ColorRect.new()  # the frame's face under the well's rounded corners
+		bg.color = Kit.SLATE
+		bg.size = size
+		_vp.add_child(bg)
+		if under.size() == 2:  # the frame itself (contour, face, lip): its INK corner curve shows past the well's
+			var fsb: StyleBoxFlat = under[0]
+			var fr: Rect2 = under[1]
+			var deco := Kit.KitDecor.spec(fsb, fr.size)
+			var paint := func(c: CanvasItem) -> void:
+				fsb.draw(c.get_canvas_item(), Rect2(Vector2.ZERO, fr.size))
+				if not deco.is_empty():
+					Kit.KitDecor.paint(c, deco, fr.size)
+			var frame := Kit.KitPainter.new(paint, fr.size)
+			frame.position = fr.position
+			_vp.add_child(frame)
+		var well := Panel.new()
+		well.size = size
+		var wsb := Kit.style(Kit.SEA_WELL, 24 - 8, 0, Kit.INK, 0, 0)  # concentric with the frame's corners
+		wsb.set_meta("kit_kind", "")
+		well.add_theme_stylebox_override("panel", wsb)
+		well.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
+		_vp.add_child(well)
+		_map = MinimapMap.new()
+		_map.world = world
+		_map.size = size
+		well.add_child(_map)
+
+	## The map fit into the well: [centre offset, scale] (the whole open world, which grows by chapter, with half a
+	## hex of sea around the outer row).
+	static func fit(w: Node3D, sz: Vector2) -> Array:
+		var lo := Vector2(1e9, 1e9)
+		var hi := Vector2(-1e9, -1e9)
+		for cell in w.sim.cells:
+			var wp: Vector3 = w.axial_to_world(cell["q"], cell["r"])
+			lo = lo.min(Vector2(wp.x, wp.z))
+			hi = hi.max(Vector2(wp.x, wp.z))
+		var span := hi - lo + Vector2(3.0, 3.0)
+		var sc := minf(sz.x / span.x, sz.y / span.y)
+		return [sz / 2 - (lo + hi) / 2.0 * sc, sc]
+
+	## Renders the map again when what it shows changed (owners, controllers, colours) or the canvas scale did.
+	func _sync() -> void:
+		var k := 1.0
+		var win := DisplayServer.window_get_size()
+		var vis := get_viewport_rect().size
+		if win.y > 0 and vis.y > 0.0:
+			k = roundf(float(win.y) / vis.y * 1000.0) / 1000.0
+		var parts: Array = [k]
+		for cell in world.sim.cells:
+			var o: int = world.owner_of(cell)
+			parts.append((o * 64 + int(cell["owner"])) * 64 + int(cell["controller"]))
+			parts.append(world.state_color(o))
+		var sig := hash(parts)
+		if sig == _sig:
+			return
+		_sig = sig
+		if k != _k:
+			_k = k
+			_vp.size = Vector2i(ceili(size.x * k), ceili(size.y * k))
+			_vp.canvas_transform = Transform2D.IDENTITY.scaled(Vector2(k, k))
+		_map.queue_redraw()
+		_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+
+	func _draw() -> void:
+		if world == null or world.get("sim") == null or _vp == null:
+			return
+		_sync()
+		draw_texture_rect(_vp.get_texture(), Rect2(Vector2.ZERO, size), false)
+		if view_rect.size != Vector2.ZERO:
+			var f := fit(world, size)
+			var c: Vector2 = f[0]
+			var sc: float = f[1]
+			# clamped to the well (the frame 3 px inside its edge): zoomed far out it hugs the well, never vanishes
+			var r := Rect2(c + view_rect.position * sc, view_rect.size * sc).intersection(Rect2(Vector2.ZERO, size).grow(-6.0))
+			if r.has_area():
+				_frame(r.grow(3.0), Kit.INK, 6, 11)
+				_frame(r.grow(1.5), Kit.WHITE, 3, 8)
+
+	func _frame(r: Rect2, col: Color, w: int, rad: int) -> void:
+		var sb := StyleBoxFlat.new()
+		sb.draw_center = false
+		sb.anti_aliasing = true
+		sb.corner_detail = 8
+		sb.border_color = col
+		sb.set_border_width_all(w)
+		sb.set_corner_radius_all(rad)
+		if not Kit.draw_flat(get_canvas_item(), r, sb, self, self, false):
+			draw_style_box(sb, r)
+
+
+## The minimap's well content (drawn inside Minimap's SubViewport): each hex in its state's colour with the light
+## top edge, an occupied hex with its occupier's dot.
+class MinimapMap extends Control:
+	var world: Node3D
 
 	func _draw() -> void:
 		if world == null or world.get("sim") == null:
 			return
-		# fit the whole open world (it grows by chapter)
-		var lo := Vector2(1e9, 1e9)
-		var hi := Vector2(-1e9, -1e9)
-		for cell in world.sim.cells:
-			var wp: Vector3 = world.axial_to_world(cell["q"], cell["r"])
-			lo = lo.min(Vector2(wp.x, wp.z))
-			hi = hi.max(Vector2(wp.x, wp.z))
-		var span := hi - lo + Vector2(3.0, 3.0)  # half a hex of sea around the outer row
-		var sc := minf(size.x / span.x, size.y / span.y)
-		var c := size / 2 - (lo + hi) / 2.0 * sc
+		var f := Minimap.fit(world, size)
+		var c: Vector2 = f[0]
+		var sc: float = f[1]
 		var water := Kit.SEA_WELL.lightened(0.1)
 		for cell in world.sim.cells:
 			var p: Vector3 = world.axial_to_world(cell["q"], cell["r"])
@@ -982,15 +1087,3 @@ class Minimap extends Control:
 				draw_polyline(PackedVector2Array([pts[3], pts[4], pts[5], pts[0]]), col.lightened(0.35), 1.0, true)
 			if cell["controller"] != cell["owner"] and cell["controller"] != 0:
 				draw_circle(o, sc * 0.35, world.state_color(cell["controller"]))
-		if view_rect.size != Vector2.ZERO:
-			# clamped to the well (the frame 3 px inside its edge): zoomed far out it hugs the well, never vanishes
-			var r := Rect2(c + view_rect.position * sc, view_rect.size * sc).intersection(Rect2(Vector2.ZERO, size).grow(-6.0))
-			if r.has_area():
-				_frame(r.grow(3.0), Kit.INK, 6, 11)
-				_frame(r.grow(1.5), Kit.WHITE, 3, 8)
-
-	func _frame(r: Rect2, col: Color, w: int, rad: int) -> void:
-		_sb.border_color = col
-		_sb.set_border_width_all(w)
-		_sb.set_corner_radius_all(rad)
-		draw_style_box(_sb, r)
