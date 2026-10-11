@@ -106,11 +106,52 @@ static func bake_stats(kb: Node) -> String:
 		kb.resets, kb.evicted, kb.used() * 100.0, kb._top, kb.stage.size, kb._state]
 
 
-static func run(tree: SceneTree, out_path: String) -> void:
+## `--perf-tabs` (docs/dev/hud_perf_plan.json H2): the store's other tabs in turn — each one rendered, held still,
+## shot (<shot>_<tab>.png, with the 3D world), its «perf» line printed and its breakdown written
+## (<shot>_<tab>.png.tree.txt).
+static func shop_tabs(tree: SceneTree, out_path: String) -> void:
+	var vp := tree.root
+	var main: Node = tree.current_scene
+	var shop: Control = main.get("shop") if main != null else null
+	if shop == null or not is_instance_valid(shop):
+		print("perf-tree no store open")
+		return
+	var base := out_path.trim_suffix(".tree.txt").get_basename()
+	for t in shop.get("TABS"):
+		if String(t) == String(shop.get("tab")):
+			continue
+		shop.set("tab", t)
+		shop.call("_render")
+		var kb := vp.get_node_or_null("KitBake")
+		var last := -1
+		for i in 40:  # (its bakes landing, then the count holding)
+			var d0 := await _draws(vp)
+			var idle: bool = kb == null or (kb.jobs.is_empty() and int(kb._state) == 0)
+			if d0 == last and idle and i > 2:
+				break
+			last = d0
+			await tree.create_timer(0.25).timeout
+		await RenderingServer.frame_post_draw
+		var png := "%s_%s.png" % [base, t]
+		vp.get_texture().get_image().save_png(png)
+		print("perf tab=%s draw_calls=%d draws_3d=%d draws_shadow=%d draws_canvas=%d" % [t,
+			Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
+			vp.get_render_info(Viewport.RENDER_INFO_TYPE_VISIBLE, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME),
+			vp.get_render_info(Viewport.RENDER_INFO_TYPE_SHADOW, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME),
+			vp.get_render_info(Viewport.RENDER_INFO_TYPE_CANVAS, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME)])
+		print("shot saved ", png)
+		await run(tree, png + ".tree.txt", false)
+
+
+static func run(tree: SceneTree, out_path: String, tabs := true) -> void:
 	var vp := tree.root
 	var lines := PackedStringArray()
 	if OS.get_cmdline_user_args().has("--perf-smoke"):
 		await smoke(tree, out_path)
+		return
+	if tabs and OS.get_cmdline_user_args().has("--perf-tabs"):
+		await run(tree, out_path, false)
+		await shop_tabs(tree, out_path)
 		return
 	# the kit's bakes still landing (ui_kit.gd KitBake) would shrink the count while it measures: wait until the bake
 	# queue is idle and the count holds (at most ~10 s)
