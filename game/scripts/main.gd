@@ -781,7 +781,7 @@ func _march_to(hex: int) -> void:
 		return
 	_march_dest[int(a["id"])] = hex
 	sfx.play("attack")
-	ui.toast(tr("march.started") % GameUI.fmt_time(int(r["seconds"])), "orders")
+	ui.toast(tr("march.started") % GameUI.fmt_time(int(r["seconds"])), "helmet")
 	_select(hex)
 	_autosave()
 
@@ -2676,7 +2676,7 @@ func _deploy_to_front(enemy: int) -> void:
 				moved += 1
 				break
 	if longest > 0:
-		ui.toast(tr("toast.armies_marching") % GameUI.fmt_time(longest), "orders")
+		ui.toast(tr("toast.armies_marching") % GameUI.fmt_time(longest), "helmet")
 	elif moved > 0:
 		ui.toast(tr("toast.armies_deployed"))
 
@@ -7452,8 +7452,8 @@ func _demo(spec: String) -> void:
 				[tr("toast.army_info"), "shield"],
 				[tr("toast.hex_info") % [_cell_name(hx), hc["value"]], "crown"],
 				[tr("toast.colonized") % _cell_name(hx), "hex_tile"],
-				[tr("march.started") % GameUI.fmt_time(66), "orders"],
-				[tr("toast.armies_marching") % GameUI.fmt_time(160), "orders"],
+				[tr("march.started") % GameUI.fmt_time(66), "helmet"],
+				[tr("toast.armies_marching") % GameUI.fmt_time(160), "helmet"],
 				[tr("toast.repair_started") % GameUI.fmt_time(Economy.REPAIR_SEC), "hammer"],
 			]
 			for i in sheet.size():

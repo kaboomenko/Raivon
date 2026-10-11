@@ -311,7 +311,7 @@ toast.no_gold,Не хватает золота,Not enough gold
 toast.settlers,Поселенцы в пути: «%s» станет вашим через %s,Settlers on the way: “%s” will be yours in %s
 toast.no_raivite,Не хватает Райвитов,Not enough Raivites
 floater.plus_hex,+1 гекс,+1 hex
-toast.colonized,«%s» — теперь ваша земля,“%s” is your land now
+toast.colonized,«%s» — ваша земля,“%s” is yours
 toast.war_declared,Война объявлена: %s! Цель — «%s» (+10 к счёту),War declared on the %s! Goal: “%s” (+10 score)
 toast.armies_deployed,Армии выдвинулись к границе,Armies moved up to the border
 toast.to_battle,В бой! Тяните от армии к врагу или бросьте карту на гекс,Charge! Drag from an army to the enemy or drop a card on a hex
@@ -495,7 +495,7 @@ march.started,Армия дойдёт через %s,The army arrives in %s
 march.no_route,Туда армии не пройти,The army can't get there
 march.busy,Там уже стоит армия,Another army is already there
 march.arrived,Армия прибыла на место,The army has arrived
-toast.armies_marching,Армии дойдут до фронта через %s,The armies reach the front in %s
+toast.armies_marching,Армии у фронта через %s,Armies at the front in %s
 ui.armies_marching,Армии дойдут до фронта через %s,The armies reach the front in %s
 ui.wait,Марш,Marching
 err.not_damaged,Здание не повреждено,The building isn't damaged
