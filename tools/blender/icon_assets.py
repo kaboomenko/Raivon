@@ -1,15 +1,25 @@
 """Every 3D UI icon (docs/ui_style.md §3.5): resources for the top bar, HUD buttons, tabs, window titles, rewards.
-One camera, one key light (plus the cool rim light), the same chunky low-poly kit as the map models.
+One key light (plus the cool rim light), the same chunky low-poly kit as the map models, and one of two cameras
+(docs/art_direction.md §7.13; camera_mode): "object" — perspective 85 mm raised 25°, the model upright at yaw 0 — for
+the standing objects (OBJECT_ICONS: the four chests, the crate, the gift); "emblem" — the orthographic camera 6° above
+the horizon — for everything else.
 
-Run: python3 tools/blender/icon_assets.py [game/assets/ui] [name ...] [--raw=DIR] [--samples=64]
+Run: python3 tools/blender/icon_assets.py [game/assets/ui] [name ...] [--raw=DIR] [--samples=64] [--force]
+     [--check-only] [--strict]
 - With no names, renders every icon in ICONS (66 icons, about 4 minutes on 4 cores).
 - coin, food, metal, raivite, oil, builder go to <out>/<name>.png (the HUD loads res://assets/ui/<name>.png);
   every other icon goes to <out>/icons/<name>.png.
+- Resume-safe: an icon whose output already exists is skipped; --force renders it again.
+- The object icons are checked for C-6 (check_geometry: no floating part, no coincident faces, the crate's boxes
+  neither sunk nor hanging) and print «GEOM name ok» or the problems; --check-only builds and checks without
+  rendering; --strict exits 1 on a problem.
+- QA: tools/qa_icons/ (measure_lean.py, masks.py, qa_chest.py, chest_qa.py; docs/art_direction.md §7.14).
 
-Pipeline, per icon (reproducible, the rim is applied exactly once):
+Pipeline, per icon (reproducible: Cycles seed 0; the rim is applied exactly once):
 1. render 256 × 256, transparent, into a temp dir (--raw=DIR, default a fresh dir under the system temp — never the
-   repo); the camera's ortho scale and shift are fitted to the model's silhouette, so every icon fills the same
-   share of its square (FILL) and leaves room for the rim;
+   repo); the camera is fitted to the model's silhouette (ortho scale or the perspective distance, and the shift), so
+   every icon fills the same share of its square (FILL) and leaves room for the rim — except the chest family, which
+   shares the closed wood chest's frame so all four bodies come out the same size;
 2. downscale to 128 × 128 (Lanczos);
 3. tools/ui/ink_rim.py bakes the 3 px INK rim into the final file.
 Portraits and card art (tools/blender/card_art.py) get no rim.
@@ -280,19 +290,66 @@ def tower():
 
 
 def crate():
-    """Warehouse: two stacked plank crates with iron corners and a sack."""
-    wd = mat("crate_w", "#b07d47", 0.7)
-    dk = mat("crate_d", "#6e4526", 0.7)
-    iron = mat("iron_i", "#4a4d52", 0.5, 0.6)
-    for (x, z, s_, r) in ((-0.18, -0.2, 0.46, 0.15), (0.2, -0.24, 0.38, -0.1), (0.0, 0.2, 0.36, 0.3)):
-        b = box("crate", (s_, s_, s_), (x, 0, z), wd, 0.02)
-        b.rotation_euler.z = r
-        for dz in (-s_ * 0.3, s_ * 0.3):
-            bb = box("plank", (s_ + 0.01, s_ + 0.01, 0.04), (x, 0, z + dz), dk, 0.005)
-            bb.rotation_euler.z = r
-        for dx in (-1, 1):
-            c = box("corner", (0.05, s_ + 0.02, s_ + 0.02), (x + dx * s_ * 0.5 * math.cos(r), dx * s_ * 0.5 * math.sin(r), z), iron, 0.005)
-            c.rotation_euler.z = r
+    """Warehouse (also the cellars and the resupply): three plank crates in a stable pyramid — two side by side, one
+    centred on top resting on their corner irons — all square to the camera (docs/art_direction.md §7.13)."""
+    panel = mat("cr_panel", "#a96f3d", 0.7)
+    batten = mat("cr_batten", "#d59c5c", 0.65)
+    iron = mat("iron_cr", "#5b6474", 0.45, 0.5)
+    s, s2, gap = CRATE_LO, CRATE_HI, CRATE_GAP
+    zb = -0.45
+    t, p = CRATE_BATTEN, CRATE_BATTEN_OUT
+
+    def one(unit, cx, cz, size, front, top):
+        """One crate: a recessed panel box, 12 edge battens, braces, 8 iron corner cubes. front / top: the brace on the
+        front and the top face — an angle in degrees (a diagonal) or "mid" (a horizontal middle batten)."""
+        before = set(bpy.context.scene.objects)
+        hs = size / 2
+        q = hs - t / 2 + p  # the battens' centre line, 0.014 proud of the crate's nominal face
+        inner = 2 * (hs - t + p)  # the horizontal battens butt against the uprights (no two faces share a plane)
+        box("panel", (size - 0.02, size - 0.02, size - 0.02), (cx, 0, cz), panel, 0.02)
+        for sx in (-1, 1):
+            for sy in (-1, 1):
+                box("bat_z", (t, t, size), (cx + sx * q, sy * q, cz), batten, 0.012)
+        for sz in (-1, 1):
+            for sy in (-1, 1):
+                box("bat_x", (inner, t, t), (cx, sy * q, cz + sz * q), batten, 0.012)
+            for sx in (-1, 1):
+                box("bat_y", (t, inner, t), (cx + sx * q, 0, cz + sz * q), batten, 0.012)
+        # braces sit between the battens, 0.008 under their faces: from the panel face (hs − 0.01) to hs + 0.006
+        th, yb = 0.016, hs - 0.002
+        L = (size - 2 * t) * math.sqrt(2) * 0.92
+        for face, spec in (("front", front), ("top", top)):
+            if spec == "mid":
+                dims = (inner, th, t * 0.85) if face == "front" else (inner, t * 0.85, th)
+            else:
+                dims = (L, th, t * 0.85) if face == "front" else (L, t * 0.85, th)
+            loc = (cx, -yb, cz) if face == "front" else (cx, 0, cz + yb)
+            b = box("brace", dims, loc, batten, 0.01)
+            if spec != "mid":
+                if face == "front":
+                    b.rotation_euler.y = math.radians(spec)
+                else:
+                    b.rotation_euler.z = math.radians(spec)
+        for sx in (-1, 1):  # small iron cubes on the eight corners, 0.006 proud of the battens: the crate stands on them
+            for sy in (-1, 1):
+                for sz in (-1, 1):
+                    c = hs + CRATE_CORNER_OUT - CRATE_CORNER / 2
+                    box("corner", (CRATE_CORNER,) * 3, (cx + sx * c, sy * c, cz + sz * c), iron, 0.018)
+        for o in bpy.context.scene.objects:
+            if o not in before:
+                o["unit"] = unit
+
+    x_lo = s / 2 + gap / 2 + p  # 0.03 between the lower crates' battens
+    one(0, -x_lo, zb + s / 2, s, 45, -45)  # left: «\»
+    one(1, x_lo, zb + s / 2, s, -45, 45)  # right: «/», mirrored
+    # the top crate's bottom battens rest on the lower crates' inner top corner irons, its own corner irons on their
+    # top battens: both at once, nothing sunk, nothing hanging
+    one(2, 0.0, zb + s + CRATE_CORNER_OUT + p + s2 / 2, s2, "mid", "mid")
+
+
+CRATE_LO, CRATE_HI, CRATE_GAP = 0.46, 0.42, 0.03
+CRATE_BATTEN, CRATE_BATTEN_OUT = 0.08, 0.014
+CRATE_CORNER, CRATE_CORNER_OUT = 0.10, 0.02  # the corner cubes reach 0.02 past the nominal face (0.006 past a batten)
 
 
 def flask():
@@ -411,11 +468,17 @@ def orders():
 
 
 def _tilt(rx=0.0, ry=0.0, rz=0.0):
-    """Turn the whole icon about the origin (one pivot for every part, so the parts stay put relative to each other)."""
+    """Turn the whole icon about the origin (one pivot for every part, so the parts stay put relative to each other).
+
+    Without a roll (ry == 0) the yaw comes first and the tilt towards the camera second (rotation_mode 'ZXY':
+    R = Rx·Rz), so the model's verticals stay vertical on screen (docs/art_direction.md §7.13). The old 'XYZ' order
+    tilted first and turned second, and every vertical fell to one side (the chests by −6.4°, metal −6.1°, …). The
+    deliberately rolled tools (hammer, key, hourglass, shard: ry ≠ 0, a dynamic pose) keep 'XYZ'."""
     e = bpy.data.objects.new("tilt", None)
     bpy.context.scene.collection.objects.link(e)
-    for o in [o for o in bpy.context.scene.objects if o.type == "MESH" and o.parent is None]:
+    for o in [o for o in bpy.context.scene.objects if o.parent is None and o is not e]:
         o.parent = e
+    e.rotation_mode = "ZXY" if ry == 0 else "XYZ"
     e.rotation_euler = (math.radians(rx), math.radians(ry), math.radians(rz))
 
 
@@ -531,8 +594,7 @@ def cards():
     pic = box("pic", (0.32, 0.03, 0.4), (0.2, -0.016, 0.0), back, 0.01)
     pic.rotation_euler.y = -0.42
     _star_mesh("star", 0.13, 0.055, 0.2, 0.0, -0.034, -0.05, mat("star_w", "#f6f3ea", 0.4), -0.42)
-    for o in [o for o in bpy.context.scene.objects if o.type == "MESH"]:
-        o.rotation_euler.x += math.radians(8)
+    _tilt(rx=8)  # about one pivot: each card turned about its own centre slid the star off its picture
 
 
 def lock():
@@ -558,8 +620,7 @@ def lock():
     k = cyl("hole", 0.06, 0.04, (0, -0.13, -0.18), mat("hole", "#1d1b1a", 0.8), 16, 0.0)
     k.rotation_euler.x = math.pi / 2
     box("slot", (0.04, 0.04, 0.13), (0, -0.13, -0.27), mat("hole", "#1d1b1a", 0.8), 0.0)
-    for o in [o for o in bpy.context.scene.objects if o.type == "MESH"]:
-        o.rotation_euler.z += math.radians(-14)
+    _tilt(rz=-14)  # about one pivot: each part turned about its own centre moved the keyhole 4.6 px off the body
 
 
 def _parallelogram(name, x0, x1, z0, z1, skew, y, material):
@@ -905,19 +966,18 @@ def horn():
 
 
 def gift():
-    """A present: a red box with a blue ribbon and a bow."""
+    """A present: a red box with a blue ribbon and a bow, upright and square to the object camera."""
     red = mat("gift", "#e04a3e", 0.5)
     red_l = mat("gift_l", "#ee5c4f", 0.5)
     rib = mat("gift_rib", "#3e8ff0", 0.45)
     box("box", (0.6, 0.6, 0.46), (0, 0, -0.16), red, 0.02)
     box("lid", (0.68, 0.68, 0.14), (0, 0, 0.12), red_l, 0.025)
     box("band_x", (0.14, 0.7, 0.62), (0, 0, -0.06), rib, 0.01)
-    box("band_y", (0.7, 0.14, 0.62), (0, 0, -0.06), rib, 0.01)
+    box("band_y", (0.7, 0.14, 0.62), (0, 0, -0.054), rib, 0.01)  # 0.006 higher: the crossing tops never coincide
     for sx in (-1, 1):
-        lp = _torus("loop", 0.12, 0.045, (sx * 0.11, 0, 0.3), rib, (math.pi / 2, sx * 0.55, 0), seg=24)
+        lp = _torus("loop", 0.12, 0.045, (sx * 0.13, 0, 0.3), rib, (math.pi / 2, sx * 0.55, 0), seg=24)
         lp.scale = (1.0, 0.6, 1.0)
     sphere("knot", 0.07, (0, 0, 0.24), rib, (1, 1, 0.9), 2)
-    _tilt(rx=22, rz=-32)
 
 
 def coins():
@@ -1023,72 +1083,243 @@ def charter():
     _tilt(rx=5, rz=-8)
 
 
-def _chest(body, band, trim, lock_m, planks=None, gem=None):
-    """A chest: a box body under a round lid, straps over both, a lock plate."""
-    box("body", (0.8, 0.5, 0.42), (0, 0, -0.2), body, 0.03)
-    if planks:
-        for z in (-0.13, -0.27):
-            box("plank", (0.79, 0.505, 0.012), (0, 0, z), planks, 0.0)
-    lid = cyl("lid", 0.25, 0.8, (0, 0, 0.01), body, 32, 0.02)
-    lid.rotation_euler.y = math.pi / 2
-    box("rim_lo", (0.83, 0.53, 0.06), (0, 0, -0.39), trim, 0.012)
-    box("rim_hi", (0.83, 0.53, 0.05), (0, 0, 0.0), trim, 0.012)
+# ------------------------------------------------------------------ chests v2 (docs/art_direction.md §7.13)
+# One builder, four finishes. Blender units, Z up, the front faces −Y, the origin is the middle of the seam (the body's
+# top). Mirrored about x = 0; parts of different pieces never share a face plane (≥ 0.005 apart); nothing finer than
+# 0.04 except the seam and the plank grooves, which are drawn lines. Shot by the object camera (render, "object").
+
+CHEST_W, CHEST_D, CHEST_H = 0.86, 0.58, 0.40  # the body's top footprint and height
+CHEST_FLARE = 0.95  # the bottom footprint is 0.95 of the top: everything fixed to the body follows
+CHEST_SEAM = 0.014  # the gap between body and lid, filled with a dark insert: one crisp line at any size
+LID_N, LID_OVER = 2.6, 0.028  # the lid's superellipse exponent and its overhang
+STRAP_X, STRAP_W, STRAP_OUT = 0.245, 0.095, 0.018
+SEAM_INK, CHEST_IN, LID_IN = "#2a1d22", "#3c1c26", "#b8423c"
+LID_OPEN = 148  # degrees, the card chest's lid thrown back about the rear hinge
+# The wood chest's ring handles: centre height and depth. Forward of the end's middle: from 25° above a ring at mid-depth
+# projects at the height of the lid's lip and hides behind it; at y −0.13 it stands out of the body's front edge.
+RING_Z, RING_Y = -0.13, -0.13
+CARD_FAN = ((-36, "#3f86f0"), (-12, "#4cb050"), (12, "#ffc531"), (36, "#a65bf2"))
+# Tiers by character, not only by colour (§7.13): body / lid, the metal, the lip, the lock and the silhouette breaker.
+CHEST_TIERS = {
+    "wood": dict(body="#b8763f", lid="#cf8f52", metal="#4f5768", iron=True, lip="#7d4c27", lock="#e8b23e",
+                 key="#2a1d16", lid_h=0.28, planks="#7d4c27", rings=True),
+    "silver": dict(body="#5677b0", lid="#6a8cc6", metal="#e6ecf4", lip=None, lock="#f4f7fb", key="#24304a",
+                   lid_h=0.31, foot=True, ends=True, rivets=True, balls=True),
+    # Royal: §7.13's #4A2A96 / #5C38B4 with gold on every metal part measured L* 58.8 at 48 px, level with the wood
+    # chest (58.2) — the violet is half the model, the gold the other half at L* 78. For the tier ladder (silver > wood
+    # > royal, ≥ 8 apart) the violet goes a step deeper and the foot rim and lid end trims turn deep violet; the gold
+    # stays on the straps, lip, boots, rivets, lock, crest and finials (L* 49.6).
+    "royal": dict(body="#361f78", lid="#442796", metal="#f2b234", trim="#2f1c6c", lip=None, lock="#f2b234",
+                  gem="#3a8dff", lid_h=0.34, foot=True, ends=True, rivets=True, crest=True, finials=True),
+    "cards": dict(body="#c23f3a", lid="#d65148", metal="#f2b234", lip=None, lock="#f2b234", lid_h=0.31,
+                  foot=True, ends=True, open=True),
+}
+
+
+def _prism_yz(name, pts, x0, x1, material, bevel=0.0, seg=3):
+    """A closed outline in the YZ plane [(y, z), …] extruded along X from x0 to x1."""
+    import bmesh
+    bm = bmesh.new()
+    f = bm.faces.new([bm.verts.new((x0, y, z)) for (y, z) in pts])
+    ext = bmesh.ops.extrude_face_region(bm, geom=[f])
+    bmesh.ops.translate(bm, vec=(x1 - x0, 0, 0), verts=[e for e in ext["geom"] if isinstance(e, bmesh.types.BMVert)])
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    o = bpy.data.objects.new(name, me)
+    bpy.context.scene.collection.objects.link(o)
+    return kit._finish(o, material, bevel, seg, smooth=True)
+
+
+def _lid_profile(a, h, z0, n=LID_N, steps=28):
+    """The lid's flat-bottomed superellipse arch: half-depth a, height h, base at z0 (n > 2: a fuller, boxier dome).
+    From +a (back) over the top to −a (front); the closing edge is the flat bottom."""
+    pts = []
+    for i in range(steps + 1):
+        t = math.pi * i / steps
+        c, s = math.cos(t), math.sin(t)
+        pts.append((a * math.copysign(abs(c) ** (2 / n), c), z0 + h * abs(s) ** (2 / n)))
+    return pts
+
+
+def _arch_point(a, h, z0, deg, n=LID_N):
+    t = math.radians(deg)
+    c, s = math.cos(t), math.sin(t)
+    return a * math.copysign(abs(c) ** (2 / n), c), z0 + h * abs(s) ** (2 / n)
+
+
+def _arch_normal(a, h, z0, deg, n=LID_N):
+    """The arch point at `deg` and its outward unit normal (y, z, ny, nz)."""
+    y, z = _arch_point(a, h, z0, deg, n)
+    y0, z0_ = _arch_point(a, h, z0, deg - 0.5, n)
+    y1, z1 = _arch_point(a, h, z0, deg + 0.5, n)
+    ty, tz = y1 - y0, z1 - z0_
+    L = math.hypot(ty, tz)
+    return y, z, -tz / L, ty / L
+
+
+def _taper(o, zb, zt, k):
+    """Scale x, y of o's vertices by s(z) = k at zb … 1 at zt (world z, about the vertical axis): the body's flare."""
+    for v in o.data.vertices:
+        w = o.location + v.co
+        t = min(1.0, max(0.0, (w.z - zb) / (zt - zb)))
+        s = k + (1 - k) * t
+        v.co = type(v.co)((w.x * s, w.y * s, w.z)) - o.location
+
+
+def _hex_plate(name, w, h, depth, loc, material, r=0.03, bevel=0.012):
+    """Our lock plate: a pointy-top hexagon w × h with corners rounded to r (docs/ui_style.md rule 8), facing −Y with
+    its front at loc.y, extruded `depth` back."""
+    R = w / math.sqrt(3)  # the circumradius of a regular pointy-top hex w wide
+    d = R - r / math.sin(math.radians(60))  # the corner arcs' centres
+    pts = []
+    for k in range(6):
+        va = math.radians(90 + 60 * k)
+        cx, cz = d * math.cos(va), d * math.sin(va)
+        for j in range(5):
+            p = va + math.radians(-30 + 15 * j)
+            pts.append((cx + r * math.cos(p), cz + r * math.sin(p)))
+    top = max(z for _, z in pts)
+    pts = [(loc[0] + x, loc[2] + z * (h / 2) / top) for (x, z) in pts]  # stretched to the exact height
+    return _extrude(name, pts, depth, material, y=loc[1], bevel=bevel)
+
+
+def _chest_v2(tier):
+    t = CHEST_TIERS[tier]
+    W, D, H = CHEST_W, CHEST_D, CHEST_H
+    zb, zt = -H, 0.0
+    zl = zt + CHEST_SEAM  # the lid's base
+    a, h = D / 2 + LID_OVER, t["lid_h"]  # the lid's half-depth (with the overhang) and its height
+    lw = W / 2 + LID_OVER
+    body = mat("c_body_" + tier, t["body"], 0.55)
+    lidm = mat("c_lid_" + tier, t["lid"], 0.55)
+    metal = mat(("iron_" if t.get("iron") else "c_metal_") + tier, t["metal"], 0.3, 0.5)
+    lip = mat("c_lip_" + tier, t["lip"], 0.6) if t["lip"] else metal
+    trim = mat("c_trim_" + tier, t["trim"], 0.3, 0.5) if t.get("trim") else metal  # the foot rim and lid end trims
+    lockm = mat("c_lock_" + tier, t["lock"], 0.28, 0.5)
+    foot, ends = t.get("foot"), t.get("ends")
+    boot_out = 0.015 if not foot else 0.023  # over the foot rim (0.017) by ≥ 0.005 after the flare: no shared faces
+    # Bottoms 0.005 apart: the boots (the chest stands on them) at zb − 0.005, the body at zb, the foot rim at zb + 0.005.
+    strap_lo = zb + 0.07 if foot else zb + 0.01  # with a foot rim the straps stand on it
+
+    # ---- the body and everything fixed to it (tapered together)
+    fixed = [box("body", (W, D, H), (0, 0, (zb + zt) / 2), body, 0.03)]
+    if not t.get("open"):
+        fixed.append(box("seam", (W - 0.03, D - 0.03, CHEST_SEAM + 0.006), (0, 0, zt + CHEST_SEAM / 2), mat("c_seam", SEAM_INK, 0.9), 0.0))
+    if foot:
+        fixed.append(box("foot", (W + 0.034, D + 0.034, 0.065), (0, 0, zb + 0.005 + 0.0325), trim, 0.014))
+    if t.get("planks"):
+        groove = mat("c_groove", t["planks"], 0.7)
+        for z in (-0.145, -0.268):  # the lower one 0.003 under §7.13's −0.265: its top stays 0.005 under the boots' tops
+            fixed.append(box("groove", (W + 0.012, D + 0.012, 0.016), (0, 0, z), groove, 0.0))
     for sx in (-1, 1):
-        box("strap", (0.08, 0.52, 0.42), (sx * 0.26, 0, -0.2), band, 0.01)
-        s = cyl("strap_lid", 0.262, 0.08, (sx * 0.26, 0, 0.01), band, 32, 0.0)
-        s.rotation_euler.y = math.pi / 2
-        e = cyl("lid_end", 0.258, 0.03, (sx * 0.4, 0, 0.01), trim, 32, 0.0)
-        e.rotation_euler.y = math.pi / 2
-    box("lock", (0.15, 0.05, 0.18), (0, -0.26, -0.02), lock_m, 0.015)
-    if gem:
-        _face_cyl("gem", 0.04, 0.03, (0, -0.29, 0.0), gem, 6, 0.006)
+        fixed.append(box("strap", (STRAP_W, D + 2 * STRAP_OUT, zt - 0.01 - strap_lo), (sx * STRAP_X, 0, (strap_lo + zt - 0.01) / 2),
+                         metal, 0.012))
+        for sy in (-1, 1):  # chunky metal boots on the four bottom corners; the chest stands on them
+            fixed.append(box("boot", (0.13, 0.13, 0.15), (sx * (W / 2 + boot_out - 0.065), sy * (D / 2 + boot_out - 0.065),
+                             zb - 0.005 + 0.075), metal, 0.022))
+        if t.get("rivets"):  # four per strap
+            for z in (-0.06, -0.137, -0.213, -0.29):
+                fixed.append(sphere("rivet", 0.02, (sx * STRAP_X, -(D / 2 + STRAP_OUT + 0.004), z), lockm, (1, 0.5, 1), 2))
+        if t.get("rings"):  # iron ring handles through the ends, 0.07 proud: «ears» that break the silhouette
+            _torus("ring", 0.075, 0.03, (sx * (W / 2 + 0.07 - 0.105), RING_Y, RING_Z), metal, (math.pi / 2, 0, 0), seg=24)
+    if t.get("open"):  # the dark inside, seen through the open top
+        fixed.append(box("inside", (W - 0.08, D - 0.08, 0.012), (0, 0, zt + 0.002), mat("c_in", CHEST_IN, 0.85), 0.0))
+        fixed.append(_hex_plate("lock", 0.18, 0.15, 0.035, (0, -(D / 2 + 0.03), -0.085), lockm, 0.025, 0.01))
+    for o in fixed:
+        _taper(o, zb, zt, CHEST_FLARE)
+    if t.get("rings"):
+        for o in bpy.context.scene.objects:  # the rings sit on the tapered end faces
+            if o.name.startswith("ring"):
+                o.location.x *= CHEST_FLARE + (1 - CHEST_FLARE) * (RING_Z - zb) / (zt - zb)
+    if t.get("balls"):  # silver: four ball feet under the boots, a light gap under the chest
+        for sx in (-1, 1):
+            for sy in (-1, 1):
+                k = CHEST_FLARE
+                sphere("ball_foot", 0.055, (sx * (W / 2 - 0.05) * k, sy * (D / 2 - 0.05) * k, zb - 0.005 - 0.05), metal, (1, 1, 1), 3)
+
+    # ---- the lid: one closed half-barrel (no hidden lower half to poke out of the sides, no end discs)
+    before = set(bpy.context.scene.objects)
+    # The lip starts 0.005 above the lid's base, the straps and end trims 0.010: no two bottoms share a plane.
+    zp = zl + 0.010
+    _prism_yz("lid", _lid_profile(a, h, zl), -lw, lw, lidm, 0.03)
+    box("lip", (2 * lw + 0.02, 2 * a + 0.02, 0.06), (0, 0, zl + 0.005 + 0.03), lip, 0.012)
+    if t.get("planks"):
+        groove = mat("c_groove", t["planks"], 0.7)
+        for deg in (52, 128):
+            y, z = _arch_point(a, h, zl, deg)
+            g = box("lid_groove", (2 * lw + 0.01, 0.016, 0.016), (0, y * 1.012, z + 0.002), groove, 0.0)
+            g.rotation_euler.x = math.radians(90 - deg)
+    for sx in (-1, 1):  # the straps follow the lid's own arch, 0.018 out
+        _prism_yz("strap_lid", _lid_profile(a + STRAP_OUT, h + STRAP_OUT, zp), sx * STRAP_X - STRAP_W / 2,
+                  sx * STRAP_X + STRAP_W / 2, metal, 0.012)
+        if ends:
+            x0, x1 = (lw - 0.054, lw + 0.016) if sx > 0 else (-lw - 0.016, -lw + 0.054)  # 0.07 wide, 0.016 proud
+            _prism_yz("lid_end", _lid_profile(a + 0.016, h + 0.016, zp), x0, x1, trim, 0.012)
+    if t.get("crest"):  # royal: a gold ridge along the top of the lid, 0.05 proud
+        _prism_yz("crest", _lid_profile(0.06, h + 0.05 - 0.1, zl + 0.1), -lw + 0.05, lw - 0.05, metal, 0.015)
+    if t.get("finials"):  # royal: four gold balls on the lid's corners
+        for sx in (-1, 1):
+            for sy in (-1, 1):
+                y, z, ny, nz = _arch_normal(a + 0.016, h + 0.016, zp, 90 - sy * 45)
+                sphere("finial", 0.05, (sx * (lw - 0.019), y + ny * 0.035, z + nz * 0.035), metal, (1, 1, 1), 3)
+    lid_parts = [o for o in bpy.context.scene.objects if o not in before]
+
+    if t.get("open"):  # the card chest: the lid thrown back about the rear hinge, its inside a red panel in the lip
+        hinge = bpy.data.objects.new("hinge", None)
+        bpy.context.scene.collection.objects.link(hinge)
+        hinge.location = (0, a - 0.01, zl)
+        # the lid's underside: a gold sheet (the lip, seen from inside) framing the red inner panel by 0.045
+        lid_parts.append(box("lid_gold", (2 * lw + 0.02, 2 * a + 0.02, 0.012), (0, 0, zl - 0.002), metal, 0.006))
+        lid_parts.append(box("lid_in", (2 * lw - 0.07, 2 * a - 0.07, 0.012), (0, 0, zl - 0.009), mat("c_lin", LID_IN, 0.7), 0.004))
+        for o in lid_parts:
+            o.parent = hinge
+            o.location -= hinge.location
+        hinge.rotation_euler.x = math.radians(-LID_OPEN)
+        for sx in (-1, 1):  # two hinge knuckles on the back edge hold the open lid to the body
+            k = cyl("hinge_knuckle", 0.035, STRAP_W - 0.01, (sx * STRAP_X, D / 2 + 0.01, zl / 2), metal, 16, 0.008)
+            k.rotation_euler.y = math.pi / 2
+        white = mat("card_white", "#fbf8f0", 0.5)
+        for k, (ang, col) in enumerate(CARD_FAN):  # a hand of cards fanned from an axis inside the chest
+            before = set(bpy.context.scene.objects)
+            box("card", (0.34, 0.02, 0.5), (0, 0, 0.25), white, 0.02)
+            box("card_face", (0.26, 0.02, 0.42), (0, -0.007, 0.25), mat("cf" + col, col, 0.5), 0.012)  # 0.04 white edge
+            _star_mesh("star", 0.085, 0.036, 0.0, 0.28, -0.024, -0.004, white)
+            # each card 0.045 further back (no two share a plane); from 25° above that would lift it on screen, so
+            # its pivot drops by the same depth × tan 25°: the fan stands level
+            _group(before, (0.0, -0.07 + k * 0.045, -0.19 - k * 0.045 * math.tan(math.radians(90 - OBJ_PITCH))), (0, ang, 0))
+        return
+    # ---- the lock straddles the seam on the front: our rounded hex, a keyhole or a raivite gem
+    yf = -(a + 0.01) + 0.013  # sunk 0.013 into the lip
+    _hex_plate("lock", 0.20, 0.23, 0.05, (0, yf - 0.05, zl + 0.002), lockm)
+    if t.get("gem"):
+        gem = [(0.065 * math.cos(math.radians(90 + 60 * k)), zl + 0.004 + 0.065 * math.sin(math.radians(90 + 60 * k))) for k in range(6)]
+        _extrude("gem", gem, 0.03, mat("c_gem", t["gem"], 0.15), y=yf - 0.05 - 0.012, bevel=0.016)
     else:
-        _face_cyl("hole", 0.025, 0.03, (0, -0.285, -0.0), mat("hole", "#1d1b1a", 0.8), 12, 0.0)
-        box("slot", (0.02, 0.03, 0.05), (0, -0.285, -0.04), mat("hole", "#1d1b1a", 0.8), 0.0)
-    _tilt(rx=14, rz=-26)
+        km = mat("c_key_" + tier, t["key"], 0.8)
+        _face_cyl("keyhole", 0.026, 0.02, (0, yf - 0.05, zl + 0.03), km, 16, 0.0)
+        box("keyslot", (0.024, 0.02, 0.06), (0, yf - 0.05 + 0.005, zl - 0.01), km, 0.0)  # its face 0.005 behind the disc's
 
 
 def chest_wood():
-    """Free case: a plank chest with iron straps."""
-    _chest(mat("chest_w", "#b07a42", 0.7), mat("iron_c", "#5d6470", 0.45, 0.6), mat("chest_wd", "#7a4e2a", 0.7),
-           brass(), planks=mat("chest_wd", "#7a4e2a", 0.7))
+    """Free case — the War Crate: a soldier's chest of planks and iron, iron ring handles on the ends."""
+    _chest_v2("wood")
 
 
 def chest_silver():
-    """Silver case: a steel-blue chest with bright silver straps."""
-    s = mat("silver", "#e3e9f1", 0.22, 1.0)
-    _chest(mat("chest_s", "#7d90ad", 0.5, 0.2), s, s, s)
+    """Silver case — an officer's casket: steel-blue, bright silver straps, rivets, ball feet."""
+    _chest_v2("silver")
 
 
 def chest_royal():
-    """Royal case: a blue chest with gold straps and a red gem on the lock."""
-    _chest(mat("chest_r", "#2f5fc8", 0.5), gold(), gold(), gold(), gem=mat("gem", "#c0392b", 0.1))
+    """Royal case — the treasury: deep violet, gold everywhere, a gold crest and finials, a raivite gem in the lock."""
+    _chest_v2("royal")
 
 
 def chest_cards():
-    """Collection case: an open red chest with gold trim and four cards fanned out of it like a hand — white borders
-    round blue, green, gold and red faces, a white star on each."""
-    body = mat("chest_c", "#c0483a", 0.5)
-    g = gold()
-    white = mat("card_white", "#fbf8f0", 0.5)
-    before = set(bpy.context.scene.objects)  # the lid, thrown wide open behind the cards
-    box("lid", (0.8, 0.5, 0.08), (0, -0.25, 0.04), body, 0.02)
-    box("lid_rim", (0.83, 0.06, 0.1), (0, -0.48, 0.04), g, 0.012)
-    _group(before, (0, 0.25, -0.12), (-150, 0, 0))
-    for k, (ang, col) in enumerate(((-36, "#3f86f0"), (-12, "#4cb050"), (12, "#ffc531"), (36, "#ef4b3f"))):
-        before = set(bpy.context.scene.objects)
-        box("card", (0.34, 0.02, 0.5), (0, 0, 0.25), white, 0.02)
-        box("card_face", (0.27, 0.02, 0.43), (0, -0.006, 0.25), mat("cf" + col, col, 0.5), 0.012)
-        _star_mesh("star", 0.08, 0.034, 0.0, 0.3, -0.018, -0.008, white)
-        _group(before, (0.0, 0.05 - k * 0.035, -0.3), (0, ang, 0))  # pivot low inside the chest: a fan
-    box("inside", (0.74, 0.44, 0.02), (0, 0, -0.07), mat("chest_in", "#5e1f18", 0.7), 0.0)
-    box("body", (0.8, 0.5, 0.36), (0, 0, -0.26), body, 0.03)
-    box("rim", (0.83, 0.53, 0.06), (0, 0, -0.08), g, 0.012)
-    box("rim_lo", (0.83, 0.53, 0.06), (0, 0, -0.44), g, 0.012)
-    for sx in (-1, 1):
-        box("strap", (0.08, 0.52, 0.36), (sx * 0.26, 0, -0.26), g, 0.01)
-    box("lock", (0.15, 0.05, 0.16), (0, -0.26, -0.17), g, 0.015)
-    _tilt(rx=12, rz=-20)
+    """Collection case: the red chest thrown open, a hand of four cards fanned out of it."""
+    _chest_v2("cards")
 
 
 def shard():
@@ -1381,6 +1612,254 @@ FILL_BY = {"coin": 0.88, "coins": 0.88, "shield": 0.86, "seal": 0.86, "gear": 0.
 RIM_BY = {"metal": 420}
 
 
+# Camera modes (docs/art_direction.md §7.13). "emblem": the orthographic icon camera, 6° above the horizon, fitted to
+# the silhouette (every icon but the standing objects). "object": the chests, the crate and the gift stand upright, yaw 0,
+# under a perspective 85 mm lens (36 mm sensor, 23.9°) raised 25° (rotation_euler (65°, 0, 0)) and aimed at the
+# model's bbox centre: verticals converge symmetrically (±4.7°) and read «seen from above», not «crooked»; 50 mm
+# converges ±7.9° (too wide), 135 mm ±2.9° (flat), ortho reads the lid's dome as a box. The distance is solved so the
+# silhouette fills FILL of the frame, centred with shift_x / shift_y.
+OBJECT_ICONS = ("chest_wood", "chest_silver", "chest_royal", "chest_cards", "crate", "gift")
+# The chest family shares ONE distance and shift, fitted on the closed wood chest, so all bodies come out the same size;
+# the open card chest may grow upwards (its frame slides up, same distance) but never shrinks its body.
+CHEST_FAMILY = ("chest_wood", "chest_silver", "chest_royal", "chest_cards")
+OBJ_LENS, OBJ_SENSOR, OBJ_PITCH = 85.0, 36.0, 65.0
+_FAMILY = {}
+
+
+def camera_mode(name):
+    return "object" if name in OBJECT_ICONS else "emblem"
+
+
+def _model_points():
+    """Every evaluated vertex of the model, in world space (n × 3 numpy array)."""
+    import numpy as np
+    bpy.context.view_layer.update()
+    dg = bpy.context.evaluated_depsgraph_get()
+    out = []
+    for o in bpy.context.scene.objects:
+        if o.type != "MESH":
+            continue
+        eo = o.evaluated_get(dg)
+        me = eo.to_mesh()
+        mw = eo.matrix_world
+        out += [tuple(mw @ v.co) for v in me.vertices]
+        eo.to_mesh_clear()
+    return np.array(out, dtype=np.float64)
+
+
+def _object_ndc(pts, loc, sx, sy):
+    """Frame coordinates (0..1, y up) of world points under the object camera at loc with shift (sx, sy)."""
+    import numpy as np
+    right, up, fwd = _object_axes()
+    d = pts - np.asarray(loc)
+    depth = d @ fwd
+    k = OBJ_LENS / OBJ_SENSOR  # square frame, horizontal sensor fit; a positive shift moves the frame, the image the other way
+    return 0.5 - sx + k * (d @ right) / depth, 0.5 - sy + k * (d @ up) / depth
+
+
+def _object_axes():
+    """The object camera's right, up and viewing direction in world space (rotation_euler (OBJ_PITCH, 0, 0))."""
+    import numpy as np
+    t = math.radians(OBJ_PITCH)
+    return np.array([1.0, 0.0, 0.0]), np.array([0.0, math.cos(t), math.sin(t)]), np.array([0.0, math.sin(t), -math.cos(t)])
+
+
+def _object_frame(fill):
+    """Solve the object camera for the model in the scene: its aim point, distance and shift (a dict)."""
+    pts = _model_points()
+    ctr = (pts.min(0) + pts.max(0)) / 2
+    fwd = _object_axes()[2]
+    dist, sx, sy = 3.0, 0.0, 0.0
+    for _ in range(40):
+        x, y = _object_ndc(pts, ctr - fwd * dist, sx, sy)
+        size = max(x.max() - x.min(), y.max() - y.min())
+        sx += (x.min() + x.max()) / 2 - 0.5
+        sy += (y.min() + y.max()) / 2 - 0.5
+        if abs(size - fill) < 1e-6:
+            break
+        dist *= size / fill
+    return {"ctr": tuple(ctr), "dist": dist, "shift": (sx, sy)}
+
+
+def _object_cam(frame):
+    """An object camera object for a solved frame (dict from _object_frame)."""
+    from mathutils import Vector
+    cam = bpy.data.objects.new("cam", bpy.data.cameras.new("cam"))
+    bpy.context.scene.collection.objects.link(cam)
+    cam.data.type = "PERSP"
+    cam.data.lens = OBJ_LENS
+    cam.data.sensor_fit = "HORIZONTAL"
+    cam.data.sensor_width = OBJ_SENSOR
+    cam.rotation_euler = (math.radians(OBJ_PITCH), 0, 0)
+    cam.location = Vector(tuple(_object_cam_loc(frame)))
+    cam.data.shift_x, cam.data.shift_y = frame["shift"]
+    cam.data.clip_end = 100
+    return cam
+
+
+def build(name):
+    """Reset the scene and build icon `name`. The chest family first solves its shared frame on the closed wood chest
+    (once per process)."""
+    if name in CHEST_FAMILY and "frame" not in _FAMILY:
+        reset()
+        chest_wood()
+        _FAMILY["frame"] = _object_frame(FILL_BY.get("chest_wood", FILL))
+    reset()
+    ICONS[name]()
+
+
+def setup_camera(name, fill=None):
+    """Add the icon's own render camera (see camera_mode) for the model built in the scene and make it the scene's
+    camera. Returns it."""
+    sc = bpy.context.scene
+    sc.render.resolution_x = RAW
+    sc.render.resolution_y = RAW
+    fill = FILL_BY.get(name, FILL) if fill is None else fill
+    if camera_mode(name) == "object":
+        if name in CHEST_FAMILY:
+            frame = dict(_FAMILY["frame"])
+            x, y = _object_ndc(_model_points(), _object_cam_loc(frame), *frame["shift"])
+            top = 1 - (1 - fill) / 2
+            if y.max() > top:  # the open chest grows upwards: slide the frame up, keep the distance (and the body)
+                frame["shift"] = (frame["shift"][0], frame["shift"][1] + y.max() - top)
+                if y.min() - (y.max() - top) < (1 - fill) / 2 - 1e-6:
+                    print("WARNING %s does not fit the chest family frame" % name, flush=True)
+            cam = _object_cam(frame)
+        else:
+            cam = _object_cam(_object_frame(fill))
+    else:
+        cam = bpy.data.objects.new("cam", bpy.data.cameras.new("cam"))
+        sc.collection.objects.link(cam)
+        cam.data.type = "ORTHO"
+        cam.location = (0, -6, 0.6)
+        cam.rotation_euler = (math.radians(84), 0, 0)
+        _fit_camera(cam, fill)
+    sc.camera = cam
+    return cam
+
+
+def _object_cam_loc(frame):
+    import numpy as np
+    return np.asarray(frame["ctr"]) - _object_axes()[2] * frame["dist"]
+
+
+def _faces_overlap(n, fa, fb, eps=1e-3):
+    """Do two convex faces lying in (nearly) one plane with normal n overlap by more than eps? Separating axis test on
+    the faces projected along the normal's dominant axis."""
+    k = max(range(3), key=lambda i: abs(n[i]))
+    ax = [i for i in range(3) if i != k]
+    pa = [(v[ax[0]], v[ax[1]]) for v in fa]
+    pb = [(v[ax[0]], v[ax[1]]) for v in fb]
+    for poly in (pa, pb):
+        for i in range(len(poly)):
+            (x0, y0), (x1, y1) = poly[i], poly[(i + 1) % len(poly)]
+            nx, ny = y1 - y0, x0 - x1
+            L = math.hypot(nx, ny)
+            if L < 1e-9:
+                continue
+            nx, ny = nx / L, ny / L
+            a = [nx * x + ny * y for (x, y) in pa]
+            b = [nx * x + ny * y for (x, y) in pb]
+            if min(max(a), max(b)) - max(min(a), min(b)) <= eps:
+                return False
+    return True
+
+
+def check_geometry(tol=0.003, plane_eps=0.0045, min_face=4e-4):
+    """C-6 (docs/art_direction.md §7.14) on the model in the scene; returns a list of problems (empty = clean).
+    - float: every part touches another (its surface crosses another's, or comes within tol);
+    - coincident faces: no two parts have big faces (> min_face) in one plane (closer than plane_eps) facing the same
+      way and overlapping — they would z-fight; parts keep ≥ 0.005 apart;
+    - units (o["unit"], the crate's three boxes): no part of one box sinks into another box by more than tol, and every
+      box but the bottom row rests on another (gap ≤ tol)."""
+    import numpy as np
+    from mathutils.bvhtree import BVHTree
+    bpy.context.view_layer.update()
+    dg = bpy.context.evaluated_depsgraph_get()
+    parts = []
+    for o in bpy.context.scene.objects:
+        if o.type != "MESH":
+            continue
+        eo = o.evaluated_get(dg)
+        me = eo.to_mesh()
+        mw = eo.matrix_world
+        nm = mw.to_3x3().inverted().transposed()
+        vs = [mw @ v.co for v in me.vertices]
+        polys = [tuple(p.vertices) for p in me.polygons]
+        faces = []
+        for p in me.polygons:
+            n = (nm @ p.normal).normalized()
+            fv = [vs[k] for k in p.vertices]
+            area = p.area * (mw.to_3x3() @ p.normal).length  # close enough for the uniform scales used here
+            if area > min_face:
+                faces.append((n, n.dot(fv[0]), fv))
+        arr = np.array([tuple(v) for v in vs])
+        parts.append({"name": o.name, "unit": o.get("unit"), "tree": BVHTree.FromPolygons(vs, polys), "verts": vs,
+                      "faces": faces, "lo": arr.min(0), "hi": arr.max(0)})
+        eo.to_mesh_clear()
+    out = []
+    n = len(parts)
+    near = lambda a, b, e: bool(np.all(a["lo"] - e <= b["hi"]) and np.all(b["lo"] - e <= a["hi"]))
+    touch = [False] * n
+    for i in range(n):
+        for j in range(i + 1, n):
+            if near(parts[i], parts[j], tol) and parts[i]["tree"].overlap(parts[j]["tree"]):
+                touch[i] = touch[j] = True
+    for i in range(n):
+        if touch[i] or n == 1:
+            continue
+        best = 1e9
+        for j in range(n):
+            if j != i and near(parts[i], parts[j], 0.05):
+                for v in parts[i]["verts"]:
+                    hit = parts[j]["tree"].find_nearest(v)
+                    if hit[0] is not None:
+                        best = min(best, hit[3])
+        if best > tol:
+            out.append("float %s (gap %.4f)" % (parts[i]["name"], best))
+    buckets = {}
+    for i, pt in enumerate(parts):
+        for (nrm, d, fv) in pt["faces"]:
+            buckets.setdefault((round(nrm.x, 2), round(nrm.y, 2), round(nrm.z, 2)), []).append((d, i, nrm, fv))
+    seen = set()
+    for key, lst in buckets.items():
+        lst.sort(key=lambda e: e[0])
+        for a_ in range(len(lst)):
+            for b_ in range(a_ + 1, len(lst)):
+                da, ia, na, fa = lst[a_]
+                db, ib, nb, fb = lst[b_]
+                if db - da >= plane_eps:
+                    break
+                if ia == ib or (min(ia, ib), max(ia, ib)) in seen:
+                    continue
+                if _faces_overlap(na, fa, fb):
+                    seen.add((min(ia, ib), max(ia, ib)))
+                    out.append("coincident faces %s / %s (%.4f apart)" % (parts[ia]["name"], parts[ib]["name"], db - da))
+    units = sorted({p["unit"] for p in parts if p["unit"] is not None})
+    if len(units) > 1:
+        for i in range(n):
+            for j in range(i + 1, n):
+                a, b = parts[i], parts[j]
+                if a["unit"] is None or b["unit"] is None or a["unit"] == b["unit"]:
+                    continue
+                depth = np.minimum(a["hi"], b["hi"]) - np.maximum(a["lo"], b["lo"])
+                if np.all(depth > tol):
+                    out.append("unit %s sinks into unit %s (%s %s, %.4f)" % (a["unit"], b["unit"], a["name"], b["name"],
+                                                                            float(depth.min())))
+        ub = {u: (np.min([p["lo"] for p in parts if p["unit"] == u], 0), np.max([p["hi"] for p in parts if p["unit"] == u], 0))
+              for u in units}
+        floor = min(lo[2] for lo, _ in ub.values())
+        for u, (lo, hi) in ub.items():
+            if lo[2] - floor < tol:
+                continue
+            gaps = [lo[2] - parts[j]["hi"][2] for j in range(n) if parts[j]["unit"] not in (None, u)
+                    and np.all(np.minimum(hi[:2], parts[j]["hi"][:2]) - np.maximum(lo[:2], parts[j]["lo"][:2]) > 0)
+                    and parts[j]["hi"][2] <= lo[2] + tol]
+            if not gaps or min(gaps) > tol:
+                out.append("unit %s hangs (gap %.4f)" % (u, min(gaps) if gaps else -1))
+    return out
+
+
 def _fit_camera(cam, fill):
     """Ortho scale and shift so the model's silhouette (every evaluated vertex, projected) fills `fill` of the frame,
     centred."""
@@ -1428,8 +1907,11 @@ def soft_world(strength):
     return w
 
 
-def render(path, fill=FILL, rim_energy=120, raw_dir=None, samples=64, view=VIEW):
+def render(path, fill=FILL, rim_energy=120, raw_dir=None, samples=64, view=VIEW, name=None):
+    """Light the model built in the scene, frame it with its own camera (camera_mode; `name` defaults to the file's
+    name) and render it through _finish."""
     sc = bpy.context.scene
+    name = name or os.path.splitext(os.path.basename(path))[0]
     bpy.ops.object.light_add(type="AREA", location=(-1.5, -2.5, 2.5))
     k = bpy.context.active_object
     k.data.energy = KEY_W
@@ -1442,19 +1924,12 @@ def render(path, fill=FILL, rim_energy=120, raw_dir=None, samples=64, view=VIEW)
     r.data.color = (0.6, 0.75, 1.0)
     r.rotation_euler = (math.radians(70), 0, math.radians(125))
     soft_world(AMBIENT * KEY_W * KEY_RAD_PER_W)
-    cam = bpy.data.objects.new("cam", bpy.data.cameras.new("cam"))
-    sc.collection.objects.link(cam)
-    cam.data.type = "ORTHO"
-    cam.location = (0, -6, 0.6)
-    cam.rotation_euler = (math.radians(84), 0, 0)
-    sc.camera = cam
-    _fit_camera(cam, fill)
+    setup_camera(name, fill)
     sc.render.engine = "CYCLES"
     sc.cycles.samples = samples
+    sc.cycles.seed = 0
     sc.cycles.use_denoising = True
     sc.render.film_transparent = True
-    sc.render.resolution_x = RAW
-    sc.render.resolution_y = RAW
     sc.view_settings.view_transform = view
     sc.view_settings.look = "AgX - Punchy" if view == "AgX" else "None"
     raw = os.path.join(raw_dir or tempfile.mkdtemp(prefix="raivon_icons_"), os.path.basename(path))
@@ -1483,13 +1958,26 @@ def out_path(base, name):
 if __name__ == "__main__":
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
     opts = dict(a[2:].split("=", 1) for a in sys.argv[1:] if a.startswith("--") and "=" in a)
+    flags = {a for a in sys.argv[1:] if a.startswith("--") and "=" not in a}
     base = os.path.abspath(args[0] if args else "game/assets/ui")
     raw_dir = opts.get("raw") or tempfile.mkdtemp(prefix="raivon_icons_")
     os.makedirs(raw_dir, exist_ok=True)
     os.makedirs(os.path.join(base, "icons"), exist_ok=True)
+    bad = 0
     for name in (args[1:] or list(ICONS)):
-        reset()
-        ICONS[name]()
-        render(out_path(base, name), FILL_BY.get(name, FILL), RIM_BY.get(name, 120), raw_dir,
-               int(opts.get("samples", 64)))
+        out = out_path(base, name)
+        if os.path.exists(out) and "--force" not in flags and "--check-only" not in flags:
+            print("SKIP", name, "(exists; --force re-renders)", flush=True)
+            continue
+        build(name)
+        if camera_mode(name) == "object":
+            problems = check_geometry()
+            bad += bool(problems)
+            print("GEOM", name, "ok" if not problems else "%d problem(s)" % len(problems), flush=True)
+            for p in problems:
+                print("  ", p, flush=True)
+        if "--check-only" in flags:
+            continue
+        render(out, FILL_BY.get(name, FILL), RIM_BY.get(name, 120), raw_dir, int(opts.get("samples", 64)), name=name)
         print("ICON", name, flush=True)
+    sys.exit(1 if bad and "--strict" in flags else 0)

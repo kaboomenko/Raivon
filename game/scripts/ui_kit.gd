@@ -544,7 +544,9 @@ class KitDecor extends Control:
 			ml = maxf(ml, g)
 			mr = maxf(mr, g)
 		var mt := maxf(r_top, out + 4.0) + sp
-		var mb := maxf(r_bot, out + float(d["lip"])) + sp
+		# the lip's inner contour keeps the full inner radius above its band: its corner reaches lip + (r − out) up from
+		# the bottom edge (a cap any shorter stretched a lip-coloured texel up the frame's inner column, ~300 px on a sheet)
+		var mb := maxf(r_bot, out + float(d["lip"]) + (maxf(0.0, r_bot - out) if float(d["lip"]) > 0.0 else 0.0)) + sp
 		var key := "decor|%s|%s|%.1f,%.1f,%.1f,%.1f|%s|%s|%s|%.1f,%.1f,%.1f,%.1f" % [(d["face"] as Color).to_html(),
 			(d["lip_color"] as Color).to_html(), out, d["r"], d["lip"], d["side"], str(rad), d["line"], str(d["gloss"]),
 			d["rl"], d["rr"], d["inset"], 0.0]
@@ -1185,7 +1187,7 @@ class KitBake extends Node:
 						_poke.call_deferred(ws[id])
 					continue
 				# full of what is shown: start it again with what is drawn now (the jobs stay queued)
-				why = "full for %s: %.0f%% in use, %d free rects (largest %s), %d refs, %d parked" % [cell, used() * 100.0, _free.size(), _largest_free(), refs.size(), parked.size()]
+				why = "full for %s: %.0f%% in use, %d free rects (largest %s), %d refs, %d parked; %s" % [cell, used() * 100.0, _free.size(), _largest_free(), refs.size(), parked.size(), _refs_census()]
 				for n in _nodes:
 					(n as Node).queue_free()
 				_nodes.clear()
@@ -1211,7 +1213,7 @@ class KitBake extends Node:
 			stage.add_child(holder)
 			_nodes.append(holder)
 			_round.append({"key": key, "base": j["base"], "off": j["off"], "pp": pp, "at": Vector2i(x, y),
-				"slot": slot, "gen": _gen})
+				"slot": slot, "cell": cell, "gen": _gen})
 			x += cell.x
 			row = maxi(row, cell.y)
 			ext = ext.max(Vector2i(x, y + row))
@@ -1313,6 +1315,34 @@ class KitBake extends Node:
 		_top = maxi(_top, by + cell.y)
 		_used += cell.x * cell.y
 		return Rect2i(bx, by, cell.x, cell.y)
+
+	## What holds the atlas (perf_probe): canvas items showing images, how many of them out of sight, asked already.
+	func _refs_census() -> String:
+		var holding := 0
+		var unseen := 0
+		var asked := 0
+		var nohost := 0
+		var px := 0
+		for id in refs:
+			var e: Array = refs[id]
+			if (e[1] as Dictionary).is_empty():
+				continue
+			holding += 1
+			for key in e[1]:
+				if slots.has(key):
+					px += (slots[key] as Rect2i).get_area()
+			var h: CanvasItem = (e[3] as WeakRef).get_ref() as CanvasItem if e.size() > 3 and e[3] != null else null
+			if h == null and e[2] != null:
+				h = (e[2] as WeakRef).get_ref() as CanvasItem
+			if h == null or not h.is_inside_tree():
+				nohost += 1
+				continue
+			if not in_sight(h, Rect2(Vector2.ZERO, (h as Control).size if h is Control else Vector2.ZERO), PAD):
+				unseen += 1
+				if int(e[0]) <= int(_asked.get(id, -1)):
+					asked += 1
+		return "%d items hold images (%.0f%% of the atlas), %d out of sight (%d asked, not drawn since), %d without a host" % [
+			holding, px * 100.0 / float(_asize.x * _asize.y), unseen, asked, nohost]
 
 	func _largest_free() -> Vector2i:
 		var best := Vector2i.ZERO
@@ -1451,7 +1481,7 @@ class KitBake extends Node:
 				var c := TextureRect.new()
 				var at := AtlasTexture.new()
 				at.atlas = st
-				at.region = Rect2(Vector2(r["at"]), Vector2((r["slot"] as Rect2i).size))
+				at.region = Rect2(Vector2(r["at"]), Vector2(r["cell"] as Vector2i))
 				c.texture = at
 				c.material = _mat
 				c.position = Vector2((r["slot"] as Rect2i).position)
@@ -1470,7 +1500,7 @@ class KitBake extends Node:
 				waiting.erase(r["key"])
 				if int(r["gen"]) == _gen:  # (a reset in between: its place is gone)
 					var s: Rect2i = r["slot"]
-					slots[r["key"]] = Rect2i(s.position + Vector2i(1, 1), s.size - Vector2i(2, 2))
+					slots[r["key"]] = Rect2i(s.position + Vector2i(1, 1), (r["cell"] as Vector2i) - Vector2i(2, 2))
 					made[r["key"]] = [r["off"], r["pp"]]
 					alts[r["base"]] = r["key"]
 				for id in ws:
@@ -1636,10 +1666,20 @@ static func draw_flat(ci: RID, rect: Rect2, sb: StyleBoxFlat, host: CanvasItem, 
 	var ox := absf(sb.shadow_offset.x) if sh > 0.0 else 0.0
 	var oy := absf(sb.shadow_offset.y) if sh > 0.0 else 0.0
 	var sp := KitBake.SLICE
-	var ml := float(maxi(maxi(sb.corner_radius_top_left, sb.corner_radius_bottom_left), sb.border_width_left)) + ox + sh + sp
-	var mr := float(maxi(maxi(sb.corner_radius_top_right, sb.corner_radius_bottom_right), sb.border_width_right)) + ox + sh + sp
-	var mt := float(maxi(maxi(sb.corner_radius_top_left, sb.corner_radius_top_right), sb.border_width_top)) + oy + sh + sp
-	var mb := float(maxi(maxi(sb.corner_radius_bottom_left, sb.corner_radius_bottom_right), sb.border_width_bottom)) + oy + sh + sp
+	# a side whose border is wider than its neighbours' (a lip as a bottom border) bends its inner contour round the full
+	# inner radius above the band: the corner then reaches that border + the radius − the narrower neighbour
+	var bl := sb.border_width_left
+	var br := sb.border_width_right
+	var bt := sb.border_width_top
+	var bb := sb.border_width_bottom
+	var rl := maxi(sb.corner_radius_top_left, sb.corner_radius_bottom_left)
+	var rr := maxi(sb.corner_radius_top_right, sb.corner_radius_bottom_right)
+	var rt := maxi(sb.corner_radius_top_left, sb.corner_radius_top_right)
+	var rb := maxi(sb.corner_radius_bottom_left, sb.corner_radius_bottom_right)
+	var ml := float(maxi(maxi(rl, bl), bl + maxi(0, rl - mini(bt, bb)) if bl > mini(bt, bb) else 0)) + ox + sh + sp
+	var mr := float(maxi(maxi(rr, br), br + maxi(0, rr - mini(bt, bb)) if br > mini(bt, bb) else 0)) + ox + sh + sp
+	var mt := float(maxi(maxi(rt, bt), bt + maxi(0, rt - mini(bl, br)) if bt > mini(bl, br) else 0)) + oy + sh + sp
+	var mb := float(maxi(maxi(rb, bb), bb + maxi(0, rb - mini(bl, br)) if bb > mini(bl, br) else 0)) + oy + sh + sp
 	var m := Vector4.ZERO
 	var size := rect.size
 	var key := flat_key(sb)

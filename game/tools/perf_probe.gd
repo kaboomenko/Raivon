@@ -369,8 +369,10 @@ static func scroll_test(tree: SceneTree, out_path: String) -> void:
 	d = await _settle(tree, vp, kb)
 	print("perf-tree scroll: held at the end draws=%d resets+%d evicted+%d %s" % [d, (kb.resets - r0) if kb else 0,
 		(kb.evicted - e0) if kb else 0, bake_stats(kb)])
-	if kb != null and kb.resets > r0:
-		print("perf-tree scroll FAIL the atlas started over while the list scrolled (last: %s)" % String(kb.get("why")))
+	if kb != null and kb.resets > r0 + 1:  # (once is the compaction a full atlas falls back to; more is churn)
+		print("perf-tree scroll FAIL the atlas started over %d times while the list scrolled (last: %s)" % [kb.resets - r0, String(kb.get("why"))])
+	elif kb != null and kb.resets > r0:
+		print("perf-tree scroll NOTE the atlas started over once (%s)" % String(kb.get("why")))
 	tree.paused = true
 	await vec_pair(tree, out_path.trim_suffix(".tree.txt").get_basename() + "_end.tree.txt")
 	tree.paused = false

@@ -1,0 +1,382 @@
+"""Kit-side QA (§7.14): the part-ID pass and the signature mask, the landmark JSON, the contact test and the stats.
+
+--sidecars=DIR writes, next to a render NAME.png:
+  DIR/ids/NAME.png      flat-emission part-ID pass: every material replaced by an emission colour of its group
+                        (style.ID_COLORS; detail:<name> colours from style.DETAIL_COLORS), the eyeball's own
+                        sclera / iris / pupil split by the same gradient as its shader; 1 sample, box filter,
+                        Standard view, transparent film; glass lenses hidden (the irises behind them count)
+  DIR/ids/NAME.json     {"colors": {group: [r, g, b]}}
+  DIR/ids/NAME_sig.png  the signature mask (the signature objects white, everything else a holdout)
+  DIR/meta/NAME.json    projected landmarks in PNG px: eye_y, chin_y, crown_y, skyline_y, head_box, sig_box, h_px,
+                        iris centres, eye openings, brow end points, mouth corners; the floating list and contact
+                        report; the P-A8 detail thresholds; for glasses the iris contrast behind the lens; stats
+--contacts: the BVH contact test of P-A7 — each attached part against its parent: the gap must be <= 0.01 H, a part
+  on a surface is buried <= 0.04 H over <= 60 % of its points; "embed" parts (eyes, nose, ears, beards: one fused
+  surface by design) are checked for the gap only, "free" parts (glasses rims) not at all.
+--stats: triangles per object, build and render seconds.
+"""
+import json
+import os
+import time
+
+import bpy
+import numpy as np
+from mathutils import Vector
+
+from . import core, rig, style
+from .core import H
+
+
+# ------------------------------------------------------------------ contacts
+def contacts(ctx, max_pts=900):
+    """-> (floating names, report rows)."""
+    rows, floating = [], []
+    gap_max = style.STYLE["contact_gap"] * H
+    bur = style.STYLE["contact_buried"] * H
+    share = style.STYLE["contact_buried_share"]
+    trees = {}
+    for p in ctx.parts:
+        if p.parent is None or p.kind in ("root", "free"):
+            continue
+        if p.obj.name not in bpy.context.scene.objects or p.parent.name not in bpy.context.scene.objects:
+            continue
+        if p.parent.name not in trees:
+            try:
+                trees[p.parent.name] = (core.bvh_of(p.parent), p.parent.matrix_world.copy())
+            except Exception:
+                continue
+        tree, pmw = trees[p.parent.name]
+        pinv = pmw.inverted()
+        try:
+            verts = core.eval_verts(p.obj, faces=True)
+        except RuntimeError:
+            continue
+        if not verts:
+            continue
+        step = max(1, len(verts) // max_pts)
+        ds = []
+        for v in verts[::step]:
+            lv = pinv @ v
+            loc, nor, idx, dist = tree.find_nearest(lv)
+            if loc is None:
+                continue
+            sign = 1.0 if (lv - loc).dot(nor) >= 0 else -1.0
+            ds.append(sign * dist * pmw.to_scale()[0])
+        if not ds:
+            continue
+        ds = np.array(ds)
+        gap = float(ds.min())
+        buried = float((ds < -bur).mean())
+        ok_gap = gap <= gap_max
+        ok_bur = p.kind == "embed" or buried <= share
+        status = "ok" if ok_gap and ok_bur else ("FLOATING" if not ok_gap else "BURIED")
+        rows.append(dict(part=p.obj.name, detail=p.detail, parent=p.parent.name, kind=p.kind, gap_H=round(gap / H, 4),
+                         buried_share=round(buried, 3), status=status))
+        if status != "ok":
+            floating.append(p.obj.name)
+    return floating, rows
+
+
+# ------------------------------------------------------------------ ID pass
+def _id_color(table, group):
+    if group not in table:
+        if group.startswith("detail:"):
+            used = {tuple(v) for v in table.values()}
+            for c in style.DETAIL_COLORS:
+                if c not in used:
+                    table[group] = c
+                    break
+        else:
+            table[group] = (200, 200, 200)
+    return table[group]
+
+
+def _flat(name, rgb8):
+    m = bpy.data.materials.new(name)
+    m.use_nodes = True
+    nt = m.node_tree
+    nt.nodes.remove(nt.nodes["Principled BSDF"])
+    em = nt.nodes.new("ShaderNodeEmission")
+    em.inputs["Color"].default_value = core.rgba("#%02x%02x%02x" % tuple(rgb8))
+    em.inputs["Strength"].default_value = 1.0
+    nt.links.new(em.outputs[0], nt.nodes["Material Output"].inputs["Surface"])
+    return m
+
+
+def _eye_id(name, eye_mat, table):
+    """The eyeball split into sclera / iris / pupil with the same gradient (constant stops) as its shader."""
+    m = bpy.data.materials.new(name)
+    m.use_nodes = True
+    nt = m.node_tree
+    nt.nodes.remove(nt.nodes["Principled BSDF"])
+    src = eye_mat.node_tree.nodes["gaze"]
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    mp = nt.nodes.new("ShaderNodeMapping")
+    mp.inputs["Scale"].default_value = src.inputs["Scale"].default_value
+    mp.inputs["Location"].default_value = src.inputs["Location"].default_value
+    nt.links.new(tc.outputs["Object"], mp.inputs[0])
+    g = nt.nodes.new("ShaderNodeTexGradient")
+    g.gradient_type = "SPHERICAL"
+    nt.links.new(mp.outputs[0], g.inputs[0])
+    ri, rp = eye_mat["eye_ri"], eye_mat["eye_rp"]
+    hx = lambda k: "#%02x%02x%02x" % tuple(_id_color(table, k))  # noqa: E731
+    stops = [(0.0, hx("sclera")), (1 - ri, hx("iris")), (1 - rp, hx("pupil"))]
+    ramp = core.node_ramp(nt, g.outputs["Fac"], stops, interp="CONSTANT")
+    em = nt.nodes.new("ShaderNodeEmission")
+    nt.links.new(ramp, em.inputs["Color"])
+    nt.links.new(em.outputs[0], nt.nodes["Material Output"].inputs["Surface"])
+    return m
+
+
+def _skin_id(name, ctx, table):
+    """Skin with its painted details (freckles) in their detail colours."""
+    m = bpy.data.materials.new(name)
+    m.use_nodes = True
+    nt = m.node_tree
+    nt.nodes.remove(nt.nodes["Principled BSDF"])
+    col = core.rgba("#%02x%02x%02x" % tuple(_id_color(table, "skin")))
+    base = None
+    for nm, (pts, rad, colr, k) in ctx.skin_paint.items():
+        acc = None
+        for q in pts:
+            bl = core.node_blob(nt, q, rad)
+            acc = bl if acc is None else core.node_math(nt, "MAXIMUM", acc, bl)
+        sharp = core.node_math(nt, "GREATER_THAN", acc, 0.35)
+        dc = "#%02x%02x%02x" % tuple(_id_color(table, "detail:" + nm))
+        base = core.node_mix(nt, sharp, base if base is not None else "#%02x%02x%02x" % tuple(_id_color(table, "skin")), dc)
+    em = nt.nodes.new("ShaderNodeEmission")
+    if base is None:
+        em.inputs["Color"].default_value = col
+    else:
+        nt.links.new(base, em.inputs["Color"])
+    nt.links.new(em.outputs[0], nt.nodes["Material Output"].inputs["Surface"])
+    return m
+
+
+def _flat_settings(size):
+    sc = bpy.context.scene
+    sc.cycles.samples = 1
+    sc.cycles.use_adaptive_sampling = False
+    sc.cycles.use_denoising = False
+    sc.cycles.pixel_filter_type = "BOX"
+    sc.cycles.filter_width = 0.01
+    sc.cycles.max_bounces = 0
+    sc.cycles.transparent_max_bounces = 8
+    sc.view_settings.view_transform = "Standard"
+    sc.view_settings.look = "None"
+    sc.render.film_transparent = True
+
+
+def id_pass(ctx, path_png, path_json, path_sig, size):
+    """Render the flat part-ID pass and the signature mask. Restores nothing: run it after the beauty render."""
+    sc = bpy.context.scene
+    _flat_settings(size)
+    table = dict(style.ID_COLORS)
+    for k in [k for k in table if k not in ("skin",)]:
+        pass
+    by_obj = {}
+    for p in ctx.parts:
+        by_obj[p.obj.name] = p.group
+    cache = {}
+    eyes = {e["obj"].name: e for e in ctx.objs["eyes"]}
+    for o in sc.objects:
+        if o.type not in ("MESH", "CURVE"):
+            continue
+        if o.get("kit_glass"):
+            o.hide_render = True
+            continue
+        grp = by_obj.get(o.name, "costume")
+        if o.name in eyes:
+            m = _eye_id("id_" + o.name, o.data.materials[0], table)
+        elif grp == "skin" and o.name == "head":
+            m = _skin_id("id_skin_head", ctx, table)
+        else:
+            if grp not in cache:
+                cache[grp] = _flat("id_" + grp, _id_color(table, grp))
+            m = cache[grp]
+        o.data.materials.clear()
+        o.data.materials.append(m)
+    for L in [o for o in sc.objects if o.type == "LIGHT"]:
+        L.hide_render = True
+    sc.world.node_tree.nodes["Background"].inputs["Strength"].default_value = 0.0
+    sc.render.filepath = path_png
+    bpy.ops.render.render(write_still=True)
+    with open(path_json, "w") as f:
+        json.dump({"colors": {k: list(v) for k, v in table.items()}}, f, indent=1)
+    # the signature mask: signature objects white, everything else a holdout (alpha 0 where it hides them)
+    hold = bpy.data.materials.new("id_holdout")
+    hold.use_nodes = True
+    nt = hold.node_tree
+    nt.nodes.remove(nt.nodes["Principled BSDF"])
+    ho = nt.nodes.new("ShaderNodeHoldout")
+    nt.links.new(ho.outputs[0], nt.nodes["Material Output"].inputs["Surface"])
+    white = _flat("id_sig", (255, 255, 255))
+    sig = {o.name for o in ctx.sig_objs}
+    for o in sc.objects:
+        if o.type not in ("MESH", "CURVE") or o.hide_render:
+            continue
+        o.data.materials.clear()
+        o.data.materials.append(white if o.name in sig else hold)
+    sc.render.filepath = path_sig
+    bpy.ops.render.render(write_still=True)
+
+
+# ------------------------------------------------------------------ landmarks
+def landmarks_json(ctx, path, png_path, ids_png, sig_png, size, floating, rows, stats):
+    from PIL import Image
+    cam = ctx.objs["cam"]
+
+    def pj(pt):
+        q = rig.project(cam, [tuple(pt)], size)[0]
+        return [round(float(q[0]), 1), round(float(q[1]), 1)]
+
+    iris = [pj(p) for p in ctx.L["iris_world"]]
+    order = sorted(range(len(iris)), key=lambda i: iris[i][0])     # near (screen left) first
+    iris = [iris[i] for i in order]
+    chin = pj(rig.head_to_world(ctx, ctx.L["chin"]))
+    crown = pj(rig.head_to_world(ctx, ctx.L["crown"]))
+    hp = rig.project(cam, rig.head_points(ctx), size)
+    head_box = [float(hp[:, 0].min()), float(hp[:, 1].min()), float(hp[:, 0].max()), float(hp[:, 1].max())]
+    a = np.asarray(Image.open(png_path).convert("RGBA"))[..., 3] > 127
+    rows_a = np.where(a.sum(1) >= 2)[0]
+    skyline = int(rows_a[0]) if len(rows_a) else None
+    sig_box = None
+    if sig_png and os.path.exists(sig_png):
+        s = np.asarray(Image.open(sig_png).convert("RGBA"))[..., 3] > 127
+        if s.any():
+            ys, xs = np.nonzero(s)
+            sig_box = [int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())]
+    brows = []
+    for tag in ("near", "far"):
+        b = ctx.L.get("brow_" + tag)
+        if b:
+            brows.append([pj(rig.head_to_world(ctx, b[0])), pj(rig.head_to_world(ctx, b[1]))])
+    mc = [pj(rig.head_to_world(ctx, q)) for q in ctx.L.get("mouth_corners", [])]
+    mc.sort(key=lambda q: q[0])
+    openings, sclera_full = [], []
+    if ids_png and os.path.exists(ids_png):
+        im = np.asarray(Image.open(ids_png).convert("RGB")).astype(int)
+        eyecols = [np.array(style.ID_COLORS[k]) for k in ("sclera", "iris", "pupil", "catch")]
+        mask = np.zeros(im.shape[:2], bool)
+        for c in eyecols:
+            mask |= (np.abs(im - c).sum(-1) < 30)
+        cut = (iris[0][0] + iris[-1][0]) / 2 if len(iris) == 2 else size[0] / 2
+        for side in (0, 1):
+            m = mask.copy()
+            if side == 0:
+                m[:, int(cut):] = False
+            else:
+                m[:, :int(cut)] = False
+            col = m.sum(0)
+            openings.append(int(col.max()) if col.any() else 0)
+    for e in ctx.objs["eyes"]:
+        rz = e["radii"][2]
+        c = e["obj"].matrix_world.translation
+        top = rig.project(cam, [tuple(c + Vector((0, 0, rz)))], size)[0][1]
+        bot = rig.project(cam, [tuple(c - Vector((0, 0, rz)))], size)[0][1]
+        sclera_full.append(round(float(abs(bot - top)), 1))
+    h_px = abs(chin[1] - crown[1])
+    meta = dict(name=os.path.splitext(os.path.basename(png_path))[0], size=list(size), cid=ctx.cid, mood=ctx.mood,
+                era=ctx.era, eye_y=round(sum(p[1] for p in iris) / len(iris), 1), chin_y=chin[1], crown_y=crown[1],
+                skyline_y=skyline, head_box=[round(v, 1) for v in head_box], sig_box=sig_box, h_px=round(h_px, 1),
+                iris=iris, eye_open_px=openings, sclera_full_px=sorted(sclera_full),
+                eye_open_H=[round(o / h_px, 3) for o in openings],
+                sclera_vis_H=[round(o / h_px / max(0.05, e["open"] - _low(ctx)), 3) for o, e in
+                              zip(openings, sorted(ctx.objs["eyes"], key=lambda e: e["side"]))],
+                brows=brows, mouth=mc,
+                mouth_open=bool(getattr(ctx, "mouth_open", False)), glasses=bool(getattr(ctx, "glasses", False)),
+                signature=ctx.ch.get("signature", {}).get("name"), floating=floating, contacts=rows,
+                details=ctx.details, frame=ctx.frame, stats=stats)
+    if getattr(ctx, "lens_iris_contrast", None) is not None:
+        meta["lens_iris_contrast"] = round(ctx.lens_iris_contrast, 3)
+    with open(path, "w") as f:
+        json.dump(meta, f, indent=1)
+    return meta
+
+
+def _low(ctx):
+    ey = ctx.ch["eyes"]
+    return ey.get(ctx.mood, {}).get("low", ey.get("low", 0.06))
+
+
+# ------------------------------------------------------------------ lens contrast (glasses)
+def lens_contrast(ctx, size, samples=24):
+    """§7.5: an iris behind a lens keeps >= 70 % of its contrast. Renders the eye region twice (lenses on / hidden)
+    with a render border and compares iris-vs-sclera |dL*| measured at the projected iris and sclera points."""
+    from PIL import Image
+    sc = bpy.context.scene
+    cam = ctx.objs["cam"]
+    lenses = [o for o in sc.objects if o.get("kit_glass")]
+    if not lenses:
+        return None
+    pts = ctx.L["iris_world"]
+    pp = rig.project(cam, [tuple(p) for p in pts], size)
+    x0, x1 = pp[:, 0].min() - 60, pp[:, 0].max() + 60
+    y0, y1 = pp[:, 1].min() - 50, pp[:, 1].max() + 50
+    sc.render.use_border = True
+    sc.render.use_crop_to_border = False
+    sc.render.border_min_x, sc.render.border_max_x = max(0, x0 / size[0]), min(1, x1 / size[0])
+    sc.render.border_min_y, sc.render.border_max_y = max(0, 1 - y1 / size[1]), min(1, 1 - y0 / size[1])
+    keep = sc.cycles.samples
+    sc.cycles.samples = samples
+    tmpd = bpy.app.tempdir or "/tmp"
+    out = []
+    for vis in (False, True):
+        for o in lenses:
+            o.hide_render = not vis
+        p = os.path.join(tmpd, "lens_%d.png" % vis)
+        sc.render.filepath = p
+        bpy.ops.render.render(write_still=True)
+        out.append(np.asarray(Image.open(p).convert("RGB")).astype(np.float64) / 255)
+    sc.render.use_border = False
+    sc.cycles.samples = keep
+    for o in lenses:
+        o.hide_render = False
+
+    def lab_l(rgb):
+        c = np.where(rgb <= 0.04045, rgb / 12.92, ((rgb + 0.055) / 1.055) ** 2.4)
+        y = c @ np.array([0.2126, 0.7152, 0.0722])
+        return np.where(y > 216 / 24389, 116 * np.cbrt(y) - 16, y * 24389 / 27)
+
+    ratios = []
+    for e, (px, py) in zip(ctx.objs["eyes"], pp):
+        rx, ry, rz = e["radii"]
+        off = rig.project(cam, [tuple(e["obj"].matrix_world.translation + Vector((rx * 0.0, 0, 0)))], size)[0]
+        del off
+        r = 2
+        xi, yi = int(round(px)), int(round(py))
+        # sclera sample: beside the iris, toward the nose / outer corner along x at the iris height
+        dx = int(round(rx * 0.72 / (2 * rz) * (e["radii"][2] * 2) / H * ctx.frame["h_px"]))
+        vals = []
+        for img in out:
+            L = lab_l(img)
+            iris_l = L[yi - r:yi + r + 1, xi - r:xi + r + 1].mean()
+            scl = max(L[yi - r:yi + r + 1, xi + dx - r:xi + dx + r + 1].mean(),
+                      L[yi - r:yi + r + 1, xi - dx - r:xi - dx + r + 1].mean())
+            vals.append(abs(scl - iris_l))
+        ratios.append(vals[1] / max(vals[0], 1e-6))
+    ctx.lens_iris_contrast = float(min(ratios))
+    return ctx.lens_iris_contrast
+
+
+# ------------------------------------------------------------------ stats
+def stats(ctx):
+    dg = bpy.context.evaluated_depsgraph_get()
+    rows = []
+    for o in bpy.context.scene.objects:
+        if o.type in ("MESH", "CURVE") and not o.hide_render:
+            ev = o.evaluated_get(dg)
+            try:
+                me = ev.to_mesh()
+            except RuntimeError:
+                continue
+            me.calc_loop_triangles()
+            rows.append((len(me.loop_triangles), o.name))
+            ev.to_mesh_clear()
+    rows.sort(reverse=True)
+    return dict(objects=len(rows), triangles=sum(r[0] for r in rows), top=[[n, c] for c, n in rows[:10]],
+                build_s=round(ctx.t_build, 2))
+
+
+def now():
+    return time.time()

@@ -1,10 +1,18 @@
-"""Commander portrait kit (04 §15.4): 3/4 busts built from the kit parameters — head shape, hair, facial hair,
-headgear, uniform, accessory, palette from 04 §15.3 — rendered on a transparent background (the game draws the
-rarity plate and frame). Run: python3 tools/blender/portrait_assets.py OUTDIR [ids...] [--size=256]
+"""Commander portraits (04 §15.4, docs/art_direction.md §7): 3/4 busts rendered on a transparent background (the game
+draws the rarity plate and frame). Run: python3 tools/blender/portrait_assets.py OUTDIR [ids...] [--size=256]
 [--eras=1,2,3,4] [--moods=calm,smile,...]. The game's set (game/assets/ui/portraits, 150 files):
 - the commanders: OUTDIR cmd_bram cmd_lira ... cmd_rai --eras=1,2,3,4 --moods=calm,smile
 - the AI leaders: OUTDIR ldr_barons ... ldr_lakes --moods=calm,angry,cunning,smile,tired
 - the ruler: OUTDIR ruler --eras=1,2,3,4
+Two builders. The ids (and eras) listed in portrait_kit/chars.py (KIT_IDS, KIT_ERAS — in P1 cmd_bram, cmd_lira and
+cmd_vega in era 1) go through the portrait kit v2 (tools/blender/portrait_kit/, §7.5): 512×588 by default (§7.12),
+Cycles 64 samples, AgX Punchy. Every other id and era keeps the old primitive builder below (256×294, 40 samples)
+until P2/P3 move it to the kit.
+Flags: --size=N (width; height = int(N × 1.15), the 0.8707 aspect), --samples=N, --frame=bust|face (kit: face = a
+square face crop, not shipped), --sidecars=DIR (kit: DIR/ids/NAME.png part-ID pass + NAME.json colours + NAME_sig.png
+signature mask, DIR/meta/NAME.json projected landmarks and the contact report; read by tools/qa_portraits), --contacts
+(kit: print the P-A7 contact report), --stats (kit: triangles, build and render seconds), --force (re-render files
+that exist; without it finished files are skipped, so an interrupted batch resumes).
 """
 import math
 import os
@@ -396,33 +404,59 @@ def setup(size):
     sc.camera = cam
 
 
+def _opts():
+    return dict(a[2:].split("=", 1) if "=" in a else (a[2:], "1") for a in sys.argv[1:] if a.startswith("--"))
+
+
 def main():
+    import portrait_kit  # noqa: E402  (tools/blender is on sys.path above)
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    size = 256
-    for a in sys.argv[1:]:
-        if a.startswith("--size="):
-            size = int(a[7:])
-    eras = [1]
-    moods = [""]
-    for a in sys.argv[1:]:
-        if a.startswith("--eras="):
-            eras = [int(x) for x in a[7:].split(",")]
-        if a.startswith("--moods="):
-            moods = ["" if m == "calm" else m for m in a[8:].split(",")]
+    opts = _opts()
+    size_opt = int(opts["size"]) if "size" in opts else None
+    eras = [int(x) for x in opts["eras"].split(",")] if "eras" in opts else [1]
+    moods = ["" if m == "calm" else m for m in opts["moods"].split(",")] if "moods" in opts else [""]
+    samples_opt = int(opts["samples"]) if "samples" in opts else None
+    frame = opts.get("frame", "bust")
+    sidecars = opts.get("sidecars")
     out = args[0]
     ids = args[1:] or list(LOOK)
     os.makedirs(out, exist_ok=True)
     for cid in ids:
         for era in eras:
             for mood in moods:
-                bpy.ops.wm.read_factory_settings(use_empty=True)
-                kit._MATS.clear()
-                build(cid, era, mood)
-                setup(size)
                 name = cid if era == 1 else "%s_e%d" % (cid, era)  # era 1 keeps the plain name
                 if mood:
                     name += "_" + mood
-                bpy.context.scene.render.filepath = os.path.join(out, name + ".png")
+                path = os.path.join(out, name + ".png")
+                if os.path.exists(path) and "force" not in opts:
+                    print("skipped", name, "(exists; --force re-renders)")
+                    continue
+                if portrait_kit.supports(cid, era):
+                    w = size_opt or 512
+                    r = portrait_kit.render_id(cid, path, mood or "calm", era,
+                                               (w, w) if frame == "face" else (w, int(w * 1.15)),
+                                               samples_opt or portrait_kit.style.RENDER["samples"], frame, sidecars,
+                                               "contacts" in opts, "stats" in opts)
+                    print("rendered", name, "(kit v2) build %.1fs render %.1fs" % (r["build_s"], r["render_s"]))
+                    if "stats" in opts and r["stats"]:
+                        st = r["stats"]
+                        print("STATS %s triangles %d objects %d build %.1fs render %.1fs samples %d" % (
+                            name, st["triangles"], st["objects"], r["build_s"], r["render_s"], st["samples"]))
+                    if "contacts" in opts:
+                        bad = [c for c in r["contacts"] if c["status"] != "ok"]
+                        print("CONTACTS %s: %d parts checked, %d floating or buried%s" % (
+                            name, len(r["contacts"]), len(bad), "".join(
+                                "\n  %s on %s: %s (gap %.4f H, buried %.0f%%)" % (c["part"], c["parent"], c["status"],
+                                                                               c["gap_H"], c["buried_share"] * 100)
+                                for c in bad)))
+                    continue
+                bpy.ops.wm.read_factory_settings(use_empty=True)
+                kit._MATS.clear()
+                build(cid, era, mood)
+                setup(size_opt or 256)
+                if samples_opt:
+                    bpy.context.scene.cycles.samples = samples_opt
+                bpy.context.scene.render.filepath = path
                 bpy.ops.render.render(write_still=True)
                 print("rendered", name)
 

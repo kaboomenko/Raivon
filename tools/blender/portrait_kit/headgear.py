@@ -1,0 +1,79 @@
+"""Headgear (§7.5 step 8). P1 builds what Bram, Lira and Vega wear in era 1: Lira's kerchief. Hats seated on the hat
+ring, brims and visors come with P2 (§7.5: 24 rim samples 0.01 H into the hair, visors down 14 deg).
+
+kerchief — a soft cloth shell over the hair (a metaball sheet sampled on the head above an edge line that runs high
+           over the forehead, over the ears and low at the nape; its thickness clears the hair cap), a folded hem
+           along its front edge (one clean rounded rim — no torn hairline), a knot at the back of the head and two
+           knot tails sticking out back (her "top back" signature zone, §7.2).
+"""
+import math
+
+from mathutils import Vector
+
+from . import core
+from .core import H
+
+
+def build_headgear(ctx):
+    hg = ctx.ch.get("headgear")
+    if not hg:
+        return
+    {"kerchief": kerchief}[hg["kind"]](ctx, hg)
+
+
+def kerchief(ctx, hg):
+    head = ctx.objs["head"]
+    edge_tbl = hg.get("edge", [(0, 40), (40, 34), (75, 16), (100, 4), (140, -8), (180, -16)])
+
+    def edge(h):
+        az = abs(math.degrees(math.atan2(h.x, -h.y)))
+        return core.lerp_table(edge_tbl, az)
+
+    def elev(h):
+        return math.degrees(math.atan2(h.z, math.hypot(h.x, h.y)))
+
+    samples, s = core.surface_samples(head, 2600, lambda h, n, d: elev(h) > edge(h))
+    th = hg.get("thick", 0.085)
+    el = core.sheet_elems(samples, s, lambda h, n: th * (0.55 + 0.45 * core.smoothstep(0, 10, elev(h) - edge(h))),
+                          inset=0.02)
+    # the folded hem: a row of balls along the edge, a little proud of the shell
+    hem = []
+    for k in range(48):
+        az = -180 + 360 * k / 48
+        e = core.lerp_table(edge_tbl, abs(az)) + 2.0
+        d = core.az_el(az, e)
+        h, n = core.ray(head, d * 3, -d)
+        if h is None:
+            continue
+        hem.append(dict(co=h + n * (th * 0.75), half=th * 0.62, stiff=2.4))
+    el += hem
+    # the knot at the back of the head (top back) and its two tails, out toward the back (screen left)
+    kd = core.az_el(hg.get("knot_az", 178), hg.get("knot_el", 18))
+    kh, kn = core.ray(head, kd * 3, -kd)
+    knot = kh + kn * (th * 1.3)
+    el.append(dict(co=knot, half=(0.07, 0.06, 0.06), stiff=2.4))
+    el.append(dict(co=knot + kn * 0.03 + Vector((0.03, 0, 0.0)), half=(0.05, 0.05, 0.05), stiff=2.4))
+    m = core.fabric(ctx, "kerchief", hg["color"], z0=-0.2, z1=0.6, rough=0.85, sheen=0.3)
+    o = core.mb_mesh(ctx, "Kerchief", el, 0.011, m, smooth_iter=2, name="kerchief")
+    ctx.add(o, "hair", head, kind="embed", head=True)   # 'hair' group: the headgear next to the face
+    ctx.objs["kerchief"] = o
+    # tails: two flattened tapered ribbons from the knot, out and back (V), drooping a little
+    back = (Vector((kn.x, kn.y, 0)).normalized() * 0.4 + core.world_dir(ctx, (-1.0, 0.35, 0.0), head=True)).normalized()
+    tails = []
+    ln = hg.get("tail", 0.34)
+    for k, (up, sw) in enumerate(((0.55, 0.25), (-0.15, -0.25))):
+        el2 = []
+        prev = knot
+        for i in range(1, 10):
+            t = i / 9
+            p = knot + back * (ln * t) + Vector((sw * 0.25 * t, 0, (up * ln * 0.55) * t - 0.10 * t * t))
+            w = 0.075 * (1 - 0.55 * t) + 0.02
+            el2.append(dict(co=p, half=(w, 0.018, ln / 9 * 0.95), stiff=2.6,
+                            rot=core.frame_quat(p - prev, Vector((0, 0, 1)).cross(back).normalized())))
+            prev = p
+        tl = core.mb_mesh(ctx, "Tail%d" % k, el2, 0.008, m, smooth_iter=2, name="kerchief_tail%d" % k)
+        ctx.add(tl, "detail:kerchief_tails", o, kind="surface", head=True)
+        tails.append(tl)
+        ctx.sig_objs.append(tl)
+    ctx.details["kerchief_tails"] = 400
+    ctx.L["knot"] = knot
