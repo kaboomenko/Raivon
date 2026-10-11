@@ -194,7 +194,7 @@ func _card(y: float, h: float, case_id: String, note: String) -> Panel:
 	c.name = case_id
 	var sb := Kit.style(Kit.CREAM_WELL, 24, 0, Kit.INK, 0, 0)
 	sb.set_meta("kit_kind", "")
-	c.add_theme_stylebox_override("panel", sb)
+	Kit.set_panel(c, sb)  # from the bake atlas: the card batches with its art and buttons
 	c.position = Vector2(0, y)
 	c.size = Vector2(w, h)
 	c.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -206,7 +206,7 @@ func _card(y: float, h: float, case_id: String, note: String) -> Panel:
 	var asb := Kit.style(tint.lerp(Kit.CREAM_ROW, 0.55), 20, 4, Kit.INK, 0, 6)
 	asb.set_meta("kit_kind", "")
 	asb.set_meta("kit_lip_color", tint.lerp(Kit.CREAM_ROW, 0.2))
-	art.add_theme_stylebox_override("panel", asb)
+	Kit.set_panel(art, asb)
 	art.position = Vector2(16, 16)
 	art.size = Vector2(220, h - 32.0)
 	art.mouse_filter = Control.MOUSE_FILTER_IGNORE

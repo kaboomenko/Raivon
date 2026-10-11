@@ -630,10 +630,12 @@ class KitBake extends Node:
 	var seen := {}  ## volatile key -> [first asked for, last asked for] (ms; held())
 	var refs := {}  ## canvas item RID id -> [frame, {full key: true}, WeakRef owner]: the images its commands show now
 	var placed := {}  ## host instance id -> [WeakRef, origin on the canvas, moved at (ms)]: what drew from the atlas there
+	var parked := {}  ## host instance id -> [WeakRef, rect, pad]: what was out of sight when it asked (not baked yet)
 	var resets := 0
 	var evicted := 0  ## images dropped to make room (they were no longer shown)
 	var _moving := {}  # host ids that moved, until they hold still (then they are drawn again)
 	var _poll: Array = []  # host ids still to look at in this pass
+	var _poll_p: Array = []  # parked host ids still to look at in this pass
 	var _later: Array = []  # [WeakRef, due ms]: owners to redraw then (later())
 	var _round: Array = []  # the jobs in flight: {key, base, off, pp, at (stage px), slot, gen}
 	var _state := 0  # 0 idle, 1 the stage renders, 2 the atlas copies
@@ -833,12 +835,21 @@ class KitBake extends Node:
 				if pxs.x > MAX_SIDE or pxs.y > MAX_SIDE or size.x <= 0.0 or size.y <= 0.0:
 					never[full] = true
 					return false
-				if not jobs.has(full) or not (jobs[full]["make"] as Callable).is_valid():  # (its first asker is gone)
-					jobs[full] = {"size": size, "px": pxs, "off": f, "pp": pp, "base": base, "make": make}
-				if owner != null:
-					if not waiting.has(full):
-						waiting[full] = {}
-					waiting[full][owner.get_instance_id()] = weakref(owner)
+				var hh: CanvasItem = host if host != null else owner as CanvasItem
+				if not in_sight(hh, rect, pad):
+					# nobody can see it now (off the screen, or wholly out of a scroll's clip — the rows of a long list):
+					# not baked, or such a list would fill the atlas and start it over and over; it draws its vectors
+					# (culled, or clipped away) and is drawn again once it comes into sight (_poll_parked)
+					_park(hh, rect, pad)
+				else:
+					if hh != null and not parked.is_empty():
+						parked.erase(hh.get_instance_id())
+					if not jobs.has(full) or not (jobs[full]["make"] as Callable).is_valid():  # (its first asker is gone)
+						jobs[full] = {"size": size, "px": pxs, "off": f, "pp": pp, "base": base, "make": make}
+					if owner != null:
+						if not waiting.has(full):
+							waiting[full] = {}
+						waiting[full][owner.get_instance_id()] = weakref(owner)
 			var alt: Variant = alts.get(base)  # the same layers made at another offset: resampled until then
 			if alt == null or not slots.has(alt):
 				return false
@@ -854,6 +865,28 @@ class KitBake extends Node:
 		e[1][full] = true
 		var how: Array = made[full]
 		_blit(ci, slot, rect, size, m, how[0], how[1], mod)
+		return true
+
+	## Whether `rect` (local to `h`, grown by `pad`) can be seen now: on the screen and inside the rect of every
+	## clipping Control above it (a ScrollContainer's view). An item of a SubViewport's canvas counts as seen.
+	static func in_sight(h: CanvasItem, rect: Rect2, pad: float) -> bool:
+		if h == null or not h.is_inside_tree():
+			return true
+		var vp := h.get_viewport()
+		if vp == null or vp != h.get_tree().root:
+			return true
+		var r := h.get_global_transform_with_canvas() * rect.grow(pad)
+		if not r.intersects(vp.get_visible_rect()):
+			return false
+		var n := h.get_parent()
+		var top := h.top_level
+		while not top and n is CanvasItem:
+			if n is Control and (n as Control).clip_contents:
+				var c := n as Control
+				if not r.intersects(c.get_global_transform_with_canvas() * Rect2(Vector2.ZERO, c.size)):
+					return false
+			top = (n as CanvasItem).top_level
+			n = n.get_parent()
 		return true
 
 	## The record of what the canvas item `ci` shows from the atlas: started anew on the first draw in a frame (a
@@ -915,6 +948,30 @@ class KitBake extends Node:
 				e[2] = now
 			elif now - int(e[2]) >= SETTLE_MS:
 				_moving.erase(id)
+				h.queue_redraw()
+
+	## Remembers `h`, out of sight when it asked for a bake: it is drawn again once `rect` (local, grown by `pad`) can be
+	## seen (a scroll brought it in, its clip grew), or once it has moved and held still.
+	func _park(h: CanvasItem, rect: Rect2, pad: float) -> void:
+		_place(h)
+		parked[h.get_instance_id()] = [weakref(h), rect, pad]
+
+	## Looks at POLL_N parked hosts a frame: one that has come into sight draws again (and asks for its bakes).
+	func _poll_parked() -> void:
+		if parked.is_empty():
+			return
+		if _poll_p.is_empty():
+			_poll_p = parked.keys()
+		for i in mini(POLL_N, _poll_p.size()):
+			var id: int = _poll_p.pop_back()
+			var e: Variant = parked.get(id)
+			if e == null:
+				continue
+			var h := (e[0] as WeakRef).get_ref() as CanvasItem
+			if h == null or not h.is_inside_tree():
+				parked.erase(id)
+			elif in_sight(h, e[1], e[2]):
+				parked.erase(id)
 				h.queue_redraw()
 
 	## True once `key` has been asked for (by any owner) for STILL_MS: a volatile look (a label's text, a bar's fill)
@@ -1002,6 +1059,7 @@ class KitBake extends Node:
 					_poke(e[0])
 			_later = keep
 		_poll_moves()
+		_poll_parked()
 		if _state != 0 or not is_inside_tree():
 			return
 		if not jobs.is_empty():
@@ -1380,6 +1438,37 @@ class KitFlag extends Control:
 			_vec.visible = not ok
 
 
+## A still picture that another Control draws as vectors (a commander's bust: a gradient plate, a halo, the render
+## through a rounded box and the frame — ~7 draw calls) drawn from the bake atlas instead, one textured rect among its
+## kit neighbours. `vec`, the drawing Control, becomes its child (it takes over vec's name, place and size) and draws
+## only until the bake has landed, or when it cannot be baked. `key`: everything that changes the picture's pixels
+## (its size is added); `make`: (size) -> a fresh Control that draws the same picture at that size (null: the look
+## has changed since, do not bake it). The picture must not change while shown: make a new KitStill for another look.
+class KitStill extends Control:
+	var key := ""
+	var make := Callable()
+	var vec: Control
+
+	func _init(v: Control = null, k := "", mk := Callable()) -> void:
+		key = k
+		make = mk
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		vec = v
+		if v != null:
+			name = v.name
+			position = v.position
+			size = v.size
+			v.position = Vector2.ZERO
+			add_child(v)
+		resized.connect(func(): if vec != null: vec.size = size)
+
+	func _draw() -> void:
+		var ok := key != "" and make.is_valid() and size.x > 0.0 and size.y > 0.0 \
+			and SELF.draw_baked(self, "still|%s|%.2f,%.2f" % [key, size.x, size.y], Rect2(Vector2.ZERO, size), size, make)
+		if vec != null and vec.visible == ok:
+			vec.visible = not ok
+
+
 ## The StyleBoxFlat a panel wears, through a KitBox too (null when it has none).
 static func flat_of(c: Control) -> StyleBoxFlat:
 	var sb := c.get_theme_stylebox("panel")
@@ -1568,8 +1657,9 @@ static func draw_baked(ci: CanvasItem, key: String, rect: Rect2, size: Vector2, 
 ## hex badges, the title plate, dots, discs, bars, the blueprint grid, the tooltip tail and the coach's ring, pointer
 ## and ghost finger (§4.12). Never a font glyph.
 class KitShape extends Control:
-	## Kinds drawn as vectors every frame (they animate by redrawing); every other kind comes from the bake atlas.
-	const LIVE := ["ring", "finger", "pointer", "rays"]
+	## Kinds drawn as vectors every frame (they animate by redrawing); every other kind comes from the bake atlas —
+	## the rays too (a turning sunburst turns its node, the same image; one too large for the atlas stays vectors).
+	const LIVE := ["ring", "finger", "pointer"]
 	var kind := ""
 	var face := Color.WHITE
 	var lip := Color.BLACK

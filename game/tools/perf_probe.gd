@@ -8,7 +8,9 @@ extends RefCounted
 ## on it, and frames are much faster without it); the first two lines show the base with and without it.
 
 const MIN_DEPTH_COST := 12  ## a subtree that costs at least this many draws is opened one level deeper
-const MAX_DEPTH := 9
+## `--perf-deep=N`: open subtrees from N draws instead (a finer breakdown)
+static var min_cost := MIN_DEPTH_COST
+const MAX_DEPTH := 14
 
 
 static func _draws(vp: Viewport) -> int:
@@ -86,7 +88,7 @@ static func _walk(vp: Viewport, item: CanvasItem, base: int, depth: int, lines: 
 			rest_n += 1
 			continue
 		lines.append("%s%4d  %s" % ["  ".repeat(depth), int(r[0]), _label(r[1])])
-		if int(r[0]) >= MIN_DEPTH_COST and depth < MAX_DEPTH:
+		if int(r[0]) >= min_cost and depth < MAX_DEPTH:
 			await _walk(vp, r[1], base, depth + 1, lines)
 	if rest_n > 0:
 		lines.append("%s%4d  (%d more items under 3 draws each)" % ["  ".repeat(depth), rest, rest_n])
@@ -149,6 +151,9 @@ static func run(tree: SceneTree, out_path: String, tabs := true) -> void:
 	if OS.get_cmdline_user_args().has("--perf-smoke"):
 		await smoke(tree, out_path)
 		return
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--perf-deep="):
+			min_cost = maxi(2, int(a.get_slice("=", 1)))
 	if tabs and OS.get_cmdline_user_args().has("--perf-tabs"):
 		await run(tree, out_path, false)
 		await shop_tabs(tree, out_path)
@@ -184,6 +189,8 @@ static func run(tree: SceneTree, out_path: String, tabs := true) -> void:
 		lines.append("  bake: baked=%d queued=%d waiting=%d state=%d seen=%d" % [kbd.slots.size(), kbd.jobs.size(),
 			kbd.waiting.size(), kbd._state, kbd.seen.size()])
 	tree.paused = true  # the game holds still while it measures (the HUD's own drawing does not depend on it)
+	if OS.get_cmdline_user_args().has("--perf-vec"):
+		await vec_pair(tree, out_path)
 	if OS.get_cmdline_user_args().has("--perf-stale"):  # which items draw less once redrawn (missed bake news)
 		vp.disable_3d = true
 		var roots0: Array = []
@@ -230,7 +237,7 @@ static func run(tree: SceneTree, out_path: String, tabs := true) -> void:
 		rows.sort_custom(func(a, b): return a[0] > b[0])
 		for r in rows:
 			lines.append("  %4d  %s" % [int(r[0]), _label(r[1])])
-			if int(r[0]) >= MIN_DEPTH_COST:
+			if int(r[0]) >= min_cost:
 				await _walk(vp, r[1], base, 2, lines)
 	# the SubViewports (minimap, portraits, card art, flags): their size, update mode and own draws
 	var subs: Array = []
@@ -251,6 +258,31 @@ static func run(tree: SceneTree, out_path: String, tabs := true) -> void:
 		f.store_string("\n".join(lines) + "\n")
 	for ln in lines:
 		print("perf-tree ", ln)
+
+
+## `--perf-vec` (H2 parity): the canvas alone (no 3D world), held still, twice in a row — as drawn (<shot>_bake.png)
+## and with the bake atlas off, every kit look drawn as its vectors (<shot>_vec.png) — for tools/hud_diff.py: a look
+## that comes from the atlas must match the vectors it stands for. Prints its canvas draws both ways.
+static func vec_pair(tree: SceneTree, out_path: String) -> void:
+	var vp := tree.root
+	var base := out_path.trim_suffix(".tree.txt").get_basename()
+	var kit: Script = load("res://scripts/ui_kit.gd")
+	vp.disable_3d = true
+	var d_bake := await _draws(vp)
+	await RenderingServer.frame_post_draw
+	vp.get_texture().get_image().save_png(base + "_bake.png")
+	kit.KitBake.off = true
+	vp.propagate_call("queue_redraw")
+	await _draws(vp)
+	var d_vec := await _draws(vp)
+	await RenderingServer.frame_post_draw
+	vp.get_texture().get_image().save_png(base + "_vec.png")
+	kit.KitBake.off = false
+	vp.propagate_call("queue_redraw")
+	await _draws(vp)
+	await _draws(vp)
+	vp.disable_3d = false
+	print("perf-tree vec pair: draws_canvas baked=%d vectors=%d -> %s_bake.png / _vec.png" % [d_bake, d_vec, base])
 
 
 ## Redraws each visible canvas item alone and reports those that then draw less (they missed the news that their

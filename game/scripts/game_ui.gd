@@ -445,7 +445,7 @@ func _battle_card(card: String, r: Rect2, two_lines := false) -> Panel:
 	art.name = "art"
 	var asb := Kit.style(Kit.SKY_LOW, 14, 0, Kit.INK, 0, 0)
 	asb.set_meta("kit_kind", "")
-	art.add_theme_stylebox_override("panel", asb)
+	Kit.set_panel(art, asb)
 	art.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
 	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	art.position = Vector2(4, 4)
@@ -472,7 +472,7 @@ func _battle_card(card: String, r: Rect2, two_lines := false) -> Panel:
 	veil.name = "veil"
 	var vsb := Kit.style(Kit.alpha(Kit.INK, 0.6), 14, 0, Kit.INK, 0, 0)
 	vsb.set_meta("kit_kind", "")
-	veil.add_theme_stylebox_override("panel", vsb)
+	Kit.set_panel(veil, vsb)
 	veil.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	veil.size = art.size
 	veil.visible = false
@@ -672,7 +672,7 @@ func _build_ghost() -> void:
 	var body := Panel.new()
 	var bsb := Kit.style(Kit.INK, 14, 0, Kit.INK, 8, 0)
 	bsb.set_meta("kit_kind", "")
-	body.add_theme_stylebox_override("panel", bsb)
+	Kit.set_panel(body, bsb)
 	body.size = _ghost.size
 	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ghost.add_child(body)
@@ -680,7 +680,7 @@ func _build_ghost() -> void:
 	var asb := Kit.style(Kit.SKY_LOW, 14, 0, Kit.INK, 0, 0)
 	asb.set_meta("kit_kind", "")
 	asb.set_corner_radius_all(11)
-	art.add_theme_stylebox_override("panel", asb)
+	Kit.set_panel(art, asb)
 	art.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
 	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	art.position = Vector2(4, 4)
@@ -1043,7 +1043,7 @@ func _paper_chip(parent: Control, center: Vector2, icon: String, text: String, m
 	p.name = "chip"
 	var sb := Kit.style(Kit.CREAM_DEEP, int(PAPER_CHIP_H * 0.5), 0, Kit.INK, 0, 0)  # a pill (h/2)
 	sb.set_meta("kit_kind", "")
-	p.add_theme_stylebox_override("panel", sb)
+	Kit.set_panel(p, sb)
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var x := 14.0
 	var tex := Kit.icon_tex(icon)
@@ -1052,7 +1052,7 @@ func _paper_chip(parent: Control, center: Vector2, icon: String, text: String, m
 		d.name = "disc"
 		var dsb := Kit.style(disc, 20, 3, Kit.INK, 0, 0)
 		dsb.set_meta("kit_kind", "")
-		d.add_theme_stylebox_override("panel", dsb)
+		Kit.set_panel(d, dsb)
 		d.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		d.position = Vector2(2, 2)
 		d.size = Vector2(40, 40)
@@ -1357,7 +1357,7 @@ func _peace_scroller(well: Control, content_h: float, at: int) -> Control:
 	bar.name = "scroll_bar"
 	var bsb := Kit.style(Kit.alpha(Kit.INK, 0.4), 8, 0, Kit.INK, 0, 0)  # a pill: R 8 on an 8 px bar (Godot fits it to w/2)
 	bsb.set_meta("kit_kind", "")
-	bar.add_theme_stylebox_override("panel", bsb)
+	Kit.set_panel(bar, bsb)
 	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	bar.size = Vector2(track.size.x, maxf(48.0, track.size.y * minf(1.0, well.size.y / content_h)))
 	bar.position = track.position
@@ -1708,7 +1708,7 @@ func _inbox_row(host: Control, r: Rect2, it: Dictionary, now: int, idx: int, ite
 	var sb := Kit.style(face, 20, 0, Kit.INK, 0, 5)
 	sb.set_meta("kit_kind", "")
 	sb.set_meta("kit_lip_color", Kit.ROW_LIP if unread else Kit.CREAM_DEEP)
-	t.add_theme_stylebox_override("panel", sb)
+	Kit.set_panel(t, sb)
 	t.add_child(Kit.KitDecor.new())
 	t.position = r.position
 	t.size = r.size
@@ -1839,7 +1839,7 @@ func show_pass(info: Dictionary, on_claim: Callable, on_buy: Callable) -> void:
 	prem.name = "premium_well"
 	var psb := Kit.style(Kit.PREMIUM_WELL, 20, 0, Kit.INK, 0, 0)
 	psb.set_meta("kit_kind", "")
-	prem.add_theme_stylebox_override("panel", psb)
+	Kit.set_panel(prem, psb)
 	prem.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	prem.position = Vector2(prem_x, 8)
 	prem.size = Vector2(ww - 20.0 - prem_x, well.size.y - 16.0)
@@ -1898,7 +1898,7 @@ func show_pass(info: Dictionary, on_claim: Callable, on_buy: Callable) -> void:
 	spine.name = "spine"
 	var ssb := Kit.style(Kit.CREAM_DEEP, 8, 0, Kit.INK, 0, 0)  # a pill: Godot fits R 8 to the 12 px bar
 	ssb.set_meta("kit_kind", "")
-	spine.add_theme_stylebox_override("panel", ssb)
+	Kit.set_panel(spine, ssb)
 	spine.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	spine.position = Vector2(cx - 6.0, y0)
 	spine.size = Vector2(12, maxf(0.0, y1 - y0))
@@ -1909,7 +1909,7 @@ func show_pass(info: Dictionary, on_claim: Callable, on_buy: Callable) -> void:
 		fill.name = "spine_fill"
 		var fsb := Kit.style(Kit.face_of("info"), 8, 0, Kit.INK, 0, 0)
 		fsb.set_meta("kit_kind", "")
-		fill.add_theme_stylebox_override("panel", fsb)
+		Kit.set_panel(fill, fsb)
 		fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		fill.position = spine.position
 		fill.size = Vector2(12, (reach - 1) * PASS_ROW)
@@ -2561,7 +2561,7 @@ func _leader_seal(box: Control, portrait: String, plate: Color, r: Rect2, mood :
 	fr.name = "leader"
 	var sb := Kit.style(Kit.face_of(_trim), 20, 4, Kit.INK, 6, 6)
 	sb.set_meta("kit_kind", "")  # a frame, not a button: the lip without the gloss
-	fr.add_theme_stylebox_override("panel", sb)
+	Kit.set_panel(fr, sb)
 	fr.position = r.position
 	fr.size = r.size
 	fr.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -2570,7 +2570,7 @@ func _leader_seal(box: Control, portrait: String, plate: Color, r: Rect2, mood :
 	var well := Panel.new()
 	var wsb := Kit.style(team, 14, 0, Kit.INK, 0, 0)
 	wsb.set_meta("kit_kind", "")
-	well.add_theme_stylebox_override("panel", wsb)
+	Kit.set_panel(well, wsb)
 	well.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
 	well.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	well.position = Vector2(9, 9)
@@ -2581,7 +2581,7 @@ func _leader_seal(box: Control, portrait: String, plate: Color, r: Rect2, mood :
 		lp.plate = team
 		lp.mood = mood
 		lp.size = well.size
-		well.add_child(lp)
+		well.add_child(_still_portrait(lp))
 	else:
 		var ic := _icon_rect("crown", well.size.x * 0.6)
 		ic.position = (well.size - ic.size) * 0.5
@@ -2590,7 +2590,7 @@ func _leader_seal(box: Control, portrait: String, plate: Color, r: Rect2, mood :
 	var rsb := Kit.style(Kit.alpha(Kit.INK, 0.0), 14, 3, Kit.INK, 0, 0)
 	rsb.draw_center = false
 	rsb.set_meta("kit_kind", "")
-	rim.add_theme_stylebox_override("panel", rsb)
+	Kit.set_panel(rim, rsb)
 	rim.position = well.position
 	rim.size = well.size
 	rim.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -2712,7 +2712,7 @@ func _mini_face(id: String, plate: Color, mood: String, side: float) -> Control:
 	fr.name = "face"
 	var sb := Kit.style(plate, 14, 0, Kit.INK, 0, 0)
 	sb.set_meta("kit_kind", "")
-	fr.add_theme_stylebox_override("panel", sb)
+	Kit.set_panel(fr, sb)
 	fr.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
 	fr.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	fr.size = Vector2(side, side)
@@ -2731,7 +2731,7 @@ func _mini_face(id: String, plate: Color, mood: String, side: float) -> Control:
 	var rsb := Kit.style(Kit.CLEAR, 14, 3, Kit.INK, 0, 0)
 	rsb.draw_center = false
 	rsb.set_meta("kit_kind", "")
-	rim.add_theme_stylebox_override("panel", rsb)
+	Kit.set_panel(rim, rsb)
 	rim.size = fr.size
 	rim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	fr.add_child(rim)
@@ -3290,7 +3290,7 @@ func _res_toggle(host: Control, c: Vector2, res_key: String, on: bool, cb: Calla
 	var d := Panel.new()
 	var sb := Kit.style(Kit.CREAM_ROW, int(MARKET_DISC * 0.5), 3, Kit.INK, 0, 0)
 	sb.set_meta("kit_kind", "")
-	d.add_theme_stylebox_override("panel", sb)
+	Kit.set_panel(d, sb)
 	d.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	d.size = r.size
 	t.add_child(d)
@@ -3308,7 +3308,7 @@ func _deal_row(parts: Array, size: int, side: float) -> Panel:
 	var sb := Kit.style(Kit.CREAM_ROW, 20, 0, Kit.INK, 0, 5)
 	sb.set_meta("kit_kind", "")
 	sb.set_meta("kit_lip_color", Kit.ROW_LIP)
-	p.add_theme_stylebox_override("panel", sb)
+	Kit.set_panel(p, sb)
 	p.add_child(Kit.KitDecor.new())  # the lip (child 0)
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var hgt := side + 28.0
@@ -3501,7 +3501,7 @@ func _border_chip(before: int, after: int) -> Panel:
 	p.name = "border"
 	var sb := Kit.style(Kit.CREAM_DEEP, int(PAPER_CHIP_H * 0.5), 0, Kit.INK, 0, 0)
 	sb.set_meta("kit_kind", "")
-	p.add_theme_stylebox_override("panel", sb)
+	Kit.set_panel(p, sb)
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var x := 16.0
 	var word := tr("swap.border2")
@@ -3535,7 +3535,7 @@ func _pay_chip(host: Control, gold: int, short: bool) -> Panel:
 	p.name = "pay"
 	var sb := Kit.style(Kit.CREAM_DEEP, int(PAPER_CHIP_H * 0.5), 0, Kit.INK, 0, 0)
 	sb.set_meta("kit_kind", "")
-	p.add_theme_stylebox_override("panel", sb)
+	Kit.set_panel(p, sb)
 	p.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var word := tr("swap.you_pay")
 	var l := Kit.label(word, 26, Kit.INK_TEXT, true)
@@ -3838,7 +3838,7 @@ func _fan(pics: Array, dy := 0.0) -> Control:
 	for i in order:
 		var k := float(i) - (n - 1) * 0.5
 		var fr := Panel.new()  # an INK frame with a hard shadow
-		fr.add_theme_stylebox_override("panel", Kit.style(Kit.INK, 8, 0, Kit.INK, 3, 0))
+		Kit.set_panel(fr, Kit.style(Kit.INK, 8, 0, Kit.INK, 3, 0))
 		fr.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		fr.size = Vector2(64, 76)
 		fr.position = Vector2(86.0 + k * 42.0 - 32.0, 8.0 + dy + absf(k) * 6.0)
@@ -3885,7 +3885,7 @@ func show_profile(info: Dictionary, cb: Dictionary) -> void:
 	rf.name = "ruler"
 	var rsb := Kit.style(Kit.face_of(_trim), 20, 4, Kit.INK, 6, 6)
 	rsb.set_meta("kit_kind", "")
-	rf.add_theme_stylebox_override("panel", rsb)
+	Kit.set_panel(rf, rsb)
 	rf.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	rf.position = Vector2(176, 80)
 	rf.size = Vector2(120, 130)
@@ -3894,7 +3894,7 @@ func show_profile(info: Dictionary, cb: Dictionary) -> void:
 	var sky := Panel.new()
 	var ssb := Kit.style(Kit.SKY_TOP, 14, 0, Kit.INK, 0, 0)
 	ssb.set_meta("kit_kind", "")
-	sky.add_theme_stylebox_override("panel", ssb)
+	Kit.set_panel(sky, ssb)
 	sky.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
 	sky.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	sky.position = Vector2(8, 8)
@@ -4213,7 +4213,7 @@ func show_flag_wizard(step: int, opts: Array, on_pick: Callable, on_random: Call
 	var line := Panel.new()
 	var lsb := Kit.style(Kit.CREAM_DEEP, 40, 0, Kit.INK, 0, 0)  # a pill (the radius clamps to h/2)
 	lsb.set_meta("kit_kind", "")
-	line.add_theme_stylebox_override("panel", lsb)
+	Kit.set_panel(line, lsb)
 	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	line.position = Vector2(w * 0.5 - 72.0, 72.0 + 24.0 - 4.0)
 	line.size = Vector2(144, 8)
@@ -4346,11 +4346,28 @@ func _cmd_face(id: String, rarity: String, side: float, level := 0, locked := fa
 	holder.size = Vector2(side, side)
 	var p := CmdPortrait.new(id, rarity, locked)
 	p.size = holder.size
-	holder.add_child(p)
+	holder.add_child(_still_portrait(p))
 	if level > 0:
 		var hb := Kit.hex_badge(holder, Vector2(side - 6.0, side - 6.0), 18, "info", str(level))
 		hb.name = "level"
 	return holder
+
+
+## A commander's bust (CmdPortrait, set up) drawn from the kit's bake atlas: one textured rect instead of its ~7
+## polygons (Kit.KitStill; the bust draws itself until its bake lands). Its look must be final when this is called.
+func _still_portrait(p: Control) -> Control:
+	var o := {"cmd": String(p.get("cmd")), "rarity": String(p.get("rarity")), "locked": bool(p.get("locked")),
+		"mood": String(p.get("mood")), "plate": p.get("plate"), "frame": bool(p.get("frame")), "era": CmdPortrait.era}
+	var mk := func(z: Vector2) -> Control:
+		if CmdPortrait.era != int(o["era"]):  # (another era's renders since: this look is gone)
+			return null
+		var c: Control = CmdPortrait.new(String(o["cmd"]), String(o["rarity"]), bool(o["locked"]))
+		c.set("mood", o["mood"])
+		c.set("plate", o["plate"])
+		c.set("frame", o["frame"])
+		c.size = z
+		return c
+	return Kit.KitStill.new(p, "portrait|" + var_to_str(o), mk)
 
 
 ## A commander skill's icon by its passive key (sim/commanders.gd PASSIVES).
@@ -4481,7 +4498,7 @@ func _commander_tile(c: Dictionary, on_pick: Callable) -> Control:
 	t.name = String(c["id"])
 	var sb := Kit.style(Kit.INK, 24, 0, Kit.INK, 5, 0)
 	sb.set_meta("kit_kind", "")
-	t.add_theme_stylebox_override("panel", sb)
+	Kit.set_panel(t, sb)
 	t.size = CMD_TILE
 	var id := String(c["id"])
 	t.cb = func(): on_pick.call(id)
@@ -4489,11 +4506,11 @@ func _commander_tile(c: Dictionary, on_pick: Callable) -> Control:
 	p.name = "portrait"
 	p.position = Vector2(4, 4)
 	p.size = Vector2(w - 8.0, h - 8.0)
-	t.add_child(p)
+	t.add_child(_still_portrait(p))
 	var clip := Panel.new()  # the scrim follows the frame's inner corners
 	var csb := Kit.style(Kit.INK, 14, 0, Kit.INK, 0, 0)
 	csb.set_meta("kit_kind", "")
-	clip.add_theme_stylebox_override("panel", csb)
+	Kit.set_panel(clip, csb)
 	clip.clip_children = CanvasItem.CLIP_CHILDREN_ONLY
 	clip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	clip.position = Vector2(8, 8)
@@ -4527,7 +4544,7 @@ func _commander_tile(c: Dictionary, on_pick: Callable) -> Control:
 			disc.name = "src_%d" % i
 			var dsb := Kit.style(Kit.alpha(Kit.INK, 0.85), 24, 3, Kit.INK, 0, 0)
 			dsb.set_meta("kit_kind", "")
-			disc.add_theme_stylebox_override("panel", dsb)
+			Kit.set_panel(disc, dsb)
 			disc.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			disc.position = Vector2(sx + i * (d + 8.0), 164)
 			disc.size = Vector2(d, d)
@@ -4614,7 +4631,7 @@ func show_commander(info: Dictionary, on_upgrade: Callable, on_target: Callable,
 	pf.name = "portrait_frame"
 	var psb := Kit.style(Kit.INK, 24, 0, Kit.INK, 6, 0)
 	psb.set_meta("kit_kind", "")
-	pf.add_theme_stylebox_override("panel", psb)
+	Kit.set_panel(pf, psb)
 	pf.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	pf.position = Vector2(32, 72)
 	pf.size = Vector2(320, 360)
@@ -4624,7 +4641,7 @@ func show_commander(info: Dictionary, on_upgrade: Callable, on_target: Callable,
 	p.mood = String(info.get("mood", ""))  # a smile right after a level-up
 	p.position = Vector2(4, 4)
 	p.size = pf.size - Vector2(8, 8)
-	pf.add_child(p)
+	pf.add_child(_still_portrait(p))
 	if locked:
 		var lk := _icon_rect("lock", 96)
 		lk.position = (pf.size - lk.size) * 0.5
@@ -4710,7 +4727,7 @@ func show_commander(info: Dictionary, on_upgrade: Callable, on_target: Callable,
 	var line := Panel.new()
 	var lsb := Kit.style(Kit.CREAM_DEEP, 40, 0, Kit.INK, 0, 0)  # a pill (the radius clamps to h/2)
 	lsb.set_meta("kit_kind", "")
-	line.add_theme_stylebox_override("panel", lsb)
+	Kit.set_panel(line, lsb)
 	line.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	line.position = Vector2(x_a, line_y - 6.0)
 	line.size = Vector2(x_b - x_a, 12)
@@ -4725,7 +4742,7 @@ func show_commander(info: Dictionary, on_upgrade: Callable, on_target: Callable,
 		var fill := Panel.new()
 		var fsb := Kit.style(Kit.face_of("info"), 40, 0, Kit.INK, 0, 0)
 		fsb.set_meta("kit_kind", "")
-		fill.add_theme_stylebox_override("panel", fsb)
+		Kit.set_panel(fill, fsb)
 		fill.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		fill.position = line.position
 		fill.size = Vector2(maxf(12.0, reach * step), 12)
@@ -4847,7 +4864,7 @@ func show_hand_picker(cards: Array, chosen: Array, slots: int, on_toggle: Callab
 		sock.name = "socket_%d" % i
 		var ssb := Kit.style(Kit.CREAM_DEEP, 20, 0, Kit.INK, 0, 0)
 		ssb.set_meta("kit_kind", "")
-		sock.add_theme_stylebox_override("panel", ssb)
+		Kit.set_panel(sock, ssb)
 		sock.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		sock.position = r.position
 		sock.size = r.size
@@ -4863,7 +4880,7 @@ func show_hand_picker(cards: Array, chosen: Array, slots: int, on_toggle: Callab
 			lb.name = "pinned"
 			var lsb := Kit.style(Kit.INK, 20, 3, Kit.INK, 0, 0)
 			lsb.set_meta("kit_kind", "")
-			lb.add_theme_stylebox_override("panel", lsb)
+			Kit.set_panel(lb, lsb)
 			lb.mouse_filter = Control.MOUSE_FILTER_IGNORE
 			lb.size = Vector2(40, 40)
 			lb.position = Vector2(r.size.x - 30.0, -10)
@@ -4900,7 +4917,7 @@ func _hand_tile(parent: Control, r: Rect2, card: String, cb: Callable) -> Kit.Ki
 	t.name = card
 	var sb := Kit.style(Kit.SLATE, 20, 4, Kit.INK, 5, 6)
 	sb.set_meta("kit_kind", "")
-	t.add_theme_stylebox_override("panel", sb)
+	Kit.set_panel(t, sb)
 	t.position = r.position
 	t.size = r.size
 	t.cb = cb
@@ -4910,7 +4927,7 @@ func _hand_tile(parent: Control, r: Rect2, card: String, cb: Callable) -> Kit.Ki
 	art.name = "art"
 	var asb := Kit.style(Kit.SKY_LOW, 14, 0, Kit.INK, 0, 0)
 	asb.set_meta("kit_kind", "")
-	art.add_theme_stylebox_override("panel", asb)
+	Kit.set_panel(art, asb)
 	art.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
 	art.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	art.position = Vector2(4, 4)
@@ -5813,7 +5830,7 @@ func _build_coach() -> void:
 	_coach_adv.add_child(_coach_bust)
 	_coach_bubble = Panel.new()
 	_coach_bubble.name = "bubble"
-	_coach_bubble.add_theme_stylebox_override("panel", Kit.style(Kit.CREAM, Kit.R_BUBBLE, 5, Kit.INK, 6, 6))
+	Kit.set_panel(_coach_bubble, Kit.style(Kit.CREAM, Kit.R_BUBBLE, 5, Kit.INK, 6, 6))
 	_coach_bubble.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_coach_bubble.add_child(Kit.KitDecor.new())  # the lip and the white line along the top
 	_coach_adv.add_child(_coach_bubble)
@@ -5829,7 +5846,7 @@ func _build_coach() -> void:
 	_coach_plate.name = "plate"
 	var psb := Kit.style(Kit.face_of("info"), 14, 3, Kit.INK, 4, 5)
 	psb.set_meta("kit_kind", "")
-	_coach_plate.add_theme_stylebox_override("panel", psb)
+	Kit.set_panel(_coach_plate, psb)
 	_coach_plate.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_coach_plate.add_child(Kit.KitDecor.new())
 	_coach_plate_lbl = Kit.label("", 26)  # BTN_S 26, white with the INK outline
@@ -5856,7 +5873,7 @@ func _coach_bust_frame() -> Panel:
 	fr.name = "bust"
 	var sb := Kit.style(Kit.SKY_TOP, 20, 0, Kit.INK, 6, 0)
 	sb.set_meta("kit_kind", "")
-	fr.add_theme_stylebox_override("panel", sb)
+	Kit.set_panel(fr, sb)
 	fr.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
 	fr.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	fr.size = COACH_BUST
@@ -5881,7 +5898,7 @@ func _coach_bust_frame() -> Panel:
 	var rsb := Kit.style(Kit.CLEAR, 20, 4, Kit.INK, 0, 0)
 	rsb.draw_center = false
 	rsb.set_meta("kit_kind", "")
-	rim.add_theme_stylebox_override("panel", rsb)
+	Kit.set_panel(rim, rsb)
 	rim.size = fr.size
 	rim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	fr.add_child(rim)
