@@ -6456,6 +6456,15 @@ func toast(text: String, icon := "", kind := "info") -> void:
 		_show_next_toast()
 
 
+## Takes back a toast that no longer applies (the battle's how-to once the battle is over, so it never sits over the
+## result window): it leaves the queue, or lets itself out now (the 300 ms fade) if it is on screen.
+func drop_toast(text: String) -> void:
+	var t := text.strip_edges()
+	_toast_queue = _toast_queue.filter(func(q): return String(q["text"]) != t)
+	if not _toast_cur.is_empty() and not _toast_out and String(_toast_cur["text"]) == t:
+		_toast_shown = INF  # its hold is over: _process_toast lets it out on the next frame
+
+
 ## Takes the next waiting toast onto the screen: TOAST in (from −24 px and transparent, 160 ms).
 func _show_next_toast() -> void:
 	_toast_cur = {}

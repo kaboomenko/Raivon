@@ -3033,6 +3033,7 @@ func _end_camp_fight() -> void:
 
 
 func _end_offensive() -> void:
+	ui.drop_toast(tr("toast.to_battle"))  # the battle's how-to is stale now: never over the result window
 	var res: Dictionary = battle.result()
 	var stars := War.offensive_stars(res["captured"], flag_hex, res["routed_player_armies"])
 	sfx.play("fanfare" if stars > 0 else "lost")
