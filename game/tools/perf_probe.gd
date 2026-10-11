@@ -92,9 +92,26 @@ static func _walk(vp: Viewport, item: CanvasItem, base: int, depth: int, lines: 
 		lines.append("%s%4d  (%d more items under 3 draws each)" % ["  ".repeat(depth), rest, rest_n])
 
 
+## KitBake's state in one line: the canvas scale, the atlas, its images (baked, queued, not baked, waited for), the
+## icons in it, resets and dropped images, and how full it is (in use / the skyline's top).
+static func bake_stats(kb: Node) -> String:
+	if kb == null:
+		return "no kit bake"
+	var icons_in := 0
+	for path in kb.icons:
+		if (kb.icons[path][2] as Rect2i).size.x > 0:
+			icons_in += 1
+	return "k=%.3f atlas=%s baked=%d queued=%d not-baked=%d waiting=%d icons=%d/%d resets=%d evicted=%d used=%.0f%% top=%d stage=%s state=%d" % [
+		kb.k, kb._asize, kb.slots.size(), kb.jobs.size(), kb.never.size(), kb.waiting.size(), icons_in, kb.icons.size(),
+		kb.resets, kb.evicted, kb.used() * 100.0, kb._top, kb.stage.size, kb._state]
+
+
 static func run(tree: SceneTree, out_path: String) -> void:
 	var vp := tree.root
 	var lines := PackedStringArray()
+	if OS.get_cmdline_user_args().has("--perf-smoke"):
+		await smoke(tree, out_path)
+		return
 	# the kit's bakes still landing (ui_kit.gd KitBake) would shrink the count while it measures: wait until the bake
 	# queue is idle and the count holds (at most ~10 s)
 	var kb0 := vp.get_node_or_null("KitBake")
@@ -185,9 +202,7 @@ static func run(tree: SceneTree, out_path: String) -> void:
 			sv.get_render_info(Viewport.RENDER_INFO_TYPE_VISIBLE, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME)])
 	var kb := vp.get_node_or_null("KitBake")  # the kit's bake atlas (ui_kit.gd KitBake)
 	if kb != null:
-		lines.append("kit bake: k=%.3f atlas=%s baked=%d queued=%d not-baked=%d waiting=%d icons=%d resets=%d state=%d shelf=%s" % [
-			kb.k, kb._asize, kb.slots.size(), kb.jobs.size(), kb.never.size(), kb.waiting.size(), kb.icons.size(), kb.resets,
-			kb._state, kb._shelf])
+		lines.append("kit bake: %s" % bake_stats(kb))
 	vp.disable_3d = false
 	tree.paused = false
 	var f := FileAccess.open(out_path, FileAccess.WRITE)
@@ -237,3 +252,153 @@ static func _find_subviewports(n: Node, out: Array) -> void:
 		if c is SubViewport:
 			out.append(c)
 		_find_subviewports(c, out)
+
+
+# ------------------------------------------------------------------ --perf-smoke: the HUD while it moves
+
+static var _rounds := 0
+static var _was := 0
+
+
+static func _frame(vp: Viewport, kb: Node) -> int:
+	await RenderingServer.frame_post_draw
+	if kb != null:
+		if int(kb._state) == 1 and _was != 1:
+			_rounds += 1
+		_was = int(kb._state)
+	return vp.get_render_info(Viewport.RENDER_INFO_TYPE_CANVAS, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME)
+
+
+static func _settle(tree: SceneTree, vp: Viewport, kb: Node) -> int:
+	var last := -1
+	var d := 0
+	for i in 60:
+		d = await _frame(vp, kb)
+		d = await _frame(vp, kb)
+		var idle: bool = kb == null or (kb.jobs.is_empty() and int(kb._state) == 0 and kb._moving.is_empty())
+		if d == last and idle:
+			break
+		last = d
+		await tree.create_timer(0.25).timeout
+	return d
+
+
+static func _spread(a: Array) -> String:
+	a.sort()
+	return "frames=%d min=%d median=%d p90=%d max=%d" % [a.size(), a[0], a[a.size() / 2], a[int(a.size() * 0.9)], a[-1]]
+
+
+## Smoke test of what a still shot does not show (docs/dev/hud_perf_plan.json H1 review): the card row scrolled
+## (each card culled exactly when it is out of the row's clip, checked against where it is drawn; the scrolled row's
+## pictures after it has held still, <shot>_s37.png / _s111.png, for tools/hud_diff.py against another build), then
+## the camera panned and zoomed (the canvas draws per frame, bake rounds, resets, the atlas filling). Prints
+## «perf-tree smoke» lines; FAIL lines name what went wrong.
+static func smoke(tree: SceneTree, out_path: String) -> void:
+	var vp := tree.root
+	var kb := vp.get_node_or_null("KitBake")
+	var main: Node = tree.current_scene
+	var args := OS.get_cmdline_user_args()
+	var no3d := args.has("--hud-only")
+	vp.disable_3d = no3d
+	var p := func(s: String) -> void: print("perf-tree smoke ", s)
+	p.call("settled: draws=%d %s" % [await _settle(tree, vp, kb), bake_stats(kb)])
+	var fails := 0
+	# 1. the card row: culled where it is out of the clip, drawn where it is in
+	var sc: ScrollContainer = main.ui.get("_bscroll")
+	var row: Container = main.ui.get("_brow")
+	if sc != null and row != null and sc.is_visible_in_tree():
+		var hb := sc.get_h_scroll_bar()
+		p.call("row: cards=%d max=%.0f page=%.0f" % [row.get_child_count(), hb.max_value, hb.page])
+		for v in [0.0, 37.0, 150.0, 400.0, 0.0, 60.0, 2000.0, 0.0]:
+			hb.value = v
+			for i in 3:
+				await _frame(vp, kb)
+			var view := sc.get_global_rect()
+			var bad := PackedStringArray()
+			var st := PackedStringArray()
+			for c in row.get_children():
+				var card := c as Control
+				var r := card.get_global_rect()
+				var on := card.visible and r.end.x > view.position.x and r.position.x < view.end.x
+				var culled := bool(card.get_meta("kit_culled", false))
+				st.append("%d..%d%s" % [r.position.x, r.end.x, "C" if culled else ""])
+				if on == culled:
+					bad.append("%s %d..%d %s" % [card.name, r.position.x, r.end.x, "culled in view" if on else "drawn out of view"])
+			p.call("scroll %.0f (now %.0f): %s%s" % [v, hb.value, " ".join(st), ("  FAIL " + ", ".join(bad)) if not bad.is_empty() else ""])
+			fails += bad.size()
+		# the row held still after a scroll: its images at the new sub-pixel offsets (and the canvas without the world)
+		var b0: int = kb.slots.size() if kb != null else 0
+		var e0: int = kb.evicted if kb != null else 0
+		vp.disable_3d = true
+		for v in [37.0, 111.0]:
+			hb.value = v
+			if kb != null:  # every owner's place looked at (KitBake polls POLL_N a frame), then SETTLE_MS of stillness
+				for i in kb.placed.size() / kb.POLL_N + 3:
+					await _frame(vp, kb)
+				await tree.create_timer(kb.SETTLE_MS / 1000.0 + 0.1).timeout
+			var d := await _settle(tree, vp, kb)
+			await _frame(vp, kb)
+			vp.get_texture().get_image().save_png(out_path.trim_suffix(".tree.txt").get_basename() + "_s%d.png" % int(v))
+			p.call("scrolled %.0f, held: draws=%d baked+%d evicted+%d %s" % [v, d, (kb.slots.size() - b0) if kb else 0,
+				(kb.evicted - e0) if kb else 0, bake_stats(kb)])
+			# the same frame with the bake off (every kit look drawn as its vectors): tools/hud_diff.py compares the
+			# two — what the atlas shows against what it stands for, in this very layout
+			if kb != null:
+				var kit: Script = load("res://scripts/ui_kit.gd")
+				kit.KitBake.off = true
+				vp.propagate_call("queue_redraw")
+				for i in 3:
+					await _frame(vp, kb)
+				vp.get_texture().get_image().save_png(out_path.trim_suffix(".tree.txt").get_basename() + "_s%d_vec.png" % int(v))
+				kit.KitBake.off = false
+				vp.propagate_call("queue_redraw")
+				await _settle(tree, vp, kb)
+		hb.value = 0.0
+		vp.disable_3d = no3d
+		await _settle(tree, vp, kb)
+	else:
+		p.call("row: not shown")
+	# 2. the camera panned, then panned and zoomed: the HUD's canvas draws stay flat, no bake churn
+	var rig: Node3D = main.get("rig")
+	if rig != null:
+		var c0: Vector3 = rig.target
+		var z0: float = rig.zoom_target
+		var n := 0
+		for phase in ["pan 15s", "pan+zoom 20s"]:
+			var a: Array = []
+			var r0 := _rounds
+			var res0: int = kb.resets if kb else 0
+			var t0 := Time.get_ticks_msec()
+			var ms := 15000 if phase == "pan 15s" else 20000
+			while Time.get_ticks_msec() - t0 < ms:
+				n += 1
+				var t := n * 0.03
+				rig.target = c0 + Vector3(sin(t) * 2.5, 0, cos(t * (1.0 if phase == "pan 15s" else 0.7)) * 2.5 - 2.5)
+				if phase != "pan 15s":
+					rig.zoom_target = clampf(0.55 + 0.4 * sin(t * 0.37), 0.1, 1.0)
+				a.append(await _frame(vp, kb))
+			var resets: int = (kb.resets - res0) if kb else 0
+			p.call("%s: %s rounds+%d resets+%d %s" % [phase, _spread(a), _rounds - r0, resets, bake_stats(kb)])
+			if resets > 0:
+				p.call("FAIL the atlas started over while panning")
+				fails += 1
+		rig.target = c0
+		rig.zoom_target = z0
+		await tree.create_timer(1.0).timeout
+		p.call("after pan, settled: draws=%d %s" % [await _settle(tree, vp, kb), bake_stats(kb)])
+	# 3. which looks fill the atlas
+	if kb != null:
+		var hist := {}
+		for key in kb.slots:
+			var s0 := String(key)
+			var pre := s0.substr(0, s0.find("@")) if s0.find("@") > 0 else s0
+			if pre.begins_with("text|"):
+				pre = "text"
+			hist[pre] = int(hist.get(pre, 0)) + 1
+		var keys := hist.keys()
+		keys.sort_custom(func(x, y): return hist[x] > hist[y])
+		for key in keys.slice(0, 6):
+			p.call("looks x%d  %s" % [hist[key], String(key).substr(0, 100)])
+	vp.disable_3d = false
+	p.call("done fails=%d %s" % [fails, bake_stats(kb)])
+

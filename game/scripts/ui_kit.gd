@@ -575,14 +575,22 @@ class KitDecor extends Control:
 ## neighbouring kit surfaces share one draw call. Pixel parity: a stage SubViewport renders the layers with the very
 ## draw calls the component would make, at the device's canvas scale and at the component's sub-pixel offset; a
 ## second pass copies them un-premultiplied into the atlas SubViewport (which is never cleared), so they blend like
-## the vectors did; and until its bake is ready (two frames) a component draws its vectors itself. Off when headless
-## (the tests): everything is drawn as vectors there.
+## the vectors did; and until its bake is ready (two frames) a component draws its vectors itself. Something that
+## moves without being redrawn (a scrolled card, a container relayout) keeps its old image until it has held still
+## for SETTLE_MS; it is then drawn again, at its new sub-pixel offset (the image made for another offset stands in,
+## resampled, until that one lands). The atlas keeps the images that some canvas item's commands still show: when
+## it is full, the others are dropped and their room is used again; only if that is not enough does it start over.
+## Off when headless (the tests): everything is drawn as vectors there.
 class KitBake extends Node:
-	const ATLAS := Vector2i(2048, 2048)  ## at the canvas scale 1; it grows with the scale's square (to 4096)
-	const STAGE := Vector2i(2048, 1024)
+	const ATLAS := Vector2i(2048, 2048)  ## at the canvas scale 1; its side grows with the scale (to 4096)
+	const STAGE := Vector2i(2048, 1024)  ## the most one round renders (the stage is sized to each round, freed when idle)
 	const RESET_GAP_MS := 5000  ## a full atlas starts again at most this often (else what does not fit stays vectors)
-	const PAD := 16.0  ## logical px of room round every bake (hard shadows, text outlines and their shadows, AA fringes)
+	const PAD := 16.0  ## logical px of room round a bake (text outlines and their shadows, AA fringes); a box: its shadow
 	const MAX_SIDE := 900  ## px: anything larger is drawn as vectors
+	const SETTLE_MS := 200  ## a moved owner is drawn again once it has held still this long
+	const POLL_N := 48  ## owners whose place is looked at per frame (in turn)
+	const PHASES := 8.0  ## sub-pixel offsets a bake is made at, per pixel and axis
+	const STAGE_IDLE_MS := 2000  ## the stage's render target is freed after this long without a round
 	const UNPREMUL := "shader_type canvas_item;\nrender_mode blend_disabled;\n" \
 		+ "void fragment() {\n\tvec2 sz = vec2(textureSize(TEXTURE, 0));\n\tivec2 p = ivec2(floor(UV * sz));\n" \
 		+ "\tvec4 c = texelFetch(TEXTURE, p, 0);\n\tif (c.a > 0.0) {\n\t\tCOLOR = vec4(c.rgb / c.a, c.a);\n\t} else {\n" \
@@ -591,42 +599,58 @@ class KitBake extends Node:
 		+ "\t\tfor (int i = 0; i < 4; i++) {\n\t\t\tivec2 o = ivec2(i == 0 ? 1 : (i == 1 ? -1 : 0), i == 2 ? 1 : (i == 3 ? -1 : 0));\n" \
 		+ "\t\t\tvec4 n = texelFetch(TEXTURE, clamp(p + o, ivec2(0), ivec2(sz) - 1), 0);\n\t\t\tif (n.a > b.a) {\n\t\t\t\tb = n;\n\t\t\t}\n\t\t}\n" \
 		+ "\t\tCOLOR = vec4(b.a > 0.0 ? b.rgb / b.a : vec3(0.0), 0.0);\n\t}\n}\n"
+	## An icon into its atlas cell: an exact copy with ICON_EDGE rows of its edge texels repeated round it (what the
+	## texture's clamp gives a filter at its edge).
+	const ICON_COPY := "shader_type canvas_item;\nrender_mode blend_disabled;\nuniform sampler2D src : filter_nearest;\n" \
+		+ "void fragment() {\n\tivec2 sz = textureSize(src, 0);\n\tivec2 p = ivec2(floor(UV * vec2(sz + ivec2(4)))) - ivec2(2);\n" \
+		+ "\tCOLOR = texelFetch(src, clamp(p, ivec2(0), sz - ivec2(1)), 0);\n}\n"
 	static var inst: KitBake
 	static var off := false
 	var stage: SubViewport
 	var atlas: SubViewport
 	var tex_rid: RID
-	var k := 1.0  ## physical px per logical px (the canvas scale; the bakes are made at it)
-	var slots := {}  ## key -> Rect2i: the baked image in the atlas
-	var jobs := {}  ## key -> {size, px, off, make}: waiting for a round
+	## Physical px per logical px of the main canvas, per axis: the canvas_items stretch scales x by window width /
+	## visible width and y by window height / visible height, and the visible size is whole pixels — so the two
+	## differ a little (1080 × 1918: 1080 / 941 and 1918 / 1672), which is half a pixel across the screen. The
+	## bakes are made at it.
+	var kv := Vector2.ONE
+	var k := 1.0  ## the larger of the two (the atlas's size, the fonts' oversampling — Viewport takes the larger too)
+	var slots := {}  ## full key -> Rect2i: the baked image in the atlas
+	var made := {}  ## full key -> [sub-pixel offset (Vector2), pad (image px)]: how its image was made
+	var alts := {}  ## key without the offset -> the full key last baked: stands in while another offset bakes
+	var jobs := {}  ## full key -> {size, px, off, pp, base, make}: waiting for a round
 	var never := {}  ## keys that are not baked (too large)
 	var owners := {}  ## instance id -> WeakRef: everything that drew from the atlas (redrawn when it is reset)
 	var waiting := {}  ## key -> {instance id: WeakRef}: redrawn when that bake lands
 	var seen := {}  ## volatile key -> [first asked for, last asked for] (ms; held())
-	var _later: Array = []  # [WeakRef, due ms]: owners to redraw then (later())
-	var _round: Array = []  # the jobs in flight: {key, at (stage px), slot}
-	var _state := 0  # 0 idle, 1 the stage renders, 2 the atlas copies
-	var _shelf := Vector3i(1, 1, 0)  # the atlas packer: x, y, row height
-	var _asize := ATLAS  # the atlas's size now
+	var refs := {}  ## canvas item RID id -> [frame, {full key: true}, WeakRef owner]: the images its commands show now
+	var placed := {}  ## host instance id -> [WeakRef, origin on the canvas, moved at (ms)]: what drew from the atlas there
 	var resets := 0
+	var evicted := 0  ## images dropped to make room (they were no longer shown)
+	var _moving := {}  # host ids that moved, until they hold still (then they are drawn again)
+	var _poll: Array = []  # host ids still to look at in this pass
+	var _later: Array = []  # [WeakRef, due ms]: owners to redraw then (later())
+	var _round: Array = []  # the jobs in flight: {key, base, off, pp, at (stage px), slot, gen}
+	var _state := 0  # 0 idle, 1 the stage renders, 2 the atlas copies
+	var _gen := 0  # the atlas generation (a reset starts a new one: what is in flight from before is dropped)
+	var _sky: Array = []  # the packer's skyline: Vector3i(x, y, width), left to right
+	var _free: Array = []  # Rect2i: room left by dropped images (used before the skyline)
+	var _used := 0  # px² of the atlas in use
+	var _top := 0  # the skyline's highest point
+	var _asize := ATLAS  # the atlas's size now
 	var _reset_at := -100000
+	var _round_at := -100000
 	var _nodes: Array = []  # the stage / copy nodes of the round
 	var _mat: ShaderMaterial
-	var _copy: ShaderMaterial  # a straight copy (the icons: straight alpha already)
-	## The rendered icons (128 × 128, assets/ui/icons) share one texture too: each is an AtlasTexture into a CPU-built
-	## sheet (exact copies, their edge texels repeated round them like a texture's clamp), and once the sheet is
-	## copied into the bake atlas their `atlas` moves there — an icon and the kit surfaces round it then batch.
+	var _icon_shader: Shader
+	## The rendered icons (128 × 128, assets/ui/icons) share the atlas too: each is an AtlasTexture that shows its own
+	## texture until the icon is copied into an atlas cell (with its edge texels repeated round it), then that cell —
+	## an icon and the kit surfaces round it then batch.
 	const ICON := 128
 	const ICON_CELL := 132  # 2 px of repeated edge texels round each icon
-	const ICON_COLS := 8
-	var icon_img: Image
-	var icon_sheet: ImageTexture
-	var icons := {}  # source texture path -> [AtlasTexture, cell origin (Vector2i)]
-	var _icon_region := Rect2i()  # the sheet's place in the atlas (size 0: not there)
-	var _icons_new: Array = []  # cells to copy into the atlas
-	var _icons_dirty := false
-	var _icon_round: Array = []  # the cells being copied
-	var _icon_round_at := Rect2i()  # where to (a reset in between moves the sheet: the copy is then wasted)
+	var icons := {}  # source texture path -> [AtlasTexture, source Texture2D, atlas cell (Rect2i; size 0: not there)]
+	var _icons_new: Array = []  # icon paths to copy into the atlas
+	var _icon_round: Array = []  # [path, cell, gen]: the icons being copied
 
 	## The shared instance (made on first use; it joins the scene root a frame later). null when headless.
 	static func get_inst() -> KitBake:
@@ -641,7 +665,7 @@ class KitBake extends Node:
 				return null
 			inst = KitBake.new()
 			inst.name = "KitBake"
-			inst.k = inst._scale(tree.root)  # the bakes asked for before it joins the tree are made at it too
+			inst._set_scale(inst._scale(tree.root))  # the bakes asked for before it joins the tree are made at it too
 			inst._fit_atlas()
 			tree.root.add_child.call_deferred(inst)
 		return inst
@@ -650,7 +674,7 @@ class KitBake extends Node:
 		process_mode = Node.PROCESS_MODE_ALWAYS
 		stage = SubViewport.new()
 		stage.name = "stage"
-		stage.size = STAGE
+		stage.size = Vector2i(4, 4)  # (sized to each round)
 		stage.transparent_bg = true
 		stage.disable_3d = true
 		stage.render_target_update_mode = SubViewport.UPDATE_DISABLED
@@ -668,11 +692,9 @@ class KitBake extends Node:
 		sh.code = UNPREMUL
 		_mat = ShaderMaterial.new()
 		_mat.shader = sh
-		var cs := Shader.new()
-		cs.code = "shader_type canvas_item;\nrender_mode blend_disabled;\nvoid fragment() {\n" \
-			+ "\tCOLOR = texelFetch(TEXTURE, ivec2(floor(UV * vec2(textureSize(TEXTURE, 0)))), 0);\n}\n"
-		_copy = ShaderMaterial.new()
-		_copy.shader = cs
+		_icon_shader = Shader.new()
+		_icon_shader.code = ICON_COPY
+		_pack_reset()
 
 	func _ready() -> void:
 		_on_resize()
@@ -683,18 +705,22 @@ class KitBake extends Node:
 		if RenderingServer.frame_post_draw.is_connected(_on_post_draw):
 			RenderingServer.frame_post_draw.disconnect(_on_post_draw)
 
-	## Physical px per logical px of the main canvas (canvas_items stretch).
-	func _scale(root: Window) -> float:
-		var win := DisplayServer.window_get_size()
+	## Physical px per logical px of the main canvas, per axis (canvas_items stretch).
+	static func _scale(root: Window) -> Vector2:
+		var win := Vector2(DisplayServer.window_get_size())
 		var vis := root.get_visible_rect().size
-		if win.y <= 0 or vis.y <= 0.0:
-			return 1.0
-		return float(win.y) / vis.y
+		if win.x <= 0.0 or win.y <= 0.0 or vis.x <= 0.0 or vis.y <= 0.0:
+			return Vector2.ONE
+		return win / vis
+
+	func _set_scale(v: Vector2) -> void:
+		kv = v
+		k = maxf(v.x, v.y)
 
 	func _on_resize() -> void:
 		var nk := _scale(get_tree().root)
-		if absf(nk - k) > 0.0005:
-			k = nk
+		if not nk.is_equal_approx(kv):
+			_set_scale(nk)
 			_fit_atlas()
 			reset()
 
@@ -705,23 +731,28 @@ class KitBake extends Node:
 		_asize = Vector2i(side, side)
 		atlas.size = _asize
 		stage.oversampling_override = k
+		_pack_reset()
 
-	## Forgets every bake (the canvas scale changed, or the atlas is full): whatever drew from the atlas draws again
-	## (its vectors, then its new bake).
+	## Forgets every bake (the canvas scale changed, or the atlas is full even without what is no longer shown):
+	## whatever drew from the atlas draws again (its vectors, then its new bake).
 	func reset() -> void:
 		resets += 1
+		_gen += 1
 		_reset_at = Time.get_ticks_msec()
 		slots.clear()
+		made.clear()
+		alts.clear()
 		never.clear()
-		_shelf = Vector3i(1, 1, 0)
-		if _icon_region.size.x > 0:  # the icons draw from their sheet until it is in the new atlas
-			_icon_region = Rect2i()
-			_icons_new.clear()
-			for path in icons:
-				var e: Array = icons[path]
-				(e[0] as AtlasTexture).atlas = icon_sheet
-				(e[0] as AtlasTexture).region = Rect2(Vector2(e[1]) + Vector2(2, 2), Vector2(ICON, ICON))
-				_icons_new.append(e[1])
+		refs.clear()
+		_pack_reset()
+		_icons_new.clear()
+		for path in icons:  # the icons show their own textures until they are in the new atlas
+			var e: Array = icons[path]
+			var at := e[0] as AtlasTexture
+			at.atlas = e[1]
+			at.region = Rect2(0, 0, ICON, ICON)
+			e[2] = Rect2i()
+			_icons_new.append(path)
 		var all := owners
 		owners = {}
 		for id in all:
@@ -734,11 +765,10 @@ class KitBake extends Node:
 		elif o is Resource:
 			(o as Resource).emit_changed()
 
-	## The sub-pixel offset (in physical px, quantised to 1/8) of a canvas item's local point `p` on the screen: a
-	## bake is made at it, so its texels land on the screen's pixels as the vectors would. Controls sit on whole
-	## logical pixels (Viewport.gui_snap_controls_to_pixels rounds each one's position), so this is the fraction of
-	## `p` itself at the canvas scale 1; a rotated or scaled item is resampled anyway (0).
-	func frac_of(ci: CanvasItem, p: Vector2) -> Vector2:
+	## The sub-pixel offset (in physical px) of a canvas item's local point `p` on a canvas scaled by `k_` (per axis).
+	## Controls sit on whole logical pixels (Viewport.gui_snap_controls_to_pixels rounds each one's position), so this
+	## is the fraction of `p` itself at the canvas scale 1; a rotated or scaled item is resampled anyway (0).
+	static func offset_of(ci: CanvasItem, p: Vector2, k_: Vector2) -> Vector2:
 		if ci == null or not ci.is_inside_tree():
 			return Vector2.ZERO
 		var o := p
@@ -760,44 +790,126 @@ class KitBake extends Node:
 			n = n.get_parent()
 		if n is CanvasLayer:
 			o += (n as CanvasLayer).offset
-		var g := o * k
-		return Vector2(roundf(fposmod(g.x, 1.0) * 8.0) / 8.0, roundf(fposmod(g.y, 1.0) * 8.0) / 8.0)
+		var g := o * k_
+		return Vector2(fposmod(g.x, 1.0), fposmod(g.y, 1.0))
+
+	## offset_of at this canvas scale, quantised to 1/8 px: a bake is made at it, so its texels land on the screen's
+	## pixels as the vectors would.
+	func frac_of(ci: CanvasItem, p: Vector2) -> Vector2:
+		var g := offset_of(ci, p, kv)
+		return Vector2(fposmod(roundf(g.x * PHASES) / PHASES, 1.0), fposmod(roundf(g.y * PHASES) / PHASES, 1.0))
 
 	## Draws the baked layers `key` into `rect` on the canvas item `ci` (a RID). `size`: the logical size the layers
 	## are made at (`make` returns a Control that draws them, its origin at (0, 0)); `m`: slice margins (left, top,
 	## right, bottom; logical) on an axis where the layers stretch from `size` to `rect`, 0 0 on an axis where
-	## rect.size == size. `f`: the sub-pixel offset (frac_of). Returns false while the bake is not ready — it is then
-	## queued, `owner` is redrawn when it lands, and the caller draws its vectors.
+	## rect.size == size. `f`: the sub-pixel offset (frac_of). `host`: the canvas item `ci` belongs to (`owner` when
+	## that is one); `pad`: logical px the layers reach past their rect. Returns false while the bake is not ready —
+	## it is then queued, `owner` is redrawn when it lands, and the caller draws its vectors (unless the same layers
+	## made at another sub-pixel offset can stand in: they are drawn, resampled, until then).
 	func draw(ci: RID, key: String, rect: Rect2, size: Vector2, make: Callable, owner: Object, m := Vector4.ZERO,
-			f := Vector2.ZERO, mod := Color.WHITE, queue := true) -> bool:
+			f := Vector2.ZERO, mod := Color.WHITE, queue := true, host: CanvasItem = null, pad := PAD) -> bool:
 		# on a sliced axis the stretch must be a whole number of pixels, or the far caps (right, bottom) would land
 		# between pixels: the size the layers are made at grows by the fraction (to 1/8 px)
 		if m.x > 0.0:
-			size.x = _base(rect.size.x, size.x)
+			size.x = _base(rect.size.x, size.x, kv.x)
 		if m.y > 0.0:
-			size.y = _base(rect.size.y, size.y)
-		var full := "%s@%.3f/%d,%d|%.3f,%.3f" % [key, k, int(f.x * 8.0), int(f.y * 8.0), size.x, size.y]
+			size.y = _base(rect.size.y, size.y, kv.y)
+		var base := "%s@%.4f,%.4f|%.3f,%.3f|p%.1f" % [key, kv.x, kv.y, size.x, size.y, pad]
+		var full := "%s/%d,%d" % [base, roundi(f.x * PHASES), roundi(f.y * PHASES)]
+		var e := _ref(ci, owner if owner != null else host)  # (its commands are being recorded anew)
 		var slot: Variant = slots.get(full)
 		if slot == null:
-			if never.has(full) or not queue:
+			if not queue:
 				return false
-			var pxs := Vector2i(int(ceil((size.x + 2.0 * PAD) * k + 1.0)), int(ceil((size.y + 2.0 * PAD) * k + 1.0)))
-			if pxs.x > MAX_SIDE or pxs.y > MAX_SIDE or size.x <= 0.0 or size.y <= 0.0:
-				never[full] = true
+			if not never.has(full):
+				var pp := (Vector2(pad, pad) * kv).ceil()
+				var pxs := Vector2i((size * kv + 2.0 * pp + Vector2.ONE).ceil())
+				if pxs.x > MAX_SIDE or pxs.y > MAX_SIDE or size.x <= 0.0 or size.y <= 0.0:
+					never[full] = true
+					return false
+				if not jobs.has(full) or not (jobs[full]["make"] as Callable).is_valid():  # (its first asker is gone)
+					jobs[full] = {"size": size, "px": pxs, "off": f, "pp": pp, "base": base, "make": make}
+				if owner != null:
+					if not waiting.has(full):
+						waiting[full] = {}
+					waiting[full][owner.get_instance_id()] = weakref(owner)
+			var alt: Variant = alts.get(base)  # the same layers made at another offset: resampled until then
+			if alt == null or not slots.has(alt):
 				return false
-			if not jobs.has(full) or not (jobs[full]["make"] as Callable).is_valid():  # (its first asker is gone)
-				jobs[full] = {"size": size, "px": pxs, "off": f, "make": make}
-			if owner != null:
-				if not waiting.has(full):
-					waiting[full] = {}
-				waiting[full][owner.get_instance_id()] = weakref(owner)
-			return false
+			full = alt
+			slot = slots[alt]
 		if owner != null:
 			var id := owner.get_instance_id()
 			if not owners.has(id):
 				owners[id] = weakref(owner)
-		_blit(ci, slot, rect, size, m, f, mod)
+		var h: CanvasItem = host if host != null else owner as CanvasItem
+		if h != null:
+			_place(h)
+		e[1][full] = true
+		var how: Array = made[full]
+		_blit(ci, slot, rect, size, m, how[0], how[1], mod)
 		return true
+
+	## The record of what the canvas item `ci` shows from the atlas: started anew on the first draw in a frame (a
+	## canvas item's commands are all recorded again when it is drawn).
+	func _ref(ci: RID, owner: Object) -> Array:
+		var id := ci.get_id()
+		var fr := Engine.get_process_frames()
+		var e: Variant = refs.get(id)
+		if e == null or int(e[0]) != fr:
+			e = [fr, {}, weakref(owner) if owner != null else null]
+			refs[id] = e
+		return e
+
+	## Remembers where `h` drew from the atlas (its place on the canvas), to draw it again once it has moved.
+	func _place(h: CanvasItem) -> void:
+		var id := h.get_instance_id()
+		var o := h.get_global_transform_with_canvas().origin
+		var e: Variant = placed.get(id)
+		if e == null:
+			placed[id] = [weakref(h), o, 0]
+		else:
+			e[1] = o
+
+	## Looks at POLL_N owners' places a frame: one that has moved (a scroll, a relayout, a slide) is drawn again once
+	## it has held still for SETTLE_MS, so its images land on whole pixels again (at k ≠ 1 a whole logical pixel is
+	## not a whole physical one).
+	func _poll_moves() -> void:
+		if placed.is_empty():
+			return
+		var now := Time.get_ticks_msec()
+		if _poll.is_empty():
+			_poll = placed.keys()
+		for i in mini(POLL_N, _poll.size()):
+			var id: int = _poll.pop_back()
+			var e: Variant = placed.get(id)
+			if e == null:
+				continue
+			var h := (e[0] as WeakRef).get_ref() as CanvasItem
+			if h == null or not h.is_inside_tree():
+				placed.erase(id)
+				continue
+			var o := h.get_global_transform_with_canvas().origin
+			if o != e[1]:
+				e[1] = o
+				e[2] = now
+				_moving[id] = true
+		if _moving.is_empty():
+			return
+		for id in _moving.keys():
+			var e: Variant = placed.get(id)
+			var h: CanvasItem = (e[0] as WeakRef).get_ref() as CanvasItem if e != null else null
+			if h == null or not h.is_inside_tree():
+				_moving.erase(id)
+				placed.erase(id)
+				continue
+			var o := h.get_global_transform_with_canvas().origin
+			if o != e[1]:
+				e[1] = o
+				e[2] = now
+			elif now - int(e[2]) >= SETTLE_MS:
+				_moving.erase(id)
+				h.queue_redraw()
 
 	## True once `key` has been asked for (by any owner) for STILL_MS: a volatile look (a label's text, a bar's fill)
 	## is baked only then, so a timer or a growing number does not fill the atlas with every step — while a row of
@@ -817,19 +929,19 @@ class KitBake extends Node:
 		e[1] = now
 		return now - int(e[0]) >= KitText.STILL_MS
 
-	## The size a sliced axis is made at: at least `base`, and `len` minus it a whole number of physical pixels.
-	func _base(len_: float, base: float) -> float:
-		var b := len_ - floorf((len_ - base) * k + 0.001) / k
+	## The size a sliced axis is made at: at least `base`, and `len` minus it a whole number of physical pixels (`kk`
+	## per logical px).
+	func _base(len_: float, base: float, kk: float) -> float:
+		var b := len_ - floorf((len_ - base) * kk + 0.001) / kk
 		return base + roundf((b - base) * 8.0) / 8.0
 
 	## The image's texels map onto the screen 1:1 from the physical pixel where the layers' origin minus the pad
-	## (PAD·k rounded up, plus the sub-pixel offset) falls.
-	func _blit(ci: RID, slot: Rect2i, rect: Rect2, size: Vector2, m: Vector4, f: Vector2, mod := Color.WHITE) -> void:
-		var pp := ceilf(PAD * k)
+	## (`pp`, image px, plus the sub-pixel offset `f` it was made at) falls.
+	func _blit(ci: RID, slot: Rect2i, rect: Rect2, size: Vector2, m: Vector4, f: Vector2, pp: Vector2, mod := Color.WHITE) -> void:
 		var img := Vector2(slot.size)
 		# x spans: [image x0, x1] -> [logical x0, x1]
-		var xs := _spans(rect.position.x, rect.size.x, size.x, m.x, m.z, pp + f.x, img.x)
-		var ys := _spans(rect.position.y, rect.size.y, size.y, m.y, m.w, pp + f.y, img.y)
+		var xs := _spans(rect.position.x, rect.size.x, size.x, m.x, m.z, pp.x + f.x, img.x, kv.x)
+		var ys := _spans(rect.position.y, rect.size.y, size.y, m.y, m.w, pp.y + f.y, img.y, kv.y)
 		var sp := Vector2(slot.position)
 		for y in ys:
 			for x in xs:
@@ -838,66 +950,40 @@ class KitBake extends Node:
 				if dst.size.x > 0.0 and dst.size.y > 0.0 and src.size.x > 0.0 and src.size.y > 0.0:
 					RenderingServer.canvas_item_add_texture_rect_region(ci, dst, tex_rid, src, mod)
 
-	## One axis: the image's spans and where they go. `o`: image px of the layers' origin; `w`: image px wide.
-	func _spans(pos: float, len_: float, base: float, m0: float, m1: float, o: float, w: float) -> Array:
-		var x0 := pos - o / k  # logical position of image px 0
+	## One axis: the image's spans and where they go. `o`: image px of the layers' origin; `w`: image px wide; `kk`:
+	## image px per logical px.
+	func _spans(pos: float, len_: float, base: float, m0: float, m1: float, o: float, w: float, kk: float) -> Array:
+		var x0 := pos - o / kk  # logical position of image px 0
 		if m0 <= 0.0 and m1 <= 0.0:
-			return [[0.0, w, x0, x0 + w / k]]
+			return [[0.0, w, x0, x0 + w / kk]]
 		var shift := len_ - base  # the right part moves with the stretch
-		var a := roundf(o + m0 * k)
-		var b := roundf(o + (base - m1) * k)
-		return [[0.0, a, x0, x0 + a / k], [a, b, x0 + a / k, x0 + shift + b / k], [b, w, x0 + shift + b / k, x0 + shift + w / k]]
+		var a := roundf(o + m0 * kk)
+		var b := roundf(o + (base - m1) * kk)
+		return [[0.0, a, x0, x0 + a / kk], [a, b, x0 + a / kk, x0 + shift + b / kk], [b, w, x0 + shift + b / kk, x0 + shift + w / kk]]
 
-	## The icon `t` (a 128 × 128 render of assets/ui/icons) as an AtlasTexture of the shared sheet; `t` itself when it
-	## cannot be (another size, unreadable, the sheet full).
+	## The icon `t` (a 128 × 128 render of assets/ui/icons) as an AtlasTexture that moves into the bake atlas; `t`
+	## itself when it cannot (another size).
 	func icon(t: Texture2D) -> Texture2D:
 		var path := t.resource_path
 		if icons.has(path):
 			return icons[path][0]
-		if icons.size() >= ICON_COLS * ICON_COLS or t.get_width() != ICON or t.get_height() != ICON:
+		if t.get_width() != ICON or t.get_height() != ICON:
 			return t
-		var img := t.get_image()
-		if img == null or img.is_empty():
-			return t
-		if img.is_compressed():
-			img.decompress()
-		img.convert(Image.FORMAT_RGBA8)
-		if icon_img == null:
-			icon_img = Image.create_empty(ICON_COLS * ICON_CELL, ICON_COLS * ICON_CELL, false, Image.FORMAT_RGBA8)
-			icon_sheet = ImageTexture.create_from_image(icon_img)
-		var n := icons.size()
-		var o := Vector2i((n % ICON_COLS) * ICON_CELL, (n / ICON_COLS) * ICON_CELL)
-		icon_img.blit_rect(img, Rect2i(0, 0, ICON, ICON), o + Vector2i(2, 2))
-		for d in 2:  # the edge texels repeated outwards (what a texture's clamp gives a filter at its edge)
-			icon_img.blit_rect(img, Rect2i(0, 0, ICON, 1), o + Vector2i(2, d))
-			icon_img.blit_rect(img, Rect2i(0, ICON - 1, ICON, 1), o + Vector2i(2, ICON + 2 + d))
-			icon_img.blit_rect(img, Rect2i(0, 0, 1, ICON), o + Vector2i(d, 2))
-			icon_img.blit_rect(img, Rect2i(ICON - 1, 0, 1, ICON), o + Vector2i(ICON + 2 + d, 2))
-		for c in [[Vector2i(0, 0), Vector2i(0, 0)], [Vector2i(ICON - 1, 0), Vector2i(ICON + 2, 0)],
-				[Vector2i(0, ICON - 1), Vector2i(0, ICON + 2)], [Vector2i(ICON - 1, ICON - 1), Vector2i(ICON + 2, ICON + 2)]]:
-			icon_img.fill_rect(Rect2i(o + (c[1] as Vector2i), Vector2i(2, 2)), img.get_pixelv(c[0]))
 		var at := AtlasTexture.new()
-		at.atlas = icon_sheet
-		at.region = Rect2(Vector2(o) + Vector2(2, 2), Vector2(ICON, ICON))
+		at.atlas = t
+		at.region = Rect2(0, 0, ICON, ICON)
 		at.set_meta("kit_src", t)
-		icons[path] = [at, o]
-		_icons_new.append(o)
-		if not _icons_dirty:
-			_icons_dirty = true
-			_upload_icons.call_deferred()
+		icons[path] = [at, t, Rect2i()]
+		_icons_new.append(path)
 		return at
-
-	func _upload_icons() -> void:
-		_icons_dirty = false
-		icon_sheet.update(icon_img)
 
 	## Redraws `owner` (a CanvasItem) in `ms` milliseconds: a volatile look asks again whether it has held still.
 	func later(owner: CanvasItem, ms: int) -> void:
 		_later.append([weakref(owner), Time.get_ticks_msec() + ms])
 
 	func _process(_d: float) -> void:
+		var now := Time.get_ticks_msec()
 		if not _later.is_empty():
-			var now := Time.get_ticks_msec()
 			var keep: Array = []
 			for e in _later:
 				if now < int(e[1]):
@@ -909,36 +995,43 @@ class KitBake extends Node:
 				else:
 					_poke(e[0])
 			_later = keep
+		_poll_moves()
 		if _state != 0 or not is_inside_tree():
 			return
 		if not jobs.is_empty():
 			_stage_round()
-		elif not _icons_new.is_empty() and not _icons_dirty:
-			if _icon_region.size.x == 0:
-				_icon_region = _alloc(Vector2i(ICON_COLS * ICON_CELL, ICON_COLS * ICON_CELL))
-				if _icon_region.size.x == 0:
-					reset()
-					return
+		elif not _icons_new.is_empty():
 			_copy_icons()
-			atlas.render_target_update_mode = SubViewport.UPDATE_ONCE
-			_state = 2
+			if not _icon_round.is_empty():
+				atlas.render_target_update_mode = SubViewport.UPDATE_ONCE
+				_state = 2
+		elif stage.size != Vector2i(4, 4) and now - _round_at > STAGE_IDLE_MS:
+			stage.size = Vector2i(4, 4)  # its render target is freed until the next round
 
-	## Copies the new icon cells from the sheet into the atlas (this frame's atlas render).
+	## Copies the icons waiting for a place into their atlas cells (this frame's atlas render); one that finds no
+	## room shows its own texture.
 	func _copy_icons() -> void:
-		if _icon_region.size.x == 0 or _icons_dirty:
-			return
-		for o in _icons_new:
-			var c := TextureRect.new()
-			var at := AtlasTexture.new()
-			at.atlas = icon_sheet
-			at.region = Rect2(Vector2(o), Vector2(ICON_CELL, ICON_CELL))
-			c.texture = at
-			c.material = _copy
-			c.position = Vector2(_icon_region.position + (o as Vector2i))
+		var tried := false
+		for path in _icons_new:
+			var e: Array = icons[path]
+			var cell := _alloc(Vector2i(ICON_CELL, ICON_CELL))
+			if cell.size.x == 0 and not tried:
+				tried = true
+				_evict()
+				cell = _alloc(Vector2i(ICON_CELL, ICON_CELL))
+			if cell.size.x == 0:
+				continue
+			e[2] = cell
+			var c := ColorRect.new()
+			var mat := ShaderMaterial.new()
+			mat.shader = _icon_shader
+			mat.set_shader_parameter("src", e[1])
+			c.material = mat
+			c.position = Vector2(cell.position)
+			c.size = Vector2(cell.size)
 			atlas.add_child(c)
 			_nodes.append(c)
-			_icon_round.append(o)
-		_icon_round_at = _icon_region
+			_icon_round.append([path, cell, _gen])
 		_icons_new.clear()
 
 	## Packs waiting jobs into the stage and the atlas and renders them on the stage this frame.
@@ -949,23 +1042,32 @@ class KitBake extends Node:
 				if (owners[id] as WeakRef).get_ref() != null:
 					live[id] = owners[id]
 			owners = live
-		if _icon_region.size.x == 0 and not icons.is_empty():  # the icon sheet's place first
-			_icon_region = _alloc(Vector2i(ICON_COLS * ICON_CELL, ICON_COLS * ICON_CELL))
-		var x := 1
-		var y := 1
+		if refs.size() > 4096:
+			for id in refs.keys():
+				var w: Variant = refs[id][2]
+				if w != null and (w as WeakRef).get_ref() == null:
+					refs.erase(id)
+		var x := 0
+		var y := 0
 		var row := 0
+		var ext := Vector2i.ZERO
+		var tried := false
 		var done: Array = []
 		for key in jobs:
 			var j: Dictionary = jobs[key]
 			var px: Vector2i = j["px"]
 			var cell := px + Vector2i(2, 2)  # a 1 px clear gutter round each image
 			if x + cell.x > STAGE.x:
-				x = 1
+				x = 0
 				y += row
 				row = 0
 			if y + cell.y > STAGE.y:
 				break
 			var slot := _alloc(cell)
+			if slot.size.x == 0 and not tried:  # the atlas is full: drop what is no longer shown
+				tried = true
+				_evict()
+				slot = _alloc(cell)
 			if slot.size.x == 0:
 				if Time.get_ticks_msec() - _reset_at < RESET_GAP_MS:
 					# full again right after a reset: what does not fit now stays vectors (until the next reset)
@@ -976,7 +1078,7 @@ class KitBake extends Node:
 					for id in ws:
 						_poke.call_deferred(ws[id])
 					continue
-				# the atlas is full: start it again with what is drawn now (the jobs stay queued)
+				# full of what is shown: start it again with what is drawn now (the jobs stay queued)
 				for n in _nodes:
 					(n as Node).queue_free()
 				_nodes.clear()
@@ -986,39 +1088,159 @@ class KitBake extends Node:
 			done.append(key)
 			var n: Control = (j["make"] as Callable).call(j["size"]) if (j["make"] as Callable).is_valid() else null
 			if n == null:  # its asker is gone, or what it asked for has changed: the others waiting ask again
+				_release(slot)
 				var ws: Dictionary = waiting.get(key, {})
 				waiting.erase(key)
 				for id in ws:
 					_poke.call_deferred(ws[id])
 				continue
 			# a Node2D holds it: Controls are snapped to whole pixels, the holder keeps the sub-pixel offset
-			var pp := ceilf(PAD * k)
+			var pp: Vector2 = j["pp"]
 			var holder := Node2D.new()
-			holder.position = Vector2(x + 1, y + 1) + Vector2(pp, pp) + (j["off"] as Vector2)
-			holder.scale = Vector2(k, k)
+			holder.position = Vector2(x + 1, y + 1) + pp + (j["off"] as Vector2)
+			holder.scale = kv
 			n.position = Vector2.ZERO
 			holder.add_child(n)
 			stage.add_child(holder)
 			_nodes.append(holder)
-			_round.append({"key": key, "at": Vector2i(x, y), "slot": Rect2i(slot.position, cell)})
+			_round.append({"key": key, "base": j["base"], "off": j["off"], "pp": pp, "at": Vector2i(x, y),
+				"slot": slot, "gen": _gen})
 			x += cell.x
 			row = maxi(row, cell.y)
+			ext = ext.max(Vector2i(x, y + row))
 		for key in done:
 			jobs.erase(key)
 		if _round.is_empty():
 			return
+		# the stage's render target: as large as this round needs (it only grows until it is freed when idle)
+		var need := Vector2i(mini(STAGE.x, (ext.x + 127) / 128 * 128), mini(STAGE.y, (ext.y + 127) / 128 * 128))
+		if stage.size.x < need.x or stage.size.y < need.y:
+			stage.size = stage.size.max(need)
+		_round_at = Time.get_ticks_msec()
 		stage.render_target_update_mode = SubViewport.UPDATE_ONCE
 		_state = 1
 
+	## The packer: an empty skyline over the whole atlas.
+	func _pack_reset() -> void:
+		_sky = [Vector3i(0, 0, _asize.x)]
+		_free.clear()
+		_used = 0
+		_top = 0
+
+	## A place for a `cell`-sized image: in the room dropped images left (the best fit, split in two), else on the
+	## skyline (the lowest spot, then the leftmost). Size 0 when there is none.
 	func _alloc(cell: Vector2i) -> Rect2i:
-		if _shelf.x + cell.x > _asize.x:
-			_shelf = Vector3i(1, _shelf.y + _shelf.z, 0)
-		if _shelf.y + cell.y > _asize.y:
+		var bi := -1
+		var ba := 1 << 40
+		for i in _free.size():
+			var r: Rect2i = _free[i]
+			if r.size.x >= cell.x and r.size.y >= cell.y and r.get_area() < ba:
+				bi = i
+				ba = r.get_area()
+		if bi >= 0:
+			var r: Rect2i = _free[bi]
+			_free.remove_at(bi)
+			var rw := r.size.x - cell.x
+			var rh := r.size.y - cell.y
+			var parts: Array = []
+			if rw > rh:  # the larger leftover keeps the full side
+				parts = [Rect2i(r.position.x + cell.x, r.position.y, rw, r.size.y), Rect2i(r.position.x, r.position.y + cell.y, cell.x, rh)]
+			else:
+				parts = [Rect2i(r.position.x, r.position.y + cell.y, r.size.x, rh), Rect2i(r.position.x + cell.x, r.position.y, rw, cell.y)]
+			for q in parts:
+				if (q as Rect2i).size.x >= 8 and (q as Rect2i).size.y >= 8:
+					_free.append(q)
+			_used += cell.x * cell.y
+			return Rect2i(r.position, cell)
+		var best := -1
+		var by := 1 << 30
+		for i in _sky.size():
+			var s: Vector3i = _sky[i]
+			if s.x + cell.x > _asize.x:
+				break
+			var top := 0
+			var left := cell.x
+			var j := i
+			while left > 0:
+				var t: Vector3i = _sky[j]
+				top = maxi(top, t.y)
+				left -= t.z
+				j += 1
+			if top + cell.y <= _asize.y and top < by:
+				by = top
+				best = i
+		if best < 0:
 			return Rect2i()
-		var r := Rect2i(_shelf.x, _shelf.y, cell.x, cell.y)
-		_shelf.x += cell.x
-		_shelf.z = maxi(_shelf.z, cell.y)
-		return r
+		var bx: int = (_sky[best] as Vector3i).x
+		var nx := bx + cell.x
+		var out: Array = []
+		var put := false
+		for s in _sky:
+			var a: Vector3i = s
+			var a_end := a.x + a.z
+			if a_end <= bx:
+				out.append(a)
+				continue
+			if a.x >= nx:
+				if not put:
+					out.append(Vector3i(bx, by + cell.y, cell.x))
+					put = true
+				out.append(a)
+				continue
+			if a.x < bx:
+				out.append(Vector3i(a.x, a.y, bx - a.x))
+			if not put:
+				out.append(Vector3i(bx, by + cell.y, cell.x))
+				put = true
+			if a_end > nx:
+				out.append(Vector3i(nx, a.y, a_end - nx))
+		if not put:
+			out.append(Vector3i(bx, by + cell.y, cell.x))
+		_sky.clear()
+		for a in out:  # neighbours at one height merge
+			if not _sky.is_empty() and (_sky[-1] as Vector3i).y == (a as Vector3i).y:
+				var l: Vector3i = _sky[-1]
+				_sky[-1] = Vector3i(l.x, l.y, l.z + (a as Vector3i).z)
+			else:
+				_sky.append(a)
+		_top = maxi(_top, by + cell.y)
+		_used += cell.x * cell.y
+		return Rect2i(bx, by, cell.x, cell.y)
+
+	func _release(cell: Rect2i) -> void:
+		_free.append(cell)
+		_used -= cell.get_area()
+
+	## Drops the images no canvas item shows any more (by what each one's commands last drew), so their room is used
+	## again. Returns how many.
+	func _evict() -> int:
+		var live := {}
+		for id in refs.keys():
+			var e: Array = refs[id]
+			var w: Variant = e[2]
+			if w != null and (w as WeakRef).get_ref() == null:  # (freed: its commands are gone)
+				refs.erase(id)
+				continue
+			for key in e[1]:
+				live[key] = true
+		var n := 0
+		for key in slots.keys():
+			if live.has(key):
+				continue
+			var s: Rect2i = slots[key]
+			_release(Rect2i(s.position - Vector2i(1, 1), s.size + Vector2i(2, 2)))
+			slots.erase(key)
+			made.erase(key)
+			n += 1
+		for b in alts.keys():
+			if not slots.has(alts[b]):
+				alts.erase(b)
+		evicted += n
+		return n
+
+	## The share of the atlas in use (0..1).
+	func used() -> float:
+		return float(_used) / float(_asize.x * _asize.y)
 
 	func _on_post_draw() -> void:
 		if _state == 1:  # the stage has rendered: copy into the atlas (un-premultiplied) next frame
@@ -1036,7 +1258,8 @@ class KitBake extends Node:
 				c.position = Vector2((r["slot"] as Rect2i).position)
 				atlas.add_child(c)
 				_nodes.append(c)
-			_copy_icons()
+			if not _icons_new.is_empty():
+				_copy_icons()
 			atlas.render_target_update_mode = SubViewport.UPDATE_ONCE
 			_state = 2
 		elif _state == 2:  # the atlas has them: draw from it
@@ -1044,23 +1267,22 @@ class KitBake extends Node:
 				(n as Node).queue_free()
 			_nodes.clear()
 			for r in _round:
-				var s: Rect2i = r["slot"]
-				slots[r["key"]] = Rect2i(s.position + Vector2i(1, 1), s.size - Vector2i(2, 2))
 				var ws: Dictionary = waiting.get(r["key"], {})
 				waiting.erase(r["key"])
+				if int(r["gen"]) == _gen:  # (a reset in between: its place is gone)
+					var s: Rect2i = r["slot"]
+					slots[r["key"]] = Rect2i(s.position + Vector2i(1, 1), s.size - Vector2i(2, 2))
+					made[r["key"]] = [r["off"], r["pp"]]
+					alts[r["base"]] = r["key"]
 				for id in ws:
 					_poke(ws[id])
 			_round.clear()
-			if not _icon_round.is_empty() and _icon_round_at == _icon_region:  # those icons draw from the atlas now
-				var moved := {}
-				for o in _icon_round:
-					moved[o] = true
-				for path in icons:
-					var e: Array = icons[path]
-					if moved.has(e[1]):
-						var at := e[0] as AtlasTexture
-						at.atlas = atlas.get_texture()
-						at.region = Rect2(Vector2(_icon_region.position + (e[1] as Vector2i)) + Vector2(2, 2), Vector2(ICON, ICON))
+			for ic in _icon_round:  # those icons draw from the atlas now
+				var e: Array = icons[ic[0]]
+				if int(ic[2]) == _gen and e[2] == ic[1]:
+					var at := e[0] as AtlasTexture
+					at.atlas = atlas.get_texture()
+					at.region = Rect2(Vector2((ic[1] as Rect2i).position) + Vector2(2, 2), Vector2(ICON, ICON))
 			_icon_round.clear()
 			_state = 0
 
@@ -1089,9 +1311,20 @@ class KitBox extends StyleBox:
 	func _init(f: StyleBoxFlat = null) -> void:
 		flat = f
 		if f != null:
-			f.changed.connect(emit_changed)
-			for side in [SIDE_LEFT, SIDE_TOP, SIDE_RIGHT, SIDE_BOTTOM]:
-				set_content_margin(side, f.get_margin(side))
+			_margins()
+			f.changed.connect(_on_flat_changed)
+
+	## The wrapped style's margins (content margins, else its border widths), so a container lays out as with it.
+	func _margins() -> void:
+		for side in [SIDE_LEFT, SIDE_TOP, SIDE_RIGHT, SIDE_BOTTOM]:
+			var v := flat.get_margin(side)
+			if get_content_margin(side) != v:
+				set_content_margin(side, v)
+
+	## An edit of the wrapped style (a border, a content margin, a colour): its margins follow, the panel redraws.
+	func _on_flat_changed() -> void:
+		_margins()
+		emit_changed()
 
 	func _draw(ci: RID, rect: Rect2) -> void:
 		var h: Object = host.get_ref() if host != null else null
@@ -1178,6 +1411,7 @@ static func draw_flat(ci: RID, rect: Rect2, sb: StyleBoxFlat, host: CanvasItem, 
 	var m := Vector4.ZERO
 	var size := rect.size
 	var key := flat_key(sb)
+	var look := key
 	if rect.size.x >= ml + mr + 6.0:
 		m.x = ml
 		m.z = mr
@@ -1194,10 +1428,15 @@ static func draw_flat(ci: RID, rect: Rect2, sb: StyleBoxFlat, host: CanvasItem, 
 		key += "|h%.2f" % rect.size.y
 	else:
 		return false
-	var snap := sb.duplicate() as StyleBoxFlat
-	var bs := size
-	var make := func(z: Vector2) -> Control: return KitPainter.new(func(c: CanvasItem): snap.draw(c.get_canvas_item(), Rect2(Vector2.ZERO, z)), z)
-	return kb.draw(ci, key, rect, size, make, owner, m, kb.frac_of(host, rect.position))
+	# made only when its bake is staged: a copy of the style as it is then (unless it has changed since)
+	var make := func(z: Vector2) -> Control:
+		if flat_key(sb) != look:
+			return null
+		var snap := sb.duplicate() as StyleBoxFlat
+		return KitPainter.new(func(c: CanvasItem): snap.draw(c.get_canvas_item(), Rect2(Vector2.ZERO, z)), z)
+	# the room round it: the box reaches past its rect only by its shadow and its antialiased edge
+	var pad := sh + maxf(ox, oy) + sb.anti_aliasing_size + 2.0
+	return kb.draw(ci, key, rect, size, make, owner, m, kb.frac_of(host, rect.position), Color.WHITE, true, host, pad)
 
 
 ## The glyphs of a Kit label from the bake atlas (Kit.label gives every label one): a label with the kit's outline and
@@ -1213,6 +1452,9 @@ class KitText extends Control:
 	func _init() -> void:
 		name = "KitText"
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
+		# the label's own rect: the renderer culls a canvas item by its rect against the clip (a 0×0 child vanished
+		# with the whole text as soon as the label's top-left corner was scrolled out of a ScrollContainer)
+		set_anchors_preset(Control.PRESET_FULL_RECT)
 
 	func _enter_tree() -> void:
 		var l := get_parent() as Label

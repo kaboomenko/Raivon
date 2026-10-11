@@ -948,10 +948,11 @@ class Fillet extends Control:
 ## The whole open world in the states' colours on the sea well (its corners concentric with the frame's), each hex
 ## with a light top edge; the camera's view is a rounded white frame over an INK one, kept inside the well. The well
 ## and the map are drawn by MinimapMap inside a SubViewport that renders only when the map changes (its cells cost
-## ~230 draw calls); this control draws that texture and the view frame (from the kit's bake atlas) over it. The
-## SubViewport is made at the device's canvas scale over a copy of the frame (`under`: its StyleBoxFlat and its rect in
-## this control's coordinates; the frame's INK contour shows at the well's corners), so the texture lands on the
-## screen pixel for pixel as the vectors did.
+## ~230 draw calls); this control draws that texture and the view frame (vectors: it follows the camera) over it.
+## The SubViewport is made at the device's canvas scale and at this control's sub-pixel offset on the screen, over a
+## copy of the frame (`under`: its StyleBoxFlat and its rect in this control's coordinates; the frame's INK contour
+## shows at the well's corners), and drawn texel to pixel from the physical pixel its origin falls in — so the map
+## lands on the screen pixel for pixel as the vectors did.
 class Minimap extends Control:
 	var world: Node3D  # map_view.gd
 	var view_rect := Rect2()
@@ -959,7 +960,9 @@ class Minimap extends Control:
 	var _vp: SubViewport
 	var _map: MinimapMap
 	var _sig := 0
-	var _k := 0.0
+	var _k := Vector2.ZERO  # physical px per logical px, per axis (zero: not rendered yet)
+	var _ph := Vector2.ZERO  # physical px from the pixel corner its origin falls in to its origin
+	var _vsz := Vector2.ZERO
 
 	func _ready() -> void:
 		_vp = SubViewport.new()
@@ -1008,26 +1011,29 @@ class Minimap extends Control:
 		var sc := minf(sz.x / span.x, sz.y / span.y)
 		return [sz / 2 - (lo + hi) / 2.0 * sc, sc]
 
-	## Renders the map again when what it shows changed (owners, controllers, colours) or the canvas scale did.
+	## Renders the map again when what it shows changed (owners, controllers, colours), or the canvas scale or this
+	## control's place between the screen's pixels did.
 	func _sync() -> void:
-		var k := 1.0
-		var win := DisplayServer.window_get_size()
-		var vis := get_viewport_rect().size
-		if win.y > 0 and vis.y > 0.0:
-			k = roundf(float(win.y) / vis.y * 1000.0) / 1000.0
-		var parts: Array = [k]
+		var k := Kit.KitBake._scale(get_tree().root)  # (x and y differ a little: the stretch's visible size is whole px)
+		var ph := Kit.KitBake.offset_of(self, Vector2.ZERO, k)
+		var parts: Array = [k.snappedf(0.0001), ph.snappedf(0.001), size]
 		for cell in world.sim.cells:
 			var o: int = world.owner_of(cell)
-			parts.append((o * 64 + int(cell["owner"])) * 64 + int(cell["controller"]))
+			var ctl := int(cell["controller"])
+			parts.append((o * 64 + int(cell["owner"])) * 64 + ctl)
 			parts.append(world.state_color(o))
+			if ctl != int(cell["owner"]) and ctl != 0:  # its occupier's dot (MinimapMap)
+				parts.append(world.state_color(ctl))
 		var sig := hash(parts)
 		if sig == _sig:
 			return
 		_sig = sig
-		if k != _k:
+		if k != _k or ph != _ph or size != _vsz:
 			_k = k
-			_vp.size = Vector2i(ceili(size.x * k), ceili(size.y * k))
-			_vp.canvas_transform = Transform2D.IDENTITY.scaled(Vector2(k, k))
+			_ph = ph
+			_vsz = size
+			_vp.size = Vector2i((size * k + ph).ceil())
+			_vp.canvas_transform = Transform2D(0.0, k, 0.0, ph)
 		_map.queue_redraw()
 		_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 
@@ -1035,7 +1041,8 @@ class Minimap extends Control:
 		if world == null or world.get("sim") == null or _vp == null:
 			return
 		_sync()
-		draw_texture_rect(_vp.get_texture(), Rect2(Vector2.ZERO, size), false)
+		# texel for pixel: the texture starts at the pixel corner the origin falls in
+		draw_texture_rect(_vp.get_texture(), Rect2(-_ph / _k, Vector2(_vp.size) / _k), false)
 		if view_rect.size != Vector2.ZERO:
 			var f := fit(world, size)
 			var c: Vector2 = f[0]
@@ -1046,6 +1053,8 @@ class Minimap extends Control:
 				_frame(r.grow(3.0), Kit.INK, 6, 11)
 				_frame(r.grow(1.5), Kit.WHITE, 3, 8)
 
+	## Drawn as vectors (two draw calls): its rect follows the camera in fractional pixels, so a bake would be made
+	## again for nearly every frame of a pan (docs/dev/hud_perf_plan.json H1 review).
 	func _frame(r: Rect2, col: Color, w: int, rad: int) -> void:
 		var sb := StyleBoxFlat.new()
 		sb.draw_center = false
@@ -1054,8 +1063,7 @@ class Minimap extends Control:
 		sb.border_color = col
 		sb.set_border_width_all(w)
 		sb.set_corner_radius_all(rad)
-		if not Kit.draw_flat(get_canvas_item(), r, sb, self, self, false):
-			draw_style_box(sb, r)
+		draw_style_box(sb, r)
 
 
 ## The minimap's well content (drawn inside Minimap's SubViewport): each hex in its state's colour with the light

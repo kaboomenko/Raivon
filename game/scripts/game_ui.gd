@@ -3630,6 +3630,10 @@ func _ensure_panel() -> void:
 	var hb := _bscroll.get_h_scroll_bar()
 	hb.value_changed.connect(_update_fade)
 	hb.changed.connect(_update_fade.bind(0.0))
+	# the cull reads where the cards are: after the layout that a scroll (or a rebuild, a coach jump) queues — the
+	# scrollbar's own signals come before the cards have moved
+	_bscroll.sort_children.connect(_cull_row)
+	_brow.sort_children.connect(_cull_row)
 
 
 ## The right-edge fade shows only while at least its own width of cards is hidden past the right edge: a row a few
@@ -3639,12 +3643,12 @@ func _update_fade(_v := 0.0) -> void:
 		return
 	var hb := _bscroll.get_h_scroll_bar()
 	_bfade.visible = hb.max_value - hb.page - hb.value >= _bfade.size.x
-	_cull_row()
 
 
 ## Cards scrolled out of the tray are not drawn: the scroll's clip hides them, but they would still cost their draw
 ## calls (~50 for the fifth army card). Only the renderer is told (the cards stay visible nodes: the row keeps its
-## layout, the coach its rects); a scroll shows them again.
+## layout, the coach its rects); a scroll shows them again. Runs after each layout of the scroll or the row
+## (sort_children), when the cards' rects are where they will be drawn.
 func _cull_row() -> void:
 	var view := _bscroll.get_global_rect()
 	for c in _brow.get_children():
