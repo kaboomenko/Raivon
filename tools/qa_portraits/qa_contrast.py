@@ -8,8 +8,8 @@ passes it to CmdPortrait.plate, the ruler on SKY. Plate gradient "B" (§7.4: rc.
 today's gradient (lightened(0.08) -> darkened(0.42)) is printed as INFO.
 Image rules (calm files: every era of a commander, each leader's calm, the ruler; --moods adds the smiles and the
 leaders' moods, which share the costume):
-- shoulder band (opaque pixels in rows 0.80-0.95 h) vs the plate row behind it: median |dL*| >= 15 and pixels with
-  |dL*| < 8 ("melting") <= 25 %;
+- shoulder band (opaque pixels in rows 0.80-0.95 h) vs the plate pixel behind each (gradient + halo, qa_common.
+  plate_image): median |dL*| >= 15 and pixels with |dL*| < 8 ("melting") <= 25 %;
 - silhouette rim (opaque pixels within 4 px of transparency at 512, scaled; rows < 0.92 h, the bottom edge cuts the
   body): <= 35 % within dL* 8 of the plate;
 - dark pixels (L* < 17, the albedo floor #2A2A30) <= 3 % of the opaque pixels.
@@ -34,20 +34,21 @@ BAND = (0.80, 0.95)
 
 
 def band_stats(im, plate_hex, mode):
-    """(median |dL*|, melting share) of the shoulder band against the plate gradient `mode`."""
-    h = im.shape[0]
+    """(median |dL*|, melting share) of the shoulder band against the plate (gradient + halo) of `mode`."""
+    h, w = im.shape[:2]
     r0, r1 = int(h * BAND[0]), int(h * BAND[1])
     band = im[r0:r1]
     op = band[..., 3] > 0.9
     if op.sum() < 20:
         return None
     L = Q.srgb_to_lab(band[..., :3])[..., 0]
-    pl = Q.srgb_to_lab(Q.plate_rows(plate_hex, h, mode)[r0:r1])[:, 0][:, None]
+    pl = Q.srgb_to_lab(Q.plate_image(plate_hex, w, h, mode)[r0:r1])[..., 0]
     dl = np.abs(L - pl)[op]
     return float(np.median(dl)), float((dl < 8).mean())
 
 
 def rim_share(im, plate_hex, mode):
+    """Share of the silhouette's inner rim (4 px at 512) within dL* 8 of the plate behind it (gradient + halo)."""
     h, w = im.shape[:2]
     a = im[..., 3]
     px = max(2, int(round(4 * w / 512)))
@@ -58,8 +59,8 @@ def rim_share(im, plate_hex, mode):
     if ring.sum() < 10:
         return None
     L = Q.srgb_to_lab(im[..., :3])[..., 0]
-    pl = Q.srgb_to_lab(Q.plate_rows(plate_hex, h, mode))[:, 0][:, None]
-    dl = np.abs(L - np.broadcast_to(pl, L.shape))[ring]
+    pl = Q.srgb_to_lab(Q.plate_image(plate_hex, w, h, mode))[..., 0]
+    dl = np.abs(L - pl)[ring]
     return float((dl < 8).mean())
 
 
@@ -140,8 +141,10 @@ def id_rules(im, masks, m, name):
         s = med(sg)
         ys = np.where(sg.any(1))[0]
         row = int(ys.mean())
+        ys_, xs_ = np.nonzero(sg)
+        col = int(xs_.mean())
         for tag, pc in plates_for(name):
-            pl = Q.srgb_to_lab(Q.plate_rows(pc, h, "B")[row])
+            pl = Q.srgb_to_lab(Q.plate_image(pc, w, h, "B")[row, col])
             de = float(Q.de76(s, pl))
             out.append(("signature-plate " + tag, de, de >= 25, "dE %.1f" % de))
     sk = grp("skin")

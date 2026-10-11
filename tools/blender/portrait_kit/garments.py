@@ -10,7 +10,6 @@ character. Kinds: vest, collar, belt, bib, strap, frogging, placket. Every layer
 import math
 
 import bmesh
-from mathutils import Vector
 
 from . import core
 from .core import H, S
@@ -196,7 +195,6 @@ def bib(ctx, ly, name):
                 f = t / 8
                 x = s * (w * 0.80 + (0.36 * k - w * 0.80) * f)
                 zz = top + 0.02 + (-0.655 - top) * min(1.0, f * 1.3)
-                y_dir = -1 if f < 0.75 else 0.0
                 if f < 0.8:
                     h, n, _ = core.ray_any([ctx.objs["torso"]], (x, -2.0, zz), (0, 1, 0))
                 else:
@@ -208,7 +206,6 @@ def bib(ctx, ly, name):
                 st.data.bevel_mode = "ROUND"
                 st.scale = (1, 1, 1)
                 ctx.add(st, "costume", ctx.objs["torso"], kind="surface")
-                del y_dir
     return o
 
 

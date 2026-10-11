@@ -180,7 +180,6 @@ def landmarks(ctx):
         L["ear_" + tag] = (he, ne)
     nose, nn = core.ray_front(head, 0, p["eye_z"] - 0.20 * H)
     L["nose_base"] = (nose, nn)
-    mz = ctx.ch["mouth"].get("z", -0.5 + 0.235) * H  # mouth line: 0.265 H above the chin by default
     L["mouth_z"] = -H / 2 + ctx.ch["mouth"].get("line", 0.235) * H
     mh, mn = core.ray_front(head, 0, L["mouth_z"])
     L["mouth"] = (mh, mn)
@@ -204,5 +203,4 @@ def landmarks(ctx):
         ch_, _ = core.ray_front(head, s_ * S["cheek_x"] * H * (p["hx"] / 0.48) / 0.98, cz)
         L["cheek_" + tag] = ch_
     L["neck_z"] = L["chin"].z - 0.05 if L["chin"] else -0.6
-    del mz
     return L

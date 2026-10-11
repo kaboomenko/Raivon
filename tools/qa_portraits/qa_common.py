@@ -162,6 +162,23 @@ def plate_rows(c, n, mode="B"):
     return lightened(c, lt) * (1 - t) + darkened(c, dk) * t
 
 
+def plate_image(c, w, h, mode="B"):
+    """The whole plate the game draws behind a w x h picture (sRGB, (h, w, 3)): the vertical gradient of `mode` and its
+    halo behind the head, as cmd_portrait.gd draws them — "B" (§7.4): soft concentric circles, about +12 L* in total,
+    no outline (white α 0.05 at radii 0.40 / 0.33 / 0.26 u around (0.5 w, 0.42 h), u = min(w, h)); "current": one white
+    α 0.1 disc of radius 0.36 u (its thin darker outline is left out)."""
+    rows = plate_rows(c, h, mode)
+    img = np.broadcast_to(rows[:, None, :], (h, w, 3)).astype(np.float32).copy()
+    yy, xx = np.mgrid[0:h, 0:w]
+    u = min(w, h)
+    d = np.sqrt((xx - 0.5 * w) ** 2 + (yy - 0.42 * h) ** 2)
+    discs = ((0.40, 0.05), (0.33, 0.05), (0.26, 0.05)) if mode == "B" else ((0.36, 0.10),)
+    for r, a in discs:
+        m = (d <= r * u)[..., None]
+        img = np.where(m, img * (1 - a) + a, img)
+    return img
+
+
 def resize_rgba(rgba, size_w, size_h=None):
     """Premultiplied Lanczos downscale (what the asset pipeline does), back to straight alpha."""
     h, w = rgba.shape[:2]

@@ -79,7 +79,7 @@ SKIN = {"T1": "#F4B48E", "T2": "#F0A274", "T3": "#DE9A6C", "T4": "#C47A4E", "T5"
 SKIN_SAT = {"T1": 1.24, "T2": 1.15, "T3": 1.08, "T4": 1.05, "T5": 1.0, "T6": 1.0}
 
 C = {
-    "lash": "#2A1712", "pupil": "#1E1A24", "sclera": "#F7F3EE", "mouth_in": "#5A1A1E", "teeth": "#FBF6EA",
+    "lash": "#2A1712", "pupil": "#1E1A24", "sclera": "#F7F3EE", "mouth_in": "#66222A", "teeth": "#FBF6EA",
     "tongue": "#E0606A", "blush": "#E5745E", "scar": "#D9787A", "freckle": "#C77B52", "shadow": "#5B5A8C",
     "floor": "#2A2A30", "seam": "#2A1D22",
     "gold": "#E8B23A", "brass": "#E0AD45", "silver": "#C8CCD4", "bronze": "#B0803A", "steel": "#B9C3CF",
@@ -94,7 +94,10 @@ LIGHT = {
     # dL* 8 of plate B on the grey plates (P-A5 gate <= 35 %): the rim must clear the plate's L* 72-77, not land on it
     "rim": dict(size=1.2, color="#CFE0FF", energy=2600.0, loc=(2.3, 2.2, 1.2), target=(0.0, 0.0, -0.3)),
     "kick": dict(size=1.2, color="#FFE2C0", energy=700.0, loc=(-2.4, 2.0, 0.6), target=(0.0, 0.0, -0.3)),
-    "world": "#A9C1E8", "world_strength": 1.05, "reflect": "#F2ECE2", "reflect_share": 0.5,
+    # world 1.45, not 1.05: §7.11 sets the sky fill for key : cheek shadow = 2.3 : 1 at a 220 W key; the 320 W key
+    # needs 1.05 x 320 / 220 = 1.5 for the same ratio. At 1.05 the shadows went past the albedo floor (P-A5 "dark
+    # <= 3 %": Bram 3.3 %, Lira 4.1 %); at 1.45 they measure 1.9 / 2.7 % and still read blue (#5B5A8C side, §7.4)
+    "world": "#A9C1E8", "world_strength": 1.45, "reflect": "#F2ECE2", "reflect_share": 0.5,
 }
 RENDER = {
     "size": (512, 588), "samples": 64, "review_samples": 96, "adaptive": 0.01, "filter": 1.2, "bounces": 6,

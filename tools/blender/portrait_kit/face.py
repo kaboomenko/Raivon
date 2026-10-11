@@ -11,7 +11,7 @@ catchlights are added by rig.solve_gaze (they must sit on the posed iris).
 import math
 
 import bmesh
-import bpy
+import bpy  # noqa: F401  (bpy before bmesh, everywhere in the kit)
 from mathutils import Matrix, Vector
 
 from . import core, head as head_mod
@@ -263,7 +263,8 @@ def build_brows(ctx):
         arch = (br.get("arch", 0.025) + mood.get("arch", 0.0)
                 + (br.get("arch_far", 0.0) if side > 0 else 0.0)) * H
         base_z = ctx.L["sclera_top"] + S["brow_gap"] * H + thick * 0.5 + lift
-        x_in = side * (p["eye_x"] - eye_w * 0.5 - 0.02 * H)
+        # the far brow starts nearer the nose: its outer end turns away with the face, the inner part carries it
+        x_in = side * (p["eye_x"] - eye_w * (br.get("in_far", 0.66) if side > 0 else 0.5) - 0.02 * H)
         shape = br.get("shape", "arc")
         pts, rad = [], []
         n = 8
@@ -318,7 +319,6 @@ def build_nose(ctx):
     nz = p["eye_z"] - nose.get("drop", 0.20) * H          # the nose tip height
     hit, nor = core.ray_front(head, 0, nz)
     ys = hit.y
-    tip = nose.get("tip", ch["skin"])
     W = ctx.W
     if kind == "potato":
         w = S["nose_potato"] * W * nose.get("k", 1.0)
@@ -442,25 +442,27 @@ def build_mouth(ctx):
         w = (max(xs) - min(xs)) / 2
         hh = max(zs) - min(zs)
         fy = ctx.L["face_y"]
-        cav = core.uvsphere("mouth_in", (cx, fy + 0.19, cz), (w * 1.0, 0.13, hh * 0.72), dark, 32, 16)
+        # the cavity stays inside the opening's height: a deeper one pokes through the chin in the 3/4 view
+        cav = core.uvsphere("mouth_in", (cx, fy + 0.19, cz), (w * 1.0, 0.13, hh * 0.56), dark, 32, 16)
         ctx.add(cav, "mouth", head, kind="embed", head=True)
         # upper teeth: a rounded slab just behind the upper edge, 30 % of the opening height (§7.3)
         top_z = max(zs)
         teeth = core.uvsphere("teeth", (cx, fy + 0.034, top_z - hh * 0.15), (w * 0.86, 0.025, hh * 0.17),
                               core.principled(ctx, "teeth", C["teeth"], 0.3, coat=0.3), 32, 16)
         ctx.add(teeth, "teeth", head, kind="embed", head=True)
-        # the tongue in the lower third, set back
-        tongue = core.uvsphere("tongue", (cx + 0.008, fy + 0.07, min(zs) + hh * 0.17), (w * 0.56, 0.06, hh * 0.24),
+        # the tongue in the lower third, set back behind the lower lip (face_y is the surface at the mouth line; the
+        # chin below it recedes, so a tongue at face_y + 0.01 reads as stuck out)
+        tongue = core.uvsphere("tongue", (cx + 0.008, fy + 0.11, min(zs) + hh * 0.25), (w * 0.55, 0.055, hh * 0.20),
                                core.principled(ctx, "tongue", C["tongue"], 0.45, sss=0.2), 32, 16)
         ctx.add(tongue, "tongue", head, kind="embed", head=True)
         lower = pts[:21]
         lp, lr = [], []
-        for i, (x, z) in enumerate(lower[2:-2]):
+        for i, (x, z) in enumerate(lower[3:-3]):     # not up the corners: there it reads as a drip
             hh2, nn = core.ray_front(head, x, z - 0.016)
             if hh2 is None:
                 continue
             lp.append(hh2 + nn * 0.004)
-            t = i / (len(lower) - 5)
+            t = i / (len(lower) - 7)
             lr.append(0.45 + 0.8 * math.sin(math.pi * t))
         lip = core.curve("lip_low", lp, lr, low_t * 0.42, lip_m)
         ctx.add(lip, "lip", head, kind="surface", head=True)
@@ -500,7 +502,8 @@ def build_mouth(ctx):
         h, nn = core.ray_front(head, (x + xoff) * 0.84, zc - crease_t * 0.5 - low_t * 0.45)
         if h is not None and 0 < i < n - 1:
             lp.append(h + nn * low_t * 0.35)
-            lr.append(0.35 + 0.8 * math.sin(math.pi * t) ** 0.7)
+            # thinner toward the far corner: it turns away with the face and would stand off the far cheek's outline
+            lr.append((0.35 + 0.8 * math.sin(math.pi * t) ** 0.7) * (1 - 0.45 * t * t))
         if ctx.female:
             h, nn = core.ray_front(head, (x + xoff) * 0.9, zc + crease_t * 0.55)
             if h is not None and 0 < i < n - 1:
@@ -511,7 +514,8 @@ def build_mouth(ctx):
     if lp:
         ctx.add(core.curve("lip_low", lp, lr, low_t / 2, lip_m), "lip", head, kind="surface", head=True)
     if len(upp) > 2:
-        ctx.add(core.curve("lip_up", upp, [0.4 + 0.5 * math.sin(math.pi * (k + 1) / (len(upp) + 1)) for k in range(len(upp))],
+        ctx.add(core.curve("lip_up", upp, [(0.4 + 0.5 * math.sin(math.pi * (k + 1) / (len(upp) + 1)))
+                                           * (1 - 0.45 * ((k + 1) / (len(upp) + 1)) ** 2) for k in range(len(upp))],
                            low_t * 0.32, lip_m), "lip", head, kind="surface", head=True)
     ctx.L["mouth_corners"] = [cp[0], cp[-1]]
 

@@ -66,13 +66,13 @@ CHARS = {
                   braid=dict(w=0.17, ribbon="#3E9B5A")),
         # the kerchief in her green (§7.6 gives no colour for it; palette slots only): white cloth on the light grey
         # plate melted at the rim (P-A5) and repeated the apron; the lighter leaf green still melted where the rim
-        # light catches its top edge
-        headgear=dict(kind="kerchief", color="#2E7A44", thick=0.075, tail=0.34, knot_az=-138, knot_el=24),
+        # light catches its top edge; a shade darker than the jacket (#22603A) so the two greens read as two layers
+        headgear=dict(kind="kerchief", color="#22603A", thick=0.075, tail=0.34, knot_az=-138, knot_el=24),
         body=dict(shoulders=2.0),
         costume=dict(
             base=dict(color="#2E7A44", rough=0.85, sheen=0.35),
             layers=[
-                dict(kind="collar", color="#2E7A44", z=-0.64, h=0.045, out=0.012, flare=0.012),
+                dict(kind="collar", color="#2E7A44", z=-0.64, h=0.07, out=0.012, flare=0.014),
                 dict(kind="bib", color="#F2F0EA", w=0.16, top=-0.82, bottom=-2.0, straps=True),
                 dict(kind="strap", id="strap", color="#8A5A34", detail="satchel_strap", min_px=3000,
                      **{"from": (0.46, -0.70), "to": (-0.62, -1.75)}, w=0.10),
@@ -93,7 +93,7 @@ CHARS = {
         eyes=dict(sclera=0.19, open=0.70, iris="#7C7EA8", tilt=-0.06, arch=0.30, flick=0.065,
                   smile=dict(open=0.70, low=0.20, tilt=-0.08, arch=0.30)),
         brows=dict(shape="angular", thick=0.055, color="#2A2224", arch=0.035, arch_far=0.03, lift=(0.0, 0.09), len=1.3,
-                   len_far=1.7,
+                   len_far=1.95, in_far=0.84,   # the raised far brow ends at the face edge: it starts nearer the nose
                    smile=dict(lift=(0.01, 0.0))),
         nose=dict(type="straight", tip="#E59A7E", tip_k=0.35, drop=0.21, k=1.0, w=0.05),
         mouth=dict(lip="#B8605A", line=0.19,
@@ -109,8 +109,8 @@ CHARS = {
                 dict(kind="placket", color="#3A3D44", w=0.05, top=-0.74),
                 dict(kind="frogging", color="#C8CCD4", z=(-0.86, -0.98, -1.10), w=0.24, t=0.028),
             ]),
-        props=[dict(kind="glasses", color="#2A2224", frame=0.025, w=1.24, h=0.78, drop=0.03, off=0.028, tint="#FFFFFF"),
-               dict(kind="pointer", x=0.62, y=0.04, z=-1.02, reach=0.36, color="#8A5A34")],
+        props=[dict(kind="glasses", color="#44484F", frame=0.025, w=1.24, h=0.78, drop=0.03, off=0.028, tint="#FFFFFF"),
+               dict(kind="pointer", x=0.62, y=0.04, z=-1.02, reach=0.33, tip_w=1.6, color="#8A5A34")],
         pose=dict(body=26, head=4, roll=3, nod=4),
         pose_smile=dict(roll=-2, nod=0),
         signature=dict(name="chisel bob + glasses bar; arrow right", zone="far side"),

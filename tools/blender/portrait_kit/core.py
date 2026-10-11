@@ -203,8 +203,34 @@ def ao_crevice(nt, base_socket, dark, dist=0.06 * H, at=0.8):
     return node_mix(nt, 1.0, base_socket, crev, "MULTIPLY")
 
 
+def floor_albedo(nt, sock, floor="#2A2A30"):
+    """§7.4's albedo floor: a colour darker than `floor` (by luminance) is scaled up to it, hue kept. Only pupils,
+    lash lines, mouth interiors, seams and glasses rubber may sit below it."""
+    fy = sum(k * v for k, v in zip((0.2126, 0.7152, 0.0722), srgb(floor)))
+    bw = nt.nodes.new("ShaderNodeRGBToBW")
+    nt.links.new(sock, bw.inputs[0])
+    eps = nt.nodes.new("ShaderNodeMath")
+    eps.operation = "MAXIMUM"
+    eps.inputs[1].default_value = 1e-4
+    nt.links.new(bw.outputs[0], eps.inputs[0])
+    div = nt.nodes.new("ShaderNodeMath")
+    div.operation = "DIVIDE"
+    div.inputs[0].default_value = fy
+    nt.links.new(eps.outputs[0], div.inputs[1])
+    k = nt.nodes.new("ShaderNodeMath")
+    k.operation = "MAXIMUM"
+    k.inputs[1].default_value = 1.0
+    nt.links.new(div.outputs[0], k.inputs[0])
+    sc = nt.nodes.new("ShaderNodeVectorMath")
+    sc.operation = "SCALE"
+    nt.links.new(sock, sc.inputs[0])
+    nt.links.new(k.outputs[0], sc.inputs["Scale"])
+    return sc.outputs["Vector"]
+
+
 def hair_mat(ctx, name, col, z0, z1, dark=None, light=None, rough=0.6, crevice=None):
-    """Hair, fur, beards: object-Z gradient (dark below, +8 % L* on top) x AO crevice tint (§7.11)."""
+    """Hair, fur, beards: object-Z gradient (dark below, +8 % L* on top) x AO crevice tint (§7.11), held at the
+    albedo floor (§7.4: the crevice tint multiplies, so dark hair would otherwise drop far below it)."""
     if name in ctx.mats:
         return ctx.mats[name]
     m = principled(ctx, name, col, rough=rough)
@@ -213,7 +239,7 @@ def hair_mat(ctx, name, col, z0, z1, dark=None, light=None, rough=0.6, crevice=N
     dark = dark or hex_scale(col, 0.72)
     light = light or hex_mix(col, "#ffffff", 0.12)
     base = node_ramp(nt, node_obj_axis(nt, "Z", z0, z1), [(0.0, dark), (0.55, col), (1.0, light)])
-    nt.links.new(ao_crevice(nt, base, crevice or hex_scale(col, 0.5)), b.inputs["Base Color"])
+    nt.links.new(floor_albedo(nt, ao_crevice(nt, base, crevice or hex_scale(col, 0.5))), b.inputs["Base Color"])
     return m
 
 
@@ -251,7 +277,9 @@ def emit_mat(ctx, name, col="#ffffff", strength=6.0):
 def glass_mat(ctx, name, tint="#ffffff"):
     """Lenses (§7.5): see-through glass with a tint by multiplication and one diagonal highlight band over ~15 % of
     the lens. Built as transparent + glossy rather than refractive transmission: without caustics a refractive lens
-    darkens the eye behind it (measured: the iris kept 10 % of its contrast), §7.5 asks for >= 70 %."""
+    darkens the eye behind it (measured: the iris kept 10 % of its contrast), §7.5 asks for >= 70 %. The Fresnel
+    sheen is a flat warm-white emission (the glossy rays' world, #F2ECE2), not a glossy BSDF: a real reflection of
+    the dark hair behind the far lens left near-black pixels at alpha 0.05 past the face outline (P-A6 dark fringe)."""
     if name in ctx.mats:
         return ctx.mats[name]
     m = bpy.data.materials.new(name)
@@ -260,9 +288,9 @@ def glass_mat(ctx, name, tint="#ffffff"):
     nt.nodes.remove(nt.nodes["Principled BSDF"])
     tr = nt.nodes.new("ShaderNodeBsdfTransparent")
     tr.inputs["Color"].default_value = rgba(tint)
-    gl = nt.nodes.new("ShaderNodeBsdfGlossy")
-    gl.inputs["Roughness"].default_value = 0.05
-    gl.inputs["Color"].default_value = rgba("#b0b0b0")
+    gl = nt.nodes.new("ShaderNodeEmission")
+    gl.inputs["Color"].default_value = rgba("#F2ECE2")
+    gl.inputs["Strength"].default_value = 0.35
     fr = nt.nodes.new("ShaderNodeFresnel")
     fr.inputs["IOR"].default_value = 1.1
     mix = nt.nodes.new("ShaderNodeMixShader")

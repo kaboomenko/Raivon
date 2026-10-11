@@ -21,7 +21,6 @@ import numpy as np
 from mathutils import Matrix, Vector
 
 from . import core, style
-from .core import H
 
 R = style.RENDER
 

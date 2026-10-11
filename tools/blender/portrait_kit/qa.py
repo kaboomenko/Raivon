@@ -301,7 +301,7 @@ def _low(ctx):
 
 
 # ------------------------------------------------------------------ lens contrast (glasses)
-def lens_renders(ctx, size, tmpdir, samples=24):
+def lens_renders(ctx, size, tmpdir, samples=64, name=None):
     """§7.5: an iris behind a lens keeps >= 70 % of its contrast. Renders the eye region twice with a render border
     (lenses hidden / shown); `lens_ratio` compares them inside the ID pass's iris and sclera masks."""
     sc = bpy.context.scene
@@ -322,7 +322,7 @@ def lens_renders(ctx, size, tmpdir, samples=24):
     for vis in (False, True):
         for o in lenses:
             o.hide_render = not vis
-        p = os.path.join(tmpdir, "%s_lens%d.png" % (ctx.cid, vis))
+        p = os.path.join(tmpdir, "%s_lens%d.png" % (name or ctx.cid, vis))
         sc.render.filepath = p
         bpy.ops.render.render(write_still=True)
         paths.append(p)

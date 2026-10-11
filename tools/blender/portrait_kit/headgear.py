@@ -11,7 +11,6 @@ import math
 from mathutils import Vector
 
 from . import core
-from .core import H
 
 
 def build_headgear(ctx):

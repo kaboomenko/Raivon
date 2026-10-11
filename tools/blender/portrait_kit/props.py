@@ -13,7 +13,6 @@ from mathutils import Matrix, Vector
 
 from . import core
 from .core import H
-from .style import C
 
 
 def build_props(ctx):
@@ -205,6 +204,7 @@ def glasses(ctx, pr):
         core.finish(lens, glass)
         lens["kit_glass"] = 1
         lens.visible_shadow = False   # no caustics: a glass that casts a shadow would put the eyes in the dark
+        lens.visible_diffuse = False  # nor occlusion: the skin and eye AO saw the plate and greyed the eye behind it
         ctx.add(lens, "glass", rim, kind="embed", head=True)
         inner.append(front + rot @ Vector((-side * w, 0.0, hh * 0.25)))
         # the temple: from the outer edge back along the head side into the hair
@@ -244,7 +244,8 @@ def pointer(ctx, pr):
     ctx.add(rod, grp, ctx.objs["arm+1"], kind="free")
     iron = core.principled(ctx, "pointer_tip", pr.get("tip_color", "#8A929C"), 0.32, metal=0.5)
     bm = bmesh.new()
-    bmesh.ops.create_cone(bm, cap_ends=True, segments=24, radius1=shaft * 1.05, radius2=0.004, depth=tip_l)
+    bmesh.ops.create_cone(bm, cap_ends=True, segments=24, radius1=shaft * pr.get("tip_w", 1.05), radius2=0.004,
+                          depth=tip_l)
     tip = core.mesh_obj("pointer_tip", bm)
     tip.location = b + d * (tip_l / 2)
     core.align_z(tip, d)
