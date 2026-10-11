@@ -766,7 +766,7 @@ class KitBake extends Node:
 			if pxs.x > MAX_SIDE or pxs.y > MAX_SIDE or size.x <= 0.0 or size.y <= 0.0:
 				never[full] = true
 				return false
-			if not jobs.has(full):
+			if not jobs.has(full) or not (jobs[full]["make"] as Callable).is_valid():  # (its first asker is gone)
 				jobs[full] = {"size": size, "px": pxs, "off": f, "make": make}
 			if owner != null:
 				if not waiting.has(full):
@@ -920,10 +920,12 @@ class KitBake extends Node:
 				reset()
 				return
 			done.append(key)
-			if not (j["make"] as Callable).is_valid():
-				continue
-			var n: Control = (j["make"] as Callable).call(j["size"])
-			if n == null:  # what it was asked for has changed since: dropped (the owner asks again)
+			var n: Control = (j["make"] as Callable).call(j["size"]) if (j["make"] as Callable).is_valid() else null
+			if n == null:  # its asker is gone, or what it asked for has changed: the others waiting ask again
+				var ws: Dictionary = waiting.get(key, {})
+				waiting.erase(key)
+				for id in ws:
+					_poke.call_deferred(ws[id])
 				continue
 			# a Node2D holds it: Controls are snapped to whole pixels, the holder keeps the sub-pixel offset
 			var pp := ceilf(PAD * k)
