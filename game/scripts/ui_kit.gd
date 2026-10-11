@@ -533,17 +533,18 @@ class KitDecor extends Control:
 		var rad: Array = d["radii"]
 		var r_top := float(maxi(rad[0], rad[1]))
 		var r_bot := float(maxi(rad[2], rad[3]))
-		var ml := maxf(float(maxi(rad[0], rad[2])), float(d["rl"]) if d["line"] == "slate" else 0.0) + 2.0
-		var mr := maxf(float(maxi(rad[1], rad[3])), float(d["rr"]) if d["line"] == "slate" else 0.0) + 2.0
+		var sp := KitBake.SLICE
+		var ml := maxf(float(maxi(rad[0], rad[2])), float(d["rl"]) if d["line"] == "slate" else 0.0) + sp
+		var mr := maxf(float(maxi(rad[1], rad[3])), float(d["rr"]) if d["line"] == "slate" else 0.0) + sp
 		if d["line"] == "cream":
-			ml = maxf(ml, float(d["inset"]) + 2.0)
-			mr = maxf(mr, float(d["inset"]) + 2.0)
+			ml = maxf(ml, float(d["inset"]) + sp)
+			mr = maxf(mr, float(d["inset"]) + sp)
 		if d["gloss"]:
-			var g := out + float(d["side"]) + maxf(4.0, float(d["r"]) - out - 6.0) + 2.0
+			var g := out + float(d["side"]) + maxf(4.0, float(d["r"]) - out - 6.0) + sp
 			ml = maxf(ml, g)
 			mr = maxf(mr, g)
-		var mt := maxf(r_top, out + 4.0) + 2.0
-		var mb := maxf(r_bot, out + float(d["lip"])) + 2.0
+		var mt := maxf(r_top, out + 4.0) + sp
+		var mb := maxf(r_bot, out + float(d["lip"])) + sp
 		var key := "decor|%s|%s|%.1f,%.1f,%.1f,%.1f|%s|%s|%s|%.1f,%.1f,%.1f,%.1f" % [(d["face"] as Color).to_html(),
 			(d["lip_color"] as Color).to_html(), out, d["r"], d["lip"], d["side"], str(rad), d["line"], str(d["gloss"]),
 			d["rl"], d["rr"], d["inset"], 0.0]
@@ -590,6 +591,10 @@ class KitBake extends Node:
 	const SETTLE_MS := 200  ## a moved owner is drawn again once it has held still this long
 	const POLL_N := 48  ## owners whose place is looked at per frame (in turn)
 	const PHASES := 8.0  ## sub-pixel offsets a bake is made at, per pixel and axis
+	## Logical px of straight edge a sliced bake keeps past each corner: what is stretched must be uniform, and the
+	## antialiased edge of a StyleBoxFlat is not, for a few px past where its corner arc ends (the half-pixel offsets
+	## of a scaled canvas show it).
+	const SLICE := 6.0
 	const STAGE_IDLE_MS := 2000  ## the stage's render target is freed after this long without a round
 	const UNPREMUL := "shader_type canvas_item;\nrender_mode blend_disabled;\n" \
 		+ "void fragment() {\n\tvec2 sz = vec2(textureSize(TEXTURE, 0));\n\tivec2 p = ivec2(floor(UV * sz));\n" \
@@ -599,7 +604,7 @@ class KitBake extends Node:
 		+ "\t\tfor (int i = 0; i < 4; i++) {\n\t\t\tivec2 o = ivec2(i == 0 ? 1 : (i == 1 ? -1 : 0), i == 2 ? 1 : (i == 3 ? -1 : 0));\n" \
 		+ "\t\t\tvec4 n = texelFetch(TEXTURE, clamp(p + o, ivec2(0), ivec2(sz) - 1), 0);\n\t\t\tif (n.a > b.a) {\n\t\t\t\tb = n;\n\t\t\t}\n\t\t}\n" \
 		+ "\t\tCOLOR = vec4(b.a > 0.0 ? b.rgb / b.a : vec3(0.0), 0.0);\n\t}\n}\n"
-	## An icon into its atlas cell: an exact copy with ICON_EDGE rows of its edge texels repeated round it (what the
+	## An icon into its atlas cell: an exact copy with two rows of its edge texels repeated round it (what the
 	## texture's clamp gives a filter at its edge).
 	const ICON_COPY := "shader_type canvas_item;\nrender_mode blend_disabled;\nuniform sampler2D src : filter_nearest;\n" \
 		+ "void fragment() {\n\tivec2 sz = textureSize(src, 0);\n\tivec2 p = ivec2(floor(UV * vec2(sz + ivec2(4)))) - ivec2(2);\n" \
@@ -640,6 +645,7 @@ class KitBake extends Node:
 	var _asize := ATLAS  # the atlas's size now
 	var _reset_at := -100000
 	var _round_at := -100000
+	var _landed := -100  # the process frame the last round landed in (its owners draw again in the next ones)
 	var _nodes: Array = []  # the stage / copy nodes of the round
 	var _mat: ShaderMaterial
 	var _icon_shader: Shader
@@ -1068,6 +1074,10 @@ class KitBake extends Node:
 				tried = true
 				_evict()
 				slot = _alloc(cell)
+			if slot.size.x == 0 and (not _round.is_empty() or Engine.get_process_frames() - _landed <= 2):
+				# full of what is shown now: this round takes what fits, the rest waits — what lands replaces images
+				# (a moved owner's old offset, a changed look) that can be dropped once their owners have drawn again
+				break
 			if slot.size.x == 0:
 				if Time.get_ticks_msec() - _reset_at < RESET_GAP_MS:
 					# full again right after a reset: what does not fit now stays vectors (until the next reset)
@@ -1277,6 +1287,7 @@ class KitBake extends Node:
 				for id in ws:
 					_poke(ws[id])
 			_round.clear()
+			_landed = Engine.get_process_frames()
 			for ic in _icon_round:  # those icons draw from the atlas now
 				var e: Array = icons[ic[0]]
 				if int(ic[2]) == _gen and e[2] == ic[1]:
@@ -1404,10 +1415,11 @@ static func draw_flat(ci: RID, rect: Rect2, sb: StyleBoxFlat, host: CanvasItem, 
 	var sh := float(sb.shadow_size) if sb.shadow_color.a > 0.0 else 0.0
 	var ox := absf(sb.shadow_offset.x) if sh > 0.0 else 0.0
 	var oy := absf(sb.shadow_offset.y) if sh > 0.0 else 0.0
-	var ml := float(maxi(maxi(sb.corner_radius_top_left, sb.corner_radius_bottom_left), sb.border_width_left)) + ox + sh + 2.0
-	var mr := float(maxi(maxi(sb.corner_radius_top_right, sb.corner_radius_bottom_right), sb.border_width_right)) + ox + sh + 2.0
-	var mt := float(maxi(maxi(sb.corner_radius_top_left, sb.corner_radius_top_right), sb.border_width_top)) + oy + sh + 2.0
-	var mb := float(maxi(maxi(sb.corner_radius_bottom_left, sb.corner_radius_bottom_right), sb.border_width_bottom)) + oy + sh + 2.0
+	var sp := KitBake.SLICE
+	var ml := float(maxi(maxi(sb.corner_radius_top_left, sb.corner_radius_bottom_left), sb.border_width_left)) + ox + sh + sp
+	var mr := float(maxi(maxi(sb.corner_radius_top_right, sb.corner_radius_bottom_right), sb.border_width_right)) + ox + sh + sp
+	var mt := float(maxi(maxi(sb.corner_radius_top_left, sb.corner_radius_top_right), sb.border_width_top)) + oy + sh + sp
+	var mb := float(maxi(maxi(sb.corner_radius_bottom_left, sb.corner_radius_bottom_right), sb.border_width_bottom)) + oy + sh + sp
 	var m := Vector4.ZERO
 	var size := rect.size
 	var key := flat_key(sb)
@@ -2572,7 +2584,7 @@ class KitButton extends Panel:
 			"gloss": enabled and role != "lock", "side": side}
 		var baked := false
 		if press == 0.0:
-			var mx := maxf(r, out + side + maxf(4.0, r - out - 6.0) if d["gloss"] else 0.0) + 2.0
+			var mx := maxf(r, out + side + maxf(4.0, r - out - 6.0) if d["gloss"] else 0.0) + KitBake.SLICE
 			var key := "btn|%s|%s|%.1f,%.1f,%.1f,%.1f,%.2f|%s|h%.2f" % [face.to_html(), (d["lipc"] as Color).to_html(), r, out, lip,
 				d["sh"], side, str(d["gloss"]), h]
 			var m := Vector4.ZERO
@@ -3104,7 +3116,7 @@ class KitPill extends Control:
 		var h := size.y
 		var r := h * 0.5
 		var face := Rect2(4, 4, w - 8.0, h - 8.0)
-		var m := float(int(r)) + 2.0
+		var m := float(int(r)) + KitBake.SLICE
 		var sz := size
 		var bs := Vector2(2.0 * m + 4.0, h) if w >= 2.0 * m + 6.0 else size
 		var sl := Vector4(m, 0, m, 0) if bs.x < w else Vector4.ZERO
@@ -3116,7 +3128,7 @@ class KitPill extends Control:
 			var fw := roundf(maxf(face.size.y, face.size.x * frac) * 4.0) / 4.0
 			var col := FULL if full else SLATE_FILL
 			var rad := r - 4.0
-			var fm := float(int(rad)) + 2.0
+			var fm := float(int(rad)) + KitBake.SLICE
 			var fs := Vector2(fw, face.size.y)
 			var fbs := Vector2(2.0 * fm + 4.0, fs.y) if fw >= 2.0 * fm + 6.0 else fs
 			var fsl := Vector4(fm, 0, fm, 0) if fbs.x < fw else Vector4.ZERO
@@ -3124,7 +3136,7 @@ class KitPill extends Control:
 			var fmk := func(z: Vector2) -> Control: return KitPainter.new(func(c: CanvasItem): KitPill._box(c, Rect2(Vector2.ZERO, z), col, rad), z)
 			if not SELF.draw_baked(self, fkey, Rect2(face.position, fs), fbs, fmk, fsl):
 				_box(self, Rect2(face.position, fs), col, rad)
-		var sm := float(int(r - 4.0)) + 2.0
+		var sm := float(int(r - 4.0)) + KitBake.SLICE
 		var sbs := Vector2(2.0 * sm + 4.0, face.size.y) if face.size.x >= 2.0 * sm + 6.0 else face.size
 		var ssl := Vector4(sm, 0, sm, 0) if sbs.x < face.size.x else Vector4.ZERO
 		var skey := "pillshade|h%.2f" % face.size.y + ("" if ssl.x > 0.0 else "|w%.2f" % face.size.x)

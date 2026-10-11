@@ -303,6 +303,20 @@ static func smoke(tree: SceneTree, out_path: String) -> void:
 	var p := func(s: String) -> void: print("perf-tree smoke ", s)
 	p.call("settled: draws=%d %s" % [await _settle(tree, vp, kb), bake_stats(kb)])
 	var fails := 0
+	for a in args:
+		if a.begins_with("--perf-small-atlas=") and kb != null:  # a small atlas: the HUD fills it, eviction must cope
+			var side := int(a.get_slice("=", 1))
+			kb._asize = Vector2i(side, side)
+			kb.atlas.size = kb._asize
+			kb.reset()
+			await tree.create_timer(1.5).timeout
+			p.call("small atlas %d: draws=%d %s" % [side, await _settle(tree, vp, kb), bake_stats(kb)])
+	if kb != null and args.has("--perf-dump"):  # the atlas as it is, and where each look is in it
+		var base := out_path.trim_suffix(".tree.txt").get_basename()
+		kb.atlas.get_texture().get_image().save_png(base + "_atlas.png")
+		var fd := FileAccess.open(base + "_atlas.txt", FileAccess.WRITE)
+		for key in kb.slots:
+			fd.store_line("%s\t%s\t%s" % [kb.slots[key], str(kb.made[key]), key])
 	# 1. the card row: culled where it is out of the clip, drawn where it is in
 	var sc: ScrollContainer = main.ui.get("_bscroll")
 	var row: Container = main.ui.get("_brow")

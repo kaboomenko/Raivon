@@ -963,6 +963,12 @@ class Minimap extends Control:
 	var _k := Vector2.ZERO  # physical px per logical px, per axis (zero: not rendered yet)
 	var _ph := Vector2.ZERO  # physical px from the pixel corner its origin falls in to its origin
 	var _vsz := Vector2.ZERO
+	var _sb := StyleBoxFlat.new()  # the view frame's
+
+	func _init() -> void:
+		_sb.draw_center = false
+		_sb.anti_aliasing = true
+		_sb.corner_detail = 8
 
 	func _ready() -> void:
 		_vp = SubViewport.new()
@@ -1056,14 +1062,10 @@ class Minimap extends Control:
 	## Drawn as vectors (two draw calls): its rect follows the camera in fractional pixels, so a bake would be made
 	## again for nearly every frame of a pan (docs/dev/hud_perf_plan.json H1 review).
 	func _frame(r: Rect2, col: Color, w: int, rad: int) -> void:
-		var sb := StyleBoxFlat.new()
-		sb.draw_center = false
-		sb.anti_aliasing = true
-		sb.corner_detail = 8
-		sb.border_color = col
-		sb.set_border_width_all(w)
-		sb.set_corner_radius_all(rad)
-		draw_style_box(sb, r)
+		_sb.border_color = col
+		_sb.set_border_width_all(w)
+		_sb.set_corner_radius_all(rad)
+		draw_style_box(_sb, r)
 
 
 ## The minimap's well content (drawn inside Minimap's SubViewport): each hex in its state's colour with the light
