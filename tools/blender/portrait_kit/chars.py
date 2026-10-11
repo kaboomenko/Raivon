@@ -46,7 +46,7 @@ CHARS = {
                dict(kind="amulet", x=-0.36, z=-0.95, d=0.16),
                dict(kind="chevrons", n=2, color="#C0452A")],
         pose=dict(body=22, head=6, roll=0, nod=-2),
-        pose_smile=dict(roll=-3, nod=2),
+        pose_smile=dict(roll=-3, nod=0),
         signature=dict(name="pear beard", zone="lower face width"),
     ),
     # ---------------------------------------------------------------- Lira (common): §7.6
@@ -56,17 +56,18 @@ CHARS = {
         skin=SKIN["T1"], skin_tone="T1", blush=0.25, freckles="#C77B52",
         eyes=dict(sclera=0.21, open=0.82, iris="#5E9E4A", tilt=0.06, arch=0.26, flick=0.06,
                   smile=dict(open=0.74, low=0.28, tilt=-0.02, arch=0.30)),
-        brows=dict(shape="arc", thick=0.06, color="#4A2818", arch=0.03, len=1.2, len_far=1.3,
-                   smile=dict(lift=(0.008, 0.004), arch=0.006)),
+        brows=dict(shape="arc", thick=0.06, color="#4A2818", arch=0.03, len=1.2, len_far=1.42,
+                   smile=dict(lift=(0.004, 0.0), arch=0.004)),
         nose=dict(type="button", tip="#F09A86", tip_k=0.45, drop=0.19, k=0.95),
         mouth=dict(lip="#D9786A", line=0.185,
                    calm=dict(type="closed", w=0.26, near=0.012, far=0.004),
                    smile=dict(type="open", w=0.32, h=0.12, near=0.03, far=0.025)),
         hair=dict(style="kerchief", color="#5A3420", dark="#3E2214", light="#7A4A30", crevice="#2A160C", fringe=0.08,
                   braid=dict(w=0.17, ribbon="#3E9B5A")),
-        # the kerchief in her leaf green (§7.6 gives no colour for it; palette slots only): white cloth on the light
-        # grey plate melted at the rim (P-A5) and repeated the apron
-        headgear=dict(kind="kerchief", color="#3E9B5A", thick=0.075, tail=0.34, knot_az=-138, knot_el=24),
+        # the kerchief in her green (§7.6 gives no colour for it; palette slots only): white cloth on the light grey
+        # plate melted at the rim (P-A5) and repeated the apron; the lighter leaf green still melted where the rim
+        # light catches its top edge
+        headgear=dict(kind="kerchief", color="#2E7A44", thick=0.075, tail=0.34, knot_az=-138, knot_el=24),
         body=dict(shoulders=2.0),
         costume=dict(
             base=dict(color="#2E7A44", rough=0.85, sheen=0.35),
@@ -92,7 +93,7 @@ CHARS = {
         eyes=dict(sclera=0.19, open=0.70, iris="#7C7EA8", tilt=-0.06, arch=0.30, flick=0.065,
                   smile=dict(open=0.70, low=0.20, tilt=-0.08, arch=0.30)),
         brows=dict(shape="angular", thick=0.055, color="#2A2224", arch=0.035, arch_far=0.03, lift=(0.0, 0.09), len=1.3,
-                   len_far=1.4,
+                   len_far=1.7,
                    smile=dict(lift=(0.01, 0.0))),
         nose=dict(type="straight", tip="#E59A7E", tip_k=0.35, drop=0.21, k=1.0, w=0.05),
         mouth=dict(lip="#B8605A", line=0.19,
