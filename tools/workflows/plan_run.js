@@ -7,7 +7,8 @@ export const meta = {
   ],
 }
 
-// args: {"plan": "docs/dev/hud_perf_plan.json", "lanes": [[{"id": "H1", "start": "impl|review|fix"}, ...], ...], "final": "F1"}
+// args: {"plan": "docs/dev/hud_perf_plan.json", "lanes": [[{"id": "H1", "start": "impl|review|fix"}, ...], ...], "final": "F1",
+//   "rounds": 2} — rounds: review → fix rounds per step (default 1)
 // start: impl (default); review — the implementer finished, its report is key "<id>_impl" of RESUME; fix — the reviewer
 // finished, its verdict is key "<id>_review" of RESUME (docs/dev/restart.md).
 const RESUME = '/tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/resume_args.json'
@@ -87,7 +88,16 @@ async function runFrom(item, ph) {
   } else {
     review = { issues: [{ severity: 'high', problem: `The reviewer's verdict for step ${id} is the JSON value of key "${id}_review" in ${RESUME} — read it and fix every high and medium issue (low when cheap). A previous fix agent may have been interrupted by a container restart; its partial edits are committed (git log -p -3 for the step's files) — inspect them, keep what is right, finish.` }] }
   }
-  const fix = await agent(fixPrompt(id, impl, review || { issues: [] }), { label: `${id}:fix`, phase: ph, schema: IMPL_SCHEMA })
+  let fix = await agent(fixPrompt(id, impl, review || { issues: [] }), { label: `${id}:fix`, phase: ph, schema: IMPL_SCHEMA })
+  // args.rounds > 1: the fixed step goes back to a fresh reviewer, up to that many review → fix rounds in all
+  for (let round = 2; round <= (PLAN.rounds || 1) && fix; round++) {
+    const re = await agent(reviewPrompt(id, fix), { label: `${id}:review${round}`, phase: ph, schema: REVIEW_SCHEMA })
+    const left = (re && re.issues ? re.issues : []).filter((i) => i.severity !== 'low')
+    if (re && re.ok && left.length === 0) { log(`${id}: review ${round} passed`); return { id, impl, review: re, fix } }
+    log(`${id}: review ${round} — ${left.length} blocking issue(s) — fixing`)
+    review = re
+    fix = await agent(fixPrompt(id, fix, re || { issues: [] }), { label: `${id}:fix${round}`, phase: ph, schema: IMPL_SCHEMA })
+  }
   return { id, impl, review, fix }
 }
 
