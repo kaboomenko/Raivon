@@ -648,6 +648,9 @@ class KitBake extends Node:
 	var _reset_at := -100000
 	var _round_at := -100000
 	var _landed := -100  # the process frame the last round landed in (its owners draw again in the next ones)
+	var _squeeze := false  # the atlas ran out of room: what cannot be seen gives its images up (draw, _release_unseen)
+	var _asked := {}  # canvas item RID id -> the frame _release_unseen asked it to draw again
+	var why := ""  ## why the atlas last started over (perf_probe)
 	var _nodes: Array = []  # the stage / copy nodes of the round
 	var _mat: ShaderMaterial
 	var _icon_shader: Shader
@@ -746,6 +749,7 @@ class KitBake extends Node:
 	func reset() -> void:
 		resets += 1
 		_gen += 1
+		_squeeze = false
 		_reset_at = Time.get_ticks_msec()
 		slots.clear()
 		made.clear()
@@ -824,8 +828,14 @@ class KitBake extends Node:
 			size.y = _base(rect.size.y, size.y, kv.y)
 		var base := "%s@%.4f,%.4f|%.3f,%.3f|p%.1f" % [key, kv.x, kv.y, size.x, size.y, pad]
 		var full := "%s/%d,%d" % [base, roundi(f.x * PHASES), roundi(f.y * PHASES)]
-		var e := _ref(ci, owner if owner != null else host)  # (its commands are being recorded anew)
+		var hh: CanvasItem = host if host != null else owner as CanvasItem
+		var e := _ref(ci, owner if owner != null else host, hh)  # (its commands are being recorded anew)
 		var slot: Variant = slots.get(full)
+		if slot != null and _squeeze and not in_sight(hh, rect, pad):
+			# the atlas is short of room: what nobody can see gives its image up (draws its vectors, culled or clipped
+			# away) so that the next eviction frees its place; it asks again once it comes into sight
+			_park(hh, rect, pad)
+			return false
 		if slot == null:
 			if not queue:
 				return false
@@ -835,7 +845,6 @@ class KitBake extends Node:
 				if pxs.x > MAX_SIDE or pxs.y > MAX_SIDE or size.x <= 0.0 or size.y <= 0.0:
 					never[full] = true
 					return false
-				var hh: CanvasItem = host if host != null else owner as CanvasItem
 				if not in_sight(hh, rect, pad):
 					# nobody can see it now (off the screen, or wholly out of a scroll's clip — the rows of a long list):
 					# not baked, or such a list would fill the atlas and start it over and over; it draws its vectors
@@ -891,14 +900,37 @@ class KitBake extends Node:
 
 	## The record of what the canvas item `ci` shows from the atlas: started anew on the first draw in a frame (a
 	## canvas item's commands are all recorded again when it is drawn).
-	func _ref(ci: RID, owner: Object) -> Array:
+	func _ref(ci: RID, owner: Object, host: CanvasItem = null) -> Array:
 		var id := ci.get_id()
 		var fr := Engine.get_process_frames()
 		var e: Variant = refs.get(id)
 		if e == null or int(e[0]) != fr:
-			e = [fr, {}, weakref(owner) if owner != null else null]
+			e = [fr, {}, weakref(owner) if owner != null else null, weakref(host) if host != null else null]
 			refs[id] = e
 		return e
+
+	## Asks every canvas item that shows atlas images but cannot be seen now (scrolled out of a list, off the screen) to
+	## draw again — its vectors, while _squeeze is on — so its images are no longer shown and the next eviction frees
+	## their room. Returns how many were asked.
+	func _release_unseen() -> int:
+		var n := 0
+		var fr := Engine.get_process_frames()
+		for id in refs.keys():
+			var e: Array = refs[id]
+			if (e[1] as Dictionary).is_empty() or int(e[0]) <= int(_asked.get(id, -1)):  # (asked, not drawn since: not again)
+				continue
+			var h: CanvasItem = (e[3] as WeakRef).get_ref() as CanvasItem if e.size() > 3 and e[3] != null else null
+			if h == null and e[2] != null:
+				h = (e[2] as WeakRef).get_ref() as CanvasItem
+			if h == null or not h.is_inside_tree() or not h.is_visible_in_tree():
+				continue
+			if not in_sight(h, Rect2(Vector2.ZERO, (h as Control).size if h is Control else Vector2.ZERO), PAD):
+				h.queue_redraw()
+				_asked[id] = fr
+				n += 1
+		if _asked.size() > 4096:
+			_asked.clear()
+		return n
 
 	## Remembers where `h` drew from the atlas (its place on the canvas), to draw it again once it has moved.
 	func _place(h: CanvasItem) -> void:
@@ -1132,6 +1164,12 @@ class KitBake extends Node:
 				tried = true
 				_evict()
 				slot = _alloc(cell)
+			if slot.size.x == 0:
+				# full of what is shown — some of it perhaps out of sight (a long list scrolled by): that draws its vectors from
+				# the next frame and gives its room up then, instead of the atlas starting over
+				_squeeze = true
+				if _release_unseen() > 0:
+					break
 			if slot.size.x == 0 and (not _round.is_empty() or Engine.get_process_frames() - _landed <= 2):
 				# full of what is shown now: this round takes what fits, the rest waits — what lands replaces images
 				# (a moved owner's old offset, a changed look) that can be dropped once their owners have drawn again
@@ -1147,6 +1185,7 @@ class KitBake extends Node:
 						_poke.call_deferred(ws[id])
 					continue
 				# full of what is shown: start it again with what is drawn now (the jobs stay queued)
+				why = "full for %s: %.0f%% in use, %d free rects (largest %s), %d refs, %d parked" % [cell, used() * 100.0, _free.size(), _largest_free(), refs.size(), parked.size()]
 				for n in _nodes:
 					(n as Node).queue_free()
 				_nodes.clear()
@@ -1275,6 +1314,13 @@ class KitBake extends Node:
 		_used += cell.x * cell.y
 		return Rect2i(bx, by, cell.x, cell.y)
 
+	func _largest_free() -> Vector2i:
+		var best := Vector2i.ZERO
+		for r in _free:
+			if (r as Rect2i).get_area() > best.x * best.y:
+				best = (r as Rect2i).size
+		return best
+
 	func _release(cell: Rect2i) -> void:
 		_free.append(cell)
 		_used -= cell.get_area()
@@ -1304,7 +1350,92 @@ class KitBake extends Node:
 			if not slots.has(alts[b]):
 				alts.erase(b)
 		evicted += n
+		if n > 0:
+			_coalesce()
+			_lower_sky()
+		if _squeeze and used() < 0.5:  # room again: what scrolls out of sight keeps its images
+			_squeeze = false
 		return n
+
+	## Joins free rects that share a whole edge (neighbours dropped together: a row of labels of one height), so an image
+	## a little larger than each of them finds room before the atlas would have to start over.
+	func _coalesce() -> void:
+		for _pass in 4:
+			var joined := false
+			for axis in [0, 1]:
+				_free.sort_custom(func(a: Rect2i, b: Rect2i) -> bool:
+					var a0 := a.position.y if axis == 0 else a.position.x
+					var b0 := b.position.y if axis == 0 else b.position.x
+					if a0 != b0:
+						return a0 < b0
+					var a1 := a.size.y if axis == 0 else a.size.x
+					var b1 := b.size.y if axis == 0 else b.size.x
+					if a1 != b1:
+						return a1 < b1
+					return (a.position.x if axis == 0 else a.position.y) < (b.position.x if axis == 0 else b.position.y))
+				var out: Array = []
+				for r in _free:
+					var c: Rect2i = r
+					if not out.is_empty():
+						var q: Rect2i = out[-1]
+						if axis == 0 and q.position.y == c.position.y and q.size.y == c.size.y and q.end.x == c.position.x:
+							out[-1] = Rect2i(q.position, Vector2i(q.size.x + c.size.x, q.size.y))
+							joined = true
+							continue
+						if axis == 1 and q.position.x == c.position.x and q.size.x == c.size.x and q.end.y == c.position.y:
+							out[-1] = Rect2i(q.position, Vector2i(q.size.x, q.size.y + c.size.y))
+							joined = true
+							continue
+					out.append(c)
+				_free = out
+			if not joined:
+				break
+
+	## Gives the free rects that lie right under the skyline back to it (a column whose top images were dropped is
+	## lower again), so the room at the top of the atlas is one piece again.
+	func _lower_sky() -> void:
+		var changed := true
+		while changed:
+			changed = false
+			for i in range(_free.size() - 1, -1, -1):
+				var r: Rect2i = _free[i]
+				if _sky_flat(r.position.x, r.end.x, r.end.y):
+					_sky_set(r.position.x, r.end.x, r.position.y)
+					_free.remove_at(i)
+					changed = true
+		_top = 0
+		for sg in _sky:
+			_top = maxi(_top, (sg as Vector3i).y)
+
+	## Whether the skyline stands at `y` all along x0 … x1.
+	func _sky_flat(x0: int, x1: int, y: int) -> bool:
+		for sg in _sky:
+			var sk: Vector3i = sg
+			if sk.x + sk.z > x0 and sk.x < x1 and sk.y != y:
+				return false
+		return true
+
+	## The skyline at `y` along x0 … x1 (neighbours at one height merged).
+	func _sky_set(x0: int, x1: int, y: int) -> void:
+		var out: Array = []
+		for sg in _sky:
+			var sk: Vector3i = sg
+			var e := sk.x + sk.z
+			if e <= x0 or sk.x >= x1:
+				out.append(sk)
+				continue
+			if sk.x < x0:
+				out.append(Vector3i(sk.x, sk.y, x0 - sk.x))
+			out.append(Vector3i(maxi(sk.x, x0), y, mini(e, x1) - maxi(sk.x, x0)))
+			if e > x1:
+				out.append(Vector3i(x1, sk.y, e - x1))
+		_sky.clear()
+		for o in out:
+			if not _sky.is_empty() and (_sky[-1] as Vector3i).y == (o as Vector3i).y:
+				var l: Vector3i = _sky[-1]
+				_sky[-1] = Vector3i(l.x, l.y, l.z + (o as Vector3i).z)
+			else:
+				_sky.append(o)
 
 	## The share of the atlas in use (0..1).
 	func used() -> float:
@@ -1658,8 +1789,10 @@ static func draw_baked(ci: CanvasItem, key: String, rect: Rect2, size: Vector2, 
 ## and ghost finger (§4.12). Never a font glyph.
 class KitShape extends Control:
 	## Kinds drawn as vectors every frame (they animate by redrawing); every other kind comes from the bake atlas —
-	## the rays too (a turning sunburst turns its node, the same image; one too large for the atlas stays vectors).
+	## the rays too while small (a case card's still glow); the opening's big turning sunburst stays vectors (it would
+	## take a sixth of the atlas, and its wedges' hard edges would be resampled as it turns).
 	const LIVE := ["ring", "finger", "pointer"]
+	const RAYS_BAKED := 256.0
 	var kind := ""
 	var face := Color.WHITE
 	var lip := Color.BLACK
@@ -1678,7 +1811,7 @@ class KitShape extends Control:
 
 	## From the bake atlas.
 	func _draw() -> void:
-		if not vector and not LIVE.has(kind):
+		if not vector and not LIVE.has(kind) and not (kind == "rays" and maxf(size.x, size.y) > RAYS_BAKED):
 			var key := "shape|%s|%s|%s|%.2f,%.2f|%s" % [kind, face.to_html(), lip.to_html(), size.x, size.y, var_to_str(data)]
 			var k_ := kind
 			var f_ := face

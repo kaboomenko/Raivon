@@ -217,7 +217,7 @@ func _card(y: float, h: float, case_id: String, note: String) -> Panel:
 	glow.size = Vector2(200, 200)
 	glow.position = Vector2(10, (art.size.y - 6.0) * 0.5 - 100.0)
 	art.add_child(glow)
-	var chest := Kit._card_rect(Kit.icon_tex(String(look[0])), Rect2(20, (art.size.y - 6.0) * 0.5 - 90.0, 180, 180))
+	var chest := Kit._card_rect(Kit.icon_atlas(String(look[0])), Rect2(20, (art.size.y - 6.0) * 0.5 - 90.0, 180, 180))
 	chest.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	art.add_child(chest)
 	var tw := w - COL_X - 16.0 - 52.0 - 12.0
@@ -649,7 +649,7 @@ static func _price(s: String) -> String:
 func _empty(icon: String, text: String) -> void:
 	var w := _body.size.x
 	var top := maxf(24.0, (_body.size.y - 300.0) * 0.5)
-	var ic := Kit._card_rect(Kit.icon_tex(icon), Rect2(w * 0.5 - 72.0, top, 144, 144))
+	var ic := Kit._card_rect(Kit.icon_atlas(icon), Rect2(w * 0.5 - 72.0, top, 144, 144))
 	ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_body.add_child(ic)
 	var l := Kit.label(text, 28, Kit.SOFT_CREAM, false)
@@ -711,11 +711,11 @@ func _raivite_pile(tier: int) -> Control:
 	pile.name = "pile"
 	pile.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var parts: Array = PILES[clampi(tier, 0, PILES.size() - 1)]
-	var crystal := Kit.icon_tex("raivite")
+	var crystal := Kit.icon_atlas("raivite")  # the kit's shared icon sheet (one batch with the tiles round it)
 	for prt in parts:
 		var p: Array = prt
 		var tr_ := TextureRect.new()
-		tr_.texture = Kit.icon_tex(String(p[1])) if p[0] == "c" else crystal
+		tr_.texture = Kit.icon_atlas(String(p[1])) if p[0] == "c" else crystal
 		tr_.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		tr_.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		tr_.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -775,7 +775,7 @@ func _atelier_tab() -> void:
 		l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		l.max_lines_visible = 3
 		var top := maxf(64.0, (_body.size.y - 300.0) * 0.5)
-		var ic := Kit._card_rect(Kit.icon_tex("frame"), Rect2(w * 0.5 - 72.0, top, 144, 144))
+		var ic := Kit._card_rect(Kit.icon_atlas("frame"), Rect2(w * 0.5 - 72.0, top, 144, 144))
 		ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		_body.add_child(ic)
 		l.position = Vector2(40, top + 166.0)

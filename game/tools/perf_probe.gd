@@ -169,7 +169,9 @@ static func run(tree: SceneTree, out_path: String, tabs := true) -> void:
 			break
 		last = d0
 		await tree.create_timer(0.25).timeout
-	var live: Array = []  # kit labels drawing their own glyphs now (not from the bake atlas)
+	if OS.get_cmdline_user_args().has("--perf-scroll"):
+		await scroll_test(tree, out_path)
+	var live: Array = []  # kit labels drawing their own glyphs now (not from the bake atlas; those out of sight left out)
 	_live_labels(vp, live)
 	lines.append("live kit labels: %d  %s" % [live.size(), ", ".join(live.slice(0, 40))])
 	var kbd := vp.get_node_or_null("KitBake")
@@ -305,7 +307,7 @@ static func _live_labels(n: Node, out: Array) -> void:
 		if c is SubViewport:
 			continue
 		if c is Label and (c as Label).is_visible_in_tree() and c.get_node_or_null("KitText") != null \
-				and (c as Label).visible_characters != 0:
+				and (c as Label).visible_characters != 0 and _seen(c as Label):
 			out.append("«%s» %s" % [(c as Label).text.replace("\n", " "), _path(c).get_file()])
 		_live_labels(c, out)
 
@@ -315,9 +317,79 @@ static func _live_nodes(n: Node, out: Array) -> void:
 		if c is SubViewport:
 			continue
 		if c is Label and (c as Label).is_visible_in_tree() and c.get_node_or_null("KitText") != null \
-				and (c as Label).visible_characters != 0 and (c as Label).text.strip_edges() != "":
+				and (c as Label).visible_characters != 0 and (c as Label).text.strip_edges() != "" and _seen(c as Label):
 			out.append(c)
 		_live_nodes(c, out)
+
+
+## A label the bake atlas would bake now (KitBake.in_sight: on the screen, inside its scroll's view).
+static func _seen(l: Label) -> bool:
+	var kit: Script = load("res://scripts/ui_kit.gd")
+	if not (kit.KitBake as Script).get_script_method_list().any(func(m): return m["name"] == "in_sight"):
+		return true  # (an older kit: every label counts)
+	return kit.KitBake.in_sight(l, Rect2(Vector2.ZERO, l.size), 16.0)
+
+
+## `--perf-scroll` (H2): the open window's list (its first vertical ScrollContainer with more than a page) scrolled to
+## the end and back in half-page steps, four frames a step, then held at the end: the bake atlas must not start over
+## (no reset) and what came into sight must end up baked. Prints «perf-tree scroll» lines (a FAIL line on a reset),
+## and saves the held end as <shot>_end_bake.png / _end_vec.png (tools/hud_diff.py: the atlas against the vectors).
+static func scroll_test(tree: SceneTree, out_path: String) -> void:
+	var vp := tree.root
+	var kb := vp.get_node_or_null("KitBake")
+	var main: Node = tree.current_scene
+	var ui: Node = main.get("ui") if main != null else null
+	var modal: Control = ui.get("_modal") if ui != null else null
+	var shop: Control = main.get("shop") if main != null else null
+	var sc := _find_scroll(modal if modal != null else shop)
+	if sc == null:
+		print("perf-tree scroll: no list in the window")
+		return
+	var bar := sc.get_v_scroll_bar()
+	var end := maxf(0.0, bar.max_value - bar.page)
+	var r0: int = kb.resets if kb != null else 0
+	var e0: int = kb.evicted if kb != null else 0
+	print("perf-tree scroll: %s content=%.0f page=%.0f %s" % [_path(sc), bar.max_value, bar.page, bake_stats(kb)])
+	var a: Array = []
+	var v := 0.0
+	var step := maxf(40.0, bar.page * 0.5)
+	for dir in [1.0, -1.0]:
+		while true:
+			v = clampf(v + step * dir, 0.0, end)
+			sc.scroll_vertical = int(v)
+			for i in 4:
+				a.append(await _frame(vp, kb))
+			if (dir > 0.0 and v >= end) or (dir < 0.0 and v <= 0.0):
+				break
+	print("perf-tree scroll: there and back %s resets+%d evicted+%d %s" % [_spread(a), (kb.resets - r0) if kb else 0,
+		(kb.evicted - e0) if kb else 0, bake_stats(kb)])
+	sc.scroll_vertical = int(end)
+	var d := await _settle(tree, vp, kb)
+	await tree.create_timer(0.5).timeout
+	d = await _settle(tree, vp, kb)
+	print("perf-tree scroll: held at the end draws=%d resets+%d evicted+%d %s" % [d, (kb.resets - r0) if kb else 0,
+		(kb.evicted - e0) if kb else 0, bake_stats(kb)])
+	if kb != null and kb.resets > r0:
+		print("perf-tree scroll FAIL the atlas started over while the list scrolled (last: %s)" % String(kb.get("why")))
+	tree.paused = true
+	await vec_pair(tree, out_path.trim_suffix(".tree.txt").get_basename() + "_end.tree.txt")
+	tree.paused = false
+	sc.scroll_vertical = 0
+	await _settle(tree, vp, kb)
+
+
+static func _find_scroll(n: Node) -> ScrollContainer:
+	if n == null:
+		return null
+	for c in n.get_children():
+		if c is ScrollContainer and (c as ScrollContainer).is_visible_in_tree():
+			var b := (c as ScrollContainer).get_v_scroll_bar()
+			if b.max_value > b.page + 1.0:
+				return c
+		var f := _find_scroll(c)
+		if f != null:
+			return f
+	return null
 
 
 static func _find_subviewports(n: Node, out: Array) -> void:

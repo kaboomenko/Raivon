@@ -141,9 +141,9 @@ func _at(l: Control, parent: Control, pos: Vector2, size := Vector2.ZERO) -> Con
 func _icon_rect(path: String, side: float) -> TextureRect:
 	var ic := TextureRect.new()
 	if path.begins_with("res://"):
-		ic.texture = load(path) if ResourceLoader.exists(path) else Kit.icon_tex(path.get_file().get_basename())
+		ic.texture = Kit.atlas_of(load(path) if ResourceLoader.exists(path) else Kit.icon_tex(path.get_file().get_basename()))
 	else:
-		ic.texture = Kit.icon_tex(path)
+		ic.texture = Kit.icon_atlas(path)  # from the kit's shared icon sheet: it batches with the kit surfaces round it
 	ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	ic.custom_minimum_size = Vector2(side, side)
@@ -494,7 +494,7 @@ func _battle_card(card: String, r: Rect2, two_lines := false) -> Panel:
 	_card_names[card] = nm
 	var lk := TextureRect.new()
 	lk.name = "lock"
-	lk.texture = Kit.icon_tex("lock")
+	lk.texture = Kit.icon_atlas("lock")
 	lk.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	lk.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	lk.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -818,7 +818,7 @@ func _build_action() -> void:
 	_timer_plate = _panel(_action, TIMER_RECT, Kit.style(Kit.SLATE, 24, 4, Kit.INK, 6, 6), Control.MOUSE_FILTER_STOP)
 	_timer_plate.name = "timer"
 	var hg := TextureRect.new()
-	hg.texture = Kit.icon_tex("hourglass")
+	hg.texture = Kit.icon_atlas("hourglass")
 	hg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	hg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	hg.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1586,7 +1586,7 @@ func _fly_rewards(srcs: Array) -> void:
 		if not is_instance_valid(src) or pill == null or not pill.is_visible_in_tree() or tex == null:
 			continue
 		var ic := TextureRect.new()
-		ic.texture = tex
+		ic.texture = Kit.atlas_of(tex)
 		ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		ic.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -2523,7 +2523,7 @@ func show_ultimatum(enemy: String, hex_name: String, tribute: int, can_pay: bool
 		card.name = "option_%d" % i
 		var tex: Texture2D = o.get("tex") if o.get("tex") != null else Kit.icon_tex(String(o["icon"]))
 		var pic := TextureRect.new()
-		pic.texture = tex
+		pic.texture = Kit.atlas_of(tex)
 		pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -2708,11 +2708,23 @@ func _dlg_chips(host: Control, r: Rect2, chips: Array, center := true) -> void:
 
 ## A leader's face for a list row: the bust on the state's colour, R 14, an INK 3 rim.
 func _mini_face(id: String, plate: Color, mood: String, side: float) -> Control:
+	# drawn from the kit's bake atlas (Kit.KitStill): one textured rect instead of the clip group, the render and the rim
+	var era := CmdPortrait.era
+	var mk := func(z: Vector2) -> Control:
+		return _mini_face_vec(id, plate, mood, z.x, true) if CmdPortrait.era == era else null
+	return Kit.KitStill.new(_mini_face_vec(id, plate, mood, side, false), "mini_face|%s|%s|%s|%d" % [id, plate.to_html(), mood, era], mk)
+
+
+## The leader's face itself (see _mini_face): `raw` — its panels as plain StyleBoxFlats (the bake stage draws them).
+func _mini_face_vec(id: String, plate: Color, mood: String, side: float, raw: bool) -> Control:
 	var fr := Panel.new()
 	fr.name = "face"
 	var sb := Kit.style(plate, 14, 0, Kit.INK, 0, 0)
 	sb.set_meta("kit_kind", "")
-	Kit.set_panel(fr, sb)
+	if raw:
+		fr.add_theme_stylebox_override("panel", sb)
+	else:
+		Kit.set_panel(fr, sb)
 	fr.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW
 	fr.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	fr.size = Vector2(side, side)
@@ -2731,7 +2743,10 @@ func _mini_face(id: String, plate: Color, mood: String, side: float) -> Control:
 	var rsb := Kit.style(Kit.CLEAR, 14, 3, Kit.INK, 0, 0)
 	rsb.draw_center = false
 	rsb.set_meta("kit_kind", "")
-	Kit.set_panel(rim, rsb)
+	if raw:
+		rim.add_theme_stylebox_override("panel", rsb)
+	else:
+		Kit.set_panel(rim, rsb)
 	rim.size = fr.size
 	rim.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	fr.add_child(rim)
@@ -3076,7 +3091,7 @@ func show_settings(sound_on: bool, on_sound: Callable, on_new_game: Callable, on
 	srow.name = "sound"
 	sw.cb = func(on: bool):
 		on_sound.call()
-		(srow.icon_node as TextureRect).texture = Kit.icon_tex("sound_on" if on else "sound_off")
+		(srow.icon_node as TextureRect).texture = Kit.icon_atlas("sound_on" if on else "sound_off")
 	srow.cb = func():
 		sw.set_on(not sw.on)
 		sw.cb.call(sw.on)
@@ -3875,7 +3890,7 @@ func show_profile(info: Dictionary, cb: Dictionary) -> void:
 	box.set_meta("kit_native", true)
 	var w := box.size.x
 	# ---- the header: flag, ruler, name
-	var crest := FlagView.new(info.get("flag", {}))
+	var crest := Kit.KitFlag.new(info.get("flag", {}))  # drawn from the kit's bake atlas
 	crest.name = "flag"
 	crest.position = Vector2(32, 72)
 	crest.size = Vector2(120, 154)
@@ -4044,7 +4059,7 @@ func show_flag_editor(flag: Dictionary, owned: Dictionary, on_change: Callable, 
 	var box := _modal_box(Rect2(full.position, Vector2(full.size.x, minf(full.size.y, rest + area_h))), false, tr("flag.title"), "", "info", true, false)
 	box.set_meta("kit_native", true)
 	var w := box.size.x
-	var prev := FlagView.new(flag)
+	var prev := Kit.KitFlag.new(flag)
 	prev.name = "preview"
 	prev.position = Vector2((w - 152.0) * 0.5, 72)
 	prev.size = Vector2(152, 196)
@@ -4236,7 +4251,7 @@ func show_flag_wizard(step: int, opts: Array, on_pick: Callable, on_random: Call
 		Kit.button(box, Rect2((w - 480.0) * 0.5, fy, 480, 112), "info", tr("flag.random"), {"size": "L", "icon": "dice",
 			"cb": on_random}).name = "random"
 		return
-	var big := FlagView.new(opts[0])
+	var big := Kit.KitFlag.new(opts[0])
 	big.name = "flag"
 	big.position = Vector2((w - 326.0) * 0.5, y0)
 	big.size = Vector2(326, 420)
@@ -4257,7 +4272,7 @@ func _flag_tile(parent: Control, r: Rect2, f: Dictionary, sel: bool, locked: boo
 	var fh := r.size.y - 5.0 - 20.0
 	var fw := minf(r.size.x - 24.0, fh * 0.78)
 	fh = fw / 0.78
-	var fv := FlagView.new(f)
+	var fv := Kit.KitFlag.new(f)  # one textured rect from the bake atlas (a FlagView costs ~11 draw calls)
 	fv.position = Vector2((r.size.x - fw) * 0.5, (r.size.y - 5.0 - fh) * 0.5)
 	fv.size = Vector2(fw, fh)
 	if locked:
@@ -5059,7 +5074,7 @@ func _leader_bust(it: Dictionary, r: Rect2) -> Control:
 	var pid := String(it.get("portrait", ""))
 	var tex: Texture2D = CmdPortrait._render(pid, _leader_face(it)) if pid != "" else null
 	var t := TextureRect.new()
-	t.texture = tex if tex != null else Kit.icon_tex("crown")
+	t.texture = tex if tex != null else Kit.icon_atlas("crown")
 	t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
