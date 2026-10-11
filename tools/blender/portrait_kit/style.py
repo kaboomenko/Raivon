@@ -53,8 +53,9 @@ STYLE = {
     "lower_lip_f": 0.036,
     "mouth_open": (0.34, 0.12),  # open D mouth width x height, in H
     "teeth_share": 0.30,       # upper teeth: share of the open mouth height
-    "mouth_depth": 0.18,       # the open mouth's pocket: its back this far behind the face at the mouth line, in H
-                               # (Bram's tuned pocket; a fixed back plane made it half as deep on narrow faces)
+    "mouth_depth": 0.12,       # the open mouth's pocket: its back this far behind the face at the mouth line, in H
+                               # (Lira's tuned pocket, now on every head: a fixed back plane made it 0.18 deep on
+                               # Bram's broad face, where its walls went black — dark pixels past §7.4's 3 %)
     "ear_h": 0.23,             # C-shaped ears, height in H; stand out 0.05 H
     "ear_out": 0.05,
     "cheek_r": 0.12,           # cheek volumes r 0.12 H at +-0.19–0.24 H, 0.10–0.12 H below the eye line

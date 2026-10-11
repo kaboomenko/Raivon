@@ -301,15 +301,18 @@ def _streak(ctx, head, part, streak_path, col, sx):
     core.update()
     el = []
     wmax = 0.12 * H * 0.5
-    tip_d = core.az_el(-30, 24)
+    # (the root lies on the front of the hair, well inside its outline seen from the level camera: a root up at the
+    # crown stood off the top of the head like a horn)
+    stk = ctx.ch["hair"]
+    route = stk.get("streak_route", [(14, 58), (2, 50), (-13, 40), (-25, 30)])   # (azimuth, elevation) on the hair
+    w0, w1 = stk.get("streak_w", (0.55, 1.0))                                    # root / middle width share
+    tip_d = core.az_el(route[-1][0] - 5, route[-1][1] - 6)
     th_, tn_ = core.ray(hair, tip_d * 3, -tip_d)
     for k, da in enumerate((-2.5, 2.5)):     # two strands ~0.06 apart: 0.12 H together, a groove between
-        free = th_ + tn_ * 0.012 + Vector((-0.012 + da * 0.003, -0.02, -0.075 - abs(da) * 0.002))
-        p_ = [core.az_el(6 + da * 0.15, 63), core.az_el(-4 + da * 0.5, 54), core.az_el(-14 + da * 0.9, 43),
-              core.az_el(-24 + da * 0.9, 32), free]
-        el += core.ribbon_lock(hair, p_, 0.006, wmax * 0.55, 0.032, n=40, lift=0.12, free_tail=1, taper_at=0.65,
-                               wmin=0.022)
-    stk = ctx.ch["hair"]
+        free = th_ + tn_ * 0.010 + Vector((-0.010 + da * 0.003, -0.018, -0.07 - abs(da) * 0.002))
+        p_ = [core.az_el(az + da * (0.2 + 0.8 * i / (len(route) - 1)), el) for i, (az, el) in enumerate(route)] + [free]
+        el += core.ribbon_lock(hair, p_, wmax * 0.55 * w0, wmax * 0.55 * w1, 0.026, n=40, lift=0.08, free_tail=1,
+                               taper_at=0.62, wmin=0.022)
     mat = core.hair_mat(ctx, "hair_streak", stk.get("streak_mid", core.hex_scale(col, 0.92)), 0.1, 0.62,
                         dark=stk.get("streak_tip", col), light=stk.get("streak_root", core.hex_scale(col, 0.78)),
                         crevice=stk.get("streak_crevice", "#5E626C"))

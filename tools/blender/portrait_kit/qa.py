@@ -193,6 +193,9 @@ def id_pass(ctx, path_png, path_json, path_sig, size):
             o.hide_render = True
             continue
         grp = by_obj.get(o.name, "costume")
+        if o is ctx.objs.get("mouth_cutter"):
+            # hidden, but its material is what the boolean transfers onto the pocket's walls: the "mouth" group
+            grp = "mouth"
         if o.name in eyes:
             m = _eye_id("id_" + o.name, o.data.materials[0], table)
         elif grp == "skin" and o.name == "head":

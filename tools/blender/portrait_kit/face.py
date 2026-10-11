@@ -13,6 +13,11 @@ skin tube along the visible bottom (the designed lower lid, or the cheek where i
 into an arch); the lid cut is calibrated from that bottom and the camera's perspective so the opening on the picture
 is (open - low) x sclera_h (§7.6); a tapered lash line runs along the lid's edge (a flick for women). The brows sit
 brow_gap above the calm lash line (+ the mood's lift). The two catchlights are added by rig.solve_gaze.
+
+Open mouths (carve_mouth, _open_mouth): an EXACT boolean whose cut carries the dark interior material (the pocket is
+the cavity, on any face), a pocket STYLE["mouth_depth"] deep behind the face; teeth, tongue and lips sit on the real
+rim (_Opening: where the uncut face meets the cutter's walls, by bisection), with an outline fallback that is
+reported in ctx.notes; portrait_assets.py --selftest builds every head with the open mouths later steps need.
 """
 import math
 
@@ -805,7 +810,7 @@ def _open_mouth(ctx, head, lip_m, low_t):
     if zr is None:
         zr = zb
     ty, tz = (0.055, hh * 0.20)
-    tongue = core.uvsphere("tongue", (cx + 0.008, face_y(cx, zr - 0.004) + 0.02 + ty, zr + tz * 0.6),
+    tongue = core.uvsphere("tongue", (cx + 0.008, face_y(cx, zr - 0.004) + 0.012 + ty, zr + tz * 0.6),
                            (w * 0.55, ty, tz), core.principled(ctx, "tongue", C["tongue"], 0.45, sss=0.2), 32, 16)
     ctx.add(tongue, "tongue", head, kind="embed", head=True)
     # the lower lip: a tube on the lower rim, not up the corners

@@ -1,15 +1,13 @@
-"""Beards and moustaches (§7.5 step 4): a mass from a sheet of balls sampled under the beard line plus rounded lobes,
-then ribbon locks cast onto a temporary mesh of that mass so they sit ~0.02 above it (soft grooves, not separate
-"petals"); a negative element keeps the mouth clear; the beard's upper edge depends on the mood (an open laugh
-needs its lower lip and a little chin clear). Converted to a mesh, Smooth 2 (§7.5).
+"""Beards and moustaches (§7.5 step 4): a few broad, smooth strand groups (core.clump) laid along a guide surface —
+the face above the chin, an analytic shape below it — over a hidden backing (a sparse sheet of large balls on the face
+plus big soft volumes), so soft grooves run between the groups (no small bumps, no separate "petals", art director
+note 3); a negative element keeps the mouth clear; the beard's upper edge depends on the mood (an open laugh needs
+its lower lip and a little chin clear, its corners covered). Converted to a mesh, Smooth 4 (§7.5: no Subsurf).
 
 Styles (chars.py "beard": {"style": ...}):
-  pear — wider than the jaw by `wider` W on each side, `below` H under the chin, two lower lobes (Bram's
+  pear — wider than the jaw by `wider` W on each side, `below` H under the chin, two rounded lower lobes (Bram's
          signature: the lower head wider than the top), with a bushy moustache.
 """
-import math
-
-import bpy
 from mathutils import Vector
 
 from . import core
@@ -82,8 +80,12 @@ def _pear(ctx, bd):
         return Vector((x, ya, z)), Vector((0.8 * u / max(w, 0.2), -1.0, -0.15 * t)).normalized()
 
     # the backing: a sparse face sheet under the beard line and big soft volumes inside the pear
+    open_m = getattr(ctx, "mouth_open", False)
+
     def keep(h, n, d):
-        if h.z > line(h.x) - 0.01:
+        # (an open mouth: the sheet stops a little lower under it — its rounded top edge stood over the lower lip
+        # and hid the bottom of the opening)
+        if h.z > line(h.x) - 0.01 - (0.035 if open_m and abs(h.x) < 0.26 * sx else 0.0):
             return False
         if abs(h.x) > 0.36 * sx and h.z > -0.25:          # the sideburn stays in front of the ear
             return h.y < -0.06
@@ -111,14 +113,17 @@ def _pear(ctx, bd):
             # stand out of the face's outline as a horn)
             z_root = min(line(x_root) - 0.035, -0.16 if u < 0.8 else -0.25)
             if abs(x_root) < 0.30 * sx:                     # under the mouth: just below the beard line there
-                z_root = line(x_root) - 0.04
+                # (an open mouth: lower, so the clump's rounded start stays under the lower lip, not over the opening)
+                z_root = line(x_root) - (0.08 if open_m else 0.04)
             xe_ = sd * xe * lobe_x
             # the lobe outline: lowest under the lobe's middle, rising to the notch between the two lobes and outward
             d_ = (abs(xe_) - lobe_x) / lobe_x
             ze = tip_z + 0.035 + (0.15 if d_ < 0 else 0.09) * d_ * d_
-            ctrl = [(x_root, z_root), (sd * u * half_w(zj), zj)]
+            # the path only runs down: a root under a big open mouth can sit below the jaw row
+            z1 = min(zj, z_root - 0.04)
+            ctrl = [(x_root, z_root), (sd * u * half_w(z1), z1)]
             for t in (0.35, 0.68):
-                z = zj - (zj - tip_z) * t
+                z = z1 - (z1 - tip_z) * t
                 x = sd * u * half_w(z)
                 ctrl.append((x + (xe_ - x) * t * 0.35, z))
             ctrl.append((xe_, ze))
@@ -132,7 +137,9 @@ def _pear(ctx, bd):
     if getattr(ctx, "mouth_open", False):
         pts = ctx.mouth_pts
         zs = [q[1] for q in pts]
-        el.append(dict(co=(0.0, fy - 0.08, (min(zs) + max(zs)) / 2 - 0.01), half=(0.16 * sx, 0.12, 0.09), stiff=4.0,
+        # (a soft, shallow window: the sheet and the clumps already stop under the lower lip; a deep notch left the
+        # beard's inner walls around the opening in black shadow, past the albedo floor, §7.4)
+        el.append(dict(co=(0.0, fy - 0.06, (min(zs) + max(zs)) / 2 - 0.01), half=(0.15 * sx, 0.08, 0.08), stiff=3.0,
                        neg=True))
     else:
         # the closed mouth: a flat window over the lower lip only (a taller one bared the chin at its two ends — cream
@@ -151,6 +158,10 @@ def _pear(ctx, bd):
         attr = o.data.color_attributes.new("beard_edge", "FLOAT_COLOR", "POINT")
         for i, v in enumerate(o.data.vertices):
             e = 1.0 - core.smoothstep(0.0, 0.08, line(v.co.x) - v.co.z)
+            if open_m:
+                # not around an open mouth: there the band sits in the opening's shadow and went black (past the
+                # albedo floor, §7.4); the lips and teeth separate the beard from the face there
+                e *= core.smoothstep(0.20 * sx, 0.30 * sx, abs(v.co.x))
             attr.data[i].color = (e, e, e, 1.0)
     ctx.add(o, "beard", head, kind="embed", head=True)
     ctx.objs["beard"] = o

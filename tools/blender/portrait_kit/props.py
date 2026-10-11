@@ -238,8 +238,8 @@ def glasses(ctx, pr):
         # frame-coloured pads read as two dots on the nose, review r3: half the size, the lens's clear material,
         # set back from the rim)
         if nose is not None:
-            corner = front + rot @ Vector((-side * w * 0.92, 0.03, -hh * 0.35))
-            hp, np_ = core.ray(nose, corner, Vector((-side, 0.0, 0.0)), dist=0.6)    # toward the nose
+            corner = front + rot @ Vector((-side * w * 0.92, 0.0, -hh * 0.35))
+            hp, np_ = core.ray(nose, corner + rot @ Vector((0.0, 0.03, 0.0)), Vector((-side, 0.0, 0.0)), dist=0.6)
             if hp is not None and (hp - corner).length < 0.25:
                 pr_ = t * 0.38
                 pad = core.uvsphere("glasses_pad_" + e["tag"], hp + np_ * pr_ * 0.6, (pr_, pr_ * 0.55, pr_ * 1.3),

@@ -103,8 +103,10 @@ static func bake_stats(kb: Node) -> String:
 	for path in kb.icons:
 		if (kb.icons[path][2] as Rect2i).size.x > 0:
 			icons_in += 1
-	return "k=%.3f atlas=%s baked=%d queued=%d not-baked=%d waiting=%d icons=%d/%d resets=%d evicted=%d used=%.0f%% top=%d stage=%s state=%d" % [
-		kb.k, kb._asize, kb.slots.size(), kb.jobs.size(), kb.never.size(), kb.waiting.size(), icons_in, kb.icons.size(),
+	var deferred: Variant = kb.get("_defer")  # (images waiting for a piece of a fragmented atlas; an older kit has none)
+	return "k=%.3f atlas=%s baked=%d queued=%d deferred=%d not-baked=%d waiting=%d icons=%d/%d resets=%d evicted=%d used=%.0f%% top=%d stage=%s state=%d" % [
+		kb.k, kb._asize, kb.slots.size(), kb.jobs.size(), (deferred as Dictionary).size() if deferred is Dictionary else 0,
+		kb.never.size(), kb.waiting.size(), icons_in, kb.icons.size(),
 		kb.resets, kb.evicted, kb.used() * 100.0, kb._top, kb.stage.size, kb._state]
 
 

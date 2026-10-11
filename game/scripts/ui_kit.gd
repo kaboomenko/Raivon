@@ -593,6 +593,9 @@ class KitBake extends Node:
 	const SETTLE_MS := 200  ## a moved owner is drawn again once it has held still this long
 	const POLL_N := 48  ## owners whose place is looked at per frame (in turn)
 	const OPAQUE := 0.999  ## a modulate α below this: seen through, drawn as vectors (draw, chain_alpha)
+	const FRAGMENTED := 0.6  ## a full atlas with less than this share in use is in pieces, not full: what fits none waits
+	const DEFER_MAX := 24  ## images waiting so for a piece large enough before the atlas starts over all the same
+	const DEFER_RETRY_MS := 300  ## the waiting images are tried again after this long
 	const PHASES := 8.0  ## sub-pixel offsets a bake is made at, per pixel and axis
 	## Logical px of straight edge a sliced bake keeps past each corner: what is stretched must be uniform, and the
 	## antialiased edge of a StyleBoxFlat is not, for a few px past where its corner arc ends (the half-pixel offsets
@@ -641,6 +644,8 @@ class KitBake extends Node:
 	var _poll: Array = []  # host ids still to look at in this pass
 	var _poll_p: Array = []  # parked host ids still to look at in this pass
 	var _poll_f: Array = []  # faded host ids still to look at in this pass
+	var _defer := {}  # full key -> job: no piece of the (fragmented) atlas fits it yet; queued again after DEFER_RETRY_MS
+	var _defer_at := 0
 	var _later: Array = []  # [WeakRef, due ms]: owners to redraw then (later())
 	var _round: Array = []  # the jobs in flight: {key, base, off, pp, at (stage px), slot, gen}
 	var _state := 0  # 0 idle, 1 the stage renders, 2 the atlas copies
@@ -762,6 +767,10 @@ class KitBake extends Node:
 		never.clear()
 		refs.clear()
 		_pack_reset()
+		for key in _defer:  # (the new atlas has room for what waited)
+			if not jobs.has(key):
+				jobs[key] = _defer[key]
+		_defer.clear()
 		_icons_new.clear()
 		for path in icons:  # the icons show their own textures until they are in the new atlas
 			var e: Array = icons[path]
@@ -1131,6 +1140,11 @@ class KitBake extends Node:
 		_poll_moves()
 		_poll_parked()
 		_poll_faded()
+		if not _defer.is_empty() and now - _defer_at >= DEFER_RETRY_MS:
+			for key in _defer:
+				if not jobs.has(key):
+					jobs[key] = _defer[key]
+			_defer.clear()
 		if _state != 0 or not is_inside_tree():
 			return
 		if not jobs.is_empty():
@@ -1214,6 +1228,16 @@ class KitBake extends Node:
 				# (a moved owner's old offset, a changed look) that can be dropped once their owners have drawn again
 				break
 			if slot.size.x == 0:
+				if used() < FRAGMENTED and _defer.size() < DEFER_MAX:
+					# half empty, but in pieces too small for it (a long list's rows dropped here and there): it waits — its
+					# owners draw its vectors — instead of the atlas starting over (every image drawn as vectors at once until
+					# the round lands: a burst of draw calls in the middle of a scroll); tried again shortly, when what went
+					# out of sight has given its room up
+					if _defer.is_empty():
+						_defer_at = Time.get_ticks_msec()
+					_defer[key] = j
+					done.append(key)
+					continue
 				if Time.get_ticks_msec() - _reset_at < RESET_GAP_MS:
 					# full again right after a reset: what does not fit now stays vectors (until the next reset)
 					never[key] = true

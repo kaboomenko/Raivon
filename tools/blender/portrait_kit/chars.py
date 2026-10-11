@@ -34,13 +34,16 @@ CHARS = {
         nose=dict(type="potato", tip="#E8857A", tip_k=0.6, drop=0.20, k=1.0),
         mouth=dict(lip="#C4675A", line=0.20,
                    calm=dict(type="closed", w=0.27, near=0.02, far=0.0),
-                   smile=dict(type="open", w=0.34, h=0.14, near=0.045, far=0.03, dz=-0.012)),
+                   # h 0.12 (§7.3 norm): at 0.14 the opening reached the chin and the beard under it sat in a
+                   # deep shadow shelf (dark pixels past §7.4's 3 %)
+                   smile=dict(type="open", w=0.34, h=0.12, near=0.045, far=0.03, dz=-0.012)),
         hair=dict(style="swept", color="#B5562B", dark="#5A200C", light="#B5562B", crevice="#46180A",
                   sideburns=True),
         # the beard #C8652F (§7.6) shaded hair-like but the other way up: lit lobe tips #D88048 on the slate jerkin
-        # (dL* >= 15), roots #A04A22 and a #7A3216 band along the cheek (it no longer melts into the T2 skin); the
-        # moustache in a darker rust, so it reads as hair over the lip, not a fleshy upper lip
-        beard=dict(style="pear", color="#C8652F", tip="#D88048", root="#A04A22", edge="#7A3216", crevice="#5A220C",
+        # (dL* >= 15), roots #8E3E1C and a #74301A band along the cheek (beard vs skin >= 15, also at the boundary:
+        # art director note 1); a soft #7A3216 crevice tone between the strand groups; the moustache in a darker
+        # rust, so it reads as hair over the lip, not a fleshy upper lip
+        beard=dict(style="pear", color="#C8652F", tip="#D88048", root="#8E3E1C", edge="#74301A", crevice="#7A3216",
                    wider=0.12, below=0.45, moustache=True, moustache_color="#A04A22", moustache_dark="#6A2810",
                    moustache_light="#B5562B"),
         scar=dict(near=True, **{"from": (-0.34, 0.01), "to": (-0.23, -0.14)}),
@@ -50,8 +53,10 @@ CHARS = {
             layers=[
                 # a laced jerkin closed under the beard (the beard lies on slate: dL* >= 15, §7.4); no shirt collar —
                 # the beard covers the neck
+                # (shade 0.94 -> 0.87 down the jerkin, not 0.80: under the beard's shadow the bottom went past the
+                # albedo floor — dark pixels, §7.4)
                 dict(kind="vest", id="jerkin", color="#3F4D5E", z0=-1.32, z1=-0.645, thick=0.032, rough=0.9, sheen=0.4,
-                     shade=(0.94, 0.80),
+                     shade=(0.94, 0.87),
                      open=[(-1.40, 0.10), (-1.15, 0.05), (-0.85, 0.05), (-0.70, 0.10), (-0.66, 0.16)]),
                 dict(kind="belt", z=-1.09, w=0.13, color="#6B4226", buckle="#E0AD45", over=0.05),
             ]),
