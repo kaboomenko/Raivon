@@ -1610,7 +1610,8 @@ class KitStill extends Control:
 		mouse_filter = Control.MOUSE_FILTER_IGNORE
 		vec = v
 		if v != null:
-			name = v.name
+			if v.name != &"":  # (an unnamed Control keeps the engine's own name; an empty one is an error)
+				name = v.name
 			position = v.position
 			size = v.size
 			v.position = Vector2.ZERO
