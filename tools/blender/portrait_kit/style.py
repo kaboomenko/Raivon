@@ -148,3 +148,74 @@ COSTUME_COLORS = [(128, 128, 0), (160, 160, 0), (96, 96, 0), (128, 160, 32), (16
 DETAIL_COLORS = [(64, 0, 0), (0, 64, 0), (0, 0, 64), (64, 64, 0), (64, 0, 64), (0, 64, 64), (192, 64, 0),
                  (64, 192, 0), (0, 64, 192), (192, 0, 64), (64, 0, 192), (0, 192, 64), (192, 192, 64),
                  (64, 192, 192), (192, 64, 192), (96, 32, 160), (160, 96, 32), (32, 160, 96)]
+
+
+# ------------------------------------------------------------------ colour maths (pure Python: chars.py uses it at
+# import time, outside Blender's colour management)
+def _lin(c):
+    return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+
+def _gam(c):
+    c = max(0.0, min(1.0, c))
+    return c * 12.92 if c <= 0.0031308 else 1.055 * c ** (1 / 2.4) - 0.055
+
+
+def lab_of(hx):
+    """sRGB hex -> CIE Lab (D65), the formula of tools/qa_portraits/qa_common.srgb_to_lab."""
+    h = hx.lstrip("#")
+    r, g, b = (_lin(int(h[i:i + 2], 16) / 255.0) for i in (0, 2, 4))
+    x = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047
+    y = 0.2126 * r + 0.7152 * g + 0.0722 * b
+    z = (0.0193 * r + 0.1192 * g + 0.9505 * b) / 1.08883
+
+    def f(t):
+        return t ** (1 / 3) if t > 216 / 24389 else (24389 / 27 * t + 16) / 116
+    fx, fy, fz = f(x), f(y), f(z)
+    return 116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)
+
+
+def hex_of_lab(L, a, b):
+    fy = (L + 16) / 116
+    fx, fz = fy + a / 500, fy - b / 200
+
+    def fi(t):
+        return t ** 3 if t ** 3 > 216 / 24389 else (116 * t - 16) / (24389 / 27)
+    x, y, z = fi(fx) * 0.95047, fi(fy), fi(fz) * 1.08883
+    r = 3.2406 * x - 1.5372 * y - 0.4986 * z
+    g = -0.9689 * x + 1.8758 * y + 0.0415 * z
+    bb = 0.0557 * x - 0.2040 * y + 1.0570 * z
+    return "#%02X%02X%02X" % tuple(int(round(_gam(c) * 255)) for c in (r, g, bb))
+
+
+def de76(a, b):
+    la, lb = lab_of(a), lab_of(b)
+    return sum((p - q) ** 2 for p, q in zip(la, lb)) ** 0.5
+
+
+def lab_adjust(hx, dL=0.0, chroma=1.0, mix=None, t=0.0):
+    """A colour with its hue locked (§7.7): L* + dL, chroma x `chroma`, optionally first mixed (in Lab) with `mix`
+    at `t` — the mix pulls the hue a little, the chroma step never turns it."""
+    L, a, b = lab_of(hx)
+    if mix:
+        L2, a2, b2 = lab_of(mix)
+        L, a, b = L + (L2 - L) * t, a + (a2 - a) * t, b + (b2 - b) * t
+    return hex_of_lab(L + dL, a * chroma, b * chroma)
+
+
+# §7.7 "Цвет по эпохам": the main colour of a costume by era (the hue locked; the old drift of every era into one khaki
+# and one steel is gone): E2 rich wool (L* -5, saturation +5 %), E3 field (mix with #6E6A4E 0.20, saturation x0.85),
+# E4 painted plates (L* +6, saturation x0.95; roughness 0.45, metallic 0.25 — ERA_PLATE) over an underlayer #3A4150.
+ERA_FIELD = "#6E6A4E"
+ERA_UNDER = "#3A4150"
+ERA_PLATE = dict(rough=0.45, metal=0.25)
+
+
+def era_color(hx, era):
+    if era == 2:
+        return lab_adjust(hx, dL=-5.0, chroma=1.05)
+    if era == 3:
+        return lab_adjust(hx, chroma=0.85, mix=ERA_FIELD, t=0.20)
+    if era == 4:
+        return lab_adjust(hx, dL=6.0, chroma=0.95)
+    return hx.upper() if hx.startswith("#") else hx

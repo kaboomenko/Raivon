@@ -75,6 +75,7 @@ class Ctx:
     def __init__(self, cid, char, mood="calm", era=1):
         self.cid, self.ch, self.mood, self.era = cid, char, mood, era
         self.smile = mood == "smile"
+        self.fx = char.get("_fx", {})         # the mood's effects (chars.MOOD_FX): cheeks, blush, pupil, gaze, bags ...
         self.rng = random.Random(sum(ord(c) * (i + 1) for i, c in enumerate(cid)))  # stable across runs
         self.parts = []
         self.mats = {}
@@ -297,6 +298,32 @@ def grad_mat(ctx, name, top, bottom, z0, z1, rough=0.8, sheen=0.0, coat=0.0, axi
     nt = m.node_tree
     nt.links.new(node_ramp(nt, node_obj_axis(nt, axis, z0, z1, space), [(0.0, bottom), (1.0, top)]),
                  nt.nodes["Principled BSDF"].inputs["Base Color"])
+    return m
+
+
+def camo_mat(ctx, name, base, spots, scale=5.0, z0=-1.9, z1=0.6, rough=0.85, sheen=0.3):
+    """Camouflage cloth (§7.6 Vik E3 "маскхалат с пятнами"): the base colour with soft-edged blotches of the `spots`
+    colours (object-space noise thresholds), under the usual top-to-bottom fabric gradient."""
+    if name in ctx.mats:
+        return ctx.mats[name]
+    m = principled(ctx, name, base, rough=rough, sheen=sheen)
+    nt = m.node_tree
+    tc = nt.nodes.new("ShaderNodeTexCoord")
+    col = node_ramp(nt, node_obj_axis(nt, "Z", z0, z1), [(0.0, hex_scale(base, 0.92)), (1.0, hex_scale(base, 1.05))])
+    for i, sp in enumerate(spots):
+        nz = nt.nodes.new("ShaderNodeTexNoise")
+        nz.inputs["Scale"].default_value = scale * (1.0 + 0.37 * i)
+        nz.inputs["Detail"].default_value = 1.0
+        nz.inputs["W"].default_value = 3.1 * i if "W" in nz.inputs else 0.0
+        try:
+            nz.noise_dimensions = "4D"
+            nz.inputs["W"].default_value = 1.7 + 3.1 * i
+        except (AttributeError, TypeError, KeyError):
+            pass
+        nt.links.new(tc.outputs["Object"], nz.inputs["Vector"])
+        mask = node_math(nt, "MULTIPLY", node_math(nt, "SUBTRACT", nz.outputs["Fac"], 0.55 + 0.02 * i), 14.0, clamp=True)
+        col = node_mix(nt, mask, col, sp)
+    nt.links.new(col, nt.nodes["Principled BSDF"].inputs["Base Color"])
     return m
 
 

@@ -54,8 +54,9 @@ def _hair_mat(ctx, name, col, z0=0.1, z1=0.62):
 
 def build_hair(ctx):
     st = ctx.ch["hair"]["style"]
-    {"swept": _swept, "kerchief": _kerchief, "bob": _bob, "tufts": _tufts, "fringe": _fringe, "short": _short,
-     "flattop": _flattop, "ponytail": _ponytail, "bun": _bun, "long": _long, "quiff": _quiff}[st](ctx)
+    fn = {"swept": _swept, "kerchief": _kerchief, "bob": _bob, "tufts": _tufts, "fringe": _fringe, "short": _short,
+          "flattop": _flattop, "ponytail": _ponytail, "bun": _bun, "long": _long, "quiff": _quiff}.get(st)
+    (fn or _P3_STYLES[st])(ctx)
 
 
 def _cut(ctx, el):
@@ -908,3 +909,278 @@ def _quiff(ctx):
         el += core.ribbon_lock(head, [core.az_el(s_ * 66, 30), core.az_el(s_ * 76, 14), core.az_el(s_ * 80, 2)],
                                0.065 * sx, 0.04 * sx, 0.035, n=10, lift=0.4, taper_at=0.6)
     _finish_hair(ctx, el, hr["color"], cut=False)
+
+
+# ================================================================== P3: the leaders' and the ruler's hair (§7.8, §7.10)
+def _bald(ctx):
+    """A bald head (Torvald; Ormdek under his steel plate): no hair object; face.skin_mat glosses the dome (hair
+    "bald": True)."""
+    return None
+
+
+def _second(ctx, el, col, name, dark=None, light=None, crevice=None, res=0.011, smooth_iter=2):
+    """A second hair mass in its own colour (grey temples, grey streaks): the "hair" ID group, parented to the head."""
+    el = _cut(ctx, el)
+    if not el:
+        return None
+    hr = ctx.ch["hair"]
+    mat = core.hair_mat(ctx, "hair_" + name, col, 0.1, 0.62, dark=dark or core.hex_scale(col, 0.8),
+                        light=light or core.hex_mix(col, "#ffffff", 0.15), crevice=crevice or hr.get("crevice"))
+    o = core.mb_mesh(ctx, "Hair" + name, el, res, mat, smooth_iter=smooth_iter, name=name)
+    ctx.add(o, "hair", ctx.objs["head"], kind="embed", head=True)
+    ctx.objs[name] = o
+    return o
+
+
+def _mane(ctx):
+    """A short mane swept straight back (Grodek, §7.8: "чёрная короткая грива назад, седые виски"): a scalp sheet
+    and broad locks from the hairline back over the crown, longer at the nape where their ends flick out; the
+    temples grey (`temples`: a second mass of short locks in front of and above the ears)."""
+    head = ctx.objs["head"]
+    hr = ctx.ch["hair"]
+    sx = ctx.P["hx"] / 0.48
+    hl = hairline_fn(hr.get("hairline", [(0, 0.31), (30, 0.29), (60, 0.21), (80, 0.13), (100, 0.07), (140, -0.14),
+                                         (180, -0.24)]))
+    samples, s = core.surface_samples(head, 2400, lambda h, n, d: h.z > hl(h) + 0.015 and not (
+        hr.get("temples") and 62 < abs(math.degrees(math.atan2(h.x, -h.y))) < 112 and h.z < 0.30))
+    el = core.sheet_elems(samples, s, lambda h, n: 0.04 + 0.03 * core.smoothstep(0.1, 0.45, h.z))
+    nape = hr.get("nape", -0.30)
+    for az in range(-160, 181, 20):
+        e0 = core.lerp_table([(0, 47), (40, 42), (60, 36), (100, 22), (140, 6), (180, 0)], abs(az))
+        sg = 1 if az >= 0 else -1
+        back_az = sg * min(180, abs(az) + 40) if abs(az) < 140 else az
+        ctrl = [core.az_el(az, e0), core.az_el(az * 0.6 + sg * 50, 66), core.az_el(back_az, 18)]
+        tail = None
+        if abs(az) >= 90:
+            d = core.az_el(back_az, -8)
+            hb, nb = core.ray(head, d * 3, -d)
+            if hb is not None:
+                tail = Vector((hb.x * 1.12, hb.y + 0.10, nape))
+        el += core.ribbon_lock(head, ctrl + ([tail] if tail is not None else []), 0.10 * sx, 0.07 * sx, 0.05, n=14,
+                               lift=0.5, free_tail=1 if tail is not None else 0, taper_at=0.65)
+    _finish_hair(ctx, el, hr["color"])
+    tc = hr.get("temples")
+    if tc:
+        el2 = []
+        for s_ in (-1, 1):
+            for az, e0, e1 in ((70, 34, 4), (84, 30, -2), (98, 28, 0)):
+                el2 += core.ribbon_lock(head, [core.az_el(s_ * az, e0), core.az_el(s_ * (az + 14), (e0 + e1) / 2),
+                                               core.az_el(s_ * (az + 30), e1)], 0.075 * sx, 0.06 * sx, 0.04, n=10,
+                                        lift=0.5)
+        _second(ctx, el2, tc, "temples", crevice=hr.get("temple_crevice", "#5A5A62"))
+
+
+def _curls(ctx):
+    """A cloud of copper curls (Mirosya, §7.8: "облако медных кудрей шириной 1.4 W"): a scalp sheet and some 90 small
+    curls — each a C of soft balls round a sunk centre — over a cloud that leaves the face open, widest at the sides
+    by the ears (the cloud's half width `width` x W / 2 there), a few curls over the forehead; `flat` < 1 presses the
+    cloud down (the tired mood: "кудри приплюснуты")."""
+    head = ctx.objs["head"]
+    hr = ctx.ch["hair"]
+    sx = ctx.P["hx"] / 0.48
+    flat = hr.get("flat", 1.0)
+    width = hr.get("width", 1.4)
+    hl = hairline_fn([(0, 0.30), (30, 0.29), (55, 0.22), (80, 0.06), (100, -0.10), (140, -0.24), (180, -0.30)])
+    samples, s = core.surface_samples(head, 2000, lambda h, n, d: h.z > hl(h) + 0.01)
+    el = core.sheet_elems(samples, s, lambda h, n: 0.05)
+    half = width * ctx.W / 2
+    rng = ctx.rng
+    cr = hr.get("curl", 0.052)
+    for d in core.fib_dirs(hr.get("n", 150)):
+        az = math.degrees(math.atan2(d.x, -d.y))
+        el_ = math.degrees(math.asin(max(-1.0, min(1.0, d.z))))
+        if abs(az) < 58 and el_ < 34:          # the face stays open
+            continue
+        if el_ < core.lerp_table([(0, 20), (60, -6), (90, -38), (130, -44), (180, -40)], abs(az)):
+            continue
+        hit, nor = core.ray(head, d * 3, -d)
+        if hit is None:
+            continue
+        # out from the scalp: thick at the sides (the 1.4 W width at ear level), less on top and at the back
+        side = abs(nor.x)
+        out = 0.05 + max(0.0, half - abs(hit.x)) * side * 0.95 * core.smoothstep(-0.45, -0.05, hit.z)
+        out += 0.04 * core.smoothstep(0.2, 0.5, hit.z)
+        out *= flat if hit.z > 0.1 else 1.0
+        c = hit + nor * out
+        if flat < 1.0 and c.z > 0.2:
+            c.z = 0.2 + (c.z - 0.2) * flat
+        t1 = nor.orthogonal().normalized()
+        t1 = (Matrix.Rotation(rng.uniform(0, 2 * math.pi), 3, nor) @ t1).normalized()
+        t2 = nor.cross(t1).normalized()
+        r = cr * rng.uniform(0.85, 1.2)
+        el.append(dict(co=c - nor * r * 0.3, half=r * 0.9, stiff=2.2))
+        for k in range(5):
+            a = math.radians(-40 + 70 * k)
+            el.append(dict(co=c + (t1 * math.cos(a) + t2 * math.sin(a)) * r * 0.85 + nor * r * 0.15,
+                           half=r * 0.55, stiff=2.8))
+        # a filler between the scalp and the curl, so the cloud has no holes
+        if out > 0.08:
+            el.append(dict(co=hit + nor * out * 0.5, half=min(out * 0.55, 0.14), stiff=2.0))
+    # fringe curls along the forehead's edge
+    for az in (-36, -20, -4, 12, 28, 42):
+        d = core.az_el(az, 33)
+        hit, nor = core.ray(head, d * 3, -d)
+        if hit is None:
+            continue
+        c = hit + nor * 0.05 + Vector((0, -0.01, -0.01))
+        r = cr * 0.95
+        el.append(dict(co=c, half=r * 0.9, stiff=2.2))
+        for k in range(4):
+            a = math.radians(-30 + 80 * k)
+            el.append(dict(co=c + Vector((math.cos(a) * r * 0.8, -0.01, math.sin(a) * r * 0.8)), half=r * 0.5,
+                           stiff=2.8))
+    _finish_hair(ctx, el, hr["color"], res=hr.get("res", 0.012), signature=True)
+
+
+def _owl(ctx):
+    """Smooth hair swept back with two sharp "owl" tufts wide at the back, turned out 30 deg (Iveta, §7.8: "два острых
+    «совиных» пучка широко сзади"): a scalp sheet, broad locks from the hairline back to a low knot at the nape, and
+    per side a tapering clump from the back of the crown up and out to a sharp point (leaders may be sharp, §7.2)."""
+    head = ctx.objs["head"]
+    hr = ctx.ch["hair"]
+    sx = ctx.P["hx"] / 0.48
+    hl = hairline_fn([(0, 0.31), (30, 0.29), (60, 0.20), (80, 0.11), (100, 0.04), (140, -0.14), (180, -0.22)])
+    samples, s = core.surface_samples(head, 2400, lambda h, n, d: h.z > hl(h) + 0.015)
+    el = core.sheet_elems(samples, s, lambda h, n: 0.045 + 0.02 * core.smoothstep(0.1, 0.45, h.z))
+    for az in range(-150, 151, 25):
+        e0 = core.lerp_table([(0, 46), (50, 38), (90, 22), (130, 6), (180, 0)], abs(az))
+        sg = 1 if az >= 0 else -1
+        el += core.ribbon_lock(head, [core.az_el(az, e0), core.az_el(az * 0.7 + sg * 40, 58),
+                                      core.az_el(sg * 168, 12)], 0.10 * sx, 0.08 * sx, 0.045, n=12, lift=0.45)
+    tf = hr.get("tufts", {})
+    ln = tf.get("len", 0.34) * H
+    for sd in (-1, 1):
+        rd = core.az_el(sd * tf.get("az", 128), tf.get("el", 40))
+        hit, nor = core.ray(head, rd * 3, -rd)
+        if hit is None:
+            continue
+        out = math.radians(tf.get("out", 30))
+        d = Vector((sd * math.sin(out) * 1.0, 0.35, math.cos(out))).normalized()
+        d = (d + nor * 0.35).normalized()
+        pts = [hit - nor * 0.02, hit + nor * 0.05 + d * ln * 0.30, hit + nor * 0.06 + d * ln * 0.65, hit + d * ln]
+        el += core.clump(pts, [nor, nor, nor, nor], 0.10, 0.07, 0.07, n=18, lift=0.0, taper_at=0.25, tip=0.06,
+                         stiff=2.6, flat=0.8)
+    o = _finish_hair(ctx, el, hr["color"], signature=True)
+    return o
+
+
+def _straight(ctx):
+    """Long straight hair from a parting (Sairin, Vedana, §7.8): locks from the parting over the crown and down the
+    sides past the ears and the jaw, their tails hanging straight to rest on the shoulders (z `drop`), the near side
+    fuller with a side parting; `across` adds one lock from the parting across the face (the tired mood: "прядь через
+    лицо" / "волосы падают на лицо")."""
+    head = ctx.objs["head"]
+    hr = ctx.ch["hair"]
+    sx = ctx.P["hx"] / 0.48
+    part = hr.get("part", 0.0)                 # the parting's azimuth (0 centre, + toward the far side)
+    hl = hairline_fn([(0, 0.32), (30, 0.30), (60, 0.21), (80, 0.12), (100, 0.04), (140, -0.14), (180, -0.22)])
+    samples, s = core.surface_samples(head, 2400, lambda h, n, d: h.z > hl(h) + 0.012)
+    el = core.sheet_elems(samples, s, lambda h, n: 0.04 + 0.02 * core.smoothstep(0.1, 0.45, h.z))
+    drop = hr.get("drop", -0.66)
+    w0 = hr.get("lock_w", 0.10)
+    for az in list(range(-165, 166, 15)):
+        if abs(az - part) < 6:
+            continue
+        sg = 1 if az > part else -1
+        root = core.az_el(part + sg * 4, 72)
+        e_side = core.lerp_table([(0, 38), (40, 34), (70, 22), (100, 6), (180, -6)], abs(az))
+        mid = core.az_el(az, e_side)
+        low = core.az_el(az + sg * 6, -18 if abs(az) < 120 else -10)
+        hb, nb = core.ray(head, low * 3, -low)
+        if hb is None:
+            continue
+        r_ = math.hypot(hb.x, hb.y)
+        ang = math.atan2(hb.x, -hb.y)
+        out = 1.0 + 0.10 * core.smoothstep(40, 100, abs(az))
+        tail_z = drop - 0.10 * core.smoothstep(60, 110, abs(az))
+        y_t = -math.cos(ang) * r_ * out + (0.08 if abs(az) > 120 else 0.0)
+        tail = Vector((math.sin(ang) * (r_ + 0.06) * out, y_t, tail_z))
+        if abs(az) < 50:
+            continue        # the front: framed by the side locks, the face stays open
+        el += core.ribbon_lock(head, [root, mid, low, tail], w0 * sx, w0 * 0.85 * sx, 0.045, n=18, lift=0.45,
+                               free_tail=1, taper_at=0.85, wmin=0.06)
+    # the fringe sweep from the parting toward the near side, over the forehead's top
+    for k, (az, e) in enumerate(((-30, 50), (-55, 40))):
+        el += core.ribbon_lock(head, [core.az_el(part - 4, 74), core.az_el(az * 0.5, 62), core.az_el(az, e)],
+                               0.12 * sx, 0.10 * sx, 0.045, n=12, lift=0.45)
+    if hr.get("across"):
+        # one lock off the parting, down across the near brow and eye to the cheek (a strand falling over the face)
+        d0 = core.az_el(part - 6, 70)
+        hit, nor = core.ray(head, d0 * 3, -d0)
+        p1 = core.ray_front(head, -0.06 * sx, ctx.P["eye_z"] + 0.20 * H)
+        p2 = core.ray_front(head, -0.20 * sx, ctx.P["eye_z"] - 0.02 * H)
+        p3 = core.ray_front(head, -0.30 * sx, ctx.P["eye_z"] - 0.24 * H)
+        if hit is not None and all(q[0] is not None for q in (p1, p2, p3)):
+            pts = [hit + nor * 0.04, p1[0] + p1[1] * 0.05, p2[0] + p2[1] * 0.06, p3[0] + p3[1] * 0.05]
+            el += core.clump(pts, [nor, p1[1], p2[1], p3[1]], 0.07, 0.05, 0.035, n=16, lift=0.0, taper_at=0.6,
+                             tip=0.3, stiff=2.6, flat=0.8)
+    _finish_hair(ctx, el, hr["color"], res=hr.get("res", 0.012))
+
+
+def _slick(ctx):
+    """Slicked-back hair with a widow's peak (Velian, §7.8: "гладкие тёмно-каштановые волосы с мысом"): a hairline with
+    a point at the middle of the forehead and receding corners, thin locks combed straight back close to the head,
+    glossy (hair "rough")."""
+    head = ctx.objs["head"]
+    hr = ctx.ch["hair"]
+    sx = ctx.P["hx"] / 0.48
+    tbl = hr.get("hairline", [(0, 0.25), (12, 0.30), (30, 0.31), (55, 0.22), (80, 0.13), (105, 0.04),
+                              (145, -0.14), (180, -0.22)])
+    hl = hairline_fn(tbl)
+    samples, s = core.surface_samples(head, 2400, lambda h, n, d: h.z > hl(h) + 0.01)
+    el = core.sheet_elems(samples, s, lambda h, n: 0.035 + 0.012 * core.smoothstep(0.1, 0.45, h.z))
+    for az in range(-160, 161, 16):
+        e0 = math.degrees(math.atan2(core.lerp_table(tbl, abs(az)) + 0.02, 0.45))
+        sg = 1 if az >= 0 else -1
+        el += core.ribbon_lock(head, [core.az_el(az, e0 + 2), core.az_el(az * 0.55 + sg * 60, 62),
+                                      core.az_el(sg * 172, 4)], 0.085 * sx, 0.07 * sx, 0.032, n=14, lift=0.35)
+    _finish_hair(ctx, el, hr["color"])
+
+
+def _wild(ctx):
+    """Wild long hair (Bjorulf, §7.8: "дикие длинные чёрно-седые волосы"): the long hair swept back (_long) with its
+    locks jittered and some sticking out, a few grey streak locks in a second colour."""
+    hr = ctx.ch["hair"]
+    head = ctx.objs["head"]
+    sx = ctx.P["hx"] / 0.48
+    rng = ctx.rng
+    hl = hairline_fn([(0, 0.32), (30, 0.30), (60, 0.22), (85, 0.12), (110, 0.0), (150, -0.14), (180, -0.20)])
+    samples, s = core.surface_samples(head, 2400, lambda h, n, d: h.z > hl(h) + 0.012)
+    el = core.sheet_elems(samples, s, lambda h, n: 0.05 + 0.02 * core.smoothstep(0.2, 0.5, h.z))
+    drop = hr.get("drop", -0.62)
+    streaks = []
+    for az in range(-160, 161, 14):
+        sg = 1 if az > 0 else -1
+        e0 = core.lerp_table([(0, 48), (40, 42), (70, 30), (100, 14), (150, 2)], abs(az))
+        if abs(az) < 30:
+            # a ragged fringe: short locks hanging forward over the forehead
+            tip = core.ray_front(head, math.sin(math.radians(az)) * 0.36 * sx, ctx.P["eye_z"] + 0.30 * H)
+            if tip[0] is None:
+                continue
+            lock = core.ribbon_lock(head, [core.az_el(az + 160 * sg, 70), core.az_el(az, 55), core.az_el(az, e0),
+                                           tip[0] + tip[1] * 0.07], 0.08 * sx, 0.05 * sx, 0.04, n=12, lift=0.45,
+                                    free_tail=1, taper_at=0.5)
+        else:
+            back = core.az_el(sg * min(178, abs(az) + 35 + rng.uniform(-10, 10)), rng.uniform(-6, 10))
+            hb, nb = core.ray(head, back * 3, -back)
+            if hb is None:
+                continue
+            ang = math.atan2(hb.x, hb.y)
+            r_ = math.hypot(hb.x, hb.y)
+            fly = rng.uniform(0.04, 0.16) * core.smoothstep(50, 110, abs(az))
+            tail = Vector((math.sin(ang) * (r_ + 0.06 + fly), math.cos(ang) * (r_ + 0.02) + 0.04,
+                           drop + rng.uniform(-0.06, 0.10)))
+            lock = core.ribbon_lock(head, [core.az_el(az, e0), core.az_el((az + back_az(back)) / 2, 44), back, tail],
+                                    0.095 * sx, 0.06 * sx, 0.05, n=16, lift=0.45, free_tail=1, taper_at=0.6)
+        (streaks if hr.get("streak") and (az // 14) % 4 == 1 and abs(az) > 40 else el).extend(lock)
+    _finish_hair(ctx, el, hr["color"])
+    if streaks:
+        _second(ctx, streaks, hr["streak"], "streaks", crevice=hr.get("crevice"))
+
+
+def back_az(d):
+    return math.degrees(math.atan2(d.x, -d.y))
+
+
+_P3_STYLES = {"bald": _bald, "mane": _mane, "curls": _curls, "owl": _owl, "straight": _straight, "slick": _slick,
+              "wild": _wild}

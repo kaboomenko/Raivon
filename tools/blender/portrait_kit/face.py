@@ -78,13 +78,20 @@ def skin_color(ctx, nt):
     col = ch["skin"]
     p = head_mod.params(ctx)
     ez = p["eye_z"]
-    cz = ez - S["cheek_below"] * H + (S["cheek_smile"] * H if ctx.smile else 0.0)
     cx = S["cheek_x"] * H * (p["hx"] / 0.48) / 0.98
-    add = core.node_math(nt, "ADD", core.node_blob(nt, (-cx, -0.40, cz), S["blush_r"] * H * 1.5),
-                         core.node_blob(nt, (cx, -0.40, cz), S["blush_r"] * H * 1.5), clamp=True)
-    # blush opacity at the apple's centre = the character's share (§7.3: men 15 %, women 25 %, young 30 %; a smile +10 %)
-    blush = ch.get("blush", S["blush"]["f" if ctx.female else "m"]) + (0.10 if ctx.smile else 0.0)
+    cz_n = ez - S["cheek_below"] * H + head_mod.cheek_dz(ctx, -1)
+    cz_f = ez - S["cheek_below"] * H + head_mod.cheek_dz(ctx, 1)
+    add = core.node_math(nt, "ADD", core.node_blob(nt, (-cx, -0.40, cz_n), S["blush_r"] * H * 1.5),
+                         core.node_blob(nt, (cx, -0.40, cz_f), S["blush_r"] * H * 1.5), clamp=True)
+    # blush opacity at the apple's centre = the character's share (§7.3: men 15 %, women 25 %, young 30 %; a smile
+    # +10 %, anger +12 % — §7.9 "красный румянец +8-15 %")
+    blush = ch.get("blush", S["blush"]["f" if ctx.female else "m"]) + ctx.fx.get("blush", 0.0)
     fac = core.node_math(nt, "MULTIPLY", add, blush, clamp=True)
+    if ctx.fx.get("nose_red") and ctx.L.get("nose_tip_guess") is not None:
+        # anger's flush on the nose too (§7.9 "нос, щёки")
+        tp = ctx.L["nose_tip_guess"]
+        fac = core.node_math(nt, "MAXIMUM", fac, core.node_math(
+            nt, "MULTIPLY", core.node_blob(nt, (tp.x, tp.y - 0.04, tp.z + 0.02), 0.09), ctx.fx["nose_red"], clamp=True))
     base = core.node_mix(nt, 0.0, col, col)
     # the warm tone of the hollows (AO) instead of grey (weaker since the P2 fix sheet: a strong red-orange hollow
     # tint saturated every shadow, art director note h)
@@ -203,6 +210,22 @@ def plan_skin_paint(ctx):
             # colour only by default: a bump re-evaluates the whole blob network three more times (the age lines'
             # bump alone took Kort's 64-sample frame from ~50 s to ~90 s, P-A10's budget is 70 s)
             ctx.skin_soft.append((pts, r * 1.6, dark, k, bool(age.get("bump", False))))
+    if ctx.fx.get("bags"):
+        # §7.9 tired: bags under the eyes — skin x0.85 in a crescent 0.03 H under each eye
+        sh = ch["eyes"].get("sclera", S["sclera_h"])
+        bag = core.hex_scale(skin, ctx.fx["bags"])
+        for s_ in (-1, 1):
+            x0 = s_ * p["eye_x"]
+            pts = arc((x0 - 0.06 * H * sx, ez - (sh * 0.5 + 0.035) * H), (x0 + 0.06 * H * sx, ez - (sh * 0.5 + 0.035) * H),
+                      -0.022 * H, 0.010 * H)
+            ctx.skin_soft.append((pts, 0.017 * H, bag, 0.85, False))
+    if ctx.fx.get("frown"):
+        # §7.9 angry: two short vertical folds between the brows
+        fold = core.hex_mix(skin, "#6a2a22", 0.5)
+        pts = []
+        for s_ in (-1, 1):
+            pts += line((s_ * 0.035 * H * sx, ez + 0.20 * H), (s_ * 0.045 * H * sx, ez + 0.12 * H), 0.008 * H)
+        ctx.skin_soft.append((pts, 0.012 * H, fold, 0.75, False))
     for pa in ch.get("paint", []):
         x, z = pa["at"]
         h, _ = core.ray_front(head, x * H * sx, ez + z * H)
@@ -267,7 +290,8 @@ def eye_mat(ctx, name, iris_hex, ri, sx):
     g = nt.nodes.new("ShaderNodeTexGradient")
     g.gradient_type = "SPHERICAL"  # fac = 1 - r
     nt.links.new(mp.outputs[0], g.inputs[0])
-    pupil = S["pupil_smile"] if ctx.smile else ctx.ch["eyes"].get("pupil", S["pupil"])
+    # the mood's pupil (§7.9: 0.62 smile, 0.48 angry, 0.55 cunning, 0.58 tired), the character's own when calm
+    pupil = ctx.fx.get("pupil") or ctx.ch["eyes"].get("pupil", S["pupil"])
     rp = ri * pupil
     lim = ri * S["limbal"]
     e = 0.012
@@ -375,7 +399,7 @@ def build_eyes(ctx):
     head = ctx.objs["head"]
     ctx.objs["eyes"] = []
     lash_t = (S["lash_f"] if ctx.female else S["lash_m"]) * H
-    rim_t = (S["rim_smile"] if ctx.smile else S["rim"]) * H
+    rim_t = (S["rim_smile"] if ctx.fx.get("rim") == "smile" else S["rim"]) * H
     shell = S["lid_shell"]
     lc, rc = lash_t * 0.5 / rz, rim_t / rz            # what the lash line and the rim tube cover, in lens z
     # the upper lid's skin: eyeshadow (Vance, §7.6 "тени век") tints it; otherwise the face's own skin
@@ -463,7 +487,7 @@ def build_eyes(ctx):
         al_c = Almond(ctx, side, rz, x0, mood="calm")
         al_c.clip = clip
         calibrate(al_c, 2 * kh * (al_c.open - al_c.low) / persp)
-        if wink == tag:
+        if wink in (tag, "both"):
             _closed_eye(ctx, side, tag, centre, rot, (rx, ry, rz), al, al_c, lash_t, lid_mat, head, shell, kv, kh)
             continue
         ri = S["iris"] * ey.get("iris_k", 1.0) * kh     # iris radius in units of rz (diameter = 0.65 x sclera height)
@@ -584,8 +608,13 @@ def build_eyes(ctx):
         # the almond outline for the QA (head-local, before the pose): under the lash line, over the rim
         us = [u0 + (u1 - u0) * i / 16 for i in range(17)]
         outline = [lens_pt(u, al.top(u) - lc) for u in us] + [lens_pt(u, al.bot(u) + rc) for u in us[::-1]]
+        # the visible opening in lens units (almond u -> the lid's edge and the rim's top): rig.solve_gaze keeps the
+        # catchlights inside it (a tired 0.30 lid hides the iris's top half; a catchlight left there sat on the lid)
+        us_ = [-1.0 + 2.0 * i / 20 for i in range(21)]
+        opening = [(u, al.top(u) - lc, al.bot(u) + rc) for u in us_]
         ctx.objs["eyes"].append(dict(obj=eye, side=side, centre=centre, radii=(rx, ry, rz), ri=ri, tag=tag,
-                                     open=al.open, low=al.low, kv=kv, kh=kh, x0=al.x0, xc0=al.xc0, almond=outline))
+                                     open=al.open, low=al.low, kv=kv, kh=kh, x0=al.x0, xc0=al.xc0, almond=outline,
+                                     opening=opening))
         ctx.L["lash_" + tag] = (calm_pts or pts, lash_t / 2)        # the calm lash line (the brows' base)
     ctx.L["sclera_top"] = p["eye_z"] + p["sclera_h"] / 2
 
@@ -665,7 +694,7 @@ def build_brows(ctx):
     head = ctx.objs["head"]
     eye_w = 2 * S["sclera_w"] * p["sclera_h"] / 2
     length0 = br.get("len", S["brow_len"]) * eye_w
-    thick = br.get("thick", S["brow"]) * H
+    thick = br.get("thick", S["brow"]) * H * mood.get("thick_k", 1.0)     # anger: 15 % thicker (§7.9)
     col = br["color"]
     mat = core.principled(ctx, "brow", col, br.get("rough", 0.7), sheen=br.get("sheen", 0.2))
     for side in (-1, 1):
@@ -676,9 +705,12 @@ def build_brows(ctx):
         inner_dz = (br.get("inner", 0.0) + mood.get("inner", 0.0)) * H
         outer_dz = (br.get("outer", 0.0) + mood.get("outer", 0.0)) * H
         arch = (br.get("arch", 0.025) + mood.get("arch", 0.0)
-                + (br.get("arch_far", 0.0) if side > 0 else 0.0)) * H
-        # the far brow starts nearer the nose: its outer end turns away with the face, the inner part carries it
-        x_in = side * (p["eye_x"] - eye_w * (br.get("in_far", 0.66) if side > 0 else 0.5) - 0.02 * H)
+                + ((br.get("arch_far", 0.0) + mood.get("arch_far", 0.0)) if side > 0 else mood.get("arch_near", 0.0))) * H
+        arch = max(arch, -0.01 * H)
+        # the far brow starts nearer the nose: its outer end turns away with the face, the inner part carries it; anger
+        # draws the inner ends 0.02 H closer (§7.9 "внутренние концы ближе на 0.02")
+        x_in = side * (p["eye_x"] - eye_w * (br.get("in_far", 0.66) if side > 0 else 0.5) - 0.02 * H
+                       - mood.get("in_dx", 0.0) * H)
         shape = br.get("shape", "arc")
 
         split = br.get("gap") if side < 0 and ctx.L.get("brow_scar_x") is not None else None
@@ -813,6 +845,13 @@ def build_nose(ctx):
             t = (k + 1) / 4
             el.append(dict(co=(0, ys - wn * 0.9 * (1 - t) + 0.01 * t, nz + L * t * 0.9),
                            half=(wn * (0.6 - 0.2 * t), wn * 0.6, wn * 0.75), stiff=2.2))
+    nk = ctx.fx.get("nostrils", 1.0)    # anger flares the nostrils (§7.9 "раздутые ноздри"): the wings out and fuller
+    if nk != 1.0:
+        for e in el:
+            if abs(e["co"][0]) > 1e-4:
+                e["co"] = (e["co"][0] * nk, e["co"][1], e["co"][2])
+                hv = e["half"]
+                e["half"] = tuple(v * nk ** 0.5 for v in hv) if isinstance(hv, tuple) else hv * nk ** 0.5
     m = ctx.mats["skin"]          # the same skin (blush, warm hollows, the tip colour) as the head: one surface
     obj = core.mb_mesh(ctx, "Nose", el, 0.007, m, smooth_iter=2, name="nose")
     ctx.add(obj, "nose", head, kind="embed", head=True)
@@ -845,21 +884,31 @@ def build_ears(ctx):
 
 
 # ------------------------------------------------------------------ mouths
-def mouth_outline(w, top, depth, near_lift=0.0, far_lift=0.0):
-    """2D open-mouth outline (x, z) in the face plane: a D whose corners rise by the lifts (near = -X)."""
+def mouth_outline(w, top, depth, near_lift=0.0, far_lift=0.0, shape="D"):
+    """2D open-mouth outline (x, z) in the face plane, 21 points of the lower edge (far corner -> near corner) then 7
+    of the upper edge: "D" (a smile: the corners rise by the lifts, near = -X), "trap" (§7.9 the angry shout: a
+    trapezoid narrower at the bottom, a flat floor, the corners pulled down by negative lifts — a "∩" top edge) or
+    "clench" (clenched teeth: a low wide slot, its corners down a little)."""
     pts = []
     n = 20
-    for i in range(n + 1):                       # bottom arc, far corner -> near corner
+    for i in range(n + 1):                       # lower edge, far corner -> near corner
         t = math.pi * i / n
         x = w * math.cos(t)
         lift = far_lift if x > 0 else near_lift
-        z = top - depth * math.sin(t) ** 0.7 + (0.02 + lift) * abs(x / w) ** 3
+        u = abs(x / w)
+        if shape == "D":
+            z = top - depth * math.sin(t) ** 0.7 + (0.02 + lift) * u ** 3
+        else:
+            # steep sides near the corners, a flat floor (the trapezoid's narrower bottom: 0.72 of the top's width)
+            side = 0.30 if shape == "trap" else 0.14
+            z = top - depth * min(1.0, (1.0 - u) / side) ** 0.55 + lift * u ** 2
         pts.append((x, z))
-    for i in range(1, 8):                        # upper edge, nearly flat, corners lifted
+    for i in range(1, 8):                        # upper edge, nearly flat; corners lifted (or pulled down)
         t = i / 8
         x = -w + 2 * w * t
         lift = far_lift if x > 0 else near_lift
-        z = top + (0.02 + lift) * abs(x / w) ** 2 - 0.004
+        u = abs(x / w)
+        z = top + ((0.02 + lift) * u ** 2 - 0.004 if shape == "D" else lift * u ** 2 - 0.002)
         pts.append((x, z))
     return pts
 
@@ -876,7 +925,7 @@ def carve_mouth(ctx):
         return
     w, hgt = mp.get("w", S["mouth_open"][0]) * H / 2, mp.get("h", S["mouth_open"][1]) * H
     top = ctx.L["mouth_z"] + mp.get("dz", 0.0) * H + 0.006
-    pts = mouth_outline(w, top, hgt, mp.get("near", 0.02) * H, mp.get("far", 0.02) * H)
+    pts = mouth_outline(w, top, hgt, mp.get("near", 0.02) * H, mp.get("far", 0.02) * H, mp.get("shape", "D"))
     xoff = mp.get("x", 0.0) * H
     pts = [(x + xoff, z) for x, z in pts]
     head = ctx.objs["head"]
@@ -1038,9 +1087,11 @@ def _open_mouth(ctx, head, lip_m, low_t):
         h_, _ = op.face(x, z)
         return h_.y if h_ is not None else fy
 
-    # upper teeth: a slab bent to the face's curve behind the top rim
-    tw = w * 0.72
-    th = hh * S["teeth_share"]
+    mp_ = ctx.ch["mouth"].get(ctx.mood, {})
+    shape = mp_.get("shape", "D")
+    # upper teeth: a slab bent to the face's curve behind the top rim (clenched: half the opening each row)
+    tw = w * (0.72 if shape == "D" else 0.80)
+    th = hh * (0.52 if shape == "clench" else mp_.get("teeth", S["teeth_share"]))
     tx = [cx - tw * 1.05 + 2.1 * tw * i / 8 for i in range(9)]
     samples = []
     for x in tx:
@@ -1065,7 +1116,57 @@ def _open_mouth(ctx, head, lip_m, low_t):
     tmat = core.principled(ctx, "teeth", C["teeth"], 0.3, coat=0.3)
     core.finish(teeth, tmat)
     ctx.add(teeth, "teeth", head, kind="embed", head=True)
-    mp_ = ctx.ch["mouth"].get(ctx.mood, {})
+    if mp_.get("lower_teeth") or shape == "clench":
+        # the lower row (§7.9 the shout: "оба ряда зубов"; clenched teeth): a slab along the bottom rim, a little
+        # narrower than the upper row
+        lth = hh * (0.50 if shape == "clench" else mp_.get("lower_share", 0.24))
+        ltw = tw * 0.86
+        lx = [cx - ltw * 1.05 + 2.1 * ltw * i / 8 for i in range(9)]
+        low_s = []
+        for x in lx:
+            zb_ = core.lerp_table(bottom_tbl, x)
+            ze = op.rim(x, zb_ + hh * 0.4, zb_ - 0.05)
+            if ze is not None:
+                low_s.append((x, ze, face_y(x, ze - 0.012)))
+        if len(low_s) < 3:
+            ctx.notes.append("%s %s: open-mouth bottom rim found at %d of 9 lower-teeth samples; on the outline instead"
+                             % (ctx.cid, ctx.mood, len(low_s)))
+            low_s = [(x, core.lerp_table(bottom_tbl, x) + 0.004, face_y(x, core.lerp_table(bottom_tbl, x) - 0.012))
+                     for x in lx]
+        bm = bmesh.new()
+        bmesh.ops.create_uvsphere(bm, u_segments=32, v_segments=16, radius=1.0)
+        ze_l = [(q[0], q[1]) for q in low_s]
+        yf_l = [(q[0], q[2]) for q in low_s]
+        for v in bm.verts:
+            x = cx + v.co.x * ltw
+            ze = core.lerp_table(ze_l, x)
+            yf = core.lerp_table(yf_l, x)
+            v.co = Vector((x, yf + 0.018 + (v.co.y + 1.0) * 0.018, ze - 0.004 + lth * 0.5 + v.co.z * lth * 0.62))
+        lteeth = core.mesh_obj("teeth_low", bm)
+        core.finish(lteeth, tmat)
+        ctx.add(lteeth, "teeth", head, kind="embed", head=True)
+    if mp_.get("fangs"):
+        # two lower fangs standing up over the lower row (Grodek's snarl, §7.8)
+        for sd in (-1, 1):
+            fx_ = cx + sd * tw * 0.55
+            zb_ = core.lerp_table(bottom_tbl, fx_)
+            yb_ = face_y(fx_, zb_ - 0.01)
+            bm2 = bmesh.new()
+            bmesh.ops.create_cone(bm2, cap_ends=True, segments=16, radius1=0.026, radius2=0.006, depth=0.075)
+            fg = core.mesh_obj("fang_low%+d" % sd, bm2)
+            fg.location = (fx_, yb_ + 0.012, zb_ + 0.03)
+            core.bevel(fg, 0.004, 2)
+            core.finish(fg, tmat)
+            ctx.add(fg, "teeth", teeth, kind="embed", head=True)
+    if mp_.get("gold_tooth"):
+        # a gold tooth glinting in the smile (Mirosya "Златоуст", §7.8): one tooth of the upper row in gold
+        gx = cx + mp_["gold_tooth"] * tw
+        ze_ = core.lerp_table(ze_t, gx)
+        yf_ = core.lerp_table(yf_t, gx)
+        gold = core.principled(ctx, "gold_tooth", "#E8B23A", rough=0.25, metal=0.55, coat=0.4)
+        gt = core.box("gold_tooth", (gx, yf_ + 0.013, ze_ + 0.004 - th * 0.5), (0.042, 0.02, th * 1.05), gold,
+                      bev=0.008)
+        ctx.add(gt, "teeth", teeth, kind="embed", head=True)
     if mp_.get("gap") is not None:
         # a gap tooth (Olm's grin, §7.6 "щербинка"): a dark slot through the teeth at gap x (-1 near .. 1 far)
         gx = cx + mp_["gap"] * tw
@@ -1094,9 +1195,12 @@ def _open_mouth(ctx, head, lip_m, low_t):
     if zr is None:
         zr = zb
     ty, tz = (0.055, hh * 0.20)
-    tongue = core.uvsphere("tongue", (cx + 0.008, face_y(cx, zr - 0.004) + 0.012 + ty, zr + tz * 0.6),
+    if shape == "clench" or mp_.get("no_tongue"):
+        tz = 0.0
+    tongue = None if tz <= 0.0 else core.uvsphere("tongue", (cx + 0.008, face_y(cx, zr - 0.004) + 0.012 + ty, zr + tz * 0.6),
                            (w * 0.55, ty, tz), core.principled(ctx, "tongue", C["tongue"], 0.45, sss=0.2), 32, 16)
-    ctx.add(tongue, "tongue", head, kind="embed", head=True)
+    if tongue is not None:
+        ctx.add(tongue, "tongue", head, kind="embed", head=True)
     # the lower lip: a tube on the lower rim, not up the corners
     lower = pts[:21][3:-3]
     lr_t = low_t * 0.42

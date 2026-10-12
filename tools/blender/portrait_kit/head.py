@@ -47,6 +47,13 @@ def params(ctx):
     return p
 
 
+def cheek_dz(ctx, side):
+    """The mood's lift of a cheek apple (side -1 near, +1 far), kit units (§7.9: a smile 0.04-0.07 H — the character's
+    cheek_smile scales it —, a snarl 0.02, the cunning near cheek 0.03, the tired cheeks -0.03)."""
+    v = ctx.fx.get("cheek", (0.0, 0.0))[0 if side < 0 else 1]
+    return v * H * (ctx.ch["head"].get("cheek_smile", 1.0) if v > 0 else 1.0)
+
+
 def brushes(ctx, p):
     """Gaussian sculpt brushes (centre, radius, displacement), in head-local units, scaled to this head."""
     sx = p["hx"] / 0.48
@@ -54,15 +61,13 @@ def brushes(ctx, p):
     ez = p["eye_z"]
     ex = p["eye_x"]
     hd = ctx.ch["head"]
-    smile = ctx.smile
-    cheek_lift = (S["cheek_smile"] * H if smile else 0.0) * hd.get("cheek_smile", 1.0)
-    cheek_z = ez - S["cheek_below"] * H + cheek_lift
-    cheek_amt = (0.05 + (0.018 if smile else 0.0)) * hd.get("cheeks", 1.0)
+    cheek_amt = (0.05 + ctx.fx.get("cheek_amt", 0.0)) * hd.get("cheeks", 1.0)
     sock_r = p["sclera_h"] * 0.85
     sock_d = S["socket_depth"] * H
     face_y = -0.42 * sy
     b = []
     for s in (-1, 1):
+        cheek_z = ez - S["cheek_below"] * H + cheek_dz(ctx, s)
         b += [
             ((s * (ex - 0.005), face_y, ez + 0.17), 0.11, (0, -0.022 * hd.get("brow_ridge", 1.0), 0.012)),  # brow ridge
             ((s * ex, face_y - 0.02, ez + 0.005), sock_r, (0, sock_d, 0.0)),                     # eye socket
@@ -209,8 +214,8 @@ def landmarks(ctx):
     nh, _ = core.ray_front(head, 0, nz)
     L["nose_tip_guess"] = nh
     # the cheek apples (the lit-cheek check of §7.4 samples a disc around the near one)
-    cz = p["eye_z"] - S["cheek_below"] * H + (S["cheek_smile"] * H if ctx.smile else 0.0)
     for s_, tag in ((-1, "near"), (1, "far")):
+        cz = p["eye_z"] - S["cheek_below"] * H + cheek_dz(ctx, s_)
         ch_, _ = core.ray_front(head, s_ * S["cheek_x"] * H * (p["hx"] / 0.48) / 0.98, cz)
         L["cheek_" + tag] = ch_
     L["neck_z"] = L["chin"].z - 0.05 if L["chin"] else -0.6

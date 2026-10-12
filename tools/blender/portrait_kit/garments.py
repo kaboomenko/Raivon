@@ -36,7 +36,8 @@ def build_layers(ctx):
         fn = {"vest": vest, "collar": collar, "belt": belt, "bib": bib, "strap": strap, "frogging": frogging,
               "placket": placket, "fur": fur, "buttons": buttons, "lapels": lapels, "quilt": quilt,
               "pauldrons": pauldrons, "cloak": cloak, "cape_collar": cape_collar, "jabot": jabot,
-              "neckerchief": neckerchief, "clasp": clasp, "pocket": pocket, "piping": piping}[ly["kind"]]
+              "neckerchief": neckerchief, "clasp": clasp, "pocket": pocket, "piping": piping}.get(ly["kind"]) \
+            or _P3_KINDS[ly["kind"]]
         fn(ctx, ly, "%s%d" % (ly["kind"], i))
         core.update()
 
@@ -81,8 +82,15 @@ def vest(ctx, ly, name):
     core.shrinkwrap(o, ctx.objs["torso"], S["layer_gap"] * H)
     core.solidify(o, max(S["layer_min"] * H, ly.get("thick", 0.03)), offset=1.0)
     top_k, bot_k = ly.get("shade", (1.06, 0.9))
-    m = core.grad_mat(ctx, name, core.hex_scale(ly["color"], top_k), core.hex_scale(ly["color"], bot_k), z0, z1,
-                      rough=ly.get("rough", 0.85), sheen=ly.get("sheen", 0.35))
+    if ly.get("camo"):
+        m = core.camo_mat(ctx, name, ly["color"], ly["camo"], scale=ly.get("camo_scale", 5.0), z0=z0, z1=z1)
+    elif ly.get("plate"):
+        # §7.7 E4 painted plates (roughness 0.45, metallic 0.25) or polished steel (`metal`)
+        m = core.principled(ctx, name, ly["color"], rough=ly.get("rough", 0.45), metal=ly.get("metallic", 0.25),
+                            coat=ly.get("coat", 0.3))
+    else:
+        m = core.grad_mat(ctx, name, core.hex_scale(ly["color"], top_k), core.hex_scale(ly["color"], bot_k), z0, z1,
+                          rough=ly.get("rough", 0.85), sheen=ly.get("sheen", 0.35))
     core.finish(o, m, sub=2)
     ctx.add(o, _group(ly), ctx.objs["torso"], kind="surface")
     ctx.outer.append(o)
@@ -560,8 +568,10 @@ def pauldrons(ctx, ly, name):
     band of a shell round the deltoid (the arm capsule's top), the top plate outermost, 0.025 H thick with bevels;
     polished steel, an enamel stripe along each plate's lower edge, a leather strap under them."""
     k = ctx.shoulder_k
-    steel = core.principled(ctx, name, ly.get("color", "#C8D0DA"), rough=0.3, metal=0.55, coat=0.2)
-    stripe = core.principled(ctx, name + "_stripe", ly.get("stripe", "#3B7A52"), rough=0.35, coat=0.3)
+    steel = _metal(ctx, name, ly.get("color", "#C8D0DA"), ly)
+    em = ly.get("stripe_emit", 0.0)
+    stripe = core.principled(ctx, name + "_stripe", ly.get("stripe", "#3B7A52"), rough=0.35, coat=0.3,
+                             emit=ly.get("stripe", "#3B7A52") if em else None, es=em)
     n = ly.get("n", 3)
     for s in (-1, 1):
         top, bot = (Vector(v) for v in ctx.objs["arm_axis%+d" % s])
@@ -655,8 +665,11 @@ def cloak(ctx, ly, name):
     o = core.mesh_obj(name, bm)
     core.solidify(o, max(S["layer_min"] * H, ly.get("thick", 0.03)), offset=1.0)
     sh_top, sh_bot = ly.get("shade", (1.06, 0.88))     # Rai: a darker top, so the key-lit shoulders stay deep blue
-    m = core.grad_mat(ctx, name, core.hex_scale(ly["color"], sh_top), core.hex_scale(ly["color"], sh_bot), z0, z1,
-                      rough=ly.get("rough", 0.85), sheen=ly.get("sheen", 0.35), spec=ly.get("spec", 0.5))
+    if ly.get("camo"):
+        m = core.camo_mat(ctx, name, ly["color"], ly["camo"], scale=ly.get("camo_scale", 5.0), z0=z0, z1=z1)
+    else:
+        m = core.grad_mat(ctx, name, core.hex_scale(ly["color"], sh_top), core.hex_scale(ly["color"], sh_bot), z0, z1,
+                          rough=ly.get("rough", 0.85), sheen=ly.get("sheen", 0.35), spec=ly.get("spec", 0.5))
     core.finish(o, m, sub=2)
     ctx.add(o, _group(ly), ctx.objs["torso"], kind="surface")
     ctx.outer.append(o)
@@ -835,3 +848,250 @@ def pocket(ctx, ly, name):
     ctx.objs[ly.get("id", name)] = o
     ctx.L[ly.get("id", name)] = (Vector((x * k, 0, z + hgt / 2)), w)
     return o
+
+
+# ================================================================== P3: the eras' costume parts (§7.6, §7.7)
+def _metal(ctx, name, col, ly):
+    if ly.get("painted"):
+        return core.principled(ctx, name, col, rough=0.45, metal=0.25, coat=0.3)
+    return core.principled(ctx, name, col, rough=ly.get("rough", 0.3), metal=ly.get("metallic", 0.55),
+                           coat=ly.get("coat", 0.2))
+
+
+def _frame(nrm, out):
+    """A rotation with Z along `nrm` and X along `out` projected into the surface."""
+    from mathutils import Matrix as M
+    z = Vector(nrm).normalized()
+    x = Vector(out) - z * Vector(out).dot(z)
+    if x.length < 1e-6:
+        x = z.orthogonal()
+    x.normalize()
+    y = z.cross(x).normalized()
+    return M((x, y, z)).transposed().to_quaternion()
+
+
+def epaulettes(ctx, ly, name):
+    """Epaulettes on the flat shoulder tops (§7.3: only the flat top seats them; cast from above): per side an oval
+    board `len` x `w` (kit units) lying on the shoulder, its outer end a round crescent, a fringe of `fringe` short
+    cords hanging from the outer rim (E2: gold, silver, bronze; heavy: longer cords), a button at the inner end;
+    `board` = a plain rectangular shoulder board with a stripe (E3)."""
+    k = ctx.shoulder_k
+    m = _metal(ctx, name, ly.get("color", "#E8B23A"), ly)
+    base_m = core.fabric(ctx, name + "_cloth", ly.get("cloth", ly.get("color", "#E8B23A")), rough=0.7, sheen=0.3) \
+        if ly.get("cloth") else m
+    grp = "detail:" + ly["detail"] if ly.get("detail") else "metal"
+    for s in (-1, 1):
+        x = s * ly.get("x", 0.44) * k
+        h, nn, ob = core.ray_any(ctx.outer, (x, ly.get("y", 0.04), 2.0), (0, 0, -1))
+        if h is None:
+            continue
+        L = ly.get("len", 0.24) * k
+        W = ly.get("w", 0.15)
+        out = Vector((s, 0, 0))
+        q = _frame(nn, out)
+        c = h + nn * 0.018
+        board = core.box(name + "_board%+d" % s, c, (L, W, 0.03), base_m, bev=min(W, L) * (0.18 if ly.get("board") else 0.45),
+                         segs=4)
+        board.rotation_mode = "QUATERNION"
+        board.rotation_quaternion = q
+        ctx.add(board, grp, ob, kind="surface")
+        ax = q @ Vector((1, 0, 0))
+        ay = q @ Vector((0, 1, 0))
+        if ly.get("board"):
+            st = core.box(name + "_stripe%+d" % s, c + nn * 0.016, (L * 0.86, W * 0.22, 0.012),
+                          core.principled(ctx, name + "_stripe", ly.get("stripe", "#E8B23A"), rough=0.35, metal=0.4),
+                          bev=0.004)
+            st.rotation_mode = "QUATERNION"
+            st.rotation_quaternion = q
+            ctx.add(st, grp, board, kind="embed")
+        else:
+            # the crescent at the outer end: a thicker round pad
+            pad = core.cylinder(name + "_pad%+d" % s, c + ax * L * 0.32 + nn * 0.01, W * 0.62, 0.05, m, nrm=nn,
+                                verts=32, bev=0.016)
+            ctx.add(pad, grp, board, kind="embed")
+        nf = ly.get("fringe", 0)
+        for i in range(nf):
+            a = math.radians(-70 + 140 * i / max(1, nf - 1))
+            p = c + ax * (L * 0.32 + W * 0.6 * math.cos(a)) + ay * (W * 0.6 * math.sin(a))
+            ln = ly.get("fringe_len", 0.09)
+            cord = core.curve(name + "_fringe%+d_%d" % (s, i), [p, p + Vector((0, 0, -ln * 0.5)) + ax * 0.01,
+                                                                p + Vector((0, 0, -ln)) + ax * 0.012],
+                              [1.0, 0.95, 0.9], ly.get("fringe_r", 0.011), m, order=3)
+            ctx.add(cord, grp, board, kind="embed")
+        btn = core.uvsphere(name + "_btn%+d" % s, c - ax * L * 0.36 + nn * 0.02, (0.022, 0.022, 0.016), m, 12, 6)
+        btn.rotation_mode = "QUATERNION"
+        btn.rotation_quaternion = q
+        ctx.add(btn, grp, board, kind="embed")
+    if ly.get("detail"):
+        ctx.details[ly["detail"]] = ly.get("min_px", 400)
+
+
+def strip(ctx, ly, name):
+    """A flat band along a front path (x in shoulder units, z), cast onto the costume: §7.7 E4's accent strip (1.0-1.2,
+    <= 1.6 emission, >= 0.04 H wide), a raivite seam, a painted stripe."""
+    k = ctx.shoulder_k
+    pts, nrs, hosts = [], [], []
+    path = core.catmull([Vector((x * k, 0.0, z)) for x, z in ly["path"]], ly.get("n", 30))
+    for q in path:
+        h, nn, ob = core.ray_any(ctx.outer, (q.x, -2.0, q.z), (0, 1, 0))
+        if h is not None:
+            pts.append(h + nn * 0.006)
+            nrs.append(nn)
+            hosts.append(ob)
+    if len(pts) < 3:
+        return None
+    o = core.ribbon_mesh(name, pts, ly.get("w", 0.045), normals=nrs)
+    core.solidify(o, 0.012, offset=1.0)
+    core.bevel(o, 0.004, 2)
+    col = ly.get("color", "#F0A830")
+    em = ly.get("emit", 0.0)
+    m = core.principled(ctx, name, col, rough=0.3, coat=0.3, emit=col if em else None, es=em)
+    core.finish(o, m, sub=1)
+    grp = "detail:" + ly.get("detail", "glow" if em else "stripe")
+    ctx.add(o, grp, max(set(hosts), key=hosts.count), kind="surface")
+    ctx.details[ly.get("detail", "glow" if em else "stripe")] = ly.get("min_px", 100)
+    return o
+
+
+def aiguillette(ctx, ly, name):
+    """An aiguillette (§7.6 Vance "аксельбант с Э2 (3 шнура ≥ 0.04 H с дальнего плеча)"): `n` cords from under the far
+    epaulette down across the chest in loops of different sag to a point by the front, metal tips (aglets) on the
+    longest ones; cast onto the costume."""
+    k = ctx.shoulder_k
+    m = _metal(ctx, name, ly.get("color", "#C8CCD4"), ly)
+    grp = "detail:" + ly.get("detail", "aiguillette")
+    a0 = Vector((ly.get("from", (0.42, -0.70))[0] * k, 0.0, ly.get("from", (0.42, -0.70))[1]))
+    a1 = Vector((ly.get("to", (0.06, -0.92))[0] * k, 0.0, ly.get("to", (0.06, -0.92))[1]))
+    r = ly.get("r", 0.022)
+    for i in range(ly.get("n", 3)):
+        sag = 0.06 + 0.07 * i
+        pts = []
+        for j in range(15):
+            t = j / 14
+            p = a0.lerp(a1, t) + Vector((0.0, 0.0, -sag * 4 * t * (1 - t)))
+            h, nn, ob = core.ray_any(ctx.outer, (p.x, -2.0, p.z), (0, 1, 0))
+            if h is not None:
+                pts.append(h + nn * (r + 0.004 + 0.003 * i))
+        if len(pts) < 3:
+            continue
+        c = core.curve("%s_cord%d" % (name, i), pts, [1.0] * len(pts), r, m)
+        ctx.add(c, grp, ctx.objs["torso"], kind="surface")
+        if i == ly.get("n", 3) - 1:
+            tip = core.cylinder("%s_aglet" % name, pts[-1] + Vector((0, 0, -0.04)), r * 1.6, 0.08, m, nrm=(0, 0, 1),
+                                verts=12, bev=0.006)
+            ctx.add(tip, grp, c, kind="embed")
+    ctx.details[ly.get("detail", "aiguillette")] = ly.get("min_px", 800)
+
+
+def medal_bar(ctx, ly, name):
+    """A ribbon bar (§7.7 E3 "одна планка наград в акцентном цвете"): `n` small coloured blocks in a row at (x, z),
+    cast onto the costume; or `medals` (a star / disc on a ribbon) hanging below it."""
+    k = ctx.shoulder_k
+    x0, z = ly.get("at", (-0.24, -0.86))
+    cols = ly.get("colors", ["#E8B23A", "#C0452A", "#3E9BF0"])
+    bw, bh = ly.get("w", 0.06), ly.get("h", 0.036)
+    grp = "detail:" + ly.get("detail", "medals")
+    for i, col in enumerate(cols):
+        x = x0 * k + (i - (len(cols) - 1) / 2) * bw * 1.04
+        h, nn, ob = core.ray_any(ctx.outer, (x, -2.0, z), (0, 1, 0))
+        if h is None:
+            continue
+        m = core.principled(ctx, "%s_%d" % (name, i), col, rough=0.5, coat=0.2, sheen=0.3)
+        b = core.box("%s_%d" % (name, i), h + nn * 0.016, (bw, bh, 0.024), m, bev=0.005)
+        b.rotation_mode = "QUATERNION"
+        b.rotation_quaternion = _frame(nn, Vector((1, 0, 0)))
+        ctx.add(b, grp, ob, kind="surface")
+    for j, md in enumerate(ly.get("medals", [])):
+        x = x0 * k + md.get("dx", 0.0)
+        zz = z - bh - md.get("drop", 0.07)
+        h, nn, ob = core.ray_any(ctx.outer, (x, -2.0, zz), (0, 1, 0))
+        if h is None:
+            continue
+        rib = core.principled(ctx, "%s_rib%d" % (name, j), md.get("ribbon", cols[0]), rough=0.5, sheen=0.3)
+        rb = core.box("%s_rib%d" % (name, j), h + nn * 0.014 + Vector((0, 0, 0.04)), (0.045, 0.06, 0.016), rib, bev=0.004)
+        rb.rotation_mode = "QUATERNION"
+        rb.rotation_quaternion = _frame(nn, Vector((1, 0, 0)))
+        ctx.add(rb, grp, ob, kind="surface")
+        from . import headgear
+        headgear.emblem(ctx, dict(kind=md.get("kind", "star"), size=md.get("size", 0.10), color=md.get("color", "#E8B23A")),
+                        h, nn, ob, grp, name="%s_medal%d" % (name, j))
+    ctx.details[ly.get("detail", "medals")] = ly.get("min_px", 80)
+
+
+def ruff(ctx, ly, name):
+    """A pleated ruff round the neck (Iveta, §7.8: "кольцо белого плиссированного брыжа"): a ring from the neck out to
+    `r` (kit units) at the neck base, its pleats a zig-zag up and down round the ring, white, 0.02 H thick."""
+    neck = ctx.objs["neck"]
+    zc = ly.get("z", -0.62)
+    r_out = ly.get("r", 0.36)
+    np_ = ly.get("pleats", 28)
+    amp = ly.get("amp", 0.05)
+    bm = bmesh.new()
+    rows = []
+    nr, na = 5, np_ * 4
+    for i in range(nr + 1):
+        t = i / nr
+        row = []
+        for j in range(na):
+            a = 2 * math.pi * j / na
+            d = Vector((math.sin(a), -math.cos(a), 0.0))
+            h, nn = core.ray(neck, Vector((0, 0.07, zc)) + d * 2, -d)
+            r0 = (Vector((h.x, h.y - 0.07, 0.0)).length if h is not None else 0.2) - 0.01
+            r = r0 + (r_out - r0) * t
+            z = zc + amp * t * math.sin(np_ * a) - 0.04 * t * t
+            row.append(bm.verts.new((d.x * r, 0.07 + d.y * r * ly.get("depth_k", 1.0), z)))
+        rows.append(row)
+    for r0, r1 in zip(rows, rows[1:]):
+        for j in range(na):
+            jj = (j + 1) % na
+            bm.faces.new((r0[j], r0[jj], r1[jj], r1[j]))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+    o = core.mesh_obj(name, bm)
+    core.solidify(o, ly.get("t", 0.022), offset=0.0)
+    m = core.principled(ctx, name, ly.get("color", "#F4F2EE"), rough=0.7, sheen=0.4)
+    core.finish(o, m, sub=1)
+    grp = "detail:" + ly["detail"] if ly.get("detail") else "costume:" + ly.get("id", "ruff")
+    ctx.add(o, grp, neck, kind="embed")
+    ctx.outer.append(o)
+    if ly.get("signature"):
+        ctx.sig_objs.append(o)
+    if ly.get("detail"):
+        ctx.details[ly["detail"]] = ly.get("min_px", 2000)
+    return o
+
+
+def tails(ctx, ly, name):
+    """Fur tails hanging from a stole down the chest (Sairin, §7.8: "белый волчий палантин с хвостами"): from the
+    points `at` (x in shoulder units, z), each a tapering metaball chain hanging down `len` with a soft swing, in the
+    fur's material."""
+    k = ctx.shoulder_k
+    col = ly.get("color", "#F2F0EC")
+    m = core.hair_mat(ctx, name, col, -1.6, -0.6, dark=ly.get("dark"), light=ly.get("light"), crevice=ly.get("crevice"),
+                      rough=0.8)
+    grp = "detail:" + ly["detail"] if ly.get("detail") else "costume:" + ly.get("id", "tails")
+    objs = []
+    for i, (x, z) in enumerate(ly.get("at", [(-0.20, -0.86), (0.20, -0.86)])):
+        h, nn, ob = core.ray_any(ctx.outer, (x * k, -2.0, z), (0, 1, 0))
+        if h is None:
+            continue
+        el = []
+        ln = ly.get("len", 0.55)
+        for j in range(14):
+            t = j / 13
+            p = h + nn * (0.05 + 0.02 * t) + Vector((0.03 * math.sin(math.pi * t) * (1 if x > 0 else -1), 0.0, -ln * t))
+            hh, n2, _ = core.ray_any(ctx.outer, (p.x, -2.0, p.z), (0, 1, 0))
+            if hh is not None:
+                p = Vector((p.x, min(p.y, hh.y - 0.05), p.z))
+            r = ly.get("r", 0.075) * (1.0 - 0.55 * t ** 1.5)
+            el.append(dict(co=p, half=(r, r * 0.75, r * 1.1), stiff=2.2))
+        o = core.mb_mesh(ctx, "Tail" + name + str(i), el, 0.010, m, smooth_iter=2, name="%s_%d" % (name, i))
+        ctx.add(o, grp, ob, kind="surface")
+        objs.append(o)
+        if ly.get("signature"):
+            ctx.sig_objs.append(o)
+    ctx.outer += objs
+    return objs
+
+
+_P3_KINDS = {"epaulettes": epaulettes, "strip": strip, "aiguillette": aiguillette, "medal_bar": medal_bar,
+             "ruff": ruff, "tails": tails}

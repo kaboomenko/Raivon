@@ -30,9 +30,12 @@ def build_beard(ctx):
     bd = ctx.ch.get("beard")
     if not bd:
         return
-    {"pear": _pear, "walrus": _walrus, "short": _short, "long": _long, "thin": _thin, "chops": _chops}[bd["style"]](
-        ctx, bd)
-    if bd.get("moustache"):
+    {"pear": _pear, "walrus": _walrus, "short": _short, "long": _long, "thin": _thin, "chops": _chops,
+     "forked": _long, "box": _long, "goatee": _long, "round": _long, "braids": _braids, "scruffy": _short,
+     "none": lambda c, b: None}[bd["style"]](ctx, bd)
+    if bd.get("moustache") == "upturned":
+        _upturned(ctx, bd)
+    elif bd.get("moustache"):
         _moustache(ctx, bd)
 
 
@@ -341,26 +344,53 @@ def _short(ctx, bd):
 
 
 # ------------------------------------------------------------------ long beard (Rai)
+LONG_PROFILE = [(-1.0, 0.80), (0.0, 1.0), (0.25, 0.88), (0.55, 0.62), (0.8, 0.36), (1.0, 0.12)]
+HANG = {
+    # Rai (§7.6): three lobes converging to a point
+    "long": dict(wider=0.02, below=0.6, profile=LONG_PROFILE, lobes=[(-0.42, 0.62), (0.0, 1.0), (0.42, 0.66)],
+                 mode="converge"),
+    # Grodek (§7.8 "раздвоенная чёрная борода"): wide, splitting into two points with a notch between them
+    "forked": dict(wider=0.05, below=0.52, profile=[(-1.0, 0.80), (0.0, 1.0), (0.3, 0.96), (0.6, 0.86),
+                                                     (0.85, 0.76), (1.0, 0.70)],
+                   lobes=[(-0.55, 1.0), (0.55, 1.0)], mode="fork"),
+    # Ormdek (§7.8 "борода-короб, срезанная прямоугольником"): straight sides, a flat bottom
+    "box": dict(wider=0.08, below=0.44, profile=[(-1.0, 0.86), (0.0, 1.0), (0.5, 1.0), (1.0, 0.97)],
+                lobes=[(0.0, 1.0)], mode="straight"),
+    # Velian (§7.8 "острая бородка"): a narrow pointed goatee on the chin only
+    "goatee": dict(width=0.17, below=0.26, profile=[(-1.0, 0.7), (0.0, 1.0), (0.4, 0.8), (0.8, 0.4), (1.0, 0.12)],
+                   lobes=[(0.0, 1.0)], mode="converge", chin_only=True),
+    # the ruler (§7.10 "ухоженная круглая борода 0.18–0.25 H ниже подбородка"): a rounded bottom
+    "round": dict(wider=0.05, below=0.22, profile=[(-1.0, 0.86), (0.0, 1.0), (0.3, 0.96), (0.6, 0.80), (0.85, 0.55),
+                                                    (1.0, 0.28)],
+                  lobes=[(0.0, 1.0)], mode="round"),
+}
+
+
 def _long(ctx, bd):
-    """Rai's long beard (§7.6: #EEF0F5 with a blue AO, 0.6 H under the chin, three big lobes converging to a point,
-    the moustache flowing in): the pear's construction (a guide surface: the face, then an analytic shape below the
-    chin) with a narrowing profile and three lobes — the middle one longest."""
+    """The hanging beards (HANG): Rai's long beard (§7.6: #EEF0F5 with a blue AO, 0.6 H under the chin, three big
+    lobes converging to a point, the moustache flowing in), and the leaders' and the ruler's — forked (two points),
+    box (straight sides, a flat bottom), goatee (the chin only), round (a rounded bottom). The pear's construction (a
+    guide surface: the face, then an analytic shape below the chin) with the style's profile and lobes."""
+    d = dict(HANG[bd["style"]])
+    d.update({k: v for k, v in bd.items() if k in ("wider", "below", "profile", "lobes", "mode", "width")})
     head = ctx.objs["head"]
     sx = ctx.P["hx"] / 0.48
     line = _beard_line(ctx, bd)
     chin_z = ctx.L["chin"].z
     jaw_x = abs(ctx.L["jaw_near"].x) if ctx.L.get("jaw_near") else 0.4 * sx
-    wide = jaw_x + bd.get("wider", 0.02) * ctx.W
-    tip_z = chin_z - bd.get("below", 0.6) * H
+    wide = d["width"] * ctx.W if d.get("width") else jaw_x + d.get("wider", 0.02) * ctx.W
+    tip_z = chin_z - d.get("below", 0.6) * H
     fy = ctx.L["face_y"]
-    zj = chin_z + 0.07
+    zj = chin_z + (0.03 if d.get("chin_only") else 0.07)
     th = bd.get("clump_th", 0.06)
     open_m = getattr(ctx, "mouth_open", False)
+    prof = d["profile"]
+    mode = d.get("mode", "converge")
+    chin_only = d.get("chin_only", False)
 
     def half_w(z):
         tt = (zj - z) / (zj - tip_z)
-        return wide * core.lerp_table([(-1.0, 0.80), (0.0, 1.0), (0.25, 0.88), (0.55, 0.62), (0.8, 0.36), (1.0, 0.12)],
-                                      tt)
+        return wide * core.lerp_table(prof, tt)
 
     def guide(x, z):
         w = half_w(z)
@@ -373,7 +403,11 @@ def _long(ctx, bd):
         ya = fy - 0.01 + 0.04 * tt + 0.35 * w * u * u
         return Vector((x, ya, z)), Vector((0.8 * u / max(w, 0.2), -1.0, -0.1 * tt)).normalized()
 
-    def keep(h, n, d):
+    def keep(h, n, d_):
+        if chin_only:
+            # a goatee: the chin under the lower lip only
+            return (abs(h.x) < wide * 0.95 and h.z < ctx.L["mouth_z"] - 0.045 - (0.03 if open_m else 0.0)
+                    and h.y < 0.0)
         if h.z > line(h.x) - 0.01 - (0.035 if open_m and abs(h.x) < 0.26 * sx else 0.0):
             return False
         if abs(h.x) > 0.36 * sx and h.z > -0.25:
@@ -387,16 +421,33 @@ def _long(ctx, bd):
         w = half_w(z)
         g, _ = guide(0.0, z)
         el.append(dict(co=(0.0, g.y + 0.12, z), half=(0.8 * w, 0.12, 0.12), stiff=2.0))
-    # three lobes: the clumps of each lobe converge to its end; the middle lobe reaches the tip
-    lobes = bd.get("lobes", [(-0.42, 0.62), (0.0, 1.0), (0.42, 0.66)])     # (x share, depth share)
-    for u, (w0, w1) in [(-0.82, (0.09, 0.07)), (-0.55, (0.10, 0.075)), (-0.28, (0.105, 0.08)), (0.0, (0.11, 0.08)),
-                        (0.28, (0.105, 0.08)), (0.55, (0.10, 0.075)), (0.82, (0.09, 0.07))]:
+    # the lobes: the clumps of each lobe converge to its end ("converge"; the middle lobe reaches the tip), split
+    # into two points ("fork"), hang straight to a flat bottom ("straight") or end on a rounded bottom ("round")
+    lobes = d.get("lobes", [(-0.42, 0.62), (0.0, 1.0), (0.42, 0.66)])     # (x share, depth share)
+    us = [(-0.82, (0.09, 0.07)), (-0.55, (0.10, 0.075)), (-0.28, (0.105, 0.08)), (0.0, (0.11, 0.08)),
+          (0.28, (0.105, 0.08)), (0.55, (0.10, 0.075)), (0.82, (0.09, 0.07))]
+    if chin_only:
+        us = [(-0.6, (0.07, 0.05)), (-0.2, (0.08, 0.055)), (0.2, (0.08, 0.055)), (0.6, (0.07, 0.05))]
+    for u, (w0, w1) in us:
         lx, ld = min(lobes, key=lambda lb: abs(lb[0] - u * 0.75))
         x_root = u * half_w(-0.10)
         z_root = line(x_root) - (0.08 if (open_m and abs(x_root) < 0.3 * sx) else 0.04)
         z_root = min(z_root, -0.16 if abs(u) < 0.8 else -0.25)
+        if chin_only:
+            x_root = u * wide * 0.8
+            z_root = ctx.L["mouth_z"] - 0.06 - (0.04 if open_m else 0.0)
         ze = zj - (zj - tip_z) * ld
-        xe = lx * half_w(ze) * 1.6 + (u - lx) * 0.05
+        if mode == "straight":
+            ze = tip_z + 0.02 * (1 - abs(u))
+            xe = u * half_w(ze) * 1.05
+        elif mode == "round":
+            ze = zj - (zj - tip_z) * (1.0 - 0.55 * u * u)
+            xe = u * half_w(ze) * 0.9
+        elif mode == "fork":
+            xe = lx * half_w(ze) * 1.15 + (u - lx) * 0.06
+            ze = ze + 0.10 * abs(u - lx)
+        else:
+            xe = lx * half_w(ze) * 1.6 + (u - lx) * 0.05
         z1 = min(zj, z_root - 0.04)
         ctrl = [(x_root, z_root), (u * half_w(z1), z1)]
         for t in (0.35, 0.7):
@@ -409,7 +460,14 @@ def _long(ctx, bd):
             g, n_ = guide(x, z)
             pts.append(g)
             nrs.append(n_)
-        el += core.clump(pts, nrs, w0, w1, th, n=26, lift=0.0, taper_at=0.6, tip=0.4, stiff=2.8, flat=0.75, root=0.2)
+        el += core.clump(pts, nrs, w0, w1, th, n=26, lift=0.0, taper_at=0.6,
+                         tip=0.4 if mode != "straight" else 0.85, stiff=2.8, flat=0.75, root=0.2)
+    if bd.get("jut"):
+        # anger pushes the beard forward (Ormdek, §7.8 "борода выпячивается")
+        for e in el:
+            if not e.get("neg") and e["co"][2] < chin_z:
+                c = Vector(e["co"])
+                e["co"] = c + Vector((0.0, -bd["jut"] * core.smoothstep(chin_z, tip_z, c.z), 0.0))
     if open_m:
         zs = [q[1] for q in ctx.mouth_pts]
         el.append(dict(co=(0.0, fy - 0.06, (min(zs) + max(zs)) / 2 - 0.01), half=(0.15 * sx, 0.08, 0.08), stiff=3.0,
@@ -420,8 +478,9 @@ def _long(ctx, bd):
     mat = core.hair_mat(ctx, "beard", bd["color"], tip_z, ctx.L["mouth_z"] - 0.04, dark=bd.get("tip"),
                         light=bd.get("root"), crevice=bd.get("crevice"))
     o = core.mb_mesh(ctx, "Long", el, 0.012, mat, smooth_iter=4, name="beard")
-    _register(ctx, o, sig=False)
+    _register(ctx, o, sig=bd.get("signature", False))
     ctx.L["beard_tip"] = Vector((0, fy + 0.1, tip_z))
+    ctx.L["beard_wide"] = wide
 
 
 # ------------------------------------------------------------------ thin moustache (Hawk)
@@ -513,3 +572,92 @@ def _chops(ctx, bd):
     ctx.details["sideburns"] = bd.get("min_px", 2000)
     ctx.add(o, "detail:sideburns", head, kind="embed", head=True)     # its own ID group: P-A8 "бакенбарды 2000"
     ctx.objs["beard"] = o
+
+
+# ================================================================== P3: braids and an upturned moustache (§7.8)
+def _braids(ctx, bd):
+    """Torvald's beard (§7.8: "длинная седая борода двумя толстыми косами с каменными бусинами"): a short hanging
+    mass under the chin (the "long" construction, 0.22 H, rounded) from which two thick plaits hang to `below` H under
+    the chin — flat lobes leaning +-25 deg in turn along a gently curving path, narrowing — each tied off with sandstone
+    beads (`bead`)."""
+    short = dict(bd, style="round", below=bd.get("mass_below", 0.22), wider=bd.get("wider", 0.02), signature=True)
+    _long(ctx, short)
+    o_mass = ctx.objs["beard"]
+    chin_z = ctx.L["chin"].z
+    fy = ctx.L["face_y"]
+    wide = ctx.L.get("beard_wide", 0.35)
+    ln = bd.get("below", 0.62) * H
+    w = bd.get("plait_w", 0.13) * H
+    el = []
+    beads = []
+    for sd in (-1, 1):
+        x0 = sd * wide * bd.get("spread", 0.42)
+        top = Vector((x0, fy - 0.02, chin_z - 0.08))
+        bot = Vector((x0 * 0.85, fy + 0.06, chin_z - ln))
+        n = 9
+        prev = top
+        for i in range(n):
+            t = i / (n - 1)
+            p = top.lerp(bot, t) + Vector((0.0, -0.04 * math.sin(math.pi * t), 0.0))
+            ww = w * (1.0 - 0.35 * t)
+            lean = math.radians(25 * (1 if i % 2 else -1))
+            along = (bot - top).normalized()
+            q = core.frame_quat(along, Vector((0, -1, 0)))
+            from mathutils import Quaternion
+            q = q @ Quaternion((0, 1, 0), lean)
+            el.append(dict(co=p, half=(ww * 0.55, ww * 0.30, ww * 0.62), stiff=2.6, rot=q))
+            prev = p
+        for t in bd.get("beads", (0.12, 1.02)):
+            beads.append((top.lerp(bot, t) + Vector((0, -0.01, 0)), w * (0.42 if t < 0.5 else 0.48)))
+    mat = core.hair_mat(ctx, "braids", bd["color"], chin_z - ln, chin_z, dark=bd.get("tip"), light=bd.get("root"),
+                        crevice=bd.get("crevice"))
+    o = core.mb_mesh(ctx, "Braids", el, 0.010, mat, smooth_iter=2, name="beard_braids")
+    ctx.add(o, "beard", o_mass, kind="embed", head=True)
+    ctx.sig_objs.append(o)
+    stone = core.principled(ctx, "bead_stone", bd.get("bead", "#C8B48A"), rough=0.75)
+    for k, (c, r) in enumerate(beads):
+        b = core.uvsphere("beard_bead%d" % k, c, (r, r * 0.9, r * 0.8), stone, 20, 10)
+        ctx.add(b, "detail:beads", o, kind="embed", head=True)
+    ctx.details["beads"] = bd.get("bead_px", 150)
+
+
+def _upturned(ctx, bd):
+    """An upturned moustache (Velian, §7.8 "закрученные вверх усы"): two tapered curves from the philtrum out along
+    the upper lip past the corners, then curling up (`curl` H; negative: the tips droop — his anger), thicker than
+    Hawk's thin one, the outer half off the face."""
+    head = ctx.objs["head"]
+    sx = ctx.P["hx"] / 0.48
+    mz = ctx.L["mouth_z"]
+    nz = ctx.L["nose_tip"].z
+    t = bd.get("m_thick", 0.05) * H
+    curl = bd.get("curl", 0.09) * H
+    reach = bd.get("reach", 0.34)
+    mtop = ctx.L.get("mouth_top") if getattr(ctx, "mouth_open", False) else None
+    base = mz + bd.get("above", 0.04) * H
+    mat = core.hair_mat(ctx, "moustache", bd.get("moustache_color", bd["color"]), mz - 0.05, mz + 0.12,
+                        dark=bd.get("tip"), light=bd.get("root"), crevice=bd.get("crevice"))
+    for sd in (-1, 1):
+        pts, rad = [], []
+        n = 12
+        for i in range(n):
+            f = i / (n - 1)
+            x = sd * (0.02 + (reach - 0.02) * min(1.0, f / 0.7)) * sx
+            z = base - 0.006 * math.sin(math.pi * min(1.0, f / 0.7))
+            if f > 0.6:
+                g = (f - 0.6) / 0.4
+                x += sd * 0.03 * sx * math.sin(math.pi * g) - sd * 0.02 * sx * g * g
+                z += curl * g ** 1.3
+            if mtop and mtop[0][0] - 0.01 <= x <= mtop[-1][0] + 0.01:
+                z = max(z, core.lerp_table(mtop, x) + t * 0.7)
+            z = min(z, nz - t * 0.9) if f < 0.5 else z
+            h, nn = core.ray_front(head, x, z)
+            if h is None or f > 0.7:
+                # off the face's outline: keep going in front of the cheek
+                hh, n2 = core.ray_front(head, x * 0.85, z)
+                y = (hh.y - 0.02) if hh is not None else ctx.L["face_y"] + 0.05
+                pts.append(Vector((x, y - t * 0.3, z)))
+            else:
+                pts.append(h + nn * t * 0.35)
+            rad.append((0.6 + 0.4 * math.sin(math.pi * min(1.0, f * 1.8))) * (1 - 0.7 * core.smoothstep(0.6, 1.0, f)))
+        o = core.curve("moustache%+d" % sd, pts, rad, t / 2, mat)
+        ctx.add(o, "beard", head, kind="surface", head=True)

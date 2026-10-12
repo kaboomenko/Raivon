@@ -694,18 +694,149 @@ CHARS = {
     ),
 }
 
+# ================================================================== eras, moods, the resolver
+import copy  # noqa: E402
+
+# Era looks (§7.6 "Палитра и эпохи", §7.7): per commander {era: patch}. A patch replaces whole entries named in
+# REPLACE (the costume, the headgear, the props list), deep-merges dicts (hair, body, pose ...), and edits props by
+# kind: "props~": {kind: {...} | None} patches (or drops) the era-1 prop of that kind, "props+": [...] adds props.
+# Filled below (ERA_LOOKS.update); the face, the hair's shape and colour, the facial hair, the signature and the
+# accent never change between eras (§7.7) — the lint checks the face keys are not patched.
+ERA_LOOKS = {}
+REPLACE = ("costume", "headgear", "props", "paint")
+FACE_KEYS = ("head", "skin", "skin_tone", "eyes", "brows", "nose", "mouth", "beard", "signature", "female")
+
+
+def _merge(a, b):
+    for k, v in b.items():
+        if isinstance(v, dict) and isinstance(a.get(k), dict) and k not in REPLACE:
+            _merge(a[k], v)
+        else:
+            a[k] = copy.deepcopy(v)
+    return a
+
+
+def apply_patch(c, patch):
+    patch = dict(patch)
+    pt = patch.pop("props~", None)
+    add = patch.pop("props+", None)
+    _merge(c, patch)
+    if pt:
+        out = []
+        for pr in c.get("props", []):
+            if pr["kind"] in pt:
+                if pt[pr["kind"]] is None:
+                    continue
+                pr = _merge(copy.deepcopy(pr), pt[pr["kind"]])
+            out.append(pr)
+        c["props"] = out
+    if add:
+        c["props"] = c.get("props", []) + copy.deepcopy(add)
+    return c
+
+
+# §7.9 the five moods, as deltas over the character's own calm face (numbers in H). The face keys (eyes, brows,
+# mouth) are filled for a mood the character does not describe itself (the leaders; the commanders carry their own
+# smile, §7.6); "fx" are the mood's shader and brush effects (cheek lift near / far, blush, pupil, gaze, eye bags,
+# the angry snarl), read by head.py, face.py and rig.py through ctx.fx.
+MOOD_POSE = {"smile": dict(roll=-5.0, nod=3.0), "angry": dict(nod=-5.0), "cunning": dict(roll=5.0, head=-4.0),
+             "tired": dict(nod=-6.0, roll=-2.0)}
+MOOD_FX = {
+    "calm": dict(),
+    # the commanders' smile as P1/P2 built it (cheeks up STYLE cheek_smile, blush +10 %, pupil 0.62, a fuller rim)
+    "smile": dict(cheek=(0.055, 0.055), cheek_amt=0.018, blush=0.10, pupil=0.62, rim="smile"),
+    # a snarl: cheeks up 0.02, a red flush on the nose and cheeks (+8-15 %), flared nostrils, two folds between the
+    # brows; the pupil 0.48
+    "angry": dict(cheek=(0.02, 0.02), cheek_amt=0.008, blush=0.12, nose_red=0.30, pupil=0.48, nostrils=1.18,
+                  frown=2),
+    # the near cheek up 0.03, the glance 30 % of the eye's width toward the near side, the pupil 0.55
+    "cunning": dict(cheek=(0.03, 0.0), cheek_amt=0.006, pupil=0.55, gaze=(-0.30, 0.0)),
+    # cheeks down 0.03, bags under the eyes (skin x0.85, a crescent 0.03 H), the glance 0.015 H down
+    "tired": dict(cheek=(-0.03, -0.03), cheek_amt=-0.012, pupil=0.58, gaze=(0.0, -0.015), bags=0.85),
+}
+
+
+def _open_of(ey, side):
+    o = ey.get("open", 0.80)
+    return o[side] if isinstance(o, (list, tuple)) else o
+
+
+def _fill_mood(c, mood):
+    """The §7.9 numbers for a mood the character does not describe: eyes, brows, mouth and the head's pose delta."""
+    if mood == "calm":
+        return
+    ey, br, mo = c["eyes"], c["brows"], c["mouth"]
+    tilt, arch = ey.get("tilt", 0.08), ey.get("arch", 0.24)
+    if mood not in ey:
+        if mood == "smile":
+            ey[mood] = dict(open=[max(0.45, _open_of(ey, i) - 0.08) for i in (0, 1)], low=0.20, bow=0.30,
+                            arch=arch + 0.04, tilt=tilt)
+        elif mood == "angry":   # 0.55, the inner corner lower
+            ey[mood] = dict(open=min(0.55, _open_of(ey, 0)), tilt=-0.22, arch=0.10, low=0.04)
+        elif mood == "cunning":  # the near eye narrowed 0.40-0.45, the far 0.60-0.65
+            ey[mood] = dict(open=[0.43, 0.62], tilt=tilt * 0.5, arch=arch * 0.6, low=0.06)
+        elif mood == "tired":    # 0.30, the outer corner down
+            ey[mood] = dict(open=0.30, tilt=0.22, arch=0.10, low=0.0)
+    if mood not in br:
+        br[mood] = {"smile": dict(inner=0.025, outer=0.01, arch=0.01),
+                    "angry": dict(inner=-0.065, outer=0.025, in_dx=0.02, thick_k=1.15, arch=-0.01),
+                    "cunning": dict(lift=(-0.02, 0.09), arch_far=0.03, arch_near=-0.02),
+                    "tired": dict(inner=0.035, outer=-0.03, arch=-0.005)}[mood]
+    if mood not in mo:
+        cw = mo.get("calm", {}).get("w", 0.27)
+        mo[mood] = {"smile": dict(type="open", w=0.33, h=0.12, near=0.04, far=0.035, dz=-0.012),
+                    "angry": dict(type="open", shape="trap", w=0.28, h=0.10, near=-0.02, far=-0.02, dz=-0.006,
+                                  lower_teeth=True),
+                    "cunning": dict(type="closed", w=cw, near=0.04, far=0.0, sag=0.004),
+                    "tired": dict(type="closed", w=0.24, near=-0.015, far=-0.015, sag=0.0, crease=0.026)}[mood]
+    if "pose_" + mood not in c:
+        c["pose_" + mood] = dict(MOOD_POSE.get(mood, {}))
+
+
+def resolve(cid, era=1, mood="calm"):
+    """The character's data for one era and mood: its era-1 entry, the era patch (ERA_LOOKS), the §7.9 mood
+    defaults for whatever the character does not describe, its own mood patch (c["moods"][mood]) and the mood's
+    effects (c["_fx"] = MOOD_FX[mood] updated by c["fx"][mood])."""
+    c = copy.deepcopy(CHARS[cid])
+    look = ERA_LOOKS.get(cid, {}).get(era)
+    if look:
+        apply_patch(c, look)
+    _fill_mood(c, mood)
+    mp = c.get("moods", {}).get(mood)
+    if mp:
+        apply_patch(c, mp)
+    fx = dict(MOOD_FX.get(mood, {}))
+    fx.update(c.get("fx", {}).get(mood, {}))
+    c["_fx"] = fx
+    c["_era"] = era
+    return c
+
+
+COMMANDER_IDS = [k for k in CHARS if k.startswith("cmd_")]
 KIT_IDS = set(CHARS)
 KIT_ERAS = {cid: {1} for cid in CHARS}      # eras the kit builds; the rest falls back to the old builder
 
-# headgear per era for the uniqueness lint (§7.6: «Головные уборы в одной эпохе не повторяются»): a headgear's id
-# (the builder kind unless it says otherwise: Olm's brass goggles and Irma's motor goggles share the goggles builder)
-HEADGEAR = {cid: {1: (c.get("headgear") or {}).get("id", (c.get("headgear") or {}).get("kind"))}
-            for cid, c in CHARS.items()}
+
+def headgear_of(cid, era):
+    """A commander's headgear id in an era (the builder kind unless it says otherwise: Olm's brass goggles and Irma's
+    motor goggles share the goggles builder) — for the uniqueness lint (§7.6)."""
+    hg = resolve(cid, era).get("headgear") or {}
+    return hg.get("id", hg.get("kind"))
+
+
+# Modules locked to a commander (§7.8 rule 1): no leader (nor the ruler) may use them.
+LOCKED = dict(hair={"kerchief": "Lira", "ponytail": "Irma", "bun": "Vance", "bob": "Vega", "flattop": "Frey",
+                    "fringe": "Vik"},
+              beard={"pear": "Bram", "long": "Rai", "walrus": "Kort", "thin": "Hawk", "chops": "Olm"},
+              headgear={"hood": "Vik", "circlet": "Rai", "aviator": "Hawk", "kerchief": "Lira",
+                        "brass_goggles": "Olm"},
+              props={"raven": "Vik", "scarf": "Hawk", "queen": "Vance", "spoon": "Bram", "spyglass": "Seir"})
 
 
 def lint():
-    """Fail the build when an id has no signature or no signature zone, two ids share a signature, or two commanders
-    share a headgear in one era (runs at every build, portrait_kit.build)."""
+    """Fail the build when an id has no signature or no signature zone, two ids share a signature, two commanders
+    share a headgear in one era, an era patch touches the face, or a leader / the ruler uses a module locked to a
+    commander (runs at every build, portrait_kit.build)."""
     errs = []
     seen = {}
     for cid, c in CHARS.items():
@@ -720,12 +851,38 @@ def lint():
             seen[s] = cid
     for era in (1, 2, 3, 4):
         worn = {}
-        for cid, by_era in HEADGEAR.items():
-            k = by_era.get(era)
+        for cid in COMMANDER_IDS:
+            if era not in KIT_ERAS.get(cid, ()):
+                continue
+            k = headgear_of(cid, era)
             if k:
                 if k in worn:
                     errs.append("era %d: %s and %s both wear %s" % (era, worn[k], cid, k))
                 worn[k] = cid
+    for cid, looks in ERA_LOOKS.items():
+        for era, patch in looks.items():
+            bad = [k for k in patch if k in FACE_KEYS]
+            if bad:
+                errs.append("%s era %d patches the face (%s): §7.7 keeps it" % (cid, era, ", ".join(bad)))
+    for cid, c in CHARS.items():
+        if cid.startswith("cmd_"):
+            continue
+        hs = (c.get("hair") or {}).get("style")
+        if hs in LOCKED["hair"]:
+            errs.append("%s uses %s's hair module %r" % (cid, LOCKED["hair"][hs], hs))
+        bs = (c.get("beard") or {}).get("style")
+        if bs in LOCKED["beard"]:
+            errs.append("%s uses %s's beard module %r" % (cid, LOCKED["beard"][bs], bs))
+        for era in (1, 2, 3, 4):
+            hg = resolve(cid, era).get("headgear") or {}
+            for k in (hg.get("kind"), hg.get("id")):
+                if k in LOCKED["headgear"]:
+                    errs.append("%s uses %s's headgear %r" % (cid, LOCKED["headgear"][k], k))
+            for pr in resolve(cid, era).get("props", []):
+                if pr["kind"] in LOCKED["props"]:
+                    errs.append("%s uses %s's prop %r" % (cid, LOCKED["props"][pr["kind"]], pr["kind"]))
+                if pr["kind"] == "glasses" and pr.get("shape", "rect") == "rect":
+                    errs.append("%s wears Vega's rectangular glasses" % cid)
     if errs:
-        raise ValueError("chars.py lint: " + "; ".join(errs))
+        raise ValueError("chars.py lint: " + "; ".join(sorted(set(errs))))
     return True

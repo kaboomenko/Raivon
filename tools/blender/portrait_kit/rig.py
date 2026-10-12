@@ -22,6 +22,7 @@ import numpy as np
 from mathutils import Euler, Matrix, Vector
 
 from . import core, style
+from .core import H as H_
 
 R = style.RENDER
 
@@ -318,6 +319,13 @@ def solve_gaze(ctx):
             x0, room = eye["al_x0"], max(0.0, eye["al_xc0"] - ri / sx) * 0.8
             gx = x0 + max(-room, min(room, (gx - x0) * 0.8))
             gz = max(-0.45 * eye["al_kh"], min(0.25 * eye["al_kh"], gz))
+            mg = ctx.fx.get("gaze")
+            if mg:
+                # the mood's glance (§7.9): cunning — sideways 30 % of the eye's width toward the near side (the eye is
+                # 2 xc0 wide in lens units); tired — 0.015 H down (rz lens units per kit unit: 1 / rz)
+                full = max(0.0, eye["al_xc0"] - ri / sx * 0.85)
+                gx = max(x0 - full, min(x0 + full, gx + mg[0] * 2 * eye["al_xc0"]))
+                gz = max(-0.6 * eye["al_kh"], gz + mg[1] * H_ / e["radii"][2])
         mat.node_tree.nodes["gaze"].inputs["Location"].default_value = (-gx * sx, 0.0, -gz)
         e["gaze"] = (gx, gz)
         gy = -math.sqrt(max(0.0, 1 - gx * gx - gz * gz))
@@ -354,6 +362,19 @@ def solve_gaze(ctx):
         if ey.get("one_catch") and e["side"] < 0:
             spots = spots[:1]
         rz = e["radii"][2]
+        op_ = e.get("opening")
+        if op_:
+            # inside the visible opening: under the lid's edge, over the rim (a catchlight the lid hides is dropped)
+            kept = []
+            for (ux, uz), frac in spots:
+                u = (ux - e["x0"]) / max(e["xc0"], 1e-6)
+                top = core.lerp_table([(q[0], q[1]) for q in op_], u)
+                bot = core.lerp_table([(q[0], q[2]) for q in op_], u)
+                rr = frac * ri * 0.5
+                if top - bot < 2.4 * rr:
+                    continue
+                kept.append(((ux, min(max(uz, bot + rr * 1.2), top - rr * 1.2)), frac))
+            spots = kept
         for k, ((ux, uz), frac) in enumerate(spots):
             uy = -math.sqrt(max(0.0, 1 - ux * ux - uz * uz))
             pos = mw @ Vector((ux, uy, uz))

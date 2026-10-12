@@ -24,12 +24,22 @@ def supports(cid, era=1):
     return cid in chars.KIT_IDS and era in chars.KIT_ERAS.get(cid, ())
 
 
+def master_size(cid):
+    """The render size of an id's master: 512x588 for everyone (§7.12: the leaders and the ruler are rendered at 512
+    and shipped downscaled to 256x294 with the premultiplied Lanczos of core.downscale)."""
+    return style.RENDER["size"]
+
+
+def ship_size(cid):
+    return (512, 588) if cid.startswith("cmd_") else (256, 294)
+
+
 def build(cid, mood="calm", era=1, log=print):
     """Build one portrait's scene (the factory scene is reset first). Returns the context."""
     t0 = time.time()
     bpy.ops.wm.read_factory_settings(use_empty=True)
     chars.lint()
-    ch = chars.CHARS[cid]
+    ch = chars.resolve(cid, era, mood)
     ctx = core.Ctx(cid, ch, mood, era)
     ctx.t0 = t0
     h = head.build_head(ctx, None)
