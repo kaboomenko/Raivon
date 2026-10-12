@@ -784,7 +784,7 @@
 | R6 | `shadow_size` больше 2. |
 | R7 | `modulate.a` как признак «выключено» у кнопок. |
 
-**Соседние кнопки** — `godot --headless --path game --script res://tests/test_siblings.gd [-- --lang=ru --only=result,peace]`: открывает основные окна (итоги, мир, ультиматум, церемония, все вкладки лавки, пропуск, календарь, патент, диалоги, рынок, обмен, карточка командира, рука, редакторы, окно лидера) и вкладки лотка, собирает видимые `KitButton` в ряды и стопки и падает, если в наборе разная высота, кегль подписи или цены, раскладка или (в окне) наличие значка у доступных вариантов (§4.1 «Соседние кнопки»). Круглые и только-значковые кнопки не считаются; кнопку, которая стоит особняком нарочно, помечают `set_meta("sibling_solo", "<причина>")`. Гоняется на ru и en.
+**Соседние кнопки** — `godot --headless --path game --script res://tests/test_siblings.gd [-- --lang=ru --only=result,peace]`: открывает основные окна (итоги, мир, ультиматум, церемония, все вкладки лавки, пропуск, календарь, патент, диалоги, рынок, обмен, карточка командира, рука, редакторы, окно лидера) и вкладки лотка, собирает видимые `KitButton` в ряды, стопки и списки (кнопка на одном месте в каждой строке списка: «Назначить» у командиров, цены наборов) и падает, если в наборе разная высота, кегль подписи или цены, раскладка или (в окне) наличие значка у доступных вариантов (§4.1 «Соседние кнопки»). Круглые и только-значковые кнопки не считаются; кнопку, которая стоит особняком нарочно, помечают `set_meta("sibling_solo", "<причина>")`. Гоняется на ru и en.
 
 ### 8.2 Кадры
 `tools/godot_shot.sh OUT.png --lang=ru --shot-delay=3 [...]`:
@@ -812,7 +812,7 @@
 - Все публичные `show_*` / `set_*` и сигналы. Новые параметры добавляются только в конец и только необязательными.
 - `GameUI.VH`, `GameUI.fmt_time`, `GameUI.fmt_num`.
 - `tools/check_strings.py`: в ru и en одинаковые плейсхолдеры, пустых ячеек нет.
-- Наборы тестов CI: test_sim, test_economy, test_deposits, test_march, test_camps, test_ring, test_ring3, test_cases, test_orders, test_pass, test_weekly, test_calendar, test_patent, test_chronicle, test_commanders, test_flow (и test_siblings — §8.1).
+- Наборы тестов CI: test_sim, test_economy, test_deposits, test_march, test_camps, test_ring, test_ring3, test_cases, test_orders, test_pass, test_weekly, test_calendar, test_patent, test_chronicle, test_commanders, test_flow; вне CI, перед сдачей экранов — test_siblings на ru и en (§8.1).
 
 ### 8.4 Производительность (вызовы отрисовки холста)
 

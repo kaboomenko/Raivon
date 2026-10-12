@@ -220,9 +220,12 @@ def id_rules(im, masks, m, name):
             c = med(under)
             dl = abs(b[0] - c[0])
             if worst is None or dl < worst[0]:
-                worst = (dl, key)
+                worst = (dl, key, float(Q.de76(b, c)))
         if worst is not None:
-            out.append(("beard-clothes", worst[0], worst[0] >= 15, "|dL*| %.1f (vs %s)" % worst))
+            # the gate is §7.4's |dL*| >= 15; dE76 is printed (INFO) because a ginger beard on a slate-blue coat
+            # separates by hue where the value step is short (P3: Bram's eras)
+            out.append(("beard-clothes", worst[0], worst[0] >= 15,
+                        "|dL*| %.1f (vs %s; dE76 %.1f INFO)" % worst))
     sg = grp("signature")
     if sg is not None and sg.sum() > 20:
         s = med(sg)

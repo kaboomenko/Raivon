@@ -441,12 +441,12 @@ CHARS = {
                    smile=dict(type="open", w=0.30, h=0.10, near=0.035, far=0.025, dz=-0.01)),
         # a flat-top (§7.6 "площадка"): a block with a level top and vertical walls on the parietal ridge, faded sides
         # with skin at the temples and over the ears, a bristle edge of short spikes along the hairline (P2 review: the
-        # planed metaball shell read as a fleece cap, the noise bristle as stucco). A warm mid-brown, not §7.6's
-        # #2A2420 (the art director's P2 note b: hair lighter than the uniform; a dark shell read as a beanie) nor the
-        # grey-beige #A8907A (read grey-haired): darker crevices low, lighter tips on top; its value keeps hair vs the
-        # T5 skin >= 15 L* (§7.4)
-        hair=dict(style="flattop", color="#3A2A20", dark="#3C2C21", light="#4C382A", crevice="#3E2E22",
-                  tip="#624A38", fleck="#4E3A2C", side=0.008, front=0.035, front_ramp=0.09, top=0.022,
+        # planed metaball shell read as a fleece cap, the noise bristle as stucco). Colour: the art director's note
+        # after P2 (the tan brush read as a box set on the head) asks for short dark-brown hair close to her brows; an
+        # ash dark brown, less saturated than the T5 skin, so hair vs skin passes §7.4 by dE76 >= 30 (31) while the
+        # shadowed far side stays above the albedo floor (dark <= 3 %: the warm #3A2A20 gave dE 28.3 and 3.1 %)
+        hair=dict(style="flattop", color="#3C3230", dark="#3E3430", light="#4E423A", crevice="#443A34",
+                  tip="#5E5048", fleck="#4C4038", side=0.008, front=0.035, front_ramp=0.09, top=0.022,
                   corner=0.13, ridge=0.16, ramp=0.12, lean=(35.0, 22.0), stubble=0.35, grain=(150, 150, 34),
                   fade_band=0.05, fade_mix=0.5, bristles_front=(0.0, 0.0, 0, 0.0, 0.0),
                   rough=0.78, spec=0.3,
@@ -994,7 +994,7 @@ CHARS.update({
     # ---------------------------------------------------------------- Archmaster Ormdek the Stone (Conclave, Turtle)
     "ldr_conclave": dict(
         name="Ormdek", leader=True, female=False, tall_headgear=True, plate="#D18D4F",
-        head=dict(shape="square", wh=1.18, n_top=3.4, h_px=258, eye_line=0.49, jaw=0.08, brow_ridge=1.6, cheeks=1.0, muzzle=1.1,
+        head=dict(shape="square", wh=1.05, n_top=3.4, h_px=258, eye_line=0.49, jaw=0.08, brow_ridge=1.6, cheeks=1.0, muzzle=1.1,
                   chin=0.02),
         skin="#9A5E4C", skin_tone="T5", blush=0.12, skin_sat=1.12, skin_spec=0.10,
         eyes=dict(sclera=0.18, open=0.66, iris="#7A8A9A", iris_shade=0.9, tilt=-0.06, arch=0.05),
@@ -1005,7 +1005,7 @@ CHARS.update({
                    smile=dict(type="open", w=0.30, h=0.10, near=0.03, far=0.03, dz=-0.008, teeth=0.45)),
         hair=dict(style="bald", bald=True, color="#9A9AA2"),
         beard=dict(style="box", color="#A0A0A8", tip="#B8B8C0", root="#8A8A94", crevice="#5A5A66", below=0.42,
-                   wider=0.10, moustache=True, moustache_color="#A8A8B0", moustache_dark="#8A8A94",
+                   wider=0.06, moustache=True, moustache_color="#A8A8B0", moustache_dark="#8A8A94",
                    moustache_light="#C4C4CA", signature=True),
         headgear=dict(kind="shell", id="steel_plate", color="#C0C8D0", mat="metal", rough=0.3, metallic=0.5,
                       edge=[(0, 52), (40, 48), (80, 40), (120, 34), (180, 30)], thick=0.04, roll=0.02, res=0.012,
@@ -1021,8 +1021,10 @@ CHARS.update({
                 dict(kind="buttons", id="rivet", at=[(-0.30, -0.95), (0.30, -0.95), (-0.30, -1.15), (0.30, -1.15)],
                      r=0.026, color="#A87A50"),
             ]),
-        props=[dict(kind="shield", side="far", r=0.40, x=0.48, turn=42, up=0.15, dz=0.15, color="#B8C0C8", metal=True,
-                    edge="#A87A50", rivets=12, detail="shield", min_px=2000)],
+        # the shield rises behind the far shoulder beside the head (lower it hid wholly behind the box beard: 529 px of
+        # the 2000 P-A8 asks); painted dark steel with a copper rim, as the light-steel disc melted into the grey beard
+        props=[dict(kind="shield", side="far", r=0.40, x=0.52, turn=42, up=0.35, dz=0.40, color="#363E4A",
+                    edge="#A87A50", edge_metal=True, rim=0.045, rivets=12, detail="shield", min_px=2000)],
         pose=dict(body=16, head=4, roll=0, nod=-3),
         signature=dict(name="box beard + one massive shield pauldron on the far shoulder",
                        zone="lower face width; far side"),
@@ -1442,7 +1444,9 @@ ERA_LOOKS.update({
                          stripe="#3E9B5A"),
                     dict(kind="strap", id="strap", color="#8A5A34", detail="satchel_strap", min_px=3000,
                          **{"from": (0.46, -0.70), "to": (-0.62, -1.75)}, w=0.10)]),
-                headgear=dict(kind="shell", id="bonnet", color="#EAF0F8", mat="fabric", thick=0.06, lift=0.07,
+                # cool whites (bonnet here, the E4 helmet): a white hat sits within 9 L* of Lira's light cheek, so it
+                # passes §7.4 hat-skin by dE76 >= 30 (31.5 / 31.2 at 512) through a blue cast, not by value
+                headgear=dict(kind="shell", id="bonnet", color="#DAE6F8", mat="fabric", thick=0.06, lift=0.07,
                               roll=0.028, clear=0.03,
                               edge=[(0, 44), (40, 36), (75, 18), (100, 6), (140, -6), (180, -14)],
                               ribbon=dict(color="#3E9B5A", w=0.055, above=7, knot_az=-150, knot_el=12, tail=0.30),
@@ -1467,7 +1471,7 @@ ERA_LOOKS.update({
                          bands=[(92, 30)], detail="pauldrons", min_px=2000),
                     dict(kind="strap", id="strap", color="#3E9B5A", detail="satchel_strap", min_px=3000,
                          **{"from": (0.46, -0.70), "to": (-0.62, -1.75)}, w=0.10)]),
-                headgear=dict(kind="hat", id="rescue_helmet", color="#D8E6F6", mat="painted", h=0.30, rim_dz=0.05,
+                headgear=dict(kind="hat", id="rescue_helmet", color="#BCD2EE", mat="painted", h=0.30, rim_dz=0.05,
                               profile=_ROUND_HELMET, brim=dict(w=0.03, ang=0, t=0.022),
                               band=dict(h=0.05, color="#3E9B5A", mat="painted"),
                               extra=[dict(kind="visor", el=60, span=60, h=0.10, dh=8, tint="#E8F6FF", frame="#3E9B5A",

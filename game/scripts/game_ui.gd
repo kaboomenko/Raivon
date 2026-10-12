@@ -4893,6 +4893,8 @@ func show_commander(info: Dictionary, on_upgrade: Callable, on_target: Callable,
 	var main_r := Rect2((w - 480.0) * 0.5, fy, 480, 112)
 	if on_target.is_valid():
 		var tw2 := (w - 64.0 - 16.0) * 0.4
+		if not (block in ["", "shards", "gold", "dl"]):  # no price on «Повысить»: the pair keeps BTN_L 40 (_pair_w)
+			tw2 = _pair_w(w - 64.0, [tr("cmdr.target_btn"), true], [tr("cmdr.upgrade_btn"), true])
 		var on := bool(info.get("target", false))
 		var tb := Kit.button(box, Rect2(32, fy, tw2, 112), "info", tr("cmdr.target_btn"), {"size": "L",
 			"icon": "check" if on else "chest_royal", "cb": on_target})
