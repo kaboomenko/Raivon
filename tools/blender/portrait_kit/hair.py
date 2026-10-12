@@ -999,7 +999,7 @@ def _curls(ctx):
         # out from the scalp: thick at the sides (the 1.4 W width at ear level), less on top and at the back
         side = abs(nor.x)
         out = 0.05 + max(0.0, half - abs(hit.x)) * side * 0.95 * core.smoothstep(-0.45, -0.05, hit.z)
-        out += 0.04 * core.smoothstep(0.2, 0.5, hit.z)
+        out *= 1.0 - 0.45 * core.smoothstep(0.15, 0.45, hit.z)      # a low crown: the cloud is wide, not tall
         out *= flat if hit.z > 0.1 else 1.0
         c = hit + nor * out
         if flat < 1.0 and c.z > 0.2:
@@ -1047,6 +1047,10 @@ def _owl(ctx):
         sg = 1 if az >= 0 else -1
         el += core.ribbon_lock(head, [core.az_el(az, e0), core.az_el(az * 0.7 + sg * 40, 58),
                                       core.az_el(sg * 168, 12)], 0.10 * sx, 0.08 * sx, 0.045, n=12, lift=0.45)
+    # a side parting and two broad locks swept across the forehead's top (without them the smooth crown read as a cap)
+    for az, e in ((-24, 46), (-50, 34)):
+        el += core.ribbon_lock(head, [core.az_el(28, 70), core.az_el(az * 0.4, 60), core.az_el(az, e)], 0.12 * sx,
+                               0.10 * sx, 0.05, n=14, lift=0.5)
     tf = hr.get("tufts", {})
     ln = tf.get("len", 0.34) * H
     for sd in (-1, 1):
@@ -1058,8 +1062,8 @@ def _owl(ctx):
         d = Vector((sd * math.sin(out) * 1.0, 0.35, math.cos(out))).normalized()
         d = (d + nor * 0.35).normalized()
         pts = [hit - nor * 0.02, hit + nor * 0.05 + d * ln * 0.30, hit + nor * 0.06 + d * ln * 0.65, hit + d * ln]
-        el += core.clump(pts, [nor, nor, nor, nor], 0.10, 0.07, 0.07, n=18, lift=0.0, taper_at=0.25, tip=0.06,
-                         stiff=2.6, flat=0.8)
+        el += core.clump(pts, [nor, nor, nor, nor], tf.get("w", 0.13), tf.get("w", 0.13) * 0.7, 0.08, n=22, lift=0.0,
+                         taper_at=0.25, tip=0.06, stiff=2.6, flat=0.8)
     o = _finish_hair(ctx, el, hr["color"], signature=True)
     return o
 
@@ -1097,7 +1101,8 @@ def _straight(ctx):
         tail = Vector((math.sin(ang) * (r_ + 0.06) * out, y_t, tail_z))
         if abs(az) < 50:
             continue        # the front: framed by the side locks, the face stays open
-        el += core.ribbon_lock(head, [root, mid, low, tail], w0 * sx, w0 * 0.85 * sx, 0.045, n=18, lift=0.45,
+        # (dense samples along the long free tail: 18 left a string of beads, the "cauliflower" of note 3)
+        el += core.ribbon_lock(head, [root, mid, low, tail], w0 * sx, w0 * 0.85 * sx, 0.045, n=40, lift=0.45,
                                free_tail=1, taper_at=0.85, wmin=0.06)
     # the fringe sweep from the parting toward the near side, over the forehead's top
     for k, (az, e) in enumerate(((-30, 50), (-55, 40))):
@@ -1171,7 +1176,7 @@ def _wild(ctx):
             tail = Vector((math.sin(ang) * (r_ + 0.06 + fly), math.cos(ang) * (r_ + 0.02) + 0.04,
                            drop + rng.uniform(-0.06, 0.10)))
             lock = core.ribbon_lock(head, [core.az_el(az, e0), core.az_el((az + back_az(back)) / 2, 44), back, tail],
-                                    0.095 * sx, 0.06 * sx, 0.05, n=16, lift=0.45, free_tail=1, taper_at=0.6)
+                                    0.095 * sx, 0.06 * sx, 0.05, n=36, lift=0.45, free_tail=1, taper_at=0.6)
         (streaks if hr.get("streak") and (az // 14) % 4 == 1 and abs(az) > 40 else el).extend(lock)
     _finish_hair(ctx, el, hr["color"])
     if streaks:

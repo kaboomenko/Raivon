@@ -45,7 +45,7 @@ def build_headgear(ctx):
         return
     builders = {"kerchief": kerchief, "hood": hood, "tricorn": tricorn, "aviator": aviator, "goggles": goggles_hg,
                 "circlet": circlet, "hat": hat, "shell": shell, "visor": visor, "headset": headset,
-                "diadem": diadem, "crown": crown, "bicorne": bicorne}
+                "diadem": diadem, "crown": crown, "bicorne": bicorne, "frame": frame_helmet, "earpiece": earpiece}
     builders[hg["kind"]](ctx, hg)
     for extra in hg.get("extra", []):          # a second piece worn with it (Hawk's goggles on the cap, a visor ...)
         builders[extra["kind"]](ctx, extra)
@@ -439,6 +439,11 @@ def aviator(ctx, hg):
         fm = core.hair_mat(ctx, "cap_fur", hg.get("fur", "#EDE3D0"), -0.3, 0.5, crevice=hg.get("fur_crevice", "#B8A890"))
         lin = core.mb_mesh(ctx, "Lin%+d" % side, el3, 0.008, fm, smooth_iter=2, name="flapfur%+d" % side)
         ctx.add(lin, "detail:" + hg.get("fur_detail", "fur"), flap, kind="embed", head=True)
+    if not hg.get("fur_roll", True):
+        # (a leather flying helmet without the fur at the face: Hawk E2)
+        ctx.details["helmet"] = hg.get("min_px", 4000)
+        ctx.detail_groups = dict(getattr(ctx, "detail_groups", {}), helmet="hat")
+        return
     # the fur roll along the face edge (fluffy: balls packed along the edge plus soft clumps)
     elf = []
     edge_tbl = hg.get("edge", AVIATOR_EDGE)
@@ -477,7 +482,9 @@ def goggles_hg(ctx, hg):
     rim_m = (core.principled(ctx, "goggle_rim", rim_col, rough=0.32, metal=hg.get("metallic", 0.55)) if style != "rubber"
              else core.principled(ctx, "goggle_rim", rim_col, rough=0.55, coat=0.2))
     lens_col = hg.get("lens_color", "#BFE0EE")
-    lens_m = core.principled(ctx, "goggle_lens", lens_col, rough=0.08, coat=0.6, spec=0.8)
+    # E4's HUD lenses glow softly (<= 0.6, §7.4 "HUD-линзы ≤ 0.6")
+    lens_m = core.principled(ctx, "goggle_lens", lens_col, rough=0.08, coat=0.6, spec=0.8,
+                             emit=lens_col if hg.get("lens_glow") else None, es=hg.get("lens_glow", 0.0))
     grp = "detail:" + hg.get("detail", "goggles")
     centres = []
     cups = []
@@ -763,7 +770,7 @@ def hat(ctx, hg):
                 else:
                     ww = w * (1.0 + br.get("front_k", 0.0) * max(0.0, math.cos(a)))
                 ang = math.radians(br.get("ang", 0.0) + br.get("up_sides", 0.0) * abs(math.sin(a)) ** 2)
-                rr = r + br.get("out", 0.005) + ww * f * math.cos(ang)
+                rr = r + br.get("out", -0.012) + ww * f * math.cos(ang)      # its root inside the crown's wall
                 zz = z + br.get("dz", 0.0) * H + ww * f * math.sin(ang) - (0.0 if front is None else 0.0)
                 row.append(bm.verts.new((c.x + dx * rr, c.y + dy * rr, zz)))
             brs.append(row)
@@ -792,6 +799,27 @@ def hat(ctx, hg):
             emblem(ctx, bg, hit, nrm, crown, grp if not bg.get("detail") else "detail:" + bg["detail"])
     if hg.get("tassel"):
         _tassel(ctx, hg["tassel"], crown, c, top_at)
+    cs = hg.get("chinstrap")
+    if cs:
+        # a chin strap from the brim's sides down to the jaw (Bram E3: "ремешок уходит в бороду")
+        sm = core.principled(ctx, "chinstrap", cs.get("color", "#5A3A22"), rough=0.5, coat=0.1)
+        head = ctx.objs["head"]
+        for sd in (-1, 1):
+            az = sd * cs.get("az", 80)
+            a = math.radians(az)
+            zr = core.lerp_table([(q[0], q[2]) for q in ring], az)
+            rr = core.lerp_table([(q[0], q[1]) for q in ring], az)
+            p0 = Vector((c.x + math.sin(a) * (rr + 0.01), c.y - math.cos(a) * (rr + 0.01), zr))
+            pts = [p0]
+            for t in (0.3, 0.6, 1.0):
+                z = zr + (cs.get("to_z", -0.40) - zr) * t
+                x = sd * (abs(p0.x) - 0.10 * t)
+                h_, n_ = core.ray(head, Vector((sd * 3.0, p0.y - 0.10 * t, z)), (-sd, 0, 0))
+                if h_ is not None:
+                    pts.append(h_ + n_ * 0.012)
+            if len(pts) > 2:
+                cu = core.curve("chinstrap%+d" % sd, pts, [1.0] * len(pts), 0.016, sm, order=3)
+                ctx.add(cu, grp, crown, kind="free", head=True)
     ctx.hat = dict(base=[Vector((c.x + math.sin(math.radians(az)) * r, c.y - math.cos(math.radians(az)) * r, z))
                          for az, r, z in ring], top_z=top_z)
     ctx.L["hat_top"] = top_z
@@ -822,7 +850,7 @@ def _tassel(ctx, ts, crown, c, top_at):
     ctx.add(t, "hat", cord, kind="embed", head=True)
 
 
-def emblem(ctx, bg, hit, nrm, parent, grp, name="emblem"):
+def emblem(ctx, bg, hit, nrm, parent, grp, name="emblem", head=True):
     """A small emblem cast on a surface (§7.3: sewn on along the normal, 0.012 H off): "disc", "hex", "star" (5
     points), "leaf" (two halves, a rib), "millstone" (a disc with a hole and 4 furrows), "arrow", "wave_hex" (our
     wave-and-hex sea badge), "coin". Emission `emit` (<= 1.6 E4) optional."""
@@ -840,36 +868,36 @@ def emblem(ctx, bg, hit, nrm, parent, grp, name="emblem"):
     def place(o):
         o.rotation_mode = "QUATERNION"
         o.rotation_quaternion = q
-        ctx.add(o, grp, parent, kind="surface", head=True)
+        ctx.add(o, grp, parent, kind="surface", head=head)
         out.append(o)
         return o
     if kind in ("disc", "coin", "millstone"):
         o = core.cylinder(name, base, size / 2, 0.022, m, nrm=nrm, verts=32, bev=0.006)
-        ctx.add(o, grp, parent, kind="surface", head=True)
+        ctx.add(o, grp, parent, kind="surface", head=head)
         out.append(o)
         if kind == "millstone":
             dk = core.principled(ctx, name + "_dk", bg.get("dark", "#7A5A2A"), rough=0.5)
             ho = core.torus(name + "_hole", base + nrm * 0.012, size * 0.15, 0.008, dk, nrm=nrm, seg=20, rseg=6)
-            ctx.add(ho, grp, o, kind="embed", head=True)
+            ctx.add(ho, grp, o, kind="embed", head=head)
             for k in range(4):
                 aa = math.pi / 4 + k * math.pi / 2
                 f = core.uvsphere(name + "_furrow", base + nrm * 0.012 + (rt * math.cos(aa) + up * math.sin(aa)) * size * 0.32,
                                   (size * 0.13, 0.006, 0.005), dk, 10, 5)
                 f.rotation_mode = "QUATERNION"
                 f.rotation_quaternion = q @ Matrix.Rotation(aa, 4, "Z").to_quaternion()
-                ctx.add(f, grp, o, kind="embed", head=True)
+                ctx.add(f, grp, o, kind="embed", head=head)
         if kind == "coin":
             rim = core.torus(name + "_rim", base + nrm * 0.011, size * 0.44, 0.006, m, nrm=nrm, seg=24, rseg=6)
-            ctx.add(rim, grp, o, kind="embed", head=True)
+            ctx.add(rim, grp, o, kind="embed", head=head)
     elif kind == "hex":
         o = core.cylinder(name, base, size / 2, 0.024, m, nrm=nrm, verts=6, bev=0.005)
-        ctx.add(o, grp, parent, kind="surface", head=True)
+        ctx.add(o, grp, parent, kind="surface", head=head)
         out.append(o)
         if bg.get("inner"):
             mi = core.principled(ctx, name + "_in", bg["inner"], rough=0.25, coat=0.4,
                                  emit=bg["inner"] if bg.get("inner_emit") else None, es=bg.get("inner_emit", 0.0))
             o2 = core.cylinder(name + "_in", base + nrm * 0.012, size * 0.36, 0.012, mi, nrm=nrm, verts=6, bev=0.003)
-            ctx.add(o2, grp, o, kind="embed", head=True)
+            ctx.add(o2, grp, o, kind="embed", head=head)
     elif kind == "star":
         bm = bmesh.new()
         vs = []
@@ -889,7 +917,7 @@ def emblem(ctx, bg, hit, nrm, parent, grp, name="emblem"):
             lf = core.uvsphere(name + "_leaf", base + rt * s_ * size * 0.09, (size * 0.16, size * 0.30, 0.012), m, 20, 10)
             lf.rotation_mode = "QUATERNION"
             lf.rotation_quaternion = q @ Matrix.Rotation(math.radians(35 - s_ * 14), 4, "Z").to_quaternion()
-            ctx.add(lf, grp, parent, kind="surface", head=True)
+            ctx.add(lf, grp, parent, kind="surface", head=head)
             out.append(lf)
     elif kind == "arrow":
         bm = bmesh.new()
@@ -903,13 +931,13 @@ def emblem(ctx, bg, hit, nrm, parent, grp, name="emblem"):
         place(o)
     elif kind == "wave_hex":
         o = core.cylinder(name, base, size / 2, 0.022, m, nrm=nrm, verts=6, bev=0.005)
-        ctx.add(o, grp, parent, kind="surface", head=True)
+        ctx.add(o, grp, parent, kind="surface", head=head)
         out.append(o)
         blue = core.principled(ctx, name + "_wave", bg.get("wave", "#2F8FB0"), rough=0.3, coat=0.3)
         pts = [base + nrm * 0.016 + rt * (size * (-0.3 + 0.6 * i / 8)) + up * (size * 0.07 * math.sin(i * 1.6) - size * 0.05)
                for i in range(9)]
         wv = core.curve(name + "_wv", pts, [1.0] * 9, size * 0.06, blue)
-        ctx.add(wv, grp, o, kind="embed", head=True)
+        ctx.add(wv, grp, o, kind="embed", head=head)
     return out
 
 
@@ -988,7 +1016,11 @@ def shell(ctx, hg):
             ear = ctx.L["ear_" + ("near" if side < 0 else "far")][0]
             if ear is None:
                 continue
-            hh_, nh_ = core.ray(o, Vector((side * 2.0, ear.y + 0.02, ear.z + 0.06)), (-side, 0, 0))
+            hh_, nh_ = None, None
+            for k in range(10):    # the shell's side may end above the ear (Kort's E3 ushanka): climb to its rim
+                hh_, nh_ = core.ray(o, Vector((side * 2.0, ear.y + 0.02, ear.z + 0.06 + 0.03 * k)), (-side, 0, 0))
+                if hh_ is not None:
+                    break
             hinge = (hh_ - nh_ * 0.02) if hh_ is not None else Vector((ear.x + side * 0.08, ear.y, ear.z + 0.05))
             if fl.get("up"):
                 # tied up over the crown (the ushanka's ears): from the hinge up the side and over toward the top
@@ -1012,6 +1044,47 @@ def shell(ctx, hg):
         hit, nrm = core.ray(o, d * 3, -d)
         if hit is not None:
             emblem(ctx, bg, hit, nrm, o, grp if not bg.get("detail") else "detail:" + bg["detail"])
+    rb = hg.get("ribbon")
+    if rb:
+        # a ribbon band round the shell (Lira E2's white bonnet: a green ribbon) and its two tails at the back (her
+        # "top back" signature, as the kerchief's knot tails)
+        rm = core.fabric(ctx, "shell_ribbon", rb["color"], rough=0.6, sheen=0.4)
+        pts = []
+        for k in range(73):
+            az = -180 + 360 * k / 72
+            e = core.lerp_table(tbl, abs(az)) + rb.get("above", 7)
+            d = core.az_el(az, e)
+            h, n = core.ray(o, d * 3, -d)
+            if h is not None:
+                pts.append(h + n * 0.004)
+        if len(pts) > 4:
+            st = core.ribbon_mesh("shell_ribbon", pts, rb.get("w", 0.05), normals=[Vector((0, 0, 1))] * len(pts))
+            core.solidify(st, 0.014, offset=0.0)
+            core.finish(st, rm, sub=1)
+            ctx.add(st, grp, o, kind="embed", head=True)
+        kd = core.az_el(rb.get("knot_az", -150), rb.get("knot_el", 10))
+        kh, kn = core.ray(o, kd * 3, -kd)
+        if kh is not None:
+            knot = kh + kn * 0.03
+            ko = core.uvsphere("shell_knot", knot, (0.05, 0.04, 0.045), rm, 16, 8)
+            ctx.add(ko, grp, o, kind="surface", head=True)
+            back = (Vector((kn.x, kn.y, 0)).normalized() * 0.4 + core.world_dir(ctx, (-1.0, 0.35, 0.0), head=True)).normalized()
+            side_ = Vector((0, 0, 1)).cross(back).normalized()
+            ln = rb.get("tail", 0.30)
+            for k_, (up, sw) in enumerate(((0.20, 0.16), (-0.5, -0.14))):
+                el2 = []
+                prev = knot
+                for i in range(1, 25):
+                    t = i / 24
+                    p = knot + back * (ln * t) + side_ * (sw * 0.3 * t) + Vector((0, 0, up * ln * 0.6 * t - 0.14 * t * t))
+                    fwd_ = (p - prev).normalized()
+                    el2.append(dict(co=p, half=(0.045 + 0.03 * t, 0.012, ln / 24 * 1.6), stiff=2.2,
+                                    rot=core.frame_quat(fwd_, side_.cross(fwd_).normalized())))
+                    prev = p
+                tl = core.mb_mesh(ctx, "STail%d" % k_, el2, 0.008, rm, smooth_iter=2, name="shell_tail%d" % k_)
+                ctx.add(tl, "detail:kerchief_tails", ko, kind="surface", head=True)
+                ctx.sig_objs.append(tl)
+            ctx.details["kerchief_tails"] = rb.get("min_px", 300)
     return o
 
 
@@ -1030,14 +1103,19 @@ def visor(ctx, hg):
     off = hg.get("off", 0.03)
     n = 40
     rows_top, rows_bot = [], []
+    ends = {}                     # per end: (the surface point under it, its object) — the side arms' anchors
+    hit_objs = []
     for i in range(n + 1):
         az = -span + 2 * span * i / n
         for e, rows in ((el0 + hg.get("dh", 9), rows_top), (el0 - hg.get("dh", 9), rows_bot)):
             d = core.az_el(az + hg.get("az", 0.0), e)
-            h, nn, _ = core.ray_any(surf, d * 3, -d)
+            h, nn, ob = core.ray_any(surf, d * 3, -d)
             if h is None:
-                h, nn = d * 0.5, d
+                h, nn, ob = d * 0.5, d, ctx.objs["head"]
             rows.append(h + nn * off)
+            hit_objs.append(ob)
+            if i in (0, n):
+                ends.setdefault(-1 if i == 0 else 1, []).append((h, ob))
     # the strip: rebuild as a ribbon between the top and the bottom rows, its middle a little proud
     bm = bmesh.new()
     vs = []
@@ -1052,28 +1130,47 @@ def visor(ctx, hg):
     strip = core.mesh_obj("visor", bm)
     core.solidify(strip, 0.012, offset=0.0)
     grp = "detail:" + hg["detail"] if hg.get("detail") else "glass"
+    fr = hg.get("frame")
+    # a visor held off the surface (off > 0.04: Vega's strip across the eyes, Seir's over the cap brim) hangs on two
+    # side arms from its pivots back to the hat / hair / head under its ends; it is registered on a pivot, the pivot
+    # on its arm, the arm on that surface (the contact check: a strip 0.05-0.09 H in front of the face read as floating)
+    arms = fr and off > 0.04
     if hg.get("glow"):
         m = core.principled(ctx, "visor_glow", hg.get("tint", "#F08A24"), rough=0.2, coat=0.5, emit=hg.get("tint", "#F08A24"),
                             es=hg["glow"])
         core.finish(strip, m, sub=1)
-        ctx.add(strip, grp, surf[0], kind="surface", head=True)
+        if not arms:
+            ctx.add(strip, grp, max(set(hit_objs), key=hit_objs.count), kind="surface", head=True)
     else:
         m = core.glass_mat(ctx, "visor_glass", hg.get("tint", "#E8F4FF"))
         core.finish(strip, m, smooth=True, sub=1)
         strip["kit_glass"] = 1
         strip.visible_shadow = False
-        ctx.add(strip, "glass", surf[0], kind="surface", head=True)
-    fr = hg.get("frame")
+        if not arms:
+            ctx.add(strip, "glass", max(set(hit_objs), key=hit_objs.count), kind="surface", head=True)
     if fr:
         fm = core.principled(ctx, "visor_frame", fr, rough=0.35, metal=hg.get("frame_metal", 0.3), coat=0.3)
-        for rows, nm in ((rows_top, "visor_top"), (rows_bot, "visor_bot")):
-            cu = core.curve(nm, rows, [1.0] * len(rows), hg.get("frame_r", 0.012), fm, order=3)
-            ctx.add(cu, grp if hg.get("glow") else "hat", strip, kind="embed", head=True)
+        pivots = []
         for sd in (-1, 1):
             a, b = (rows_top[0], rows_bot[0]) if sd < 0 else (rows_top[-1], rows_bot[-1])
             pv = core.cylinder("visor_pivot%+d" % sd, (a + b) / 2, hh * 0.45, 0.03, fm,
                                nrm=((a + b) / 2 - Vector((0, 0.02, (a.z + b.z) / 2))).normalized(), verts=20, bev=0.006)
-            ctx.add(pv, "hat", strip, kind="embed", head=True)
+            if arms:
+                (h0, ob0), (h1, ob1) = ends[sd][0], ends[sd][1]
+                # into the surface under the upper end (the midpoint of two hits on hat and hair floated, the check)
+                anchor = h0 + (a - h0).normalized() * -0.006 if (a - h0).length > 1e-6 else h0
+                arm = core.curve("visor_arm%+d" % sd, [(a + b) / 2, ((a + b) / 2).lerp(anchor, 0.5), anchor],
+                                 [1.0, 1.0, 1.0], max(0.012, hh * 0.16), fm, order=3)
+                ctx.add(arm, "hat", ob0, kind="surface", head=True)
+                ctx.add(pv, "hat", arm, kind="embed", head=True)
+            else:
+                ctx.add(pv, "hat", strip, kind="embed", head=True)
+            pivots.append(pv)
+        if arms:
+            ctx.add(strip, grp if hg.get("glow") else "glass", pivots[0], kind="embed", head=True)
+        for rows, nm in ((rows_top, "visor_top"), (rows_bot, "visor_bot")):
+            cu = core.curve(nm, rows, [1.0] * len(rows), hg.get("frame_r", 0.012), fm, order=3)
+            ctx.add(cu, grp if hg.get("glow") else "hat", strip, kind="embed", head=True)
     if hg.get("line"):
         # a thin white HUD line along the strip (Vega E4), glowing softly (<= 0.6, §7.4 HUD lenses)
         lm = core.emit_mat(ctx, "hud_line", hg["line"], hg.get("line_emit", 0.6))
@@ -1096,21 +1193,23 @@ def headset(ctx, hg):
     grp = "detail:" + hg.get("detail", "headset")
     sides = hg.get("sides", (-1,))
     side = sides[0]
-    pts = []
+    pts, hosts = [], []
     for k in range(17):
         t = k / 16
         e = -2 + 90 * t if len(sides) == 1 else -2 + 184 * t
         az = side * 92 if (len(sides) == 1 or t < 0.5) else -side * 92
         el_ = e if e <= 90 else 180 - e
         d = core.az_el(az, el_)
-        h, nn, _ = core.ray_any(surf, d * 3, -d)
+        h, nn, ob = core.ray_any(surf, d * 3, -d)
         if h is not None:
             pts.append(h + nn * 0.016)
+            hosts.append(ob)
     if len(pts) > 3:
         st = core.ribbon_mesh("headset_band", pts, hg.get("w", 0.045), normals=[Vector((0, 1, 0))] * len(pts))
         core.solidify(st, 0.016, offset=0.0)
         core.finish(st, m, sub=1)
-        ctx.add(st, grp, surf[-1], kind="embed", head=True)
+        # on the surface most of it lies on (over the hair, not 0.07 H off the scalp, the contact check)
+        ctx.add(st, grp, max(set(hosts), key=hosts.count), kind="embed", head=True)
     ear = ctx.L["ear_" + ("near" if side < 0 else "far")][0]
     if ear is not None:
         r = hg.get("r", 0.10) * H
@@ -1214,7 +1313,7 @@ def crown(ctx, hg):
     rows = []
     for g in (0.0, 0.3, 0.55, 0.75, 0.9, 1.0):
         rk = math.cos(g * math.pi / 2) ** 0.6
-        rows.append([bm.verts.new((c.x + math.sin(math.radians(az)) * r * 0.97 * rk, c.y - math.cos(math.radians(az)) * r * 0.97 * rk,
+        rows.append([bm.verts.new((c.x + math.sin(math.radians(az)) * (r + 0.006) * rk, c.y - math.cos(math.radians(az)) * (r + 0.006) * rk,
                                    z + bw * 0.5 + (top - z - bw * 0.5) * math.sin(g * math.pi / 2)))
                      for az, r, z in ring])
     for r0, r1 in zip(rows, rows[1:]):
@@ -1275,3 +1374,67 @@ def bicorne(ctx, hg):
     tape along the edge and a cockade at the front."""
     hg2 = dict(hg, corners=2, corner_az=90.0)
     return tricorn(ctx, hg2)
+
+
+def frame_helmet(ctx, hg):
+    """An open helmet frame (§7.6 Irma E4 "открытый каркас шлема ... хвост через кольцо сзади"): a brow band round the
+    head over the hair, a crest band from the brow over the crown to the nape and two side bands from the temples up
+    to the crest, all flat painted metal; a ring at the back the ponytail runs through."""
+    surf = _surf(ctx)
+    m = _hat_mat(ctx, hg, "frame_" + hg.get("id", "frame"), kind=hg.get("mat", "painted"))
+    w = hg.get("w", 0.075) * H
+    grp = "hat"
+    objs = []
+
+    def band(name, dirs):
+        pts, nrs, hosts = [], [], []
+        for d in dirs:
+            h, n, ob = core.ray_any(surf, d * 3, -d)
+            if h is not None:
+                pts.append(h + n * 0.014)     # its inner face on the hair (0.03 left a 0.015 H gap, the contact check)
+                nrs.append(n)
+                hosts.append(ob)
+        if len(pts) < 3:
+            return None
+        # the band's flat side on the head: its width across the run, in the surface
+        o = core.ribbon_mesh(name, pts, w, normals=[(nrs[i].cross((pts[min(i + 1, len(pts) - 1)] - pts[max(i - 1, 0)]))
+                                                     .cross(nrs[i])).normalized() * -1 if False else nrs[i]
+                                                    for i in range(len(pts))])
+        core.solidify(o, 0.024, offset=0.0)
+        core.bevel(o, 0.006, 2)
+        core.finish(o, m, sub=1)
+        ctx.add(o, grp, max(set(hosts), key=hosts.count), kind="embed", head=True)
+        objs.append(o)
+        return o
+    el_b = hg.get("el", 30)
+    band("frame_brow", [core.az_el(-180 + 360 * k / 72, el_b + 6 * math.cos(math.radians(-180 + 360 * k / 72)))
+                        for k in range(73)])
+    band("frame_crest", [core.az_el(0 if e <= 90 else 180, e if e <= 90 else 180 - e) for e in range(el_b + 4, 176, 4)])
+    for sd in (-1, 1):
+        band("frame_side%+d" % sd, [core.az_el(sd * 90, e) for e in range(el_b - 4, 88, 4)])
+    if hg.get("ring"):
+        g = ctx.L.get("ponytail_root")
+        if g is not None:
+            r = core.torus("frame_ring", g, 0.06, 0.016, m, nrm=Vector((0, 0.6, 0.8)).normalized(), seg=24, rseg=8)
+            ctx.add(r, grp, objs[0] if objs else ctx.objs["head"], kind="free", head=True)
+    ctx.objs["hat"] = objs[0] if objs else None
+    if hg.get("signature"):
+        ctx.sig_objs += objs
+
+
+def earpiece(ctx, hg):
+    """An earpiece on the near ear (§7.6 Vance E4 "наушник"): a small domed cup over the ear with a short mic stem."""
+    m = core.principled(ctx, "earpiece", hg.get("color", "#C8CCD4"), rough=0.3, metal=0.5, coat=0.3)
+    side = -1 if hg.get("ear", "near") == "near" else 1
+    ear = ctx.L["ear_" + ("near" if side < 0 else "far")][0]
+    if ear is None:
+        return
+    c = ear + Vector((side * 0.045, 0.0, 0.0))
+    cup = core.uvsphere("earpiece", c, (0.035, 0.05, 0.06), m, 20, 10)
+    ctx.add(cup, "detail:" + hg.get("detail", "earpiece"), ctx.objs["head"], kind="surface", head=True)
+    if hg.get("mic", True):
+        a = c + Vector((side * 0.01, -0.03, -0.04))
+        b = a + Vector((side * 0.01, -0.12, -0.06))
+        st = core.curve("earpiece_mic", [a, b], [1.0, 0.8], 0.008, m, order=2)
+        ctx.add(st, "detail:" + hg.get("detail", "earpiece"), cup, kind="embed", head=True)
+    ctx.details[hg.get("detail", "earpiece")] = hg.get("min_px", 60)

@@ -694,6 +694,451 @@ CHARS = {
     ),
 }
 
+# ================================================================== the AI leaders (§7.8) and the ruler (§7.10)
+# Same kit, same bar; no commander-locked module (lint). Plates = the state colours the game passes to
+# CmdPortrait.plate (tools/qa_portraits/qa_common.LEADER_PLATE); the costume's main colour is chosen by value against
+# it (shoulder band >= 15 L* on plate B), the state colour is an accent (sash, lining, stone) >= 10 %. Headgear and
+# props stay at y >= 50 of the master (tall_headgear: the framing solver's 50 px skyline). Moods: §7.9 defaults
+# (chars._fill_mood) plus each leader's own patch ("moods").
+CHARS.update({
+    # ---------------------------------------------------------------- Baron Grodek the Fang (Barons, Wolf; war red)
+    "ldr_barons": dict(
+        name="Grodek", leader=True, female=False, tall_headgear=True, plate="#DD3A30",
+        head=dict(shape="square", wh=0.98, h_px=272, eye_line=0.49, jaw=0.07, chin=0.03, cheeks=1.1, muzzle=1.2,
+                  brow_ridge=1.5),
+        skin=SKIN["T4"], skin_tone="T4", blush=0.18,
+        eyes=dict(sclera=0.18, open=0.68, iris="#D0A030", iris_shade=0.9, tilt=-0.12, arch=0.10),
+        brows=dict(shape="bushy", thick=0.085, color="#2E2A2C", arch=0.01, len=1.3, inner=-0.03, outer=0.02),
+        nose=dict(type="aquiline", len=0.22, w=0.085, proj=0.07, hump=0.012, drop=0.21, tip="#B8604A", tip_k=0.4),
+        mouth=dict(lip="#9A4A40", line=0.21,
+                   calm=dict(type="closed", w=0.30, near=-0.012, far=0.012),
+                   smile=dict(type="open", w=0.36, h=0.12, near=0.045, far=0.04, dz=-0.012, lower_teeth=True,
+                              lower_share=0.22, teeth=0.32)),
+        hair=dict(style="mane", color="#2E2A2C", dark="#2A2628", light="#4A4448", crevice="#1E1A1C",
+                  temples="#A8A8B0"),
+        beard=dict(style="forked", color="#2E2A2C", tip="#4A4448", root="#2A2628", crevice="#1E1A1C", below=0.48,
+                   moustache=True, moustache_color="#302C2E", moustache_dark="#2A2628", moustache_light="#4A4448",
+                   signature=True),
+        body=dict(shoulders=2.05),
+        costume=dict(
+            base=dict(color="#4C525C", rough=0.6, sheen=0.1),
+            layers=[
+                dict(kind="vest", id="cuirass", color="#4C525C", plate=True, metallic=0.45, rough=0.35, z0=-1.35,
+                     z1=-0.70, thick=0.035),
+                dict(kind="piping", color="#F08A24", r=0.02, path=[(-0.42, -0.74), (-0.2, -0.80), (0.0, -0.82),
+                                                                   (0.2, -0.80), (0.42, -0.74)]),
+                dict(kind="fur", id="pelt", color="#4A403C", dark="#3A322E", light="#6A5E58", crevice="#2E2826",
+                     r=0.95, r_in=0.30, t=0.11, front_z=-1.0, side_z=-0.95, back_z=-0.85, open=0.16,
+                     clumps=dict(n=70, len=0.14, w=0.05, th=0.03, curl=0.2), smooth=3),
+            ]),
+        props=[dict(kind="wolf_head", x=-0.52, y=0.12, size=0.50, turn=62, color="#8E8882", dark="#6A6460",
+                    light="#C8C2BC", min_px=2500),
+               dict(kind="fang", side="near", len=0.07, r=0.022),
+               dict(kind="pendant", at=(0.02, -1.02))],
+        pose=dict(body=20, head=8, roll=-3, nod=-3),
+        signature=dict(name="wolf head pelt + forked beard + fang", zone="near shoulder; lower face width"),
+        moods=dict(
+            angry=dict(mouth=dict(angry=dict(type="open", shape="trap", w=0.30, h=0.11, near=-0.02, far=-0.02,
+                                             lower_teeth=True, fangs=True, dz=-0.008))),
+            cunning=dict(eyes=dict(cunning=dict(open=[0.22, 0.66], tilt=-0.05, arch=0.08, low=0.06)),
+                         mouth=dict(cunning=dict(type="closed", w=0.30, near=0.045, far=-0.005, sag=0.004))),
+            tired=dict(pose_tired=dict(nod=-10.0, roll=-3.0)),
+        ),
+    ),
+    # ---------------------------------------------------------------- Headwoman Mirosya Goldmouth (Hamlets, Fox)
+    "ldr_hamlets": dict(
+        name="Mirosya", leader=True, female=True, tall_headgear=True, plate="#4FD162",
+        head=dict(shape="round", wh=0.96, h_px=262, eye_line=0.47, cheeks=1.45, muzzle=1.0, chin=0.0),
+        skin=SKIN["T2"], skin_tone="T2", blush=0.34,
+        paint=[dict(at=(-0.24, -0.15), r=0.02, color="#C8705A", k=0.5), dict(at=(0.24, -0.15), r=0.02,
+                                                                            color="#C8705A", k=0.5)],
+        eyes=dict(sclera=0.21, open=0.78, iris="#9A6A2A", tilt=0.04, arch=0.26, flick=0.06),
+        brows=dict(shape="arc", thick=0.058, color="#6A3418", arch=0.035, len=1.2, len_far=1.5, in_far=0.84),
+        nose=dict(type="button", k=1.0, drop=0.19, tip="#E88A70", tip_k=0.5),
+        mouth=dict(lip="#C8605A", line=0.20,
+                   calm=dict(type="closed", w=0.27, near=0.025, far=0.02),
+                   smile=dict(type="open", w=0.35, h=0.13, near=0.05, far=0.045, dz=-0.012, gold_tooth=-0.45)),
+        hair=dict(style="curls", color="#B8642A", dark="#8A4418", light="#D8884A", crevice="#5A2A10", width=1.4,
+                  n=150, curl=0.054),
+        body=dict(shoulders=2.0),
+        costume=dict(
+            base=dict(color="#6E3420", rough=0.85, sheen=0.3),
+            layers=[
+                dict(kind="cloak", id="shawl", color="#8E3E1C", z1=-0.64, gap=0.03, flare=0.10,
+                     open=[(-1.9, 0.30), (-1.2, 0.24), (-0.85, 0.20), (-0.66, 0.16)]),
+                dict(kind="fur", id="fox", color="#F0E2CC", dark="#D8C8B0", light="#FFF8EC", crevice="#A89880",
+                     r=0.62, r_in=0.24, t=0.09, front_z=-0.96, side_z=-0.86, back_z=-0.80, open=0.12,
+                     clumps=dict(n=40, len=0.12, w=0.07, th=0.045), smooth=4),
+                dict(kind="strap", id="ribbon", color="#3E9B5A", w=0.06, **{"from": (-0.30, -0.72), "to": (0.40, -1.5)}),
+            ]),
+        props=[dict(kind="chain", z=-1.04, d=0.22, color="#E8B23A", sheaf="#C8901A", link=0.06),
+               dict(kind="monocle", eye="near", r=1.35, color="#E8B23A")],
+        pose=dict(body=18, head=8, roll=4, nod=1),
+        signature=dict(name="copper curl cloud + gold chain + monocle", zone="head width"),
+        moods=dict(
+            cunning=dict(eyes=dict(cunning=dict(open=[0.90, 0.42], tilt=0.0, arch=0.18, low=0.0)),
+                         mouth=dict(cunning=dict(type="closed", w=0.27, near=0.045, far=0.0)),
+                         **{"props~": {"monocle": dict(glint=3.0, r=1.45)}}),
+            # angry: puffed cheeks, pursed lips (§7.8)
+            angry=dict(mouth=dict(angry=dict(type="closed", w=0.17, near=-0.02, far=-0.02, sag=-0.004,
+                                             crease=0.03)),
+                       fx=dict(angry=dict(cheek_amt=0.035, cheek=(0.0, 0.0)))),
+            tired=dict(hair=dict(flat=0.62)),
+        ),
+    ),
+    # ---------------------------------------------------------------- Chancellor Iveta the Wise (League, Owl)
+    "ldr_league": dict(
+        name="Iveta", leader=True, female=True, tall_headgear=True, plate="#32D1C2",
+        head=dict(shape="heart", wh=0.80, h_px=266, eye_line=0.47, cheekbones=0.03, chin=0.0),
+        skin=SKIN["T5"], skin_tone="T5", blush=0.18,
+        eyes=dict(sclera=0.22, open=0.80, iris="#C08A30", iris_shade=0.9, tilt=0.02, arch=0.24, flick=0.05),
+        brows=dict(shape="arc", thick=0.058, color="#2A2226", arch=0.03, len=1.2, len_far=1.5, in_far=0.84),
+        nose=dict(type="straight", w=0.048, drop=0.20, k=0.9, tip="#8A4E34", tip_k=0.3),
+        mouth=dict(lip="#8A3E44", line=0.19,
+                   calm=dict(type="closed", w=0.25, near=0.01, far=0.01),
+                   smile=dict(type="closed", w=0.29, near=0.06, far=0.05, sag=0.012)),
+        hair=dict(style="owl", color="#3A3440", dark="#2E2A30", light="#5A5260", crevice="#221E26",
+                  tufts=dict(az=118, el=44, out=42, len=0.50, w=0.15)),
+        body=dict(shoulders=1.9),
+        costume=dict(
+            base=dict(color="#7A2E4A", rough=0.85, sheen=0.4),
+            layers=[
+                dict(kind="cloak", id="mantle", color="#7A2E4A", z1=-0.64, gap=0.03, flare=0.12,
+                     open=[(-1.9, 0.30), (-1.2, 0.22), (-0.85, 0.16), (-0.66, 0.12)]),
+                dict(kind="bib", id="stole", color="#22A898", w=0.17, top=-0.72, bottom=-2.0, straps=False,
+                     over_last=True, round=0.06, gap=0.006),
+                dict(kind="ruff", id="ruff", color="#F4F2EE", z=-0.62, r=0.40, pleats=26, amp=0.045,
+                     detail="ruff", min_px=3000, signature=True),
+            ]),
+        props=[dict(kind="glasses", shape="round", color="#6A4A30", tortoise="#B07A40", frame=0.03, w=1.65, h=1.5,
+                    drop=0.02, off=0.03, tint="#FFFFFF", round_k=1.0)],
+        pose=dict(body=22, head=6, roll=3, nod=3),
+        signature=dict(name="owl tufts + white ruff + round glasses", zone="double bump on top; head frame"),
+        moods=dict(
+            smile=dict(eyes=dict(smile=dict(open=0.6, wink="both"))),
+            cunning=dict(**{"props~": {"glasses": dict(drop=0.075)}}, fx=dict(cunning=dict(gaze=(-0.30, 0.012)))),
+            angry=dict(**{"props~": {"glasses": dict(glare=0.9)}},
+                       mouth=dict(angry=dict(type="closed", w=0.22, near=-0.025, far=-0.02, crease=0.026))),
+            tired=dict(**{"props~": {"glasses": dict(askew=11, drop=0.035)}}),
+        ),
+    ),
+    # ---------------------------------------------------------------- Magister Torvald the Patient (Order, Turtle)
+    "ldr_order": dict(
+        name="Torvald", leader=True, female=False, tall_headgear=True, plate="#704FD1",
+        head=dict(shape="long", wh=0.84, h_px=272, eye_line=0.47, brow_ridge=1.7, cheeks=0.95, muzzle=1.05),
+        skin=SKIN["T3"], skin_tone="T3", blush=0.18,
+        eyes=dict(sclera=0.19, open=0.60, iris="#6A8AA0", iris_shade=0.9, tilt=-0.04, arch=0.06),
+        brows=dict(shape="bushy", thick=0.085, color="#6A6A72", arch=0.02, len=1.3, outer=-0.03),
+        nose=dict(type="aquiline", len=0.24, w=0.07, proj=0.075, hump=0.01, drop=0.21, tip="#C8806A", tip_k=0.35),
+        mouth=dict(lip="#A8605A", line=0.20,
+                   calm=dict(type="closed", w=0.25, near=0.004, far=0.004),
+                   smile=dict(type="closed", w=0.28, near=0.04, far=0.035, sag=0.01)),
+        hair=dict(style="bald", bald=True, color="#B8B8C0"),
+        beard=dict(style="braids", color="#BCBCC4", tip="#D4D4DA", root="#A0A0A8", crevice="#5E5E6A", below=0.66,
+                   mass_below=0.20, bead="#C8B48A", moustache=True, moustache_color="#C4C4CA",
+                   moustache_dark="#A0A0A8", moustache_light="#DADADE", moustache_k=0.8),
+        age=dict(forehead=2, crows=3, nasolabial=False, k=0.4),
+        body=dict(shoulders=2.05),
+        costume=dict(
+            base=dict(color="#6A4A30", rough=0.9, sheen=0.25),
+            layers=[
+                dict(kind="collar", color="#5A3E28", z=-0.66, h=0.10, out=0.02, flare=0.05, piping="#8E6AD8",
+                     piping_r=0.018),
+                dict(kind="piping", color="#8E6AD8", r=0.02, path=[(0.06, -0.72), (0.07, -1.0), (0.07, -1.4),
+                                                                   (0.07, -1.8)]),
+            ]),
+        props=[dict(kind="shield", side="near", r=0.34, x=0.58, turn=35, up=0.5, color="#C8B48A", relief="hex",
+                    edge="#A8946A", detail="shield", min_px=8000)],
+        pose=dict(body=20, head=6, roll=-2, nod=-2),
+        signature=dict(name="round turtle-shell shield on the near shoulder + braided beard",
+                       zone="near shoulder; lower face width"),
+        moods=dict(
+            tired=dict(eyes=dict(tired=dict(open=0.10, tilt=0.15, arch=0.04))),
+            cunning=dict(eyes=dict(cunning=dict(open=[0.12, 0.74], tilt=0.0, arch=0.12))),
+            angry=dict(brows=dict(angry=dict(inner=-0.075, outer=0.02, in_dx=0.02, thick_k=1.2)),
+                       mouth=dict(angry=dict(type="closed", w=0.25, near=-0.03, far=-0.03, crease=0.024))),
+        ),
+    ),
+    # ---------------------------------------------------------------- Sovereign Sairin the Iron (Alvaria, Wolf)
+    "ldr_alvaria": dict(
+        name="Sairin", leader=True, female=True, tall_headgear=True, plate="#E8873A",
+        head=dict(shape="heart", wh=0.76, h_px=266, eye_line=0.47, cheekbones=0.035, chin=0.0),
+        skin="#F2C4AE", skin_tone="T1", blush=0.14, skin_sat=1.05,
+        eyes=dict(sclera=0.19, open=0.70, iris="#5A8AC8", iris_shade=0.85, tilt=-0.05, arch=0.18, flick=0.07),
+        brows=dict(shape="straight", thick=0.06, color="#2E2E3E", arch=0.015, outer=0.02, len=1.25, len_far=1.7,
+                   in_far=0.84),
+        nose=dict(type="straight", w=0.045, drop=0.21, k=0.95, tip="#E8A090", tip_k=0.25),
+        mouth=dict(lip="#A85868", line=0.19,
+                   calm=dict(type="closed", w=0.25, near=0.004, far=0.0),
+                   smile=dict(type="closed", w=0.28, near=0.04, far=0.03, sag=0.008)),
+        hair=dict(style="straight", color="#2E2E40", dark="#2A2A36", light="#5A5E80", crevice="#1E1E2A", part=0.0,
+                  drop=-0.68),
+        headgear=dict(kind="diadem", color="#5A6270", w=0.07, el=(40, 22), spike=0.44, spike_az=34, back=30, out=16,
+                      detail="diadem", min_px=1500),
+        body=dict(shoulders=1.95),
+        costume=dict(
+            base=dict(color="#3A4A6A", rough=0.6, sheen=0.1),
+            layers=[
+                dict(kind="cloak", id="cloak", color="#2E3A56", z1=-0.64, gap=0.05, flare=0.10,
+                     open=[(-1.9, 0.40), (-1.2, 0.36), (-0.85, 0.30), (-0.66, 0.26)]),
+                # the state's orange as the cloak's lining showing along its front edges (§7.8 rule 3: >= 10 %)
+                dict(kind="strip", id="lining", color="#F08A24", w=0.07, path=[(-0.30, -0.70), (-0.34, -1.0),
+                                                                               (-0.38, -1.4), (-0.42, -1.8)]),
+                dict(kind="strip", id="lining2", color="#F08A24", w=0.07, path=[(0.30, -0.70), (0.34, -1.0),
+                                                                                (0.38, -1.4), (0.42, -1.8)]),
+                dict(kind="vest", id="plate", color="#4A6A9A", plate=True, metallic=0.4, rough=0.35, z0=-1.4, z1=-0.68,
+                     thick=0.035),
+                dict(kind="fur", id="stole", color="#F2F0EC", dark="#D8D4CC", light="#FFFFFF", crevice="#A8A49C",
+                     r=0.78, r_in=0.28, t=0.11, front_z=-1.0, side_z=-0.9, back_z=-0.84, open=0.18,
+                     clumps=dict(n=50, len=0.14, w=0.06, th=0.04), smooth=3, signature=True),
+                dict(kind="tails", at=[(-0.24, -0.92), (0.24, -0.92)], len=0.55, r=0.075, color="#F2F0EC",
+                     dark="#D8D4CC", light="#FFFFFF", crevice="#A8A49C", signature=True),
+            ]),
+        props=[],
+        pose=dict(body=22, head=8, roll=-3, nod=4),
+        signature=dict(name="iron diadem with two wolf-ear spikes + white wolf stole", zone="top centre; shoulders"),
+        moods=dict(
+            angry=dict(mouth=dict(angry=dict(type="open", shape="clench", w=0.27, h=0.07, near=-0.015, far=-0.015,
+                                             dz=-0.004))),
+            cunning=dict(mouth=dict(cunning=dict(type="closed", w=0.25, near=0.035, far=0.0, sag=0.002))),
+            tired=dict(hair=dict(across=True)),
+        ),
+    ),
+    # ---------------------------------------------------------------- Doge Velian the Sly (Saren, Fox)
+    "ldr_saren": dict(
+        name="Velian", leader=True, female=False, tall_headgear=True, plate="#D95290",
+        head=dict(shape="heart", wh=0.74, h_px=268, eye_line=0.48, cheekbones=0.02, chin=-0.01),
+        skin=SKIN["T4"], skin_tone="T4", blush=0.15,
+        eyes=dict(sclera=0.19, open=0.64, iris="#7A8A3A", iris_shade=0.9, tilt=0.10, arch=0.16),
+        brows=dict(shape="angular", thick=0.058, color="#3A2418", arch=0.04, lift=(0.0, 0.03), len=1.25, len_far=1.8,
+                   in_far=0.9),
+        nose=dict(type="aquiline", len=0.28, w=0.05, proj=0.085, hump=0.008, drop=0.23, tip="#B86A4A", tip_k=0.3),
+        mouth=dict(lip="#985048", line=0.20,
+                   calm=dict(type="closed", w=0.26, near=0.03, far=0.0),
+                   smile=dict(type="open", w=0.36, h=0.11, near=0.06, far=0.05, dz=-0.01)),
+        hair=dict(style="slick", color="#4A2E1C", dark="#3A2214", light="#6A4630", crevice="#24140C", rough=0.4),
+        beard=dict(style="goatee", color="#4A2E1C", tip="#5A3A24", root="#3A2214", crevice="#24140C", below=0.30,
+                   width=0.16, moustache="upturned", curl=0.09, reach=0.32, signature=True),
+        headgear=dict(kind="hat", id="toque", color="#14505A", mat="velvet", h=0.15, rim_dz=0.13, tilt=-8,
+                      profile=[(0.0, 1.0), (0.3, 1.32), (0.62, 1.56), (0.86, 1.52), (1.0, 1.30)], top_dome=0.03,
+                      top_tilt=3,
+                      badge=dict(kind="coin", size=0.13, color="#E8B23A", g=0.55), signature=True, detail="toque",
+                      min_px=3000),
+        body=dict(shoulders=1.85),
+        costume=dict(
+            base=dict(color="#1E6A5A", rough=0.7, sheen=0.5),
+            layers=[
+                dict(kind="collar", color="#1A5A4C", z=-0.66, h=0.10, out=0.016, flare=0.02),
+                dict(kind="frogging", color="#E8B23A", z=(-0.88, -1.00, -1.12), w=0.20, t=0.022),
+                dict(kind="strap", id="sash", color="#D95290", w=0.08, **{"from": (-0.36, -0.72), "to": (0.45, -1.55)}),
+            ]),
+        props=[dict(kind="monocle", eye="near", r=1.25, color="#E8B23A"),
+               dict(kind="chain", z=-1.06, d=0.14, color="#E8B23A", link=0.05, top_x=0.28,
+                    emblem=dict(kind="coin", color="#E8B23A"))],
+        pose=dict(body=24, head=10, roll=4, nod=3),
+        signature=dict(name="flat wide toque + pointed goatee", zone="top centre; lower face"),
+        moods=dict(
+            cunning=dict(eyes=dict(cunning=dict(open=[0.40, 0.58], tilt=0.12, arch=0.10)),
+                         mouth=dict(cunning=dict(type="closed", w=0.27, near=0.05, far=0.0)),
+                         **{"props~": {"monocle": dict(glint=3.0)}}),
+            angry=dict(beard=dict(curl=-0.05),
+                       mouth=dict(angry=dict(type="open", shape="clench", w=0.28, h=0.07, near=-0.02, far=-0.02))),
+            tired=dict(**{"props~": {"monocle": dict(hang=True, hang_at=(-0.14, -1.0), chain_to=(-0.34, -0.80))}}),
+        ),
+    ),
+    # ---------------------------------------------------------------- Chieftain Bjorulf Black Feather (Pack, Raven)
+    "ldr_pack": dict(
+        name="Bjorulf", leader=True, female=False, tall_headgear=True, plate="#D1934F",
+        head=dict(shape="long", wh=0.74, h_px=268, eye_line=0.47, cheeks=0.72, brow_ridge=1.4, jaw=-0.02,
+                  muzzle=0.95),
+        skin="#E8A07A", skin_tone="T2", blush=0.12,
+        paint=[dict(at=(x, z), r=0.085, color="#3E4864", k=1.0) for x in (-0.40, -0.30, -0.20, -0.10, 0.0, 0.10, 0.20,
+                                                                         0.30, 0.40) for z in (-0.02, 0.05)],
+        eyes=dict(sclera=0.18, open=0.66, iris="#C8B840", iris_shade=0.9, tilt=-0.06, arch=0.12),
+        brows=dict(shape="angular", thick=0.065, color="#2E2C30", arch=0.03, len=1.25, len_far=1.7, in_far=0.9),
+        nose=dict(type="aquiline", len=0.27, w=0.058, proj=0.09, hump=0.03, drop=0.23, tip="#C8705A", tip_k=0.3),
+        mouth=dict(lip="#A05048", line=0.20,
+                   calm=dict(type="closed", w=0.26, near=0.02, far=-0.01),
+                   smile=dict(type="open", w=0.34, h=0.12, near=0.05, far=0.04, dz=-0.012, lower_teeth=True,
+                              fangs=True)),
+        hair=dict(style="wild", color="#2E2C30", dark="#2A2A2E", light="#4A4850", crevice="#1C1C20",
+                  streak="#9A9AA4", drop=-0.60),
+        beard=dict(style="scruffy", color="#34323A", tip="#4A4850", root="#2E2C30", crevice="#1C1C20", thick=0.045,
+                   under=0.04, clump_lift=0.15, clump_th=0.6),
+        body=dict(shoulders=1.95),
+        costume=dict(
+            base=dict(color="#5A4A3A", rough=0.7, sheen=0.1),
+            layers=[
+                dict(kind="cloak", id="cloak", color="#D8DEE6", z1=-0.64, gap=0.04, flare=0.12,
+                     open=[(-1.9, 0.34), (-1.2, 0.28), (-0.85, 0.22), (-0.66, 0.18)]),
+                dict(kind="fur", id="scales", color="#C8D0DA", dark="#A8B0BA", light="#E8EEF4", crevice="#7A828E",
+                     r=0.92, r_in=0.30, t=0.07, front_z=-0.98, side_z=-0.92, back_z=-0.84, open=0.18,
+                     clumps=dict(n=60, len=0.16, w=0.05, th=0.022, tip=0.25), smooth=2),
+                dict(kind="strap", id="strap", color="#5A3A22", w=0.07, **{"from": (0.42, -0.72), "to": (-0.45, -1.6)}),
+            ]),
+        props=[dict(kind="feathers", len=0.5, w=0.08, color="#2E2E36", sheen="#4A5470", bead="#C8902A"),
+               dict(kind="pendant", at=(-0.08, -1.0), color="#C8902A")],
+        pose=dict(body=22, head=10, roll=-4, nod=-1),
+        signature=dict(name="three black feathers up-back", zone="top back"),
+        moods=dict(
+            tired=dict(**{"props~": {"feathers": dict(droop=20)}}),
+            cunning=dict(mouth=dict(cunning=dict(type="closed", w=0.27, near=0.05, far=-0.01))),
+        ),
+    ),
+    # ---------------------------------------------------------------- Archmaster Ormdek the Stone (Conclave, Turtle)
+    "ldr_conclave": dict(
+        name="Ormdek", leader=True, female=False, tall_headgear=True, plate="#D18D4F",
+        head=dict(shape="square", wh=1.0, h_px=276, eye_line=0.49, jaw=0.08, brow_ridge=1.6, cheeks=1.0, muzzle=1.1,
+                  chin=0.02),
+        skin=SKIN["T5"], skin_tone="T5", blush=0.12,
+        eyes=dict(sclera=0.18, open=0.66, iris="#7A8A9A", iris_shade=0.9, tilt=-0.06, arch=0.05),
+        brows=dict(shape="straight", thick=0.09, color="#B4B4BC", arch=0.0, len=1.3, inner=-0.01, rough=0.6),
+        nose=dict(type="straight", w=0.085, drop=0.21, k=1.05, tip="#8A4E34", tip_k=0.3),
+        mouth=dict(lip="#7A4038", line=0.21,
+                   calm=dict(type="closed", w=0.26, near=-0.005, far=-0.005),
+                   smile=dict(type="open", w=0.30, h=0.08, near=0.03, far=0.03, dz=-0.008, teeth=0.45)),
+        hair=dict(style="bald", bald=True, color="#9A9AA2"),
+        beard=dict(style="box", color="#A0A0A8", tip="#B8B8C0", root="#8A8A94", crevice="#5A5A66", below=0.42,
+                   wider=0.10, moustache=True, moustache_color="#A8A8B0", moustache_dark="#8A8A94",
+                   moustache_light="#C4C4CA", signature=True),
+        headgear=dict(kind="shell", id="steel_plate", color="#C0C8D0", mat="metal", rough=0.3, metallic=0.5,
+                      edge=[(0, 52), (40, 48), (80, 40), (120, 34), (180, 30)], thick=0.04, roll=0.02, res=0.012,
+                      smooth=3),
+        body=dict(shoulders=2.25, neck=0.62),
+        costume=dict(
+            base=dict(color="#7A6A5A", rough=0.7, sheen=0.1),
+            layers=[
+                dict(kind="vest", id="steel", color="#D0D6DE", plate=True, metallic=0.5, rough=0.3, z0=-1.4, z1=-0.68,
+                     thick=0.04),
+                dict(kind="piping", color="#A87A50", r=0.022, path=[(-0.42, -0.74), (-0.2, -0.80), (0.0, -0.82),
+                                                                   (0.2, -0.80), (0.42, -0.74)]),
+                dict(kind="buttons", id="rivet", at=[(-0.30, -0.95), (0.30, -0.95), (-0.30, -1.15), (0.30, -1.15)],
+                     r=0.026, color="#A87A50"),
+            ]),
+        props=[dict(kind="shield", side="far", r=0.38, x=0.50, turn=42, up=0.45, color="#B8C0C8", metal=True,
+                    edge="#A87A50", rivets=12, detail="shield", min_px=6000)],
+        pose=dict(body=16, head=4, roll=0, nod=-3),
+        signature=dict(name="box beard + one massive shield pauldron on the far shoulder",
+                       zone="lower face width; far side"),
+        moods=dict(
+            angry=dict(beard=dict(jut=0.06),
+                       brows=dict(angry=dict(inner=-0.06, outer=0.0, in_dx=0.02, thick_k=1.25)),
+                       mouth=dict(angry=dict(type="open", shape="clench", w=0.27, h=0.07, near=-0.015, far=-0.015))),
+            cunning=dict(brows=dict(cunning=dict(lift=(0.0, 0.10), arch_far=0.02))),
+            tired=dict(eyes=dict(tired=dict(open=0.26))),
+        ),
+    ),
+    # ---------------------------------------------------------------- Margravine Vedana Dark Wing (Veilmark, Raven)
+    "ldr_veilmark": dict(
+        name="Vedana", leader=True, female=True, tall_headgear=True, plate="#58D14F",
+        head=dict(shape="oval", wh=0.78, h_px=266, eye_line=0.47, cheekbones=0.04, chin=0.0),
+        skin="#F6CDB8", skin_tone="T1", blush=0.16, skin_sat=1.1,
+        eyes=dict(sclera=0.20, open=0.64, iris="#7A6A9A", iris_shade=0.9, tilt=0.08, arch=0.18, flick=0.08,
+                  shadow="#6A4A70", shadow_k=0.5),
+        brows=dict(shape="arc", thick=0.056, color="#2E2638", arch=0.04, lift=(0.0, 0.02), len=1.25, len_far=1.7,
+                   in_far=0.84),
+        nose=dict(type="straight", w=0.042, drop=0.20, k=0.9, tip="#F0A090", tip_k=0.25),
+        mouth=dict(lip="#6A2A48", line=0.19,
+                   calm=dict(type="closed", w=0.25, near=0.03, far=0.0),
+                   smile=dict(type="closed", w=0.28, near=0.065, far=0.04, sag=0.01)),
+        hair=dict(style="straight", color="#3A2A48", dark="#2E2238", light="#5E4A72", crevice="#1E1628", part=36,
+                  drop=-0.70),
+        body=dict(shoulders=1.85),
+        costume=dict(
+            base=dict(color="#4A3458", rough=0.8, sheen=0.4),
+            layers=[
+                dict(kind="collar", color="#3E2A4A", z=-0.64, h=0.16, out=-0.004, flare=0.06, gap=0.10,
+                     piping="#C8CCD4", piping_r=0.014),
+                dict(kind="lapels", color="#3E2A4A",
+                     shape=[(0.08, -0.66), (0.24, -0.70), (0.33, -0.78), (0.28, -0.84), (0.20, -0.98), (0.04, -1.14)]),
+            ]),
+        props=[dict(kind="wing", x=0.56, y=0.06, n=10, len=1.35, a0=70, spread=48, w=0.13, color="#2E2A36", sheen="#6A4A9A",
+                    min_px=4000),
+               dict(kind="brooch", at=(0.0, -0.74), d=0.10),
+               dict(kind="feather_pin", az=-82, el=24, len=0.20, w=0.04, color="#2E2A36", pin="#C8CCD4",
+                    dir=(-0.4, 0.5, 0.8))],
+        pose=dict(body=26, head=8, roll=3, nod=3),
+        signature=dict(name="dark wing rising over the far shoulder", zone="far side"),
+        moods=dict(
+            tired=dict(hair=dict(across=True)),
+            angry=dict(mouth=dict(angry=dict(type="open", shape="clench", w=0.26, h=0.07, near=-0.01, far=-0.02))),
+        ),
+    ),
+    # ---------------------------------------------------------------- Consul Arman the Nocturne (Lakes, Owl)
+    "ldr_lakes": dict(
+        name="Arman", leader=True, female=False, tall_headgear=True, plate="#42BED1",
+        head=dict(shape="long", wh=0.76, h_px=262, eye_line=0.47, cheeks=0.95),
+        skin=SKIN["T6"], skin_tone="T6", blush=0.10,
+        eyes=dict(sclera=0.19, open=0.72, iris="#8A5A2A", iris_shade=1.0, tilt=0.02, arch=0.20),
+        brows=dict(shape="arc", thick=0.06, color="#E4E6EC", arch=0.025, len=1.25, len_far=1.7, in_far=0.84),
+        nose=dict(type="straight", w=0.05, drop=0.21, k=1.05, tip="#6A3828", tip_k=0.2),
+        mouth=dict(lip="#5A3028", line=0.20,
+                   calm=dict(type="closed", w=0.27, near=0.016, far=0.01),
+                   smile=dict(type="closed", w=0.30, near=0.055, far=0.05, sag=0.01)),
+        hair=dict(style="short", color="#E4E6EC", dark="#B8BCC8", light="#FFFFFF", crevice="#7A8094",
+                  escape=[(-72, 26, 4, 0.065), (-88, 20, -6, 0.06), (78, 24, 4, 0.06)]),
+        headgear=dict(kind="hat", id="top_hat", color="#222C48", mat="velvet", h=0.42, rim_dz=0.01, tilt=-4,
+                      profile=[(0.0, 1.0), (0.06, 0.99), (0.5, 1.0), (1.0, 1.08)], top_tilt=-3,
+                      band=dict(h=0.07, color="#C8CCD4", mat="metal"),
+                      brim=dict(w=0.07, ang=0, up_sides=22, t=0.024, color="#222C48"), signature=True,
+                      detail="top_hat", min_px=5000),
+        body=dict(shoulders=1.9),
+        costume=dict(
+            base=dict(color="#2A3A62", rough=0.8, sheen=0.4),
+            layers=[
+                dict(kind="neckerchief", color="#F2F2F2", z=-0.62),
+                dict(kind="lapels", color="#2A8AA0",
+                     shape=[(0.10, -0.66), (0.28, -0.70), (0.38, -0.80), (0.32, -0.86), (0.24, -1.00), (0.05, -1.18)]),
+                dict(kind="buttons", id="btn", at=[(-0.16, -1.02), (0.16, -1.02), (-0.15, -1.20), (0.15, -1.20)], r=0.03,
+                     color="#C8CCD4"),
+            ]),
+        props=[dict(kind="glasses", shape="half", color="#C8CCD4", metal=0.5, frame=0.022, w=1.8, h=1.0, drop=0.075,
+                    off=0.04, tint="#FFFFFF"),
+               dict(kind="brooch", at=(0.0, -0.74), d=0.08)],
+        pose=dict(body=20, head=6, roll=2, nod=1),
+        signature=dict(name="tall top hat + half glasses", zone="top centre"),
+        moods=dict(
+            smile=dict(**{"headgear~": dict(side_tilt=8.0)}),
+            cunning=dict(fx=dict(cunning=dict(gaze=(-0.30, 0.014)))),
+            angry=dict(**{"props~": {"glasses": dict(glare=0.9, drop=0.05)}},
+                       mouth=dict(angry=dict(type="closed", w=0.22, near=-0.02, far=-0.02, crease=0.026))),
+            tired=dict(**{"headgear~": dict(top_tilt=-12.0, rim_dz=-0.06, tilt=-14)}),
+        ),
+    ),
+    # ---------------------------------------------------------------- the ruler (§7.10)
+    "ruler": dict(
+        name="Ruler", ruler=True, female=False, tall_headgear=True, plate="#8FCDF2",
+        head=dict(shape="square", wh=0.90, h_px=264, eye_line=0.48, jaw=0.0, cheeks=1.1),
+        skin=SKIN["T3"], skin_tone="T3", blush=0.20,
+        eyes=dict(sclera=0.20, open=0.80, iris="#6A4426", iris_shade=1.0, tilt=0.04, arch=0.22),
+        brows=dict(shape="arc", thick=0.068, color="#4A3020", arch=0.025, len=1.22, len_far=1.6, in_far=0.84),
+        nose=dict(type="potato", k=0.82, drop=0.20, tip="#D8806A", tip_k=0.35),
+        mouth=dict(lip="#A85A4A", line=0.20,
+                   calm=dict(type="closed", w=0.27, near=0.015, far=0.015)),
+        hair=dict(style="long", color="#5A3A22", dark="#4A3018", light="#7A5434", crevice="#2A1A0E", drop=-0.42),
+        beard=dict(style="round", color="#5A3A22", tip="#7A5434", root="#4A3018", crevice="#2A1A0E", below=0.22,
+                   moustache=True, moustache_color="#563620", moustache_dark="#4A3018", moustache_light="#7A5434",
+                   signature=True),
+        headgear=dict(kind="crown", color="#E8B23A", band=0.07, merlon=0.15, merlon_w=0.15, cap=0.22, rim_dz=0.10,
+                      velvet="#2E5BD8", emit=1.0),
+        body=dict(shoulders=2.1),
+        costume=dict(
+            base=dict(color="#2E5BD8", rough=0.85, sheen=0.4),
+            layers=[
+                dict(kind="cloak", id="mantle", color="#2E5BD8", z1=-0.64, gap=0.03, flare=0.12,
+                     open=[(-1.9, 0.30), (-1.2, 0.24), (-0.85, 0.18), (-0.66, 0.14)]),
+                dict(kind="fur", id="fur", color="#F4F1EA", dark="#DCD6CC", light="#FFFFFF", crevice="#A8A296",
+                     r=0.82, r_in=0.28, t=0.10, front_z=-0.98, side_z=-0.9, back_z=-0.82, open=0.14,
+                     clumps=dict(n=40, len=0.14, w=0.07, th=0.04), smooth=4),
+            ]),
+        props=[dict(kind="chain", z=-1.06, d=0.18, color="#E8B23A", link=0.055, top_x=0.30,
+                    emblem=dict(kind="hex", color="#E8B23A", inner="#3A8DFF", inner_emit=0.8))],
+        pose=dict(body=18, head=6, roll=0, nod=1),
+        signature=dict(name="crown merlons + round beard", zone="top centre; lower face width"),
+    ),
+})
+
+
 # ================================================================== eras, moods, the resolver
 import copy  # noqa: E402
 
@@ -720,6 +1165,12 @@ def apply_patch(c, patch):
     patch = dict(patch)
     pt = patch.pop("props~", None)
     add = patch.pop("props+", None)
+    # "<key>~": merge into an entry REPLACE would otherwise replace (a mood tilting a leader's hat: "headgear~")
+    for k in [k for k in patch if k.endswith("~")]:
+        v = patch.pop(k)
+        base = c.get(k[:-1])
+        if isinstance(base, dict):
+            _merge(base, v)
     _merge(c, patch)
     if pt:
         out = []
@@ -813,8 +1264,10 @@ def resolve(cid, era=1, mood="calm"):
 
 
 COMMANDER_IDS = [k for k in CHARS if k.startswith("cmd_")]
+LEADER_IDS = [k for k in CHARS if k.startswith("ldr_")]
 KIT_IDS = set(CHARS)
-KIT_ERAS = {cid: {1} for cid in CHARS}      # eras the kit builds; the rest falls back to the old builder
+# since P3 every id and era goes through the kit (the leaders have no era files, §7.8 rule 4)
+KIT_ERAS = {cid: ({1} if cid.startswith("ldr_") else {1, 2, 3, 4}) for cid in CHARS}
 
 
 def headgear_of(cid, era):
@@ -886,3 +1339,471 @@ def lint():
     if errs:
         raise ValueError("chars.py lint: " + "; ".join(sorted(set(errs))))
     return True
+
+
+# ================================================================== the era looks (§7.6 "Палитра и эпохи", §7.7)
+# E2 coats and braid (the main colour L* -5, +5 % saturation), E3 field uniform (mixed 0.20 with #6E6A4E, x0.85),
+# E4 rounded painted plates (L* +6, x0.95, roughness 0.45, metallic 0.25) over the #3A4150 underlayer with an accent
+# strip (1.0-1.2, >= 0.04 H wide). style.era_color does the colour maths; the face, the hair, the facial hair, the
+# signature and the accent never change (the lint refuses an era patch of a face key).
+from .style import ERA_UNDER as _UNDER  # noqa: E402
+from .style import era_color as _E  # noqa: E402
+
+_LAPEL = [(0.08, -0.66), (0.24, -0.70), (0.33, -0.78), (0.28, -0.84), (0.20, -0.98), (0.04, -1.14)]
+_ROUND_HELMET = [(0.0, 1.0), (0.3, 1.0), (0.62, 0.88), (0.86, 0.58), (1.0, 0.0)]
+_FRONT = [(-0.42, -0.74), (-0.2, -0.80), (0.0, -0.82), (0.2, -0.80), (0.42, -0.74)]   # a plate's top edge
+
+
+def _plate(col, z0=-1.42, z1=-0.66, **kw):
+    """§7.7 E4: a rounded painted breastplate (vest shell)."""
+    return dict(kind="vest", id="plate", color=col, plate=True, z0=z0, z1=z1, thick=kw.pop("thick", 0.04), **kw)
+
+
+ERA_LOOKS.update({
+    # ---------------------------------------------------------------- Bram
+    "cmd_bram": {
+        2: dict(costume=dict(base=dict(color="#34486A", rough=0.85, sheen=0.35), layers=[
+                    dict(kind="collar", color="#34486A", z=-0.64, h=0.07, out=0.004, flare=0.012),
+                    dict(kind="lapels", color="#DCCAA0", shape=_LAPEL),
+                    dict(kind="strap", id="sash", color="#F2F0EA", w=0.09, **{"from": (-0.44, -0.70), "to": (0.50, -1.6)}),
+                    dict(kind="buttons", id="btn", at=[(-0.30, -0.88), (-0.31, -1.00), (-0.31, -1.12)], r=0.032,
+                         color="#E0AD45"),
+                    dict(kind="belt", z=-1.09, w=0.13, color="#6B4226", buckle="#E0AD45", over=0.006)]),
+                headgear=dict(kind="hat", id="shako", color="#34486A", h=0.40, profile=[(0.0, 1.0), (1.0, 1.14)],
+                              band=dict(h=0.05, color="#2E2A2C", mat="leather"), top_tilt=-4,
+                              brim=dict(w=0.10, ang=-14, front=58, color="#2E2A2C", mat="leather"),
+                              badge=dict(kind="millstone", size=0.17, color="#E0AD45", g=0.48, dark="#8A6A2A"))),
+        3: dict(costume=dict(base=dict(color=_E("#3D4A58", 3), rough=0.9, sheen=0.25), layers=[
+                    dict(kind="collar", color=_E("#3D4A58", 3), z=-0.64, h=0.07, out=0.004, flare=0.012),
+                    dict(kind="strap", id="ystrap1", color="#6B4226", w=0.075,
+                         **{"from": (-0.36, -0.70), "to": (-0.16, -1.1)}),
+                    dict(kind="strap", id="ystrap2", color="#6B4226", w=0.075,
+                         **{"from": (0.36, -0.70), "to": (0.16, -1.1)}),
+                    dict(kind="belt", z=-1.09, w=0.13, color="#6B4226", buckle="#B0A090", over=0.006)]),
+                headgear=dict(kind="hat", id="brodie", color=_E("#3D4A58", 3), mat="painted", h=0.34, rim_dz=0.02,
+                              profile=[(0.0, 1.0), (0.25, 0.98), (0.6, 0.86), (0.85, 0.58), (1.0, 0.0)],
+                              brim=dict(w=0.13, ang=-8, t=0.026), chinstrap=dict(color="#6B4226", to_z=-0.38)),
+                **{"props~": {"chevrons": dict(n=3, at=(0.13, 0.21, 0.29))}}),
+        4: dict(costume=dict(base=dict(color=_UNDER, rough=0.7, sheen=0.2), layers=[
+                    _plate(_E("#3D4A58", 4)),
+                    dict(kind="collar", color="#B9C7D6", metal=True, z=-0.66, h=0.07, out=0.03, flare=0.02),
+                    dict(kind="pauldrons", color=_E("#3D4A58", 4), painted=True, stripe="#F0A830", n=2, spread=84,
+                         bands=[(92, 36), (44, 0)], detail="pauldrons", min_px=4000),
+                    dict(kind="strip", id="amber", color="#F0A830", emit=1.1, w=0.05, detail="glow", min_px=100,
+                         path=[(-0.62, -1.22), (-0.3, -1.25), (0.0, -1.26), (0.3, -1.25), (0.62, -1.22)]),
+                    dict(kind="belt", z=-1.09, w=0.13, color="#6B4226", buckle="#E0AD45", over=0.058)]),
+                headgear=dict(kind="hat", id="open_helmet", color=_E("#3D4A58", 4), mat="painted", h=0.30,
+                              rim_dz=0.06, profile=_ROUND_HELMET, brim=dict(w=0.035, ang=0, t=0.024),
+                              extra=[dict(kind="visor", el=58, span=62, h=0.10, dh=8, tint="#DDEBF4", frame="#B9C7D6",
+                                          off=0.03)]),
+                **{"props~": {"chevrons": None},
+                   "props+": [dict(kind="emblem", shape="millstone", at=(-0.30, -1.00), size=0.20, color="#B9C7D6",
+                                   dark="#6A7484", detail="millstone", min_px=200)]}),
+    },
+})
+
+ERA_LOOKS.update({
+    # ---------------------------------------------------------------- Lira
+    "cmd_lira": {
+        2: dict(costume=dict(base=dict(color=_E("#2E7A44", 2), rough=0.85, sheen=0.35), layers=[
+                    dict(kind="collar", color=_E("#2E7A44", 2), z=-0.64, h=0.08, out=0.004, flare=0.016),
+                    dict(kind="lapels", color="#F2F0EA", shape=_LAPEL),
+                    dict(kind="buttons", id="btn", at=[(-0.14, -0.96), (0.14, -0.96), (-0.13, -1.12), (0.13, -1.12)],
+                         r=0.03, color="#E0AD45"),
+                    dict(kind="epaulettes", color="#E0AD45", len=0.16, w=0.08, x=0.46, fringe=0, board=True,
+                         stripe="#3E9B5A"),
+                    dict(kind="strap", id="strap", color="#8A5A34", detail="satchel_strap", min_px=3000,
+                         **{"from": (0.46, -0.70), "to": (-0.62, -1.75)}, w=0.10)]),
+                headgear=dict(kind="shell", id="bonnet", color="#F4F2EE", mat="fabric", thick=0.06, lift=0.07,
+                              roll=0.028, clear=0.03,
+                              edge=[(0, 44), (40, 36), (75, 18), (100, 6), (140, -6), (180, -14)],
+                              ribbon=dict(color="#3E9B5A", w=0.055, above=7, knot_az=-150, knot_el=12, tail=0.30),
+                              badge=dict(kind="leaf", size=0.15, color="#3E9B5A", el=40, metal=0.0, rough=0.5))),
+        3: dict(costume=dict(base=dict(color=_E("#2E7A44", 3), rough=0.9, sheen=0.25), layers=[
+                    dict(kind="collar", color=_E("#2E7A44", 3), z=-0.64, h=0.07, out=0.004, flare=0.014),
+                    dict(kind="neckerchief", color="#22603A", z=-0.63),
+                    dict(kind="pocket", id="pocket1", on="torso", at=(-0.22, -1.02), w=0.11, h=0.14,
+                         color=_E("#2E7A44", 3)),
+                    dict(kind="strap", id="strap", color="#8A5A34", detail="satchel_strap", min_px=3000,
+                         **{"from": (0.46, -0.70), "to": (-0.62, -1.75)}, w=0.10)]),
+                headgear=dict(kind="hat", id="side_cap", color=_E("#2E7A44", 3), h=0.12, rim_dz=0.15, tilt=-4,
+                              side_tilt=-8, squash=(0.62, 1.12), profile=[(0.0, 1.0), (0.55, 0.96), (0.85, 0.7),
+                                                                          (1.0, 0.18)],
+                              badge=dict(kind="leaf", size=0.10, color="#3E9B5A", g=0.4, az=-20, metal=0.0)),
+                **{"props+": [dict(kind="chevrons", style="ring", n=1, at=(0.30,), r=0.05, color="#F2F0EA",
+                                   detail="armband", min_px=200)]}),
+        4: dict(costume=dict(base=dict(color=_UNDER, rough=0.7, sheen=0.2), layers=[
+                    _plate("#ECEFEA"),
+                    dict(kind="piping", color="#2E7A44", r=0.02, path=_FRONT),
+                    dict(kind="pauldrons", color=_E("#2E7A44", 4), painted=True, stripe="#F2F0EA", n=1, spread=84,
+                         bands=[(92, 30)], detail="pauldrons", min_px=2000),
+                    dict(kind="strap", id="strap", color="#3E9B5A", detail="satchel_strap", min_px=3000,
+                         **{"from": (0.46, -0.70), "to": (-0.62, -1.75)}, w=0.10)]),
+                headgear=dict(kind="hat", id="rescue_helmet", color="#F2F0EA", mat="painted", h=0.30, rim_dz=0.05,
+                              profile=_ROUND_HELMET, brim=dict(w=0.03, ang=0, t=0.022),
+                              band=dict(h=0.05, color="#3E9B5A", mat="painted"),
+                              extra=[dict(kind="visor", el=60, span=60, h=0.10, dh=8, tint="#E8F6FF", frame="#3E9B5A",
+                                          off=0.03)]),
+                **{"props~": {"badge": dict(glow=0.8)}}),
+    },
+    # ---------------------------------------------------------------- Olm
+    "cmd_olm": {
+        2: dict(costume=dict(base=dict(color="#6B4426", rough=0.85, sheen=0.3), layers=[
+                    dict(kind="collar", color="#FAF4E6", z=-0.64, h=0.06, out=0.004, flare=0.012, gap=0.06),
+                    dict(kind="buttons", id="btn", at=[(-0.40, -0.92), (-0.40, -1.08), (0.40, -0.92), (0.40, -1.08)],
+                         r=0.03, color="#C9A24A"),
+                    dict(kind="bib", id="apron", color="#7A4E2D", leather=True, w=0.30, top=-0.80, bottom=-2.0,
+                         straps=True, detail="apron", min_px=6000),
+                    dict(kind="pocket", id="pocket", on="apron", at=(0.15, -1.00), w=0.13, h=0.22, color="#6B4426")]),
+                headgear=dict(CHARS["cmd_olm"]["headgear"], id="green_goggles", lens_color="#5AC88A"),
+                **{"props~": {"wrench": dict(color="#C9A24A")}}),
+        3: dict(costume=dict(base=dict(color="#8A6A44", rough=0.85, sheen=0.25), layers=[
+                    dict(kind="collar", color="#8A6A44", z=-0.64, h=0.07, out=0.004, flare=0.014),
+                    dict(kind="bib", id="apron", color="#7A4E2D", leather=True, w=0.28, top=-0.92, bottom=-2.0,
+                         straps=True, detail="apron", min_px=5000),
+                    dict(kind="pocket", id="pocket", on="apron", at=(0.15, -1.06), w=0.13, h=0.22, color="#6B4426"),
+                    dict(kind="belt", z=-1.30, w=0.11, color="#4E3620", buckle="#C9A24A", over=0.045)]),
+                headgear=dict(CHARS["cmd_olm"]["headgear"], id="rubber_goggles", rim_color="#3A3A40",
+                              lens_color="#A8D8E8", metallic=0.1, strap="#3A3A40"),
+                **{"props~": {"wrench": dict(color="#6C7482", handle="#B83A2A", top_dy=0.10)}}),
+        4: dict(costume=dict(base=dict(color=_UNDER, rough=0.7, sheen=0.2), layers=[
+                    _plate(_E("#7A4E2D", 4)),
+                    dict(kind="piping", color="#C9A24A", r=0.02, path=_FRONT),
+                    dict(kind="bib", id="apron", color="#5A3A22", leather=True, w=0.26, top=-0.92, bottom=-2.0,
+                         straps=True, over_last=True, detail="apron", min_px=4000),
+                    dict(kind="pocket", id="pocket", on="apron", at=(0.15, -1.06), w=0.13, h=0.22, color="#4A3020")]),
+                headgear=dict(CHARS["cmd_olm"]["headgear"], id="hud_goggles", lens_color="#FF9A40", lens_glow=0.6,
+                              rim_color="#C9A24A"),
+                **{"props~": {"wrench": None},
+                   "props+": [dict(kind="cutter", pocket="pocket", len=0.62, ang=13, depth=0.32, top_dy=0.10,
+                                   glow=1.5, signature=False)]}),
+    },
+    # ---------------------------------------------------------------- Vik
+    "cmd_vik": {
+        2: dict(costume=dict(base=dict(color=_E("#6B4A2A", 2), rough=0.6, sheen=0.15), layers=[
+                    dict(kind="cloak", id="cloak", color=_E("#4E6B3A", 2), z1=-0.64, gap=0.03, flare=0.10,
+                         open=[(-1.9, 0.34), (-1.2, 0.26), (-0.85, 0.18), (-0.66, 0.14)]),
+                    dict(kind="frogging", color="#E0AD45", z=(-0.88, -1.00, -1.12), w=0.16, t=0.024),
+                    dict(kind="strap", id="strap", color="#4E3620", **{"from": (0.40, -0.72), "to": (-0.45, -1.6)},
+                         w=0.07)]),
+                headgear=dict(CHARS["cmd_vik"]["headgear"], id="hood_feather", color=_E("#3E6234", 2)),
+                **{"props~": {"raven": dict(variant="tube")},
+                   "props+": [dict(kind="feather_pin", az=-58, el=40, len=0.30, w=0.06, color="#B8502A",
+                                   dir=(-0.35, 0.55, 0.75))]}),
+        3: dict(costume=dict(base=dict(color="#5E7A44", rough=0.85, sheen=0.2), layers=[
+                    dict(kind="cloak", id="cloak", color="#5E7A44", camo=["#3E5A2E", "#8A9A5A", "#4E4A30"],
+                         camo_scale=6.0, z1=-0.64, gap=0.03, flare=0.10,
+                         open=[(-1.9, 0.34), (-1.2, 0.26), (-0.85, 0.18), (-0.66, 0.14)]),
+                    dict(kind="strap", id="strap", color="#4E3620", **{"from": (0.40, -0.72), "to": (-0.45, -1.6)},
+                         w=0.07)]),
+                headgear=dict(CHARS["cmd_vik"]["headgear"], id="camo_hood", color="#5E7A44",
+                              camo=["#3E5A2E", "#8A9A5A", "#4E4A30"], camo_scale=6.0),
+                **{"props~": {"raven": dict(variant="clockwork", color="#2E3038", sheen="#5A5E6A"), "bow": None},
+                   "props+": [dict(kind="binoculars", at=(0.10, -1.04), size=0.20)]}),
+        4: dict(costume=dict(base=dict(color=_UNDER, rough=0.7, sheen=0.2), layers=[
+                    _plate(_E("#4E6B3A", 4), z0=-1.40, z1=-0.68),
+                    dict(kind="pauldrons", color=_E("#4E6B3A", 4), painted=True, stripe="#5AE07A", stripe_emit=0.0,
+                         n=1, spread=80, bands=[(92, 30)], detail="pauldrons", min_px=2000),
+                    dict(kind="strip", id="glow", color="#5AE07A", emit=1.1, w=0.045, detail="glow", min_px=80,
+                         path=[(-0.30, -0.80), (-0.32, -1.0), (-0.34, -1.2)])]),
+                headgear=dict(CHARS["cmd_vik"]["headgear"], id="tech_hood", color=_E("#3E6234", 4),
+                              extra=[dict(kind="visor", el=52, span=58, h=0.075, dh=6, glow=1.1, tint="#5AE07A",
+                                          frame="#3A4150", off=0.035, detail="visor", min_px=150)]),
+                **{"props~": {"raven": None, "bow": None},
+                   "props+": [dict(kind="drone", x=-0.62, y=0.10, size=0.55, turn=-55, roll=10)]}),
+    },
+    # ---------------------------------------------------------------- Vega
+    "cmd_vega": {
+        2: dict(costume=dict(base=dict(color=_E("#3F4658", 2), rough=0.8, sheen=0.35), layers=[
+                    dict(kind="collar", color="#F2F2F2", z=-0.66, h=0.13, out=0.018, flare=0.035, gap=0.05, thick=0.03),
+                    dict(kind="lapels", color=_E("#3F4658", 2), shape=_LAPEL),
+                    dict(kind="buttons", id="btn", at=[(-0.16, -0.96), (0.16, -0.96), (-0.15, -1.12), (0.15, -1.12)],
+                         r=0.03, color="#C8CCD4"),
+                    dict(kind="epaulettes", color="#C8CCD4", len=0.22, w=0.15, x=0.44, fringe=9, fringe_len=0.10)]),
+                headgear=dict(kind="bicorne", id="bicorne", color="#2E3240", trim="#C8CCD4", rim_dz=0.06, tilt=-6,
+                              crown=0.18, wall=0.30, wall_corner=0.35, corner=0.30, mid=0.0, crown_sub=1,
+                              badge=dict(kind="disc", size=0.10, color="#C8CCD4", g=0.55))),
+        3: dict(costume=dict(base=dict(color=_E("#3F4658", 3), rough=0.85, sheen=0.25), layers=[
+                    dict(kind="collar", color=_E("#3F4658", 3), z=-0.66, h=0.10, out=0.018, flare=0.03, gap=0.05),
+                    dict(kind="medal_bar", at=(-0.10, -0.72), colors=["#C8CCD4"], w=0.05, h=0.03, detail="tabs",
+                         min_px=20),
+                    dict(kind="medal_bar", at=(0.10, -0.72), colors=["#C8CCD4"], w=0.05, h=0.03, detail="tabs2",
+                         min_px=20),
+                    dict(kind="strap", id="sam_browne", color="#3A2A1E", w=0.07,
+                         **{"from": (-0.42, -0.70), "to": (0.45, -1.6)}),
+                    dict(kind="belt", z=-1.22, w=0.11, color="#3A2A1E", buckle="#C8CCD4", over=0.006)]),
+                headgear=dict(kind="hat", id="beret", color="#2E3240", h=0.10, rim_dz=0.10, tilt=-4, side_tilt=-12,
+                              profile=[(0.0, 1.0), (0.25, 1.22), (0.6, 1.30), (0.85, 1.12), (1.0, 0.0)],
+                              badge=dict(kind="arrow", size=0.12, color="#C8CCD4", g=0.3, az=-25)),
+                **{"props~": {"glasses": dict(tint="#C8CEDA")}}),
+        4: dict(costume=dict(base=dict(color=_UNDER, rough=0.7, sheen=0.2), layers=[
+                    _plate(_E("#3F4658", 4)),
+                    dict(kind="piping", color="#C8CCD4", r=0.02, path=_FRONT),
+                    dict(kind="collar", color="#F2F2F2", z=-0.66, h=0.11, out=0.03, flare=0.03, gap=0.05)]),
+                headgear=dict(kind="visor", id="hud_strip", on="head", el=-4, span=48, h=0.13, dh=6, off=0.11,
+                              tint="#EEF6FF", frame="#C8CCD4", frame_r=0.008, line="#FFFFFF", line_emit=0.6,
+                              detail="hud", min_px=300,
+                              extra=[dict(kind="headset", sides=(1,), color="#3A4150", accent="#C8CCD4", mic=True)]),
+                **{"props~": {"glasses": None}}),
+    },
+    # ---------------------------------------------------------------- Kort
+    "cmd_kort": {
+        2: dict(costume=dict(base=dict(color=_E("#5D6236", 2), rough=0.85, sheen=0.3), layers=[
+                    dict(kind="placket", color="#4E5330", w=0.045, top=-0.80, x=0.0),
+                    dict(kind="buttons", id="button", at=[(0.0, -0.98), (0.0, -1.16)], r=0.032, color="#B0803A"),
+                    CHARS["cmd_kort"]["costume"]["layers"][2],
+                    dict(kind="clasp", color="#B0803A", z=-0.90, x=0.075),
+                    dict(kind="epaulettes", color="#B0803A", len=0.16, w=0.13, x=0.54, fringe=9, fringe_len=0.11,
+                         fringe_r=0.013)]),
+                headgear=dict(kind="hat", id="colpack", color="#5E4636", mat="fur", fur_dark="#4E3A2C",
+                              fur_light="#7A5E4A", fur_crevice="#3A2A20", h=0.40, rim_dz=-0.01,
+                              profile=[(0.0, 1.04), (0.5, 1.07), (1.0, 1.02)], top_dome=0.03, wall=0.05,
+                              tassel=dict(color="#B0803A", az=60))),
+        3: dict(costume=dict(base=dict(color=_E("#5D6236", 3), rough=0.9, sheen=0.25), layers=[
+                    dict(kind="placket", color="#4E5330", w=0.045, top=-0.80, x=0.0),
+                    dict(kind="buttons", id="button", at=[(0.0, -0.98), (0.0, -1.16)], r=0.032, color="#B0803A"),
+                    dict(CHARS["cmd_kort"]["costume"]["layers"][2], r=1.0, t=0.14),
+                    dict(kind="epaulettes", color="#B0803A", len=0.16, w=0.10, x=0.54, board=True, stripe="#E0B040"),
+                    dict(kind="medal_bar", at=(-0.30, -1.06), colors=["#B0803A", "#C0452A", "#3E9BF0"], detail="medals",
+                         min_px=60)]),
+                headgear=dict(kind="shell", id="ushanka", color="#6B5040", mat="fur", fur_dark="#5A4232",
+                              fur_light="#8A6E58", fur_crevice="#3A2A20", thick=0.07, lift=0.06, roll=0.035,
+                              edge=[(0, 46), (40, 40), (80, 22), (110, 8), (180, -4)],
+                              flaps=dict(up=True, len=0.22, w=0.20, mat="fur", color="#6B5040"),
+                              badge=dict(kind="star", size=0.11, color="#B0803A", el=44))),
+        4: dict(costume=dict(base=dict(color=_UNDER, rough=0.7, sheen=0.2), layers=[
+                    _plate(_E("#5D6236", 4)),
+                    dict(kind="piping", color="#B0803A", r=0.02, path=[(0.0, -0.95), (0.0, -1.2), (0.0, -1.6)]),
+                    dict(kind="buttons", id="button", at=[(0.0, -0.98), (0.0, -1.16)], r=0.032, color="#B0803A"),
+                    CHARS["cmd_kort"]["costume"]["layers"][2]]),
+                headgear=dict(kind="headset", id="headset", sides=(-1,), color="#3A4150", accent="#B0803A", mic=True,
+                              w=0.04, detail="headset", min_px=200),
+                **{"props~": {"hourglass": dict(sand_glow=1.2, sand="#F0A040")}}),
+    },
+    # ---------------------------------------------------------------- Seir
+    "cmd_seir": {
+        2: dict(costume=dict(base=dict(color=_E("#175A72", 2), rough=0.85, sheen=0.3), layers=[
+                    dict(kind="neckerchief", color="#F2F2F2", z=-0.64),
+                    dict(kind="lapels", color="#F2F2F2",
+                         shape=[(0.10, -0.66), (0.30, -0.70), (0.42, -0.80), (0.36, -0.86), (0.30, -1.02), (0.05, -1.20)]),
+                    dict(kind="buttons", id="btn", r=0.036, color="#E8B23A",
+                         at=[(-0.22, -0.98), (0.22, -0.98), (-0.20, -1.14), (0.20, -1.14)]),
+                    dict(kind="epaulettes", color="#E8B23A", len=0.22, w=0.15, x=0.44, fringe=9, fringe_len=0.10)]),
+                headgear=dict(CHARS["cmd_seir"]["headgear"], id="tricorn_gold", trim="#E8B23A", tape2=True,
+                              badge=dict(kind="disc", size=0.10, color="#F2F2F2", g=0.5, metal=0.0, rough=0.5)),
+                **{"props~": {"spyglass": dict(bands="#E8B23A")}}),
+        3: dict(costume=dict(base=dict(color=_E("#175A72", 3), rough=0.85, sheen=0.25), layers=[
+                    dict(kind="collar", color=_E("#175A72", 3), z=-0.64, h=0.08, out=0.004, flare=0.02, gap=0.06),
+                    dict(kind="neckerchief", color="#F2F2F2", z=-0.64),
+                    dict(kind="buttons", id="btn", r=0.034, color="#E8B23A",
+                         at=[(-0.20, -0.98), (0.20, -0.98), (-0.19, -1.14), (0.19, -1.14)])]),
+                headgear=dict(kind="hat", id="peaked_cap", color="#F2F2F2", h=0.30, rim_dz=0.01, tilt=-4,
+                              profile=[(0.0, 1.0), (0.45, 1.02), (0.78, 1.24), (1.0, 1.26)], top_tilt=4,
+                              band=dict(h=0.07, color="#134B5F"),
+                              brim=dict(w=0.12, ang=-14, front=56, color="#2E2A2C", mat="leather"),
+                              badge=dict(kind="wave_hex", size=0.12, color="#E8B23A", g=0.12, wave="#2F8FB0")),
+                **{"props~": {"spyglass": dict(color="#C8CCD4", rough=0.22)},
+                   "props+": [dict(kind="chevrons", style="ring", n=2, at=(0.82, 0.88), r=0.016, color="#E8B23A",
+                                   detail="cuff_stripes", min_px=60)]}),
+        4: dict(costume=dict(base=dict(color=_UNDER, rough=0.7, sheen=0.2), layers=[
+                    _plate(_E("#175A72", 4)),
+                    dict(kind="piping", color="#F2F2F2", r=0.02, path=_FRONT),
+                    dict(kind="pauldrons", color="#F2F2F2", painted=True, stripe=_E("#175A72", 4), n=1, spread=80,
+                         bands=[(92, 30)], detail="pauldrons", min_px=2000)]),
+                headgear=dict(kind="hat", id="hud_cap", color="#F2F2F2", mat="painted", h=0.30, rim_dz=0.01, tilt=-4,
+                              profile=[(0.0, 1.0), (0.45, 1.02), (0.78, 1.24), (1.0, 1.26)], top_tilt=4,
+                              band=dict(h=0.07, color=_E("#175A72", 4), mat="painted"),
+                              brim=dict(w=0.12, ang=-14, front=56, color=_E("#175A72", 4), mat="painted"),
+                              badge=dict(kind="wave_hex", size=0.12, color="#E8B23A", g=0.12, wave="#2F8FB0"),
+                              extra=[dict(kind="visor", el=34, span=50, h=0.08, dh=6, tint="#E0F4FF", frame="#C8CCD4",
+                                          off=0.12)]),
+                **{"props~": {"spyglass": None},
+                   "props+": [dict(CHARS["cmd_seir"]["props"][0], kind="rangefinder", len=0.62, glow_ring="#5AD8FF",
+                                   glow=1.4)]}),
+    },
+})
+
+ERA_LOOKS.update({
+    # ---------------------------------------------------------------- Frey (no hat in any era: the flat top is her sign)
+    "cmd_frey": {
+        2: dict(costume=dict(base=dict(color=_E("#1F7040", 2), rough=0.85, sheen=0.3), layers=[
+                    dict(kind="collar", color="#C8D0DA", metal=True, z=-0.66, h=0.07, out=0.03, flare=0.025),
+                    _plate("#C8D0DA", z0=-1.36, z1=-0.70, metallic=0.55, rough=0.3, thick=0.035),
+                    dict(kind="pauldrons", color="#C8D0DA", stripe="#2E8A50", stripe_r=0.02, n=3, spread=88,
+                         detail="pauldrons", min_px=10000)]),
+                **{"props~": {"badge_relief": dict(at=(-0.26, -1.0))}}),
+        3: dict(costume=dict(base=dict(color=_E("#1F7040", 3), rough=0.9, sheen=0.25), layers=[
+                    dict(kind="collar", color=_E("#1F7040", 3), z=-0.64, h=0.08, out=0.004, flare=0.02),
+                    _plate("#B8C2CC", z0=-1.36, z1=-0.72, metallic=0.45, rough=0.45, thick=0.03),
+                    dict(kind="strap", id="ystrap1", color="#4E3620", w=0.075,
+                         **{"from": (-0.36, -0.70), "to": (-0.20, -1.5)}),
+                    dict(kind="strap", id="ystrap2", color="#4E3620", w=0.075,
+                         **{"from": (0.36, -0.70), "to": (0.20, -1.5)}),
+                    dict(kind="pauldrons", color="#C8D0DA", stripe="#2E8A50", stripe_r=0.02, n=3, spread=88,
+                         detail="pauldrons", min_px=10000)]),
+                **{"props~": {"badge_relief": dict(at=(-0.27, -1.02))}}),
+        4: dict(costume=dict(base=dict(color=_UNDER, rough=0.7, sheen=0.2), layers=[
+                    _plate(_E("#1F7040", 4)),
+                    dict(kind="collar", color="#C8D0DA", metal=True, z=-0.66, h=0.08, out=0.03, flare=0.025,
+                         piping="#3AD07A", piping_r=0.02),
+                    dict(kind="pauldrons", color="#C8D0DA", stripe="#3AD07A", stripe_emit=1.0, stripe_r=0.022, n=3,
+                         spread=90, detail="pauldrons", min_px=10000)]),
+                **{"props~": {"badge_relief": dict(at=(-0.26, -1.0), glow_rim="#5AE07A", glow=1.3)}}),
+    },
+    # ---------------------------------------------------------------- Irma
+    "cmd_irma": {
+        2: dict(costume=dict(base=dict(color=_E("#3A3C46", 2), rough=0.45, sheen=0.1), layers=[
+                    dict(kind="collar", color=_E("#3A3C46", 2), z=-0.66, h=0.14, out=0.004, flare=0.04, gap=0.08,
+                         thick=0.03, piping="#F08A24", piping_r=0.022),
+                    dict(kind="frogging", color="#F08A24", z=(-0.86, -0.98, -1.10), w=0.22, t=0.026),
+                    dict(kind="strap", id="strap", color="#2E2E34", **{"from": (-0.40, -0.72), "to": (0.45, -1.6)},
+                         w=0.075)]),
+                headgear=dict(CHARS["cmd_irma"]["headgear"], id="goggles_e2", rim_color="#E0AD45", style="rubber",
+                              lens_color="#F0B060", metallic=0.5)),
+        3: dict(costume=dict(base=dict(color=_E("#3A3C46", 3), rough=0.5, sheen=0.1), layers=[
+                    dict(kind="collar", color="#5A4A3A", z=-0.66, h=0.20, out=-0.004, flare=0.12, gap=0.10, thick=0.04),
+                    dict(kind="piping", color="#F08A24", r=0.021,
+                         path=[(0.07, -0.70), (0.09, -0.92), (0.10, -1.2), (0.10, -1.75)]),
+                    dict(kind="strap", id="strap", color="#2E2E34", **{"from": (-0.40, -0.72), "to": (0.45, -1.6)},
+                         w=0.075)]),
+                headgear=dict(kind="shell", id="tank_headset", color="#4A3E30", mat="leather", thick=0.05, roll=0.03,
+                              edge=[(0, 50), (40, 44), (80, 26), (100, 6), (140, -2), (180, 2)], clear=0.02,
+                              ribs=[-40, 0, 40],
+                              cups=dict(r=0.11, d=0.06, color="#3A3226", mat="leather"),
+                              extra=[dict(CHARS["cmd_irma"]["headgear"], el=46)])),
+        4: dict(costume=dict(base=dict(color=_UNDER, rough=0.7, sheen=0.2), layers=[
+                    _plate(_E("#3A3C46", 4)),
+                    dict(kind="collar", color=_E("#3A3C46", 4), z=-0.66, h=0.16, out=0.03, flare=0.06, gap=0.10),
+                    dict(kind="strip", id="glow1", color="#F08A24", emit=1.2, w=0.045, detail="glow", min_px=100,
+                         path=[(0.08, -0.74), (0.10, -1.0), (0.11, -1.3), (0.12, -1.7)]),
+                    dict(kind="strip", id="glow2", color="#F08A24", emit=1.2, w=0.045, detail="glow2", min_px=60,
+                         path=[(-0.56, -0.78), (-0.50, -0.90), (-0.40, -0.98)]),
+                    dict(kind="strap", id="strap", color="#2E2E34", **{"from": (-0.40, -0.72), "to": (0.45, -1.6)},
+                         w=0.075)]),
+                headgear=dict(kind="frame", id="helmet_frame", color=_E("#3A3C46", 4), mat="painted", el=32, w=0.07,
+                              ring=True,
+                              extra=[dict(kind="visor", el=56, span=55, h=0.07, dh=5, glow=1.2, tint="#F08A24",
+                                          frame="#2E2E34", off=0.06, detail="visor", min_px=120)])),
+    },
+    # ---------------------------------------------------------------- Hawk
+    "cmd_hawk": {
+        # §7.6 E2 "небесно-голубой мундир": the sky is Hawk's accent; §7.7's hue lock on the main colour (the leather)
+        # cannot hold for this era by §7.6's own design (reported)
+        2: dict(costume=dict(base=dict(color="#6FA8DC", rough=0.8, sheen=0.35), layers=[
+                    dict(kind="collar", color="#5A8CC0", z=-0.64, h=0.08, out=0.004, flare=0.02, gap=0.06),
+                    dict(kind="buttons", id="btn", at=[(-0.16, -0.98), (0.16, -0.98), (-0.15, -1.14), (0.15, -1.14)],
+                         r=0.03, color="#E8B23A"),
+                    dict(kind="epaulettes", color="#E8B23A", len=0.22, w=0.15, x=0.44, fringe=9, fringe_len=0.10)]),
+                headgear=dict(CHARS["cmd_hawk"]["headgear"], id="flight_helmet_leather", color="#4A3020",
+                              fur_roll=False)),
+        3: dict(costume=dict(base=dict(color=_E("#5A3A24", 3), rough=0.5, sheen=0.1), layers=[
+                    CHARS["cmd_hawk"]["costume"]["layers"][0],
+                    dict(kind="strap", id="harness", color="#3A2A1E", w=0.07,
+                         **{"from": (-0.36, -0.72), "to": (-0.20, -1.6)}),
+                    dict(kind="medal_bar", at=(0.26, -1.06), colors=["#6FA8DC", "#E8B23A"], detail="medals",
+                         min_px=40)]),
+                headgear=dict(CHARS["cmd_hawk"]["headgear"], id="flight_helmet", color="#6A4428")),
+        4: dict(costume=dict(base=dict(color="#DCE6F0", rough=0.6, sheen=0.2), layers=[
+                    dict(kind="collar", color="#C8D6E4", z=-0.64, h=0.09, out=0.004, flare=0.02, gap=0.06),
+                    dict(kind="strap", id="harness1", color="#3A4150", w=0.08,
+                         **{"from": (-0.36, -0.72), "to": (-0.18, -1.6)}),
+                    dict(kind="strap", id="harness2", color="#3A4150", w=0.08,
+                         **{"from": (0.36, -0.72), "to": (0.18, -1.6)}),
+                    dict(kind="belt", z=-1.30, w=0.10, color="#3A4150", buckle="#B9C7D6", over=0.006)]),
+                headgear=dict(kind="shell", id="hard_helmet", color="#E8EEF4", mat="painted",
+                              edge=[(0, 47), (35, 42), (60, 28), (78, 6), (92, -16), (120, -24), (180, -26)],
+                              thick=0.06, roll=0.03, clear=0.03, cut_hair=True,
+                              cups=dict(r=0.12, d=0.07, color="#6FA8DC", mat="painted"),
+                              extra=[dict(kind="visor", el=56, span=60, h=0.09, dh=8, tint="#BFE0FF", frame="#6FA8DC",
+                                          off=0.03)]),
+                **{"props~": {"badge_relief": dict(glow_rim="#9FD0FF", glow=1.2)}}),
+    },
+    # ---------------------------------------------------------------- Vance (no hat in any era: the bun is her hat)
+    "cmd_vance": {
+        2: dict(costume=dict(base=dict(color=_E("#3A2262", 2), rough=0.8, sheen=0.4), layers=[
+                    dict(kind="collar", color="#40266A", z=-0.64, h=0.07, out=0.004, flare=0.012, gap=0.08),
+                    dict(kind="lapels", color="#5E3A9E", shape=[(0.08, -0.66), (0.24, -0.70), (0.33, -0.78),
+                                                                (0.28, -0.84), (0.20, -0.98), (0.04, -1.14)]),
+                    dict(kind="jabot", color="#F4F2F6", top=-0.66, tiers=3, r=0.12),
+                    dict(kind="epaulettes", color="#C8CCD4", len=0.20, w=0.14, x=0.42, fringe=8, fringe_len=0.09),
+                    dict(kind="aiguillette", color="#C8CCD4", n=3, r=0.022, **{"from": (0.42, -0.72), "to": (0.12, -0.96)},
+                         detail="aiguillette", min_px=800)]),
+                **{"props~": {"queen": dict(mat="metal", color="#C8CCD4")}}),
+        3: dict(costume=dict(base=dict(color=_E("#3A2262", 3), rough=0.85, sheen=0.3), layers=[
+                    dict(kind="collar", color=_E("#3A2262", 3), z=-0.64, h=0.09, out=0.004, flare=0.02, gap=0.06),
+                    dict(kind="medal_bar", at=(-0.10, -0.70), colors=["#8E5BD0"], w=0.05, h=0.03, detail="tabs",
+                         min_px=20),
+                    dict(kind="medal_bar", at=(0.10, -0.70), colors=["#8E5BD0"], w=0.05, h=0.03, detail="tabs2",
+                         min_px=20),
+                    dict(kind="jabot", color="#F4F2F6", top=-0.68, tiers=2, r=0.10),
+                    dict(kind="aiguillette", color="#C8CCD4", n=3, r=0.022, **{"from": (0.42, -0.72), "to": (0.12, -0.96)},
+                         detail="aiguillette", min_px=800)]),
+                # the brooch a little lower on the smaller jabot (at -0.70 it sat on the jabot top, facing up, and the queen
+                # chain left its frame)
+                **{"props~": {"queen": dict(mat="porcelain"), "brooch": dict(at=(0.0, -0.72))}}),
+        4: dict(costume=dict(base=dict(color=_UNDER, rough=0.7, sheen=0.2), layers=[
+                    _plate(_E("#3A2262", 4)),
+                    dict(kind="piping", color="#C8CCD4", r=0.018, path=_FRONT),
+                    dict(kind="collar", color=_E("#3A2262", 4), z=-0.66, h=0.20, out=0.03, flare=0.05, gap=0.06,
+                         piping="#C8CCD4", piping_r=0.014),
+                    dict(kind="aiguillette", color="#C8CCD4", n=3, r=0.022, **{"from": (0.42, -0.72), "to": (0.12, -0.96)},
+                         detail="aiguillette", min_px=800)]),
+                headgear=dict(kind="earpiece", id="earpiece", color="#C8CCD4"),
+                **{"props~": {"queen": dict(mat="holo", color="#B48CFF", emit=1.0), "brooch": dict(at=(0.0, -0.72))}}),
+    },
+    # ---------------------------------------------------------------- Rai
+    "cmd_rai": {
+        2: dict(costume=dict(base=dict(color="#EEF1F6", rough=0.85, sheen=0.3), layers=[
+                    CHARS["cmd_rai"]["costume"]["layers"][0],
+                    dict(kind="epaulettes", color="#C8CCD4", len=0.20, w=0.14, x=0.46, fringe=8, fringe_len=0.09),
+                    CHARS["cmd_rai"]["costume"]["layers"][2],
+                    CHARS["cmd_rai"]["costume"]["layers"][3]]),
+                **{"props~": {"banner": dict(finial="#E8C870")}}),
+        3: dict(costume=dict(base=dict(color="#E6EAF0", rough=0.9, sheen=0.25), layers=[
+                    CHARS["cmd_rai"]["costume"]["layers"][0],
+                    dict(kind="epaulettes", color="#C8CCD4", len=0.18, w=0.09, x=0.46, board=True, stripe="#1E4FA8"),
+                    CHARS["cmd_rai"]["costume"]["layers"][2],
+                    CHARS["cmd_rai"]["costume"]["layers"][3]]),
+                **{"props~": {"banner": dict(color="#9AA4B0", staff_metal=0.5, staff_rough=0.3)}}),
+        4: dict(costume=dict(base=dict(color=_UNDER, rough=0.7, sheen=0.2), layers=[
+                    _plate("#E8ECF2", metallic=0.35),
+                    dict(kind="strip", id="seam1", color="#3A8DFF", emit=1.4, w=0.042, detail="glow", min_px=80,
+                         path=[(-0.40, -0.80), (-0.36, -1.0), (-0.34, -1.3)]),
+                    CHARS["cmd_rai"]["costume"]["layers"][0],
+                    dict(kind="pauldrons", color="#C8CCD4", stripe="#3A8DFF", stripe_emit=1.2, n=1, spread=82,
+                         bands=[(92, 30)], detail="pauldrons", min_px=2000),
+                    CHARS["cmd_rai"]["costume"]["layers"][2],
+                    CHARS["cmd_rai"]["costume"]["layers"][3]]),
+                headgear=dict(CHARS["cmd_rai"]["headgear"], emit=2.0),
+                **{"props~": {"banner": dict(light=0.9, color="#C8CCD4", staff_metal=0.5, cloth="#4A8AFF",
+                                             alpha=0.7)}}),
+    },
+    # ---------------------------------------------------------------- the ruler (§7.10)
+    "ruler": {
+        2: dict(costume=dict(base=dict(color=_E("#2E5BD8", 2), rough=0.85, sheen=0.35), layers=[
+                    dict(kind="collar", color=_E("#2E5BD8", 2), z=-0.64, h=0.08, out=0.004, flare=0.016,
+                         piping="#E8B23A", piping_r=0.016),
+                    dict(kind="strap", id="sash", color="#F4F1EA", w=0.10, **{"from": (-0.44, -0.70), "to": (0.50, -1.6)}),
+                    dict(kind="buttons", id="btn", at=[(-0.30, -0.90), (-0.31, -1.04), (-0.31, -1.18)], r=0.032,
+                         color="#E8B23A"),
+                    dict(kind="epaulettes", color="#E8B23A", len=0.22, w=0.15, x=0.46, fringe=9, fringe_len=0.10)]),
+                **{"props~": {"chain": None}}),
+        3: dict(costume=dict(base=dict(color=_E("#2E5BD8", 3), rough=0.9, sheen=0.25), layers=[
+                    dict(kind="collar", color="#E8B23A", z=-0.64, h=0.08, out=0.004, flare=0.02, metal=True),
+                    dict(kind="buttons", id="btn", at=[(-0.30, -0.92), (-0.31, -1.08), (-0.31, -1.24)], r=0.032,
+                         color="#E8B23A"),
+                    dict(kind="epaulettes", color="#E8B23A", len=0.18, w=0.09, x=0.46, board=True, stripe="#2E5BD8"),
+                    dict(kind="medal_bar", at=(0.30, -1.00), colors=["#E8B23A"], detail="medals", min_px=60,
+                         medals=[dict(kind="star", size=0.11, color="#E8B23A", ribbon="#2E5BD8")])]),
+                **{"props~": {"chain": None}}),
+        4: dict(costume=dict(base=dict(color=_UNDER, rough=0.7, sheen=0.2), layers=[
+                    _plate(_E("#2E5BD8", 4)),
+                    dict(kind="piping", color="#E8B23A", r=0.02, path=_FRONT),
+                    dict(kind="pauldrons", color="#F2F4F8", painted=True, stripe="#E8B23A", n=1, spread=84,
+                         bands=[(92, 30)], detail="pauldrons", min_px=2000),
+                    dict(kind="strip", id="raivite", color="#3A8DFF", emit=1.0, w=0.045, detail="glow", min_px=80,
+                         path=[(-0.62, -1.24), (-0.3, -1.27), (0.0, -1.28), (0.3, -1.27), (0.62, -1.24)])]),
+                headgear=dict(CHARS["ruler"]["headgear"], emit=1.6),
+                **{"props~": {"chain": None}}),
+    },
+})

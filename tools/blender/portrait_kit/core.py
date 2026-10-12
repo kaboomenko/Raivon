@@ -314,8 +314,7 @@ def camo_mat(ctx, name, base, spots, scale=5.0, z0=-1.9, z1=0.6, rough=0.85, she
         nz = nt.nodes.new("ShaderNodeTexNoise")
         nz.inputs["Scale"].default_value = scale * (1.0 + 0.37 * i)
         nz.inputs["Detail"].default_value = 1.0
-        nz.inputs["W"].default_value = 3.1 * i if "W" in nz.inputs else 0.0
-        try:
+        try:            # a different 4D slice per colour, so the blotches do not stack
             nz.noise_dimensions = "4D"
             nz.inputs["W"].default_value = 1.7 + 3.1 * i
         except (AttributeError, TypeError, KeyError):

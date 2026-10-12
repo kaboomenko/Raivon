@@ -1157,7 +1157,7 @@ def _open_mouth(ctx, head, lip_m, low_t):
             fg.location = (fx_, yb_ + 0.012, zb_ + 0.03)
             core.bevel(fg, 0.004, 2)
             core.finish(fg, tmat)
-            ctx.add(fg, "teeth", teeth, kind="embed", head=True)
+            ctx.add(fg, "teeth", head, kind="embed", head=True)      # rooted in the gum under the lip
     if mp_.get("gold_tooth"):
         # a gold tooth glinting in the smile (Mirosya "Златоуст", §7.8): one tooth of the upper row in gold
         gx = cx + mp_["gold_tooth"] * tw

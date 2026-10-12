@@ -352,6 +352,17 @@ def landmarks_json(ctx, path, png_path, ids_png, sig_png, size, floating, rows, 
                 wink=ctx.L.get("wink"), lids=[e["open"] for e in sorted(ctx.objs["eyes"], key=lambda e: e["side"])],
                 skin_albedo=skin_albedo(ctx),
                 signature=ctx.ch.get("signature", {}).get("name"), floating=floating, contacts=rows,
+                pose=dict(ctx.ch.get("pose", {}), **{"mood_" + k: v for k, v in ctx.ch.get("pose_" + ctx.mood, {}).items()}),
+                headgear=(ctx.ch.get("headgear") or {}).get("id", (ctx.ch.get("headgear") or {}).get("kind")),
+                modules=dict(hair=(ctx.ch.get("hair") or {}).get("style"), beard=(ctx.ch.get("beard") or {}).get("style"),
+                             headgear=(ctx.ch.get("headgear") or {}).get("kind"),
+                             props=[p_["kind"] for p_ in ctx.ch.get("props", [])],
+                             glasses=[p_.get("shape", "rect") for p_ in ctx.ch.get("props", []) if p_["kind"] == "glasses"]),
+                pupils=[e["obj"].data.materials[0]["eye_rp"] / max(1e-6, e["obj"].data.materials[0]["eye_ri"])
+                        if e["obj"].data.materials and "eye_rp" in e["obj"].data.materials[0] else None
+                        for e in sorted(ctx.objs["eyes"], key=lambda e: e["side"])],
+                gaze=[list(e.get("gaze", (0.0, 0.0))) + [e.get("x0", 0.0), e.get("xc0", 1.0)]
+                      for e in sorted(ctx.objs["eyes"], key=lambda e: e["side"])],
                 details=ctx.details, detail_groups=getattr(ctx, "detail_groups", {}), frame=ctx.frame, stats=stats)
     if getattr(ctx, "lens_paths", None) and ids_png:
         r = lens_ratio(ctx.lens_paths, ids_png)
@@ -523,5 +534,83 @@ def build_regression(log=print):
                 log("FAIL %s — %s: %s" % (label, type(ex).__name__, ex))
             finally:
                 chars.CHARS[cid] = saved
+    # P3: every era look (calm) and every leader mood the files use, plus the chars.py lint (§7.7, §7.8)
+    for cid in sorted(chars.KIT_IDS):
+        runs = [("calm", e) for e in sorted(chars.KIT_ERAS.get(cid, {1})) if e != 1]
+        if cid in chars.LEADER_IDS:
+            runs += [(m, 1) for m in ("angry", "cunning", "tired")]
+        for mood, era in runs:
+            label = "%s %s e%d" % (cid, mood, era)
+            try:
+                ctx = build(cid, mood, era, log=lambda *a: None)
+                log("ok   %s%s" % (label, "".join("\n      note: " + n for n in ctx.notes)))
+            except Exception as ex:  # noqa: BLE001
+                ok = False
+                log("FAIL %s — %s: %s" % (label, type(ex).__name__, ex))
+    try:
+        chars.lint()                      # raises on a duplicate headgear, a locked module, a face patch
+        log("ok   chars.py lint")
+    except ValueError as ex:
+        ok = False
+        log("FAIL %s" % ex)
     log("REGRESSION %s" % ("PASS" if ok else "FAIL"))
     return ok
+
+
+# ------------------------------------------------------------------ shipped-size sidecars (leaders, the ruler)
+PX_KEYS = ("eye_y", "chin_y", "crown_y", "skyline_y", "h_px")
+PX_LISTS = ("head_box", "sig_box", "iris", "eye_open_px", "sclera_full_px", "eye_almond", "brows", "mouth",
+            "cheek_near")
+
+
+def _scale(v, k):
+    if v is None:
+        return None
+    if isinstance(v, (list, tuple)):
+        return [_scale(x, k) for x in v]
+    if isinstance(v, (int, float)):
+        return round(v * k, 2)
+    return v
+
+
+def scale_sidecars(src_dir, dst_dir, name, size):
+    """§7.12: the leaders and the ruler ship at 256x294, downscaled from the 512 master. Their sidecars follow: the
+    part-ID pass and the signature mask downscaled (nearest / area), the landmark JSON's picture coordinates scaled,
+    the detail thresholds (px areas) by k^2 — so tools/qa_portraits read the shipped folder like any other."""
+    from PIL import Image
+    os.makedirs(os.path.join(dst_dir, "ids"), exist_ok=True)
+    os.makedirs(os.path.join(dst_dir, "meta"), exist_ok=True)
+    mp = os.path.join(src_dir, "meta", name + ".json")
+    if not os.path.exists(mp):
+        return False
+    with open(mp) as f:
+        m = json.load(f)
+    k = size[0] / float(m["size"][0])
+    for key in PX_KEYS:
+        if m.get(key) is not None:
+            m[key] = round(m[key] * k, 2)
+    for key in PX_LISTS:
+        if m.get(key) is not None:
+            m[key] = _scale(m[key], k)
+    m["details"] = {d: int(round(v * k * k)) for d, v in (m.get("details") or {}).items()}
+    m["master_size"], m["size"] = m["size"], list(size)
+    with open(os.path.join(dst_dir, "meta", name + ".json"), "w") as f:
+        json.dump(m, f, indent=1)
+    ip = os.path.join(src_dir, "ids", name + ".png")
+    if os.path.exists(ip):
+        Image.open(ip).convert("RGBA").resize(size, Image.NEAREST).save(os.path.join(dst_dir, "ids", name + ".png"))
+    for ext in (".json",):
+        sp = os.path.join(src_dir, "ids", name + ext)
+        if os.path.exists(sp):
+            with open(sp) as f:
+                data = f.read()
+            with open(os.path.join(dst_dir, "ids", name + ext), "w") as f:
+                f.write(data)
+    sg = os.path.join(src_dir, "ids", name + "_sig.png")
+    if os.path.exists(sg):
+        a = Image.open(sg).convert("RGBA")
+        al = a.getchannel("A").resize(size, Image.BOX).point(lambda v: 255 if v > 127 else 0)
+        out = Image.new("RGBA", size, (255, 255, 255, 0))
+        out.putalpha(al)
+        out.save(os.path.join(dst_dir, "ids", name + "_sig.png"))
+    return True

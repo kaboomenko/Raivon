@@ -6,19 +6,22 @@ draws the rarity plate and frame). Run: python3 tools/blender/portrait_assets.py
 - the ruler: OUTDIR ruler --eras=1,2,3,4
 Add --force to regenerate into an existing folder (game/assets/ui/portraits included): without it every file that
 already exists is skipped, so these three commands do nothing there.
-Two builders. The ids (and eras) listed in portrait_kit/chars.py (KIT_IDS, KIT_ERAS — since P2 all twelve
-commanders in era 1) go through the portrait kit v2 (tools/blender/portrait_kit/, §7.5): 512×588 by default (§7.12),
-Cycles 64 samples, AgX Punchy. Every other id and era (the commanders' eras 2–4, the AI leaders, the ruler) keeps the
-old primitive builder below (256×294, 40 samples) until P3 moves it to the kit. The hand poses of §7.5 (Vance, Seir,
-Irma, Vega) follow chars.py ("hands"); the environment's KIT_HANDS=0/1 forces the hand-free fallbacks / the hands for
-the side-by-side review (§7.15 q3).
+Since P3 every id of the 150 goes through the portrait kit v2 (tools/blender/portrait_kit/, §7.5; portrait_kit/chars.py
+KIT_IDS, KIT_ERAS: the twelve commanders and the ruler in eras 1–4, the ten AI leaders in era 1 with their five
+moods), Cycles 64 samples, AgX Punchy: commanders 512×588; the leaders and the ruler rendered at the same 512 master and
+shipped as 256×294 by the premultiplied Lanczos downscale (§7.12; with --sidecars the masters and their sidecars stay
+in SIDECARS/master/, the shipped-size sidecars are scaled into SIDECARS/). The old primitive builder below is reached
+only by an id or era the kit does not list (a leader with --eras=2..4); P4 removes it. The hand poses of §7.5 (Vance,
+Seir, Irma, Vega) follow chars.py ("hands"); the environment's KIT_HANDS=0/1 forces the hand-free fallbacks / the hands
+for the side-by-side review (§7.15 q3).
 Flags: --size=N (width; height = int(N × 1.15), the 0.8707 aspect), --samples=N, --frame=bust|face (kit: face = a
 square face crop, not shipped), --sidecars=DIR (kit: DIR/ids/NAME.png part-ID pass + NAME.json colours + NAME_sig.png
 signature mask, DIR/meta/NAME.json projected landmarks and the contact report; read by tools/qa_portraits), --contacts
 (kit: print the P-A7 contact report), --stats (kit: triangles, build and render seconds), --force (re-render files
 that exist; without it finished files are skipped, so an interrupted batch resumes). `python3
 tools/blender/portrait_assets.py --selftest` (no OUTDIR) builds every kit character with the open mouths and lids later
-steps need, renders nothing, and exits 1 when a build fails (portrait_kit.qa.build_regression).
+steps need, every era look (E2–E4) and every leader mood, runs the chars.py lint, renders nothing, and exits 1 when a
+build or the lint fails (portrait_kit.qa.build_regression).
 """
 import math
 import os
@@ -441,16 +444,38 @@ def main():
                     print("skipped", name, "(exists; --force re-renders)")
                     continue
                 if portrait_kit.supports(cid, era):
+                    # commanders render at 512x588; the leaders and the ruler at the same 512 master, shipped as
+                    # 256x294 by the premultiplied Lanczos downscale (§7.12); --size renders straight at that width
+                    ship = portrait_kit.ship_size(cid)
+                    downscale = size_opt is None and frame == "bust" and ship[0] < 512
                     w = size_opt or 512
+                    rpath, rside = path, sidecars
+                    tmp = None
+                    if downscale:
+                        if sidecars:
+                            rside = os.path.join(sidecars, "master")
+                            os.makedirs(rside, exist_ok=True)
+                            rpath = os.path.join(rside, name + ".png")
+                        else:
+                            import tempfile
+                            tmp = tempfile.mkdtemp(prefix="portrait_master_")
+                            rpath = os.path.join(tmp, name + ".png")
                     try:
-                        r = portrait_kit.render_id(cid, path, mood or "calm", era,
+                        r = portrait_kit.render_id(cid, rpath, mood or "calm", era,
                                                    (w, w) if frame == "face" else (w, int(w * 1.15)),
-                                                   samples_opt or portrait_kit.style.RENDER["samples"], frame, sidecars,
+                                                   samples_opt or portrait_kit.style.RENDER["samples"], frame, rside,
                                                    "contacts" in opts, "stats" in opts)
                     except RuntimeError as e:  # the framing solver's "does not fit": report, go on, exit 1 at the end
                         print("FAILED", name, "-", e)
                         failed.append(name)
                         continue
+                    if downscale:
+                        portrait_kit.core.downscale(rpath, ship[0], path)
+                        if sidecars:
+                            portrait_kit.qa.scale_sidecars(rside, sidecars, name, ship)
+                        if tmp:
+                            import shutil
+                            shutil.rmtree(tmp, ignore_errors=True)
                     print("rendered", name, "(kit v2) build %.1fs render %.1fs" % (r["build_s"], r["render_s"]))
                     for nt in r.get("notes") or []:
                         print("NOTE", name, "-", nt)

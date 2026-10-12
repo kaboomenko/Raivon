@@ -98,6 +98,24 @@ def vest(ctx, ly, name):
     return o
 
 
+
+def _nearest_host(ctx, pts):
+    """The costume layer (torso or one of ctx.outer) nearest to some points: the contact host of a part that stands
+    on whatever is under it."""
+    best, bd = ctx.objs["torso"], 1e9
+    core.update()
+    for ob in [ctx.objs["torso"]] + list(ctx.outer):
+        try:
+            tree = core.bvh_of(ob)
+        except Exception:
+            continue
+        inv = ob.matrix_world.inverted()
+        for p in pts:
+            loc, _, _, dist = tree.find_nearest(inv @ p)
+            if loc is not None and dist < bd:
+                bd, best = dist, ob
+    return best
+
 def collar(ctx, ly, name):
     """A stand collar around the neck base: a short tube with real thickness and a rounded top edge (§7.3: no flat
     triangle). Height in H; 'gap' leaves a front gap (a V). By default each ring follows the torso at its height (low
@@ -125,10 +143,12 @@ def collar(ctx, ly, name):
     if gap:
         kill = [f for f in bm.faces if f.calc_center_median().y < 0 and abs(f.calc_center_median().x) < gap]
         bmesh.ops.delete(bm, geom=kill, context="FACES")
+    base_ring = [v.co.copy() for v in rings[0] if v.is_valid]
     o = core.mesh_obj(name, bm)
     core.solidify(o, max(S["collar"] * H, ly.get("thick", 0.03)), offset=1.0)
     core.finish(o, _mat(ctx, ly, name), sub=2)
-    ctx.add(o, _group(ly), ctx.objs["torso"], kind="surface")
+    # on the layer it stands on: an E4 collar on the breastplate, not the torso 0.015 H under it (the contact check)
+    ctx.add(o, _group(ly), _nearest_host(ctx, base_ring[::4]) if out >= 0.02 else ctx.objs["torso"], kind="surface")
     ctx.outer.append(o)
     if ly.get("piping"):
         # a coloured piping along the collar's top edge (Irma's orange, §7.6 "оранжевый кант"), from end to end of
@@ -167,7 +187,9 @@ def belt(ctx, ly, name):
     core.solidify(o, ly.get("thick", 0.035), offset=1.0)
     m = core.principled(ctx, name, ly["color"], rough=0.5, sheen=0.15, coat=0.1)
     core.finish(o, m, sub=2)
-    ctx.add(o, "costume:belt", ctx.outer[-1], kind="surface")
+    # on the shell it wraps (a vest / a plate) or the torso — not a strap or pocket added just before it
+    under = [ob for ob in ctx.outer if ob.name.startswith(("vest", "cloak", "bib"))]
+    ctx.add(o, "costume:belt", under[-1] if under else ctx.objs["torso"], kind="surface")
     ctx.outer.append(o)
     ctx.objs["belt"] = o
     core.update()
@@ -216,7 +238,7 @@ def bib(ctx, ly, name):
             bm.faces.new((grid[j][i], grid[j][i + 1], grid[j + 1][i + 1], grid[j + 1][i]))
     o = core.mesh_obj(name, bm)
     tgt = ctx.outer[-1] if ly.get("over_last") else ctx.objs["torso"]
-    core.shrinkwrap(o, tgt, S["layer_gap"] * H, method="PROJECT", project_y=True)
+    core.shrinkwrap(o, tgt, ly.get("gap", S["layer_gap"]) * H, method="PROJECT", project_y=True)
     core.solidify(o, max(S["layer_min"] * H, 0.026), offset=1.0)
     if ly.get("leather"):
         m = core.grad_mat(ctx, name, core.hex_scale(ly["color"], 1.06), core.hex_scale(ly["color"], 0.9), bottom, top,
@@ -262,15 +284,17 @@ def strap(ctx, ly, name):
     n = 28
     pts, nors = [], []
     over_shoulder = ly.get("over_shoulder", True)
+    hosts = []
     for i in range(n):
         t = i / (n - 1)
         x = x0 + (x1 - x0) * t
         z = z0 + (z1 - z0) * t
-        h, nn, _ = core.ray_any(ctx.outer, (x, -2.0, z), (0, 1, 0))
+        h, nn, ob = core.ray_any(ctx.outer, (x, -2.0, z), (0, 1, 0))
         if h is None:
             continue
         pts.append(h + nn * (S["strap_off"] * H + 0.004))
         nors.append(nn)
+        hosts.append(ob)
     if over_shoulder:  # continue over the shoulder top to the back (the end goes out of sight)
         top = pts[0]
         for k2, dy in enumerate((0.12, 0.26, 0.40)):
@@ -283,7 +307,9 @@ def strap(ctx, ly, name):
     core.bevel(o, 0.006, 2)
     m = core.principled(ctx, name, ly["color"], rough=0.5, sheen=0.15, coat=0.1)
     core.finish(o, m, sub=1)
-    ctx.add(o, _group(ly), ctx.outer[-1], kind="surface")
+    # on the surface most of it was cast onto (the layer added last is not always under it: a pocket, another strap)
+    host = max(set(hosts), key=hosts.count) if hosts else ctx.outer[-1]
+    ctx.add(o, _group(ly), host, kind="surface")
     ctx.outer.append(o)
     ctx.objs[ly.get("id", name)] = o
     ctx.L[ly.get("id", name)] = pts
@@ -828,6 +854,14 @@ def pocket(ctx, ly, name):
     k = ctx.shoulder_k
     x, z = ly["at"]
     w, hgt = ly.get("w", 0.12) * k, ly.get("h", 0.14)
+    # the host can be narrower than the pocket (Olm's E3/E4 aprons): a corner the projection misses stays at y -1.5
+    # and floats as a board toward the camera, so the panel shrinks toward its centre until every corner lands
+    for _ in range(8):
+        if all(core.ray_any([tgt], (x * k + sx * w * 1.04, -2.0, z + sz * hgt / 2 * 1.04), (0, 1, 0))[0] is not None
+               for sx in (-1, 1) for sz in (-1, 1)):
+            break
+        w *= 0.9
+        hgt *= 0.95
     bm = bmesh.new()
     vs = []
     for j in range(5):
@@ -904,6 +938,7 @@ def epaulettes(ctx, ly, name):
             st.rotation_mode = "QUATERNION"
             st.rotation_quaternion = q
             ctx.add(st, grp, board, kind="embed")
+            pad = None
         else:
             # the crescent at the outer end: a thicker round pad
             pad = core.cylinder(name + "_pad%+d" % s, c + ax * L * 0.32 + nn * 0.01, W * 0.62, 0.05, m, nrm=nn,
@@ -917,7 +952,7 @@ def epaulettes(ctx, ly, name):
             cord = core.curve(name + "_fringe%+d_%d" % (s, i), [p, p + Vector((0, 0, -ln * 0.5)) + ax * 0.01,
                                                                 p + Vector((0, 0, -ln)) + ax * 0.012],
                               [1.0, 0.95, 0.9], ly.get("fringe_r", 0.011), m, order=3)
-            ctx.add(cord, grp, board, kind="embed")
+            ctx.add(cord, grp, pad or board, kind="embed")    # hangs from the crescent pad's rim
         btn = core.uvsphere(name + "_btn%+d" % s, c - ax * L * 0.36 + nn * 0.02, (0.022, 0.022, 0.016), m, 12, 6)
         btn.rotation_mode = "QUATERNION"
         btn.rotation_quaternion = q
@@ -965,17 +1000,18 @@ def aiguillette(ctx, ly, name):
     r = ly.get("r", 0.022)
     for i in range(ly.get("n", 3)):
         sag = 0.06 + 0.07 * i
-        pts = []
+        pts, hosts = [], []
         for j in range(15):
             t = j / 14
             p = a0.lerp(a1, t) + Vector((0.0, 0.0, -sag * 4 * t * (1 - t)))
             h, nn, ob = core.ray_any(ctx.outer, (p.x, -2.0, p.z), (0, 1, 0))
             if h is not None:
                 pts.append(h + nn * (r + 0.004 + 0.003 * i))
+                hosts.append(ob)
         if len(pts) < 3:
             continue
         c = core.curve("%s_cord%d" % (name, i), pts, [1.0] * len(pts), r, m)
-        ctx.add(c, grp, ctx.objs["torso"], kind="surface")
+        ctx.add(c, grp, max(set(hosts), key=hosts.count), kind="surface")     # on the plate in E4, not the torso
         if i == ly.get("n", 3) - 1:
             tip = core.cylinder("%s_aglet" % name, pts[-1] + Vector((0, 0, -0.04)), r * 1.6, 0.08, m, nrm=(0, 0, 1),
                                 verts=12, bev=0.006)
@@ -1008,13 +1044,18 @@ def medal_bar(ctx, ly, name):
         if h is None:
             continue
         rib = core.principled(ctx, "%s_rib%d" % (name, j), md.get("ribbon", cols[0]), rough=0.5, sheen=0.3)
-        rb = core.box("%s_rib%d" % (name, j), h + nn * 0.014 + Vector((0, 0, 0.04)), (0.045, 0.06, 0.016), rib, bev=0.004)
+        # the ribbon lies on the costume where it is (cast at its own height: offset up from the medal's hit it stood
+        # off the chest's curve, the contact check)
+        hr, nr, obr = core.ray_any(ctx.outer, (x, -2.0, zz + 0.04), (0, 1, 0))
+        if hr is None:
+            hr, nr, obr = h + Vector((0, 0, 0.04)), nn, ob
+        rb = core.box("%s_rib%d" % (name, j), hr + nr * 0.010, (0.045, 0.06, 0.016), rib, bev=0.004)
         rb.rotation_mode = "QUATERNION"
-        rb.rotation_quaternion = _frame(nn, Vector((1, 0, 0)))
-        ctx.add(rb, grp, ob, kind="surface")
+        rb.rotation_quaternion = _frame(nr, Vector((1, 0, 0)))
+        ctx.add(rb, grp, obr, kind="surface")
         from . import headgear
         headgear.emblem(ctx, dict(kind=md.get("kind", "star"), size=md.get("size", 0.10), color=md.get("color", "#E8B23A")),
-                        h, nn, ob, grp, name="%s_medal%d" % (name, j))
+                        h, nn, ob, grp, name="%s_medal%d" % (name, j), head=False)
     ctx.details[ly.get("detail", "medals")] = ly.get("min_px", 80)
 
 

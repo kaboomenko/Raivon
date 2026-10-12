@@ -28,7 +28,8 @@ def build_props(ctx):
          "scarf": scarf, "queen": queen, "brooch": brooch, "hairpin": hairpin, "banner": banner,
          "gauntlet": gauntlet, "wolf_head": wolf_head, "fang": fang, "pendant": pendant, "shield": shield,
          "feathers": feathers, "wing": wing, "monocle": monocle, "chain": chain, "feather_pin": feather_pin,
-         "drone": drone, "rangefinder": rangefinder, "cutter": cutter}[pr["kind"]](ctx, pr)
+         "drone": drone, "rangefinder": rangefinder, "cutter": cutter, "binoculars": binoculars,
+         "emblem": emblem_prop}[pr["kind"]](ctx, pr)
         core.update()
 
 
@@ -107,6 +108,21 @@ def chevrons(ctx, pr):
     look = Vector((-0.55, -0.83, 0.0)).normalized()
     side = axis.cross(look).normalized()
     grp = _detail(ctx, pr, "chevrons", 300)
+    if pr.get("style") == "ring":
+        # straight stripes round the sleeve (Seir E3 "золотые нашивки на рукавах")
+        for zc in pr.get("at", (0.80, 0.86))[:pr.get("n", 2)]:
+            c0 = top + (bot - top) * zc
+            pts = []
+            for i in range(9):
+                u = -1 + 2 * i / 8
+                d = (look + side * u * 0.75).normalized()
+                hit, nor = core.ray(arm, c0 + d * 1.0, -d)
+                if hit is not None:
+                    pts.append(hit + nor * 0.012)
+            if len(pts) >= 4:
+                ctx.add(core.curve("chevron", pts, [1.0] * len(pts), pr.get("r", 0.016), m, order=3), grp, arm,
+                        kind="surface")
+        return
     for zc in pr.get("at", (0.13, 0.21))[:pr.get("n", 2)]:
         pts = []
         for i in range(7):
@@ -135,7 +151,8 @@ def badge(ctx, pr):
     disc = core.cylinder("badge", h + nrm * 0.018, d / 2, 0.03, core.principled(ctx, "badge_white", "#F6F4EE", 0.45),
                          nrm=nrm, bev=0.01)
     ctx.add(disc, grp, st, kind="surface")
-    leaf_m = core.principled(ctx, "leaf", pr.get("leaf", "#3E9B5A"), 0.5)
+    leaf_m = core.principled(ctx, "leaf", pr.get("leaf", "#3E9B5A"), 0.5,
+                             emit=pr.get("leaf", "#3E9B5A") if pr.get("glow") else None, es=pr.get("glow", 0.0))
     q = Vector((0, 0, 1)).rotation_difference(nrm)
     tilt = Matrix.Rotation(math.radians(35), 4, "Z").to_quaternion()
     for s in (-1, 1):
@@ -292,14 +309,24 @@ def glasses(ctx, pr):
             hh2, nn = core.ray(head, Vector((side * 3, p.y, p.z)), (-side, 0, 0))
             if hh2 is not None and f > 0:
                 p = hh2 + nn * (t * 0.8 + 0.035)
+                if f >= 0.7 and hair is not head:
+                    # the end tucked into the hair (or kept on the head where the hair does not reach)
+                    hh3, nn3 = core.ray(hair, Vector((side * 3, p.y, p.z)), (-side, 0, 0))
+                    if hh3 is not None and (hh3 - hh2).length < 0.12:
+                        p = hh3 - nn3 * 0.012
+                    else:
+                        p = hh2 + nn * (t * 0.5)
             back.append(p)
         tm = core.curve("glasses_temple_" + e["tag"], back, [1.0] * len(back), t * 0.42, fm, order=3)
-        ctx.add(tm, grp, hair, kind="embed", head=True)       # runs back under the hair by design
+        # runs back under the hair by design; where the hair does not reach (Iveta's glasses slid down, Arman's short
+        # hair) it lies on the head, which is then its host (the contact check)
+        ctx.add(tm, grp, _closest_parent(ctx, tm, [hair, head]) if hair is not head else hair, kind="embed", head=True)
     # the bridge over the nose
     if len(inner) == 2:
         mid = (inner[0] + inner[1]) / 2
         hb, nb = core.ray_front(head, mid.x, mid.z)
-        top = (hb + nb * (t * 0.8 + 0.01)) if hb is not None else mid
+        # (round and half frames: the bridge rests on the nose, 0.8 t + 0.01 left Iveta's 0.010 H off it)
+        top = (hb + nb * ((t * 0.8 + 0.01) if shape == "rect" else (t * 0.5 + 0.004))) if hb is not None else mid
         br = core.curve("glasses_bridge", [inner[0], top, inner[1]], [1, 1, 1], t / 2, fm, order=3)
         ctx.add(br, grp, _closest_parent(ctx, br, [nose, head]), kind="surface", head=True)
     ctx.glasses = True
@@ -379,7 +406,8 @@ def pointer(ctx, pr):
 
 
 # ------------------------------------------------------------------ P2 props
-def _chain(ctx, name, a, b, sag, m, link=0.022, parent=None, grp="metal", wire=0.0045, link_k=0.45, cast=True):
+def _chain(ctx, name, a, b, sag, m, link=0.022, parent=None, grp="metal", wire=0.0045, link_k=0.45, cast=True,
+           even=False):
     """A chain of small alternating links from a to b, sagging by `sag` in the middle; link_k = a link's radius over
     the link spacing (>= 0.55 makes neighbours interlock: the contact check sees no gap)."""
     a, b = Vector(a), Vector(b)
@@ -400,6 +428,22 @@ def _chain(ctx, name, a, b, sag, m, link=0.022, parent=None, grp="metal", wire=0
         for i in range(k0 + 1, n):
             f = (i - k0) / (n - k0)
             pts[i] = pts[k0].lerp(pts[n], f)
+    if even:
+        # even links: a step much longer than the rest (the first one, from the shoulder top down onto the chest)
+        # is split, each new point cast onto the costume, so a long link does not stand off its short neighbour
+        # (the office chains' link1, the contact check)
+        med = sorted((pts[i + 1] - pts[i]).length for i in range(len(pts) - 1))[(len(pts) - 1) // 2]
+        out = [pts[0]]
+        for p1 in pts[1:]:
+            p0 = out[-1]
+            m_ = int((p1 - p0).length / (med * 1.35))
+            for j in range(1, m_ + 1):
+                q = p0.lerp(p1, j / (m_ + 1))
+                h, nn, _ = core.ray_any(ctx.outer, (q.x, -2.0, q.z), (0, 1, 0)) if cast else (None, None, None)
+                out.append(h + nn * (wire + 0.004) if h is not None and h.y < q.y else q)
+            out.append(p1)
+        pts = out
+        n = len(pts) - 1
     for i in range(n):
         p0, p1 = pts[i], pts[i + 1]
         c = (p0 + p1) / 2
@@ -436,7 +480,8 @@ def hourglass(ctx, pr):
                             spec=pr.get("glass_spec", 0.8))
     b = glass.node_tree.nodes["Principled BSDF"]
     b.inputs["Alpha"].default_value = pr.get("glass_alpha", 0.35)
-    sand = core.principled(ctx, "sand", pr.get("sand", "#E8A33A"), rough=0.7)
+    sand = core.principled(ctx, "sand", pr.get("sand", "#E8A33A"), rough=0.7,
+                           emit=pr.get("sand", "#E8A33A") if pr.get("sand_glow") else None, es=pr.get("sand_glow", 0.0))
     grp = _detail(ctx, pr, "hourglass", 500)
     for s_ in (-1, 1):
         pl = core.cylinder("hg_plate%+d" % s_, c + up * s_ * hgt * 0.46, r * 1.05, hgt * 0.08, bronze, nrm=up, bev=0.006)
@@ -494,10 +539,11 @@ def wrench(ctx, pr):
     b = a + d * ln
     b.y = min(b.y, a.y + pr.get("top_dy", 0.0))
     iron = core.principled(ctx, "wrench", pr.get("color", "#9AA4B0"), rough=0.35, metal=0.55)
+    handle = (core.principled(ctx, "wrench_handle", pr["handle"], rough=0.4, coat=0.3) if pr.get("handle") else iron)
     grp = _detail(ctx, pr, "wrench", 1200)
     w, t = pr.get("w", 0.055), pr.get("t", 0.026)
     mid = (a + b) / 2
-    bar = core.box("wrench_bar", mid, (w, t, (b - a).length), iron, bev=0.010, segs=3)
+    bar = core.box("wrench_bar", mid, (w, t, (b - a).length), handle, bev=0.010, segs=3)
     bar.rotation_mode = "QUATERNION"
     bar.rotation_quaternion = core.frame_quat(b - a, nn if h is not None else Vector((0, -1, 0)))
     bar.rotation_quaternion = Vector((0, 0, 1)).rotation_difference(b - a)
@@ -646,7 +692,9 @@ def raven(ctx, pr):
         c = P(-0.26, -0.20, f_ * 0.11)
         el += core.clump([a, (a + c) / 2, c], [face, face, face], 0.045 * s, 0.05 * s, 0.022 * s, n=10, lift=0.0,
                          taper_at=0.7, tip=0.7, stiff=2.6, flat=0.8)
-    mat = core.principled(ctx, "raven", pr.get("color", "#343A52"), rough=0.45, coat=0.25, sheen=0.3)
+    clock = pr.get("variant") == "clockwork"
+    mat = core.principled(ctx, "raven", pr.get("color", "#343A52"), rough=0.25 if clock else 0.45,
+                          coat=0.7 if clock else 0.25, sheen=0.0 if clock else 0.3, metal=0.2 if clock else 0.0)
     nt = mat.node_tree
     lw = nt.nodes.new("ShaderNodeLayerWeight")
     lw.inputs["Blend"].default_value = 0.2
@@ -709,6 +757,183 @@ def raven(ctx, pr):
                              [1.0, 0.9, 0.5], 0.009 * s, leg_m, order=3)
             ctx.add(toe, grp, pobj, kind="surface")
     ctx.L["raven_head"] = hc
+    if pr.get("variant") == "tube":
+        # E2 "ворон с кожаным тубусом для писем на лапе": a leather message tube with a brass cap on the near leg
+        lm = core.principled(ctx, "raven_tube", "#7A5A34", rough=0.5, coat=0.15)
+        bm_ = core.principled(ctx, "raven_tube_cap", "#E0AD45", rough=0.3, metal=0.55)
+        pos = P(0.035, 0.035, -0.045) - cam * 0.012
+        tb = core.cylinder("raven_tube", pos, 0.022 * s, 0.10 * s, lm, nrm=up, verts=16, bev=0.004)
+        ctx.add(tb, grp, body, kind="embed")
+        cp = core.cylinder("raven_tube_cap", pos + up * 0.055 * s, 0.025 * s, 0.02 * s, bm_, nrm=up, verts=16, bev=0.003)
+        ctx.add(cp, grp, tb, kind="embed")
+    if clock:
+        # E3 "заводной ворон (латунь и чёрная эмаль, шестерёнки, линза-глаз)": a brass gear on the near wing, a brass
+        # wind-up key on the back, brass beak
+        brass = core.principled(ctx, "raven_brass", pr.get("brass", "#E0AD45"), rough=0.3, metal=0.55)
+        for sd_, f_, u_, rr in ((-1, -0.02, 0.24, 0.085), (-1, -0.10, 0.16, 0.05)):
+            d = (side * sd_ * 0.9 + cam * 0.4).normalized()
+            hh, nh = core.ray(body, P(f_, u_) + d * 0.6, -d)
+            if hh is None:
+                continue
+            g = core.cylinder("raven_gear%d" % int(rr * 1000), hh + nh * 0.01, rr * s, 0.02, brass, nrm=nh, verts=24,
+                              bev=0.004)
+            ctx.add(g, grp, body, kind="surface")
+            for t_ in range(10):
+                a_ = 2 * math.pi * t_ / 10
+                q_ = Vector((0, 0, 1)).rotation_difference(nh)
+                tooth = core.box("raven_tooth", hh + nh * 0.01 + q_ @ Vector((math.cos(a_), math.sin(a_), 0)) * rr * s * 1.08,
+                                 (0.016 * s, 0.016 * s, 0.02), brass)
+                tooth.rotation_mode = "QUATERNION"
+                tooth.rotation_quaternion = q_ @ Matrix.Rotation(a_, 4, "Z").to_quaternion()
+                ctx.add(tooth, grp, g, kind="embed")
+        key = core.torus("raven_key", P(-0.14, 0.34), 0.04 * s, 0.01 * s, brass, nrm=side, seg=20, rseg=6)
+        ctx.add(key, grp, body, kind="embed")
+        ks = core.cylinder("raven_key_stem", P(-0.10, 0.30), 0.01 * s, 0.07 * s, brass, nrm=(up - face).normalized(),
+                           verts=10)
+        ctx.add(ks, grp, body, kind="embed")
+        bk.data.materials[0] = brass
+
+
+# ------------------------------------------------------------------ the raven-drone (Vik E4)
+def drone(ctx, pr):
+    """Vik's raven-drone (§7.6 E4: "чёрный корпус, клюв-сенсор, 4 винта вместо крыльев, стоит на посадочных ножках на
+    наплечнике, зелёный глаз ≤ 1.6"): a smooth bird-shaped black body and head on the near shoulder, a sensor beak,
+    four arms with rotor rings and props where the wings were, two landing legs with skids on the shoulder plate, a
+    green glowing eye — the raven's silhouette kept (§7.7)."""
+    k = ctx.shoulder_k
+    size = pr.get("size", 0.55) * H
+    s = size / 0.55
+    cam = core.world_dir(ctx, (0.0, -1.0, 0.0))
+    right = core.world_dir(ctx, (1.0, 0.0, 0.0))
+    h, nn, perch = core.ray_any(ctx.outer, (pr.get("x", -0.60) * k, pr.get("y", 0.10), 1.5), (0, 0, -1))
+    if h is None:
+        return
+    face = (cam * math.cos(math.radians(pr.get("turn", -55))) + right * math.sin(math.radians(pr.get("turn", -55)))).normalized()
+    up = Vector((0, 0, 1))
+    roll = math.radians(pr.get("roll", 0.0))
+    up = (up * math.cos(roll) - right * math.sin(roll)).normalized()
+    face = (face - up * face.dot(up)).normalized()
+    side = up.cross(face).normalized()
+    feet = h + up * 0.08 * s
+
+    def P(f, u, sd=0.0):
+        return feet + face * f * s + up * u * s + side * sd * s
+    shell = core.principled(ctx, "drone_shell", pr.get("color", "#2E3038"), rough=0.25, coat=0.7, metal=0.2)
+    dark = core.principled(ctx, "drone_dark", "#4A4E5A", rough=0.35, metal=0.4, coat=0.3)
+    grp = _detail(ctx, pr, "raven", 4000)
+    el = [dict(co=P(0.0, 0.20), half=(0.12 * s, 0.11 * s, 0.17 * s), stiff=2.6,
+               rot=core.frame_quat((up - face * 0.25).normalized(), face)),
+          dict(co=P(0.03, 0.34), half=0.065 * s, stiff=2.6),
+          dict(co=P(0.05, 0.44), half=(0.08 * s, 0.085 * s, 0.08 * s), stiff=2.8),
+          dict(co=P(-0.16, 0.10), half=(0.05 * s, 0.03 * s, 0.10 * s), stiff=2.8, rot=core.frame_quat((face * -1 + up * -0.6).normalized(), up))]
+    body = core.mb_mesh(ctx, "Drone", el, 0.010, shell, smooth_iter=2, name="raven")
+    ctx.add(body, grp, perch, kind="free")
+    ctx.sig_objs.append(body)
+    bm = bmesh.new()
+    bmesh.ops.create_cone(bm, cap_ends=True, segments=16, radius1=0.04 * s, radius2=0.008, depth=0.13 * s)
+    bk = core.mesh_obj("raven_beak", bm)
+    bdir = (face + up * -0.12).normalized()
+    bk.location = P(0.06, 0.44) + bdir * 0.13 * s
+    core.align_z(bk, bdir)
+    core.finish(bk, dark)
+    ctx.add(bk, grp, body, kind="embed")
+    tipm = core.principled(ctx, "drone_tip", pr.get("eye", "#4AE07A"), rough=0.2, emit=pr.get("eye", "#4AE07A"),
+                           es=pr.get("glow", 1.4))
+    sens = core.uvsphere("drone_sensor", P(0.06, 0.44) + bdir * 0.20 * s, (0.012 * s,) * 3, tipm, 10, 6)
+    ctx.add(sens, grp, bk, kind="embed")
+    for sd in (-1, 1):
+        d = (face * 0.55 + side * sd * 0.8 + up * 0.15).normalized()
+        hh, nh = core.ray(body, P(0.05, 0.45) + d * 0.5, -d)
+        if hh is not None:
+            ey = core.uvsphere("drone_eye%+d" % sd, hh + nh * 0.004, (0.026 * s, 0.026 * s, 0.012 * s), tipm, 16, 8)
+            core.align_z(ey, nh)
+            ctx.add(ey, grp, body, kind="embed")
+    # four arms with rotor rings: two forward-up and two back-up, where the wings were
+    rot_m = core.principled(ctx, "drone_rotor", "#8A92A0", rough=0.3, metal=0.5)
+    for j, (f_, u_, sd) in enumerate(((0.10, 0.28, -1), (0.10, 0.28, 1), (-0.14, 0.22, -1), (-0.14, 0.22, 1))):
+        a = P(f_ * 0.4, u_, sd * 0.08)
+        b = P(f_, u_ + 0.10, sd * 0.22)
+        arm = core.curve("drone_arm%d" % j, [a, b], [1.0, 0.8], 0.014 * s, dark, order=2)
+        ctx.add(arm, grp, body, kind="embed")
+        ring = core.torus("drone_ring%d" % j, b + up * 0.012, 0.075 * s, 0.010 * s, shell, nrm=up, seg=28, rseg=8)
+        hub = core.cylinder("drone_hub%d" % j, b, 0.016 * s, 0.03, dark, nrm=up, verts=12)
+        ctx.add(hub, grp, arm, kind="embed")
+        # the guard ring is held by a cross strut from the hub (it was hosted on the arm it never touches)
+        strut = core.curve("drone_strut%d" % j, [b + up * 0.012 - side * 0.075 * s, b + up * 0.012 + side * 0.075 * s],
+                           [1.0, 1.0], 0.009 * s, dark, order=2)
+        ctx.add(strut, grp, hub, kind="embed")
+        ctx.add(ring, grp, strut, kind="embed")
+        for t_ in range(2):
+            pa = core.box("drone_prop%d_%d" % (j, t_), b + up * 0.018, (0.13 * s, 0.022 * s, 0.006), rot_m, bev=0.004)
+            pa.rotation_euler = (0, 0, math.radians(35 + 90 * t_ + 25 * j))
+            ctx.add(pa, grp, hub, kind="embed")
+    # landing legs: two struts down to a skid on the shoulder
+    for sd in (-1, 1):
+        top = P(0.0, 0.10, sd * 0.06)
+        hf, nf, pobj = core.ray_any(ctx.outer, top + up * 0.02, (0, 0, -1))
+        if hf is None:
+            continue
+        leg = core.curve("drone_leg%+d" % sd, [top, hf + nf * 0.016], [1.0, 1.0], 0.011 * s, dark, order=2)
+        ctx.add(leg, grp, body, kind="free")
+        sk = core.capsule("drone_skid%+d" % sd, hf + nf * 0.012 + face * 0.07 * s, hf + nf * 0.012 - face * 0.07 * s,
+                          0.012 * s, 0.012 * s)
+        core.finish(sk, dark)
+        ctx.add(sk, grp, pobj, kind="surface")
+    ctx.L["raven_head"] = P(0.05, 0.45)
+
+
+def rangefinder(ctx, pr):
+    """Seir's E4 digital rangefinder (§7.6: "цифровой дальномер со светящимся кольцом линзы") on the spyglass's
+    diagonal: the spyglass builder with one dark tube, a housing and a glowing lens ring."""
+    pr2 = dict(pr, kind="spyglass", color=pr.get("color", "#5A6270"), segs=[(0.0, 0.62, 1.0), (0.60, 1.0, 0.82)],
+               glow_ring=pr.get("glow_ring", "#5AD8FF"), detail=pr.get("detail", "spyglass"))
+    spyglass(ctx, pr2)
+
+
+def cutter(ctx, pr):
+    """Olm's E4 plasma cutter in the apron pocket on the wrench's line (§7.6: "плазменный резак на месте ключа, кончик
+    ≤ 1.6"): a torch — a ribbed grip, a body and a nozzle — its tip glowing."""
+    k = ctx.shoulder_k
+    pocket = ctx.L.get(pr.get("pocket", "pocket"))
+    a = Vector((pocket[0].x, 0.0, pocket[0].z - pr.get("depth", 0.30))) if pocket is not None else Vector((0.14 * k, 0, -1.1))
+    h, nn, par = core.ray_any(ctx.outer, (a.x, -2.0, a.z), (0, 1, 0))
+    if pocket is not None and h is not None and par is ctx.objs.get(pr.get("pocket", "pocket")):
+        h2, nn2, par2 = core.ray_any([o for o in ctx.outer if o is not par], (a.x, -2.0, a.z), (0, 1, 0))
+        if h2 is not None:
+            h, nn, par = h2, nn2, par2
+    a = h + nn * pr.get("inset", 0.010) if h is not None else a
+    ln = pr.get("len", 0.70) * H
+    ang = math.radians(pr.get("ang", 13))
+    d = Vector((math.sin(ang), pr.get("dy", 0.04), math.cos(ang))).normalized()
+    b = a + d * ln
+    b.y = min(b.y, a.y + pr.get("top_dy", 0.10))
+    d = (b - a).normalized()
+    body_m = core.principled(ctx, "cutter_body", pr.get("color", "#4A4E5A"), rough=0.35, metal=0.4, coat=0.3)
+    accent = core.principled(ctx, "cutter_acc", pr.get("accent", "#E0AD45"), rough=0.3, metal=0.55)
+    steel = core.principled(ctx, "cutter_steel", "#B9C3CF", rough=0.3, metal=0.55)
+    glow = core.principled(ctx, "cutter_glow", pr.get("glow_color", "#FF9A40"), rough=0.2,
+                           emit=pr.get("glow_color", "#FF9A40"), es=pr.get("glow", 1.5))
+    grp = _detail(ctx, pr, "wrench", 1200)
+    r = pr.get("r", 0.05)
+    bar = core.cylinder("cutter_grip", a + d * ln * 0.38, r, ln * 0.76, body_m, nrm=d, verts=24, bev=0.01)
+    ctx.add(bar, grp, par, kind="surface")
+    for t_ in (0.55, 0.62, 0.69):
+        rg = core.torus("cutter_rib%d" % int(t_ * 100), a + d * ln * t_, r * 1.02, 0.008, accent, nrm=d, seg=24, rseg=6)
+        ctx.add(rg, grp, bar, kind="embed")
+    head = core.cylinder("cutter_head", a + d * ln * 0.84, r * 1.25, ln * 0.16, body_m, nrm=d, verts=24, bev=0.012)
+    ctx.add(head, grp, bar, kind="embed")
+    bm = bmesh.new()
+    bmesh.ops.create_cone(bm, cap_ends=True, segments=20, radius1=r * 0.9, radius2=r * 0.35, depth=0.10)
+    nz = core.mesh_obj("cutter_nozzle", bm)
+    nz.location = a + d * (ln * 0.92 + 0.05)
+    core.align_z(nz, d)
+    core.finish(nz, steel)
+    ctx.add(nz, grp, head, kind="embed")
+    tip = core.uvsphere("cutter_tip", a + d * (ln * 0.92 + 0.11), (r * 0.42, r * 0.42, r * 0.6), glow, 16, 8)
+    core.align_z(tip, d)
+    tip.visible_shadow = False
+    ctx.add(tip, grp, nz, kind="embed")
+    ctx.L["wrench_top"] = b
 
 
 # ------------------------------------------------------------------ bow tip (Vik)
@@ -771,11 +996,12 @@ def spyglass(ctx, pr):
     rest = h + nn * (r + 0.01)
     below = pr.get("below_hand", pr.get("below", 0.30)) if (pr.get("hand") and ctx.hands) else pr.get("below", 0.30)
     a = rest - d * ln * below
-    brass = core.principled(ctx, "spyglass", pr.get("color", "#E0AD45"), rough=0.3, metal=0.55)
+    brass = core.principled(ctx, "spyglass", pr.get("color", "#E0AD45"), rough=pr.get("rough", 0.3), metal=0.55)
     leather = core.principled(ctx, "spy_leather", pr.get("leather", "#6B4A2A"), rough=0.55, coat=0.1)
     dark = core.principled(ctx, "spy_dark", "#3A3C46", rough=0.4)
     grp = _detail(ctx, pr, "spyglass", 2000)
-    segs = [(0.0, 0.45, r), (0.43, 0.75, r * 0.86), (0.73, 1.0, r * 0.72)]
+    segs = pr.get("segs", [(0.0, 0.45, 1.0), (0.43, 0.75, 0.86), (0.73, 1.0, 0.72)])
+    segs = [(t0, t1, r * rk) for t0, t1, rk in segs]
     objs = []
     for i, (t0, t1, rr) in enumerate(segs):
         c = a + d * ln * (t0 + t1) / 2
@@ -790,6 +1016,25 @@ def spyglass(ctx, pr):
     ctx.add(obj_rim, grp, objs[0], kind="free")
     eye = core.cylinder("spy_eyepiece", a + d * (ln + 0.02), r * 0.55, 0.04, dark, nrm=d, verts=24, bev=0.006)
     ctx.add(eye, grp, objs[-1], kind="free")
+    if pr.get("bands"):
+        # gold bands round the tube (E2 "труба с золотым пояском")
+        gm = core.principled(ctx, "spy_band", pr["bands"], rough=0.28, metal=0.55)
+        for t_ in (0.30, 0.60):
+            bd_ = core.torus("spy_band%d" % int(t_ * 10), a + d * ln * t_, r * 1.03, 0.014, gm, nrm=d, seg=32, rseg=8)
+            ctx.add(bd_, grp, objs[0], kind="free")
+    if pr.get("glow_ring"):
+        # E4: a digital rangefinder's glowing lens ring (<= 1.6) and a housing on the tube
+        gm = core.principled(ctx, "spy_glow", pr["glow_ring"], rough=0.2, emit=pr["glow_ring"], es=pr.get("glow", 1.4))
+        gr = core.torus("spy_glowring", a - d * 0.005, r * 0.80, 0.014, gm, nrm=d, seg=32, rseg=8)
+        ctx.add(gr, grp, objs[0], kind="free")
+        lens = core.cylinder("spy_lens", a, r * 0.78, 0.01, core.principled(ctx, "spy_lensm", "#2A3A4A", rough=0.1,
+                                                                             coat=0.9), nrm=d, verts=32)
+        ctx.add(lens, grp, objs[0], kind="free")
+        hous = core.box("spy_housing", a + d * ln * 0.55 + Vector((0, 0, r * 0.95)), (r * 1.3, r * 1.1, ln * 0.40), dark,
+                        bev=0.012)
+        hous.rotation_mode = "QUATERNION"
+        hous.rotation_quaternion = Vector((0, 0, 1)).rotation_difference(d)
+        ctx.add(hous, grp, objs[0], kind="free")
     ctx.sig_objs += objs
     # the contact: the tube rests on the shoulder
     touch = core.uvsphere("spy_touch", h + nn * 0.004, (r * 0.4, r * 0.4, 0.004), brass, 8, 4)
@@ -843,9 +1088,15 @@ def badge_relief(ctx, pr):
     q = Vector((0, 0, 1)).rotation_difference(nn)
     up_ = (Vector((0, 0, 1)) - nn * nn.z).normalized()
     rt = nn.cross(up_).normalized() * -1
-    metal = core.principled(ctx, pr.get("kind_mat", "badge_metal"), pr.get("color", "#C8CCD4"), rough=0.3, metal=0.55)
+    metal = core.principled(ctx, pr.get("kind_mat", "badge_metal"), pr.get("color", "#C8CCD4"), rough=0.3, metal=0.55,
+                            emit=pr.get("color", "#C8CCD4") if pr.get("metal_glow") else None, es=pr.get("metal_glow", 0.0))
     grp = _detail(ctx, pr, pr.get("detail", "badge"), 500)
     base = h + nn * 0.004
+    if pr.get("glow_rim"):
+        # E4 "значок светится по краю": a glowing ring round the badge (<= 1.6)
+        gm = core.principled(ctx, "badge_glow", pr["glow_rim"], rough=0.2, emit=pr["glow_rim"], es=pr.get("glow", 1.3))
+        gr = core.torus("badge_glowring", base + nn * 0.012, size * 0.54, 0.012, gm, nrm=nn, seg=40, rseg=8)
+        ctx.add(gr, grp, par, kind="surface")
 
     def at(u, v, w=0.0):
         return base + rt * u * size + up_ * v * size + nn * w
@@ -967,7 +1218,16 @@ def queen(ctx, pr):
     rounded points, a ball on top — pinched by the near hand at the chin (pr["hand"]) or, hand-free, as a pendant
     on a short chain under the brooch, on the jabot (§7.6 "без кисти — кулоном на жабо"; pendant_k x the size)."""
     hgt = pr.get("h", 0.30) * H
-    wood = core.principled(ctx, "queen", pr.get("color", "#5A3A26"), rough=0.35, coat=0.4)
+    qm = pr.get("mat", "wood")
+    if qm == "metal":          # E2 silver
+        wood = core.principled(ctx, "queen", pr.get("color", "#C8CCD4"), rough=0.28, metal=0.55, coat=0.3)
+    elif qm == "porcelain":    # E3 white porcelain with a cobalt line
+        wood = core.principled(ctx, "queen", pr.get("color", "#F2F0F4"), rough=0.18, coat=0.8, spec=0.6)
+    elif qm == "holo":         # E4 a holographic crystal, glowing <= 1.2
+        wood = core.principled(ctx, "queen", pr.get("color", "#B48CFF"), rough=0.1, coat=0.8,
+                               emit=pr.get("color", "#B48CFF"), es=pr.get("emit", 1.0))
+    else:
+        wood = core.principled(ctx, "queen", pr.get("color", "#5A3A26"), rough=0.35, coat=0.4)
     grp = _detail(ctx, pr, "queen", 1500)
     hold = bool(pr.get("hand")) and ctx.hands
     if hold:
@@ -1080,8 +1340,15 @@ def banner(ctx, pr):
     hanging from it toward the far side with a soft wave, the white eagle on it (the game's emblem outline), a hex
     raivite crystal on top (emission <= 2.0, §7.4)."""
     k = ctx.shoulder_k
-    wood = core.principled(ctx, "staff", pr.get("color", "#8A5A34"), rough=0.5, coat=0.15)
-    cloth = core.principled(ctx, "banner", pr.get("cloth", "#2B5FD9"), rough=0.8, sheen=0.4)
+    wood = core.principled(ctx, "staff", pr.get("color", "#8A5A34"), rough=pr.get("staff_rough", 0.5), coat=0.15,
+                           metal=pr.get("staff_metal", 0.0))
+    if pr.get("light"):
+        # E4 "световое знамя — полупрозрачная синяя ткань с белым орлом": a translucent glowing cloth
+        cloth = core.principled(ctx, "banner", pr.get("cloth", "#2B5FD9"), rough=0.4, emit=pr.get("cloth", "#2B5FD9"),
+                                es=pr["light"])
+        cloth.node_tree.nodes["Principled BSDF"].inputs["Alpha"].default_value = pr.get("alpha", 0.75)
+    else:
+        cloth = core.principled(ctx, "banner", pr.get("cloth", "#2B5FD9"), rough=0.8, sheen=0.4)
     white = core.principled(ctx, "banner_eagle", "#F6F6F2", rough=0.7, sheen=0.3)
     grp = _detail(ctx, pr, "banner", 2500)
     right = core.world_dir(ctx, (1.0, 0.0, 0.0))
@@ -1137,6 +1404,13 @@ def banner(ctx, pr):
     core.finish(eg, white, smooth=False)
     ctx.add(eg, grp, cl, kind="free")
     gem = core.principled(ctx, "raivite", "#3A8DFF", rough=0.15, coat=0.6, emit="#3A8DFF", es=pr.get("emit", 1.5))
+    if pr.get("finial"):
+        # E2 "древко с серебряным позолоченным навершием": a gilt finial collar under the crystal
+        fm = core.principled(ctx, "finial", pr["finial"], rough=0.28, metal=0.55, coat=0.3)
+        fc = core.uvsphere("banner_finial", top + Vector((0, 0, 0.0)), (0.045, 0.045, 0.06), fm, 16, 8)
+        ctx.add(fc, grp, staff, kind="free")
+        fr2 = core.torus("banner_finial_ring", top - Vector((0, 0, 0.05)), 0.035, 0.012, fm, nrm=(0, 0, 1), seg=24, rseg=6)
+        ctx.add(fr2, grp, staff, kind="free")
     bm = bmesh.new()
     bmesh.ops.create_cone(bm, cap_ends=True, segments=6, radius1=0.05, radius2=0.0, depth=0.16)
     cr = core.mesh_obj("banner_crystal", bm)
@@ -1329,14 +1603,16 @@ def pendant(ctx, pr):
     grp = _detail(ctx, pr, "pendant", 200)
     for s_ in (-1, 1):
         pts = [h + nn * 0.02 + Vector((s_ * 0.02, 0, 0.03))]
+        hosts = [par]
         for t in (0.4, 0.75, 1.0):
             px = h.x + (s_ * 0.17 * k - h.x) * t
             pz = h.z + 0.03 + (-0.66 - h.z - 0.03) * t
-            hh, n2, _ = core.ray_any(ctx.outer, (px, -2.0, pz), (0, 1, 0))
+            hh, n2, ob = core.ray_any(ctx.outer, (px, -2.0, pz), (0, 1, 0))
             if hh is not None:
-                pts.append(hh + n2 * 0.01)
+                pts.append(hh + n2 * 0.008)
+                hosts.append(ob)
         cu = core.curve("pendant_cord%+d" % s_, pts, [1.0] * len(pts), 0.009, cord, order=3)
-        ctx.add(cu, grp, par, kind="surface")
+        ctx.add(cu, grp, max(set(hosts), key=hosts.count), kind="surface")
     m = core.principled(ctx, "pendant_fang", pr.get("color", "#F4EEDC"), rough=0.35, coat=0.3)
     bm = bmesh.new()
     bmesh.ops.create_cone(bm, cap_ends=True, segments=16, radius1=0.032, radius2=0.004, depth=0.13)
@@ -1372,7 +1648,7 @@ def shield(ctx, pr):
     prof = [(0.0, 0.0), (R * 0.98, 0.0), (R, 0.02), (R * 0.96, 0.05), (R * 0.70, 0.10), (R * 0.35, 0.135),
             (0.0, 0.145)]
     dome = _lathe("shield", prof, m, seg=48, axis=nrm, base=c)
-    ctx.add(dome, grp, perch, kind="surface")
+    ctx.add(dome, grp, perch, kind="free")      # held by its strap: the touch disc below is its contact
     ctx.sig_objs.append(dome)
     edge_col = pr.get("edge", col)
     em = core.principled(ctx, "shield_edge", edge_col, rough=0.3, metal=0.55 if pr.get("metal") or pr.get("edge_metal") else 0.0,
@@ -1478,19 +1754,20 @@ def wing(ctx, pr):
     n = pr.get("n", 9)
     ln0 = pr.get("len", 0.95)
     root = h + Vector((0, 0, 0.02)) + back * 0.06
+    # the covert: a soft mass over the roots on the shoulder (the feathers grow out of it)
+    el = [dict(co=root + Vector((0, 0, 0.06)) + right * 0.04, half=(0.12, 0.09, 0.13), stiff=2.2)]
+    cv = core.mb_mesh(ctx, "WingC", el, 0.01, m, smooth_iter=2, name="wing_covert")
+    ctx.add(cv, grp, perch, kind="surface")
     for i in range(n):
         t = i / (n - 1)
         a = math.radians(pr.get("a0", 80) - pr.get("spread", 62) * t)      # from near-vertical out to the side
         d = (Vector((0, 0, 1)) * math.sin(a) + right * math.cos(a) + back * 0.25).normalized()
         ln = ln0 * (1.0 - 0.45 * t) * (0.85 if i % 2 else 1.0)
-        o, _ = _feather_mesh(ctx, "wing_f%d" % i, root + back * 0.012 * i, d, ln, pr.get("w", 0.10) * (1 - 0.3 * t), m,
+        o, _ = _feather_mesh(ctx, "wing_f%d" % i, root + back * 0.007 * i, d, ln, pr.get("w", 0.10) * (1 - 0.3 * t), m,
                              curve=0.10, side=back.cross(d).normalized())
-        ctx.add(o, grp, perch, kind="surface" if i == 0 else "embed")
+        ctx.add(o, grp, cv, kind="embed")
         ctx.sig_objs.append(o)
-    # the covert: a soft mass over the roots on the shoulder
-    el = [dict(co=root + Vector((0, 0, 0.06)) + right * 0.04, half=(0.10, 0.08, 0.12), stiff=2.2)]
-    cv = core.mb_mesh(ctx, "WingC", el, 0.01, m, smooth_iter=2, name="wing_covert")
-    ctx.add(cv, grp, perch, kind="surface")
+    ctx.sig_objs.append(cv)
 
 
 def monocle(ctx, pr):
@@ -1518,7 +1795,7 @@ def monocle(ctx, pr):
                                                 pr.get("hang_at", (-0.16, -1.02))[1]), (0, 1, 0))
         if hpt is None:
             return
-        cen = hpt + nn * 0.02
+        cen = hpt + nn * 0.012     # the ring lies on the coat (0.02 left it 0.010 H off, the contact check)
         nrm = nn
         ring = core.torus("monocle_ring", cen, R, 0.012, gold, nrm=nrm, seg=32, rseg=8)
         ctx.add(ring, grp, par, kind="surface")
@@ -1567,18 +1844,19 @@ def chain(ctx, pr):
     if hm is None:
         return
     for s_ in (-1, 1):
-        ha, na, _ = core.ray_any(ctx.outer, (s_ * pr.get("top_x", 0.30) * k, pr.get("top_y", 0.05), 2.0), (0, 0, -1))
+        ha, na, top_ob = core.ray_any(ctx.outer, (s_ * pr.get("top_x", 0.30) * k, pr.get("top_y", 0.05), 2.0), (0, 0, -1))
         if ha is None:
             continue
-        _chain(ctx, "office_chain%+d" % s_, ha + na * 0.02, hm + nm * 0.03 + Vector((0, 0, 0.06)), 0.02, gold,
-               link=pr.get("link", 0.06) * H * 0.62, parent=par, grp=grp, wire=pr.get("wire", 0.011), link_k=0.62)
-    med = core.cylinder("chain_medal", hm + nm * 0.03, pr.get("d", 0.20) * H / 2, 0.03, gold, nrm=nm, verts=36, bev=0.008)
+        _chain(ctx, "office_chain%+d" % s_, ha + na * 0.012, hm + nm * 0.03 + Vector((0, 0, 0.06)), 0.02, gold,
+               link=pr.get("link", 0.06) * H * 0.62, parent=top_ob, grp=grp, wire=pr.get("wire", 0.011), link_k=0.62,
+               even=True)
+    med = core.cylinder("chain_medal", hm + nm * 0.017, pr.get("d", 0.20) * H / 2, 0.03, gold, nrm=nm, verts=36, bev=0.008)
     ctx.add(med, grp, par, kind="surface")
     em = pr.get("emblem")
     if em:
         from . import headgear
-        headgear.emblem(ctx, dict(em, size=em.get("size", pr.get("d", 0.20) * 0.62)), hm + nm * 0.045, nm, med, grp,
-                        name="chain_emblem")
+        headgear.emblem(ctx, dict(em, size=em.get("size", pr.get("d", 0.20) * 0.62)), hm + nm * 0.032, nm, med, grp,
+                        name="chain_emblem", head=False)
     if pr.get("sheaf"):
         # a sheaf of wheat: three ears fanned up and a band across
         wheat = core.principled(ctx, "sheaf", pr.get("sheaf"), rough=0.45, metal=0.3)
@@ -1606,9 +1884,66 @@ def feather_pin(ctx, pr):
     m = core.principled(ctx, "pin_feather", col, rough=0.5, sheen=0.4)
     grp = _detail(ctx, pr, "feather_pin", 300)
     d = (Vector(pr.get("dir", (-0.3, 0.6, 0.75)))).normalized()
-    o, _ = _feather_mesh(ctx, "pin_feather", h + nn * 0.02, d, pr.get("len", 0.34) * H, pr.get("w", 0.06), m, curve=-0.15)
+    o, _ = _feather_mesh(ctx, "pin_feather", h + nn * 0.006, d, pr.get("len", 0.34) * H, pr.get("w", 0.06), m, curve=-0.15)
     ctx.add(o, grp, ob, kind="surface", head=True)
     brass = core.principled(ctx, "pin_brass", pr.get("pin", "#E0AD45"), rough=0.3, metal=0.55)
     pn = core.uvsphere("pin_head", h + nn * 0.02, (0.03, 0.03, 0.024), brass, 16, 8)
     core.align_z(pn, nn)
     ctx.add(pn, grp, ob, kind="surface", head=True)
+
+
+def binoculars(ctx, pr):
+    """Field binoculars on a strap on the chest (§7.6 Vik E3 "бинокль 0.2 H"): two short tubes side by side, a bridge,
+    eyecups, the strap up round the neck."""
+    k = ctx.shoulder_k
+    x, z = pr.get("at", (0.05, -1.02))
+    h, nn, par = core.ray_any(ctx.outer, (x * k, -2.0, z), (0, 1, 0))
+    if h is None:
+        return
+    s = pr.get("size", 0.20) * H
+    body = core.principled(ctx, "bino", pr.get("color", "#3A3C34"), rough=0.5, coat=0.2)
+    trim = core.principled(ctx, "bino_trim", pr.get("trim", "#8A8E80"), rough=0.35, metal=0.5)
+    grp = _detail(ctx, pr, "binoculars", 500)
+    up = (Vector((0, 0, 1)) - nn * nn.z).normalized()
+    rt = nn.cross(up).normalized()
+    tubes, cs = {}, {}
+    for sd in (-1, 1):
+        # each tube rests on the chest under it (the chest curves away from the centre: one ray for both left the
+        # outer tube floating, the contact check)
+        p0 = h + rt * sd * s * 0.26
+        h2, n2, par2 = core.ray_any(ctx.outer, (p0.x, -2.0, p0.z), (0, 1, 0))
+        if h2 is None:
+            h2, n2, par2 = p0, nn, par
+        c = h2 + n2 * (s * 0.22 - 0.004)
+        t = core.cylinder("bino_tube%+d" % sd, c, s * 0.22, s * 0.85, body, nrm=up, verts=24, bev=0.01)
+        ctx.add(t, grp, par2, kind="surface")
+        r = core.torus("bino_rim%+d" % sd, c - up * s * 0.42, s * 0.22, 0.008, trim, nrm=up, seg=24, rseg=6)
+        ctx.add(r, grp, t, kind="embed")
+        tubes[sd], cs[sd] = t, c
+    br = core.box("bino_bridge", (cs[-1] + cs[1]) * 0.5 + up * s * 0.2, (s * 0.4, s * 0.14, s * 0.18), trim, bev=0.008)
+    ctx.add(br, grp, tubes[-1], kind="embed")
+    strap = core.principled(ctx, "bino_strap", pr.get("strap", "#4E3620"), rough=0.5)
+    for sd in (-1, 1):
+        a = cs[sd] + rt * sd * s * 0.20 + up * s * 0.35     # from the tube's outer side, up round the neck
+        pts = [a]
+        for t_ in (0.4, 0.75, 1.0):
+            px = a.x + (sd * 0.16 * k - a.x) * t_
+            pz = a.z + (-0.66 - a.z) * t_
+            hh, n2, _ = core.ray_any(ctx.outer, (px, -2.0, pz), (0, 1, 0))
+            if hh is not None:
+                pts.append(hh + n2 * 0.01)
+        cu = core.curve("bino_strap%+d" % sd, pts, [1.0] * len(pts), 0.012, strap, order=3)
+        ctx.add(cu, grp, tubes[sd], kind="surface")
+
+
+def emblem_prop(ctx, pr):
+    """An emblem on the costume at (x in shoulder units, z): headgear.emblem's shapes (a millstone relief on Bram's E4
+    breastplate, a medal, a star), its own P-A8 detail when named."""
+    from . import headgear
+    x, z = pr.get("at", (-0.25, -0.95))
+    h, nn, par = _on_outer(ctx, x, z)
+    if h is None:
+        return
+    grp = _detail(ctx, pr, pr.get("detail", "emblem"), pr.get("min_px", 150))
+    headgear.emblem(ctx, dict(pr, kind=pr.get("shape", "disc")), h, nn, par, grp, name="emblem_" + pr.get("detail", "x"),
+                    head=False)

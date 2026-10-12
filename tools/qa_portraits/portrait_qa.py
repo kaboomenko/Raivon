@@ -33,6 +33,9 @@ Checks (PASS / FAIL / INFO with numbers, one line each, into OUT_DIR/report.txt)
                   (meta "wink") skips its opening, iris, pupil and catchlight; its brow keeps both brow gates
   P-A4 smile      calm / smile pairs with meta: both mouth corners >= 6 px higher, in the picture and with the pose
                   held (head-local corners); open smiles: cavity >= 900 px² on the master, teeth visible
+  P-A4 bands      each leader mood vs its calm (meta brows, pupils, eye openings, gaze, pose): angry brows' inner
+                  ends down >= 20 deg, pupil <= 0.85; tired opening 0.30-0.50, brows' inner ends up >= 12 deg;
+                  cunning brow difference +0.06 H, glance >= 25 % of the eye width, roll >= 4 deg
   P-A7            meta "floating" empty; one alpha island; every detail:* at least its P-A8 pixel count (a detail the
                   kit measures on another group says so in meta "detail_groups": Hawk's helmet = the "hat", which
                   holds only the cap and its flaps; a part of one surface gets its own group instead — Vik's hood
@@ -615,6 +618,71 @@ def check_extra_details(d, imgs, rep):
                     % (share * 100))
 
 
+def _brow_angle(b):
+    """The brow's inner end down, in degrees (picture y grows down): b = [inner, outer] picture points."""
+    (xi, yi), (xo, yo) = b
+    return float(np.degrees(np.arctan2(yi - yo, max(1e-6, abs(xi - xo)))))
+
+
+def check_mood_bands(d, imgs, rep):
+    """P-A4 by the landmarks of each leader mood against its own calm (§7.14): angry — the brows' inner ends down >= 20
+    deg and the pupil <= 0.85 of the calm one; tired — the eye opening 0.30-0.50 of the calm one and the brows' inner
+    ends up >= 12 deg; cunning — the two brows' height difference grown >= 0.06 H, the glance >= 25 % of the eye's
+    width sideways, the head rolled >= 4 deg. (Smile: check_smiles.) An eye closed by design (a wink, the smile's
+    happy closed eyes) skips its opening."""
+    for x in Q.LEADERS:
+        mc = Q.meta(d, "ldr_" + x)
+        if not mc or not mc.get("brows"):
+            continue
+        for mood in ("angry", "tired", "cunning"):
+            n = "ldr_%s_%s" % (x, mood)
+            mm = Q.meta(d, n)
+            if not mm or not mm.get("brows") or n not in imgs:
+                continue
+            out, bad = [], False
+            h = mm.get("h_px", 270.0)
+            da = [_brow_angle(bm) - _brow_angle(bc) for bm, bc in zip(mm["brows"], mc["brows"])]
+            if mood == "angry":
+                ok = min(da) >= 20
+                out.append("brows inner down %s deg (>= 20)%s" % ("/".join("%.1f" % v for v in da), "" if ok else " FAIL"))
+                bad |= not ok
+                pr = [a / b for a, b in zip(mm.get("pupils") or [], mc.get("pupils") or []) if a and b]
+                if pr:
+                    ok = max(pr) <= 0.851
+                    out.append("pupil %.2f of calm (<= 0.85)%s" % (max(pr), "" if ok else " FAIL"))
+                    bad |= not ok
+            elif mood == "tired":
+                op = [a / b for a, b in zip(mm.get("eye_open_px") or [], mc.get("eye_open_px") or []) if b]
+                if op:
+                    ok = all(0.25 <= v <= 0.52 for v in op)
+                    out.append("opening %s of calm (0.30-0.50)%s" % ("/".join("%.2f" % v for v in op), "" if ok else " FAIL"))
+                    bad |= not ok
+                ok = max(da) <= -12
+                out.append("brows inner up %s deg (>= 12)%s" % ("/".join("%.1f" % -v for v in da), "" if ok else " FAIL"))
+                bad |= not ok
+            else:
+                def mid_y(b):
+                    return (b[0][1] + b[1][1]) / 2
+                diff_m = abs(mid_y(mm["brows"][0]) - mid_y(mm["brows"][1])) / h
+                diff_c = abs(mid_y(mc["brows"][0]) - mid_y(mc["brows"][1])) / h
+                ok = diff_m - diff_c >= 0.06 - 1e-6
+                out.append("brow difference +%.3f H (>= 0.06)%s" % (diff_m - diff_c, "" if ok else " FAIL"))
+                bad |= not ok
+                gz = []
+                for gm, gc in zip(mm.get("gaze") or [], mc.get("gaze") or []):
+                    gz.append(abs((gm[0] - gm[2]) - (gc[0] - gc[2])) / max(1e-6, 2 * gm[3]))
+                if gz:
+                    ok = min(gz) >= 0.25 - 1e-6
+                    out.append("glance %s of the eye width (>= 0.25)%s" % ("/".join("%.2f" % v for v in gz),
+                                                                         "" if ok else " FAIL"))
+                    bad |= not ok
+                roll = abs((mm.get("pose") or {}).get("mood_roll", 0.0))
+                ok = roll >= 4
+                out.append("roll %.1f deg (>= 4)%s" % (roll, "" if ok else " FAIL"))
+                bad |= not ok
+            rep.add("FAIL" if bad else "PASS", "P-A4 band " + n, "; ".join(out))
+
+
 def main():
     pos, opts = Q.parse(sys.argv[1:])
     src, out = pos[0], pos[1]
@@ -630,6 +698,7 @@ def main():
         check_moods(imgs, rep, out)
         check_ids(src, imgs, rep)
         check_smiles(src, imgs, rep)
+        check_mood_bands(src, imgs, rep)
         check_meta(src, imgs, rep)
         check_distinct(src, imgs, rep)
         check_extra_details(src, imgs, rep)
