@@ -349,8 +349,9 @@ AVIATOR_EDGE = [(0, 47), (35, 42), (60, 28), (78, 6), (92, -16), (120, -24), (18
 def aviator(ctx, hg):
     """A leather aviator cap (§7.6 Hawk era 1: "кожаная шапка с клапанами", #7A5133, fur #EDE3D0 at the face): a
     leather sheet hugging the cranium and the hair above an edge line (high on the forehead, down in front of the
-    ears, low at the nape), the ear flaps turned up and out like small wings (the round helmet with flaps of his
-    signature), a fluffy cream fur roll along the face edge; goggles go on it (hg["extra"])."""
+    ears, low at the nape), the ear flaps of his signature — turned up and out like small wings, or with
+    flaps["down"] hanging over the ears, lining inside (Hawk era 1: up they read as horns, P2) — a fluffy cream fur
+    roll along the face edge; goggles go on it (hg["extra"])."""
     head = ctx.objs["head"]
     hair = ctx.objs.get("hair")
     edge = _edge_fn(hg.get("edge", AVIATOR_EDGE))

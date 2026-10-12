@@ -720,11 +720,14 @@ def spyglass(ctx, pr):
     """Seir's brass spyglass (§7.6: 0.8 H long, 0.11 H across): three telescoping brass sections with rims, a
     leather grip band and a dark eyepiece, resting on the near shoulder and rising behind the head at `ang` deg
     (backward-up: on the picture up and to the left behind the head — his near-shoulder diagonal). Held by the near
-    hand (pr["hand"]: body.hand) or, hand-free, slung on a strap across the chest (§7.5 fallback)."""
+    hand (pr["hand"]: body.hand) or, hand-free, slung on a strap across the chest (§7.5 fallback). The held pose
+    takes its own length, angle, direction and rest point (`len_hand`, `ang_hand`, `dir_world_hand`, `rest_hand`,
+    `below_hand`)."""
     k = ctx.shoulder_k
-    ln = pr.get("len", 0.8) * H
     r = pr.get("d", 0.11) * H / 2
     held = bool(pr.get("hand")) and ctx.hands
+    # (held, the sections may be drawn out further: `len_hand`)
+    ln = (pr.get("len_hand", pr.get("len", 0.8)) if held else pr.get("len", 0.8)) * H
     ang = math.radians(pr.get("ang_hand", pr.get("ang", 50)) if held else pr.get("ang", 50))
     dw = pr.get("dir_world_hand", pr.get("dir_world")) if held else pr.get("dir_world")
     if dw:

@@ -46,18 +46,23 @@ CHARS = {
         # thick dome was as wide as the beard, so his "pear" read as a plain bust)
         # (the thinner crop is less self-shadowed: a hair darker than #B5562B and the locks lifted a little more for AO
         # between them, so hair vs skin keeps >= 15 L* in the laugh)
-        hair=dict(style="swept", color="#A84C24", dark="#5A200C", light="#B0522A", crevice="#46180A",
-                  sideburns=True, sheet=(0.024, 0.016), lock_th=0.044, lock_lift=0.36),
+        # (the thinner cap is lit more evenly: a step darker again, #9A4420, so hair vs skin keeps >= 15 L* in the
+        # laugh — 13.4 at #A84C24)
+        hair=dict(style="swept", color="#9A4420", dark="#521C0A", light="#A84C26", crevice="#3E1408",
+                  sideburns=True, sheet=(0.016, 0.010), lock_th=0.034, lock_lift=0.36),
         # the beard #C8652F (§7.6) shaded hair-like but the other way up: lit lobe tips #E08A50 on the slate jerkin
         # (dL* >= 15), roots #8E3E1C and a #74301A band along the cheek (beard vs skin >= 15, also at the boundary:
-        # art director note 1); a soft #7A3216 crevice tone between the strand groups; the moustache in a darker
+        # art director note 1); a soft #8A3C1C crevice tone between the strand groups; the moustache in a darker
         # rust, so it reads as hair over the lip, not a fleshy upper lip
-        beard=dict(style="pear", color="#C8652F", tip="#E08A50", root="#8E3E1C", edge="#74301A", crevice="#7A3216",
+        beard=dict(style="pear", color="#C8652F", tip="#E08A50", root="#8E3E1C", edge="#74301A", crevice="#8A3C1C",
                    # 0.18 W past the jaw each side (§7.6 0.12 W), widest at the chin and full over its upper half:
                    # at 0.12 the pear only widened over the chest, where the shoulders hide it in the 48 px
                    # silhouette (P-A2; 0.20-0.22 pushed the laugh's dark pixels past §7.4's 3 %)
-                   wider=0.18, below=0.45, widest=0.0,
-                   profile=[(-1.0, 0.74), (0.0, 1.0), (0.3, 0.97), (0.6, 0.78), (0.85, 0.56), (1.0, 0.44)],
+                   # (P2 review: still read as a plain bell at 48 px, named as Kort — wider again, 0.24 W, its widest
+                   # row a little under the chin and full down to the middle, 0.50 H deep: round convex lobes that
+                   # bulge past the face's outline; the hair cap thinner, so the crown is clearly the narrow end)
+                   wider=0.24, below=0.50, widest=-0.05,
+                   profile=[(-1.0, 0.70), (0.0, 1.0), (0.3, 1.0), (0.6, 0.86), (0.85, 0.62), (1.0, 0.46)],
                    moustache=True, moustache_color="#A04A22", moustache_dark="#76301A", moustache_light="#B5562B"),
         scar=dict(near=True, **{"from": (-0.34, 0.01), "to": (-0.23, -0.14)}),
         body=dict(shoulders=2.0),
@@ -69,7 +74,8 @@ CHARS = {
                 # the beard covers the neck
                 # (shade 0.94 -> 0.92 down the jerkin, not 0.80 / 0.87: under the beard's shadow the bottom went past the
                 # albedo floor — dark pixels, §7.4)
-                dict(kind="vest", id="jerkin", color="#394552", z0=-1.32, z1=-0.645, thick=0.032, rough=0.9, sheen=0.4,
+                # (#3D4A58 with the larger pear: its shadow on the jerkin pushed the laugh's dark pixels to 3.1 %)
+                dict(kind="vest", id="jerkin", color="#3D4A58", z0=-1.32, z1=-0.645, thick=0.032, rough=0.9, sheen=0.4,
                      shade=(0.94, 0.92),
                      open=[(-1.40, 0.10), (-1.15, 0.05), (-0.85, 0.05), (-0.70, 0.10), (-0.66, 0.16)]),
                 dict(kind="belt", z=-1.09, w=0.13, color="#6B4226", buckle="#E0AD45", over=0.05),
@@ -205,8 +211,10 @@ CHARS = {
                              fans=[(104, -6, 1.0, 0.065, 4), (124, -10, 0.9, 0.06, 3)])),
         # the walrus moustache, white #EDEDF2, hanging 0.25 H below the mouth (§7.6), its ends pushed out past the jaw
         # (1.1 W, not 0.85: the ends must break the face's outline so his shape is wide and low at 48 px — P-A2)
-        beard=dict(style="walrus", color="#EDEDF2", tip="#FFFFFF", root="#D4D6DE", crevice="#7E8496", w=1.10,
-                   drop=0.30, smile_lift=0.04),
+        # (1.22 W, 0.32 H: the P2 review still read his outline as a plain dome — the ends now sweep out past the
+        # cheeks like tusks over the collar)
+        beard=dict(style="walrus", color="#EDEDF2", tip="#FFFFFF", root="#D4D6DE", crevice="#7E8496", w=1.22,
+                   drop=0.32, smile_lift=0.04),
         age=dict(forehead=2, crows=3, nasolabial=False, k=0.45, smile_k=0.55),   # §7.3: 2 forehead folds
         body=dict(shoulders=2.15, neck=0.55),
         costume=dict(
@@ -223,7 +231,7 @@ CHARS = {
                 # shoulders and puffed up round the neck to the moustache (his "shoulder width" zone: wide and low
                 # at 48 px, P-A2)
                 dict(kind="fur", id="fur", color="#7C5E4A", dark="#765A48", light="#9C7A62", crevice="#665040",
-                     r=0.84, r_in=0.27, t=0.12, front_z=-1.05, side_z=-0.96, back_z=-0.86, open=0.10,
+                     r=0.92, r_in=0.27, t=0.12, front_z=-1.05, side_z=-0.96, back_z=-0.86, open=0.10,
                      clumps=dict(n=95, len=0.13, w=0.034, th=0.024, curl=0.5, sink=0.88, rise=0.0, balls=7, tip=0.45),
                      detail="fur", min_px=8000, signature=True, smooth=2, res=0.011),
                 dict(kind="clasp", color="#B0803A", z=-0.90, x=0.075),
@@ -308,15 +316,26 @@ CHARS = {
         mouth=dict(lip="#C4675A", line=0.20,
                    calm=dict(type="closed", w=0.25, near=0.03, far=0.005),
                    smile=dict(type="open", w=0.32, h=0.11, near=0.075, far=0.035, dz=-0.01, fang="near")),
-        # straw (§7.6 #EBD27A) as a mid-tone with light tips and dark crevices between the clumps: seven tapered
+        # straw (§7.6 #EBD27A) as a mid-tone with light tips and dark crevices between the clumps: eight tapered
         # wisps from under the hood onto the brows (a flat pale cream #FFF6CC, chosen for hair-skin dE, rendered them
-        # as white pebbles, P2 review); value keeps hair vs skin dE76 >= 30 (§7.4)
-        hair=dict(style="fringe", color="#FAE6A2", dark="#DCBE6C", light="#FFF8D8", crevice="#7A5A22", rim_el=50),
-        # the soft peak stands 0.25 H clear of the hood (§7.6), up and back, a little toward the near side so the
-        # level 3/4 camera sees it side-on; #4E6B3A a hair lighter: dark budget
+        # as white pebbles, P2 review). Narrower wisps at alternating lifts, so they lie in two layers with dark gaps
+        # between them (wide, even ones fused into one cream band), a deep crevice tone and darker roots under the
+        # hood; the lit straw stays light (#FFEFA6): hair vs skin dE76 >= 30 (§7.4) — a mid-tone straw (#F2D672,
+        # #F8E28E) measured 23-27 on his tanned T2
+        hair=dict(style="fringe", color="#FFEFA6", dark="#E0BC66", light="#FFFCE6", crevice="#5E4214", rim_el=50,
+                  wisps=[(-44, 0.08, 18, 0.06, 0.014), (-31, 0.085, 24, 0.0, 0.036), (-17, 0.085, 28, 0.03, 0.016),
+                         (-4, 0.09, 30, -0.01, 0.040), (9, 0.085, 30, 0.04, 0.018), (22, 0.08, 28, 0.05, 0.038),
+                         (34, 0.07, 22, 0.11, 0.016), (44, 0.065, 16, 0.14, 0.030)]),
+        # the soft peak stands >= 0.25 H clear of the hood (§7.6), up and back: it leaves the dome high on its near
+        # back (az -138) and points up at 46 deg toward the picture's left (az -124 is side-on to the level 3/4
+        # camera: aimed straight back, az -160, it was foreshortened behind the dome and stood only 15-40 px clear —
+        # a small cat ear, P2 review); a fat base and a long taper, since a metaball chain's thin end shrinks inside
+        # its nominal radius. #4E6B3A a hair lighter: dark budget
         # (the front edge a little higher than the kit's default, so the fringe has a forehead to fall over)
-        headgear=dict(kind="hood", color="#527040", thick=0.075, peak=0.30, edge_r=0.05, peak_at=(-160, 44),
-                      peak_dir=(-138, 22), droop=0.10,
+        # (the hood a step darker than the cloak, #3E6234: the larger peak is most of his signature mask, and at
+        # #527040 its lit green sat dE76 22.9 from the grey common plate, §7.4 needs 25)
+        headgear=dict(kind="hood", color="#3E6234", thick=0.075, peak=0.42, peak_r=0.16, edge_r=0.05,
+                      peak_at=(-138, 54), peak_dir=(-124, 46), droop=0.11,
                       edge=[(0, 53), (40, 46), (62, 24), (76, -10), (88, -60), (180, -90)]),
         body=dict(shoulders=1.75),
         costume=dict(
@@ -331,7 +350,9 @@ CHARS = {
         # the raven in profile, beak out to the left (a bird's eye looks at you from the side of its head: its near
         # eye and catchlight face the camera), out on the shoulder and leaning away from the hood — a notch of
         # background between bird and hood at 48 px (P-A2: pressed against the hood it merged into one slope)
-        props=[dict(kind="raven", x=-0.70, y=0.10, size=0.55, turn=-55, roll=8),
+        # (rolled 16 deg out: its head and back lean off the hood's slope, a notch of background between them; 20
+        # pushed it into the frame's side band)
+        props=[dict(kind="raven", x=-0.70, y=0.10, size=0.55, turn=-55, roll=16),
                dict(kind="bow", x0=0.66, y=0.26, z0=-0.86, len=0.6, lean=10)],
         pose=dict(body=18, head=14, roll=-6, nod=2),
         pose_smile=dict(roll=-4, nod=2),
@@ -371,14 +392,15 @@ CHARS = {
                 dict(kind="buttons", id="btn", r=0.036, color="#E0AD45",
                      at=[(-0.22, -0.98), (0.22, -0.98), (-0.20, -1.14), (0.20, -1.14)]),
             ]),
-        # held (the P2 reviewer's call for §7.15 q3): the near hand low on the near shoulder by the collar, the tube
-        # resting on the shoulder and leaning out to the left as it rises, so it crosses behind the beard and the back
-        # of the head at ~50 deg in the picture (aimed mostly away from the camera it stood at 72 deg beside the head,
-        # P2 review)
-        props=[dict(kind="spyglass", len=0.8, d=0.11, ang=50, dir_world=(-0.8, 0.6, 0.0), rest=(-0.48, None),
-                    dir_world_hand=(-0.95, 0.3, 0.0), ang_hand=48, rest_hand=(-0.44, None),
+        # held (the P2 reviewer's call for §7.15 q3): the near hand on the near shoulder by the collar, the tube
+        # rising up and back at 58 deg (world) so it passes behind the ear and the back hair and its eyepiece ends
+        # under the tricorn's near corner — "за головой". Drawn out to 0.95 H (a telescope's sections extended): at
+        # §7.6's 0.8 H the eyepiece stops at ear level whatever the angle, and aimed out to the left at 48 deg (the
+        # interrupted fix) it stood clear of the head instead of behind it (P2 review: 72 deg beside the head)
+        props=[dict(kind="spyglass", len=0.8, len_hand=0.95, d=0.11, ang=50, dir_world=(-0.8, 0.6, 0.0),
+                    rest=(-0.48, None), dir_world_hand=(-0.8, 0.6, 0.0), ang_hand=58, rest_hand=(-0.42, None),
                     rest_y=0.06, below=0.30, strap_from=(-0.42, -0.70), strap_to=(0.55, -1.6), grip_t=0.12,
-                    below_hand=0.26,
+                    below_hand=0.18,
                     hand=dict(grip="wrap", curl=1.0, elbow=(-0.45, -0.40, -1.75), sleeve="#175A72",
                               cuff="#F2F2F2")),
                dict(kind="earring", style="ring", d=0.11, tube=0.034, color="#E8B23A")],
@@ -620,15 +642,18 @@ CHARS = {
                 # the robe's neckline in the stole's blue (a stand band round the neck): above the stole's top edge a
                 # sliver of the white robe showed beside the beard (beard vs costume dL* 4.8). The stole itself cannot
                 # start higher: a bib projected above the torso's top stays a flat sheet in front of the chest
-                dict(kind="collar", color="#2B5FD9", z=-0.68, h=0.11, out=0.0, flare=0.016),
+                dict(kind="collar", color="#2252EC", z=-0.68, h=0.11, out=0.0, flare=0.016),
                 dict(kind="cloak", id="cloak", color="#173C86", rough=0.92, sheen=0.1, spec=0.15, shade=(0.84, 0.88),
                      z1=-0.64,
                      gap=0.012, flare=0.06, open=[(-1.9, 0.50), (-1.2, 0.48), (-0.85, 0.48), (-0.66, 0.52)]),
                 dict(kind="cape_collar", color="#1E4FA8", z0=-0.72, top_z=0.02, r0=0.30, r1=0.58, open=58,
                      piping="#C8CCD4", detail="collar", min_px=4000),
-                # wide enough that the beard lies on the stole, not the cloak's lit shoulders (§7.6 "борода лежит на
-                # синем палантине")
-                dict(kind="bib", id="stole", color="#2B5FD9", w=0.42, top=-0.665, bottom=-2.0, straps=False,
+                # the beard lies on the stole (§7.6 "борода лежит на синем палантине"); 0.42 W at its top: wider
+                # (0.48), its top corners ran past the torso's shoulders, missed the projection and stood out as flat
+                # blades in front of the chest
+                # (#2252EC, a step more saturated than #2B5FD9: with more of the stole showing, Rai's clothes median
+                # sat dE76 17 from Vance's violet and their P-A9 mean fell to 15.0)
+                dict(kind="bib", id="stole", color="#2252EC", w=0.42, top=-0.665, bottom=-2.0, straps=False,
                      over_last=False),
             ]),
         props=[dict(kind="banner", x=0.50, y=0.32, top=0.80, w=0.40, h=0.60)],
