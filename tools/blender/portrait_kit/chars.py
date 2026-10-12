@@ -731,11 +731,11 @@ CHARS.update({
                      r=0.95, r_in=0.30, t=0.11, front_z=-1.0, side_z=-0.95, back_z=-0.85, open=0.16,
                      clumps=dict(n=70, len=0.14, w=0.05, th=0.03, curl=0.2), smooth=3),
             ]),
-        props=[dict(kind="wolf_head", x=-0.46, y=0.12, size=0.44, turn=62, color="#8E8882", dark="#6A6460",
+        props=[dict(kind="wolf_head", x=-0.48, y=0.12, size=0.70, lift=0.30, turn=25, color="#8E8882", dark="#6A6460",
                     light="#C8C2BC", min_px=2500),
                dict(kind="fang", side="near", len=0.07, r=0.022),
                dict(kind="pendant", at=(0.02, -1.02))],
-        pose=dict(body=20, head=8, roll=-3, nod=-3),
+        pose=dict(body=20, head=8, roll=-6, nod=-3),
         signature=dict(name="wolf head pelt + forked beard + fang", zone="near shoulder; lower face width"),
         moods=dict(
             smile=dict(eyes=dict(smile=dict(open=[0.64, 0.64], low=0.12))),
@@ -830,7 +830,7 @@ CHARS.update({
     "ldr_order": dict(
         name="Torvald", leader=True, female=False, tall_headgear=True, plate="#704FD1",
         head=dict(shape="long", wh=0.84, h_px=264, eye_line=0.47, brow_ridge=1.7, cheeks=0.95, muzzle=1.05),
-        skin="#E89078", skin_tone="T3", blush=0.18, skin_sat=1.45, skin_value=0.92, skin_spec=0.08,
+        skin="#EC9C8A", skin_tone="T3", blush=0.18, skin_sat=1.15, skin_value=0.95, skin_spec=0.08,
         eyes=dict(sclera=0.19, open=0.60, iris="#6A8AA0", iris_shade=0.9, tilt=-0.04, arch=0.06),
         brows=dict(shape="bushy", thick=0.085, color="#DCDEE4", arch=0.02, len=1.3, outer=-0.03),
         nose=dict(type="aquiline", len=0.24, w=0.07, proj=0.075, hump=0.01, drop=0.21, tip="#C8806A", tip_k=0.35),
@@ -866,7 +866,7 @@ CHARS.update({
     # ---------------------------------------------------------------- Sovereign Sairin the Iron (Alvaria, Wolf)
     "ldr_alvaria": dict(
         name="Sairin", leader=True, female=True, tall_headgear=True, plate="#E8873A",
-        head=dict(shape="heart", wh=0.76, h_px=262, eye_line=0.47, cheekbones=0.035, chin=0.0),
+        head=dict(shape="heart", wh=0.76, h_px=258, eye_line=0.47, cheekbones=0.035, chin=0.0),
         skin="#F2A898", skin_tone="T1", blush=0.16, skin_sat=1.40, skin_value=1.08,
         eyes=dict(sclera=0.19, open=0.70, iris="#5A8AC8", iris_shade=0.85, tilt=-0.05, arch=0.18, flick=0.07),
         brows=dict(shape="straight", thick=0.06, color="#2E2E3E", arch=0.015, outer=0.02, len=1.25, len_far=1.7,
@@ -877,7 +877,7 @@ CHARS.update({
                    smile=dict(type="closed", w=0.28, near=0.04, far=0.03, sag=0.008)),
         hair=dict(style="straight", res=0.015, color="#4E4E68", dark="#46465E", light="#7C84AC", crevice="#42425A", part=0.0,
                   drop=-0.68),
-        headgear=dict(kind="diadem", color="#5A6270", w=0.07, el=(40, 22), spike=0.38, spike_az=34, back=36, out=16,
+        headgear=dict(kind="diadem", color="#5A6270", w=0.07, el=(40, 22), spike=0.42, spike_az=34, back=22, out=16,
                       detail="diadem", min_px=1500),
         body=dict(shoulders=1.95),
         costume=dict(
@@ -956,7 +956,7 @@ CHARS.update({
     # ---------------------------------------------------------------- Chieftain Bjorulf Black Feather (Pack, Raven)
     "ldr_pack": dict(
         name="Bjorulf", leader=True, female=False, tall_headgear=True, plate="#D1934F",
-        head=dict(shape="long", wh=0.74, h_px=268, eye_line=0.47, cheeks=0.72, brow_ridge=1.4, jaw=-0.02,
+        head=dict(shape="long", wh=0.74, h_px=274, eye_line=0.47, cheeks=0.72, brow_ridge=1.4, jaw=-0.02,
                   muzzle=0.95),
         skin="#E8907C", skin_tone="T2", blush=0.12, skin_sat=1.25,
         mask=dict(**{"from": (-0.46, 0.02), "to": (0.46, 0.02)}, w=0.15, color="#4A5470", k=0.92, min_px=300),
@@ -982,7 +982,7 @@ CHARS.update({
                      clumps=dict(n=60, len=0.16, w=0.05, th=0.022, tip=0.25), smooth=2),
                 dict(kind="strap", id="strap", color="#5A3A22", w=0.07, **{"from": (0.42, -0.72), "to": (-0.45, -1.6)}),
             ]),
-        props=[dict(kind="feathers", len=0.5, w=0.08, color="#2E2E36", sheen="#4A5470", bead="#C8902A"),
+        props=[dict(kind="feathers", len=0.5, w=0.11, back_k=0.3, out_k=1.6, color="#2E2E36", sheen="#4A5470", bead="#C8902A"),
                dict(kind="pendant", at=(-0.08, -1.0), color="#C8902A")],
         pose=dict(body=22, head=10, roll=-4, nod=-1),
         signature=dict(name="three black feathers up-back", zone="top back"),
@@ -994,9 +994,9 @@ CHARS.update({
     # ---------------------------------------------------------------- Archmaster Ormdek the Stone (Conclave, Turtle)
     "ldr_conclave": dict(
         name="Ormdek", leader=True, female=False, tall_headgear=True, plate="#D18D4F",
-        head=dict(shape="square", wh=1.0, h_px=258, eye_line=0.49, jaw=0.08, brow_ridge=1.6, cheeks=1.0, muzzle=1.1,
+        head=dict(shape="square", wh=1.18, n_top=3.4, h_px=258, eye_line=0.49, jaw=0.08, brow_ridge=1.6, cheeks=1.0, muzzle=1.1,
                   chin=0.02),
-        skin="#9A5A48", skin_tone="T5", blush=0.12, skin_sat=1.45, skin_spec=0.10,
+        skin="#9A5E4C", skin_tone="T5", blush=0.12, skin_sat=1.12, skin_spec=0.10,
         eyes=dict(sclera=0.18, open=0.66, iris="#7A8A9A", iris_shade=0.9, tilt=-0.06, arch=0.05),
         brows=dict(shape="straight", thick=0.09, color="#B4B4BC", arch=0.0, len=1.3, inner=-0.01, rough=0.6),
         nose=dict(type="straight", w=0.085, drop=0.21, k=1.05, tip="#8A4E34", tip_k=0.3),
@@ -1010,7 +1010,7 @@ CHARS.update({
         headgear=dict(kind="shell", id="steel_plate", color="#C0C8D0", mat="metal", rough=0.3, metallic=0.5,
                       edge=[(0, 52), (40, 48), (80, 40), (120, 34), (180, 30)], thick=0.04, roll=0.02, res=0.012,
                       smooth=3),
-        body=dict(shoulders=2.25, neck=0.62),
+        body=dict(shoulders=2.02, neck=0.62),
         costume=dict(
             base=dict(color="#7A6A5A", rough=0.7, sheen=0.1),
             layers=[
@@ -1021,7 +1021,7 @@ CHARS.update({
                 dict(kind="buttons", id="rivet", at=[(-0.30, -0.95), (0.30, -0.95), (-0.30, -1.15), (0.30, -1.15)],
                      r=0.026, color="#A87A50"),
             ]),
-        props=[dict(kind="shield", side="far", r=0.36, x=0.48, turn=42, up=0.45, color="#B8C0C8", metal=True,
+        props=[dict(kind="shield", side="far", r=0.40, x=0.48, turn=42, up=0.15, dz=0.15, color="#B8C0C8", metal=True,
                     edge="#A87A50", rivets=12, detail="shield", min_px=2000)],
         pose=dict(body=16, head=4, roll=0, nod=-3),
         signature=dict(name="box beard + one massive shield pauldron on the far shoulder",
@@ -1060,7 +1060,7 @@ CHARS.update({
                 dict(kind="lapels", color="#6A5280",
                      shape=[(0.08, -0.66), (0.24, -0.70), (0.33, -0.78), (0.28, -0.84), (0.20, -0.98), (0.04, -1.14)]),
             ]),
-        props=[dict(kind="wing", x=0.54, y=0.06, n=10, len=1.30, a0=70, spread=48, w=0.13, color="#565266", sheen="#9A7ACA",
+        props=[dict(kind="wing", x=0.52, y=0.06, n=10, len=1.30, a0=70, spread=48, w=0.13, color="#565266", sheen="#9A7ACA",
                     min_px=4000),
                dict(kind="brooch", at=(0.0, -0.74), d=0.10),
                dict(kind="feather_pin", az=-82, el=24, len=0.20, w=0.04, color="#2E2A36", pin="#C8CCD4",

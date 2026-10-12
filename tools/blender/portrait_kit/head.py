@@ -36,6 +36,7 @@ SHAPES = {
 def params(ctx):
     hd = ctx.ch["head"]
     n0, n1, jaw, taper, flat, depth = SHAPES[hd.get("shape", "oval")]
+    n0 = hd.get("n_top", n0)        # a squarer skull top (Ormdek's head-block, §7.8)
     jaw += hd.get("jaw", 0.0)
     if ctx.female:
         jaw -= (1 - S["female_jaw"])

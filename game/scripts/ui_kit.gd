@@ -582,7 +582,9 @@ class KitDecor extends Control:
 ## moves without being redrawn (a scrolled card, a container relayout) keeps its old image until it has held still
 ## for SETTLE_MS; it is then drawn again, at its new sub-pixel offset (the image made for another offset stands in,
 ## resampled, until that one lands). The atlas keeps the images that some canvas item's commands still show: when
-## it is full, the others are dropped and their room is used again; only if that is not enough does it start over.
+## it is full, the others are dropped and their room is used again; when what is left is in pieces too small, the
+## images still shown are packed tight into a second (spare) atlas in one copy, which takes over — they stay on the
+## screen meanwhile; only if they would not leave room even so does it start over.
 ## Something seen through a modulate α < 1 (a claimed row, a taken calendar day) is made at that α, each layer faded
 ## on its own on the stage as the vectors are on the screen, and drawn with the α it inherits made up for; while its
 ## α changes (a fade) its opaque image stands in, faded as one piece. Off when headless (the tests): everything is

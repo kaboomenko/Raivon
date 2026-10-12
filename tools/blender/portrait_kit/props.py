@@ -1532,7 +1532,7 @@ def wolf_head(ctx, pr):
     face = (cam * math.cos(math.radians(pr.get("turn", 35))) - right * math.sin(math.radians(pr.get("turn", 35)))).normalized()
     up = Vector((0, 0, 1))
     side = up.cross(face).normalized()
-    base = h + up * 0.10 * s
+    base = h + up * (0.10 + pr.get("lift", 0.0)) * s     # `lift`: the head sits up on the pelt (its ears clear the shoulder)
 
     def P(f, u, sd=0.0):
         return base + face * f * s + up * u * s + side * sd * s
@@ -1540,6 +1540,8 @@ def wolf_head(ctx, pr):
           dict(co=P(0.13, 0.0), half=(0.09 * s, 0.085 * s, 0.075 * s), stiff=2.4, rot=core.frame_quat(face, up)),  # snout
           dict(co=P(0.22, -0.015), half=(0.065 * s, 0.06 * s, 0.05 * s), stiff=2.6, rot=core.frame_quat(face, up)),
           dict(co=P(-0.12, -0.04), half=(0.16 * s, 0.10 * s, 0.10 * s), stiff=2.0)]       # the neck of the pelt
+    if pr.get("lift", 0.0):     # the pelt's neck runs on down to the shoulder under a lifted head
+        el.append(dict(co=P(-0.12, -0.04 - pr["lift"]), half=(0.17 * s, 0.12 * s, 0.11 * s), stiff=2.0))
     for sd in (-1, 1):       # the cheek ruffs
         el.append(dict(co=P(-0.02, -0.02, sd * 0.11), half=0.07 * s, stiff=2.4))
     mat = core.hair_mat(ctx, "wolf", pr.get("color", "#6E6862"), base.z - 0.1, base.z + 0.25, dark=pr.get("dark"),
@@ -1723,9 +1725,10 @@ def feathers(ctx, pr):
     grp = _detail(ctx, pr, "feathers", 1500)
     droop = math.radians(pr.get("droop", 0.0))
     ln = pr.get("len", 0.5) * H
+    bk, ok = pr.get("back_k", 1.0), pr.get("out_k", 1.0)     # less back / more out: the fan reads in the silhouette
     for i, (ang, back, k) in enumerate(((58, 0.35, 1.0), (40, 0.50, 0.9), (75, 0.20, 0.82))):
         a = math.radians(ang) - droop
-        d = Vector((-math.cos(a) * 0.65, back, math.sin(a))).normalized()
+        d = Vector((-math.cos(a) * 0.65 * ok, back * bk, math.sin(a))).normalized()
         o, _ = _feather_mesh(ctx, "feather%d" % i, base + Vector((0, 0.01 * i, 0.0)), d, ln * k, pr.get("w", 0.075), m,
                              curve=-0.10)
         ctx.add(o, grp, hair, kind="embed", head=True)
