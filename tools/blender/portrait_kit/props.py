@@ -320,7 +320,9 @@ def glasses(ctx, pr):
         tm = core.curve("glasses_temple_" + e["tag"], back, [1.0] * len(back), t * 0.42, fm, order=3)
         # runs back under the hair by design; where the hair does not reach (Iveta's glasses slid down, Arman's short
         # hair) it lies on the head, which is then its host (the contact check)
-        ctx.add(tm, grp, _closest_parent(ctx, tm, [hair, head]) if hair is not head else hair, kind="embed", head=True)
+        # (Vega's rectangular pair keeps its P2 registration on the hair: re-hosting moved her far temple a pixel)
+        ctx.add(tm, grp, _closest_parent(ctx, tm, [hair, head]) if (hair is not head and shape != "rect") else hair,
+                kind="embed", head=True)
     # the bridge over the nose
     if len(inner) == 2:
         mid = (inner[0] + inner[1]) / 2

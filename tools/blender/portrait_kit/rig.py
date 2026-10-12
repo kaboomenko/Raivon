@@ -221,9 +221,11 @@ def frame_targets(ctx, size, frame="bust"):
                 chin_max=R["chin_max"] * k)
 
 
-def solve_frame(ctx, size, frame="bust", log=print):
+def solve_frame(ctx, size, frame="bust", log=print, h_px=None):
     """Shift and distance so the eye line, head centre and head height land on §7.11's numbers; then the skyline and
-    side-band checks, stepping H_px down by 4 when the frame does not fit (an error below 256)."""
+    side-band checks, stepping H_px down by 4 when the frame does not fit (an error below 256). `h_px` (master px)
+    starts from another file's head size instead of the character's: a leader's moods keep the H_px its calm face
+    settled on, so the head is one size across the five (§7.9), while the eye line and the head centre stay put."""
     sc = bpy.context.scene
     sc.render.resolution_x, sc.render.resolution_y = size
     t = frame_targets(ctx, size, frame)
@@ -237,7 +239,7 @@ def solve_frame(ctx, size, frame="bust", log=print):
     # a nod or a roll shortens the projected chin-crown line, and holding that to H_px would zoom a tilted head in
     # (a smile's chin-up put the chin past P-A6's 0.65 h); the size stays the character's, the tilt stays a tilt
     up = upright_points(ctx, (ctx.L["chin"], ctx.L["crown"]))
-    target_h = t["h_px"]
+    target_h = t["h_px"] if h_px is None else h_px * k
     allpts = visible_points(ctx)
     # a designed overflow of the top (Rai's banner, §7.2 "знамя за верх кадра") is left out of the skyline check;
     # it still keeps the side band
@@ -284,7 +286,6 @@ def solve_frame(ctx, size, frame="bust", log=print):
                          dist=round(-cam.location.y, 4), shift=(round(cam.data.shift_x, 5), round(cam.data.shift_y, 5)),
                          target_h=round(target_h / k, 1))
         if ok:
-            ctx.frame_cam = (tuple(cam.location), cam.data.shift_x, cam.data.shift_y)   # for the moods (reuse_frame)
             return ctx.frame
         log("frame: H_px %.0f does not fit (skyline %.1f, sides %.1f / %.1f, chin %.1f) -> H_px %.0f" % (
             target_h / k, sky / k, side_l / k, side_r / k, chin_y / k, (target_h - t["step"]) / k))
@@ -294,53 +295,6 @@ def solve_frame(ctx, size, frame="bust", log=print):
                                "%.1f / %.1f px, chin %.1f px; need >= %.0f, >= %.0f and chin <= %.0f on the 512x588 "
                                "master)" % (ctx.cid, t["h_min"] / k, sky / k, side_l / k, side_r / k, chin_y / k,
                                             t["sky"] / k, t["side_band"] / k, (t.get("chin_max") or 0) / k))
-
-
-def reuse_frame(ctx, size, cam_state, frame="bust", log=print):
-    """A leader's mood keeps its calm frame (§7.9: the features do not move between moods, only shapes, angles and
-    the head's pose): the calm camera (location and shift) is set as it is, the frame numbers are measured for the
-    record, and a mood whose head pose pushes something past the skyline, the side band or the chin is noted (the
-    data then lowers the leader's H_px so that every mood fits) instead of re-solving a different frame."""
-    sc = bpy.context.scene
-    sc.render.resolution_x, sc.render.resolution_y = size
-    t = frame_targets(ctx, size, frame)
-    k = size[1] / 588.0
-    cam = ctx.objs["cam"]
-    loc, sx, sy = cam_state
-    cam.location = loc
-    cam.data.shift_x, cam.data.shift_y = sx, sy
-    core.update()
-    eyes = [e["obj"].matrix_world.translation.copy() for e in ctx.objs["eyes"]]
-    chin = head_to_world(ctx, ctx.L["chin"])
-    up = upright_points(ctx, (ctx.L["chin"], ctx.L["crown"]))
-    exempt = getattr(ctx, "skyline_exempt", [])
-    allpts = visible_points(ctx)
-    skypts = visible_points(ctx, exempt) if exempt else allpts
-    pe = project(cam, eyes, size)
-    pu = project(cam, up, size)
-    hp = project(cam, head_points(ctx), size)
-    pa = project(cam, allpts, size)
-    sky = float(project(cam, skypts, size)[:, 1].min())
-    upper = pa[pa[:, 1] < t["side_rows"]]
-    side_l = float(upper[:, 0].min()) if len(upper) else float(size[0])
-    side_r = float(size[0] - upper[:, 0].max()) if len(upper) else float(size[0])
-    chin_y = float(project(cam, [chin], size)[0, 1])
-    ctx.frame = dict(mode=frame, h_px=round(abs(pu[0, 1] - pu[1, 1]) / k, 2), eye_y=round(float(pe[:, 1].mean()) / k, 2),
-                     head_x=round(float(hp[:, 0].min() + hp[:, 0].max()) / 2 / k, 2), chin_y=round(chin_y / k, 1),
-                     skyline=round(sky / k, 1), side=(round(side_l / k, 1), round(side_r / k, 1)),
-                     dist=round(-cam.location.y, 4), shift=(round(sx, 5), round(sy, 5)), target_h=None,
-                     calm_frame=True)
-    bad = []
-    if sky < t["sky"]:
-        bad.append("skyline %.1f < %.0f" % (sky / k, t["sky"] / k))
-    if min(side_l, side_r) < t["side_band"]:
-        bad.append("side %.1f / %.1f < %.0f" % (side_l / k, side_r / k, t["side_band"] / k))
-    if t.get("chin_max") is not None and chin_y > t["chin_max"]:
-        bad.append("chin %.1f > %.0f" % (chin_y / k, t["chin_max"] / k))
-    if bad:
-        ctx.notes.append("calm frame kept for the %s mood, but %s" % (ctx.mood, ", ".join(bad)))
-        log("frame: " + ctx.notes[-1])
-    return ctx.frame
 
 
 # ------------------------------------------------------------------ gaze and catchlights

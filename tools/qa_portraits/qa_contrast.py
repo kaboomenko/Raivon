@@ -53,8 +53,10 @@ def band_stats(im, plate_hex, mode):
     return float(np.median(dl)), float((dl < 8).mean())
 
 
-def rim_share(im, plate_hex, mode):
-    """Share of the silhouette's inner rim (4 px at 512) within dL* 8 of the plate behind it (gradient + halo)."""
+def rim_share(im, plate_hex, mode, exclude=None):
+    """Share of the silhouette's inner rim (4 px at 512) within dL* 8 of the plate behind it (gradient + halo);
+    `exclude` (a mask) leaves some pixels out (INFO only: the ruler's crown, whose gold §7.10 sets at dL* ~4 to the
+    sky)."""
     h, w = im.shape[:2]
     a = im[..., 3]
     px = max(2, int(round(4 * w / 512)))
@@ -62,6 +64,8 @@ def rim_share(im, plate_hex, mode):
     inner = np.asarray(m.filter(ImageFilter.MinFilter(2 * px + 1))) > 127
     ring = (a > 0.95) & ~inner
     ring[int(h * 0.92):] = False
+    if exclude is not None:
+        ring &= ~exclude
     if ring.sum() < 10:
         return None
     L = Q.srgb_to_lab(im[..., :3])[..., 0]
@@ -335,6 +339,15 @@ def main():
                 tally[key][0] += ok
                 tally[key][1] += 1
                 bad |= not ok
+            if n.startswith("ruler") and image_rules:
+                crown = np.zeros(im.shape[:2], bool)
+                for kk, v in masks.items():
+                    if kk.startswith("detail:crown"):
+                        crown |= v
+                rc = rim_share(im, "#8FCDF2", "B", exclude=crown)
+                if rc is not None:
+                    idl.append("rim without the crown (INFO, §7.10 sets the gold at dL* ~4 to the sky) %.0f%%"
+                               % (rc * 100))
         fails += bad
         if not quiet or bad:
             print("%-22s dark %.1f%%%s%s" % (n, ds * 100, "" if okd else " FAIL", "   FAIL" if bad else ""))

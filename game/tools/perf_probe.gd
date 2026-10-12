@@ -104,10 +104,11 @@ static func bake_stats(kb: Node) -> String:
 		if (kb.icons[path][2] as Rect2i).size.x > 0:
 			icons_in += 1
 	var deferred: Variant = kb.get("_defer")  # (images waiting for a piece of a fragmented atlas; an older kit has none)
-	return "k=%.3f atlas=%s baked=%d queued=%d deferred=%d not-baked=%d waiting=%d icons=%d/%d resets=%d evicted=%d used=%.0f%% top=%d stage=%s state=%d" % [
+	var comp: Variant = kb.get("compactions")  # (an older kit has none)
+	return "k=%.3f atlas=%s baked=%d queued=%d deferred=%d not-baked=%d waiting=%d icons=%d/%d resets=%d compactions=%d evicted=%d used=%.0f%% top=%d stage=%s state=%d" % [
 		kb.k, kb._asize, kb.slots.size(), kb.jobs.size(), (deferred as Dictionary).size() if deferred is Dictionary else 0,
 		kb.never.size(), kb.waiting.size(), icons_in, kb.icons.size(),
-		kb.resets, kb.evicted, kb.used() * 100.0, kb._top, kb.stage.size, kb._state]
+		kb.resets, int(comp) if comp != null else 0, kb.evicted, kb.used() * 100.0, kb._top, kb.stage.size, kb._state]
 
 
 ## What the atlas holds, by look (the key's kind: text, flat, decor, shape, still, …): images and share of the atlas,
@@ -189,6 +190,9 @@ static func run(tree: SceneTree, out_path: String, tabs := true) -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--perf-deep="):
 			min_cost = maxi(2, int(a.get_slice("=", 1)))
+	if OS.get_cmdline_user_args().has("--perf-fling"):
+		await fling(tree, out_path)
+		return
 	if tabs and OS.get_cmdline_user_args().has("--perf-tabs"):
 		await run(tree, out_path, false)
 		await shop_tabs(tree, out_path)
@@ -424,6 +428,124 @@ static func scroll_test(tree: SceneTree, out_path: String) -> void:
 	await _settle(tree, vp, kb)
 
 
+const FLING_MAX := 300  ## --perf-fling: no frame may draw more canvas calls than this
+
+
+## `--perf-fling` (H2 review 2; run with --fixed-fps=60 --virtual-clock, so the bake's waits last as many frames as on a
+## 60 fps phone): the open window's list scrolled the way a finger moves it — 18 px, then 45 px every frame, to the end
+## and back — each followed by 150 frames held still, every frame's canvas draws recorded (the 3D world off). Then a
+## compaction is forced at rest (every image's texels must arrive unchanged; the frames before and after:
+## <shot>_cmp_a.png / _cmp_b.png), and the list held at the top is shot baked and as vectors (<shot>_end_bake.png /
+## _end_vec.png). Prints «perf-tree fling» lines: the spread, the frames over FLING_MAX, the resets and compactions
+## while it scrolled and while it held, and FAIL lines.
+static func fling(tree: SceneTree, out_path: String) -> void:
+	var vp := tree.root
+	var kb := vp.get_node_or_null("KitBake")
+	var main: Node = tree.current_scene
+	var ui: Node = main.get("ui") if main != null else null
+	var modal: Control = ui.get("_modal") if ui != null else null
+	var shop: Control = main.get("shop") if main != null else null
+	var sc := _find_scroll(modal if modal != null else shop)
+	var p := func(t: String) -> void: print("perf-tree fling ", t)
+	if sc == null:
+		p.call("no list in the window")
+		return
+	vp.disable_3d = true
+	var s0 := await _settle(tree, vp, kb)
+	p.call("settled draws=%d %s" % [s0, bake_stats(kb)])
+	var base := out_path.trim_suffix(".tree.txt").get_basename()
+	var fails := 0
+	var bar := sc.get_v_scroll_bar()
+	var end := maxf(0.0, bar.max_value - bar.page)
+	for spd in [18.0, 45.0]:
+		var r0: int = kb.resets if kb else 0
+		var c0: int = int(kb.get("compactions")) if kb else 0
+		var a: Array = []
+		var v := 0.0
+		for dir in [1.0, -1.0]:
+			while true:
+				v = clampf(v + spd * dir, 0.0, end)
+				sc.scroll_vertical = int(v)
+				a.append(await _frame(vp, kb))
+				if (dir > 0.0 and v >= end) or (dir < 0.0 and v <= 0.0):
+					break
+		var r1: int = kb.resets if kb else 0
+		var c1: int = int(kb.get("compactions")) if kb else 0
+		var h: Array = []
+		for i in 150:
+			h.append(await _frame(vp, kb))
+		var over: Array = []
+		for i in a.size():
+			if int(a[i]) > FLING_MAX:
+				over.append("s%d:%d" % [i, a[i]])
+		for i in h.size():
+			if int(h[i]) > FLING_MAX:
+				over.append("h%d:%d" % [i, h[i]])
+		var hmax := 0
+		for x in h:
+			hmax = maxi(hmax, int(x))
+		p.call("speed %d px/frame: scroll %s resets+%d compactions+%d | hold 150 frames max=%d resets+%d compactions+%d | over %d: %d %s" % [
+			spd, _spread(a.duplicate()), r1 - r0, c1 - c0, hmax, (kb.resets - r1) if kb else 0,
+			(int(kb.get("compactions")) - c1) if kb else 0, FLING_MAX, over.size(), str(over.slice(0, 24))])
+		p.call("speed %d: scroll seq %s" % [spd, str(a.slice(0, 400))])
+		p.call("speed %d: hold seq %s" % [spd, str(h.slice(0, 60))])
+		if not over.is_empty():
+			fails += over.size()
+			p.call("FAIL %d frames over %d at %d px/frame (last reset: %s)" % [over.size(), FLING_MAX, spd, String(kb.get("why")) if kb else ""])
+	if kb != null and kb.has_method("_start_compaction"):
+		# a compaction moves every image to another place (another atlas): the screen must not change — the frame before
+		# and the frame after (<shot>_cmp_a.png / _cmp_b.png; tools/hud_diff.py), its draws too
+		await RenderingServer.frame_post_draw
+		var da := await _frame(vp, kb)
+		vp.get_texture().get_image().save_png(base + "_cmp_a.png")
+		var c0: int = kb.compactions
+		# every image's texels must arrive as they were: the atlas before, the places, then the atlas after
+		var img_a: Image = kb.atlas.get_texture().get_image()
+		var was := {}
+		for key in kb.slots:
+			was[key] = kb.slots[key]
+		for path in kb.icons:
+			if (kb.icons[path][2] as Rect2i).size.x > 0:
+				was["icon:" + String(path)] = kb.icons[path][2]
+		kb._compact_at = -1000
+		var ok: bool = int(kb._state) == 0 and kb._start_compaction(Vector2i(4, 4))
+		var seq: Array = []
+		for i in 6:
+			seq.append(await _frame(vp, kb))
+		vp.get_texture().get_image().save_png(base + "_cmp_b.png")
+		var img_b: Image = kb.atlas.get_texture().get_image()
+		var same := 0
+		var moved := 0
+		var bad: Array = []
+		for key in was:
+			var r0: Rect2i = was[key]
+			var r1: Variant = kb.icons[String(key).trim_prefix("icon:")][2] if String(key).begins_with("icon:") else kb.slots.get(key)
+			if r1 == null or (r1 as Rect2i).size != r0.size:
+				bad.append(String(key).substr(0, 40))
+				continue
+			moved += int((r1 as Rect2i).position != r0.position)
+			if img_a.get_region(r0).get_data() == img_b.get_region(r1).get_data():
+				same += 1
+			else:
+				bad.append(String(key).substr(0, 40))
+		p.call("forced compaction: started=%s landed=%d images %d (moved %d), texels the same in %d%s; draws before=%d after=%s (%s) %s" % [
+			ok, kb.compactions - c0, was.size(), moved, same, (" FAIL differ: " + str(bad.slice(0, 6))) if not bad.is_empty() else "",
+			da, str(seq), String(kb.get("why_compact")), bake_stats(kb)])
+		if not bad.is_empty():
+			fails += 1
+		for x in seq:
+			if int(x) > maxi(da, FLING_MAX):
+				fails += 1
+				p.call("FAIL a compaction changed the draws: %s" % str(seq))
+				break
+	# held at the top again after both: what the atlas shows against its vectors (<shot>_end_bake.png / _end_vec.png)
+	tree.paused = true
+	await vec_pair(tree, base + "_end.tree.txt")
+	tree.paused = false
+	vp.disable_3d = false
+	p.call("done fails=%d %s; last compaction %s" % [fails, bake_stats(kb), String(kb.get("why_compact")) if kb else ""])
+
+
 static func _find_scroll(n: Node) -> ScrollContainer:
 	if n == null:
 		return null
@@ -656,8 +778,16 @@ static func late(tree: SceneTree, out_path: String) -> void:
 		_:
 			print("perf-tree late: no late state for --demo=%s" % demo)
 			return
+	# held still without the 3D world (much faster frames), then shot with it. A breathing element (the calendar's
+	# today) keeps its owner moving, so the settle runs to its limit: under --fixed-fps each of its 0.25 s waits is 15
+	# frames, and 60 tries with the world on outlasted godot_shot's RUN_LIMIT — at most TRANS_SETTLE tries then
+	vp.disable_3d = true
 	await tree.create_timer(1.0).timeout
-	var d := await _settle(tree, vp, kb)
+	var fixed := OS.get_cmdline_args().has("--fixed-fps")
+	var d := await _settle(tree, vp, kb, TRANS_SETTLE if fixed else 60)
+	vp.disable_3d = false
+	await RenderingServer.frame_post_draw
+	await RenderingServer.frame_post_draw
 	await RenderingServer.frame_post_draw
 	var png := out_path.trim_suffix(".tree.txt")
 	vp.get_texture().get_image().save_png(png)
@@ -695,8 +825,10 @@ const TRANS_SETTLE := 12  ## --perf-trans waits at most this many settle steps (
 
 ## `--perf-trans` (H2 review; run with --fixed-fps=60): the canvas draws of each frame while things fade — the open
 ## window closed and opened again twice (`--perf-trans-open=<main's opener>`, e.g. _open_calendar), the bottom tabs
-## switched in turn, two toasts — 40 frames each, then held still. Prints «perf-tree trans» lines: the peak, the
-## frames more than 20 over the settled count, the sequence.
+## switched in turn (and twice within one fade: the row's fade mark must go), two toasts — 40 frames each, then held
+## still. With --perf-late only the window (its late state): the rest is the same, and under --fixed-fps all of it
+## outlasts godot_shot's RUN_LIMIT. Prints «perf-tree trans» lines: the peak, the frames more than 20 over the settled
+## count, the sequence.
 static func trans(tree: SceneTree, _out_path: String) -> void:
 	var vp := tree.root
 	var kb := vp.get_node_or_null("KitBake")
@@ -722,11 +854,30 @@ static func trans(tree: SceneTree, _out_path: String) -> void:
 			p.call("open %d: %s  settled=%d resets=%d" % [round_, _fmt(o, so), so, kb.resets if kb else 0])
 		ui.call("close_modal")
 		await _settle(tree, vp, kb, TRANS_SETTLE)
+	if OS.get_cmdline_user_args().has("--perf-late"):
+		# (the late state is the window's: the tabs and toasts are the same as without it, and all of it under
+		# --fixed-fps outlasts godot_shot's RUN_LIMIT)
+		vp.disable_3d = false
+		p.call("done (late: the window only) %s" % bake_stats(kb))
+		return
 	for t in ["buildings", "development", "diplomacy", "world", "army", "buildings", "diplomacy", "development"]:
 		main.call("_open_tab", t)
 		var a := await _rec(vp, kb, 40)
 		var d := await _settle(tree, vp, kb, TRANS_SETTLE)
 		p.call("tab %s: %s  settled=%d resets=%d %s" % [t, _fmt(a, d), d, kb.resets if kb else 0, bake_stats(kb)])
+	# two switches within the first's fade (Kit.fade_in on the card row): the second fade takes over, and the row's
+	# passing-fade mark goes when it ends (else its modulate would be left out of chain_alpha for good)
+	var brow: Node = ui.get("_brow")
+	main.call("_open_tab", "buildings")
+	await _frame(vp, kb)
+	await _frame(vp, kb)
+	main.call("_open_tab", "development")
+	var q := await _rec(vp, kb, 40)
+	var dq := await _settle(tree, vp, kb, TRANS_SETTLE)
+	var mark: Variant = brow.get_meta(&"kit_fade") if brow != null and brow.has_meta(&"kit_fade") else null
+	p.call("tab quick switch: %s  settled=%d resets=%d mark after=%s alpha=%.2f" % [_fmt(q, dq), dq, kb.resets if kb else 0,
+		"none" if mark == null else ("running tween" if mark is Tween and (mark as Tween).is_valid() else "STALE"),
+		(brow as CanvasItem).modulate.a if brow != null else -1.0])
 	for i in 2:
 		ui.call("toast", "Проверка уведомления", "gold", "info")
 		var a := await _rec(vp, kb, 40)

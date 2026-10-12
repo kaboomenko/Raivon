@@ -597,9 +597,10 @@ class KitBake extends Node:
 	const POLL_N := 48  ## owners whose place is looked at per frame (in turn)
 	const OPAQUE := 0.999  ## a modulate α below this: seen through, its image made at that α (draw, _fade_alpha)
 	const FADE_MIN := 0.05  ## below this α (all but gone: a fade's first frames) no image is made at it
-	## A full atlas with less than this share in use is in pieces, not full: what fits none waits (_defer). At k ≠ 1 a
-	## long list fills more of it (its rows' images at several sub-pixel offsets): at 1080 × 1918 the Chronicle's fast
-	## scroll found no piece for a 558 px title at 66 % in use, and the atlas started over mid-scroll (an ~800 draw burst).
+	## A full atlas with less than this share in use is in pieces, not full: what fits none waits (_defer) when it cannot
+	## be compacted now (_start_compaction: one ran a moment ago). At k ≠ 1 a long list fills more of it (its rows'
+	## images at several sub-pixel offsets): at 1080 × 1918 the Chronicle's scroll found no piece for a 558 px title at
+	## 66 % in use, and the atlas started over mid-scroll (an ~800 draw burst).
 	const FRAGMENTED := 0.8
 	const DEFER_MAX := 24  ## images waiting so for a piece large enough before the atlas starts over all the same
 	const DEFER_RETRY_MS := 300  ## the waiting images are tried again after this long
@@ -610,6 +611,16 @@ class KitBake extends Node:
 	## of a scaled canvas show it).
 	const SLICE := 6.0
 	const STAGE_IDLE_MS := 2000  ## the stage's render target is freed after this long without a round
+	## An atlas in pieces (no piece fits an image, though there is room enough in all) is compacted: the images still
+	## shown are copied, packed tight, into the spare atlas in one render, which then takes over — every image stays
+	## on the screen meanwhile (reset() would draw them all as vectors until they were made again: a burst of draw
+	## calls). At most this share of the atlas in use (with the image that found no piece) for it to be worth it.
+	const COMPACT_FILL := 0.9
+	const COMPACT_GAP := 12  ## process frames between two compactions at least (else the other ways: wait, start over)
+	const SPARE_KEEP := 4  ## process frames the old atlas is kept after a compaction (until its users have drawn again)
+	## An atlas cell's texels as they are (blend disabled: a transparent texel too) — a compaction's copy.
+	const COPY := "shader_type canvas_item;\nrender_mode blend_disabled;\n" \
+		+ "void fragment() {\n\tCOLOR = texelFetch(TEXTURE, ivec2(floor(UV * vec2(textureSize(TEXTURE, 0)))), 0);\n}\n"
 	const UNPREMUL := "shader_type canvas_item;\nrender_mode blend_disabled;\n" \
 		+ "void fragment() {\n\tvec2 sz = vec2(textureSize(TEXTURE, 0));\n\tivec2 p = ivec2(floor(UV * sz));\n" \
 		+ "\tvec4 c = texelFetch(TEXTURE, p, 0);\n\tif (c.a > 0.0) {\n\t\tCOLOR = vec4(c.rgb / c.a, c.a);\n\t} else {\n" \
@@ -625,8 +636,10 @@ class KitBake extends Node:
 		+ "\tCOLOR = texelFetch(src, clamp(p, ivec2(0), sz - ivec2(1)), 0);\n}\n"
 	static var inst: KitBake
 	static var off := false
+	static var _vclock := -1
 	var stage: SubViewport
 	var atlas: SubViewport
+	var spare: SubViewport  ## a compaction's target (then the atlas; the old one becomes this): 4 × 4 when idle
 	var tex_rid: RID
 	## Physical px per logical px of the main canvas, per axis: the canvas_items stretch scales x by window width /
 	## visible width and y by window height / visible height, and the visible size is whole pixels — so the two
@@ -651,6 +664,11 @@ class KitBake extends Node:
 	var fades := {}
 	var resets := 0
 	var evicted := 0  ## images dropped to make room (they were no longer shown)
+	var compactions := 0  ## times the images still shown were packed afresh into the spare atlas (_start_compaction)
+	var _cmove: Array = []  # a compaction in flight: [moves ([[old cell, key or icon path, is icon], new cell]), painter, gen]
+	var _compact_at := -1000  # the process frame the last compaction started in
+	var _spare_at := -1000  # the process frame the last compaction landed in (the old atlas is freed SPARE_KEEP after)
+	var _copy_mat: ShaderMaterial
 	var _moving := {}  # host ids that moved, until they hold still (then they are drawn again)
 	var _poll: Array = []  # host ids still to look at in this pass
 	var _poll_p: Array = []  # parked host ids still to look at in this pass
@@ -659,7 +677,7 @@ class KitBake extends Node:
 	var _defer_at := 0
 	var _later: Array = []  # [WeakRef, due ms]: owners to redraw then (later())
 	var _round: Array = []  # the jobs in flight: {key, base, off, pp, at (stage px), slot, gen}
-	var _state := 0  # 0 idle, 1 the stage renders, 2 the atlas copies
+	var _state := 0  # 0 idle, 1 the stage renders, 2 the atlas copies, 3 the spare atlas copies (a compaction)
 	var _gen := 0  # the atlas generation (a reset starts a new one: what is in flight from before is dropped)
 	var _sky: Array = []  # the packer's skyline: Vector3i(x, y, width), left to right
 	var _free: Array = []  # Rect2i: room left by dropped images (used before the skyline)
@@ -672,6 +690,7 @@ class KitBake extends Node:
 	var _squeeze := false  # the atlas ran out of room: what cannot be seen gives its images up (draw, _release_unseen)
 	var _asked := {}  # canvas item RID id -> the frame _release_unseen asked it to draw again
 	var why := ""  ## why the atlas last started over (perf_probe)
+	var why_compact := ""  ## what the last compaction did (perf_probe)
 	var _nodes: Array = []  # the stage / copy nodes of the round
 	var _mat: ShaderMaterial
 	var _icon_shader: Shader
@@ -719,6 +738,14 @@ class KitBake extends Node:
 		atlas.render_target_clear_mode = SubViewport.CLEAR_MODE_NEVER
 		atlas.render_target_update_mode = SubViewport.UPDATE_DISABLED
 		add_child(atlas)
+		spare = SubViewport.new()
+		spare.name = "spare"
+		spare.size = Vector2i(4, 4)  # (sized to the atlas for a compaction)
+		spare.transparent_bg = true
+		spare.disable_3d = true
+		spare.render_target_clear_mode = SubViewport.CLEAR_MODE_NEVER
+		spare.render_target_update_mode = SubViewport.UPDATE_DISABLED
+		add_child(spare)
 		tex_rid = atlas.get_texture().get_rid()
 		var sh := Shader.new()
 		sh.code = UNPREMUL
@@ -726,7 +753,21 @@ class KitBake extends Node:
 		_mat.shader = sh
 		_icon_shader = Shader.new()
 		_icon_shader.code = ICON_COPY
+		var cs := Shader.new()
+		cs.code = COPY
+		_copy_mat = ShaderMaterial.new()
+		_copy_mat.shader = cs
 		_pack_reset()
+
+	## The bake's clock (ms): the engine's; with the user argument --virtual-clock (perf_probe, under --fixed-fps=60)
+	## the process frames at 60 a second, so its waits (SETTLE_MS, DEFER_RETRY_MS, RESET_GAP_MS, STILL_MS) last as many
+	## frames as on a phone however slowly the software renderer draws them.
+	static func now_ms() -> int:
+		if _vclock < 0:
+			_vclock = 1 if OS.get_cmdline_user_args().has("--virtual-clock") else 0
+		if _vclock == 1:
+			return int(Engine.get_process_frames() * 1000 / 60)
+		return Time.get_ticks_msec()
 
 	func _ready() -> void:
 		_on_resize()
@@ -771,7 +812,7 @@ class KitBake extends Node:
 		resets += 1
 		_gen += 1
 		_squeeze = false
-		_reset_at = Time.get_ticks_msec()
+		_reset_at = KitBake.now_ms()
 		slots.clear()
 		made.clear()
 		alts.clear()
@@ -932,7 +973,7 @@ class KitBake extends Node:
 		var n: Node = h
 		while n is CanvasItem:
 			var c := n as CanvasItem
-			if not c.has_meta(&"kit_fade"):
+			if not c.has_meta(&"kit_fade") or not SELF.passing(c):
 				a *= c.modulate.a
 			if a < FADE_MIN or c.top_level:
 				break
@@ -950,7 +991,7 @@ class KitBake extends Node:
 			if not fades.is_empty():
 				fades.erase(id)
 			return 1.0
-		var now := Time.get_ticks_msec()
+		var now := KitBake.now_ms()
 		var r: Variant = fades.get(id)
 		var steady := true
 		if r == null:
@@ -1016,7 +1057,7 @@ class KitBake extends Node:
 	func _poll_moves() -> void:
 		if placed.is_empty():
 			return
-		var now := Time.get_ticks_msec()
+		var now := KitBake.now_ms()
 		if _poll.is_empty():
 			_poll = placed.keys()
 		for i in mini(POLL_N, _poll.size()):
@@ -1106,7 +1147,7 @@ class KitBake extends Node:
 	## is baked only then, so a timer or a growing number does not fill the atlas with every step — while a row of
 	## cards rebuilt every second keeps its unchanging texts baked.
 	func held(key: String) -> bool:
-		var now := Time.get_ticks_msec()
+		var now := KitBake.now_ms()
 		if seen.size() > 2048:  # forget what was asked for only a while ago
 			var keep := {}
 			for k_ in seen:
@@ -1170,10 +1211,10 @@ class KitBake extends Node:
 
 	## Redraws `owner` (a CanvasItem) in `ms` milliseconds: a volatile look asks again whether it has held still.
 	func later(owner: CanvasItem, ms: int) -> void:
-		_later.append([weakref(owner), Time.get_ticks_msec() + ms])
+		_later.append([weakref(owner), KitBake.now_ms() + ms])
 
 	func _process(_d: float) -> void:
-		var now := Time.get_ticks_msec()
+		var now := KitBake.now_ms()
 		if not _later.is_empty():
 			var keep: Array = []
 			for e in _later:
@@ -1195,6 +1236,8 @@ class KitBake extends Node:
 			_defer.clear()
 		if _state != 0 or not is_inside_tree():
 			return
+		if spare.size != Vector2i(4, 4) and Engine.get_process_frames() - _spare_at > SPARE_KEEP:
+			spare.size = Vector2i(4, 4)  # the old atlas after a compaction: its render target is freed
 		if not jobs.is_empty():
 			_stage_round()
 		elif not _icons_new.is_empty():
@@ -1279,21 +1322,27 @@ class KitBake extends Node:
 				# full of what is shown now: this round takes what fits, the rest waits — what lands replaces images
 				# (a moved owner's old offset, a changed look) that can be dropped once their owners have drawn again
 				break
+			if slot.size.x == 0 and _start_compaction(cell):
+				# room enough, but in pieces (a long list's rows and their sub-pixel offsets dropped here and there): the
+				# images still shown move, packed tight, into the spare atlas, and what is left is one piece again. They
+				# stay on the screen meanwhile; the jobs wait for the next round (this one is empty: see above)
+				break
 			if slot.size.x == 0:
 				var tries := int(_defer_n.get(key, 0))
 				if used() < FRAGMENTED and _defer.size() < DEFER_MAX and tries < DEFER_TRIES:
-					# a fifth or more free, but in pieces too small for it (a long list's rows dropped here and there): it
-					# waits — its owners draw its vectors — instead of the atlas starting over (every image drawn as vectors at
-					# once until the round lands: a burst of draw calls in the middle of a scroll); tried again shortly, when
-					# what went out of sight has given its room up — DEFER_TRIES times, then the atlas is compacted after all
+					# (no compaction now: one just ran, or the images shown would not leave room for it packed either) a fifth
+					# or more free, but in pieces too small for it: it waits — its owners draw its vectors — instead of the
+					# atlas starting over (every image drawn as vectors at once until the round lands: a burst of draw calls
+					# in the middle of a scroll); tried again shortly, when what went out of sight has given its room up —
+					# DEFER_TRIES times, then the atlas starts over after all
 					if _defer.is_empty():
-						_defer_at = Time.get_ticks_msec()
+						_defer_at = KitBake.now_ms()
 					_defer[key] = j
 					_defer_n[key] = tries + 1
 					done.append(key)
 					continue
 				_defer_n.erase(key)
-				if Time.get_ticks_msec() - _reset_at < RESET_GAP_MS:
+				if KitBake.now_ms() - _reset_at < RESET_GAP_MS:
 					# full again right after a reset: what does not fit now stays vectors (until the next reset)
 					never[key] = true
 					done.append(key)
@@ -1345,7 +1394,7 @@ class KitBake extends Node:
 		var need := Vector2i(mini(STAGE.x, (ext.x + 127) / 128 * 128), mini(STAGE.y, (ext.y + 127) / 128 * 128))
 		if stage.size.x < need.x or stage.size.y < need.y:
 			stage.size = stage.size.max(need)
-		_round_at = Time.get_ticks_msec()
+		_round_at = KitBake.now_ms()
 		stage.render_target_update_mode = SubViewport.UPDATE_ONCE
 		_state = 1
 
@@ -1507,6 +1556,109 @@ class KitBake extends Node:
 			_squeeze = false
 		return n
 
+	## Compacts the atlas when that leaves room for an image of `cell` (no piece fits it now): the images it holds (the
+	## shown ones: _evict has dropped the rest) and the icons are packed afresh, tallest first, and copied into the spare
+	## atlas in one render; when that has rendered the spare becomes the atlas (_end_compaction). False (nothing done)
+	## when one ran a moment ago, or packed tight they would still leave no room for `cell`.
+	func _start_compaction(cell: Vector2i) -> bool:
+		if not _cmove.is_empty() or Engine.get_process_frames() - _compact_at < COMPACT_GAP:
+			return false
+		if float(_used + cell.x * cell.y) > COMPACT_FILL * float(_asize.x * _asize.y):
+			return false
+		var items: Array = []  # [old cell (with its gutter), key or icon path, is an icon]
+		for key in slots:
+			var s: Rect2i = slots[key]
+			items.append([Rect2i(s.position - Vector2i.ONE, s.size + Vector2i(2, 2)), key, false])
+		for path in icons:
+			var c: Rect2i = icons[path][2]
+			if c.size.x > 0:
+				items.append([c, path, true])
+		items.sort_custom(func(a: Array, b: Array) -> bool:
+			var ra: Rect2i = a[0]
+			var rb: Rect2i = b[0]
+			return ra.size.y > rb.size.y if ra.size.y != rb.size.y else ra.size.x > rb.size.x)
+		var was := [_sky.duplicate(), _free.duplicate(), _used, _top]
+		_pack_reset()
+		var moves: Array = []
+		for it in items:
+			var to := _alloc((it[0] as Rect2i).size)
+			if to.size.x == 0:
+				break
+			moves.append([it, to])
+		var room := _alloc(cell) if moves.size() == items.size() else Rect2i()
+		if room.size.x == 0:  # (the packer as it was)
+			_sky = was[0]
+			_free = was[1]
+			_used = was[2]
+			_top = was[3]
+			return false
+		_release(room)  # (the image that found no piece takes it in the next round)
+		why_compact = "for %s: %d images and icons moved, %.0f%% in use" % [cell, moves.size(), used() * 100.0]
+		var src := tex_rid
+		var mv := moves
+		var paint := func(c: CanvasItem) -> void:
+			var ci := c.get_canvas_item()
+			for m in mv:
+				RenderingServer.canvas_item_add_texture_rect_region(ci, Rect2(m[1] as Rect2i), src, Rect2(m[0][0] as Rect2i))
+		var cp := KitPainter.new(paint, Vector2(_asize))
+		cp.material = _copy_mat
+		spare.size = _asize
+		spare.add_child(cp)
+		spare.render_target_update_mode = SubViewport.UPDATE_ONCE
+		_cmove = [moves, cp, _gen]
+		_compact_at = Engine.get_process_frames()
+		_state = 3
+		return true
+
+	## The spare atlas holds the moved images: it becomes the atlas (the old one is kept SPARE_KEEP frames, while what
+	## drew from it draws again), the images' places and the icons' regions are the new ones, and everything that drew
+	## from the atlas draws again.
+	func _end_compaction() -> void:
+		var moves: Array = _cmove[0]
+		var cp: Node = _cmove[1]
+		var gen: int = _cmove[2]
+		_cmove = []
+		_state = 0
+		if is_instance_valid(cp):
+			cp.get_parent().remove_child(cp)
+			cp.queue_free()
+		if gen != _gen:  # (a reset in between: those images are gone)
+			return
+		var old := atlas
+		atlas = spare
+		spare = old
+		tex_rid = atlas.get_texture().get_rid()
+		var tex := atlas.get_texture()
+		for m in moves:
+			var it: Array = m[0]
+			var to: Rect2i = m[1]
+			if bool(it[2]):
+				var e: Array = icons[it[1]]
+				e[2] = to
+				var at := e[0] as AtlasTexture
+				at.atlas = tex
+				at.region = Rect2(Vector2(to.position) + Vector2(2, 2), Vector2(ICON, ICON))
+			else:
+				slots[it[1]] = Rect2i(to.position + Vector2i.ONE, to.size - Vector2i(2, 2))
+		compactions += 1
+		_spare_at = Engine.get_process_frames()
+		_landed = _spare_at
+		for id in owners:
+			var o: Object = (owners[id] as WeakRef).get_ref()
+			var bh: Object = (o as KitBox).host.get_ref() if o is KitBox and (o as KitBox).host != null else null
+			if bh is CanvasItem:  # (its panel draws it again: a changed style would lay the panel out again too)
+				(bh as CanvasItem).queue_redraw()
+			elif o != null:
+				_poke(owners[id])
+		for id in refs:  # (what shows images, through its owner or its host)
+			var e: Array = refs[id]
+			if (e[1] as Dictionary).is_empty():
+				continue
+			for w in [e[2], e[3] if e.size() > 3 else null]:
+				var o: Object = (w as WeakRef).get_ref() if w != null else null
+				if o is CanvasItem:
+					(o as CanvasItem).queue_redraw()
+
 	## Joins free rects that share a whole edge (neighbours dropped together: a row of labels of one height), so an image
 	## a little larger than each of them finds room before the atlas would have to start over.
 	func _coalesce() -> void:
@@ -1592,7 +1744,9 @@ class KitBake extends Node:
 		return float(_used) / float(_asize.x * _asize.y)
 
 	func _on_post_draw() -> void:
-		if _state == 1:  # the stage has rendered: copy into the atlas (un-premultiplied) next frame
+		if _state == 3:  # the spare atlas has the moved images: it takes over
+			_end_compaction()
+		elif _state == 1:  # the stage has rendered: copy into the atlas (un-premultiplied) next frame
 			for n in _nodes:
 				(n as Node).queue_free()
 			_nodes.clear()
@@ -1787,14 +1941,9 @@ static func flat_key(sb: StyleBoxFlat) -> String:
 		sb.shadow_size, sb.shadow_offset.x, sb.shadow_offset.y]
 
 
-## Draws a StyleBoxFlat from the bake atlas, nine-sliced (the parts between its corners are uniform); false when it
-## cannot be (not baked yet, skewed, expanded; with `exact` false, too small to slice — a box whose size keeps
-## changing would bake again and again): draw it as it is then.
-static func draw_flat(ci: RID, rect: Rect2, sb: StyleBoxFlat, host: CanvasItem, owner: Object, exact := true) -> bool:
-	var kb := KitBake.get_inst()
-	if kb == null or sb == null or sb.skew != Vector2.ZERO or sb.expand_margin_left != 0.0 or sb.expand_margin_top != 0.0 \
-			or sb.expand_margin_right != 0.0 or sb.expand_margin_bottom != 0.0:
-		return false
+## The slice margins of a StyleBoxFlat drawn from the atlas (left, top, right, bottom; logical px): its corner, its
+## shadow and SLICE of straight edge past them.
+static func _flat_margins(sb: StyleBoxFlat) -> Vector4:
 	var sh := float(sb.shadow_size) if sb.shadow_color.a > 0.0 else 0.0
 	var ox := absf(sb.shadow_offset.x) if sh > 0.0 else 0.0
 	var oy := absf(sb.shadow_offset.y) if sh > 0.0 else 0.0
@@ -1809,10 +1958,35 @@ static func draw_flat(ci: RID, rect: Rect2, sb: StyleBoxFlat, host: CanvasItem, 
 	var rr := maxi(sb.corner_radius_top_right, sb.corner_radius_bottom_right)
 	var rt := maxi(sb.corner_radius_top_left, sb.corner_radius_top_right)
 	var rb := maxi(sb.corner_radius_bottom_left, sb.corner_radius_bottom_right)
-	var ml := float(maxi(maxi(rl, bl), bl + maxi(0, rl - mini(bt, bb)) if bl > mini(bt, bb) else 0)) + ox + sh + sp
-	var mr := float(maxi(maxi(rr, br), br + maxi(0, rr - mini(bt, bb)) if br > mini(bt, bb) else 0)) + ox + sh + sp
-	var mt := float(maxi(maxi(rt, bt), bt + maxi(0, rt - mini(bl, br)) if bt > mini(bl, br) else 0)) + oy + sh + sp
-	var mb := float(maxi(maxi(rb, bb), bb + maxi(0, rb - mini(bl, br)) if bb > mini(bl, br) else 0)) + oy + sh + sp
+	return Vector4(float(maxi(maxi(rl, bl), bl + maxi(0, rl - mini(bt, bb)) if bl > mini(bt, bb) else 0)) + ox + sh + sp,
+		float(maxi(maxi(rt, bt), bt + maxi(0, rt - mini(bl, br)) if bt > mini(bl, br) else 0)) + oy + sh + sp,
+		float(maxi(maxi(rr, br), br + maxi(0, rr - mini(bt, bb)) if br > mini(bt, bb) else 0)) + ox + sh + sp,
+		float(maxi(maxi(rb, bb), bb + maxi(0, rb - mini(bl, br)) if bb > mini(bl, br) else 0)) + oy + sh + sp)
+
+
+## The least width at which a box in the style `sb` is drawn from the atlas sliced across (draw_flat): one image then
+## serves it at any such width; a narrower one is made at its very width.
+static func flat_slice_w(sb: StyleBoxFlat) -> float:
+	var m := _flat_margins(sb)
+	return m.x + m.z + 6.0
+
+
+## Draws a StyleBoxFlat from the bake atlas, nine-sliced (the parts between its corners are uniform); false when it
+## cannot be (not baked yet, skewed, expanded; with `exact` false, too small to slice — a box whose size keeps
+## changing would bake again and again): draw it as it is then.
+static func draw_flat(ci: RID, rect: Rect2, sb: StyleBoxFlat, host: CanvasItem, owner: Object, exact := true) -> bool:
+	var kb := KitBake.get_inst()
+	if kb == null or sb == null or sb.skew != Vector2.ZERO or sb.expand_margin_left != 0.0 or sb.expand_margin_top != 0.0 \
+			or sb.expand_margin_right != 0.0 or sb.expand_margin_bottom != 0.0:
+		return false
+	var sh := float(sb.shadow_size) if sb.shadow_color.a > 0.0 else 0.0
+	var ox := absf(sb.shadow_offset.x) if sh > 0.0 else 0.0
+	var oy := absf(sb.shadow_offset.y) if sh > 0.0 else 0.0
+	var mm := _flat_margins(sb)
+	var ml := mm.x
+	var mt := mm.y
+	var mr := mm.z
+	var mb := mm.w
 	var m := Vector4.ZERO
 	var size := rect.size
 	var key := flat_key(sb)
@@ -2041,14 +2215,8 @@ class KitShape extends Control:
 				c.size = s_
 				c.vector = true
 				return c
-			# a look that keeps changing (a bar filling up) is baked only once it holds still (KitBake.held)
-			var kb := KitBake.get_inst()
-			var settled := kind != "bar" or kb == null or kb.held(key)
-			if SELF.draw_baked(self, key, Rect2(Vector2.ZERO, size), size, make, Vector4.ZERO, settled):
+			if SELF.draw_baked(self, key, Rect2(Vector2.ZERO, size), size, make):
 				return
-			if not settled and not _armed and is_inside_tree():
-				_armed = true
-				kb.later(self, KitText.STILL_MS + 100)
 		_paint()
 
 	func _stroke(pts: PackedVector2Array, w: float, col: Color) -> void:
@@ -2331,20 +2499,29 @@ class KitShape extends Control:
 		f.set_corner_radius_all(int(ih * 0.5))
 		f.border_width_bottom = int(maxf(1.0, ih * 0.18))
 		f.border_color = face.darkened(0.25)
-		_box(f, Rect2(3, 3, fw, ih))
+		_box(f, Rect2(3, 3, fw, ih), true)
 		if fw > ih:
 			var gl := StyleBoxFlat.new()
 			gl.anti_aliasing = true
 			gl.bg_color = Color(1, 1, 1, 0.3)
 			gl.set_corner_radius_all(int(ih * 0.15))
-			_box(gl, Rect2(3.0 + ih * 0.35, 3.0 + ih * 0.12, fw - ih * 0.7, maxf(2.0, ih * 0.3)))
+			_box(gl, Rect2(3.0 + ih * 0.35, 3.0 + ih * 0.12, fw - ih * 0.7, maxf(2.0, ih * 0.3)), true)
 
 	## One of a bar's boxes: from the bake atlas (Kit.draw_flat) when drawn on the screen — sliced across when long
-	## enough, so a fill of any such length uses the same image (a short one is made at its length); else (on the
-	## stage, not baked yet) as it is.
-	func _box(sb: StyleBoxFlat, r: Rect2) -> void:
-		if not vector and SELF.draw_flat(get_canvas_item(), r, sb, self, self):
-			return
+	## enough, so a fill of any such length uses the same image; else (on the stage, not baked yet) as it is. `fill`:
+	## its length follows the bar's fill — one too short to slice is made at its very length, so only once that length
+	## has held still (KitBake.held: a bar filling up would make an image at each step); as it is until then.
+	func _box(sb: StyleBoxFlat, r: Rect2, fill := false) -> void:
+		if not vector:
+			var kb := KitBake.get_inst()
+			var exact := true
+			if fill and kb != null and r.size.x < SELF.flat_slice_w(sb):
+				exact = kb.held("barfill|%s|%.2f,%.2f" % [SELF.flat_key(sb), r.size.x, r.size.y])
+				if not exact and not _armed and is_inside_tree():
+					_armed = true
+					kb.later(self, KitText.STILL_MS + 100)
+			if SELF.draw_flat(get_canvas_item(), r, sb, self, self, exact):
+				return
 		draw_style_box(sb, r)
 
 
@@ -5468,8 +5645,13 @@ static func breathe(node: Control) -> void:
 ## TAB: the new content of a switched tab fades in (120 ms).
 static func fade_in(node: CanvasItem, d := 0.12) -> void:
 	var t := _dur(d)
+	var was: Variant = node.get_meta(&"kit_fade") if node.has_meta(&"kit_fade") else null  # (a null default errors)
+	if was is Tween and (was as Tween).is_valid():  # (switched again before the last fade ended: this one takes over)
+		(was as Tween).kill()
 	if t <= 0.0:
 		node.modulate.a = 1.0
+		if node.has_meta(&"kit_fade"):
+			node.remove_meta(&"kit_fade")
 		return
 	node.modulate.a = 0.0
 	var tw := node.create_tween()
@@ -5479,18 +5661,28 @@ static func fade_in(node: CanvasItem, d := 0.12) -> void:
 
 ## Marks `node`'s modulate α as a passing fade (a window closing, a tab's content or a toast fading in or out): what
 ## is under it is drawn from its images as it stands, the whole faded as one piece for those few frames — not made
-## again at each α of the tween (KitBake.chain_alpha leaves it out). `tw`: the tween; the mark goes when it ends (a
-## node freed at its end needs none).
+## again at each α of the tween (KitBake.chain_alpha leaves it out). `tw`: the tween — the mark is it, and holds while
+## it runs (passing): it goes when that tween ends, and a newer fade's mark is left alone; a killed one marks nothing.
+## Without one the mark holds for good (a node freed at its fade's end).
 static func passing_fade(node: CanvasItem, tw: Tween = null) -> void:
-	node.set_meta(&"kit_fade", true)
+	node.set_meta(&"kit_fade", tw if tw != null else true)
 	if tw != null:
-		tw.finished.connect(_fade_passed.bind(weakref(node)))
+		tw.finished.connect(_fade_passed.bind(weakref(node), tw))
 
 
-static func _fade_passed(w: WeakRef) -> void:
+static func _fade_passed(w: WeakRef, tw: Tween) -> void:
 	var n := w.get_ref() as CanvasItem
-	if n != null:
+	var m: Variant = n.get_meta(&"kit_fade") if n != null and n.has_meta(&"kit_fade") else null
+	if m is Tween and m == tw:  # (a newer fade's mark stays)
 		n.remove_meta(&"kit_fade")
+
+
+## Whether `c`'s modulate α is a passing fade now (passing_fade): marked, by a tween that still runs.
+static func passing(c: CanvasItem) -> bool:
+	if not c.has_meta(&"kit_fade"):
+		return false
+	var m: Variant = c.get_meta(&"kit_fade")
+	return not (m is Tween) or (m as Tween).is_valid()
 
 
 static func count_up(l: Label, from: int, to: int, ms := 450) -> void:

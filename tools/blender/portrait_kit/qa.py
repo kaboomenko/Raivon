@@ -16,8 +16,9 @@
   DIR/meta/NAME.json    projected landmarks in PNG px: eye_y, chin_y, crown_y, skyline_y, head_box, sig_box, h_px,
                         iris centres, eye openings (and the design opening), the lids' opening per eye (lids), a
                         winking eye (wink: "near" / "far"), the eyes' almond outlines (eye_almond),
-                        brow end points and the brows' gap to the calm lash line (brow_gap_H), mouth corners (and head-local, pose-free, in H:
-                        mouth_local); the floating list and contact
+                        brow end points (and head-local, pose-free, in H: brows_local) and the brows' gap to the calm
+                        lash line (brow_gap_H), mouth corners (and head-local, pose-free, in H: mouth_local); the
+                        floating list and contact
                         report; the P-A8 detail thresholds (details) and the details measured on another ID group
                         (detail_groups, e.g. Hawk's helmet = "hat"); the skin's albedo as shaded (skin_albedo:
                         the chars hex after its HSV saturation / value — §7.4's lit-cheek floor min(70, L* - 8)); for
@@ -334,6 +335,10 @@ def landmarks_json(ctx, path, png_path, ids_png, sig_png, size, floating, rows, 
     h_px = abs(chin[1] - crown[1])
     # the mouth corners in head units (pose-free: the expression alone, for the mood check's pose-held delta)
     mouth_local = sorted([[round(q.x / H, 4), round(q.z / H, 4)] for q in ctx.L.get("mouth_corners", [])])
+    # the brows' end points head-local and pose-free (in H): a mood's brow shapes apart from the head's roll (§7.9
+    # gives the brows' deltas against the character's own calm face; the cunning roll is checked on its own)
+    brows_local = [[[round(q.x / H, 4), round(q.z / H, 4)] for q in ctx.L["brow_" + t]] for t in ("near", "far")
+                   if ctx.L.get("brow_" + t)]
     meta = dict(name=os.path.splitext(os.path.basename(png_path))[0], size=list(size), cid=ctx.cid, mood=ctx.mood,
                 era=ctx.era, eye_y=round(sum(p[1] for p in iris) / len(iris), 1), chin_y=chin[1], crown_y=crown[1],
                 skyline_y=skyline, head_box=[round(v, 1) for v in head_box], sig_box=sig_box, h_px=round(h_px, 1),
@@ -345,7 +350,7 @@ def landmarks_json(ctx, path, png_path, ids_png, sig_png, size, floating, rows, 
                               sorted(ctx.objs["eyes"], key=lambda e: e["side"])],
                 eye_almond=almonds,
                 brow_gap_H=[round(ctx.L[k], 4) for k in ("brow_gap_near", "brow_gap_far") if k in ctx.L],
-                brows=brows, mouth=mc, mouth_local=mouth_local,
+                brows=brows, brows_local=brows_local, mouth=mc, mouth_local=mouth_local,
                 cheek_near=pj(rig.head_to_world(ctx, ctx.L["cheek_near"])) if ctx.L.get("cheek_near") else None,
                 mouth_open=bool(getattr(ctx, "mouth_open", False)), glasses=bool(getattr(ctx, "glasses", False)),
                 top_exempt=next((p.group for p in ctx.parts if p.obj in getattr(ctx, "skyline_exempt", [])), None),

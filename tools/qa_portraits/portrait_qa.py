@@ -30,7 +30,9 @@ Checks (PASS / FAIL / INFO with numbers, one line each, into OUT_DIR/report.txt)
                   regression guard — it catches a lid shell that no longer covers the lens top, an eye drawn over
                   the face's outline or a shifted almond; it cannot prove the eye sits in its lids (a white sliver
                   under the rim inside the outline passes): judge that on the face crops at 512. A winking eye
-                  (meta "wink") skips its opening, iris, pupil and catchlight; its brow keeps both brow gates
+                  (meta "wink", or lids shut by design < 0.12) skips its opening, iris, pupil and catchlight; its
+                  brow keeps both brow gates; a P3 mood (angry, cunning, tired) reports its eye sizes as INFO (the
+                  P-A4 mood bands gate them against the calm face)
   P-A4 smile      calm / smile pairs with meta: both mouth corners >= 6 px higher, in the picture and with the pose
                   held (head-local corners); open smiles: cavity >= 900 px² on the master, teeth visible
   P-A4 bands      each leader mood vs its calm (meta brows, pupils, eye openings, gaze, pose): angry brows' inner
@@ -346,10 +348,17 @@ def readability(d, n, a, masks, m):
     # a winking eye (meta "wink": "near" / "far", Hawk's laugh) is closed by design: its opening, iris, pupil and
     # catchlight are not gated (the other eye is)
     wink_i = {"near": 0, "far": 1}.get(m.get("wink"), -1)
+    # an eye shut by design beside the wink (Iveta's smile: "глаза-дуги", both lids 0) is treated like one; the P3
+    # moods narrow the eyes by design (§7.9: tired 0.30, cunning near 0.40-0.45, angry 0.55, and the glasses' opaque
+    # glare of Iveta's and Arman's anger): their opening, iris, pupil and catchlight sizes are reported as INFO here
+    # and gated by the P-A4 mood bands against the calm face (portrait_qa check_mood_bands)
+    lids = m.get("lids") or []
+    shut = {i for i, v in enumerate(lids[:2]) if v is not None and v < 0.12}
+    narrowed = m.get("mood") in ("angry", "cunning", "tired")
     for px in (128, 64):
         k = px / w
         for i, side in enumerate(("near", "far")):
-            if i == wink_i:
+            if i == wink_i or i in shut:
                 if px == 128:
                     out.append(("eye %s closed (wink)" % side, 1, 0))
                 if i < len(brows):
@@ -362,12 +371,14 @@ def readability(d, n, a, masks, m):
                 out.append(("%d brow %s thick" % (px, side), _thick(brows[i]) * k, 3 if px == 128 else 2))
                 if px == 64:
                     out.append(("64 brow %s long" % side, _long(brows[i]) * k, 6))
+            info = " (INFO, mood)" if narrowed else ""
             if i < len(eyes):
-                out.append(("%d eye %s opening" % (px, side), _thick(eyes[i]) * k, 6 if px == 128 else 3))
+                out.append(("%d eye %s opening%s" % (px, side, info), _thick(eyes[i]) * k,
+                            0 if narrowed else (6 if px == 128 else 3)))
             if px == 128 and i < len(irises):
-                out.append(("128 iris %s" % side, _thick(irises[i]) * k, 4))
+                out.append(("128 iris %s%s" % (side, info), _thick(irises[i]) * k, 0 if narrowed else 4))
             if px == 64 and i < len(pupils):
-                out.append(("64 pupil %s" % side, _thick(pupils[i]) * k, 2))
+                out.append(("64 pupil %s%s" % (side, info), _thick(pupils[i]) * k, 0 if narrowed else 2))
         if mouth_open:
             out.append(("%d open mouth px2" % px, mouth.sum() * k * k, 40 if px == 128 else 6))
         elif px == 128:
@@ -380,11 +391,12 @@ def readability(d, n, a, masks, m):
     lum = small[..., :3] @ np.array([0.2126, 0.7152, 0.0722])
     for i, e in enumerate(eyes):
         ys, xs_ = np.nonzero(e)
-        if not len(ys):
+        if not len(ys) or i == wink_i or i in shut:
             continue
         y0, y1 = int(ys.min() * ks), int(np.ceil(ys.max() * ks)) + 1
         x0, x1 = int(xs_.min() * ks), int(np.ceil(xs_.max() * ks)) + 1
-        out.append(("128 catchlight %s max" % ("near" if i == 0 else "far"), float(lum[y0:y1, x0:x1].max()), 0.85))
+        out.append(("128 catchlight %s max%s" % ("near" if i == 0 else "far", " (INFO, mood)" if narrowed else ""),
+                    float(lum[y0:y1, x0:x1].max()), 0 if narrowed else 0.85))
     # 48 px: the signature alone >= 8 % of the head-zone alpha mask
     if sig.any():
         am = Q.alpha_mask(a, 48)
@@ -663,12 +675,20 @@ def check_mood_bands(d, imgs, rep):
             else:
                 def mid_y(b):
                     return (b[0][1] + b[1][1]) / 2
-                # signed (near minus far, picture y): a calm face whose far brow already sits a little lower would
-                # read a raised far brow as a SMALLER |difference| (Mirosya: calm -4 px, cunning +1 px)
-                diff_m = (mid_y(mm["brows"][0]) - mid_y(mm["brows"][1])) / h
-                diff_c = (mid_y(mc["brows"][0]) - mid_y(mc["brows"][1])) / h
+                # signed (near minus far): a calm face whose far brow already sits a little lower would read a raised
+                # far brow as a SMALLER |difference| (Mirosya: calm -4 px, cunning +1 px). Head-local and pose-free
+                # when the kit wrote brows_local (in H, z up): §7.9's brow deltas are against the character's own calm
+                # face, and the cunning roll (checked on its own below) tilts the picture's brow line by ~0.04 H
+                if mm.get("brows_local") and mc.get("brows_local"):
+                    diff_m = mid_y(mm["brows_local"][1]) - mid_y(mm["brows_local"][0])
+                    diff_c = mid_y(mc["brows_local"][1]) - mid_y(mc["brows_local"][0])
+                    where = "head-local"
+                else:
+                    diff_m = (mid_y(mm["brows"][0]) - mid_y(mm["brows"][1])) / h
+                    diff_c = (mid_y(mc["brows"][0]) - mid_y(mc["brows"][1])) / h
+                    where = "picture"
                 ok = abs(diff_m - diff_c) >= 0.06 - 1e-6
-                out.append("brow difference %+.3f H (>= 0.06)%s" % (diff_m - diff_c, "" if ok else " FAIL"))
+                out.append("brow difference %+.3f H %s (>= 0.06)%s" % (diff_m - diff_c, where, "" if ok else " FAIL"))
                 bad |= not ok
                 gz = []
                 for gm, gc in zip(mm.get("gaze") or [], mc.get("gaze") or []):
