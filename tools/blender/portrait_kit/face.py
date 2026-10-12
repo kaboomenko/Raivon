@@ -115,7 +115,8 @@ def skin_color(ctx, nt):
         sharp = core.node_math(nt, "GREATER_THAN", acc, 0.35)
         base = core.node_mix(nt, core.node_math(nt, "MULTIPLY", sharp, k), base, colr)
     # the saturation: the tone's (or the character's) boost x the set's chroma k (art director note h: every skin a
-    # step less chroma; the subsurface scattering amplifies it, so k 0.94 takes the rendered chroma down ~15-20 %)
+    # step less chroma; the subsurface scattering amplifies it, so k 0.94 takes the rendered chroma down ~15-20 %;
+    # style.SKIN_CHROMA)
     tone = ch.get("skin_tone")
     sat = ch.get("skin_sat", S_SAT.get(tone, 1.0) if tone else 1.0) * SKIN_CHROMA["k"]
     val = ch.get("skin_value", 1.04)       # a hooded face (Vik) is lifted a little out of the hood's shade

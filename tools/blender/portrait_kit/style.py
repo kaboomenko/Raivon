@@ -94,10 +94,12 @@ SKIN_SAT = {"T1": 1.24, "T2": 1.15, "T3": 1.08, "T4": 1.05, "T5": 1.0, "T6": 1.0
 # (Olm and Kort sunburnt red-orange) — every skin's chroma down ~15-20 %, the cheeks rosy only on the blush. The
 # saturation above (or a character's skin_sat) x k: the subsurface scattering amplifies albedo saturation, so k 0.94
 # measured -15 to -20 % median C* on the rendered skin (k 0.90: -28 %); the warm hollow (AO) tint mixes `hollow` of
-# #C0503A into the skin (0.35 before). The blush is painted after the chroma (face.skin_color), so it stays rosy. A
-# shadow-side rolloff by the key's N.L was tried and dropped: the darkest skin is the neck in the head's cast shadow,
-# which N.L does not reach (shadow x0.3 moved the median C* 3 %).
-SKIN_CHROMA = {"k": 0.94, "hollow": 0.30}
+# #C0503A into the skin (0.35 before). The key-lit side keeps its saturation: x `lit` where the normal faces the key
+# light (N . key from lo to hi) — AgX desaturates highlights, the reason for §7.4's lit-cheek floor (HSV S >= 0.35);
+# at x1 the set's lit cheeks measured 0.31-0.34, at lit 1.22 over N . key 0.7-1.0 they keep 0.37-0.47 while the median
+# C* stays -16 to -17 % (a wider band, 0.35-0.8, gave most of the chroma back: -2 to -10 %). The blush is painted after
+# the chroma (face.skin_color), so it stays rosy.
+SKIN_CHROMA = {"k": 0.94, "hollow": 0.30, "lit": 1.22, "lo": 0.7, "hi": 1.0}
 
 C = {
     "lash": "#2A1712", "pupil": "#1E1A24", "sclera": "#F7F3EE", "mouth_in": "#74282E", "teeth": "#FBF6EA",

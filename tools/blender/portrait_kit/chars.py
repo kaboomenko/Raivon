@@ -24,9 +24,10 @@ CHARS = {
         # 0.654 h, past P-A6's 0.65 h
         head=dict(shape="square", wh=0.92, h_px=280, eye_line=0.47, cheeks=1.15, muzzle=1.15, brow_ridge=1.2),
         # "T2 румяный" (§7.6) beside ginger hair (art director note 1): T2's lightness moved toward peach-pink (hue
-        # 22 -> 12 deg: rendered skin 12-13 deg against the hair's 17-19, not orange on orange), its saturation
-        # boost a little higher than T2's 1.15 so the lit cheek keeps HSV S >= 0.35 (§7.4)
-        skin="#FFA08D", skin_tone="T2", skin_sat=1.22, blush=0.25,
+        # 22 -> 12 deg: rendered skin 12-13 deg against the hair's 17-19, not orange on orange); x1.22 kept the lit
+        # cheek at S >= 0.35 before the set's lower chroma — x1.16 since the P2 fix sheet: with the lit side held
+        # (style.SKIN_CHROMA) x1.22 lost only 4 % of its median chroma, x1.10 30 %; art director note h asks 15-20 %
+        skin="#FFA08D", skin_tone="T2", skin_sat=1.16, blush=0.25,
         # calm: the stern half-smile (§7.6 "суровая полуулыбка") — a heavy, flat upper lid (arch 0.10), its inner end
         # a little lower than the outer (tilt -0.04: a lid falling toward the temple read as worried), the brows'
         # inner ends 0.01 H down
@@ -193,9 +194,9 @@ CHARS = {
         # lit-cheek sample (the brightest 30 % of the skin) caught, and it greyed it under the 0.27 floor (0.22 at the
         # default 0.35)
         # (P2 fix sheet: still tomato-red beside Bram and Olm at hue 11 deg, S 0.55 — a weathered rose-beige #C88878
-        # under the set's lower chroma, art director note h: x1.36 x k 0.94, value 0.92 renders hue 15 deg, median C*
-        # 34 (-17 %), the lit cheek S 0.28 (peach-pink floor 0.27) and the white brows 20 L* over the skin)
-        skin="#C88878", skin_tone="T2", blush=0.28, skin_sat=1.36, skin_value=0.92, skin_spec=0.08,
+        # under the set's lower chroma, art director note h: x1.30 x k 0.94 (the lit dome held, style.SKIN_CHROMA),
+        # value 0.92 — hue ~15 deg, the white brows >= 18 L* over the skin)
+        skin="#C88878", skin_tone="T2", blush=0.28, skin_sat=1.30, skin_value=0.92, skin_spec=0.08,
         # heavy lids 0.50 with a crease, grey-blue, small "spark" catchlights; the smile opens them to 0.70
         eyes=dict(sclera=0.18, open=0.50, iris="#8AA0B4", iris_shade=0.85, tilt=-0.10, arch=0.06, catch_k=1.0,
                   iris_k=1.08, pupil=0.62,
@@ -251,7 +252,10 @@ CHARS = {
     "cmd_olm": dict(
         name="Olm", rarity="common", female=False,
         head=dict(shape="long", wh=0.75, h_px=276, eye_line=0.48, brow_ridge=1.3, cheeks=0.95, muzzle=1.05),
-        skin="#E8926C", skin_tone="T2", blush=0.24,
+        # (x1.10, not T2's 1.15: art director note h named Olm "sunburnt red-orange", and his key-lit bald dome keeps
+        # the lit-side saturation of style.SKIN_CHROMA over a larger share of his skin than anyone's; at 1.06 the
+        # chroma fell 30 % and the grey tufts went under hair vs skin dE76 30)
+        skin="#E8926C", skin_tone="T2", blush=0.24, skin_sat=1.10,
         # the squint (§7.6: near 0.55, far 0.68, the lower lid +0.02): "смотрит поверх носа"
         eyes=dict(sclera=0.18, open=[0.55, 0.68], low=0.02, iris="#6F8FA8", iris_shade=0.85, tilt=0.0, arch=0.14,
                   smile=dict(open=[0.62, 0.68], low=0.12, bow=0.25, arch=0.18)),
@@ -266,10 +270,12 @@ CHARS = {
                    calm=dict(type="closed", w=0.26, near=-0.015, far=0.0),
                    # the crooked grin: the far corner higher, a gap in the teeth (§7.6 "щербинка")
                    smile=dict(type="open", w=0.31, h=0.115, near=0.02, far=0.055, dz=-0.01, gap=0.22)),
-        hair=dict(style="tufts", bald=True, color="#D0D0D4", dark="#A8A8B0", light="#ECECF0", crevice="#6E6E7A",
+        # (the grey a step lighter, #DCDCE0: beside the set's less saturated skin, art director note h, #D0D0D4
+        # measured hair vs skin dE76 27.6, §7.4 needs 30)
+        hair=dict(style="tufts", bald=True, color="#DCDCE0", dark="#B4B4BC", light="#F0F0F4", crevice="#6E6E7A",
                   tufts=dict(band_az=95, band_lo=-20, band_hi=10, out=0.10, up=0.35,
                              fans=[(90, 20, 1.0, 0.06, 5), (110, 13, 0.85, 0.055, 4)])),
-        beard=dict(style="chops", color="#D0D0D4", tip="#E4E4E8", root="#B0B0B8", crevice="#6E6E7A", w=0.16,
+        beard=dict(style="chops", color="#DCDCE0", tip="#ECECF0", root="#BCBCC4", crevice="#6E6E7A", w=0.16,
                    thick=0.05),
         age=dict(forehead=2, crows=3, nasolabial=True, k=0.4, smile_k=0.5),      # §7.3: 2 forehead folds
         headgear=dict(kind="goggles", id="brass_goggles", style="brass", lens=0.22, rim=0.03, el=47, spread=19, tilt=0.35, depth=0.10,
@@ -308,9 +314,9 @@ CHARS = {
     "cmd_vik": dict(
         name="Vik", rarity="common", female=False,
         head=dict(shape="long", wh=0.80, h_px=264, eye_line=0.46, cheeks=1.0),
-        # (value 0.80, a tanned ranger: with the set's lower skin chroma, art director note h, the straw no longer
+        # (value 0.81, a tanned ranger: with the set's lower skin chroma, art director note h, the straw no longer
         # separates from the face by colour — it does by value, hair vs skin |dL*| >= 15, §7.4)
-        skin="#F2A276", skin_tone="T2", blush=0.30, skin_value=0.80,
+        skin="#F2A276", skin_tone="T2", blush=0.30, skin_value=0.81,
         paint=[dict(at=(0.0, -0.13), r=0.13, color="#D9825A", k=0.32)],          # the tan across the nose
         eyes=dict(sclera=0.22, open=0.85, iris="#C98A2E", iris_shade=0.85, tilt=0.06, arch=0.26,
                   smile=dict(open=0.74, low=0.22, bow=0.3, arch=0.3)),
@@ -330,7 +336,7 @@ CHARS = {
         # #F8E28E) measured 23-27 on his tanned T2
         # (P2 fix sheet: the pale cream wisps read as icing — the straw warmer and a step deeper, the lit tips
         # #F8E296, the roots and crevices darker so the clumps part; the set's less saturated skin keeps dE76 >= 30)
-        hair=dict(style="fringe", color="#FFF0AA", dark="#C8984A", light="#FFF4B8", crevice="#4A3010", rim_el=50,
+        hair=dict(style="fringe", color="#FFF3B2", dark="#C8984A", light="#FFF7C4", crevice="#4A3010", rim_el=50,
                   wisps=[(-44, 0.08, 18, 0.06, 0.014), (-31, 0.085, 24, 0.0, 0.036), (-17, 0.085, 28, 0.03, 0.016),
                          (-4, 0.09, 30, -0.01, 0.040), (9, 0.085, 30, 0.04, 0.018), (22, 0.08, 28, 0.05, 0.038),
                          (34, 0.07, 22, 0.11, 0.016), (44, 0.065, 16, 0.14, 0.030)]),
@@ -374,7 +380,9 @@ CHARS = {
         # (KIT_HANDS=1) read as a fist seen from the back at 512 and an orange lump at 128
         hands=False,
         head=dict(shape="square", wh=0.88, h_px=272, eye_line=0.48, jaw=-0.03, cheeks=1.1),
-        skin=SKIN["T4"], skin_tone="T4", blush=0.32,
+        # (x1.0, under T4's 1.05: most of his skin is the key-lit upper face, where style.SKIN_CHROMA holds the
+        # saturation — at 1.05 the median chroma fell only 7 %, at 0.96 28 %; art director note h asks 15-20 %)
+        skin=SKIN["T4"], skin_tone="T4", blush=0.32, skin_sat=1.0,
         paint=[dict(at=(0.0, -0.20), r=0.07, color="#D0604A", k=0.35)],          # the ruddy nose
         eyes=dict(sclera=0.18, open=0.58, low=0.10, iris="#2F8FB0", iris_shade=0.9, tilt=0.02, arch=0.16,
                   smile=dict(open=0.62, low=0.13, bow=0.3, arch=0.22)),
@@ -628,7 +636,10 @@ CHARS = {
     "cmd_rai": dict(
         name="Rai", rarity="legendary", female=False,
         head=dict(shape="long", wh=0.82, h_px=274, eye_line=0.46, cheeks=1.0),
-        skin="#BE8256", skin_tone="T4", blush=0.15,
+        # (x1.0, under T4's 1.05: the beard leaves mostly key-lit skin, where style.SKIN_CHROMA holds the saturation —
+        # at 1.05 the median chroma fell only 7-10 %, at 0.96 26-29 %; art director note h asks 15-20 %)
+        # (value 0.97: the white brows >= 18 L* over the less saturated, lighter skin, §7.4)
+        skin="#BE8256", skin_tone="T4", blush=0.15, skin_sat=1.0, skin_value=0.97,
         # a light raivite iris (the #5AA8FF hue lightened, full lift): P-A8 wants it at L* 70-85 (#5AA8FF at lift
         # 0.45 measured 61, 0.85 64.5; #6CB4FF at 1.0 67.9), which cannot also keep §7.4's iris-sclera dL* >= 30 (the
         # sclera renders at L* ~71) — a spec conflict for the main session. A strong dark limbal ring (x0.30 of the

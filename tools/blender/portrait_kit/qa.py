@@ -371,8 +371,8 @@ def skin_albedo(ctx):
     hx = ch["skin"].lstrip("#")
     r, g, b = (int(hx[i:i + 2], 16) / 255.0 for i in (0, 2, 4))
     tone = ch.get("skin_tone")
-    # the key-lit side's saturation (face.skin_color: the tone's boost x the set's chroma k)
-    sat = ch.get("skin_sat", SKIN_SAT.get(tone, 1.0) if tone else 1.0) * SKIN_CHROMA["k"]
+    # the key-lit side's saturation (face.skin_color: the tone's boost x the set's chroma k x its lit-side hold)
+    sat = ch.get("skin_sat", SKIN_SAT.get(tone, 1.0) if tone else 1.0) * SKIN_CHROMA["k"] * SKIN_CHROMA.get("lit", 1.0)
     val = ch.get("skin_value", 1.04)
     h, s, v = colorsys.rgb_to_hsv(r, g, b)
     r, g, b = colorsys.hsv_to_rgb(h, min(1.0, s * sat), min(1.0, v * val))
