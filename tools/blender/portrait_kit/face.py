@@ -148,7 +148,9 @@ def plan_skin_paint(ctx):
       - "oil": {"from": (x, z), "to": (x, z), "color", "k"} a smear (§7.3 #5A4A44 alpha 0.7, 0.18 x 0.05 H) —
         sharp paint, its own detail group in the ID pass ("detail:oil");
       - "brow_scar": {"x": near-brow position in eye widths, "color", "w"} — a light line from the near brow down to
-        the cheek (Frey, §7.6: #C88A6A 0.025 H), its own detail group ("detail:brow_scar")."""
+        the cheek (Frey, §7.6: #C88A6A 0.025 H), its own detail group ("detail:brow_scar");
+      - "mask": {"from", "to", "w", "color", "k"} — a painted band across the eyes (Bjorulf, §7.8), sharp, its own
+        detail group ("detail:mask")."""
     ctx.skin_paint = {}
     ctx.skin_soft = []
     ch = ctx.ch
@@ -231,6 +233,14 @@ def plan_skin_paint(ctx):
         h, _ = core.ray_front(head, x * H * sx, ez + z * H)
         if h is not None:
             ctx.skin_soft.append(([h], pa.get("r", 0.08) * H, pa["color"], pa.get("k", 0.4), False))
+    mk = ch.get("mask")
+    if mk:
+        # a painted band across both eyes and the nose bridge (Bjorulf's "вороновая маска", §7.8 #4A5470): sharp paint
+        # along a line, its own detail group ("detail:mask"); a row of soft dots read as bruises, not a band
+        (x0, z0), (x1, z1) = mk.get("from", (-0.44, 0.0)), mk.get("to", (0.44, 0.0))
+        pts = line((x0 * H * sx, ez + z0 * H), (x1 * H * sx, ez + z1 * H), mk.get("step", 0.03) * H)
+        ctx.skin_paint["mask"] = (pts, mk.get("w", 0.12) * H * 0.62, mk.get("color", "#4A5470"), mk.get("k", 0.9))
+        ctx.details["mask"] = mk.get("min_px", 300)
     oil = ch.get("oil")
     if oil:
         (x0, z0), (x1, z1) = oil["from"], oil["to"]

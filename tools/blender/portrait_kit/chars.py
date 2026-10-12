@@ -704,7 +704,7 @@ CHARS.update({
     # ---------------------------------------------------------------- Baron Grodek the Fang (Barons, Wolf; war red)
     "ldr_barons": dict(
         name="Grodek", leader=True, female=False, tall_headgear=True, plate="#DD3A30",
-        head=dict(shape="square", wh=0.98, h_px=272, eye_line=0.49, jaw=0.07, chin=0.03, cheeks=1.1, muzzle=1.2,
+        head=dict(shape="square", wh=0.98, h_px=268, eye_line=0.49, jaw=0.07, chin=0.03, cheeks=1.1, muzzle=1.2,
                   brow_ridge=1.5),
         skin=SKIN["T4"], skin_tone="T4", blush=0.18,
         eyes=dict(sclera=0.18, open=0.68, iris="#D0A030", iris_shade=0.9, tilt=-0.12, arch=0.10),
@@ -731,7 +731,7 @@ CHARS.update({
                      r=0.95, r_in=0.30, t=0.11, front_z=-1.0, side_z=-0.95, back_z=-0.85, open=0.16,
                      clumps=dict(n=70, len=0.14, w=0.05, th=0.03, curl=0.2), smooth=3),
             ]),
-        props=[dict(kind="wolf_head", x=-0.52, y=0.12, size=0.50, turn=62, color="#8E8882", dark="#6A6460",
+        props=[dict(kind="wolf_head", x=-0.46, y=0.12, size=0.44, turn=62, color="#8E8882", dark="#6A6460",
                     light="#C8C2BC", min_px=2500),
                dict(kind="fang", side="near", len=0.07, r=0.022),
                dict(kind="pendant", at=(0.02, -1.02))],
@@ -749,7 +749,7 @@ CHARS.update({
     "ldr_hamlets": dict(
         name="Mirosya", leader=True, female=True, tall_headgear=True, plate="#4FD162",
         head=dict(shape="round", wh=0.96, h_px=262, eye_line=0.47, cheeks=1.45, muzzle=1.0, chin=0.0),
-        skin=SKIN["T2"], skin_tone="T2", blush=0.34,
+        skin=SKIN["T2"], skin_tone="T2", blush=0.34, skin_value=1.12,
         paint=[dict(at=(-0.24, -0.15), r=0.02, color="#C8705A", k=0.5), dict(at=(0.24, -0.15), r=0.02,
                                                                             color="#C8705A", k=0.5)],
         eyes=dict(sclera=0.21, open=0.78, iris="#9A6A2A", tilt=0.04, arch=0.26, flick=0.06),
@@ -758,8 +758,8 @@ CHARS.update({
         mouth=dict(lip="#C8605A", line=0.20,
                    calm=dict(type="closed", w=0.27, near=0.025, far=0.02),
                    smile=dict(type="open", w=0.35, h=0.13, near=0.05, far=0.045, dz=-0.012, gold_tooth=-0.45)),
-        hair=dict(style="curls", color="#B8642A", dark="#8A4418", light="#D8884A", crevice="#5A2A10", width=1.4,
-                  n=150, curl=0.054),
+        hair=dict(style="curls", color="#A85A24", dark="#7A3C14", light="#D8884A", crevice="#5A2A10", width=1.4,
+                  n=75, curl=0.08, lobes=3, lobe_k=0.6),
         body=dict(shoulders=2.0),
         costume=dict(
             base=dict(color="#6E3420", rough=0.85, sheen=0.3),
@@ -789,7 +789,7 @@ CHARS.update({
     # ---------------------------------------------------------------- Chancellor Iveta the Wise (League, Owl)
     "ldr_league": dict(
         name="Iveta", leader=True, female=True, tall_headgear=True, plate="#32D1C2",
-        head=dict(shape="heart", wh=0.80, h_px=266, eye_line=0.47, cheekbones=0.03, chin=0.0),
+        head=dict(shape="heart", wh=0.80, h_px=260, eye_line=0.47, cheekbones=0.03, chin=0.0),
         skin=SKIN["T5"], skin_tone="T5", blush=0.18,
         eyes=dict(sclera=0.22, open=0.80, iris="#C08A30", iris_shade=0.9, tilt=0.02, arch=0.24, flick=0.05),
         brows=dict(shape="arc", thick=0.058, color="#2A2226", arch=0.03, len=1.2, len_far=1.5, in_far=0.84),
@@ -797,7 +797,7 @@ CHARS.update({
         mouth=dict(lip="#8A3E44", line=0.19,
                    calm=dict(type="closed", w=0.25, near=0.01, far=0.01),
                    smile=dict(type="closed", w=0.29, near=0.06, far=0.05, sag=0.012)),
-        hair=dict(style="owl", color="#3A3440", dark="#2E2A30", light="#5A5260", crevice="#221E26",
+        hair=dict(style="owl", color="#423C48", dark="#36323A", light="#625A6A", crevice="#2A262E",
                   tufts=dict(az=118, el=44, out=42, len=0.50, w=0.15)),
         body=dict(shoulders=1.9),
         costume=dict(
@@ -825,8 +825,8 @@ CHARS.update({
     # ---------------------------------------------------------------- Magister Torvald the Patient (Order, Turtle)
     "ldr_order": dict(
         name="Torvald", leader=True, female=False, tall_headgear=True, plate="#704FD1",
-        head=dict(shape="long", wh=0.84, h_px=272, eye_line=0.47, brow_ridge=1.7, cheeks=0.95, muzzle=1.05),
-        skin=SKIN["T3"], skin_tone="T3", blush=0.18,
+        head=dict(shape="long", wh=0.84, h_px=264, eye_line=0.47, brow_ridge=1.7, cheeks=0.95, muzzle=1.05),
+        skin=SKIN["T3"], skin_tone="T3", blush=0.18, skin_sat=1.55, skin_spec=0.08,
         eyes=dict(sclera=0.19, open=0.60, iris="#6A8AA0", iris_shade=0.9, tilt=-0.04, arch=0.06),
         brows=dict(shape="bushy", thick=0.085, color="#6A6A72", arch=0.02, len=1.3, outer=-0.03),
         nose=dict(type="aquiline", len=0.24, w=0.07, proj=0.075, hump=0.01, drop=0.21, tip="#C8806A", tip_k=0.35),
@@ -834,20 +834,20 @@ CHARS.update({
                    calm=dict(type="closed", w=0.25, near=0.004, far=0.004),
                    smile=dict(type="closed", w=0.28, near=0.04, far=0.035, sag=0.01)),
         hair=dict(style="bald", bald=True, color="#B8B8C0"),
-        beard=dict(style="braids", color="#BCBCC4", tip="#D4D4DA", root="#A0A0A8", crevice="#5E5E6A", below=0.66,
-                   mass_below=0.20, bead="#C8B48A", moustache=True, moustache_color="#C4C4CA",
-                   moustache_dark="#A0A0A8", moustache_light="#DADADE", moustache_k=0.8),
+        beard=dict(style="braids", color="#E0E2E8", tip="#EEF0F4", root="#C4C6CE", crevice="#7A7C88", below=0.66,
+                   mass_below=0.20, bead="#C8B48A", moustache=True, moustache_color="#E2E4EA",
+                   moustache_dark="#C0C2CA", moustache_light="#F2F3F6", moustache_k=0.8),
         age=dict(forehead=2, crows=3, nasolabial=False, k=0.4),
         body=dict(shoulders=2.05),
         costume=dict(
-            base=dict(color="#6A4A30", rough=0.9, sheen=0.25),
+            base=dict(color="#4E3522", rough=0.9, sheen=0.25),
             layers=[
-                dict(kind="collar", color="#5A3E28", z=-0.66, h=0.10, out=0.02, flare=0.05, piping="#8E6AD8",
+                dict(kind="collar", color="#44301E", z=-0.66, h=0.10, out=0.02, flare=0.05, piping="#8E6AD8",
                      piping_r=0.018),
                 dict(kind="piping", color="#8E6AD8", r=0.02, path=[(0.06, -0.72), (0.07, -1.0), (0.07, -1.4),
                                                                    (0.07, -1.8)]),
             ]),
-        props=[dict(kind="shield", side="near", r=0.34, x=0.58, turn=35, up=0.5, color="#C8B48A", relief="hex",
+        props=[dict(kind="shield", side="near", r=0.32, x=0.50, turn=35, up=0.5, color="#C8B48A", relief="hex",
                     edge="#A8946A", detail="shield", min_px=8000)],
         pose=dict(body=20, head=6, roll=-2, nod=-2),
         signature=dict(name="round turtle-shell shield on the near shoulder + braided beard",
@@ -862,8 +862,8 @@ CHARS.update({
     # ---------------------------------------------------------------- Sovereign Sairin the Iron (Alvaria, Wolf)
     "ldr_alvaria": dict(
         name="Sairin", leader=True, female=True, tall_headgear=True, plate="#E8873A",
-        head=dict(shape="heart", wh=0.76, h_px=266, eye_line=0.47, cheekbones=0.035, chin=0.0),
-        skin="#F2C4AE", skin_tone="T1", blush=0.14, skin_sat=1.05,
+        head=dict(shape="heart", wh=0.76, h_px=262, eye_line=0.47, cheekbones=0.035, chin=0.0),
+        skin="#F2BCA6", skin_tone="T1", blush=0.16, skin_sat=1.40,
         eyes=dict(sclera=0.19, open=0.70, iris="#5A8AC8", iris_shade=0.85, tilt=-0.05, arch=0.18, flick=0.07),
         brows=dict(shape="straight", thick=0.06, color="#2E2E3E", arch=0.015, outer=0.02, len=1.25, len_far=1.7,
                    in_far=0.84),
@@ -871,9 +871,9 @@ CHARS.update({
         mouth=dict(lip="#A85868", line=0.19,
                    calm=dict(type="closed", w=0.25, near=0.004, far=0.0),
                    smile=dict(type="closed", w=0.28, near=0.04, far=0.03, sag=0.008)),
-        hair=dict(style="straight", color="#2E2E40", dark="#2A2A36", light="#5A5E80", crevice="#1E1E2A", part=0.0,
+        hair=dict(style="straight", color="#36364C", dark="#2E2E40", light="#666C92", crevice="#22222E", part=0.0,
                   drop=-0.68),
-        headgear=dict(kind="diadem", color="#5A6270", w=0.07, el=(40, 22), spike=0.44, spike_az=34, back=30, out=16,
+        headgear=dict(kind="diadem", color="#5A6270", w=0.07, el=(40, 22), spike=0.38, spike_az=34, back=36, out=16,
                       detail="diadem", min_px=1500),
         body=dict(shoulders=1.95),
         costume=dict(
@@ -907,9 +907,9 @@ CHARS.update({
     # ---------------------------------------------------------------- Doge Velian the Sly (Saren, Fox)
     "ldr_saren": dict(
         name="Velian", leader=True, female=False, tall_headgear=True, plate="#D95290",
-        head=dict(shape="heart", wh=0.74, h_px=268, eye_line=0.48, cheekbones=0.02, chin=-0.01),
+        head=dict(shape="heart", wh=0.74, h_px=264, eye_line=0.48, cheekbones=0.02, chin=-0.01),
         skin=SKIN["T4"], skin_tone="T4", blush=0.15,
-        eyes=dict(sclera=0.19, open=0.64, iris="#7A8A3A", iris_shade=0.9, tilt=0.10, arch=0.16),
+        eyes=dict(sclera=0.19, open=0.64, iris="#5A6A26", iris_shade=0.9, tilt=0.10, arch=0.16),
         brows=dict(shape="angular", thick=0.058, color="#3A2418", arch=0.04, lift=(0.0, 0.03), len=1.25, len_far=1.8,
                    in_far=0.9),
         nose=dict(type="aquiline", len=0.28, w=0.05, proj=0.085, hump=0.008, drop=0.23, tip="#B86A4A", tip_k=0.3),
@@ -926,9 +926,9 @@ CHARS.update({
                       min_px=3000),
         body=dict(shoulders=1.85),
         costume=dict(
-            base=dict(color="#1E6A5A", rough=0.7, sheen=0.5),
+            base=dict(color="#165446", rough=0.7, sheen=0.5),
             layers=[
-                dict(kind="collar", color="#1A5A4C", z=-0.66, h=0.10, out=0.016, flare=0.02),
+                dict(kind="collar", color="#E8B23A", metal=True, z=-0.66, h=0.10, out=0.016, flare=0.02),
                 dict(kind="frogging", color="#E8B23A", z=(-0.88, -1.00, -1.12), w=0.20, t=0.022),
                 dict(kind="strap", id="sash", color="#D95290", w=0.08, **{"from": (-0.36, -0.72), "to": (0.45, -1.55)}),
             ]),
@@ -951,25 +951,24 @@ CHARS.update({
         name="Bjorulf", leader=True, female=False, tall_headgear=True, plate="#D1934F",
         head=dict(shape="long", wh=0.74, h_px=268, eye_line=0.47, cheeks=0.72, brow_ridge=1.4, jaw=-0.02,
                   muzzle=0.95),
-        skin="#E8A07A", skin_tone="T2", blush=0.12,
-        paint=[dict(at=(x, z), r=0.085, color="#3E4864", k=1.0) for x in (-0.40, -0.30, -0.20, -0.10, 0.0, 0.10, 0.20,
-                                                                         0.30, 0.40) for z in (-0.02, 0.05)],
-        eyes=dict(sclera=0.18, open=0.66, iris="#C8B840", iris_shade=0.9, tilt=-0.06, arch=0.12),
+        skin="#E8A07A", skin_tone="T2", blush=0.12, skin_sat=1.25,
+        mask=dict(**{"from": (-0.46, 0.02), "to": (0.46, 0.02)}, w=0.15, color="#4A5470", k=0.92, min_px=300),
+        eyes=dict(sclera=0.18, open=0.66, iris="#A89A2C", iris_shade=0.9, tilt=-0.06, arch=0.12),
         brows=dict(shape="angular", thick=0.065, color="#2E2C30", arch=0.03, len=1.25, len_far=1.7, in_far=0.9),
         nose=dict(type="aquiline", len=0.27, w=0.058, proj=0.09, hump=0.03, drop=0.23, tip="#C8705A", tip_k=0.3),
         mouth=dict(lip="#A05048", line=0.20,
                    calm=dict(type="closed", w=0.26, near=0.02, far=-0.01),
                    smile=dict(type="open", w=0.34, h=0.12, near=0.05, far=0.04, dz=-0.012, lower_teeth=True,
                               fangs=True)),
-        hair=dict(style="wild", color="#2E2C30", dark="#2A2A2E", light="#4A4850", crevice="#1C1C20",
+        hair=dict(style="wild", color="#3A3840", dark="#302E36", light="#5A5862", crevice="#222026",
                   streak="#9A9AA4", drop=-0.60),
-        beard=dict(style="scruffy", color="#34323A", tip="#4A4850", root="#2E2C30", crevice="#1C1C20", thick=0.045,
+        beard=dict(style="scruffy", color="#3C3A42", tip="#565460", root="#34323A", crevice="#222026", thick=0.045,
                    under=0.04, clump_lift=0.15, clump_th=0.6),
         body=dict(shoulders=1.95),
         costume=dict(
             base=dict(color="#5A4A3A", rough=0.7, sheen=0.1),
             layers=[
-                dict(kind="cloak", id="cloak", color="#D8DEE6", z1=-0.64, gap=0.04, flare=0.12,
+                dict(kind="cloak", id="cloak", color="#F0F2F6", z1=-0.64, gap=0.04, flare=0.12,
                      open=[(-1.9, 0.34), (-1.2, 0.28), (-0.85, 0.22), (-0.66, 0.18)]),
                 dict(kind="fur", id="scales", color="#C8D0DA", dark="#A8B0BA", light="#E8EEF4", crevice="#7A828E",
                      r=0.92, r_in=0.30, t=0.07, front_z=-0.98, side_z=-0.92, back_z=-0.84, open=0.18,
@@ -988,9 +987,9 @@ CHARS.update({
     # ---------------------------------------------------------------- Archmaster Ormdek the Stone (Conclave, Turtle)
     "ldr_conclave": dict(
         name="Ormdek", leader=True, female=False, tall_headgear=True, plate="#D18D4F",
-        head=dict(shape="square", wh=1.0, h_px=276, eye_line=0.49, jaw=0.08, brow_ridge=1.6, cheeks=1.0, muzzle=1.1,
+        head=dict(shape="square", wh=1.0, h_px=264, eye_line=0.49, jaw=0.08, brow_ridge=1.6, cheeks=1.0, muzzle=1.1,
                   chin=0.02),
-        skin=SKIN["T5"], skin_tone="T5", blush=0.12,
+        skin=SKIN["T5"], skin_tone="T5", blush=0.12, skin_sat=1.45, skin_spec=0.10,
         eyes=dict(sclera=0.18, open=0.66, iris="#7A8A9A", iris_shade=0.9, tilt=-0.06, arch=0.05),
         brows=dict(shape="straight", thick=0.09, color="#B4B4BC", arch=0.0, len=1.3, inner=-0.01, rough=0.6),
         nose=dict(type="straight", w=0.085, drop=0.21, k=1.05, tip="#8A4E34", tip_k=0.3),
@@ -1008,14 +1007,14 @@ CHARS.update({
         costume=dict(
             base=dict(color="#7A6A5A", rough=0.7, sheen=0.1),
             layers=[
-                dict(kind="vest", id="steel", color="#D0D6DE", plate=True, metallic=0.5, rough=0.3, z0=-1.4, z1=-0.68,
+                dict(kind="vest", id="steel", color="#E6EAF0", plate=True, metallic=0.15, rough=0.4, z0=-1.4, z1=-0.68,
                      thick=0.04),
                 dict(kind="piping", color="#A87A50", r=0.022, path=[(-0.42, -0.74), (-0.2, -0.80), (0.0, -0.82),
                                                                    (0.2, -0.80), (0.42, -0.74)]),
                 dict(kind="buttons", id="rivet", at=[(-0.30, -0.95), (0.30, -0.95), (-0.30, -1.15), (0.30, -1.15)],
                      r=0.026, color="#A87A50"),
             ]),
-        props=[dict(kind="shield", side="far", r=0.38, x=0.50, turn=42, up=0.45, color="#B8C0C8", metal=True,
+        props=[dict(kind="shield", side="far", r=0.36, x=0.48, turn=42, up=0.45, color="#B8C0C8", metal=True,
                     edge="#A87A50", rivets=12, detail="shield", min_px=6000)],
         pose=dict(body=16, head=4, roll=0, nod=-3),
         signature=dict(name="box beard + one massive shield pauldron on the far shoulder",
@@ -1032,7 +1031,7 @@ CHARS.update({
     "ldr_veilmark": dict(
         name="Vedana", leader=True, female=True, tall_headgear=True, plate="#58D14F",
         head=dict(shape="oval", wh=0.78, h_px=266, eye_line=0.47, cheekbones=0.04, chin=0.0),
-        skin="#F6CDB8", skin_tone="T1", blush=0.16, skin_sat=1.1,
+        skin="#F4C2AC", skin_tone="T1", blush=0.18, skin_sat=1.45,
         eyes=dict(sclera=0.20, open=0.64, iris="#7A6A9A", iris_shade=0.9, tilt=0.08, arch=0.18, flick=0.08,
                   shadow="#6A4A70", shadow_k=0.5),
         brows=dict(shape="arc", thick=0.056, color="#2E2638", arch=0.04, lift=(0.0, 0.02), len=1.25, len_far=1.7,
@@ -1041,18 +1040,18 @@ CHARS.update({
         mouth=dict(lip="#6A2A48", line=0.19,
                    calm=dict(type="closed", w=0.25, near=0.03, far=0.0),
                    smile=dict(type="closed", w=0.28, near=0.065, far=0.04, sag=0.01)),
-        hair=dict(style="straight", color="#3A2A48", dark="#2E2238", light="#5E4A72", crevice="#1E1628", part=36,
+        hair=dict(style="straight", color="#4A3A5C", dark="#3C2E4C", light="#6E5A86", crevice="#2A2036", part=36,
                   drop=-0.70),
         body=dict(shoulders=1.85),
         costume=dict(
-            base=dict(color="#4A3458", rough=0.8, sheen=0.4),
+            base=dict(color="#5C4470", rough=0.8, sheen=0.4),
             layers=[
-                dict(kind="collar", color="#3E2A4A", z=-0.64, h=0.16, out=-0.004, flare=0.06, gap=0.10,
+                dict(kind="collar", color="#4E3860", z=-0.64, h=0.16, out=-0.004, flare=0.06, gap=0.10,
                      piping="#C8CCD4", piping_r=0.014),
-                dict(kind="lapels", color="#3E2A4A",
+                dict(kind="lapels", color="#4E3860",
                      shape=[(0.08, -0.66), (0.24, -0.70), (0.33, -0.78), (0.28, -0.84), (0.20, -0.98), (0.04, -1.14)]),
             ]),
-        props=[dict(kind="wing", x=0.56, y=0.06, n=10, len=1.35, a0=70, spread=48, w=0.13, color="#2E2A36", sheen="#6A4A9A",
+        props=[dict(kind="wing", x=0.54, y=0.06, n=10, len=1.30, a0=70, spread=48, w=0.13, color="#3A3646", sheen="#7A5AAA",
                     min_px=4000),
                dict(kind="brooch", at=(0.0, -0.74), d=0.10),
                dict(kind="feather_pin", az=-82, el=24, len=0.20, w=0.04, color="#2E2A36", pin="#C8CCD4",
@@ -1077,7 +1076,7 @@ CHARS.update({
                    smile=dict(type="closed", w=0.30, near=0.055, far=0.05, sag=0.01)),
         hair=dict(style="short", color="#E4E6EC", dark="#B8BCC8", light="#FFFFFF", crevice="#7A8094",
                   escape=[(-72, 26, 4, 0.065), (-88, 20, -6, 0.06), (78, 24, 4, 0.06)]),
-        headgear=dict(kind="hat", id="top_hat", color="#222C48", mat="velvet", h=0.42, rim_dz=0.01, tilt=-4,
+        headgear=dict(kind="hat", id="top_hat", color="#222C48", mat="velvet", h=0.36, rim_dz=0.01, tilt=-4,
                       profile=[(0.0, 1.0), (0.06, 0.99), (0.5, 1.0), (1.0, 1.08)], top_tilt=-3,
                       band=dict(h=0.07, color="#C8CCD4", mat="metal"),
                       brim=dict(w=0.07, ang=0, up_sides=22, t=0.024, color="#222C48"), signature=True,
@@ -1109,7 +1108,7 @@ CHARS.update({
     "ruler": dict(
         name="Ruler", ruler=True, female=False, tall_headgear=True, plate="#8FCDF2",
         head=dict(shape="square", wh=0.90, h_px=264, eye_line=0.48, jaw=0.0, cheeks=1.1),
-        skin=SKIN["T3"], skin_tone="T3", blush=0.20,
+        skin=SKIN["T3"], skin_tone="T3", blush=0.20, skin_sat=1.22,
         eyes=dict(sclera=0.20, open=0.80, iris="#6A4426", iris_shade=1.0, tilt=0.04, arch=0.22),
         brows=dict(shape="arc", thick=0.068, color="#4A3020", arch=0.025, len=1.22, len_far=1.6, in_far=0.84),
         nose=dict(type="potato", k=0.82, drop=0.20, tip="#D8806A", tip_k=0.35),
@@ -1216,6 +1215,8 @@ def _fill_mood(c, mood):
     """The §7.9 numbers for a mood the character does not describe: eyes, brows, mouth and the head's pose delta."""
     if mood == "calm":
         return
+    if mood == "smile" and c.get("_cid", "").startswith("cmd_"):
+        return      # a commander's smile is its own approved P2 preset (§7.6); what it leaves out stays calm, as in P2
     ey, br, mo = c["eyes"], c["brows"], c["mouth"]
     tilt, arch = ey.get("tilt", 0.08), ey.get("arch", 0.24)
     if mood not in ey:
@@ -1249,6 +1250,7 @@ def resolve(cid, era=1, mood="calm"):
     defaults for whatever the character does not describe, its own mood patch (c["moods"][mood]) and the mood's
     effects (c["_fx"] = MOOD_FX[mood] updated by c["fx"][mood])."""
     c = copy.deepcopy(CHARS[cid])
+    c["_cid"] = cid
     look = ERA_LOOKS.get(cid, {}).get(era)
     if look:
         apply_patch(c, look)
@@ -1780,15 +1782,19 @@ ERA_LOOKS.update({
     },
     # ---------------------------------------------------------------- the ruler (§7.10)
     "ruler": {
-        2: dict(costume=dict(base=dict(color=_E("#2E5BD8", 2), rough=0.85, sheen=0.35), layers=[
-                    dict(kind="collar", color=_E("#2E5BD8", 2), z=-0.64, h=0.08, out=0.004, flare=0.016,
+        # the coat a step LIGHTER than E1 (§7.7 says L* -5): the chestnut beard lies on it and needs |dL*| >= 15
+        # (P-A5 beard-clothes; at -5 it measured 9.1); the hue stays locked (dE76 to E1 15.7)
+        2: dict(costume=dict(base=dict(color="#5878E6", rough=0.85, sheen=0.35), layers=[
+                    dict(kind="collar", color="#5878E6", z=-0.64, h=0.08, out=0.004, flare=0.016,
                          piping="#E8B23A", piping_r=0.016),
                     dict(kind="strap", id="sash", color="#F4F1EA", w=0.10, **{"from": (-0.44, -0.70), "to": (0.50, -1.6)}),
                     dict(kind="buttons", id="btn", at=[(-0.30, -0.90), (-0.31, -1.04), (-0.31, -1.18)], r=0.032,
                          color="#E8B23A"),
                     dict(kind="epaulettes", color="#E8B23A", len=0.22, w=0.15, x=0.46, fringe=9, fringe_len=0.10)]),
                 **{"props~": {"chain": None}}),
-        3: dict(costume=dict(base=dict(color=_E("#2E5BD8", 3), rough=0.9, sheen=0.25), layers=[
+        # E3 likewise lighter (the 0.20 olive mix of a saturated blue alone gives dE76 26.6 > 22 and a beard contrast
+        # of 12.0): a blue-grey that keeps the hue
+        3: dict(costume=dict(base=dict(color="#5676D6", rough=0.9, sheen=0.25), layers=[
                     dict(kind="collar", color="#E8B23A", z=-0.64, h=0.08, out=0.004, flare=0.02, metal=True),
                     dict(kind="buttons", id="btn", at=[(-0.30, -0.92), (-0.31, -1.08), (-0.31, -1.24)], r=0.032,
                          color="#E8B23A"),
@@ -1797,7 +1803,7 @@ ERA_LOOKS.update({
                          medals=[dict(kind="star", size=0.11, color="#E8B23A", ribbon="#2E5BD8")])]),
                 **{"props~": {"chain": None}}),
         4: dict(costume=dict(base=dict(color=_UNDER, rough=0.7, sheen=0.2), layers=[
-                    _plate(_E("#2E5BD8", 4)),
+                    _plate("#5A7CE8"),        # L* +12 not +6: the beard on the plate (P-A5 beard-clothes 12.7)
                     dict(kind="piping", color="#E8B23A", r=0.02, path=_FRONT),
                     dict(kind="pauldrons", color="#F2F4F8", painted=True, stripe="#E8B23A", n=1, spread=84,
                          bands=[(92, 30)], detail="pauldrons", min_px=2000),

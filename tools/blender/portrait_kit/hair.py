@@ -1009,10 +1009,11 @@ def _curls(ctx):
         t2 = nor.cross(t1).normalized()
         r = cr * rng.uniform(0.85, 1.2)
         el.append(dict(co=c - nor * r * 0.3, half=r * 0.9, stiff=2.2))
-        for k in range(5):
-            a = math.radians(-40 + 70 * k)
+        nl = hr.get("lobes", 5)          # fewer, rounder lobes per curl: big smooth clumps, not a cauliflower (AD)
+        for k in range(nl):
+            a = math.radians(-40 + 280 * k / max(1, nl - 1) * (4 / 5 if nl == 5 else 1.0))
             el.append(dict(co=c + (t1 * math.cos(a) + t2 * math.sin(a)) * r * 0.85 + nor * r * 0.15,
-                           half=r * 0.55, stiff=2.8))
+                           half=r * hr.get("lobe_k", 0.55), stiff=2.8))
         # a filler between the scalp and the curl, so the cloud has no holes
         if out > 0.08:
             el.append(dict(co=hit + nor * out * 0.5, half=min(out * 0.55, 0.14), stiff=2.0))

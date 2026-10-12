@@ -73,12 +73,27 @@ def build(cid, mood="calm", era=1, log=print):
     return ctx
 
 
+_CALM_CAM = {}      # (leader id, era, size) -> the calm frame's camera, reused by its moods
+
+
 def render_id(cid, out_png, mood="calm", era=1, size=(512, 588), samples=64, frame="bust", sidecars=None,
               contacts=False, want_stats=False, log=print):
     """Build and render one portrait to out_png; with `sidecars` (a folder) also the ID pass, the signature mask
     and the landmark JSON (P-A3/P-A5/P-A6/P-A7 inputs). Returns a dict with the frame, stats and timings."""
-    ctx = build(cid, mood, era, log)
-    rig.solve_frame(ctx, size, frame, log)
+    if frame == "bust" and mood != "calm" and cid in chars.LEADER_IDS:
+        # a leader's moods keep the calm frame (§7.9: the features stay put, the head only turns and tilts)
+        key = (cid, era, tuple(size))
+        if key not in _CALM_CAM:
+            c0 = build(cid, "calm", era, lambda *a: None)
+            rig.solve_frame(c0, size, frame, lambda *a: None)
+            _CALM_CAM[key] = c0.frame_cam
+        ctx = build(cid, mood, era, log)
+        rig.reuse_frame(ctx, size, _CALM_CAM[key], frame, log)
+    else:
+        ctx = build(cid, mood, era, log)
+        rig.solve_frame(ctx, size, frame, log)
+        if frame == "bust" and cid in chars.LEADER_IDS:
+            _CALM_CAM[(cid, era, tuple(size))] = ctx.frame_cam
     rig.solve_gaze(ctx)
     rig.setup_render(size, samples)
     st = qa.stats(ctx) if (want_stats or sidecars) else None
