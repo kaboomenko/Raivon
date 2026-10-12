@@ -668,6 +668,8 @@ class KitBake extends Node:
 	var _cmove: Array = []  # a compaction in flight: [moves ([[old cell, key or icon path, is icon], new cell]), painter, gen]
 	var _compact_at := -1000  # the process frame the last compaction started in
 	var _spare_at := -1000  # the process frame the last compaction landed in (the old atlas is freed SPARE_KEEP after)
+	var _redo := {}  # canvas item RID id -> {key without the offset: full key}: what it showed when a compaction landed
+	var _redo_until := -1000  # the last process frame _redo holds for (its owners draw again in the next ones)
 	var _copy_mat: ShaderMaterial
 	var _moving := {}  # host ids that moved, until they hold still (then they are drawn again)
 	var _poll: Array = []  # host ids still to look at in this pass
@@ -908,6 +910,16 @@ class KitBake extends Node:
 		var full := "%s/%d,%d" % [base, posmod(roundi(f.x * PHASES), ph), posmod(roundi(f.y * PHASES), ph)]
 		var e := _ref(ci, owner if owner != null else host, hh)  # (its commands are being recorded anew)
 		var slot: Variant = slots.get(full)
+		var redo := false
+		if slot == null and not _redo.is_empty() and Engine.get_process_frames() <= _redo_until:
+			# drawn again because a compaction moved its image: that image, as it showed it — it may have moved since (a
+			# list scrolling), and the image at its new offset is asked for once it holds still (below: _poll_moves), not
+			# now, all at once, with every other moved owner (a label would draw its glyphs until then)
+			var was: Variant = (_redo.get(ci.get_id(), {}) as Dictionary).get(base)
+			if was != null and slots.has(was):
+				full = was
+				slot = slots[was]
+				redo = true
 		if slot != null and _squeeze and not in_sight(hh, rect, pad):
 			# the atlas is short of room: what is off the screen gives its image up (draws its vectors, culled) so that
 			# the next eviction frees its place; it asks again once it comes onto the screen
@@ -948,6 +960,9 @@ class KitBake extends Node:
 		var h: CanvasItem = host if host != null else owner as CanvasItem
 		if h != null:
 			_place(h)
+			if redo:  # (drawn again at its offset once it has held still from now on)
+				(placed[h.get_instance_id()] as Array)[2] = KitBake.now_ms()
+				_moving[h.get_instance_id()] = true
 		e[1][full] = true
 		var how: Array = made[full]
 		_blit(ci, slot, rect, size, m, how[0], how[1], mod)
@@ -1238,6 +1253,8 @@ class KitBake extends Node:
 			return
 		if spare.size != Vector2i(4, 4) and Engine.get_process_frames() - _spare_at > SPARE_KEEP:
 			spare.size = Vector2i(4, 4)  # the old atlas after a compaction: its render target is freed
+		if not _redo.is_empty() and Engine.get_process_frames() > _redo_until:
+			_redo = {}
 		if not jobs.is_empty():
 			_stage_round()
 		elif not _icons_new.is_empty():
@@ -1643,6 +1660,17 @@ class KitBake extends Node:
 		compactions += 1
 		_spare_at = Engine.get_process_frames()
 		_landed = _spare_at
+		_redo = {}  # (each one draws again what it shows now, at the new place: draw)
+		for id in refs:
+			var ks: Dictionary = refs[id][1]
+			if ks.is_empty():
+				continue
+			var mp := {}
+			for k_ in ks:
+				var s := String(k_)
+				mp[s.substr(0, s.rfind("/"))] = s
+			_redo[id] = mp
+		_redo_until = _spare_at + 2
 		for id in owners:
 			var o: Object = (owners[id] as WeakRef).get_ref()
 			var bh: Object = (o as KitBox).host.get_ref() if o is KitBox and (o as KitBox).host != null else null

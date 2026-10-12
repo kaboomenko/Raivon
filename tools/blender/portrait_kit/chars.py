@@ -1371,6 +1371,21 @@ def _plate(col, z0=-1.42, z1=-0.66, **kw):
     return dict(kind="vest", id="plate", color=col, plate=True, z0=z0, z1=z1, thick=kw.pop("thick", 0.04), **kw)
 
 
+# E3 field colours where the formula alone would make two commanders twins (§7.7 asks dE76 >= 12 between any two
+# commanders in E3; Bram's slate #3D4A58 and Vega's graphite #44484F are dE76 ~3 apart already in E1, the olive mix of
+# E3 leaves them at 2.9, and Lira's green came within 7.8 of Vik's camo): Bram keeps his hue a step bluer, Vega's
+# graphite a step lighter, Lira's green deeper and less mixed — each within dE76 22 of its own E1
+_BRAM_E3 = "#34507A"      # dE76 17.9 to E1
+_VEGA_E3 = "#626670"      # dE76 14.5 to E1
+_LIRA_E3 = "#226A40"      # dE76 8.8 to E1
+_KORT_E3 = "#566A3C"      # dE76 7.1 to E1 (the olive mix brought his greatcoat within 11.5 of Hawk's flight jacket)
+# E4 plates of the slate / graphite / black-leather commanders converged (bram-vega 3.4, bram-irma 3.9, vega-irma
+# 5.6): Bram's plates a step bluer, Vega's a step lighter (Irma's keep the formula); Hawk's E4 suit sky-tinted, apart
+# from Rai's white plates (2.2)
+_BRAM_E4 = "#4A6488"      # dE76 17.1 to E1
+_VEGA_E4 = "#6C7280"      # dE76 ~19 to E1
+
+
 ERA_LOOKS.update({
     # ---------------------------------------------------------------- Bram
     "cmd_bram": {
@@ -1385,26 +1400,26 @@ ERA_LOOKS.update({
                               band=dict(h=0.05, color="#2E2A2C", mat="leather"), top_tilt=-4,
                               brim=dict(w=0.10, ang=-14, front=58, color="#2E2A2C", mat="leather"),
                               badge=dict(kind="millstone", size=0.17, color="#E0AD45", g=0.48, dark="#8A6A2A"))),
-        3: dict(costume=dict(base=dict(color=_E("#3D4A58", 3), rough=0.9, sheen=0.25), layers=[
-                    dict(kind="collar", color=_E("#3D4A58", 3), z=-0.64, h=0.07, out=0.004, flare=0.012),
+        3: dict(costume=dict(base=dict(color=_BRAM_E3, rough=0.9, sheen=0.25), layers=[
+                    dict(kind="collar", color=_BRAM_E3, z=-0.64, h=0.07, out=0.004, flare=0.012),
                     dict(kind="strap", id="ystrap1", color="#6B4226", w=0.075,
                          **{"from": (-0.36, -0.70), "to": (-0.16, -1.1)}),
                     dict(kind="strap", id="ystrap2", color="#6B4226", w=0.075,
                          **{"from": (0.36, -0.70), "to": (0.16, -1.1)}),
                     dict(kind="belt", z=-1.09, w=0.13, color="#6B4226", buckle="#B0A090", over=0.006)]),
-                headgear=dict(kind="hat", id="brodie", color=_E("#3D4A58", 3), mat="painted", h=0.34, rim_dz=0.02,
+                headgear=dict(kind="hat", id="brodie", color=_BRAM_E3, mat="painted", h=0.34, rim_dz=0.07,
                               profile=[(0.0, 1.0), (0.25, 0.98), (0.6, 0.86), (0.85, 0.58), (1.0, 0.0)],
                               brim=dict(w=0.13, ang=-8, t=0.026), chinstrap=dict(color="#6B4226", to_z=-0.38)),
                 **{"props~": {"chevrons": dict(n=3, at=(0.13, 0.21, 0.29))}}),
         4: dict(costume=dict(base=dict(color=_UNDER, rough=0.7, sheen=0.2), layers=[
-                    _plate(_E("#3D4A58", 4)),
+                    _plate(_BRAM_E4),
                     dict(kind="collar", color="#B9C7D6", metal=True, z=-0.66, h=0.07, out=0.03, flare=0.02),
-                    dict(kind="pauldrons", color=_E("#3D4A58", 4), painted=True, stripe="#F0A830", n=2, spread=84,
+                    dict(kind="pauldrons", color=_BRAM_E4, painted=True, stripe="#F0A830", n=2, spread=84,
                          bands=[(92, 36), (44, 0)], detail="pauldrons", min_px=4000),
                     dict(kind="strip", id="amber", color="#F0A830", emit=1.1, w=0.05, detail="glow", min_px=100,
                          path=[(-0.62, -1.22), (-0.3, -1.25), (0.0, -1.26), (0.3, -1.25), (0.62, -1.22)]),
                     dict(kind="belt", z=-1.09, w=0.13, color="#6B4226", buckle="#E0AD45", over=0.058)]),
-                headgear=dict(kind="hat", id="open_helmet", color=_E("#3D4A58", 4), mat="painted", h=0.30,
+                headgear=dict(kind="hat", id="open_helmet", color=_BRAM_E4, mat="painted", h=0.30,
                               rim_dz=0.06, profile=_ROUND_HELMET, brim=dict(w=0.035, ang=0, t=0.024),
                               extra=[dict(kind="visor", el=58, span=62, h=0.10, dh=8, tint="#DDEBF4", frame="#B9C7D6",
                                           off=0.03)]),
@@ -1431,23 +1446,23 @@ ERA_LOOKS.update({
                               edge=[(0, 44), (40, 36), (75, 18), (100, 6), (140, -6), (180, -14)],
                               ribbon=dict(color="#3E9B5A", w=0.055, above=7, knot_az=-150, knot_el=12, tail=0.30),
                               badge=dict(kind="leaf", size=0.15, color="#3E9B5A", el=40, metal=0.0, rough=0.5))),
-        3: dict(costume=dict(base=dict(color=_E("#2E7A44", 3), rough=0.9, sheen=0.25), layers=[
-                    dict(kind="collar", color=_E("#2E7A44", 3), z=-0.64, h=0.07, out=0.004, flare=0.014),
+        3: dict(costume=dict(base=dict(color=_LIRA_E3, rough=0.9, sheen=0.25), layers=[
+                    dict(kind="collar", color=_LIRA_E3, z=-0.64, h=0.07, out=0.004, flare=0.014),
                     dict(kind="neckerchief", color="#22603A", z=-0.63),
                     dict(kind="pocket", id="pocket1", on="torso", at=(-0.22, -1.02), w=0.11, h=0.14,
-                         color=_E("#2E7A44", 3)),
+                         color=_LIRA_E3),
                     dict(kind="strap", id="strap", color="#8A5A34", detail="satchel_strap", min_px=3000,
                          **{"from": (0.46, -0.70), "to": (-0.62, -1.75)}, w=0.10)]),
-                headgear=dict(kind="hat", id="side_cap", color=_E("#2E7A44", 3), h=0.12, rim_dz=0.15, tilt=-4,
+                headgear=dict(kind="hat", id="side_cap", color=_LIRA_E3, h=0.12, rim_dz=0.15, tilt=-4,
                               side_tilt=-8, squash=(0.62, 1.12), profile=[(0.0, 1.0), (0.55, 0.96), (0.85, 0.7),
                                                                           (1.0, 0.18)],
                               badge=dict(kind="leaf", size=0.10, color="#3E9B5A", g=0.4, az=-20, metal=0.0)),
                 **{"props+": [dict(kind="chevrons", style="ring", n=1, at=(0.30,), r=0.05, color="#F2F0EA",
                                    detail="armband", min_px=200)]}),
         4: dict(costume=dict(base=dict(color=_UNDER, rough=0.7, sheen=0.2), layers=[
-                    _plate("#ECEFEA"),
+                    _plate(_E("#2E7A44", 4)),
                     dict(kind="piping", color="#2E7A44", r=0.02, path=_FRONT),
-                    dict(kind="pauldrons", color=_E("#2E7A44", 4), painted=True, stripe="#F2F0EA", n=1, spread=84,
+                    dict(kind="pauldrons", color="#ECEFEA", painted=True, stripe="#3E9B5A", n=1, spread=84,
                          bands=[(92, 30)], detail="pauldrons", min_px=2000),
                     dict(kind="strap", id="strap", color="#3E9B5A", detail="satchel_strap", min_px=3000,
                          **{"from": (0.46, -0.70), "to": (-0.62, -1.75)}, w=0.10)]),
@@ -1535,8 +1550,8 @@ ERA_LOOKS.update({
                 headgear=dict(kind="bicorne", id="bicorne", color="#2E3240", trim="#C8CCD4", rim_dz=0.06, tilt=-6,
                               crown=0.18, wall=0.30, wall_corner=0.35, corner=0.30, mid=0.0, crown_sub=1,
                               badge=dict(kind="disc", size=0.10, color="#C8CCD4", g=0.55))),
-        3: dict(costume=dict(base=dict(color=_E("#3F4658", 3), rough=0.85, sheen=0.25), layers=[
-                    dict(kind="collar", color=_E("#3F4658", 3), z=-0.66, h=0.10, out=0.018, flare=0.03, gap=0.05),
+        3: dict(costume=dict(base=dict(color=_VEGA_E3, rough=0.85, sheen=0.25), layers=[
+                    dict(kind="collar", color=_VEGA_E3, z=-0.66, h=0.10, out=0.018, flare=0.03, gap=0.05),
                     dict(kind="medal_bar", at=(-0.10, -0.72), colors=["#C8CCD4"], w=0.05, h=0.03, detail="tabs",
                          min_px=20),
                     dict(kind="medal_bar", at=(0.10, -0.72), colors=["#C8CCD4"], w=0.05, h=0.03, detail="tabs2",
@@ -1549,7 +1564,7 @@ ERA_LOOKS.update({
                               badge=dict(kind="arrow", size=0.12, color="#C8CCD4", g=0.3, az=-25)),
                 **{"props~": {"glasses": dict(tint="#C8CEDA")}}),
         4: dict(costume=dict(base=dict(color=_UNDER, rough=0.7, sheen=0.2), layers=[
-                    _plate(_E("#3F4658", 4)),
+                    _plate(_VEGA_E4),
                     dict(kind="piping", color="#C8CCD4", r=0.02, path=_FRONT),
                     dict(kind="collar", color="#F2F2F2", z=-0.66, h=0.11, out=0.03, flare=0.03, gap=0.05)]),
                 headgear=dict(kind="visor", id="hud_strip", on="head", el=-4, span=48, h=0.13, dh=6, off=0.11,
@@ -1571,7 +1586,7 @@ ERA_LOOKS.update({
                               fur_light="#7A5E4A", fur_crevice="#3A2A20", h=0.40, rim_dz=-0.01,
                               profile=[(0.0, 1.04), (0.5, 1.07), (1.0, 1.02)], top_dome=0.03, wall=0.05,
                               tassel=dict(color="#B0803A", az=60))),
-        3: dict(costume=dict(base=dict(color=_E("#5D6236", 3), rough=0.9, sheen=0.25), layers=[
+        3: dict(costume=dict(base=dict(color=_KORT_E3, rough=0.9, sheen=0.25), layers=[
                     dict(kind="placket", color="#4E5330", w=0.045, top=-0.80, x=0.0),
                     dict(kind="buttons", id="button", at=[(0.0, -0.98), (0.0, -1.16)], r=0.032, color="#B0803A"),
                     dict(CHARS["cmd_kort"]["costume"]["layers"][2], r=1.0, t=0.14),
@@ -1665,7 +1680,7 @@ ERA_LOOKS.update({
     # ---------------------------------------------------------------- Irma
     "cmd_irma": {
         2: dict(costume=dict(base=dict(color=_E("#3A3C46", 2), rough=0.45, sheen=0.1), layers=[
-                    dict(kind="collar", color=_E("#3A3C46", 2), z=-0.66, h=0.14, out=0.004, flare=0.04, gap=0.08,
+                    dict(kind="collar", color=_E("#3A3C46", 2), z=-0.66, h=0.20, out=0.004, flare=0.07, gap=0.10,
                          thick=0.03, piping="#F08A24", piping_r=0.022),
                     dict(kind="frogging", color="#F08A24", z=(-0.86, -0.98, -1.10), w=0.22, t=0.026),
                     dict(kind="strap", id="strap", color="#2E2E34", **{"from": (-0.40, -0.72), "to": (0.45, -1.6)},
@@ -1685,7 +1700,7 @@ ERA_LOOKS.update({
                               extra=[dict(CHARS["cmd_irma"]["headgear"], el=46)])),
         4: dict(costume=dict(base=dict(color=_UNDER, rough=0.7, sheen=0.2), layers=[
                     _plate(_E("#3A3C46", 4)),
-                    dict(kind="collar", color=_E("#3A3C46", 4), z=-0.66, h=0.16, out=0.03, flare=0.06, gap=0.10),
+                    dict(kind="collar", color=_E("#3A3C46", 4), z=-0.66, h=0.20, out=0.02, flare=0.07, gap=0.10),
                     dict(kind="strip", id="glow1", color="#F08A24", emit=1.2, w=0.045, detail="glow", min_px=100,
                          path=[(0.08, -0.74), (0.10, -1.0), (0.11, -1.3), (0.12, -1.7)]),
                     dict(kind="strip", id="glow2", color="#F08A24", emit=1.2, w=0.045, detail="glow2", min_px=60,
@@ -1715,7 +1730,7 @@ ERA_LOOKS.update({
                     dict(kind="medal_bar", at=(0.26, -1.06), colors=["#6FA8DC", "#E8B23A"], detail="medals",
                          min_px=40)]),
                 headgear=dict(CHARS["cmd_hawk"]["headgear"], id="flight_helmet", color="#6A4428")),
-        4: dict(costume=dict(base=dict(color="#DCE6F0", rough=0.6, sheen=0.2), layers=[
+        4: dict(costume=dict(base=dict(color="#A8C8E8", rough=0.6, sheen=0.2), layers=[
                     dict(kind="collar", color="#C8D6E4", z=-0.64, h=0.09, out=0.004, flare=0.02, gap=0.06),
                     dict(kind="strap", id="harness1", color="#3A4150", w=0.08,
                          **{"from": (-0.36, -0.72), "to": (-0.18, -1.6)}),

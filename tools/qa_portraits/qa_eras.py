@@ -6,7 +6,8 @@ Usage: python3 -I tools/qa_portraits/qa_eras.py PORTRAIT_DIR [--strict]
 Needs the kit's sidecars (portrait_assets.py --sidecars=PORTRAIT_DIR): ids/<name>.png (part-ID pass) and
 meta/<name>.json. Checks, on the calm files of each era present (a folder with only some of the 150 names is fine):
 - main colour: the median CIE Lab of the beauty render over the largest clothes group of the ID pass (costume /
-  costume:<id>; details and metal excluded) — E1 vs EN of one commander (and the ruler) dE76 <= 22; between any two
+  costume:<id>; details and metal excluded; MAIN_GROUP names it where the largest is not the §7.6 main colour,
+  Olm's E1 apron over the shirt) — E1 vs EN of one commander (and the ruler) dE76 <= 22; between any two
   commanders in E3 and in E4 dE76 >= 12 (§7.7);
 - face mask: skin, eyes, brows, lashes, nose, lips and mouth inside the head box down to the chin, E1 vs EN changed
   share <= 2 % (pixels under a hat, glass or detail in either file left out, §7.7 "вне перекрытия убором");
@@ -35,11 +36,23 @@ FACE = ("skin", "sclera", "iris", "pupil", "catch", "lash", "brow", "nose", "lip
 COVER = ("hat", "glass")
 
 
-def clothes_lab(rgba, masks):
+# the main colour's group where the largest clothes group is not it (§7.6 palette, the first colour named): Olm's E1
+# shirt is "inside the apron" (#E8DCC0), his main colour the apron's leather #7A4E2D
+MAIN_GROUP = {"cmd_olm": "detail:apron",     # (the apron is a P-A8 detail group in the ID pass)
+              # Frey's E2-E3 green uniform under the steel cuirass (the cuirass is the larger group; §7.6 names the
+              # green first and the steel as trim), Rai's white robe under the blue stole (§7.6: "белое одеяние" first)
+              "cmd_frey_e2": "costume", "cmd_frey_e3": "costume",
+              "cmd_rai": "costume", "cmd_rai_e2": "costume", "cmd_rai_e3": "costume"}
+
+
+def clothes_lab(rgba, masks, prefer=None):
     groups = {k: v for k, v in masks.items() if k == "costume" or k.startswith("costume:")}
     if not groups:
         return None, None
-    k, m = max(groups.items(), key=lambda kv: kv[1].sum())
+    if prefer in masks:
+        k, m = prefer, masks[prefer]
+    else:
+        k, m = max(groups.items(), key=lambda kv: kv[1].sum())
     m = m & (rgba[..., 3] > 0.9)
     if m.sum() < 50:
         return None, k
@@ -79,7 +92,7 @@ def main():
             if p is None or masks is None or meta is None:
                 continue
             rgba = Q.load(p)
-            lab, grp = clothes_lab(rgba, masks)
+            lab, grp = clothes_lab(rgba, masks, MAIN_GROUP.get(n))
             fm, cov = face_mask(masks, meta)
             data[n] = dict(lab=lab, grp=grp, face=fm, cover=cov, meta=meta, masks=masks, rgba=rgba)
     print("== main colour (median Lab of the largest clothes group) E1 vs EN: dE76 <= 22 ==")
@@ -158,8 +171,14 @@ def main():
     for e in Q.ERAS[:2]:
         m = Q.meta(d, "cmd_seir" + e)
         if m:
-            ok = str(m.get("headgear", "")).startswith("tricorn")
-            row.append("%s %s%s" % (e[1:] or "e1", m.get("headgear"), "" if ok else " FAIL"))
+            hg = m.get("headgear")
+            if hg is None and "headgear" not in m:
+                # the P2 era-1 files predate the meta "headgear" key: §7.6's E1 tricorn, if the ID pass has the hat
+                masks, _ = Q.ids(d, "cmd_seir" + e)
+                hat = int(masks["hat"].sum()) if masks is not None and "hat" in masks else 0
+                hg = "tricorn (P2 meta; hat %d px)" % hat if hat >= 1000 else None
+            ok = str(hg or "").startswith("tricorn")
+            row.append("%s %s%s" % (e[1:] or "e1", hg, "" if ok else " FAIL"))
             if not ok:
                 fails.append(("era detail", "cmd_seir" + e + ":tricorn", 0))
     print("seir   tricorn      %s" % "  ".join(row))

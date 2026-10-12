@@ -431,6 +431,11 @@ static func scroll_test(tree: SceneTree, out_path: String) -> void:
 const FLING_MAX := 300  ## --perf-fling: no frame may draw more canvas calls than this
 
 
+static func _geti(o: Object, prop: String) -> int:  # (a property an older kit has not: 0)
+	var v: Variant = o.get(prop)
+	return int(v) if v != null else 0
+
+
 ## `--perf-fling` (H2 review 2; run with --fixed-fps=60 --virtual-clock, so the bake's waits last as many frames as on a
 ## 60 fps phone): the open window's list scrolled the way a finger moves it — 18 px, then 45 px every frame, to the end
 ## and back — each followed by 150 frames held still, every frame's canvas draws recorded (the 3D world off). Then a
@@ -459,18 +464,34 @@ static func fling(tree: SceneTree, out_path: String) -> void:
 	var end := maxf(0.0, bar.max_value - bar.page)
 	for spd in [18.0, 45.0]:
 		var r0: int = kb.resets if kb else 0
-		var c0: int = int(kb.get("compactions")) if kb else 0
+		var c0: int = _geti(kb, "compactions") if kb else 0
 		var a: Array = []
 		var v := 0.0
+		var ev: Array = []  # what the bake did, by frame: C compaction, R reset, D images waiting (deferred); a frame over
+		var cn := c0  # 200 draws: its live kit labels on the screen and the bake's queue
+		var rn := r0
 		for dir in [1.0, -1.0]:
 			while true:
 				v = clampf(v + spd * dir, 0.0, end)
 				sc.scroll_vertical = int(v)
-				a.append(await _frame(vp, kb))
+				var d := await _frame(vp, kb)
+				a.append(d)
+				if kb != null:
+					var cc := _geti(kb, "compactions")
+					var dn: int = (kb.get("_defer") as Dictionary).size()
+					if cc != cn or kb.resets != rn or dn > 0 or d > 200:
+						var live: Array = []
+						if d > 200:
+							_live_labels(vp, live)
+						ev.append("%d:%d%s%s%s%s" % [a.size() - 1, d, " C" if cc != cn else "", " R" if kb.resets != rn else "",
+							(" D%d" % dn) if dn > 0 else "", (" live=%d jobs=%d state=%d" % [live.size(), kb.jobs.size(), kb._state]) if d > 200 else ""])
+					cn = cc
+					rn = kb.resets
 				if (dir > 0.0 and v >= end) or (dir < 0.0 and v <= 0.0):
 					break
+		p.call("speed %d: events %s" % [spd, str(ev.slice(0, 40))])
 		var r1: int = kb.resets if kb else 0
-		var c1: int = int(kb.get("compactions")) if kb else 0
+		var c1: int = _geti(kb, "compactions") if kb else 0
 		var h: Array = []
 		for i in 150:
 			h.append(await _frame(vp, kb))
@@ -486,8 +507,8 @@ static func fling(tree: SceneTree, out_path: String) -> void:
 			hmax = maxi(hmax, int(x))
 		p.call("speed %d px/frame: scroll %s resets+%d compactions+%d | hold 150 frames max=%d resets+%d compactions+%d | over %d: %d %s" % [
 			spd, _spread(a.duplicate()), r1 - r0, c1 - c0, hmax, (kb.resets - r1) if kb else 0,
-			(int(kb.get("compactions")) - c1) if kb else 0, FLING_MAX, over.size(), str(over.slice(0, 24))])
-		p.call("speed %d: scroll seq %s" % [spd, str(a.slice(0, 400))])
+			(_geti(kb, "compactions") - c1) if kb else 0, FLING_MAX, over.size(), str(over.slice(0, 24))])
+		p.call("speed %d: scroll seq %s" % [spd, str(a.slice(0, 800))])
 		p.call("speed %d: hold seq %s" % [spd, str(h.slice(0, 60))])
 		if not over.is_empty():
 			fails += over.size()
@@ -543,7 +564,7 @@ static func fling(tree: SceneTree, out_path: String) -> void:
 	await vec_pair(tree, base + "_end.tree.txt")
 	tree.paused = false
 	vp.disable_3d = false
-	p.call("done fails=%d %s; last compaction %s" % [fails, bake_stats(kb), String(kb.get("why_compact")) if kb else ""])
+	p.call("done fails=%d %s; last compaction %s" % [fails, bake_stats(kb), str(kb.get("why_compact")) if kb else ""])
 
 
 static func _find_scroll(n: Node) -> ScrollContainer:
