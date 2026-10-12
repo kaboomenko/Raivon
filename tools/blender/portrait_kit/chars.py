@@ -179,12 +179,13 @@ CHARS = {
         # "T2 румяный" as a deeper rosy pink (#D88878): the white brows measured only 12.6 L* over the skin at #F2A07E
         # (§7.4: white brows >= 18 L* lighter than the skin); the pink hue (<= 16 deg) keeps it from going pumpkin
         # orange as it darkens (and takes §7.4's S floor 0.27 for peach-pink skin)
-        # rose rather than red-orange, a step less saturated (P2 review: at #D88878 x1.32 the head read as a tomato
-        # beside Olm and Bram, hue 15 deg, skin S 0.58): a pinker base at x1.34 (skin S 0.52, hue 5 deg). §7.4's
-        # lit-cheek S floor (0.27) then measures 0.25: its sample (the brightest 30 % of the skin) falls on the rim-lit
-        # bald dome; on the face alone (below the brows) the same sample measures S 0.38. x1.40 passes the gate
-        # (0.29) but reads crimson — reported to the main session with a proposed face-only sample
-        skin="#DA8482", skin_tone="T2", blush=0.28, skin_sat=1.34, skin_value=0.98,
+        # a weathered ruddy rose, a step less saturated and less orange (P2 review: at #D88878 x1.32 the head read as a
+        # tomato beside Olm and Bram — skin S 0.58, hue 15 deg): #C87C72 x1.26, value 0.95 (skin S 0.50, hue 10 deg).
+        # Darker rather than paler: the white brows and moustache need the skin >= 18 L* under them (§7.4; paler
+        # tries measured 9-16). A matte skin (specular 0.08): the rim light's sheen on the bald dome is what §7.4's
+        # lit-cheek sample (the brightest 30 % of the skin) caught, and it greyed it under the 0.27 floor (0.22 at the
+        # default 0.35)
+        skin="#C87C72", skin_tone="T2", blush=0.28, skin_sat=1.26, skin_value=0.95, skin_spec=0.08,
         # heavy lids 0.50 with a crease, grey-blue, small "spark" catchlights; the smile opens them to 0.70
         eyes=dict(sclera=0.18, open=0.50, iris="#8AA0B4", iris_shade=0.85, tilt=-0.10, arch=0.06, catch_k=1.0,
                   iris_k=1.08, pupil=0.62,
@@ -221,8 +222,8 @@ CHARS = {
                 # between them (round clumps on a thick roll read as chocolate mousse, P2 review); wider over the
                 # shoulders and puffed up round the neck to the moustache (his "shoulder width" zone: wide and low
                 # at 48 px, P-A2)
-                dict(kind="fur", id="fur", color="#725544", dark="#6C5242", light="#94725A", crevice="#604A3A",
-                     r=0.84, r_in=0.27, t=0.13, front_z=-1.05, side_z=-0.96, back_z=-0.86, open=0.10,
+                dict(kind="fur", id="fur", color="#7C5E4A", dark="#765A48", light="#9C7A62", crevice="#665040",
+                     r=0.84, r_in=0.27, t=0.12, front_z=-1.05, side_z=-0.96, back_z=-0.86, open=0.10,
                      clumps=dict(n=95, len=0.13, w=0.034, th=0.024, curl=0.5, sink=0.88, rise=0.0, balls=7, tip=0.45),
                      detail="fur", min_px=8000, signature=True, smooth=2, res=0.011),
                 dict(kind="clasp", color="#B0803A", z=-0.90, x=0.075),
@@ -390,9 +391,10 @@ CHARS = {
         name="Frey", rarity="rare", female=True,
         # she keeps the square jaw (§7.3: "Фрей сохраняет квадратную челюсть"): +0.06 cancels the women's -6 %
         head=dict(shape="square", wh=0.95, h_px=278, eye_line=0.48, chin=0.01, jaw=0.06, cheeks=1.05),
-        # lit cheek S >= 0.35 (x1.22, not 1.08: with the bare temples of the flat-top the lit forehead joins the
-        # brightest skin pixels)
-        skin=SKIN["T5"], skin_tone="T5", blush=0.2, skin_sat=1.22,
+        # lit cheek S >= 0.35 (§7.4): a matter skin (roughness 0.62, specular 0.22) and x1.22 — the flat-top bares
+        # the temples and forehead, and the key's sheen on them greyed the brightest skin pixels to S 0.33 (more
+        # saturation alone did not lift them)
+        skin=SKIN["T5"], skin_tone="T5", blush=0.2, skin_sat=1.22, skin_rough=0.62, skin_spec=0.22,
         eyes=dict(sclera=0.19, open=0.72, iris="#8A5A2E", tilt=0.0, arch=0.18, flick=0.028,
                   smile=dict(open=0.62, low=0.20, bow=0.3, arch=0.24)),
         brows=dict(shape="straight", thick=0.075, color="#2A2020", arch=0.01, len=1.25, inner=-0.01, gap=0.04,
@@ -495,9 +497,11 @@ CHARS = {
         paint=[dict(at=(-0.20, -0.36), r=0.022, color="#B86A48", k=0.5)],        # the dimple by the near corner
         eyes=dict(sclera=0.20, open=0.75, iris="#9A6A2E", tilt=0.04, arch=0.22,
                   smile=dict(open=0.62, low=0.20, bow=0.3, arch=0.26, wink="near")),
-        # (the near brow 1.32 eye widths: over the winking eye it measured 5.2 px long at 64 px, P-A3 needs 6)
-        brows=dict(shape="arc", thick=0.078, color="#3A2414", arch=0.025, lift=(0.05, 0.0), len=1.32, len_far=1.7,
-                   in_far=0.84),
+        # (the laugh's near brow 1.12x longer: over the winking eye it measured 5.2 px long at 64 px, P-A3 needs 6;
+        # longer in the calm too, it covered the lit forehead under the quiff, leaving only a shaded sliver of skin
+        # at the hair's edge)
+        brows=dict(shape="arc", thick=0.078, color="#3A2414", arch=0.025, lift=(0.05, 0.0), len=1.2, len_far=1.7,
+                   in_far=0.84, smile=dict(len_near=1.12)),
         nose=dict(type="button", k=1.1, drop=0.20, tip="#E0906A", tip_k=0.35),
         mouth=dict(lip="#B8645A", line=0.20,
                    calm=dict(type="closed", w=0.27, near=0.04, far=0.005),
@@ -611,16 +615,17 @@ CHARS = {
                 # matte, a step deeper (#173C86, sheen 0.1, low specular) and darker at the top (shade): the sheen,
                 # the key and the rim's grazing highlight lit the shoulder tops to L* 72-81 beside the white beard
                 # (beard vs clothes dL* 2.1, §7.4 needs 15)
-                # (the front opening wider at the top, so the beard's far side lies on the stole: the cloak's rim-lit
-                # far edge touched it, beard vs clothes dL* 3.7, P2 review)
+                # (the front opening wider, so the beard's far side lies on the stole: the cloak's rim-lit far edge
+                # touched it, beard vs clothes dL* 3.7, P2 review; at the neck it stays narrower and the stole starts
+                # higher, so no sliver of the white robe shows beside the beard)
                 dict(kind="cloak", id="cloak", color="#173C86", rough=0.92, sheen=0.1, spec=0.15, shade=(0.84, 0.88),
                      z1=-0.64,
-                     gap=0.03, flare=0.06, open=[(-1.9, 0.50), (-1.2, 0.48), (-0.85, 0.45), (-0.66, 0.42)]),
+                     gap=0.03, flare=0.06, open=[(-1.9, 0.50), (-1.2, 0.48), (-0.85, 0.45), (-0.66, 0.32)]),
                 dict(kind="cape_collar", color="#1E4FA8", z0=-0.72, top_z=0.02, r0=0.30, r1=0.58, open=58,
                      piping="#C8CCD4", detail="collar", min_px=4000),
                 # wide enough that the beard lies on the stole, not the cloak's lit shoulders (§7.6 "борода лежит на
                 # синем палантине")
-                dict(kind="bib", id="stole", color="#2B5FD9", w=0.46, top=-0.665, bottom=-2.0, straps=False,
+                dict(kind="bib", id="stole", color="#2B5FD9", w=0.48, top=-0.60, bottom=-2.0, straps=False,
                      over_last=False),
             ]),
         props=[dict(kind="banner", x=0.50, y=0.32, top=0.80, w=0.40, h=0.60)],

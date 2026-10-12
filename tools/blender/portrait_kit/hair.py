@@ -432,11 +432,12 @@ def _fringe(ctx):
     brow_z = ctx.P["eye_z"] + ctx.P["sclera_h"] * 0.5 + 0.05 * H
     rim_el = hr.get("rim_el", 44)
     # (diagonal, swept to the far side and overlapping from the rim down: vertical, evenly spaced spikes read as a
-    # row of fangs; the far ones end higher, so the far brow keeps its length at 64 px)
-    for az, w, sweep, tip_dz, lift in hr.get("wisps", [(-46, 0.10, 20, 0.05, 0.018), (-33, 0.11, 24, 0.00, 0.024),
-                                                       (-20, 0.115, 28, -0.025, 0.030), (-7, 0.115, 30, 0.01, 0.032),
-                                                       (6, 0.11, 30, -0.015, 0.030), (19, 0.10, 28, 0.03, 0.026),
-                                                       (31, 0.09, 24, 0.09, 0.022), (42, 0.08, 18, 0.12, 0.018)]):
+    # row of fangs; their tips rest on the brows' upper edge, the far ones higher: crossing the far brow they cut it
+    # under P-A3's 6 px length at 64 px in the laugh)
+    for az, w, sweep, tip_dz, lift in hr.get("wisps", [(-46, 0.10, 20, 0.07, 0.018), (-33, 0.11, 24, 0.035, 0.024),
+                                                       (-20, 0.115, 28, 0.015, 0.030), (-7, 0.115, 30, 0.04, 0.032),
+                                                       (6, 0.11, 30, 0.025, 0.030), (19, 0.10, 28, 0.06, 0.026),
+                                                       (31, 0.09, 24, 0.11, 0.022), (42, 0.08, 18, 0.14, 0.018)]):
         root_d = core.az_el(az * 0.8, rim_el + 14)
         rim_d = core.az_el(az + sweep * 0.3, rim_el)
         hr_, nr_ = core.ray(head, root_d * 3, -root_d)

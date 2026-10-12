@@ -43,7 +43,10 @@ def skin_mat(ctx):
     when the character has them, freckles (level D: shader paint only), age lines (soft darker grooves with a bump),
     tan or ruddy patches, an oil smear. A bald dome (hair "bald": True) is glossier (roughness 0.35 above the brow
     ridge, §7.6 Olm "лысый купол с бликом")."""
-    m = core.principled(ctx, "skin", ctx.ch["skin"], rough=0.5, sss=0.25, spec=0.35)
+    # (a character may take a matter skin: on Frey's dark T5 skin the key's sheen washed the lit temples and
+    # forehead the flat-top bares to grey, under §7.4's lit-cheek saturation floor)
+    m = core.principled(ctx, "skin", ctx.ch["skin"], rough=ctx.ch.get("skin_rough", 0.5), sss=0.25,
+                        spec=ctx.ch.get("skin_spec", 0.35))
     nt = m.node_tree
     b = nt.nodes["Principled BSDF"]
     nt.links.new(skin_color(ctx, nt), b.inputs["Base Color"])
@@ -662,7 +665,7 @@ def build_brows(ctx):
     for side in (-1, 1):
         tag = "near" if side < 0 else "far"
         # the far brow turns away from the camera: a little longer so it reads as long as the near one
-        length = length0 * (br.get("len_far", 1.12) if side > 0 else 1.0)
+        length = length0 * (br.get("len_far", 1.12) if side > 0 else mood.get("len_near", 1.0))
         lift = (br.get("lift", (0.0, 0.0))[0 if side < 0 else 1] + mood.get("lift", (0.0, 0.0))[0 if side < 0 else 1]) * H
         inner_dz = (br.get("inner", 0.0) + mood.get("inner", 0.0)) * H
         outer_dz = (br.get("outer", 0.0) + mood.get("outer", 0.0)) * H
