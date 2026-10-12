@@ -194,7 +194,10 @@ def hood(ctx, hg):
         # a soft cone: wide where it leaves the hood, its last third bending down toward a rounded tip
         c = base + d * ln + Vector((0, 0, -hg.get("droop", 0.06) * core.smoothstep(0.45, 1.0, t) * t))
         peak_el.append(dict(co=c, half=r0 * (1 - 0.80 * t ** 0.85) + 0.010, stiff=2.0))
-    m = core.fabric(ctx, "hood", hg["color"], z0=-0.7, z1=0.6, rough=0.85, sheen=0.35)
+    # the fabric gradient (§7.11: 1.05 at the crown down to `shade_low` at the drape round the neck — a lighter low
+    # end keeps the drape's shadow under the chin over the albedo floor, §7.4 dark budget)
+    m = core.grad_mat(ctx, "hood", core.hex_scale(hg["color"], 1.05), core.hex_scale(hg["color"], hg.get("shade_low", 0.92)),
+                      -0.7, 0.6, rough=0.85, sheen=0.35)
     o = core.mb_mesh(ctx, "Hood", el + peak_el, 0.013, m, smooth_iter=3, name="hood")
     ctx.add(o, "hat", head, kind="embed", head=True)
     ctx.objs["hood"] = o
