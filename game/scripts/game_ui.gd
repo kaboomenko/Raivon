@@ -786,6 +786,7 @@ const PRIMARY_LOOK := {
 	"retreat": ["info", "white_flag"],
 	"truce": ["lock", "hourglass"], "core": ["lock", "lock"], "camp_far": ["lock", "lock"], "camp_wait": ["lock", "hourglass"],
 	"wait": ["lock", "hourglass"], "repairing": ["lock", "hourglass"], "convoy_status": ["lock", "hourglass"],
+	"upgrade_locked": ["lock", "lock"], "upgrading": ["lock", "hourglass"],
 }
 ## The status button's look by kind: [role, icon, the plate's icon]. Both ad buttons are secondary (info, §2: an ad
 ## button is the secondary one when a main action stands beside it — the paid repair / «Улучшить» on the big button),
@@ -960,7 +961,7 @@ func has_modal() -> bool:
 
 var _closing: Control  # the window fading out
 var _closed_frame := -1
-var _docked := false  # a window docked to the bottom is open: the bottom groups are hidden under it
+var _docked := false  # a docked window or a post-battle one is open: the bottom groups are hidden under it
 var on_dock := Callable()  # (docked: bool) — main hides the HUD's bottom group (tabs, tray, hex panel) with ours
 
 
@@ -1113,6 +1114,7 @@ func show_result(stars: int, captured: int, lost: int, score: float, control: in
 	var h := 776.0 if note else 736.0
 	var box := _modal_box(_win_rect("M", h), false, title, "", role, false, true)
 	box.set_meta("kit_native", true)
+	_set_docked(true)  # the empty tray, the tabs and the hex panel do not peek out under the window
 	var w := box.size.x
 	for i in 3:
 		var big := i == 1
@@ -1143,8 +1145,11 @@ func show_result(stars: int, captured: int, lost: int, score: float, control: in
 		nl.size = Vector2(w - 64.0, 44)
 		box.add_child(nl)
 	var fy := h - 32.0 - 116.0
-	var more := Kit.button(box, Rect2(32, fy, 280, 116), "info", tr("result.continue"), {"icon": "swords", "size": "L", "cb": on_continue})
-	var peace := Kit.button(box, Rect2(328, fy, w - 360.0, 116), "go", tr("result.peace"), {"icon": "treaty", "size": "L", "cb": on_peace})
+	# one decision, one caption size (§4.1 sibling offers): the secondary is wide enough for «Ещё бой» / «Fight on» at
+	# BTN_L 40 with its icon, so the pair keeps the class's size
+	var more := Kit.button(box, Rect2(32, fy, 310, 116), "info", tr("result.continue"), {"icon": "swords", "size": "L", "cb": on_continue})
+	var peace := Kit.button(box, Rect2(358, fy, w - 390.0, 116), "go", tr("result.peace"), {"icon": "treaty", "size": "L", "cb": on_peace})
+	Kit.unify([more, peace])
 	_modal_buttons = [more, peace]
 
 
@@ -1219,6 +1224,7 @@ func show_peace(enemy: String, budget: float, control: int, demands: Array, chos
 	var h := head + 60.0 + well_h + tail
 	var keep_scroll := 0 if fresh else _peace_scroll  # a tap re-renders the treaty: the list stays where it was
 	var box := _modal_box(_win_rect("L", h), false, tr("peace.title"), "", "go", false, true)
+	_set_docked(true)  # (as under the result: the bottom groups hide)
 	_modal.set_meta("peace", true)
 	box.set_meta("kit_native", true)
 	var w := box.size.x
@@ -1301,13 +1307,15 @@ func show_peace(enemy: String, budget: float, control: int, demands: Array, chos
 		hl.size = Vector2(w - 64.0, 36)
 		box.add_child(hl)
 	var fy := h - 32.0 - 116.0
-	# «К войне»: secondary, a step quieter than the L beside it, still a full thumb target (§1.4: ≥ 84 standalone)
-	var back := Kit.button(box, Rect2(32, fy + 14.0, 240, 88), "info", tr("peace.back"), {"size": "M", "hit_pad": 6.0,
+	# «К войне» and «Подписать мир» are one decision, laid out as the result's «Ещё бой» / «К миру»: both L, the
+	# secondary narrower (info, swords; wide enough for «К войне» at BTN_L 40), one caption size (§4.1 sibling offers)
+	var back := Kit.button(box, Rect2(32, fy, 340, 116), "info", tr("peace.back"), {"icon": "swords", "size": "L",
 		"cb": func(): action_pressed.emit("back_to_war")})
-	var sb := Kit.button(box, Rect2(288, fy, w - 320.0, 116), "go", tr("peace.seal"), {"icon": "treaty", "size": "L",
+	var sb := Kit.button(box, Rect2(388, fy, w - 420.0, 116), "go", tr("peace.seal"), {"icon": "treaty", "size": "L",
 		"hold": true, "hold_sec": 0.8, "enabled": not over, "cb": _on_seal})
 	sb.name = "seal"
 	sb.denied.connect(func(): Kit.tooltip(sb, tr("peace.seal"), tr("peace.over")))
+	Kit.unify([back, sb])
 	_seal_btn = sb
 	_modal_buttons = [back, sb]
 
@@ -1441,6 +1449,7 @@ func show_ceremony_counters(lines: Array, on_done: Callable, on_double := Callab
 		well_h = 24.0 + listed.size() * 44.0
 	var h := well_y + well_h + 32.0 + 116.0 + 32.0
 	var box := _modal_box(_win_rect("L", h), false, "", "", "gold", false, true, 0.75)
+	_set_docked(true)  # (as under the result: the bottom groups hide)
 	box.set_meta("kit_native", true)
 	var w := box.size.x
 	Kit.title_plate(box, tr("ceremony.title"), "gold", "", true, 64)
@@ -1536,15 +1545,17 @@ func show_ceremony_counters(lines: Array, on_done: Callable, on_double := Callab
 	var buttons: Array = []
 	var dbl: Kit.KitButton = null
 	if on_double.is_valid():
-		dbl = Kit.button(box, Rect2(32, fy + 12.0, 280, 92), "info", tr("ceremony.double"), {"icon": "ad", "size": "M", "enabled": false,
+		# «×2» beside «Забрать» as in the calendar: both L, one caption size, both with an icon (the ad / a check)
+		dbl = Kit.button(box, Rect2(32, fy, 280, 116), "info", tr("ceremony.double"), {"icon": "ad", "size": "L", "enabled": false,
 			"cb": func(): _claim(gate, flyers, on_double)})
 		dbl.name = "double"
 		buttons.append(dbl)
 	var main_r := Rect2(328, fy, w - 360.0, 116) if dbl != null else Rect2((w - 480.0) * 0.5, fy, 480, 116)
 	var done := Kit.button(box, main_r, "go", tr("ceremony.claim"), {"size": "L", "enabled": false,
-		"cb": func(): _claim(gate, flyers, on_done)})
+		"icon": "check" if dbl != null else "", "cb": func(): _claim(gate, flyers, on_done)})
 	done.name = "claim"
 	buttons.append(done)
+	Kit.unify(buttons)
 	var open := func():
 		gate["open"] = true
 		for b in buttons:
@@ -2134,15 +2145,20 @@ func show_calendar(info: Dictionary, on_claim: Callable) -> void:
 	var fy := box.size.y - 32.0 - 112.0
 	if pending:
 		var main_r := Rect2((w - 480.0) * 0.5, fy, 480, 112)
+		var pair: Array = []
 		if bool(info.get("can_double", false)):
 			var pat := bool(info.get("patent", false))
 			var dw := (w - 64.0 - 16.0) * 0.4
 			var db := Kit.button(box, Rect2(32, fy, dw, 112), "info", "×2", {"size": "L", "icon": "charter" if pat else "ad",
 				"cb": func(): on_claim.call(true)})
 			db.name = "double"
+			pair.append(db)
 			main_r = Rect2(32.0 + dw + 16.0, fy, w - 64.0 - dw - 16.0, 112)
-		var cb_ := Kit.button(box, main_r, "go", tr("ui.claim"), {"size": "L", "cb": func(): on_claim.call(false)})
+		# beside «×2» (its ad or the charter) «Забрать» carries a check: the two read as one set (§4.1)
+		var cb_ := Kit.button(box, main_r, "go", tr("ui.claim"), {"size": "L", "icon": "check" if not pair.is_empty() else "",
+			"cb": func(): on_claim.call(false)})
 		cb_.name = "claim"
+		Kit.unify(pair + [cb_])
 	else:
 		var nx := _paper_chip(box, Vector2(w * 0.5, fy + 56.0), "hourglass", tr("cal.tomorrow"), w - 64.0)
 		nx.name = "next"
@@ -2293,12 +2309,16 @@ func show_patent(info: Dictionary, on_buy: Callable, on_restore: Callable) -> vo
 		var fy := y + 34.0
 		var price := Kit.store_price(String(info.get("price", "")))  # RU «7,99 $», EN «$7.99» (§3.7), as in the store
 		if trial:
-			var mb := Kit.button(box, Rect2(32, fy + 14.0, 260, 88), "info", tr("patent.month_btn") % price,
-				{"size": "M", "cb": func(): on_buy.call("iap_sub_patent")})
+			# two offers side by side, as the pass's: one rect each, one caption and price size, one layout (§4.1
+			# sibling offers); the month reads as the subscription alone does — «Оформить» + «7,99 $/мес»
+			var bw := (w - 64.0 - 16.0) * 0.5
+			var mb := Kit.button(box, Rect2(32, fy, bw, 116), "info", tr("patent.subscribe"),
+				{"size": "L", "price": [["", tr("patent.month_btn") % price]], "cb": func(): on_buy.call("iap_sub_patent")})
 			mb.name = "buy_month"
-			var tb := Kit.button(box, Rect2(308, fy, w - 340.0, 116), "gold", tr("patent.trial_btn"),
+			var tb := Kit.button(box, Rect2(32.0 + bw + 16.0, fy, bw, 116), "gold", tr("patent.trial_btn"),
 				{"size": "L", "price": [["", Kit.store_price(String(info.get("trial_price", "")))]], "cb": func(): on_buy.call("iap_sub_trial")})
 			tb.name = "buy_trial"
+			Kit.unify([mb, tb])
 			Kit.ribbon(box, Vector2(tb.position.x + tb.size.x * 0.5, fy), tr("patent.trial_tag"), "war")
 		else:
 			var sb := Kit.button(box, Rect2((w - 480.0) * 0.5, fy, 480, 116), "gold", tr("patent.subscribe"),
@@ -2500,6 +2520,7 @@ func show_ultimatum(enemy: String, hex_name: String, tribute: int, can_pay: bool
 	var h := 64.0 + 170.0 + 40.0 + 332.0 + 32.0
 	var box := _modal_box(_win_rect("L", h), false, tr("ult.title"), "", "war", true, false)
 	box.set_meta("kit_native", true)
+	_set_docked(true)  # (as under the result: the tray, the tabs and the big button hide)
 	var w := box.size.x
 	_leader_seal(box, portrait, plate, Rect2(32, 64, 156, 170), "angry", enemy)
 	var bx := 32.0 + 156.0 + 28.0
@@ -2517,6 +2538,7 @@ func show_ultimatum(enemy: String, hex_name: String, tribute: int, can_pay: bool
 			"reason": tr("ult.no_gold") % Kit.fmt_num(short) if short > 0 else tr("toast.no_gold"), "title_color": Kit.NEG_CREAM},
 		{"icon": "swords", "title": tr("ult.refuse_title"), "role": "war", "cap": tr("ult.refuse"), "cb": on_refuse, "enabled": true},
 	]
+	var choices: Array = []
 	for i in 3:
 		var o: Dictionary = opts[i]
 		var card := Kit.tile(well, Rect2(16.0 + i * (cw + gap), 16, cw, 300), {})
@@ -2548,9 +2570,11 @@ func show_ultimatum(enemy: String, hex_name: String, tribute: int, can_pay: bool
 		var b := Kit.button(card, Rect2(14, 300 - 5.0 - 14.0 - 64.0, cw - 28.0, 64), String(o["role"]), String(o["cap"]),
 			{"size": "S", "cb": o["cb"], "enabled": bool(o["enabled"])})
 		b.name = "choice"
+		choices.append(b)
 		if not bool(o["enabled"]):  # the tip stands over the whole card: the coins and the amount stay in sight
 			var why := String(o.get("reason", ""))
 			b.denied.connect(func(): Kit.tooltip(card, String(o["cap"]), why))
+	Kit.unify(choices)  # «Отдать» / «Откупиться» / «Война»: one caption size
 
 
 ## An enemy leader's portrait (ultimatum, peace): the face on the state's colour in a TRIM frame (brass DL1–4, steel
@@ -2939,8 +2963,10 @@ func _dlg_footer_h(items: Array) -> float:
 
 
 ## The footer (§4.3): one action centred (480); two — the secondary at the left (~40 %), the primary at the right
-## (~60 %: the go / gold entry, else war, else the last), both L (a secondary with size "M" is a quieter M centred on
-## the L's height); three or more — a stack of M buttons the content's width.
+## (~60 %: the go / gold entry, else war, else the last), both L: one decision reads as one set (§4.1 sibling offers),
+## so the secondary is quieter by its width and role only — never shorter, never a smaller caption (an older caller's
+## `size: "M"` is ignored); when one of the two has an icon the other gets its role's (DLG_ICON); three or more — a
+## stack of M buttons the content's width. Every footer's buttons share one caption and price size (Kit.unify).
 func _dlg_footer(box: Control, w: float, y: float, items: Array) -> void:
 	var iw := w - 2.0 * DLG_PAD
 	var rects: Array = []
@@ -2961,20 +2987,24 @@ func _dlg_footer(box: Control, w: float, y: float, items: Array) -> void:
 			pi = 1
 		order = [1 - pi, pi]
 		var sw := roundf((iw - 16.0) * 0.4)
-		var quiet := String((items[1 - pi]["opts"] as Dictionary).get("size", "")) == "M"
-		rects = [Rect2(DLG_PAD, y + (14.0 if quiet else 0.0), sw, 88.0 if quiet else 116.0),
-			Rect2(DLG_PAD + sw + 16.0, y, iw - sw - 16.0, 116)]
-		sizes = ["M" if quiet else "L", "L"]
+		rects = [Rect2(DLG_PAD, y, sw, 116), Rect2(DLG_PAD + sw + 16.0, y, iw - sw - 16.0, 116)]
+		sizes = ["L", "L"]
 	else:
 		for i in items.size():
 			rects.append(Rect2(DLG_PAD, y + i * 100.0, iw, 88))
 			sizes.append("M")
+	var with_icon := items.size() == 2 and items.any(func(x): return String((x["opts"] as Dictionary).get("icon", "")) != "")
+	var made: Array = []
 	for k in order.size():
 		var it: Dictionary = items[order[k]]
 		var o: Dictionary = it["opts"]
 		var cap := String(it["text"])
-		var b := Kit.button(box, rects[k], String(it["role"]), cap, {"icon": String(o.get("icon", "")),
+		var icon := String(o.get("icon", ""))
+		if icon == "" and with_icon:
+			icon = String(DLG_ICON.get(String(it["role"]), "check"))
+		var b := Kit.button(box, rects[k], String(it["role"]), cap, {"icon": icon,
 			"price": o.get("price", []), "size": sizes[k], "enabled": bool(o.get("enabled", true)), "cb": it["cb"]})
+		made.append(b)
 		b.name = String(o.get("name", "btn_%d" % order[k]))
 		var why := String(o.get("reason", ""))
 		if why != "":
@@ -2984,6 +3014,12 @@ func _dlg_footer(box: Control, w: float, y: float, items: Array) -> void:
 			b.cb = func():
 				Kit.shake(b)
 				Kit.tooltip(b, cap, short_why)
+	Kit.unify(made)
+
+
+## A dialog footer's icon for an entry that has none while its sibling has one: the role's usual meaning (decline ✕,
+## fight on — swords, accept — a check).
+const DLG_ICON := {"info": "x", "slate": "x", "war": "swords", "go": "check", "gold": "check"}
 
 
 ## The window of a dialog: M (L when docked) sized to its content, centred in the band — or docked to the bottom
@@ -3006,8 +3042,9 @@ func _dlg_box(h: float, title: String, role: String, icon: String, cancel: Calla
 	return box
 
 
-## The bottom groups (ours: the card row, the big button; the HUD's through `on_dock`) hide while a docked window is
-## open and come back when it closes.
+## The bottom groups (ours: the card row, the big button; the HUD's through `on_dock`) hide while a docked window or
+## a post-battle one (result, treaty, ceremony, ultimatum) is open and come back when it closes: an empty slate tray,
+## the folder tabs and the hex panel would otherwise peek out under it.
 func _set_docked(on: bool) -> void:
 	_docked = on
 	if _bottom:
@@ -3211,6 +3248,12 @@ func show_market(info: Dictionary, quote_fn: Callable, on_exchange: Callable, on
 		var cw := (iw - 32.0 - 12.0 * (n - 1)) / n
 		for i in n:
 			_lot_card(lw, Rect2(16.0 + i * (cw + 12.0), 16, cw, LOT_H), lots[i], i, on_lot)
+		var buys: Array = []  # the lots' «Купить» side by side: one caption size, one price size (§4.1)
+		for c in lw.get_children():
+			var bb := c.get_node_or_null("buy")
+			if bb is Kit.KitButton:
+				buys.append(bb)
+		Kit.unify(buys)
 		y += 16.0 + LOT_H + 16.0 + 24.0
 	# ---- the exchange
 	var ew := Kit.well(box, Rect2(32, y, iw, ex_h))
@@ -3698,14 +3741,18 @@ func _fill_panel(kind: String, items: Array, builder: Callable) -> void:
 		_brow.remove_child(c)
 		c.queue_free()
 	var ns := 26  # the names of a row share one size: the smallest any card needed
+	var ctas: Array = []  # and so do their buttons' captions and prices (§4.1 sibling offers: one tray, one set)
 	for it in items:
 		var card: Control = builder.call(it)
 		_brow.add_child(card)
 		if card is Kit.KitCard:
 			ns = mini(ns, (card as Kit.KitCard).name_label.get_theme_font_size("font_size"))
+			if (card as Kit.KitCard).cta != null:
+				ctas.append((card as Kit.KitCard).cta)
 	for card in _brow.get_children():
 		if card is Kit.KitCard:
 			(card as Kit.KitCard).name_label.add_theme_font_size_override("font_size", ns)
+	Kit.unify(ctas)
 	_bscroll.set_deferred("scroll_horizontal", keep)
 	if switched:
 		Kit.fade_in(_brow)
@@ -4157,8 +4204,7 @@ func show_flag_editor(flag: Dictionary, owned: Dictionary, on_change: Callable, 
 						set_key.call("frame", fid))
 	var fy := box.size.y - 32.0 - 112.0
 	var rw_ := (w - 64.0 - 16.0) * 0.4
-	Kit.button(box, Rect2(32, fy, rw_, 112), "info", tr("flag.random"), {"size": "L", "icon": "dice", "cb": on_random}).name = "random"
-	Kit.button(box, Rect2(32.0 + rw_ + 16.0, fy, w - 64.0 - rw_ - 16.0, 112), "go", tr("flag.done"), {"size": "L", "cb": on_done}).name = "done"
+	_random_done(box, fy, rw_, tr("flag.random"), on_random, on_done)
 
 
 ## «Название державы» (canon §14.3, §6 «Флаг, имя»): a paper window M with the info plate; the name field is a well
@@ -4212,9 +4258,7 @@ func show_name_editor(current: String, ideas: Array, max_len: int, on_done: Call
 	field.text_changed.connect(func(_t: String): draw_ideas.call(draw_ideas))
 	var fy := box.size.y - 32.0 - 112.0
 	var rw_ := (w - 64.0 - 16.0) * 0.4
-	Kit.button(box, Rect2(32, fy, rw_, 112), "info", tr("realm.more"), {"size": "L", "icon": "dice", "cb": on_more}).name = "more"
-	Kit.button(box, Rect2(32.0 + rw_ + 16.0, fy, w - 64.0 - rw_ - 16.0, 112), "go", tr("flag.done"), {"size": "L",
-		"cb": func(): on_done.call(field.text)}).name = "done"
+	_random_done(box, fy, rw_, tr("realm.more"), on_more, func(): on_done.call(field.text)).name = "more"
 
 
 ## The FTUE flag wizard (canon §14.3: 3 taps, §6 «Флаг, имя, мастер флага»): a paper window L with the info plate. The
@@ -4265,9 +4309,20 @@ func show_flag_wizard(step: int, opts: Array, on_pick: Callable, on_random: Call
 	var hint := _paper_chip(box, Vector2(w * 0.5, y0 + 420.0 + 16.0 + 22.0), "pencil", tr("flagw.later"), w - 64.0)
 	hint.name = "hint"
 	var rw_ := (w - 64.0 - 16.0) * 0.4
-	Kit.button(box, Rect2(32, fy, rw_, 112), "info", tr("flag.random"), {"size": "L", "icon": "dice", "cb": on_random}).name = "random"
-	Kit.button(box, Rect2(32.0 + rw_ + 16.0, fy, w - 64.0 - rw_ - 16.0, 112), "go", tr("flag.done"), {"size": "L",
-		"cb": on_done}).name = "done"
+	_random_done(box, fy, rw_, tr("flag.random"), on_random, on_done)
+
+
+## The editors' footer (flag, name, flag wizard): «Случайно» / «Ещё идеи» (info, dice) at the left 40 %, «Готово» (go,
+## a check) at the right — both L 112, one caption size (§4.1 sibling offers). Returns the left one (named "random").
+func _random_done(box: Control, fy: float, rw_: float, left_cap: String, on_left: Callable, on_done: Callable) -> Kit.KitButton:
+	var w := box.size.x
+	var rb := Kit.button(box, Rect2(32, fy, rw_, 112), "info", left_cap, {"size": "L", "icon": "dice", "cb": on_left})
+	rb.name = "random"
+	var db := Kit.button(box, Rect2(32.0 + rw_ + 16.0, fy, w - 64.0 - rw_ - 16.0, 112), "go", tr("flag.done"),
+		{"size": "L", "icon": "check", "cb": on_done})
+	db.name = "done"
+	Kit.unify([rb, db])
+	return rb
 
 
 ## A flag as an option tile (§4.9): the banner on a paper tile; the chosen one with a go outline and check; a closed one
@@ -4836,6 +4891,9 @@ func show_commander(info: Dictionary, on_upgrade: Callable, on_target: Callable,
 			b = Kit.button(box, main_r, "go", tr("cmdr.upgrade_btn"), {"size": "L", "icon": "arrow_up", "enabled": false})
 			b.denied.connect(func(): Kit.tooltip(b, tr("cmdr.upgrade_btn"), tr("cmdr.max_short")))
 	b.name = "upgrade"
+	var tgt := box.get_node_or_null("target")
+	if tgt is Kit.KitButton:
+		Kit.unify([tgt, b])  # «Цель кейса» beside «Повысить»: one caption size
 
 
 ## The width a paper chip will take for this icon and text (lays chips out in rows before making them).
@@ -5212,6 +5270,7 @@ func _leader_dialog(it: Dictionary) -> void:
 	oc.position = Vector2(sc.position.x + sc.size.x + 12.0, sc.position.y + (sc.size.y - oc.size.y) * 0.5)
 	# the actions: two per row, the last one alone in the middle
 	var bw := (w - 64.0 - 16.0) * 0.5
+	var grid: Array = []
 	for i in acts.size():
 		var a: Dictionary = acts[i]
 		var col := i % 2
@@ -5224,6 +5283,7 @@ func _leader_dialog(it: Dictionary) -> void:
 		var b := Kit.button(box, Rect2(x, grid_y + row * 104.0, bw, 88), "go" if kind == "gift" else "info", String(a["cap"]),
 			{"icon": String(a["icon"]), "price": a.get("price", []), "enabled": bool(a["on"]), "size": "M"})
 		b.name = "act_" + kind
+		grid.append(b)
 		var why := String(a["why"])
 		if why != "":
 			b.denied.connect(func(): Kit.tooltip(b, String(a["cap"]), why))
@@ -5236,6 +5296,7 @@ func _leader_dialog(it: Dictionary) -> void:
 			b.cb = func():
 				close_modal()
 				diplomacy_action.emit(id, kind)
+	Kit.unify(grid)  # «Пакт / Союз / Обмен / Подарок»: one caption size, the gift's price too
 	# the footer: one action in the middle
 	var fr := Rect2((w - 480.0) * 0.5, foot_y, 480, 116)
 	if rel == "war":

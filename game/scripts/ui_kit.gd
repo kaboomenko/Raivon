@@ -2625,6 +2625,8 @@ class KitPrice extends Panel:
 	var compact := false
 	var _rows: Array = []  # [{ic: TextureRect or null, l: Label, text, short}]
 	var _more: Label
+	var _more_chip: Panel  # «+N»: a neutral count chip (§4.8: SLATE_WELL, white), not a number glued to the price
+	var _more_sb: StyleBoxFlat
 	var _sb: StyleBoxFlat
 
 	func _init(its: Array = []) -> void:
@@ -2650,10 +2652,18 @@ class KitPrice extends Panel:
 			l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 			add_child(l)
 			_rows.append({"ic": ic, "l": l, "text": l.text, "short": short})
+		_more_chip = Panel.new()
+		_more_chip.name = "more"
+		_more_chip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_more_sb = SELF.style(SLATE_WELL, 12, 0, INK, 0, 0)
+		_more_sb.set_meta("kit_kind", "")
+		SELF.set_panel(_more_chip, _more_sb)
+		_more_chip.visible = false
+		add_child(_more_chip)
 		_more = SELF.label("", 24, TEXT, true)
+		_more.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_more.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		_more.visible = false
-		add_child(_more)
+		_more_chip.add_child(_more)
 
 	## The items shown: all of them (at most 2); of more, the first two with what is short first (callers order the
 	## items scarcest first) and «+N»; when compact, the scarcest one alone.
@@ -2700,16 +2710,28 @@ class KitPrice extends Panel:
 			x += tw
 		var more := _rows.size() - shown.size()
 		if more > 0:
+			# «+1»: how many other prices the tooltip lists — a count chip inside the plate's end (SLATE_WELL, white
+			# MICRO), so it never reads as a bonus added to the number before it
 			var mt := "+%d" % more
+			var cn := 22
+			var ch := h - 8.0
+			var cw := maxf(ch, SELF.text_w(mt, cn, "d900", false) + 16.0)
 			x += 6.0
-			var mw := SELF.text_w(mt, num, "d900", false)
-			if apply:  # «+1»: the other prices, softer than the numbers so it does not read as part of them
+			if apply:
 				_more.text = mt
-				_more.visible = true
-				_num(_more, num, SOFT, x, mw, h)
-			x += mw
-		elif apply:
-			_more.visible = false
+				_more_chip.visible = true
+				_more_chip.position = Vector2(x, 4.0)
+				_more_chip.size = Vector2(cw, ch)
+				_more_sb.set_corner_radius_all(int(ch * 0.5))
+				_more_chip.queue_redraw()
+				SELF.style_label(_more, cn, TEXT, true)
+				_more.add_theme_font_override("font", SELF.font("d900"))
+				_more.add_theme_font_size_override("font_size", cn)
+				_more.position = Vector2(0, -1.0)
+				_more.size = Vector2(cw, ch)
+			return x + cw + 4.0
+		if apply:
+			_more_chip.visible = false
 		return x + (maxf(9.0, roundf(h * 0.24)) if icon > 24.5 else 7.0)
 
 	func _num(l: Label, num: int, col: Color, x: float, tw: float, h: float) -> void:

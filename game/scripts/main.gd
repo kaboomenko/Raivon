@@ -626,16 +626,31 @@ func _price_items(cost: Dictionary) -> Array:
 	return out
 
 
-## «Улучшить» on an own hex opens the Buildings tab; its plate shows what the hex's building's next level costs,
-## when that building can still grow (nothing for a bare hex or a building at its cap).
-func _upgrade_price(hex: int) -> Array:
+## «Улучшить» on an own hex opens the Buildings tab; its plate shows what the hex's building's next level costs (a
+## bare hex: no plate). A building that cannot grow for another reason than the store or the builders is not offered
+## in green (docs/ui_style.md §4.1 «Недоступно»): the lock role and icon, the short reason on the plate — the hexes
+## the realm needs, the level, the chapter — and the whole reason in the tooltip; one being built is locked with the
+## hourglass and its time left (as «Ремонт»).
+func _upgrade_primary(hex: int) -> void:
 	var b: Dictionary = econ.building_at(hex)
-	if b.is_empty():
-		return []
-	var why: String = econ.can_upgrade(b, now_s())
-	if why != "" and not why.begins_with("err.not_enough") and why != "err.builders_busy":
-		return []
-	return _price_items(econ.upgrade_cost(b))
+	var why: String = econ.can_upgrade(b, now_s()) if not b.is_empty() else ""
+	if b.is_empty() or why == "" or why.begins_with("err.not_enough") or why == "err.builders_busy":
+		ui.set_primary("upgrade", tr("ui.upgrade"), "go", true, "", _price_items(econ.upgrade_cost(b)) if not b.is_empty() else [])
+		return
+	if why == "err.upgrading":
+		var t := GameUI.fmt_time(maxi(0, int(b["upgrade_end"]) - now_s()))
+		ui.set_primary("upgrading", tr("ui.upgrade"), "lock", false, "", [["", t]], tr("bld.tip.left") % t)
+		return
+	var n := int(why.get_slice("|", 1)) if why.contains("|") else 0
+	var plate: Array = []
+	match why.get_slice("|", 0):
+		"err.need_hexes":
+			plate = [["hex_tile", str(n)]]
+		"err.need_residence":
+			plate = [["", tr("dl.short") % n]]
+		"err.chapter_locked":
+			plate = [["", tr("world.chapter") % GameUI.ROMAN[clampi(n, 0, GameUI.ROMAN.size() - 1)]]]
+	ui.set_primary("upgrade_locked", tr("ui.upgrade"), "lock", false, "", plate, L.t(why))
 
 
 ## The big button for the selected hex on the map (docs/ui_style.md §6 HUD: short captions, the cost or the time in
@@ -705,7 +720,7 @@ func _primary_for_selection() -> void:
 	elif _march_primary():
 		pass
 	elif c["owner"] == Types.PLAYER:
-		ui.set_primary("upgrade", tr("ui.upgrade"), "go", true, "", _upgrade_price(selected))
+		_upgrade_primary(selected)
 	else:
 		ui.set_primary("", "")
 	if c["owner"] == Types.PLAYER and econ.ruin_left(now_s()) > 0 and _ad_left("ad_ruin_halve", 1) > 0:
