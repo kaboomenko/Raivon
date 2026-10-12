@@ -208,7 +208,7 @@ def node_blob(nt, centre, radius, scale=(1.0, 1.0, 1.0)):
 def ao_crevice(nt, base_socket, dark, dist=0.06 * H, at=0.8):
     """Multiply a colour by an AO-driven crevice tint (the grooves of hair, beards and fur)."""
     ao = nt.nodes.new("ShaderNodeAmbientOcclusion")
-    ao.samples = 8
+    ao.samples = 4          # x 64 path samples: smooth enough; 8 cost Kort's fur-and-moustache frame ~20 % (P-A10 70 s)
     ao.inputs["Distance"].default_value = dist
     crev = node_ramp(nt, ao.outputs["AO"], [(0.0, dark), (at, "#ffffff")])
     return node_mix(nt, 1.0, base_socket, crev, "MULTIPLY")
@@ -273,11 +273,11 @@ def hair_mat(ctx, name, col, z0, z1, dark=None, light=None, rough=0.6, crevice=N
     return m
 
 
-def grad_mat(ctx, name, top, bottom, z0, z1, rough=0.8, sheen=0.0, coat=0.0, axis="Z", space="Object"):
+def grad_mat(ctx, name, top, bottom, z0, z1, rough=0.8, sheen=0.0, coat=0.0, axis="Z", space="Object", spec=0.5):
     """Fabric / leather: a vertical gradient (1.05 -> 0.92 down the torso, §7.11)."""
     if name in ctx.mats:
         return ctx.mats[name]
-    m = principled(ctx, name, top, rough=rough, sheen=sheen, coat=coat)
+    m = principled(ctx, name, top, rough=rough, sheen=sheen, coat=coat, spec=spec)
     nt = m.node_tree
     nt.links.new(node_ramp(nt, node_obj_axis(nt, axis, z0, z1, space), [(0.0, bottom), (1.0, top)]),
                  nt.nodes["Principled BSDF"].inputs["Base Color"])

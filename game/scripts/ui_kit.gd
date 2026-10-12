@@ -1870,18 +1870,16 @@ class KitText extends Control:
 			_live(l)
 			return
 		var key := SELF.label_key(l)
-		# a left-aligned line is made only as wide as its glyphs reach (a list row's title over half its width empty
-		# took that much of the atlas too)
-		var sz := l.size
-		var span := span_of(l)
-		if span > 0.0:
-			sz.x = span
+		# a one-line label is made only as wide as its glyphs reach (a list row's title over half its width empty, a
+		# bar's centred figure, took that much of the atlas too)
+		var sp := span_of(l)
+		var sz := Vector2(sp.y, l.size.y) if sp.y > 0.0 else l.size
 		var make := func(_z: Vector2) -> Control:
 			if not is_instance_valid(l) or SELF.label_key(l) != key:
 				return null
-			return KitText.clone(l, span)
-		var r := Rect2(Vector2.ZERO, sz)
-		var f := kb.frac_of(self, Vector2.ZERO)
+			return KitText.clone(l, sp.y)
+		var r := Rect2(Vector2(maxf(sp.x, 0.0), 0.0), sz)
+		var f := kb.frac_of(self, r.position)
 		# baked already (by this label or another one with the same look): at once; else once the text has held
 		var ok := kb.draw(get_canvas_item(), "text|" + key, r, sz, make, self, Vector4.ZERO, f, l.self_modulate, false)
 		if not ok and kb.held("text|" + key):
@@ -1904,28 +1902,43 @@ class KitText extends Control:
 		if l.visible_characters != -1:
 			l.visible_characters = -1
 
-	## The width of `l`'s left part that its glyphs reach: a left-aligned single line's advance (as a Label shapes
-	## it: its font, size and features), its outline and shadow, and a margin; -1 when the whole label is needed
-	## (another alignment, wrapped or several lines, cut, right-to-left, or nearly as wide). A left-aligned line lays
-	## out the same in a narrower label as long as it fits, so its glyphs are drawn where they were.
-	static func span_of(l: Label) -> float:
-		if l.horizontal_alignment != HORIZONTAL_ALIGNMENT_LEFT or l.autowrap_mode != TextServer.AUTOWRAP_OFF \
-				or l.text.contains("\n") or l.lines_skipped != 0 or l.is_layout_rtl() \
-				or l.text_direction == Control.TEXT_DIRECTION_RTL:
-			return -1.0
+	## The part of `l` its glyphs reach, as (x, width): a single line's advance (as a Label shapes it: its font, size
+	## and features), its outline and shadow, and a margin, at its alignment — left from x 0; centred, x a whole number
+	## and the width the label's less twice x; right, x a whole number to the label's end — so that the line, laid
+	## out in a label that wide, falls on the very pixels it does in `l` (Label places a line at int(width − line) / 2
+	## centred, int(width − margin − line) right: shifted by whole pixels together with x). (-1, -1) when the whole
+	## label is needed (wrapped or several lines, cut, right-to-left, or nearly as wide).
+	static func span_of(l: Label) -> Vector2:
+		var none := Vector2(-1.0, -1.0)
+		var al := l.horizontal_alignment
+		if al == HORIZONTAL_ALIGNMENT_FILL or l.autowrap_mode != TextServer.AUTOWRAP_OFF or l.text.contains("\n") \
+				or l.lines_skipped != 0 or l.is_layout_rtl() or l.text_direction == Control.TEXT_DIRECTION_RTL:
+			return none
 		var font := l.get_theme_font("font")
 		if font == null:
-			return -1.0
+			return none
 		var t := l.text.to_upper() if l.uppercase else l.text
-		var adv := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1.0, l.get_theme_font_size("font_size")).x
+		var adv := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1.0, l.get_theme_font_size("font_size")).x * 1.02
 		var sb := l.get_theme_stylebox("normal")
-		var left := sb.get_margin(SIDE_LEFT) if sb != null else 0.0
 		var reach := float(l.get_theme_constant("outline_size")) + absf(float(l.get_theme_constant("shadow_offset_x"))) \
 			+ float(l.get_theme_constant("shadow_outline_size")) + 8.0
-		var w := ceilf(left + adv * 1.02 + reach)
-		return w if w < l.size.x - 24.0 else -1.0
+		var big := l.size.x
+		var x := 0.0
+		var w := big
+		match al:
+			HORIZONTAL_ALIGNMENT_LEFT:
+				w = ceilf((sb.get_margin(SIDE_LEFT) if sb != null else 0.0) + adv + reach)
+			HORIZONTAL_ALIGNMENT_CENTER:
+				x = floorf((big - ceilf(adv + 2.0 * reach)) * 0.5)
+				w = big - 2.0 * x
+			HORIZONTAL_ALIGNMENT_RIGHT:
+				x = floorf(big - ceilf((sb.get_margin(SIDE_RIGHT) if sb != null else 0.0) + adv + reach))
+				w = big - x
+		if x < 0.0 or w > big - 24.0:
+			return none
+		return Vector2(x, w)
 
-	## The label as it draws itself, for the stage (`span` > 0: only that wide — span_of).
+	## The label as it draws itself, for the stage (`span` > 0: only that wide — span_of's width).
 	static func clone(l: Label, span := -1.0) -> Label:
 		var c := l.duplicate(0) as Label
 		for ch in c.get_children():
@@ -2006,7 +2019,9 @@ class KitShape extends Control:
 
 	## From the bake atlas.
 	func _draw() -> void:
-		if not vector and not LIVE.has(kind) and not (kind == "rays" and maxf(size.x, size.y) > RAYS_BAKED):
+		# a bar: its boxes one by one from the atlas, sliced (_box) — a bar of any fill shares them; baked whole, each
+		# bar's look (its fill) took an image of its full size
+		if not vector and not LIVE.has(kind) and kind != "bar" and not (kind == "rays" and maxf(size.x, size.y) > RAYS_BAKED):
 			var key := "shape|%s|%s|%s|%.2f,%.2f|%s" % [kind, face.to_html(), lip.to_html(), size.x, size.y, var_to_str(data)]
 			var k_ := kind
 			var f_ := face
@@ -2294,13 +2309,13 @@ class KitShape extends Control:
 		o.anti_aliasing = true
 		o.bg_color = INK
 		o.set_corner_radius_all(int(h * 0.5))
-		draw_style_box(o, Rect2(0, 0, w, h))
+		_box(o, Rect2(0, 0, w, h))
 		var ih := h - 6.0
 		var t := StyleBoxFlat.new()
 		t.anti_aliasing = true
 		t.bg_color = data.get("track", CREAM_DEEP if paper else SLATE_WELL)  # a bar on a dark scrim takes a lighter one
 		t.set_corner_radius_all(int(ih * 0.5))
-		draw_style_box(t, Rect2(3, 3, w - 6.0, ih))
+		_box(t, Rect2(3, 3, w - 6.0, ih))
 		if frac <= 0.0:
 			return
 		var fw := maxf(ih, (w - 6.0) * frac)
@@ -2310,13 +2325,21 @@ class KitShape extends Control:
 		f.set_corner_radius_all(int(ih * 0.5))
 		f.border_width_bottom = int(maxf(1.0, ih * 0.18))
 		f.border_color = face.darkened(0.25)
-		draw_style_box(f, Rect2(3, 3, fw, ih))
+		_box(f, Rect2(3, 3, fw, ih))
 		if fw > ih:
 			var gl := StyleBoxFlat.new()
 			gl.anti_aliasing = true
 			gl.bg_color = Color(1, 1, 1, 0.3)
 			gl.set_corner_radius_all(int(ih * 0.15))
-			draw_style_box(gl, Rect2(3.0 + ih * 0.35, 3.0 + ih * 0.12, fw - ih * 0.7, maxf(2.0, ih * 0.3)))
+			_box(gl, Rect2(3.0 + ih * 0.35, 3.0 + ih * 0.12, fw - ih * 0.7, maxf(2.0, ih * 0.3)))
+
+	## One of a bar's boxes: from the bake atlas (Kit.draw_flat) when drawn on the screen — sliced across when long
+	## enough, so a fill of any such length uses the same image (a short one is made at its length); else (on the
+	## stage, not baked yet) as it is.
+	func _box(sb: StyleBoxFlat, r: Rect2) -> void:
+		if not vector and SELF.draw_flat(get_canvas_item(), r, sb, self, self):
+			return
+		draw_style_box(sb, r)
 
 
 static func hex_points(c: Vector2, r: float) -> PackedVector2Array:

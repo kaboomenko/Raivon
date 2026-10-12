@@ -1129,7 +1129,6 @@ def gauntlet(ctx, pr):
         ctx.add(cf, grp, info["obj"], kind="free")
         pipe = core.torus("gauntlet_pipe", wrist + f * 0.02 - f * cuff_l, 0.15, 0.014, orange, nrm=f, seg=32, rseg=8)
         ctx.add(pipe, grp, cf, kind="free")
-        ctx.sig_objs.append(cf)
         return
     strap = ctx.objs.get(pr.get("on", "strap"))
     pts = ctx.L.get(pr.get("on", "strap"))
@@ -1167,4 +1166,3 @@ def gauntlet(ctx, pr):
                    stiff=2.6, rot=core.frame_quat(down, nn))]
         gl = core.mb_mesh(ctx, "Glove%d" % j, el, 0.007, glove_m, smooth_iter=2, name="glove%d" % j)
         ctx.add(gl, grp, cf, kind="free")
-        ctx.sig_objs.append(cf)

@@ -55,11 +55,12 @@ CHARS = {
         costume=dict(
             base=dict(color="#DCCAA0", rough=0.85, sheen=0.25),
             layers=[
-                # a laced jerkin closed under the beard (the beard lies on slate: dL* >= 15, §7.4); no shirt collar —
+                # a laced jerkin closed under the beard (the beard lies on slate: dL* >= 15, §7.4; #3F4D5E a step
+                # darker, #3B4859: the smile measured 14.7 at 64 samples); no shirt collar —
                 # the beard covers the neck
                 # (shade 0.94 -> 0.87 down the jerkin, not 0.80: under the beard's shadow the bottom went past the
                 # albedo floor — dark pixels, §7.4)
-                dict(kind="vest", id="jerkin", color="#3F4D5E", z0=-1.32, z1=-0.645, thick=0.032, rough=0.9, sheen=0.4,
+                dict(kind="vest", id="jerkin", color="#3B4859", z0=-1.32, z1=-0.645, thick=0.032, rough=0.9, sheen=0.4,
                      shade=(0.94, 0.87),
                      open=[(-1.40, 0.10), (-1.15, 0.05), (-0.85, 0.05), (-0.70, 0.10), (-0.66, 0.16)]),
                 dict(kind="belt", z=-1.09, w=0.13, color="#6B4226", buckle="#E0AD45", over=0.05),
@@ -322,7 +323,7 @@ CHARS = {
                    moustache=True, moustache_color="#C4C4CA", moustache_dark="#A0A0A8", moustache_light="#DADADE",
                    moustache_k=0.72),
         age=dict(forehead=2, crows=3, nasolabial=True, k=0.4, smile_k=0.65),
-        headgear=dict(kind="tricorn", color="#134B5F", trim="#F2F2F2", rim_dz=0.0, crown=0.20, wall=0.19,
+        headgear=dict(kind="tricorn", color="#134B5F", trim="#F2F2F2", rim_dz=0.0, crown=0.20, wall=0.19, crown_sub=1,
                       corner=0.24, mid=0.02),
         body=dict(shoulders=2.0),
         costume=dict(
@@ -350,7 +351,7 @@ CHARS = {
         name="Frey", rarity="rare", female=True,
         # she keeps the square jaw (§7.3: "Фрей сохраняет квадратную челюсть"): +0.06 cancels the women's -6 %
         head=dict(shape="square", wh=0.95, h_px=278, eye_line=0.48, chin=0.01, jaw=0.06, cheeks=1.05),
-        skin=SKIN["T5"], skin_tone="T5", blush=0.2,
+        skin=SKIN["T5"], skin_tone="T5", blush=0.2, skin_sat=1.08,              # lit cheek S >= 0.35
         eyes=dict(sclera=0.19, open=0.72, iris="#8A5A2E", tilt=0.0, arch=0.18, flick=0.028,
                   smile=dict(open=0.62, low=0.20, bow=0.3, arch=0.24)),
         brows=dict(shape="straight", thick=0.075, color="#2A2020", arch=0.01, len=1.25, inner=-0.01, gap=0.04,
@@ -363,8 +364,8 @@ CHARS = {
         # a light ash-brown buzz-cut ("ёжик"), not §7.6's #2A2420: the art director's P2 note — it must read as HAIR,
         # lighter than the uniform, with a bristly edge and the forehead and temples bare below it (the dark shell
         # read as a beanie); light also keeps hair vs her T5 skin >= 15 L* (§7.4)
-        hair=dict(style="flattop", color="#8E7660", dark="#5E4A3A", light="#B49C82", crevice="#3E3026", side=0.026,
-                  top=0.12, stubble=0.8, bristle=0.012,
+        hair=dict(style="flattop", color="#A8907A", dark="#7C6650", light="#CCB89E", crevice="#4A3A2C", side=0.026,
+                  top=0.15, plane_k=0.08, stubble=0.8, bristle=0.012,
                   # the corners recede at the temples (a straight line across the forehead read as a cap's rim)
                   hairline=[(0, 0.31), (16, 0.315), (30, 0.29), (42, 0.265), (56, 0.25), (72, 0.20), (92, 0.11),
                             (130, -0.05), (180, -0.20)]),
@@ -424,11 +425,12 @@ CHARS = {
             layers=[
                 dict(kind="collar", color="#3A3C46", z=-0.66, h=0.20, out=0.008, flare=0.07, gap=0.10, thick=0.03,
                      piping="#F08A24", piping_r=0.024),
-                dict(kind="placket", color="#F08A24", w=0.055, top=-0.76, x=0.03),     # P-A8: orange >= 3 %
+                dict(kind="placket", color="#F08A24", w=0.08, top=-0.76, x=0.03),      # P-A8: orange >= 3 %
                 dict(kind="strap", id="strap", color="#2E2E34", **{"from": (-0.40, -0.72), "to": (0.45, -1.6)},
                      w=0.075),
             ]),
         props=[dict(kind="gauntlet", on="strap", z=(-0.95, -1.06), color="#3A3C46", piping="#F08A24", free_color="#5E606C",
+                    pipe_r=0.022,
                     hand=dict(grip="wrap", curl=0.85, target=(-0.20, -0.36, -0.62), axis=(0.25, 0.4, 1.0),
                               radius=0.03, elbow=(-0.40, -0.45, -1.75), sleeve="#3A3C46", detail="gauntlet"))],
         pose=dict(body=28, head=12, roll=-5, nod=5),
@@ -497,7 +499,7 @@ CHARS = {
         # beside Irma's platinum and Rai's white the P-A9 colour groups read as one)
         # the bun 0.31 H (§7.6 0.28 H): with the queen as a pendant (hand-free) the bun alone is her 48 px signature
         # and measured 6.9 % of the head zone at 0.28 (P-A3 needs 8 %)
-        hair=dict(style="bun", color="#BEA8EE", dark="#9280C8", light="#E2D6FF", crevice="#50448A",
+        hair=dict(style="bun", color="#B49CEC", dark="#8872C4", light="#DCCCFF", crevice="#4C4088",
                   bun=dict(h=0.31, r=(0.13, 0.092), turns=3.0, w=0.05)),
         body=dict(shoulders=1.75, neck=0.42),
         costume=dict(
@@ -546,9 +548,11 @@ CHARS = {
         costume=dict(
             base=dict(color="#EEF1F6", rough=0.85, sheen=0.3),
             layers=[
-                # matte, a step deeper (#173C86, sheen 0.1) and darker at the top (shade): the sheen and the key lit
-                # the shoulder tops to L* 72 beside the white beard (beard vs clothes dL* 2.1, §7.4 needs 15)
-                dict(kind="cloak", id="cloak", color="#173C86", rough=0.92, sheen=0.1, shade=(0.84, 0.88), z1=-0.64,
+                # matte, a step deeper (#173C86, sheen 0.1, low specular) and darker at the top (shade): the sheen,
+                # the key and the rim's grazing highlight lit the shoulder tops to L* 72-81 beside the white beard
+                # (beard vs clothes dL* 2.1, §7.4 needs 15)
+                dict(kind="cloak", id="cloak", color="#173C86", rough=0.92, sheen=0.1, spec=0.15, shade=(0.84, 0.88),
+                     z1=-0.64,
                      gap=0.03, flare=0.06, open=[(-1.9, 0.46), (-1.2, 0.42), (-0.85, 0.36), (-0.66, 0.30)]),
                 dict(kind="cape_collar", color="#1E4FA8", z0=-0.72, top_z=0.02, r0=0.30, r1=0.58, open=58,
                      piping="#C8CCD4", detail="collar", min_px=4000),

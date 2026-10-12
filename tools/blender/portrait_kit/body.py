@@ -171,7 +171,7 @@ def hand(ctx, h):
     el.append(dict(co=pts[-1], half=fr * 0.95, stiff=4.0))
     glove = h.get("glove")
     mat = (core.principled(ctx, "glove", glove, rough=0.45, coat=0.25) if glove else ctx.mats["skin"])
-    o = core.mb_mesh(ctx, "Hand", el, h.get("res", 0.008), mat, smooth_iter=2, name="hand")
+    o = core.mb_mesh(ctx, "Hand", el, h.get("res", 0.012), mat, smooth_iter=2, name="hand")   # §7.5: resolution 0.012
     s_mod = o.modifiers.new("sub", "SUBSURF")
     s_mod.levels = s_mod.render_levels = 1
     # the forearm from below the frame up to the wrist, in the sleeve, with a cuff

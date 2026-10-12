@@ -614,7 +614,7 @@ def cloak(ctx, ly, name):
     core.solidify(o, max(S["layer_min"] * H, ly.get("thick", 0.03)), offset=1.0)
     sh_top, sh_bot = ly.get("shade", (1.06, 0.88))     # Rai: a darker top, so the key-lit shoulders stay deep blue
     m = core.grad_mat(ctx, name, core.hex_scale(ly["color"], sh_top), core.hex_scale(ly["color"], sh_bot), z0, z1,
-                      rough=ly.get("rough", 0.85), sheen=ly.get("sheen", 0.35))
+                      rough=ly.get("rough", 0.85), sheen=ly.get("sheen", 0.35), spec=ly.get("spec", 0.5))
     core.finish(o, m, sub=2)
     ctx.add(o, _group(ly), ctx.objs["torso"], kind="surface")
     ctx.outer.append(o)

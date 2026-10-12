@@ -169,24 +169,30 @@ def plan_skin_paint(ctx):
         k = age.get("smile_k", age.get("k", 0.5)) if ctx.smile else age.get("k", 0.5)
         dark = core.hex_mix(skin, "#6a2a22", 0.55)
         r = 0.014 * H
+        # the blobs' spacing along a line: 1.2 r under their 1.6 r falloff keeps the groove continuous (a 14 % ripple
+        # at most) with 2.4x fewer shader nodes than 0.5 r — at 0.5 r the age lines alone took Olm's and Kort's
+        # 64-sample frame past P-A10's 70 s
+        step = age.get("step", 1.2)
         pts = []
         for i in range(age.get("forehead", 0)):
             z = ez + (0.33 + 0.075 * i) * H
             w = (0.17 - 0.03 * i) * H * sx
-            pts += arc((-w, z - 0.012), (w, z - 0.012), 0.018, r * 0.5)
+            pts += arc((-w, z - 0.012), (w, z - 0.012), 0.018, r * step)
         eye_w = S["sclera_w"] * p["sclera_h"]
         for s_ in (-1, 1):
             x0 = s_ * (p["eye_x"] + eye_w * 0.62)
             for j in range(age.get("crows", 0)):
                 ang = math.radians(-28 + 28 * j) if age.get("crows", 0) > 1 else 0.0
                 ln = 0.055 * H
-                pts += line((x0, ez - 0.01), (x0 + s_ * ln * math.cos(ang), ez - 0.01 + ln * math.sin(ang)), r * 0.5)
+                pts += line((x0, ez - 0.01), (x0 + s_ * ln * math.cos(ang), ez - 0.01 + ln * math.sin(ang)), r * step)
             if age.get("nasolabial"):
                 nz = ez - ch.get("nose", {}).get("drop", 0.2) * H
                 mz = ctx.L["mouth_z"]
-                pts += arc((s_ * 0.085 * sx, nz + 0.01), (s_ * 0.165 * sx, mz - 0.035), -s_ * 0.0, r * 0.5)
+                pts += arc((s_ * 0.085 * sx, nz + 0.01), (s_ * 0.165 * sx, mz - 0.035), -s_ * 0.0, r * step)
         if pts:
-            ctx.skin_soft.append((pts, r * 1.6, dark, k, True))
+            # colour only by default: a bump re-evaluates the whole blob network three more times (the age lines'
+            # bump alone took Kort's 64-sample frame from ~50 s to ~90 s, P-A10's budget is 70 s)
+            ctx.skin_soft.append((pts, r * 1.6, dark, k, bool(age.get("bump", False))))
     for pa in ch.get("paint", []):
         x, z = pa["at"]
         h, _ = core.ray_front(head, x * H * sx, ez + z * H)

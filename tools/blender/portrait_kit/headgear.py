@@ -287,7 +287,7 @@ def tricorn(ctx, hg):
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
     crown = core.mesh_obj("tricorn_crown", bm)
     core.solidify(crown, 0.03, offset=-1.0)
-    core.finish(crown, felt, sub=2)
+    core.finish(crown, felt, sub=hg.get("crown_sub", 2))      # Seir: 1 (P-A10's 500k triangles with his hand)
     ctx.add(crown, "hat", brim, kind="embed", head=True)
     # the white tape along the walls' top edge
     tape = core.curve("tricorn_tape", tops + tops[:1], [1.0] * (n + 1), hg.get("tape", 0.022),

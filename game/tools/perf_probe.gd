@@ -110,6 +110,34 @@ static func bake_stats(kb: Node) -> String:
 		kb.resets, kb.evicted, kb.used() * 100.0, kb._top, kb.stage.size, kb._state]
 
 
+## What the atlas holds, by look (the key's kind: text, flat, decor, shape, still, …): images and share of the atlas,
+## then the largest images.
+static func census(kb: Node) -> String:
+	var by := {}
+	var big: Array = []
+	var area := float(kb._asize.x * kb._asize.y)
+	for key in kb.slots:
+		var s0 := String(key)
+		var kind := s0.get_slice("|", 0)
+		var r: Rect2i = kb.slots[key]
+		var e: Array = by.get(kind, [0, 0])
+		e[0] += 1
+		e[1] += r.get_area()
+		by[kind] = e
+		big.append([r.get_area(), "%dx%d %s" % [r.size.x, r.size.y, s0.substr(0, 60).replace("\n", " ")]])
+	var kinds := by.keys()
+	kinds.sort_custom(func(a, b): return by[a][1] > by[b][1])
+	var out := PackedStringArray()
+	for k_ in kinds:
+		out.append("%s %d %.1f%%" % [k_, by[k_][0], by[k_][1] * 100.0 / area])
+	big.sort_custom(func(a, b): return a[0] > b[0])
+	var tops := PackedStringArray()
+	for b in big.slice(0, 6):
+		tops.append(String(b[1]))
+	return "%s; icons %d %.1f%%; largest: %s" % [", ".join(out), kb.icons.size(),
+		kb.icons.size() * 132.0 * 132.0 * 100.0 / area, " | ".join(tops)]
+
+
 ## `--perf-tabs` (docs/dev/hud_perf_plan.json H2): the store's other tabs in turn — each one rendered, held still,
 ## shot (<shot>_<tab>.png, with the 3D world), its «perf» line printed and its breakdown written
 ## (<shot>_<tab>.png.tree.txt).
@@ -383,6 +411,8 @@ static func scroll_test(tree: SceneTree, out_path: String) -> void:
 	d = await _settle(tree, vp, kb)
 	print("perf-tree scroll: held at the end draws=%d resets+%d evicted+%d %s" % [d, (kb.resets - r0) if kb else 0,
 		(kb.evicted - e0) if kb else 0, bake_stats(kb)])
+	if kb != null:
+		print("perf-tree scroll census: %s" % census(kb))
 	if kb != null and kb.resets > r0 + 1:  # (once is the compaction a full atlas falls back to; more is churn)
 		print("perf-tree scroll FAIL the atlas started over %d times while the list scrolled (last: %s)" % [kb.resets - r0, String(kb.get("why"))])
 	elif kb != null and kb.resets > r0:
@@ -430,10 +460,10 @@ static func _frame(vp: Viewport, kb: Node) -> int:
 	return vp.get_render_info(Viewport.RENDER_INFO_TYPE_CANVAS, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME)
 
 
-static func _settle(tree: SceneTree, vp: Viewport, kb: Node) -> int:
+static func _settle(tree: SceneTree, vp: Viewport, kb: Node, tries := 60) -> int:
 	var last := -1
 	var d := 0
-	for i in 60:
+	for i in tries:
 		d = await _frame(vp, kb)
 		d = await _frame(vp, kb)
 		var idle: bool = kb == null or (kb.jobs.is_empty() and int(kb._state) == 0 and kb._moving.is_empty())
@@ -660,6 +690,9 @@ static func _fmt(a: Array, settled: int) -> String:
 	return "max=%d frames>settled+20=%d sum=%d seq=%s" % [mx, over, sum, str(a.slice(0, 30))]
 
 
+const TRANS_SETTLE := 12  ## --perf-trans waits at most this many settle steps (a breathing element never holds still)
+
+
 ## `--perf-trans` (H2 review; run with --fixed-fps=60): the canvas draws of each frame while things fade — the open
 ## window closed and opened again twice (`--perf-trans-open=<main's opener>`, e.g. _open_calendar), the bottom tabs
 ## switched in turn, two toasts — 40 frames each, then held still. Prints «perf-tree trans» lines: the peak, the
@@ -671,7 +704,7 @@ static func trans(tree: SceneTree, _out_path: String) -> void:
 	var ui: Node = main.get("ui")
 	vp.disable_3d = true
 	var p := func(s: String) -> void: print("perf-tree trans ", s)
-	var s0 := await _settle(tree, vp, kb)
+	var s0 := await _settle(tree, vp, kb, TRANS_SETTLE)
 	p.call("settled: draws=%d %s" % [s0, bake_stats(kb)])
 	var opener := ""
 	for a in OS.get_cmdline_user_args():
@@ -681,23 +714,23 @@ static func trans(tree: SceneTree, _out_path: String) -> void:
 		for round_ in 2:
 			ui.call("close_modal")
 			var c := await _rec(vp, kb, 40)
-			var sc := await _settle(tree, vp, kb)
+			var sc := await _settle(tree, vp, kb, TRANS_SETTLE)
 			p.call("close %d: %s  settled=%d resets=%d" % [round_, _fmt(c, sc), sc, kb.resets if kb else 0])
 			main.call(opener)
 			var o := await _rec(vp, kb, 40)
-			var so := await _settle(tree, vp, kb)
+			var so := await _settle(tree, vp, kb, TRANS_SETTLE)
 			p.call("open %d: %s  settled=%d resets=%d" % [round_, _fmt(o, so), so, kb.resets if kb else 0])
 		ui.call("close_modal")
-		await _settle(tree, vp, kb)
+		await _settle(tree, vp, kb, TRANS_SETTLE)
 	for t in ["buildings", "development", "diplomacy", "world", "army", "buildings", "diplomacy", "development"]:
 		main.call("_open_tab", t)
 		var a := await _rec(vp, kb, 40)
-		var d := await _settle(tree, vp, kb)
+		var d := await _settle(tree, vp, kb, TRANS_SETTLE)
 		p.call("tab %s: %s  settled=%d resets=%d %s" % [t, _fmt(a, d), d, kb.resets if kb else 0, bake_stats(kb)])
 	for i in 2:
 		ui.call("toast", "Проверка уведомления", "gold", "info")
 		var a := await _rec(vp, kb, 40)
-		var d := await _settle(tree, vp, kb)
+		var d := await _settle(tree, vp, kb, TRANS_SETTLE)
 		p.call("toast %d: %s  settled=%d" % [i, _fmt(a, d), d])
 	vp.disable_3d = false
 	p.call("done %s" % bake_stats(kb))
