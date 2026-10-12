@@ -26,7 +26,9 @@ def build_props(ctx):
          "glasses": glasses, "pointer": pointer, "hourglass": hourglass, "wrench": wrench, "pencil": pencil,
          "raven": raven, "bow": bow, "spyglass": spyglass, "earring": earring, "badge_relief": badge_relief,
          "scarf": scarf, "queen": queen, "brooch": brooch, "hairpin": hairpin, "banner": banner,
-         "gauntlet": gauntlet}[pr["kind"]](ctx, pr)
+         "gauntlet": gauntlet, "wolf_head": wolf_head, "fang": fang, "pendant": pendant, "shield": shield,
+         "feathers": feathers, "wing": wing, "monocle": monocle, "chain": chain, "feather_pin": feather_pin,
+         "drone": drone, "rangefinder": rangefinder, "cutter": cutter}[pr["kind"]](ctx, pr)
         core.update()
 
 
@@ -200,10 +202,27 @@ def glasses(ctx, pr):
     hair = ctx.objs.get("hair") or head
     t = pr.get("frame", 0.025) * H
     fm = core.principled(ctx, "glasses_frame", pr.get("color", "#2A2A30"), rough=0.3, metal=pr.get("metal", 0.0), coat=0.4)
-    glass = core.glass_mat(ctx, "glasses_lens", pr.get("tint", "#F4F8FF"))
+    if pr.get("tortoise"):
+        # tortoiseshell (Iveta, §7.8 "черепаховые очки #6A4A30"): mottled amber-brown
+        nt = fm.node_tree
+        nz = nt.nodes.new("ShaderNodeTexNoise")
+        nz.inputs["Scale"].default_value = 60.0
+        nt.links.new(core.node_ramp(nt, nz.outputs["Fac"], [(0.35, core.hex_scale(pr["color"], 0.7)),
+                                                            (0.65, pr["tortoise"])]),
+                     nt.nodes["Principled BSDF"].inputs["Base Color"])
+    if pr.get("glare"):
+        # §7.8 angry (Iveta, Arman): "линзы бликуют непрозрачно" — an opaque white glare hides the eyes
+        glass = core.principled(ctx, "glasses_glare", "#E8F0F8", rough=0.15, coat=0.8, emit="#F4F8FF", es=pr["glare"])
+    else:
+        glass = core.glass_mat(ctx, "glasses_lens", pr.get("tint", "#F4F8FF"))
     grp = _detail(ctx, pr, "glasses", 500)
     inner = []
     rims = []
+    shape = pr.get("shape", "rect")
+    # askew (Iveta tired: "очки набок"): the whole pair rolled about the bridge
+    eyes_ = ctx.objs["eyes"]
+    pivot = sum((e["centre"] for e in eyes_), Vector()) / max(1, len(eyes_))
+    tilt = Matrix.Rotation(math.radians(pr.get("askew", 0.0)), 3, Vector((0, -1, 0)))
     for e in ctx.objs["eyes"]:
         rx, ry, rz = e["radii"]
         side = e["side"]
@@ -216,13 +235,21 @@ def glasses(ctx, pr):
         hh = e["kh"] * rz * pr.get("h", 1.26)
         drop = pr.get("drop", 0.02) * H
         front = c + rot @ Vector((0, -(ry + pr.get("off", 0.04)), -drop))
-        ex = pr.get("square", 5.0)        # superellipse exponent: a rectangle with rounded corners
+        if pr.get("askew"):
+            front = pivot + tilt @ (front - pivot) + Vector((0, 0, pr.get("askew_dz", 0.0) * H * e["side"]))
+            rot = tilt @ rot
+        ex = pr.get("square", 5.0 if shape == "rect" else 2.0)   # superellipse: a rounded rectangle / a circle
+        if shape == "round":
+            hh = w = max(w, hh) * pr.get("round_k", 1.0)
         pts = []
         for k in range(40):
             a = 2 * math.pi * k / 40
             cx, cz = math.cos(a), math.sin(a)
             x = w * math.copysign(abs(cx) ** (2 / ex), cx)
             z = hh * math.copysign(abs(cz) ** (2 / ex), cz)
+            if shape == "half":
+                # half-moon reading glasses (Arman, §7.8 "очки-половинки низко на носу"): the lower half, a flat top
+                z = min(z, hh * 0.06)
             pts.append(front + rot @ Vector((x, 0.0, z)))
         rim = core.curve("glasses_rim_" + e["tag"], pts, [1.0] * len(pts), t / 2, fm, order=2, kind="POLY", cyclic=True)
         ctx.add(rim, grp, _closest_parent(ctx, rim, [nose, head]), kind="surface", head=True)
@@ -237,7 +264,8 @@ def glasses(ctx, pr):
         # flat: a smooth-shaded n-gon has only rim vertices, so its normals tilt across the whole lens and the Fresnel
         # sheen turned the near lens grey (iris contrast 0.57)
         core.finish(lens, glass, smooth=False)
-        lens["kit_glass"] = 1
+        if not pr.get("glare"):
+            lens["kit_glass"] = 1
         lens.visible_shadow = False   # no caustics: a glass that casts a shadow would put the eyes in the dark
         ctx.add(lens, "glass", rim, kind="embed", head=True)
         inner.append(front + rot @ Vector((-side * w, 0.0, hh * 0.25)))
@@ -1210,3 +1238,377 @@ def gauntlet(ctx, pr):
     # the strap passes over the wrist: the glove goes under it (the contact: the glove touches the strap)
     ctx.add(core.uvsphere("glove_touch", h + nn * 0.004, (0.02, 0.02, 0.004), glove_m, 8, 4), grp, strap,
             kind="surface")
+
+
+# ================================================================== P3: the leaders' signatures (§7.8)
+def wolf_head(ctx, pr):
+    """A wolf pelt's head on the near shoulder (Grodek, §7.8: "волчья шкура на плечах, голова волка с ушами (кончики
+    скруглены) на ближнем плече"): a metaball skull and a tapering snout lying forward on the shoulder, two upright
+    ears with rounded tips, dark glossy eyes and nose, the muzzle a lighter grey; on the costume (ray cast)."""
+    k = ctx.shoulder_k
+    size = pr.get("size", 0.42) * H
+    s = size / 0.42
+    h, nn, perch = core.ray_any(ctx.outer, (pr.get("x", -0.58) * k, pr.get("y", 0.02), 1.5), (0, 0, -1))
+    if h is None:
+        return
+    cam = core.world_dir(ctx, (0.0, -1.0, 0.0))
+    right = core.world_dir(ctx, (1.0, 0.0, 0.0))
+    face = (cam * math.cos(math.radians(pr.get("turn", 35))) - right * math.sin(math.radians(pr.get("turn", 35)))).normalized()
+    up = Vector((0, 0, 1))
+    side = up.cross(face).normalized()
+    base = h + up * 0.10 * s
+
+    def P(f, u, sd=0.0):
+        return base + face * f * s + up * u * s + side * sd * s
+    el = [dict(co=P(0.0, 0.04), half=(0.15 * s, 0.13 * s, 0.12 * s), stiff=2.2, rot=core.frame_quat(face, up)),   # skull
+          dict(co=P(0.13, 0.0), half=(0.09 * s, 0.085 * s, 0.075 * s), stiff=2.4, rot=core.frame_quat(face, up)),  # snout
+          dict(co=P(0.22, -0.015), half=(0.065 * s, 0.06 * s, 0.05 * s), stiff=2.6, rot=core.frame_quat(face, up)),
+          dict(co=P(-0.12, -0.04), half=(0.16 * s, 0.10 * s, 0.10 * s), stiff=2.0)]       # the neck of the pelt
+    for sd in (-1, 1):       # the cheek ruffs
+        el.append(dict(co=P(-0.02, -0.02, sd * 0.11), half=0.07 * s, stiff=2.4))
+    mat = core.hair_mat(ctx, "wolf", pr.get("color", "#6E6862"), base.z - 0.1, base.z + 0.25, dark=pr.get("dark"),
+                        light=pr.get("light"), crevice=pr.get("crevice", "#3A3634"))
+    head = core.mb_mesh(ctx, "Wolf", el, 0.010, mat, smooth_iter=2, name="wolf_head")
+    grp = _detail(ctx, pr, "wolf_head", 2500)
+    ctx.add(head, grp, perch, kind="surface")
+    ctx.sig_objs.append(head)
+    # the ears: flattened cones with rounded tips, upright and a little back
+    for sd in (-1, 1):
+        a = P(-0.05, 0.13, sd * 0.07)
+        d = (up * 1.0 - face * 0.25 + side * sd * 0.18).normalized()
+        el2 = []
+        for j in range(8):
+            t = j / 7
+            el2.append(dict(co=a + d * (0.14 * s * t), half=(0.055 * s * (1 - 0.7 * t) + 0.008, 0.02 * s,
+                                                            0.03 * s), stiff=2.6, rot=core.frame_quat(d, face)))
+        ear = core.mb_mesh(ctx, "WolfEar%+d" % sd, el2, 0.007, mat, smooth_iter=2, name="wolf_ear%+d" % sd)
+        ctx.add(ear, grp, head, kind="embed")
+        ctx.sig_objs.append(ear)
+    dark = core.principled(ctx, "wolf_dark", pr.get("eye", "#2E2A2C"), rough=0.2, coat=0.6)
+    nose = core.uvsphere("wolf_nose", P(0.285, 0.005), (0.035 * s, 0.03 * s, 0.028 * s), dark, 16, 8)
+    ctx.add(nose, grp, head, kind="embed")
+    for sd in (-1, 1):
+        d = (face * 0.6 + side * sd * 0.7 + up * 0.4).normalized()
+        hh, nh = core.ray(head, P(0.05, 0.08, sd * 0.05) + d * 0.5, -d)
+        if hh is not None:
+            ey = core.uvsphere("wolf_eye%+d" % sd, hh + nh * 0.004, (0.022 * s, 0.022 * s, 0.012 * s), dark, 12, 6)
+            core.align_z(ey, nh)
+            ctx.add(ey, grp, head, kind="embed")
+    ctx.L["wolf_head"] = base
+
+
+def fang(ctx, pr):
+    """One big lower fang over the upper lip (Grodek's twist, §7.8: "один большой нижний клык поверх губы", 0.07 H,
+    geometry): a curved ivory cone from the lower lip up over the upper lip at the mouth's near (or far) side."""
+    head = ctx.objs["head"]
+    side = -1 if pr.get("side", "near") == "near" else 1
+    mc = ctx.L.get("mouth_corners")
+    mz = ctx.L["mouth_z"]
+    x = side * pr.get("x", 0.085) * (ctx.P["hx"] / 0.48)
+    if mc and len(mc) == 2:
+        x = mc[0].x * 0.55 if side < 0 else mc[1].x * 0.55
+    h, nn = core.ray_front(head, x, mz - 0.03)
+    if h is None:
+        return
+    ln = pr.get("len", 0.07) * H
+    m = core.principled(ctx, "fang", pr.get("color", "#F4EEDC"), rough=0.35, coat=0.3)
+    pts = [h + nn * 0.015, h + nn * 0.03 + Vector((0, 0, ln * 0.55)), h + nn * 0.022 + Vector((side * 0.008, 0, ln))]
+    f = core.curve("fang", pts, [1.0, 0.7, 0.15], pr.get("r", 0.024), m, order=3)
+    ctx.add(f, "teeth", head, kind="surface", head=True)
+
+
+def pendant(ctx, pr):
+    """A pendant on a cord round the neck (Grodek's fang, §7.8 "подвеска-клык"): the cord over the costume from the
+    neck down to `at`, an ivory fang (or `kind_shape`: a disc) hanging there."""
+    k = ctx.shoulder_k
+    x, z = pr.get("at", (-0.05, -0.98))
+    h, nn, par = core.ray_any(ctx.outer, (x * k, -2.0, z), (0, 1, 0))
+    if h is None:
+        return
+    cord = core.principled(ctx, "pendant_cord", pr.get("cord", "#4F321E"), 0.7)
+    grp = _detail(ctx, pr, "pendant", 200)
+    for s_ in (-1, 1):
+        pts = [h + nn * 0.02 + Vector((s_ * 0.02, 0, 0.03))]
+        for t in (0.4, 0.75, 1.0):
+            px = h.x + (s_ * 0.17 * k - h.x) * t
+            pz = h.z + 0.03 + (-0.66 - h.z - 0.03) * t
+            hh, n2, _ = core.ray_any(ctx.outer, (px, -2.0, pz), (0, 1, 0))
+            if hh is not None:
+                pts.append(hh + n2 * 0.01)
+        cu = core.curve("pendant_cord%+d" % s_, pts, [1.0] * len(pts), 0.009, cord, order=3)
+        ctx.add(cu, grp, par, kind="surface")
+    m = core.principled(ctx, "pendant_fang", pr.get("color", "#F4EEDC"), rough=0.35, coat=0.3)
+    bm = bmesh.new()
+    bmesh.ops.create_cone(bm, cap_ends=True, segments=16, radius1=0.032, radius2=0.004, depth=0.13)
+    o = core.mesh_obj("pendant", bm)
+    o.location = h + nn * 0.035 + Vector((0, 0, -0.04))
+    o.rotation_euler = (math.radians(180), math.radians(12), 0)
+    core.bevel(o, 0.004, 2)
+    core.finish(o, m)
+    ctx.add(o, grp, par, kind="surface")
+
+
+def shield(ctx, pr):
+    """A big round shield worn as a pauldron (Torvald on the near shoulder: sandstone with 6-7 hexagonal plates of a
+    turtle's shell in relief; Ormdek on the far shoulder: a massive steel one with rivets and copper edges): a domed
+    disc of radius `r` seated on the shoulder top, its face turned out and toward the camera (`turn`), a rim, the
+    relief or the rivets."""
+    k = ctx.shoulder_k
+    side = -1 if pr.get("side", "near") == "near" else 1
+    x = side * pr.get("x", 0.60) * k
+    h, nn, perch = core.ray_any(ctx.outer, (x, pr.get("y", 0.0), 1.5), (0, 0, -1))
+    if h is None:
+        return
+    R = pr.get("r", 0.30)
+    cam = core.world_dir(ctx, (0.0, -1.0, 0.0))
+    outv = Vector((side, 0, 0))
+    nrm = (outv * math.cos(math.radians(pr.get("turn", 40))) + cam * math.sin(math.radians(pr.get("turn", 40)))
+           + Vector((0, 0, pr.get("up", 0.55)))).normalized()
+    c = h + nrm * (R * 0.18) + Vector((side * pr.get("out", 0.06), 0, pr.get("dz", 0.02)))
+    col = pr.get("color", "#C8B48A")
+    m = (core.principled(ctx, "shield", col, rough=0.3, metal=0.55, coat=0.2) if pr.get("metal")
+         else core.principled(ctx, "shield", col, rough=0.75, coat=0.1))
+    grp = _detail(ctx, pr, "shield", 6000)
+    prof = [(0.0, 0.0), (R * 0.98, 0.0), (R, 0.02), (R * 0.96, 0.05), (R * 0.70, 0.10), (R * 0.35, 0.135),
+            (0.0, 0.145)]
+    dome = _lathe("shield", prof, m, seg=48, axis=nrm, base=c)
+    ctx.add(dome, grp, perch, kind="surface")
+    ctx.sig_objs.append(dome)
+    edge_col = pr.get("edge", col)
+    em = core.principled(ctx, "shield_edge", edge_col, rough=0.3, metal=0.55 if pr.get("metal") or pr.get("edge_metal") else 0.0,
+                         coat=0.2)
+    rim = core.torus("shield_rim", c + nrm * 0.02, R * 0.99, pr.get("rim", 0.03), em, nrm=nrm, seg=48, rseg=10)
+    ctx.add(rim, grp, dome, kind="embed")
+    ctx.sig_objs.append(rim)
+    up = (Vector((0, 0, 1)) - nrm * nrm.z).normalized()
+    rt = nrm.cross(up).normalized()
+    if pr.get("relief") == "hex":
+        rel = core.principled(ctx, "shield_relief", pr.get("relief_color", core.hex_scale(col, 1.08)), rough=0.7)
+        cells = [(0.0, 0.0)] + [(math.cos(math.radians(30 + 60 * i)) * R * 0.52, math.sin(math.radians(30 + 60 * i)) * R * 0.52)
+                                for i in range(6)]
+        for i, (u, v) in enumerate(cells):
+            d = math.hypot(u, v) / R
+            hgt = 0.145 - 0.13 * d * d
+            o = core.cylinder("shield_hex%d" % i, c + nrm * (hgt + 0.004) + rt * u + up * v, R * 0.22, 0.03, rel,
+                              nrm=(nrm + (rt * u + up * v) * 0.6).normalized(), verts=6, bev=0.01)
+            ctx.add(o, grp, dome, kind="embed")
+    if pr.get("rivets"):
+        rv = core.principled(ctx, "shield_rivet", pr.get("rivet_color", edge_col), rough=0.3, metal=0.55)
+        for i in range(pr["rivets"]):
+            a = 2 * math.pi * i / pr["rivets"]
+            p = c + nrm * 0.045 + (rt * math.cos(a) + up * math.sin(a)) * R * 0.86
+            o = core.uvsphere("shield_rivet%d" % i, p, (0.022, 0.022, 0.016), rv, 10, 5)
+            core.align_z(o, nrm)
+            ctx.add(o, grp, dome, kind="embed")
+        boss = core.uvsphere("shield_boss", c + nrm * 0.13, (R * 0.22, R * 0.22, R * 0.12), em, 24, 12)
+        core.align_z(boss, nrm)
+        ctx.add(boss, grp, dome, kind="embed")
+    # the strap under it (the contact: the shield rests on the shoulder)
+    ctx.add(core.uvsphere("shield_touch", h + nn * 0.006, (0.05, 0.05, 0.006), m, 8, 4), grp, perch, kind="surface")
+
+
+def _feather_mesh(ctx, name, base, d, ln, w, m, curve=0.12, side=None):
+    """A feather: a quill and a flat vane (leaf-shaped, widest at 40 %), bent `curve` along its length."""
+    side = side or d.cross(Vector((0, -1, 0))).normalized()
+    if side.length < 1e-6:
+        side = Vector((1, 0, 0))
+    bend = d.cross(side).normalized()
+    pts, ws = [], []
+    n = 16
+    for i in range(n):
+        t = i / (n - 1)
+        pts.append(base + d * ln * t + bend * curve * ln * t * t)
+        ws.append(w * (math.sin(math.pi * min(1.0, t * 1.12)) ** 0.7) * (0.25 if t < 0.12 else 1.0) + 0.003)
+    nrs = [bend] * n
+    o = core.ribbon_mesh(name, pts, ws, normals=nrs)
+    core.solidify(o, 0.008, offset=0.0)
+    core.finish(o, m, sub=1)
+    return o, pts
+
+
+def feathers(ctx, pr):
+    """Three black feathers behind the near ear (Bjorulf, §7.8: "три чёрных пера 0.5 H за ближним ухом, вверх-назад"):
+    fanned up and back from a bead knot in the hair; `droop` deg tips them down (the tired mood: −20°)."""
+    head = ctx.objs["head"]
+    ear = ctx.L["ear_near"][0]
+    if ear is None:
+        return
+    base = ear + Vector((0.0, 0.10, 0.14))
+    hair = ctx.objs.get("hair") or head
+    col = pr.get("color", "#2E2E36")
+    m = core.principled(ctx, "feather", col, rough=0.4, coat=0.3, sheen=0.4)
+    nt = m.node_tree
+    lw = nt.nodes.new("ShaderNodeLayerWeight")
+    lw.inputs["Blend"].default_value = 0.25
+    nt.links.new(core.node_mix(nt, core.node_math(nt, "POWER", lw.outputs["Facing"], 3.0), col,
+                               pr.get("sheen", "#4A5470")), nt.nodes["Principled BSDF"].inputs["Base Color"])
+    grp = _detail(ctx, pr, "feathers", 1500)
+    droop = math.radians(pr.get("droop", 0.0))
+    ln = pr.get("len", 0.5) * H
+    for i, (ang, back, k) in enumerate(((58, 0.35, 1.0), (40, 0.50, 0.9), (75, 0.20, 0.82))):
+        a = math.radians(ang) - droop
+        d = Vector((-math.cos(a) * 0.65, back, math.sin(a))).normalized()
+        o, _ = _feather_mesh(ctx, "feather%d" % i, base + Vector((0, 0.01 * i, 0.0)), d, ln * k, pr.get("w", 0.075), m,
+                             curve=-0.10)
+        ctx.add(o, grp, hair, kind="embed", head=True)
+        ctx.sig_objs.append(o)
+    bead = core.uvsphere("feather_knot", base, (0.035, 0.035, 0.035),
+                         core.principled(ctx, "ochre_bead", pr.get("bead", "#C8902A"), rough=0.45), 12, 6)
+    ctx.add(bead, grp, hair, kind="embed", head=True)
+
+
+def wing(ctx, pr):
+    """A dark wing rising from the far shoulder above the ear (Vedana, §7.8: "крыло-мантия с дальнего плеча выше уха:
+    перья #2E2A36 с фиолетовым отливом"): `n` long feathers fanned from a root on the far shoulder, up and out to the
+    right of the frame, the longest over the ear; sharp tips (leaders may be sharp)."""
+    k = ctx.shoulder_k
+    h, nn, perch = core.ray_any(ctx.outer, (pr.get("x", 0.50) * k, pr.get("y", 0.12), 1.5), (0, 0, -1))
+    if h is None:
+        return
+    col = pr.get("color", "#2E2A36")
+    m = core.principled(ctx, "wing", col, rough=0.4, coat=0.3, sheen=0.4)
+    nt = m.node_tree
+    lw = nt.nodes.new("ShaderNodeLayerWeight")
+    lw.inputs["Blend"].default_value = 0.25
+    nt.links.new(core.node_mix(nt, core.node_math(nt, "POWER", lw.outputs["Facing"], 2.5), col,
+                               pr.get("sheen", "#6A4A9A")), nt.nodes["Principled BSDF"].inputs["Base Color"])
+    grp = _detail(ctx, pr, "wing", 4000)
+    right = core.world_dir(ctx, (1.0, 0.0, 0.0))
+    back = core.world_dir(ctx, (0.0, 1.0, 0.0))
+    n = pr.get("n", 9)
+    ln0 = pr.get("len", 0.95)
+    root = h + Vector((0, 0, 0.02)) + back * 0.06
+    for i in range(n):
+        t = i / (n - 1)
+        a = math.radians(pr.get("a0", 80) - pr.get("spread", 62) * t)      # from near-vertical out to the side
+        d = (Vector((0, 0, 1)) * math.sin(a) + right * math.cos(a) + back * 0.25).normalized()
+        ln = ln0 * (1.0 - 0.45 * t) * (0.85 if i % 2 else 1.0)
+        o, _ = _feather_mesh(ctx, "wing_f%d" % i, root + back * 0.012 * i, d, ln, pr.get("w", 0.10) * (1 - 0.3 * t), m,
+                             curve=0.10, side=back.cross(d).normalized())
+        ctx.add(o, grp, perch, kind="surface" if i == 0 else "embed")
+        ctx.sig_objs.append(o)
+    # the covert: a soft mass over the roots on the shoulder
+    el = [dict(co=root + Vector((0, 0, 0.06)) + right * 0.04, half=(0.10, 0.08, 0.12), stiff=2.2)]
+    cv = core.mb_mesh(ctx, "WingC", el, 0.01, m, smooth_iter=2, name="wing_covert")
+    ctx.add(cv, grp, perch, kind="surface")
+
+
+def monocle(ctx, pr):
+    """A monocle on a gold chain (§7.8 Mirosya: "монокль на цепочке у ближнего глаза"; Velian: "монокль в глазу на
+    золотой цепочке"): a gold ring with a clear lens in front of the near eye, a fine chain down to the coat; `hang`
+    — the monocle dropped, hanging on its chain against the chest (Velian tired); `glint` — a bright glint on the
+    lens (the cunning mood)."""
+    eyes = [e for e in ctx.objs["eyes"] if e["side"] == (-1 if pr.get("eye", "near") == "near" else 1)]
+    if not eyes:
+        return
+    e = eyes[0]
+    rx, ry, rz = e["radii"]
+    gold = core.principled(ctx, "monocle_gold", pr.get("color", "#E8B23A"), rough=0.28, metal=0.55, coat=0.3)
+    glass = core.glass_mat(ctx, "monocle_glass", pr.get("tint", "#F4F8FF"))
+    grp = _detail(ctx, pr, "monocle", 300)
+    head = ctx.objs["head"]
+    lens_rot = e["obj"].rotation_euler.to_matrix()
+    yaw = Matrix.Rotation(e["obj"].rotation_euler.z, 3, "Z")
+    c = e["centre"] + lens_rot @ Vector((e["x0"] * rx, 0.0, 0.0))
+    R = e["xc0"] * rx * pr.get("r", 1.35)
+    fwd = yaw @ Vector((0, -1, 0))
+    if pr.get("hang"):
+        k = ctx.shoulder_k
+        hpt, nn, par = core.ray_any(ctx.outer, (pr.get("hang_at", (-0.16, -1.02))[0] * k, -2.0,
+                                                pr.get("hang_at", (-0.16, -1.02))[1]), (0, 1, 0))
+        if hpt is None:
+            return
+        cen = hpt + nn * 0.02
+        nrm = nn
+        ring = core.torus("monocle_ring", cen, R, 0.012, gold, nrm=nrm, seg=32, rseg=8)
+        ctx.add(ring, grp, par, kind="surface")
+        lens = core.cylinder("monocle_lens", cen, R * 0.96, 0.006, glass, nrm=nrm, verts=32)
+        lens["kit_glass"] = 1
+        ctx.add(lens, "glass", ring, kind="embed")
+        top = cen + Vector((0, 0, R))
+        hb, nb, _ = core.ray_any(ctx.outer, (pr.get("chain_to", (-0.32, -0.80))[0] * k, -2.0,
+                                             pr.get("chain_to", (-0.32, -0.80))[1]), (0, 1, 0))
+        if hb is not None:
+            _chain(ctx, "monocle_chain", hb + nb * 0.01, top, 0.03, gold, link=0.014, parent=par, grp=grp, wire=0.0035,
+                   link_k=0.62)
+        return
+    cen = c + fwd * (ry + pr.get("off", 0.035))
+    ring = core.torus("monocle_ring", cen, R, 0.013, gold, nrm=fwd, seg=36, rseg=8)
+    ctx.add(ring, grp, head, kind="free", head=True)
+    lens = core.cylinder("monocle_lens", cen, R * 0.96, 0.006, glass, nrm=fwd, verts=36)
+    lens["kit_glass"] = 1
+    lens.visible_shadow = False
+    ctx.add(lens, "glass", ring, kind="free", head=True)
+    if pr.get("glint"):
+        gm = core.emit_mat(ctx, "monocle_glint", "#FFFFFF", pr.get("glint", 3.0))
+        gl = core.uvsphere("monocle_glint", cen + fwd * 0.008 + Vector((R * -0.35, 0, R * 0.4)), (R * 0.22, R * 0.22, 0.004),
+                           gm, 12, 6)
+        core.align_z(gl, fwd)
+        gl.visible_shadow = False
+        ctx.add(gl, "catch", ring, kind="free", head=True)
+    # the chain from the ring's lower edge down off the face to the costume (head-local: it hangs in the head's
+    # frame; its lower end meets the collar)
+    a = cen + Vector((0, 0, -R))
+    b = a + Vector((-0.05, 0.02, -0.38))
+    pts = [a, a + Vector((-0.03, -0.01, -0.12)), (a + b) / 2 + Vector((-0.02, -0.02, 0)), b]
+    ch = core.curve("monocle_chain", pts, [1.0] * len(pts), 0.0055, gold, order=3)
+    ctx.add(ch, grp, ring, kind="free", head=True)
+
+
+def chain(ctx, pr):
+    """A heavy gold chain of office over the shoulders with a medallion (§7.8 Mirosya: "золотая цепь головы (звенья
+    0.06 H, медальон со снопом)"; Velian "тяжёлая золотая цепь"): links from shoulder to shoulder sagging to the chest,
+    a medallion disc at the bottom with an emblem."""
+    k = ctx.shoulder_k
+    gold = core.principled(ctx, "chain_gold", pr.get("color", "#E8B23A"), rough=0.28, metal=0.55, coat=0.3)
+    grp = _detail(ctx, pr, "chain", 1500)
+    z = pr.get("z", -1.02)
+    hm, nm, par = core.ray_any(ctx.outer, (pr.get("x", 0.0) * k, -2.0, z), (0, 1, 0))
+    if hm is None:
+        return
+    for s_ in (-1, 1):
+        ha, na, _ = core.ray_any(ctx.outer, (s_ * pr.get("top_x", 0.30) * k, pr.get("top_y", 0.05), 2.0), (0, 0, -1))
+        if ha is None:
+            continue
+        _chain(ctx, "office_chain%+d" % s_, ha + na * 0.02, hm + nm * 0.03 + Vector((0, 0, 0.06)), 0.02, gold,
+               link=pr.get("link", 0.06) * H * 0.62, parent=par, grp=grp, wire=pr.get("wire", 0.011), link_k=0.62)
+    med = core.cylinder("chain_medal", hm + nm * 0.03, pr.get("d", 0.20) * H / 2, 0.03, gold, nrm=nm, verts=36, bev=0.008)
+    ctx.add(med, grp, par, kind="surface")
+    em = pr.get("emblem")
+    if em:
+        from . import headgear
+        headgear.emblem(ctx, dict(em, size=em.get("size", pr.get("d", 0.20) * 0.62)), hm + nm * 0.045, nm, med, grp,
+                        name="chain_emblem")
+    if pr.get("sheaf"):
+        # a sheaf of wheat: three ears fanned up and a band across
+        wheat = core.principled(ctx, "sheaf", pr.get("sheaf"), rough=0.45, metal=0.3)
+        up = (Vector((0, 0, 1)) - nm * nm.z).normalized()
+        rt = nm.cross(up).normalized()
+        c = hm + nm * 0.05
+        dd = pr.get("d", 0.20) * H
+        for j in (-1, 0, 1):
+            a = c - up * dd * 0.25 + rt * j * dd * 0.03
+            b = c + up * dd * 0.28 + rt * j * dd * 0.16
+            st = core.curve("sheaf%d" % j, [a, (a + b) / 2, b], [0.8, 1.0, 1.3], dd * 0.035, wheat, order=3)
+            ctx.add(st, grp, med, kind="embed")
+    ctx.sig_objs.append(med)
+
+
+def feather_pin(ctx, pr):
+    """A feather pinned on the side of a hood or hat (Vik E2 "капюшон с пером-булавкой"; Vedana's small black feather):
+    a brass pin and a feather sweeping back from it."""
+    surf = [ctx.objs[k] for k in ("hood", "hat", "hair") if ctx.objs.get(k) is not None] + [ctx.objs["head"]]
+    d0 = core.az_el(pr.get("az", -70), pr.get("el", 30))
+    h, nn, ob = core.ray_any(surf, d0 * 3, -d0)
+    if h is None:
+        return
+    col = pr.get("color", "#C0452A")
+    m = core.principled(ctx, "pin_feather", col, rough=0.5, sheen=0.4)
+    grp = _detail(ctx, pr, "feather_pin", 300)
+    d = (Vector(pr.get("dir", (-0.3, 0.6, 0.75)))).normalized()
+    o, _ = _feather_mesh(ctx, "pin_feather", h + nn * 0.02, d, pr.get("len", 0.34) * H, pr.get("w", 0.06), m, curve=-0.15)
+    ctx.add(o, grp, ob, kind="surface", head=True)
+    brass = core.principled(ctx, "pin_brass", pr.get("pin", "#E0AD45"), rough=0.3, metal=0.55)
+    pn = core.uvsphere("pin_head", h + nn * 0.02, (0.03, 0.03, 0.024), brass, 16, 8)
+    core.align_z(pn, nn)
+    ctx.add(pn, grp, ob, kind="surface", head=True)
