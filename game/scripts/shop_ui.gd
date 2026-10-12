@@ -746,20 +746,28 @@ func _packs_tab() -> void:
 	if content_h > well.size.y + 1.0:
 		host = Kit.scroller(well, content_h)["inner"]
 	var rw_w := w - 32.0 - (12.0 if host != well else 0.0)
+	# the rows' prices are sibling offers (docs/ui_style.md §4.1): one width — the widest price's, 150…230 — right-aligned
+	# in every row, and one caption size (Kit.unify), not a short «1,99 $» beside a long «4,99 $/30 дней»
+	var bw := 150.0
+	for p in PACK_SKUS:
+		bw = maxf(bw, Kit.text_w(_price(p[2]) + (tr(p[4]) if p[4] != "" else ""), 26, "d900") + 44.0)
+	bw = minf(bw, 230.0)
+	var buys: Array = []
 	for i in PACK_SKUS.size():
 		var p: Array = PACK_SKUS[i]
 		var id: String = p[0]
 		var price := _price(p[2]) + (tr(p[4]) if p[4] != "" else "")
-		var bw := clampf(Kit.text_w(price, 26, "d900") + 44.0, 150.0, 230.0)
 		var b := Kit.button(null, Rect2(0, 0, bw, 60), "gold", price, {"size": "S", "filter": Control.MOUSE_FILTER_PASS,
 			"cb": func(): buy_sku.emit(id)})
 		b.name = "buy"
+		buys.append(b)
 		var name := tr(p[1])
 		var desc := tr(p[3])
 		var rw := Kit.row(host, Rect2(16, 16 + i * (row_h + gap), rw_w, row_h), {"icon": String(PACK_ICON.get(id, "gift")),
 			"title": name, "sub": tr(p[1] + ".short"), "right": b})
 		rw.name = id
 		rw.cb = func(): Kit.tooltip(rw.title_label, name, desc)
+	Kit.unify(buys)
 
 
 func _atelier_tab() -> void:

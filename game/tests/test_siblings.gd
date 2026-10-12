@@ -1,8 +1,8 @@
 extends SceneTree
 ## Sibling buttons read as one set (docs/dev/hud_perf_plan.json F1; docs/ui_style.md §4.1): opens the main windows,
 ## the store's tabs and the tray's tabs, groups the visible Kit buttons of each screen into rows (centres within a
-## quarter of the smaller height) and stacks (one left edge and width, gap ≤ 24) — in the open window or the store, else
-## in the card tray — and fails on a set whose buttons differ in height, caption size, price size, layout (the caption
+## quarter of the smaller height), stacks (one left edge and width, gap ≤ 24) and lists (one place in each row of a
+## list) — in the open window or the store, else in the card tray — and fails on a set whose buttons differ in height, caption size, price size, layout (the caption
 ## over the price) or, in a window, icon presence among the choices that can be taken. Round buttons (✕, «i», back)
 ## and icon-only ones are not offers; a button may stand apart from its row on purpose with the meta `sibling_solo`
 ## (the reason), listed.
@@ -172,7 +172,7 @@ func _check_screen(nm: String, g: Node) -> void:
 	var bad := 0
 	var sets := 0
 	for si in groups:
-		for row in _rows(groups[si]) + _columns(groups[si]):
+		for row in _rows(groups[si]) + _columns(groups[si]) + _lists(groups[si]):
 			if row.size() < 2:
 				continue
 			sets += 1
@@ -258,6 +258,34 @@ func _columns(es: Array) -> Array:
 		if not placed:
 			cols.append([e])
 	return cols
+
+
+## Lists: buttons at one place in the rows of a list — each in its own row or tile, those under one parent, at one local
+## x, width and height (the commander picker's «Назначить», a pack's price, a chronicle row's «Забрать») — however far
+## apart the rows are. Two buttons of one parent are a row or a stack above, never a list (a window's middle button
+## and its footer may share a width by chance).
+func _lists(es: Array) -> Array:
+	var by := {}
+	for e in es:
+		var kb: Kit.KitButton = e["b"]
+		var p := kb.get_parent()
+		if p == null or p.get_parent() == null:
+			continue
+		var key := "%d|%d|%d|%d" % [p.get_parent().get_instance_id(), roundi(kb.position.x), roundi(kb.size.x),
+			roundi(kb.size.y)]
+		if not by.has(key):
+			by[key] = []
+		(by[key] as Array).append(e)
+	var out: Array = []
+	for k in by:
+		var l: Array = by[k]
+		var parents := {}
+		for e in l:
+			parents[(e["b"] as Node).get_parent()] = true
+		if l.size() >= 2 and parents.size() == l.size():
+			l.sort_custom(func(a, b): return (a["r"] as Rect2).position.y < (b["r"] as Rect2).position.y)
+			out.append(l)
+	return out
 
 
 func _desc(e: Dictionary) -> String:

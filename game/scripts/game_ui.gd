@@ -1145,10 +1145,11 @@ func show_result(stars: int, captured: int, lost: int, score: float, control: in
 		nl.size = Vector2(w - 64.0, 44)
 		box.add_child(nl)
 	var fy := h - 32.0 - 116.0
-	# one decision, one caption size (§4.1 sibling offers): the secondary is wide enough for «Ещё бой» / «Fight on» at
-	# BTN_L 40 with its icon, so the pair keeps the class's size
-	var more := Kit.button(box, Rect2(32, fy, 310, 116), "info", tr("result.continue"), {"icon": "swords", "size": "L", "cb": on_continue})
-	var peace := Kit.button(box, Rect2(358, fy, w - 390.0, 116), "go", tr("result.peace"), {"icon": "treaty", "size": "L", "cb": on_peace})
+	# one decision, one caption size (§4.1 sibling offers): the secondary is as wide as «Ещё бой» / «Fight on» needs at
+	# BTN_L 40 with its icon (_pair_w), so the pair keeps the class's size
+	var sw := _pair_w(w - 64.0, [tr("result.continue"), true], [tr("result.peace"), true])
+	var more := Kit.button(box, Rect2(32, fy, sw, 116), "info", tr("result.continue"), {"icon": "swords", "size": "L", "cb": on_continue})
+	var peace := Kit.button(box, Rect2(48.0 + sw, fy, w - 80.0 - sw, 116), "go", tr("result.peace"), {"icon": "treaty", "size": "L", "cb": on_peace})
 	Kit.unify([more, peace])
 	_modal_buttons = [more, peace]
 
@@ -1308,10 +1309,12 @@ func show_peace(enemy: String, budget: float, control: int, demands: Array, chos
 		box.add_child(hl)
 	var fy := h - 32.0 - 116.0
 	# «К войне» and «Подписать мир» are one decision, laid out as the result's «Ещё бой» / «К миру»: both L, the
-	# secondary narrower (info, swords; wide enough for «К войне» at BTN_L 40), one caption size (§4.1 sibling offers)
-	var back := Kit.button(box, Rect2(32, fy, 340, 116), "info", tr("peace.back"), {"icon": "swords", "size": "L",
+	# secondary narrower (info, swords; as wide as «К войне» / «Back to war» needs at BTN_L 40), one caption size
+	# (§4.1 sibling offers)
+	var sw := _pair_w(w - 64.0, [tr("peace.back"), true], [tr("peace.seal"), true])
+	var back := Kit.button(box, Rect2(32, fy, sw, 116), "info", tr("peace.back"), {"icon": "swords", "size": "L",
 		"cb": func(): action_pressed.emit("back_to_war")})
-	var sb := Kit.button(box, Rect2(388, fy, w - 420.0, 116), "go", tr("peace.seal"), {"icon": "treaty", "size": "L",
+	var sb := Kit.button(box, Rect2(48.0 + sw, fy, w - 80.0 - sw, 116), "go", tr("peace.seal"), {"icon": "treaty", "size": "L",
 		"hold": true, "hold_sec": 0.8, "enabled": not over, "cb": _on_seal})
 	sb.name = "seal"
 	sb.denied.connect(func(): Kit.tooltip(sb, tr("peace.seal"), tr("peace.over")))
@@ -2987,6 +2990,10 @@ func _dlg_footer(box: Control, w: float, y: float, items: Array) -> void:
 			pi = 1
 		order = [1 - pi, pi]
 		var sw := roundf((iw - 16.0) * 0.4)
+		var priced := items.any(func(x): return not ((x["opts"] as Dictionary).get("price", []) as Array).is_empty())
+		if not priced:  # the secondary as wide as its caption needs at the pair's largest size (§4.1)
+			var has_ic := items.any(func(x): return String((x["opts"] as Dictionary).get("icon", "")) != "")
+			sw = _pair_w(iw, [String(items[1 - pi]["text"]), has_ic], [String(items[pi]["text"]), has_ic])
 		rects = [Rect2(DLG_PAD, y, sw, 116), Rect2(DLG_PAD + sw + 16.0, y, iw - sw - 16.0, 116)]
 		sizes = ["L", "L"]
 	else:
@@ -3020,6 +3027,32 @@ func _dlg_footer(box: Control, w: float, y: float, items: Array) -> void:
 ## A dialog footer's icon for an entry that has none while its sibling has one: the role's usual meaning (decline ✕,
 ## fight on — swords, accept — a check).
 const DLG_ICON := {"info": "x", "slate": "x", "war": "swords", "go": "check", "gold": "check"}
+
+
+## The secondary's width in a pair of L buttons side by side (`iw`: both and the 16 gap; §4.1 sibling offers, §4.3):
+## its share (40 %) or, when its caption needs more at the largest L size (40, else 36) both captions reach on one
+## line, that much — never so wide that the primary falls under its own need. So «Ещё бой / К миру» and «Back to war /
+## Sign peace» keep BTN_L 40 in both languages instead of the pair shrinking to the narrow one's size (Kit.unify takes
+## the smallest). Longer pairs keep the share: the buttons step down or wrap to two lines as usual.
+## sec / pri: [caption, has an icon]; a caption with a line break or an inline icon keeps the share (callers pass no
+## priced buttons: a price plate is not measured here).
+static func _pair_w(iw: float, sec: Array, pri: Array, share := 0.4) -> float:
+	var room := iw - 16.0
+	var base := roundf(room * share)
+	for cap in [String(sec[0]), String(pri[0])]:
+		if cap.contains("\n") or cap.contains("["):
+			return base
+	for s in [40, 36]:
+		var ns := _l_need(String(sec[0]), bool(sec[1]), s)
+		var np := _l_need(String(pri[0]), bool(pri[1]), s)
+		if ns + np <= room:
+			return roundf(clampf(maxf(base, ns), ns, room - np))
+	return base
+
+
+## What an L button (§4.1: pads 18, icon 72 + gap 10) needs for a one-line caption at size `s`, 2 px to spare.
+static func _l_need(cap: String, icon: bool, s: int) -> float:
+	return 36.0 + (82.0 if icon else 0.0) + Kit.text_w(cap, s, "d900" if s >= 26 else "d800") + 2.0
 
 
 ## The window of a dialog: M (L when docked) sized to its content, centred in the band — or docked to the bottom
@@ -4203,8 +4236,7 @@ func show_flag_editor(flag: Dictionary, owned: Dictionary, on_change: Callable, 
 					else:
 						set_key.call("frame", fid))
 	var fy := box.size.y - 32.0 - 112.0
-	var rw_ := (w - 64.0 - 16.0) * 0.4
-	_random_done(box, fy, rw_, tr("flag.random"), on_random, on_done)
+	_random_done(box, fy, tr("flag.random"), on_random, on_done)
 
 
 ## «Название державы» (canon §14.3, §6 «Флаг, имя»): a paper window M with the info plate; the name field is a well
@@ -4257,8 +4289,7 @@ func show_name_editor(current: String, ideas: Array, max_len: int, on_done: Call
 	draw_ideas.call(draw_ideas)
 	field.text_changed.connect(func(_t: String): draw_ideas.call(draw_ideas))
 	var fy := box.size.y - 32.0 - 112.0
-	var rw_ := (w - 64.0 - 16.0) * 0.4
-	_random_done(box, fy, rw_, tr("realm.more"), on_more, func(): on_done.call(field.text)).name = "more"
+	_random_done(box, fy, tr("realm.more"), on_more, func(): on_done.call(field.text)).name = "more"
 
 
 ## The FTUE flag wizard (canon §14.3: 3 taps, §6 «Флаг, имя, мастер флага»): a paper window L with the info plate. The
@@ -4308,14 +4339,15 @@ func show_flag_wizard(step: int, opts: Array, on_pick: Callable, on_random: Call
 	box.add_child(big)
 	var hint := _paper_chip(box, Vector2(w * 0.5, y0 + 420.0 + 16.0 + 22.0), "pencil", tr("flagw.later"), w - 64.0)
 	hint.name = "hint"
-	var rw_ := (w - 64.0 - 16.0) * 0.4
-	_random_done(box, fy, rw_, tr("flag.random"), on_random, on_done)
+	_random_done(box, fy, tr("flag.random"), on_random, on_done)
 
 
-## The editors' footer (flag, name, flag wizard): «Случайно» / «Ещё идеи» (info, dice) at the left 40 %, «Готово» (go,
-## a check) at the right — both L 112, one caption size (§4.1 sibling offers). Returns the left one (named "random").
-func _random_done(box: Control, fy: float, rw_: float, left_cap: String, on_left: Callable, on_done: Callable) -> Kit.KitButton:
+## The editors' footer (flag, name, flag wizard): «Случайно» / «Ещё идеи» (info, dice) at the left (40 %, or what its
+## caption needs at BTN_L 40 — _pair_w), «Готово» (go, a check) at the right — both L 112, one caption size (§4.1
+## sibling offers). Returns the left one (named "random").
+func _random_done(box: Control, fy: float, left_cap: String, on_left: Callable, on_done: Callable) -> Kit.KitButton:
 	var w := box.size.x
+	var rw_ := _pair_w(w - 64.0, [left_cap, true], [tr("flag.done"), true])
 	var rb := Kit.button(box, Rect2(32, fy, rw_, 112), "info", left_cap, {"size": "L", "icon": "dice", "cb": on_left})
 	rb.name = "random"
 	var db := Kit.button(box, Rect2(32.0 + rw_ + 16.0, fy, w - 64.0 - rw_ - 16.0, 112), "go", tr("flag.done"),

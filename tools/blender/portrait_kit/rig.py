@@ -288,13 +288,14 @@ def solve_frame(ctx, size, frame="bust", log=print, h_px=None):
         if ok:
             return ctx.frame
         log("frame: H_px %.0f does not fit (skyline %.1f, sides %.1f / %.1f, chin %.1f) -> H_px %.0f" % (
-            target_h / k, sky / k, side_l / k, side_r / k, chin_y / k, (target_h - t["step"]) / k))
-        target_h -= t["step"]
-        if target_h < t["h_min"] - 1e-6:
+            target_h / k, sky / k, side_l / k, side_r / k, chin_y / k, max(t["h_min"], target_h - t["step"]) / k))
+        if target_h <= t["h_min"] + 1e-6:
             raise RuntimeError("%s: the portrait does not fit the frame even at H_px %.0f (skyline %.1f px, sides "
                                "%.1f / %.1f px, chin %.1f px; need >= %.0f, >= %.0f and chin <= %.0f on the 512x588 "
                                "master)" % (ctx.cid, t["h_min"] / k, sky / k, side_l / k, side_r / k, chin_y / k,
                                             t["sky"] / k, t["side_band"] / k, (t.get("chin_max") or 0) / k))
+        # the last step lands on the floor itself (a 258 face tries 256 before the error, not 254)
+        target_h = max(t["h_min"], target_h - t["step"])
 
 
 # ------------------------------------------------------------------ gaze and catchlights

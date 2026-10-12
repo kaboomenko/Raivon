@@ -877,7 +877,7 @@ CHARS.update({
                    smile=dict(type="closed", w=0.28, near=0.04, far=0.03, sag=0.008)),
         hair=dict(style="straight", res=0.015, color="#5A5A76", dark="#585874", light="#8890B6", crevice="#5A5A78", part=0.0,
                   drop=-0.68),
-        headgear=dict(kind="diadem", color="#5A6270", w=0.07, el=(40, 22), spike=0.42, spike_az=34, back=22, out=16,
+        headgear=dict(kind="diadem", color="#5A6270", w=0.07, el=(40, 22), spike=0.38, spike_az=34, back=27, out=16,
                       detail="diadem", min_px=1500),
         body=dict(shoulders=1.95),
         costume=dict(
@@ -1010,7 +1010,7 @@ CHARS.update({
         headgear=dict(kind="shell", id="steel_plate", color="#C0C8D0", mat="metal", rough=0.3, metallic=0.5,
                       edge=[(0, 52), (40, 48), (80, 40), (120, 34), (180, 30)], thick=0.04, roll=0.02, res=0.012,
                       smooth=3),
-        body=dict(shoulders=2.02, neck=0.62),
+        body=dict(shoulders=1.92, neck=0.62),
         costume=dict(
             base=dict(color="#7A6A5A", rough=0.7, sheen=0.1),
             layers=[
