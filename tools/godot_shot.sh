@@ -11,6 +11,11 @@ set -euo pipefail
 # the clear colour) — two builds' HUDs compare pixel for pixel (tools/hud_diff.py). --perf-tree --perf-smoke: instead of
 # the breakdown, the HUD while it moves — the card row scrolled (culling checked; OUT_s37.png / OUT_s111.png once it
 # holds still) and the camera panned and zoomed (canvas draws per frame, bake rounds, atlas resets); «FAIL» lines.
+# --perf-tree --perf-late (with --demo=calendar|chronicle|pass): the screen again in a late-game state (calendar day 27,
+# every Chronicle goal taken, War Pass level 30 claimed), shot over OUT.png («perf late» line) and measured so.
+# --perf-tree --perf-trans --perf-trans-open=<main opener> (use --fixed-fps=60): canvas draws frame by frame while the
+# window closes and opens, the bottom tabs switch and toasts come. --perf-nobreak: the counts (and --perf-vec's
+# bake/vector pair) without the per-subtree breakdown (much faster).
 # --fixed-fps=N is passed to the engine (`--fixed-fps N`): every frame then advances game time by exactly 1/N s, so
 # an animation captured part-way (e.g. --demo=ceremony:T) lands on the same moment however slow the software
 # renderer is; a --shot-delay then costs N frames a second, so use it without a delay.

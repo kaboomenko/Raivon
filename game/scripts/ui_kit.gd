@@ -583,7 +583,10 @@ class KitDecor extends Control:
 ## for SETTLE_MS; it is then drawn again, at its new sub-pixel offset (the image made for another offset stands in,
 ## resampled, until that one lands). The atlas keeps the images that some canvas item's commands still show: when
 ## it is full, the others are dropped and their room is used again; only if that is not enough does it start over.
-## Off when headless (the tests): everything is drawn as vectors there.
+## Something seen through a modulate α < 1 (a claimed row, a taken calendar day) is made at that α, each layer faded
+## on its own on the stage as the vectors are on the screen, and drawn with the α it inherits made up for; while its
+## α changes (a fade) its opaque image stands in, faded as one piece. Off when headless (the tests): everything is
+## drawn as vectors there.
 class KitBake extends Node:
 	const ATLAS := Vector2i(2048, 2048)  ## at the canvas scale 1; its side grows with the scale (to 4096)
 	const STAGE := Vector2i(2048, 1024)  ## the most one round renders (the stage is sized to each round, freed when idle)
@@ -592,10 +595,12 @@ class KitBake extends Node:
 	const MAX_SIDE := 900  ## px: anything larger is drawn as vectors
 	const SETTLE_MS := 200  ## a moved owner is drawn again once it has held still this long
 	const POLL_N := 48  ## owners whose place is looked at per frame (in turn)
-	const OPAQUE := 0.999  ## a modulate α below this: seen through, drawn as vectors (draw, chain_alpha)
+	const OPAQUE := 0.999  ## a modulate α below this: seen through, its image made at that α (draw, _fade_alpha)
+	const FADE_MIN := 0.05  ## below this α (all but gone: a fade's first frames) no image is made at it
 	const FRAGMENTED := 0.6  ## a full atlas with less than this share in use is in pieces, not full: what fits none waits
 	const DEFER_MAX := 24  ## images waiting so for a piece large enough before the atlas starts over all the same
 	const DEFER_RETRY_MS := 300  ## the waiting images are tried again after this long
+	const DEFER_TRIES := 3  ## an image that found no piece this many times takes the full atlas's way (compaction)
 	const PHASES := 8.0  ## sub-pixel offsets a bake is made at, per pixel and axis
 	## Logical px of straight edge a sliced bake keeps past each corner: what is stretched must be uniform, and the
 	## antialiased edge of a StyleBoxFlat is not, for a few px past where its corner arc ends (the half-pixel offsets
@@ -637,14 +642,17 @@ class KitBake extends Node:
 	var refs := {}  ## canvas item RID id -> [frame, {full key: true}, WeakRef owner]: the images its commands show now
 	var placed := {}  ## host instance id -> [WeakRef, origin on the canvas, moved at (ms)]: what drew from the atlas there
 	var parked := {}  ## host instance id -> [WeakRef, rect, pad]: what was out of sight when it asked (not baked yet)
-	var faded := {}  ## host instance id -> WeakRef: drew its vectors under a modulate α < 1 (drawn again once opaque)
+	## host instance id -> [its chain_alpha when last looked at, since when (ms; -1: so since it was first seen), the
+	## chain α its commands are made for (1: none — its opaque image, faded as one piece)]: the hosts seen through a
+	## modulate α < 1 (_fade_alpha, _poll_moves)
+	var fades := {}
 	var resets := 0
 	var evicted := 0  ## images dropped to make room (they were no longer shown)
 	var _moving := {}  # host ids that moved, until they hold still (then they are drawn again)
 	var _poll: Array = []  # host ids still to look at in this pass
 	var _poll_p: Array = []  # parked host ids still to look at in this pass
-	var _poll_f: Array = []  # faded host ids still to look at in this pass
 	var _defer := {}  # full key -> job: no piece of the (fragmented) atlas fits it yet; queued again after DEFER_RETRY_MS
+	var _defer_n := {}  # full key -> how many times it was deferred (DEFER_TRIES)
 	var _defer_at := 0
 	var _later: Array = []  # [WeakRef, due ms]: owners to redraw then (later())
 	var _round: Array = []  # the jobs in flight: {key, base, off, pp, at (stage px), slot, gen}
@@ -771,6 +779,7 @@ class KitBake extends Node:
 			if not jobs.has(key):
 				jobs[key] = _defer[key]
 		_defer.clear()
+		_defer_n.clear()
 		_icons_new.clear()
 		for path in icons:  # the icons show their own textures until they are in the new atlas
 			var e: Array = icons[path]
@@ -840,21 +849,18 @@ class KitBake extends Node:
 			size.x = _base(rect.size.x, size.x, kv.x)
 		if m.y > 0.0:
 			size.y = _base(rect.size.y, size.y, kv.y)
-		var base := "%s@%.4f,%.4f|%.3f,%.3f|p%.1f" % [key, kv.x, kv.y, size.x, size.y, pad]
-		var full := "%s/%d,%d" % [base, roundi(f.x * PHASES), roundi(f.y * PHASES)]
 		var hh: CanvasItem = host if host != null else owner as CanvasItem
+		var base := "%s@%.4f,%.4f|%.3f,%.3f|p%.1f" % [key, kv.x, kv.y, size.x, size.y, pad]
+		# seen through a modulate α < 1 (a claimed row, a taken calendar day; `mod`: a label's own): the image is made at
+		# that α, each layer faded on its own on the stage as the vectors are here — an opaque image faded as one piece
+		# would be lighter (the layers under its face no longer show through) — and drawn with the α it inherits made up
+		# for (`mod` α / fa: the product is 1)
+		var fa := _fade_alpha(hh, mod.a) if hh != null else 1.0
+		if fa < 1.0:
+			base += "|a%.3f" % fa
+			mod = Color(mod.r, mod.g, mod.b, mod.a / fa)
+		var full := "%s/%d,%d" % [base, roundi(f.x * PHASES), roundi(f.y * PHASES)]
 		var e := _ref(ci, owner if owner != null else host, hh)  # (its commands are being recorded anew)
-		if hh != null:
-			var ca := chain_alpha(hh)
-			if ca < OPAQUE or mod.a < OPAQUE:
-				# seen through a modulate α < 1 (a claimed row, a taken calendar day, a fade): the vectors, each layer at
-				# that α as always — an image would fade as one piece, lighter (the layers under its face no longer show
-				# through); drawn again once it is opaque (_poll_faded; a change of `mod` redraws its owner anyway)
-				if ca < OPAQUE:
-					faded[hh.get_instance_id()] = weakref(hh)
-				return false
-			if not faded.is_empty():
-				faded.erase(hh.get_instance_id())
 		var slot: Variant = slots.get(full)
 		if slot != null and _squeeze and not in_sight(hh, rect, pad):
 			# the atlas is short of room: what is off the screen gives its image up (draws its vectors, culled) so that
@@ -879,7 +885,7 @@ class KitBake extends Node:
 					if hh != null and not parked.is_empty():
 						parked.erase(hh.get_instance_id())
 					if not jobs.has(full) or not (jobs[full]["make"] as Callable).is_valid():  # (its first asker is gone)
-						jobs[full] = {"size": size, "px": pxs, "off": f, "pp": pp, "base": base, "make": make}
+						jobs[full] = {"size": size, "px": pxs, "off": f, "pp": pp, "base": base, "make": make, "alpha": fa}
 					if owner != null:
 						if not waiting.has(full):
 							waiting[full] = {}
@@ -914,16 +920,46 @@ class KitBake extends Node:
 		return (h.get_global_transform_with_canvas() * rect.grow(pad)).intersects(vp.get_visible_rect())
 
 	## The α `h`'s own commands are drawn at: its self_modulate times the modulate of it and of every canvas item above
-	## it (a top-level item does not inherit its parents').
+	## it (a top-level item does not inherit its parents') — but for a passing fade's (Kit.passing_fade: a window
+	## closing, a tab's content fading in), which what is under it takes as one piece.
 	static func chain_alpha(h: CanvasItem) -> float:
 		var a := h.self_modulate.a
 		var n: Node = h
 		while n is CanvasItem:
-			a *= (n as CanvasItem).modulate.a
-			if a < OPAQUE or (n as CanvasItem).top_level:
+			var c := n as CanvasItem
+			if not c.has_meta(&"kit_fade"):
+				a *= c.modulate.a
+			if a < FADE_MIN or c.top_level:
 				break
 			n = n.get_parent()
 		return a
+
+	## The α to make `h`'s image at: its α on the screen (chain_alpha × `ma`, a label's own) when that is below 1 and
+	## holds — as it was first seen, or for SETTLE_MS since it changed — else 1 (opaque; while its α changes, a fade,
+	## the opaque image stands in, faded as one piece by the modulate it inherits).
+	func _fade_alpha(h: CanvasItem, ma: float) -> float:
+		var id := h.get_instance_id()
+		var c := chain_alpha(h)
+		var at := snappedf(c * ma, 0.001)
+		if at >= OPAQUE:
+			if not fades.is_empty():
+				fades.erase(id)
+			return 1.0
+		var now := Time.get_ticks_msec()
+		var r: Variant = fades.get(id)
+		var steady := true
+		if r == null:
+			r = [c, -1, 1.0]  # (first seen so: a claimed row is made faded, not faded in)
+			fades[id] = r
+		elif absf(float(r[0]) - c) > 0.0005:
+			r[0] = c
+			r[1] = now
+			steady = false
+		else:
+			steady = int(r[1]) < 0 or now - int(r[1]) >= SETTLE_MS
+		steady = steady and at >= FADE_MIN
+		r[2] = c if steady else 1.0
+		return at if steady else 1.0
 
 	## The record of what the canvas item `ci` shows from the atlas: started anew on the first draw in a frame (a
 	## canvas item's commands are all recorded again when it is drawn).
@@ -971,7 +1007,7 @@ class KitBake extends Node:
 
 	## Looks at POLL_N owners' places a frame: one that has moved (a scroll, a relayout, a slide) is drawn again once
 	## it has held still for SETTLE_MS, so its images land on whole pixels again (at k ≠ 1 a whole logical pixel is
-	## not a whole physical one).
+	## not a whole physical one). Its α too (_poll_alpha).
 	func _poll_moves() -> void:
 		if placed.is_empty():
 			return
@@ -986,14 +1022,14 @@ class KitBake extends Node:
 			var h := (e[0] as WeakRef).get_ref() as CanvasItem
 			if h == null or not h.is_inside_tree():
 				placed.erase(id)
+				fades.erase(id)
 				continue
 			var o := h.get_global_transform_with_canvas().origin
 			if o != e[1]:
 				e[1] = o
 				e[2] = now
 				_moving[id] = true
-			if not faded.has(id) and chain_alpha(h) < OPAQUE:
-				h.queue_redraw()  # (a parent faded it since it drew from the atlas: its vectors now)
+			_poll_alpha(h, id, now)
 		if _moving.is_empty():
 			return
 		for id in _moving.keys():
@@ -1017,23 +1053,31 @@ class KitBake extends Node:
 		_place(h)
 		parked[h.get_instance_id()] = [weakref(h), rect, pad]
 
-	## Looks at POLL_N faded hosts a frame: one that is opaque again draws again (from the atlas).
-	func _poll_faded() -> void:
-		if faded.is_empty():
-			return
-		if _poll_f.is_empty():
-			_poll_f = faded.keys()
-		for i in mini(POLL_N, _poll_f.size()):
-			var id: int = _poll_f.pop_back()
-			var w: Variant = faded.get(id)
-			if w == null:
-				continue
-			var h := (w as WeakRef).get_ref() as CanvasItem
-			if h == null or not h.is_inside_tree():
-				faded.erase(id)
-			elif chain_alpha(h) >= OPAQUE:
-				faded.erase(id)
-				h.queue_redraw()
+	## The α of `h` (placed: it drew from the atlas) against the α its commands are made for (fades): brighter — no
+	## longer faded, or less — it draws again at once (its image, made up for a lower α, would show too opaque);
+	## another α that has held for SETTLE_MS (a parent faded it since, a fade ended) draws again then, at that α. A
+	## changing α (a fade going on) leaves it as it is: its image fades as one piece meanwhile. Asked once per change
+	## (what it is made for is set here: a host whose drawing does not come back through draw() is not asked again).
+	func _poll_alpha(h: CanvasItem, id: int, now: int) -> void:
+		var c := chain_alpha(h)
+		var r: Variant = fades.get(id)
+		if r == null:
+			if c >= OPAQUE:
+				return
+			r = [c, now, 1.0]  # (faded since it drew: opaque)
+			fades[id] = r
+		elif absf(float(r[0]) - c) > 0.0005:
+			r[0] = c
+			r[1] = now
+		var made_for := float(r[2])
+		if c > made_for + 0.002 and made_for < OPAQUE:
+			r[2] = minf(c, 1.0)
+			h.queue_redraw()
+		elif absf(made_for - c) > 0.0005 and c >= FADE_MIN and (c >= OPAQUE or int(r[1]) < 0 or now - int(r[1]) >= SETTLE_MS):
+			r[2] = c
+			h.queue_redraw()
+		if c >= OPAQUE and float(r[2]) >= OPAQUE:
+			fades.erase(id)
 
 	## Looks at POLL_N parked hosts a frame: one that has come into sight draws again (and asks for its bakes).
 	func _poll_parked() -> void:
@@ -1139,7 +1183,6 @@ class KitBake extends Node:
 			_later = keep
 		_poll_moves()
 		_poll_parked()
-		_poll_faded()
 		if not _defer.is_empty() and now - _defer_at >= DEFER_RETRY_MS:
 			for key in _defer:
 				if not jobs.has(key):
@@ -1196,6 +1239,10 @@ class KitBake extends Node:
 				var w: Variant = refs[id][2]
 				if w != null and (w as WeakRef).get_ref() == null:
 					refs.erase(id)
+		if fades.size() > 4096:  # (the hosts that drew vectors and were freed: never placed, never polled)
+			for id in fades.keys():
+				if not is_instance_id_valid(id):
+					fades.erase(id)
 		var x := 0
 		var y := 0
 		var row := 0
@@ -1228,16 +1275,19 @@ class KitBake extends Node:
 				# (a moved owner's old offset, a changed look) that can be dropped once their owners have drawn again
 				break
 			if slot.size.x == 0:
-				if used() < FRAGMENTED and _defer.size() < DEFER_MAX:
+				var tries := int(_defer_n.get(key, 0))
+				if used() < FRAGMENTED and _defer.size() < DEFER_MAX and tries < DEFER_TRIES:
 					# half empty, but in pieces too small for it (a long list's rows dropped here and there): it waits — its
 					# owners draw its vectors — instead of the atlas starting over (every image drawn as vectors at once until
 					# the round lands: a burst of draw calls in the middle of a scroll); tried again shortly, when what went
-					# out of sight has given its room up
+					# out of sight has given its room up — DEFER_TRIES times, then the atlas is compacted after all
 					if _defer.is_empty():
 						_defer_at = Time.get_ticks_msec()
 					_defer[key] = j
+					_defer_n[key] = tries + 1
 					done.append(key)
 					continue
+				_defer_n.erase(key)
 				if Time.get_ticks_msec() - _reset_at < RESET_GAP_MS:
 					# full again right after a reset: what does not fit now stays vectors (until the next reset)
 					never[key] = true
@@ -1256,6 +1306,8 @@ class KitBake extends Node:
 				reset()
 				return
 			done.append(key)
+			if not _defer_n.is_empty():
+				_defer_n.erase(key)
 			var n: Control = (j["make"] as Callable).call(j["size"]) if (j["make"] as Callable).is_valid() else null
 			if n == null:  # its asker is gone, or what it asked for has changed: the others waiting ask again
 				_release(slot)
@@ -1269,6 +1321,8 @@ class KitBake extends Node:
 			var holder := Node2D.new()
 			holder.position = Vector2(x + 1, y + 1) + pp + (j["off"] as Vector2)
 			holder.scale = kv
+			# a faded look (draw): each of its layers drawn at that α onto the clear stage, as the vectors are over the screen
+			holder.modulate.a = float(j.get("alpha", 1.0))
 			n.position = Vector2.ZERO
 			holder.add_child(n)
 			stage.add_child(holder)
@@ -1816,16 +1870,22 @@ class KitText extends Control:
 			_live(l)
 			return
 		var key := SELF.label_key(l)
+		# a left-aligned line is made only as wide as its glyphs reach (a list row's title over half its width empty
+		# took that much of the atlas too)
+		var sz := l.size
+		var span := span_of(l)
+		if span > 0.0:
+			sz.x = span
 		var make := func(_z: Vector2) -> Control:
 			if not is_instance_valid(l) or SELF.label_key(l) != key:
 				return null
-			return KitText.clone(l)
-		var r := Rect2(Vector2.ZERO, l.size)
+			return KitText.clone(l, span)
+		var r := Rect2(Vector2.ZERO, sz)
 		var f := kb.frac_of(self, Vector2.ZERO)
 		# baked already (by this label or another one with the same look): at once; else once the text has held
-		var ok := kb.draw(get_canvas_item(), "text|" + key, r, l.size, make, self, Vector4.ZERO, f, l.self_modulate, false)
+		var ok := kb.draw(get_canvas_item(), "text|" + key, r, sz, make, self, Vector4.ZERO, f, l.self_modulate, false)
 		if not ok and kb.held("text|" + key):
-			ok = kb.draw(get_canvas_item(), "text|" + key, r, l.size, make, self, Vector4.ZERO, f, l.self_modulate)
+			ok = kb.draw(get_canvas_item(), "text|" + key, r, sz, make, self, Vector4.ZERO, f, l.self_modulate)
 		elif not ok and not _armed:  # look again once it may have held still
 			_armed = true
 			kb.later(self, STILL_MS + 100)
@@ -1844,8 +1904,29 @@ class KitText extends Control:
 		if l.visible_characters != -1:
 			l.visible_characters = -1
 
-	## The label as it draws itself, for the stage.
-	static func clone(l: Label) -> Label:
+	## The width of `l`'s left part that its glyphs reach: a left-aligned single line's advance (as a Label shapes
+	## it: its font, size and features), its outline and shadow, and a margin; -1 when the whole label is needed
+	## (another alignment, wrapped or several lines, cut, right-to-left, or nearly as wide). A left-aligned line lays
+	## out the same in a narrower label as long as it fits, so its glyphs are drawn where they were.
+	static func span_of(l: Label) -> float:
+		if l.horizontal_alignment != HORIZONTAL_ALIGNMENT_LEFT or l.autowrap_mode != TextServer.AUTOWRAP_OFF \
+				or l.text.contains("\n") or l.lines_skipped != 0 or l.is_layout_rtl() \
+				or l.text_direction == Control.TEXT_DIRECTION_RTL:
+			return -1.0
+		var font := l.get_theme_font("font")
+		if font == null:
+			return -1.0
+		var t := l.text.to_upper() if l.uppercase else l.text
+		var adv := font.get_string_size(t, HORIZONTAL_ALIGNMENT_LEFT, -1.0, l.get_theme_font_size("font_size")).x
+		var sb := l.get_theme_stylebox("normal")
+		var left := sb.get_margin(SIDE_LEFT) if sb != null else 0.0
+		var reach := float(l.get_theme_constant("outline_size")) + absf(float(l.get_theme_constant("shadow_offset_x"))) \
+			+ float(l.get_theme_constant("shadow_outline_size")) + 8.0
+		var w := ceilf(left + adv * 1.02 + reach)
+		return w if w < l.size.x - 24.0 else -1.0
+
+	## The label as it draws itself, for the stage (`span` > 0: only that wide — span_of).
+	static func clone(l: Label, span := -1.0) -> Label:
 		var c := l.duplicate(0) as Label
 		for ch in c.get_children():
 			c.remove_child(ch)
@@ -1853,7 +1934,7 @@ class KitText extends Control:
 		c.visible_characters = -1
 		c.set_anchors_preset(Control.PRESET_TOP_LEFT)
 		c.position = Vector2.ZERO
-		c.size = l.size
+		c.size = Vector2(span, l.size.y) if span > 0.0 else l.size
 		c.modulate = Color.WHITE
 		c.self_modulate = Color.WHITE
 		c.visible = true
@@ -3238,6 +3319,7 @@ static func title_plate(panel: Control, text: String, role := "info", icon := ""
 		var drop := s.create_tween().set_parallel()
 		drop.tween_property(s, "position:y", y0, d).set_delay(0.06).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 		drop.tween_property(s, "modulate:a", 1.0, d * 0.5).set_delay(0.06)
+		passing_fade(s, drop)
 	return s
 
 
@@ -5311,6 +5393,7 @@ static func close_fx(node: Node) -> void:
 		(ci as Control).pivot_offset = (ci as Control).size * 0.5
 		tw.tween_property(ci, "scale", Vector2(0.94, 0.94), d)
 	tw.tween_property(ci, "modulate:a", 0.0, d)
+	passing_fade(ci)  # (freed at its end)
 	tw.chain().tween_callback(ci.queue_free)
 
 
@@ -5360,7 +5443,25 @@ static func fade_in(node: CanvasItem, d := 0.12) -> void:
 		node.modulate.a = 1.0
 		return
 	node.modulate.a = 0.0
-	node.create_tween().tween_property(node, "modulate:a", 1.0, t)
+	var tw := node.create_tween()
+	tw.tween_property(node, "modulate:a", 1.0, t)
+	passing_fade(node, tw)
+
+
+## Marks `node`'s modulate α as a passing fade (a window closing, a tab's content or a toast fading in or out): what
+## is under it is drawn from its images as it stands, the whole faded as one piece for those few frames — not made
+## again at each α of the tween (KitBake.chain_alpha leaves it out). `tw`: the tween; the mark goes when it ends (a
+## node freed at its end needs none).
+static func passing_fade(node: CanvasItem, tw: Tween = null) -> void:
+	node.set_meta(&"kit_fade", true)
+	if tw != null:
+		tw.finished.connect(_fade_passed.bind(weakref(node)))
+
+
+static func _fade_passed(w: WeakRef) -> void:
+	var n := w.get_ref() as CanvasItem
+	if n != null:
+		n.remove_meta(&"kit_fade")
 
 
 static func count_up(l: Label, from: int, to: int, ms := 450) -> void:

@@ -153,6 +153,11 @@ static func run(tree: SceneTree, out_path: String, tabs := true) -> void:
 	if OS.get_cmdline_user_args().has("--perf-smoke"):
 		await smoke(tree, out_path)
 		return
+	if tabs and OS.get_cmdline_user_args().has("--perf-late"):
+		await late(tree, out_path)
+	if OS.get_cmdline_user_args().has("--perf-trans"):
+		await trans(tree, out_path)
+		return
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--perf-deep="):
 			min_cost = maxi(2, int(a.get_slice("=", 1)))
@@ -213,6 +218,13 @@ static func run(tree: SceneTree, out_path: String, tabs := true) -> void:
 	lines.append("base draws_canvas=%d (with the 3D world on: %d; before a full redraw: %d)" % [base, with_3d, with_3d])
 	if redrawn != with_3d:
 		lines.append("NOTE: a full redraw changed the count %d -> %d" % [with_3d, redrawn])
+	if OS.get_cmdline_user_args().has("--perf-nobreak"):  # the counts (and --perf-vec's pair) only, no breakdown
+		lines.append("kit bake: %s" % bake_stats(vp.get_node_or_null("KitBake")))
+		vp.disable_3d = false
+		tree.paused = false
+		for ln in lines:
+			print("perf-tree ", ln)
+		return
 	var roots: Array = []
 	_roots(vp, roots)
 	var layers := {}  # CanvasLayer (or null: the root canvas) -> [items]
@@ -565,3 +577,127 @@ static func smoke(tree: SceneTree, out_path: String) -> void:
 	vp.disable_3d = false
 	p.call("done fails=%d %s" % [fails, bake_stats(kb)])
 
+
+
+# ------------------------------------------------------------------ --perf-late: the screens in a late-game state
+
+## `--perf-late` (H2 review): the open screen again in the state a player reaches late in a season or a cycle — the
+## login calendar on day 27 (days 1–26 taken), the Chronicle with every goal reached and taken, the War Pass at level
+## 30 (premium) with everything up to it taken — rows and tiles under their «taken» α. Picked by the shot's --demo
+## (calendar, chronicle, pass); the state is set, the screen opened again and held still, then shot over <shot>.png
+## (a «perf late» line with its draws); the breakdown that follows is of that state.
+static func late(tree: SceneTree, out_path: String) -> void:
+	var main: Node = tree.current_scene
+	var vp := tree.root
+	var kb := vp.get_node_or_null("KitBake")
+	var demo := ""
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--demo="):
+			demo = a.get_slice("=", 1).get_slice(":", 0)
+	var now: int = main.call("now_s")
+	match demo:
+		"calendar":
+			var cal: Object = main.get("calendar").get_script().new()
+			main.set("calendar", cal)
+			for d in 27:
+				cal.call("visit", now - (26 - d) * 86400)
+				if d < 26:
+					cal.call("claim")
+			main.call("_open_calendar")
+		"chronicle":
+			var ch: Object = main.get("chronicle")
+			var list: Array = ch.get_script().get_script_constant_map()["LIST"]
+			for i in list.size():
+				var code: String = list[i][0]
+				ch.get("reached")[code] = true
+				ch.get("claimed")[code] = true
+				if not (ch.get("order") as Array).has(code):
+					(ch.get("order") as Array).append(code)
+			main.call("_open_chronicle")
+		"pass":
+			var bp: Object = main.get("bp")
+			bp.call("add_xp", maxi(0, 30500 - int(bp.get("xp"))), now)
+			bp.set("premium", true)
+			for lv in range(1, 31):
+				for track in ["free", "premium"]:
+					if bp.call("can_claim", lv, track):
+						bp.call("claim", lv, track)
+			main.call("_open_pass")
+		_:
+			print("perf-tree late: no late state for --demo=%s" % demo)
+			return
+	await tree.create_timer(1.0).timeout
+	var d := await _settle(tree, vp, kb)
+	await RenderingServer.frame_post_draw
+	var png := out_path.trim_suffix(".tree.txt")
+	vp.get_texture().get_image().save_png(png)
+	print("perf late=%s draw_calls=%d draws_3d=%d draws_shadow=%d draws_canvas=%d" % [demo,
+		Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
+		vp.get_render_info(Viewport.RENDER_INFO_TYPE_VISIBLE, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME),
+		vp.get_render_info(Viewport.RENDER_INFO_TYPE_SHADOW, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME),
+		vp.get_render_info(Viewport.RENDER_INFO_TYPE_CANVAS, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME)])
+	print("perf-tree late %s settled: draws=%d %s" % [demo, d, bake_stats(kb)])
+
+
+# ------------------------------------------------------------------ --perf-trans: transitions frame by frame
+
+static func _rec(vp: Viewport, kb: Node, n: int) -> Array:
+	var a: Array = []
+	for i in n:
+		a.append(await _frame(vp, kb))
+	return a
+
+
+static func _fmt(a: Array, settled: int) -> String:
+	var mx := 0
+	var over := 0
+	var sum := 0
+	for v in a:
+		mx = maxi(mx, int(v))
+		sum += int(v)
+		if int(v) > settled + 20:
+			over += 1
+	return "max=%d frames>settled+20=%d sum=%d seq=%s" % [mx, over, sum, str(a.slice(0, 30))]
+
+
+## `--perf-trans` (H2 review; run with --fixed-fps=60): the canvas draws of each frame while things fade — the open
+## window closed and opened again twice (`--perf-trans-open=<main's opener>`, e.g. _open_calendar), the bottom tabs
+## switched in turn, two toasts — 40 frames each, then held still. Prints «perf-tree trans» lines: the peak, the
+## frames more than 20 over the settled count, the sequence.
+static func trans(tree: SceneTree, _out_path: String) -> void:
+	var vp := tree.root
+	var kb := vp.get_node_or_null("KitBake")
+	var main: Node = tree.current_scene
+	var ui: Node = main.get("ui")
+	vp.disable_3d = true
+	var p := func(s: String) -> void: print("perf-tree trans ", s)
+	var s0 := await _settle(tree, vp, kb)
+	p.call("settled: draws=%d %s" % [s0, bake_stats(kb)])
+	var opener := ""
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--perf-trans-open="):
+			opener = a.get_slice("=", 1)
+	if ui.get("_modal") != null and opener != "":
+		for round_ in 2:
+			ui.call("close_modal")
+			var c := await _rec(vp, kb, 40)
+			var sc := await _settle(tree, vp, kb)
+			p.call("close %d: %s  settled=%d resets=%d" % [round_, _fmt(c, sc), sc, kb.resets if kb else 0])
+			main.call(opener)
+			var o := await _rec(vp, kb, 40)
+			var so := await _settle(tree, vp, kb)
+			p.call("open %d: %s  settled=%d resets=%d" % [round_, _fmt(o, so), so, kb.resets if kb else 0])
+		ui.call("close_modal")
+		await _settle(tree, vp, kb)
+	for t in ["buildings", "development", "diplomacy", "world", "army", "buildings", "diplomacy", "development"]:
+		main.call("_open_tab", t)
+		var a := await _rec(vp, kb, 40)
+		var d := await _settle(tree, vp, kb)
+		p.call("tab %s: %s  settled=%d resets=%d %s" % [t, _fmt(a, d), d, kb.resets if kb else 0, bake_stats(kb)])
+	for i in 2:
+		ui.call("toast", "Проверка уведомления", "gold", "info")
+		var a := await _rec(vp, kb, 40)
+		var d := await _settle(tree, vp, kb)
+		p.call("toast %d: %s  settled=%d" % [i, _fmt(a, d), d])
+	vp.disable_3d = false
+	p.call("done %s" % bake_stats(kb))

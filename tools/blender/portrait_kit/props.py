@@ -350,8 +350,9 @@ def pointer(ctx, pr):
 
 
 # ------------------------------------------------------------------ P2 props
-def _chain(ctx, name, a, b, sag, m, link=0.022, parent=None, grp="metal", wire=0.0045):
-    """A chain of small alternating links from a to b, sagging by `sag` in the middle."""
+def _chain(ctx, name, a, b, sag, m, link=0.022, parent=None, grp="metal", wire=0.0045, link_k=0.45, cast=True):
+    """A chain of small alternating links from a to b, sagging by `sag` in the middle; link_k = a link's radius over
+    the link spacing (>= 0.55 makes neighbours interlock: the contact check sees no gap)."""
     a, b = Vector(a), Vector(b)
     L = (b - a).length
     n = max(4, int(L / link))
@@ -361,12 +362,12 @@ def _chain(ctx, name, a, b, sag, m, link=0.022, parent=None, grp="metal", wire=0
         t = i / n
         p = a.lerp(b, t) + Vector((0, -0.004, -sag * 4 * t * (1 - t)))
         # the chain lies on the costume: each link cast onto what is under it
-        h, nn, _ = core.ray_any(ctx.outer, (p.x, -2.0, p.z), (0, 1, 0))
+        h, nn, _ = core.ray_any(ctx.outer, (p.x, -2.0, p.z), (0, 1, 0)) if cast else (None, None, None)
         if h is not None and 0 < i < n - free:      # (the last links hang free to the end ring)
             p = h + nn * (wire + 0.004)
         pts.append(p)
     k0 = n - free - 1                                # straight from the last link on the costume to the end
-    if k0 > 0:
+    if k0 > 0 and cast:
         for i in range(k0 + 1, n):
             f = (i - k0) / (n - k0)
             pts[i] = pts[k0].lerp(pts[n], f)
@@ -379,7 +380,7 @@ def _chain(ctx, name, a, b, sag, m, link=0.022, parent=None, grp="metal", wire=0
             side = Vector((1, 0, 0))
         side.normalize()
         nrm = side if i % 2 else d.cross(side).normalized()
-        lk = core.torus("%s_link%d" % (name, i), c, link * 0.45, wire, m, nrm=nrm, seg=12, rseg=6)
+        lk = core.torus("%s_link%d" % (name, i), c, (p1 - p0).length * link_k, wire, m, nrm=nrm, seg=12, rseg=6)
         lk.scale = (1.0, 1.0, 1.0)
         # each link hangs in the one before it (the first on the button / the host)
         ctx.add(lk, grp, parent if i == 0 else prev, kind="embed")
@@ -445,14 +446,20 @@ def wrench(ctx, pr):
     k = ctx.shoulder_k
     pocket = ctx.L.get(pr.get("pocket", "pocket"))
     if pocket is not None:
-        a = Vector((pocket[0].x, 0.0, pocket[0].z - 0.05))
+        # deep in the pocket (only the upper handle and the jaws show: a holder, not a bar floating in front)
+        a = Vector((pocket[0].x, 0.0, pocket[0].z - pr.get("depth", 0.05)))
     else:
         a = Vector((pr.get("x0", 0.14) * k, 0.0, pr.get("z0", -1.10)))
     ln = pr.get("len", 0.70) * H
     ang = math.radians(pr.get("ang", 18))          # leaning out from the vertical, toward the far side
     d = Vector((math.sin(ang), pr.get("dy", -0.05), math.cos(ang))).normalized()
     h, nn, par = core.ray_any(ctx.outer, (a.x, -2.0, a.z), (0, 1, 0))
-    a = h + nn * 0.02 if h is not None else a
+    if pocket is not None and h is not None and par is ctx.objs.get(pr.get("pocket", "pocket")):
+        # the ray hit the pocket's front: go in behind it, onto the apron
+        h2, nn2, par2 = core.ray_any([o for o in ctx.outer if o is not par], (a.x, -2.0, a.z), (0, 1, 0))
+        if h2 is not None:
+            h, nn, par = h2, nn2, par2
+    a = h + nn * pr.get("inset", 0.02) if h is not None else a
     b = a + d * ln
     b.y = min(b.y, a.y + pr.get("top_dy", 0.0))
     iron = core.principled(ctx, "wrench", pr.get("color", "#9AA4B0"), rough=0.35, metal=0.55)
@@ -842,9 +849,9 @@ def badge_relief(ctx, pr):
 
 # ------------------------------------------------------------------ scarf (Hawk)
 def scarf(ctx, pr):
-    """Hawk's white silk scarf (§7.6: flying to the right in an S, 0.9 x 0.18 H): a soft roll round the neck and one
-    long flat tail from the throat out to the right of the frame in an S, widening and thinning toward its end,
-    smooth silk."""
+    """Hawk's white silk scarf (§7.6: flying to the right, 0.9 x 0.18 H): a soft roll round the neck and one long flat
+    tail from the throat — style "back" (default): up over the far shoulder and streaming back behind it with a half
+    fold; "s": straight out to the right of the frame in an S — widening toward its end, smooth silk."""
     neck = ctx.objs["neck"]
     torso = ctx.objs["torso"]
     el = []
@@ -867,20 +874,36 @@ def scarf(ctx, pr):
     cam = core.world_dir(ctx, (0.0, -1.0, 0.0))
     ln = pr.get("len", 0.9) * H
     w0, w1 = pr.get("w", (0.10, 0.19))
-    n = 26
+    n = 30
     pts, nrs, ws = [], [], []
-    for i in range(n):
-        t = i / (n - 1)
-        # an S: out to the right, lifting and dipping once and a quarter, drooping toward its end
-        p = knot + right * (ln * t) + Vector((0, 0, pr.get("rise", -0.10) * t - 0.08 * t * t
-                                                 + 0.085 * math.sin(2 * math.pi * t * 1.25)))
-        p += cam * (0.06 * math.sin(math.pi * t))
-        pts.append(p)
-        tw = math.radians(pr.get("twist", 50) * math.sin(math.pi * t * 1.5))
-        nrs.append((cam * math.cos(tw) + Vector((0, 0, 1)) * math.sin(tw)).normalized())
-        ws.append(w0 + (w1 - w0) * t ** 0.8)
+    if pr.get("style", "back") == "back":
+        # the end flutters back over the far shoulder (art director, P2 sheet: sticking straight out sideways it read
+        # as a sausage): up and out from the knot to the shoulder line, then streaming back and down behind it in two
+        # soft waves, a half fold (the ribbon turns over once) and narrower
+        back = -cam
+        for i in range(n):
+            t = i / (n - 1)
+            p = (knot + right * (ln * pr.get("out", 0.42) * math.sin(math.pi * 0.5 * min(1.0, t * 1.3)))
+                 + back * (ln * pr.get("back", 0.55) * t ** 1.4)
+                 + Vector((0, 0, pr.get("lift", 0.16) * math.sin(math.pi * min(1.0, t * 1.6)) - 0.10 * t * t
+                           + 0.035 * math.sin(2 * math.pi * t * 2.0) * t)))
+            pts.append(p)
+            tw = math.radians(pr.get("fold", 180) * core.smoothstep(0.25, 0.75, t))
+            nrs.append((cam * math.cos(tw) + Vector((0, 0, 1)) * math.sin(tw)).normalized())
+            ws.append(w0 + (w1 - w0) * t ** 0.8)
+    else:
+        for i in range(n):
+            t = i / (n - 1)
+            # an S: out to the right, lifting and dipping once and a quarter, drooping toward its end
+            p = knot + right * (ln * t) + Vector((0, 0, pr.get("rise", -0.10) * t - 0.08 * t * t
+                                                     + 0.085 * math.sin(2 * math.pi * t * 1.25)))
+            p += cam * (0.06 * math.sin(math.pi * t))
+            pts.append(p)
+            tw = math.radians(pr.get("twist", 50) * math.sin(math.pi * t * 1.5))
+            nrs.append((cam * math.cos(tw) + Vector((0, 0, 1)) * math.sin(tw)).normalized())
+            ws.append(w0 + (w1 - w0) * t ** 0.8)
     tail = core.ribbon_mesh("scarf_tail", pts, ws, normals=nrs)
-    core.solidify(tail, 0.016, offset=0.0)
+    core.solidify(tail, pr.get("thick", 0.016), offset=0.0)
     core.finish(tail, silk, sub=2)
     ctx.add(tail, grp, roll, kind="free")
     ctx.sig_objs += [tail]
@@ -895,7 +918,7 @@ QUEEN = [(0.0, 0.0), (0.46, 0.0), (0.48, 0.05), (0.40, 0.09), (0.30, 0.12), (0.2
 def queen(ctx, pr):
     """The chess queen (Vance, §7.6: 0.30 H, dark wood in era 1): a turned piece — base, waist, collar, a crown of
     rounded points, a ball on top — pinched by the near hand at the chin (pr["hand"]) or, hand-free, as a pendant
-    on a chain on the jabot (§7.5 fallback, a smaller piece)."""
+    on a short chain under the brooch, on the jabot (§7.6 "без кисти — кулоном на жабо"; pendant_k x the size)."""
     hgt = pr.get("h", 0.30) * H
     wood = core.principled(ctx, "queen", pr.get("color", "#5A3A26"), rough=0.35, coat=0.4)
     grp = _detail(ctx, pr, "queen", 1500)
@@ -908,9 +931,15 @@ def queen(ctx, pr):
         axis = Vector(pr.get("axis", (0.0, 0.0, 1.0))).normalized()
         par = ctx.objs["torso"]
     else:
-        jt = ctx.L.get("jabot_top")
         hgt *= pr.get("pendant_k", 0.6)
-        x, z = pr.get("pendant_at", (0.0, -0.90))
+        brooch_ = ctx.L.get("brooch")
+        if brooch_ is not None:
+            # hung right under the brooch on a short chain: high on the jabot, near the chin (§7.6 "у подбородка"),
+            # inside the head zone the 48 px signature check reads
+            bc, bn, bd = brooch_[1], brooch_[2], brooch_[3]
+            x, z = bc.x, bc.z - bd * 0.5 - pr.get("drop", 0.035) - hgt * 1.16 + hgt * 0.5
+        else:
+            x, z = pr.get("pendant_at", (0.0, -0.90))
         h, nn, par = _on_outer(ctx, x, z)
         if h is None:
             return
@@ -936,13 +965,23 @@ def queen(ctx, pr):
         ring = core.torus("queen_loop", base + axis * hgt * 1.12, 0.014, 0.005, silver, nrm=Vector((1, 0, 0)), seg=12,
                           rseg=6)
         ctx.add(ring, grp, q, kind="free")
-        for sd in (-1, 1):
-            a = base + axis * hgt * 1.14
-            b_ = Vector((sd * 0.16 * ctx.shoulder_k, a.y + 0.10, -0.64))
-            h2, n2, _ = core.ray_any(ctx.outer, (b_.x, -2.0, b_.z), (0, 1, 0))
-            if h2 is not None:
-                b_ = h2 + n2 * 0.006
-            _chain(ctx, "queen_chain%+d" % sd, a, b_, 0.0, silver, link=0.018, parent=par, grp=grp, wire=0.0035)
+        brooch_ = ctx.L.get("brooch")
+        if brooch_ is not None:
+            # a short straight chain from the brooch's lower rim down to the loop, the links interlocking (the first
+            # hangs in the brooch frame)
+            fr_, bc, bn, bd = brooch_
+            top_ = bc - Vector((0, 0, bd * 0.45)) + bn * 0.004
+            _chain(ctx, "queen_chain", top_, base + axis * hgt * 1.16, 0.0, silver, link=0.014, parent=fr_, grp=grp,
+                   wire=0.0035, link_k=0.62, cast=False)
+        else:
+            for sd in (-1, 1):
+                a = base + axis * hgt * 1.14
+                b_ = Vector((sd * 0.16 * ctx.shoulder_k, a.y + 0.10, -0.64))
+                h2, n2, _ = core.ray_any(ctx.outer, (b_.x, -2.0, b_.z), (0, 1, 0))
+                if h2 is not None:
+                    b_ = h2 + n2 * 0.006
+                _chain(ctx, "queen_chain%+d" % sd, a, b_, 0.0, silver, link=0.018, parent=ring, grp=grp, wire=0.0035,
+                       link_k=0.62)
     ctx.L["queen"] = base
 
 
@@ -961,6 +1000,7 @@ def brooch(ctx, pr):
     ctx.add(fr, grp, par, kind="surface")
     pl = core.uvsphere("brooch_pearl", h + nn * 0.026, (d * 0.36, d * 0.36, d * 0.32), pearl, 24, 12)
     ctx.add(pl, grp, fr, kind="embed")
+    ctx.L["brooch"] = (fr, h + nn * 0.012, nn, d)       # the queen's pendant hangs from it (Vance hand-free)
 
 
 def hairpin(ctx, pr):
@@ -1095,27 +1135,36 @@ def gauntlet(ctx, pr):
     pts = ctx.L.get(pr.get("on", "strap"))
     if strap is None or not pts:
         return
+    # hand-free: a lighter leather than the jacket (in the jacket's own #3A3C46 the pair melted into it)
+    glove_m = core.principled(ctx, "gauntlet_free", pr.get("free_color", pr.get("color", "#3A3C46")), rough=0.45,
+                              coat=0.25)
     for j, zt in enumerate(pr.get("z", (-0.95, -1.06))):
         p = min(pts, key=lambda q: abs(q.z - zt))
         h, nn, _ = core.ray_any([strap], (p.x, -2.0, p.z), (0, 1, 0))
         if h is None:
             continue
-        down = Vector((0.12 * (1 if j else -1), 0, -1)).normalized()
+        # the pair side by side, splayed a little (one tube each read as a single dark bottle, P2 review), the
+        # flared cuffs on top with a broad orange piping, four fingers hanging out under the strap
+        spread = pr.get("spread", 0.10)
+        down = Vector((0.18 * (1 if j else -1), 0, -1)).normalized()
         cuff_l = pr.get("cuff", 0.30) * H * 0.75
-        prof = [(0.045, 0.0), (0.06, cuff_l * 0.5), (0.085, cuff_l)]
-        c0 = h + nn * 0.05 - down * cuff_l * 0.55
-        cf = _lathe("gauntlet_cuff%d" % j, prof, leather, seg=28, axis=-down, base=c0 + down * cuff_l)
+        prof = [(0.045, 0.0), (0.062, cuff_l * 0.5), (0.095, cuff_l)]
+        c0 = h + nn * 0.05 - down * cuff_l * 0.55 + Vector(((1 if j else -1) * spread * 0.5, 0, 0))
+        cf = _lathe("gauntlet_cuff%d" % j, prof, glove_m, seg=28, axis=-down, base=c0 + down * cuff_l)
         cf.scale = (1.0, 0.55, 1.0)
         ctx.add(cf, grp, strap, kind="free")
-        pipe = core.torus("gauntlet_pipe%d" % j, c0, 0.085, 0.01, orange, nrm=-down, seg=28, rseg=8)
+        pipe = core.torus("gauntlet_pipe%d" % j, c0, 0.095, pr.get("pipe_r", 0.016), orange, nrm=-down, seg=28,
+                          rseg=8)
         pipe.scale = (1.0, 0.55, 1.0)
         ctx.add(pipe, grp, cf, kind="free")
-        el = [dict(co=c0 + down * (cuff_l + 0.06), half=(0.07, 0.03, 0.08), stiff=2.4,
-                   rot=core.frame_quat(down, nn))]
-        for fi in range(3):
-            fx = (fi - 1) * 0.04
-            el.append(dict(co=c0 + down * (cuff_l + 0.15) + Vector((fx, 0, 0)), half=(0.022, 0.022, 0.05), stiff=2.6,
-                           rot=core.frame_quat(down, nn)))
-        gl = core.mb_mesh(ctx, "Glove%d" % j, el, 0.008, leather, smooth_iter=2, name="glove%d" % j)
+        # a flat glove folded over the strap: the palm and the fingers as one soft, slightly flared lobe (four thin
+        # fingers read as a puppet's legs), the thumb a small lobe at its side
+        el = [dict(co=c0 + down * (cuff_l + 0.06), half=(0.075, 0.03, 0.08), stiff=2.4,
+                   rot=core.frame_quat(down, nn)),
+              dict(co=c0 + down * (cuff_l + 0.15), half=(0.072, 0.026, 0.07), stiff=2.4,
+                   rot=core.frame_quat(down, nn)),
+              dict(co=c0 + down * (cuff_l + 0.07) + Vector(((-1 if j else 1) * 0.07, 0, 0)), half=(0.024, 0.022, 0.045),
+                   stiff=2.6, rot=core.frame_quat(down, nn))]
+        gl = core.mb_mesh(ctx, "Glove%d" % j, el, 0.007, glove_m, smooth_iter=2, name="glove%d" % j)
         ctx.add(gl, grp, cf, kind="free")
         ctx.sig_objs.append(cf)

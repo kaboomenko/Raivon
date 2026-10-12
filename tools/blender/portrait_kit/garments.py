@@ -485,7 +485,7 @@ def quilt(ctx, ly, name):
                 if h is not None:
                     pts.append(h + nn * 0.002)
             if len(pts) > 3:
-                c = core.curve("%s_v%d" % (name, col), pts, [1.0] * len(pts), 0.008, m)
+                c = core.curve("%s_v%d" % (name, col), pts, [1.0] * len(pts), ly.get("r", 0.008), m)
                 ctx.add(c, "costume:" + ly.get("id", "quilt"), tgt, kind="surface")
             x += dx
             col += 1
@@ -612,7 +612,8 @@ def cloak(ctx, ly, name):
     bmesh.ops.delete(bm, geom=kill, context="FACES")
     o = core.mesh_obj(name, bm)
     core.solidify(o, max(S["layer_min"] * H, ly.get("thick", 0.03)), offset=1.0)
-    m = core.grad_mat(ctx, name, core.hex_scale(ly["color"], 1.06), core.hex_scale(ly["color"], 0.88), z0, z1,
+    sh_top, sh_bot = ly.get("shade", (1.06, 0.88))     # Rai: a darker top, so the key-lit shoulders stay deep blue
+    m = core.grad_mat(ctx, name, core.hex_scale(ly["color"], sh_top), core.hex_scale(ly["color"], sh_bot), z0, z1,
                       rough=ly.get("rough", 0.85), sheen=ly.get("sheen", 0.35))
     core.finish(o, m, sub=2)
     ctx.add(o, _group(ly), ctx.objs["torso"], kind="surface")

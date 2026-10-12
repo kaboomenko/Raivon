@@ -6549,6 +6549,7 @@ func _show_next_toast() -> void:
 		var tw := body.create_tween().set_parallel().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 		tw.tween_property(body, "position:y", 0.0, d)
 		tw.tween_property(body, "modulate:a", 1.0, d)
+		Kit.passing_fade(body, tw)
 
 
 ## The toast's nodes: a root at its place (it follows the war bar) holding the body the motion moves — the pill, the
@@ -6672,6 +6673,7 @@ func _process_toast(delta: float) -> void:
 		return
 	var tw := body.create_tween().set_parallel()
 	tw.tween_property(body, "modulate:a", 0.0, d)
+	Kit.passing_fade(body)  # (freed at its end)
 	tw.tween_property(body, "position:y", -12.0, d).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
 	tw.chain().tween_callback(_toast_done)
 

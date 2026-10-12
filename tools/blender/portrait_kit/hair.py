@@ -2,7 +2,7 @@
 over the surface frame from the crown or the parting to the fringe and the nape; tips may leave the scalp (a fringe
 over the forehead, a bob's ends). Locks whose root would lie inside a headgear are dropped and 6–10 "escape" locks
 grow below its rim (hats come with P2; the kerchief keeps a fringe under its edge). Converted to a mesh, Smooth 2,
-no Subsurf (§7.5). Material: object-Z gradient (+8 % L* on top) x AO crevice tint.
+no Subsurf (§7.5); a character may coarsen its main hair mass (hair "res", Rai: P-A10's triangle budget). Material: object-Z gradient (+8 % L* on top) x AO crevice tint.
 
 Styles (chars.py "hair": {"style": ...}):
   swept    — short hair, a fringe of broad locks swept to the far side, ears free (Bram);
@@ -17,8 +17,8 @@ Styles (chars.py "hair": {"style": ...}):
              over the ears, Kort behind them);
   fringe   — only what a hood shows: shaggy locks over the brows and at the temples (Vik);
   short    — short hair swept back, culled under a hat, escape locks below its rim (Seir);
-  flattop  — a cropped shell filled up to a flat plane with near-vertical walls, a crisp hairline and stubble in
-             the shader (Frey);
+  flattop  — a cropped shell filled up to a flat plane with near-vertical walls, the crown planed level after
+             meshing, a thin crisp hairline receding at the temples and stubble grains in the shader (Frey);
   ponytail — hair drawn up to a high gather, a fringe to the far side and a tail of 7 clumps arcing over and behind
              the head (Irma);
   bun      — hair swept up to a tall vertical bun coiled round its axis (Vance);
@@ -27,6 +27,7 @@ Styles (chars.py "hair": {"style": ...}):
 """
 import math
 
+import bpy
 from mathutils import Matrix, Vector
 
 from . import core
@@ -495,6 +496,17 @@ def _flattop(ctx):
             q.z = flat + (q.z - flat) * hr.get("plane_k", 0.15)
             v.co = back @ q
     o.data.update()
+    if hr.get("bristle"):
+        # a buzz-cut's bristle: a fine noise displacement along the normal — a fuzzy outline and edge instead of a
+        # smooth shell (a smooth one read as a knitted cap, P2 review)
+        tex = bpy.data.textures.new("bristle_" + ctx.cid, type="CLOUDS")
+        tex.noise_scale = hr.get("bristle_scale", 0.014)
+        tex.noise_depth = 1
+        dm = o.modifiers.new("bristle", "DISPLACE")
+        dm.texture = tex
+        dm.texture_coords = "LOCAL"
+        dm.strength = hr["bristle"] * H
+        dm.mid_level = 0.5
     return o
 
 
@@ -558,7 +570,8 @@ def _ponytail(ctx):
             if side.length < 1e-6:
                 side = Vector((0, 0, 1))
             b2 = tang.cross(side).normalized()
-            r = 0.04 + 0.06 * math.sin(math.pi * min(1.0, t * 1.4)) + 0.09 * core.smoothstep(0.6, 1.0, t)
+            r = tl.get("r0", 0.04) + tl.get("r1", 0.06) * math.sin(math.pi * min(1.0, t * 1.4)) \
+                + tl.get("r2", 0.09) * core.smoothstep(0.6, 1.0, t)
             off = side * math.cos(a + t * 1.2) * r + b2 * math.sin(a + t * 1.2) * r * 0.8
             cp.append(p + off)
             nrm.append((side * math.cos(a + t * 1.2) + b2 * math.sin(a + t * 1.2)).normalized())
@@ -571,9 +584,10 @@ def _ponytail(ctx):
     ctx.add(tail, "detail:ponytail", o, kind="embed", head=True)       # P-A8 "хвост 3000": its own ID group
     ctx.sig_objs.append(tail)
     ctx.objs["ponytail"] = tail
-    band = core.torus("pony_band", (pts[3] + pts[4]) / 2, 0.06, 0.018,
+    bi = tl.get("band_at", 3)            # the hair tie: a band round the tail just past the gather
+    band = core.torus("pony_band", (pts[bi] + pts[bi + 1]) / 2, tl.get("band_r", 0.06), 0.018,
                       core.principled(ctx, "pony_band", tl.get("band", "#3A3C46"), 0.5, sheen=0.2),
-                      nrm=(pts[5] - pts[2]).normalized(), seg=32, rseg=10)
+                      nrm=(pts[bi + 2] - pts[max(0, bi - 1)]).normalized(), seg=32, rseg=10)
     ctx.add(band, "costume:band", tail, kind="embed", head=True)
     ctx.details["ponytail"] = 3000
     ctx.L["gather"] = gather

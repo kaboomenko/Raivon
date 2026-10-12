@@ -1,7 +1,7 @@
 """The bust (§7.5 step 5): a lofted torso whose top rings are the neck, arms as capsules whose round tops are the
 deltoids. Proportions from §7.3: shoulders 2.0 W (character 1.75–2.6 W; women 8 % narrower), the shoulder top flat
 over ~60 % of the half width with a slope under 15 deg (epaulettes and pauldrons need a flat seat), the neck
-0.50–0.60 W (women 0.36 W), the arms visible down to the bottom edge of the frame.
+0.50–0.60 W (women 0.40 W: §7.3 says 0.36), the arms visible down to the bottom edge of the frame.
 
 Hands (§7.5, `hand`): a metaball palm and fingers gripping a prop ("wrap" round a rod, "pinch" of a small piece),
 the forearm entering from the bottom of the frame in its sleeve, a cuff; used by the props of Vega, Seir, Vance and
@@ -29,7 +29,8 @@ def spec(ctx):
     # women's shoulders 8 % narrower (§7.3) unless the character's width is absolute (Frey's 2.6 W, §7.6)
     sh = b.get("shoulders", S["shoulders"]) * (S["female_shoulders"] if ctx.female and not b.get("absolute") else 1.0)
     k = sh * ctx.W / 1.95
-    neck = b.get("neck", 0.36 if ctx.female else S["neck_w"]) * ctx.W / 2
+    # women 0.40 W (§7.3's 0.36 W read as a head pasted on a stalk at the album size, P2 review)
+    neck = b.get("neck", 0.40 if ctx.female else S["neck_w"]) * ctx.W / 2
     rings = [(z, hx * k, hy * (0.85 + 0.15 * k), n, yo) for z, hx, hy, n, yo in TORSO]
     top = TORSO[-1]
     rings.append((-0.625, max(neck * 1.12, top[1] * k * 0.62), neck * 0.98, 2.0, 0.07))   # the neck base, under collars

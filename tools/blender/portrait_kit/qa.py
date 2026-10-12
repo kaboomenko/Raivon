@@ -7,20 +7,22 @@
                         inside its almond, so the white never shows outside the lids); 1 sample, box filter,
                         Standard view, transparent film; glass lenses hidden (the irises behind them count)
   DIR/ids/NAME.json     {"colors": {group: [r, g, b]}}
-  DIR/ids/NAME_sig.png  the signature mask (the signature objects white, everything else a holdout)
+  DIR/ids/NAME_sig.png  the signature mask (the signature objects white, everything else a holdout — every material
+                        slot, so an open mouth's pocket walls on the head's slot 1 stay out of it)
   DIR/meta/NAME.json    projected landmarks in PNG px: eye_y, chin_y, crown_y, skyline_y, head_box, sig_box, h_px,
                         iris centres, eye openings (and the design opening), the lids' opening per eye (lids), a
                         winking eye (wink: "near" / "far"), the eyes' almond outlines (eye_almond),
                         brow end points and the brows' gap to the calm lash line (brow_gap_H), mouth corners (and head-local, pose-free, in H:
                         mouth_local); the floating list and contact
                         report; the P-A8 detail thresholds (details) and the details measured on another ID group
-                        (detail_groups, e.g. Hawk's helmet = "hat"); for glasses the iris contrast behind the lens;
-                        stats
+                        (detail_groups, e.g. Hawk's helmet = "hat"); the skin's albedo as shaded (skin_albedo:
+                        the chars hex after its HSV saturation / value — §7.4's lit-cheek floor min(70, L* - 8)); for
+                        glasses the iris contrast behind the lens; stats
 --contacts: the BVH contact test of P-A7 — each attached part against its parent: the gap must be <= 0.01 H, a part
   on a surface is buried <= 0.04 H over <= 60 % of its points; "embed" parts (eyes, nose, ears, beards, glasses
   temples under the hair: inside their parent by design) are checked for the gap only;
   glasses rims and bridges are registered on what they rest on (nose or face), their pads on the nose. "free" parts
-  (none in P1) are skipped.
+  (Vance's queen and its points, hung on a chain whose links are checked) are skipped.
 --stats: triangles per object, build and render seconds.
 build_regression (portrait_assets.py --selftest): build-only runs of every kit character with the open mouths and lid
   settings later steps need (§7.3 ranges, §7.9 moods) — fails on an exception, an open mouth without its lip, teeth
@@ -235,8 +237,12 @@ def id_pass(ctx, path_png, path_json, path_sig, size):
     for o in sc.objects:
         if o.type not in ("MESH", "CURVE") or o.hide_render:
             continue
+        n_slots = max(1, len(o.data.materials))
         o.data.materials.clear()
-        o.data.materials.append(white if o.name in sig else hold)
+        # every slot (the head's slot 1 — an open mouth's pocket walls — left empty rendered as an opaque default
+        # surface: the teeth / mouth showed up in the signature mask)
+        for _ in range(n_slots):
+            o.data.materials.append(white if o.name in sig else hold)
     sc.render.filepath = path_sig
     bpy.ops.render.render(write_still=True)
 

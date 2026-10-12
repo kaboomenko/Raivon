@@ -341,6 +341,12 @@ def aviator(ctx, hg):
         L_, W_ = fl.get("len", 0.25), fl.get("w", 0.19)
         el2 = []
         face_n = Vector((0.0, -1.0, 0.0))            # the flap's flat side toward the front: a wing, not a stick
+        if fl.get("down"):
+            # hanging down over the ear against the side of the head, a little out at the bottom (a flying cap's
+            # ear flap; turned up and out like wings they read as horns or ears, P2 review)
+            outv = Vector((side * fl.get("splay", 0.22), 0.06, -1.0)).normalized()
+            face_n = Vector((side, 0.0, 0.0))
+            hinge = hinge + Vector((side * 0.012, 0.0, 0.04))
         for k in range(7):
             t = k / 6
             c = hinge + outv * (L_ * t)
@@ -353,7 +359,8 @@ def aviator(ctx, hg):
         el3 = []
         for k in range(6):
             t = (k + 0.5) / 6
-            c = hinge + outv * (L_ * t) + face_n * 0.024
+            # turned up: the lining on the face toward the camera; hanging down: inside, peeking at the edges
+            c = hinge + outv * (L_ * t) + face_n * (-0.016 if fl.get("down") else 0.024)
             el3.append(dict(co=c, half=(W_ * 0.36, 0.02, 0.04), stiff=2.4, rot=core.frame_quat(outv, face_n)))
         fm = core.hair_mat(ctx, "cap_fur", hg.get("fur", "#EDE3D0"), -0.3, 0.5, crevice=hg.get("fur_crevice", "#B8A890"))
         lin = core.mb_mesh(ctx, "Lin%+d" % side, el3, 0.008, fm, smooth_iter=2, name="flapfur%+d" % side)
@@ -475,8 +482,9 @@ def goggles_hg(ctx, hg):
         ctx.add(lp, grp, arm, kind="embed", head=True)
     ctx.details[hg.get("detail", "goggles")] = hg.get("min_px", 1200)
     if hg.get("signature"):
-        ctx.sig_objs += [o for o in bpy.context.scene.objects if o.name.startswith("goggle_cup") or
-                         o.name.startswith("goggle_rim")]
+        # the whole pair (cups, rims, lenses, bridge, strap, loupe): rims alone left holes in the 48 px signature
+        # mask (Olm: 7.5 % of the head zone, P-A3 needs 8 %)
+        ctx.sig_objs += [o for o in bpy.context.scene.objects if o.name.startswith("goggle_")]
 
 
 # ------------------------------------------------------------------ circlet (Rai)

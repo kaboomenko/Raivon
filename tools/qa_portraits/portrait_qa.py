@@ -21,7 +21,8 @@ Checks (PASS / FAIL / INFO with numbers, one line each, into OUT_DIR/report.txt)
                   with ids: hair/brow/iris/beard/signature/lit-cheek rules (qa_contrast.id_rules)
   P-A4            leader moods at 64 px (INFO here; qa_moods.py gates); sheet faces64.png
   P-A3 (ids)      at 128 px: brows >= 3 px thick, eye opening >= 6 px, iris >= 4 px, a catchlight pixel > 0.85,
-                  closed mouth >= 2 px, open mouth >= 40 px²; at 64 px: brows >= 2 px thick and >= 6 px long, eye
+                  closed mouth >= 2 px, open mouth >= 40 px²; at 64 px: brows >= 2 px thick and >= 6 px long (each
+                  brow = the connected parts nearest its iris, not a cut midway between the irises), eye
                   opening >= 3 px, pupil >= 2 px, open mouth >= 6 px², signature >= 20 px; at 48 px the signature
                   alone >= 8 % of the head-zone mask; irises behind glasses keep >= 70 % of their contrast; seated
                   eyes: <= 2 % of each eye's sclera / iris / pupil pixels outside the lids' outline (meta eye_almond).
@@ -267,6 +268,45 @@ def _split(mask, xs):
     return [mask & (cols < cut), mask & (cols >= cut)] if xs[0] == lo else [mask & (cols >= cut), mask & (cols < cut)]
 
 
+def _components(mask):
+    """Connected parts of a small mask (4-neighbour flood fill; numpy + Pillow only) -> list of bool masks."""
+    ys, xs = np.nonzero(mask)
+    left = set(zip(ys.tolist(), xs.tolist()))
+    out = []
+    while left:
+        seed = left.pop()
+        comp, stack = [seed], [seed]
+        while stack:
+            y, x = stack.pop()
+            for q in ((y + 1, x), (y - 1, x), (y, x + 1), (y, x - 1)):
+                if q in left:
+                    left.remove(q)
+                    comp.append(q)
+                    stack.append(q)
+        mk = np.zeros(mask.shape, bool)
+        cy, cx = zip(*comp)
+        mk[list(cy), list(cx)] = True
+        out.append(mk)
+    return out
+
+
+def _split_parts(mask, xs):
+    """Split a mask of separate parts (the two brows) by its connected parts, each to the eye whose x is nearest the
+    part's centre: in the 3/4 view the far brow's inner end crosses the midpoint between the irises, and the
+    midpoint cut gave that end to the near brow (a far brow that starts nearer the nose measured shorter). Parts under
+    6 px are ignored; falls back to the midpoint cut when the parts do not separate."""
+    if len(xs) < 2:
+        return [mask]
+    parts = [c for c in _components(mask) if c.sum() >= 6]
+    if len(parts) < 2:
+        return _split(mask, xs)
+    out = [np.zeros(mask.shape, bool), np.zeros(mask.shape, bool)]
+    for c in parts:
+        cx = np.nonzero(c)[1].mean()
+        out[0 if abs(cx - xs[0]) <= abs(cx - xs[1]) else 1] |= c
+    return out
+
+
 def _thick(mask):
     s = mask.sum(0)
     return int(s.max()) if s.any() else 0
@@ -292,7 +332,7 @@ def readability(d, n, a, masks, m):
     eyes = _split(grp("sclera", "iris", "pupil", "catch"), xs)
     irises = _split(grp("iris", "pupil", "catch"), xs)
     pupils = _split(grp("pupil", "catch"), xs)
-    brows = _split(grp("brow"), xs)
+    brows = _split_parts(grp("brow"), xs)
     mouth_open = bool(m.get("mouth_open")) or grp("teeth").sum() > 30
     # the closed mouth is the fold: crease + lips (§7.3 "складка", lower lip 0.03 H); the open one its whole opening
     mouth = grp("mouth", "teeth", "tongue") if mouth_open else grp("mouth", "lip")
