@@ -67,7 +67,7 @@ def build(cid, mood="calm", era=1, log=print):
     props.build_props(ctx)
     core.update()
     rig.pose(ctx)
-    rig.light_rig()
+    rig.light_rig(ctx)
     rig.camera(ctx)
     ctx.t_build = time.time() - t0
     return ctx

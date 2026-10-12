@@ -712,8 +712,12 @@ def build_brows(ctx):
         # the far brow turns away from the camera: a little longer so it reads as long as the near one
         length = length0 * (br.get("len_far", 1.12) if side > 0 else mood.get("len_near", 1.0))
         lift = (br.get("lift", (0.0, 0.0))[0 if side < 0 else 1] + mood.get("lift", (0.0, 0.0))[0 if side < 0 else 1]) * H
-        inner_dz = (br.get("inner", 0.0) + mood.get("inner", 0.0)) * H
-        outer_dz = (br.get("outer", 0.0) + mood.get("outer", 0.0)) * H
+        # the far brow is drawn longer (len_far) so it reads as long as the near one: a P3 mood's inner / outer drop
+        # is scaled with it, so both brows take the same slope (§7.9's numbers are for a brow of the plain length;
+        # unscaled, the tired far brow tilted 8-11 deg against P-A4's 12). The smile keeps P2's numbers.
+        mk = (length / length0) if (side > 0 and ctx.mood in ("angry", "cunning", "tired")) else 1.0
+        inner_dz = (br.get("inner", 0.0) + mood.get("inner", 0.0) * mk) * H
+        outer_dz = (br.get("outer", 0.0) + mood.get("outer", 0.0) * mk) * H
         arch = (br.get("arch", 0.025) + mood.get("arch", 0.0)
                 + ((br.get("arch_far", 0.0) + mood.get("arch_far", 0.0)) if side > 0 else mood.get("arch_near", 0.0))) * H
         arch = max(arch, -0.01 * H)

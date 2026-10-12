@@ -98,8 +98,11 @@ def head_to_world(ctx, p):
 
 
 # ------------------------------------------------------------------ light and world
-def light_rig():
+def light_rig(ctx=None):
+    """`ctx.ch["light"]` may scale one light's energy ({"rim": 0.5}): the ruler's sky plate (L* 80-95) took the rim
+    light's bright silhouette edges for sky (P-A5 rim 35-39 %)."""
     sc = bpy.context.scene
+    lk = (ctx.ch.get("light") or {}) if ctx is not None else {}
     L = style.LIGHT
     w = bpy.data.worlds.new("w")
     sc.world = w
@@ -120,7 +123,7 @@ def light_rig():
     for name in ("key", "rim", "kick"):
         d = L[name]
         lt = bpy.data.lights.new(name, "AREA")
-        lt.energy = d["energy"]
+        lt.energy = d["energy"] * lk.get(name, 1.0)
         lt.color = core.srgb(d["color"])
         lt.size = d["size"]
         o = core.link(bpy.data.objects.new(name, lt))
@@ -371,7 +374,10 @@ def solve_gaze(ctx):
             if mg:
                 # the mood's glance (§7.9): cunning — sideways 30 % of the eye's width toward the near side (the eye is
                 # 2 xc0 wide in lens units); tired — 0.015 H down (rz lens units per kit unit: 1 / rz)
-                full = max(0.0, eye["al_xc0"] - ri / sx * 0.85)
+                # the iris may tuck under the near corner (a sly side glance): its centre within 0.3 of its radius of
+                # the almond's end — the calm gaze already leans that way to meet the camera of a 3/4 face, and
+                # 0.85 left 0.08 of the eye's width to glance with (P-A4 asks >= 0.25)
+                full = max(0.0, eye["al_xc0"] - ri / sx * 0.30)
                 gx = max(x0 - full, min(x0 + full, gx + mg[0] * 2 * eye["al_xc0"]))
                 gz = max(-0.6 * eye["al_kh"], gz + mg[1] * H_ / e["radii"][2])
         mat.node_tree.nodes["gaze"].inputs["Location"].default_value = (-gx * sx, 0.0, -gz)

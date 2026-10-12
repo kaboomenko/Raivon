@@ -627,9 +627,9 @@ def _brow_angle(b):
 def check_mood_bands(d, imgs, rep):
     """P-A4 by the landmarks of each leader mood against its own calm (§7.14): angry — the brows' inner ends down >= 20
     deg and the pupil <= 0.85 of the calm one; tired — the eye opening 0.30-0.50 of the calm one and the brows' inner
-    ends up >= 12 deg; cunning — the two brows' height difference grown >= 0.06 H, the glance >= 25 % of the eye's
-    width sideways, the head rolled >= 4 deg. (Smile: check_smiles.) An eye closed by design (a wink, the smile's
-    happy closed eyes) skips its opening."""
+    ends up >= 12 deg; cunning — the two brows' height difference (near minus far, signed) changed by >= 0.06 H, the
+    glance >= 25 % of the eye's width sideways, the head rolled >= 4 deg. (Smile: check_smiles.) An eye closed by
+    design (a wink, the smile's happy closed eyes) skips its opening."""
     for x in Q.LEADERS:
         mc = Q.meta(d, "ldr_" + x)
         if not mc or not mc.get("brows"):
@@ -663,10 +663,12 @@ def check_mood_bands(d, imgs, rep):
             else:
                 def mid_y(b):
                     return (b[0][1] + b[1][1]) / 2
-                diff_m = abs(mid_y(mm["brows"][0]) - mid_y(mm["brows"][1])) / h
-                diff_c = abs(mid_y(mc["brows"][0]) - mid_y(mc["brows"][1])) / h
-                ok = diff_m - diff_c >= 0.06 - 1e-6
-                out.append("brow difference +%.3f H (>= 0.06)%s" % (diff_m - diff_c, "" if ok else " FAIL"))
+                # signed (near minus far, picture y): a calm face whose far brow already sits a little lower would
+                # read a raised far brow as a SMALLER |difference| (Mirosya: calm -4 px, cunning +1 px)
+                diff_m = (mid_y(mm["brows"][0]) - mid_y(mm["brows"][1])) / h
+                diff_c = (mid_y(mc["brows"][0]) - mid_y(mc["brows"][1])) / h
+                ok = abs(diff_m - diff_c) >= 0.06 - 1e-6
+                out.append("brow difference %+.3f H (>= 0.06)%s" % (diff_m - diff_c, "" if ok else " FAIL"))
                 bad |= not ok
                 gz = []
                 for gm, gc in zip(mm.get("gaze") or [], mc.get("gaze") or []):

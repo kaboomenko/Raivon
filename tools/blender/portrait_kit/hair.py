@@ -1110,12 +1110,13 @@ def _straight(ctx):
         el += core.ribbon_lock(head, [core.az_el(part - 4, 74), core.az_el(az * 0.5, 62), core.az_el(az, e)],
                                0.12 * sx, 0.10 * sx, 0.045, n=12, lift=0.45)
     if hr.get("across"):
-        # one lock off the parting, down across the near brow and eye to the cheek (a strand falling over the face)
+        # one lock off the parting, down across the near brow and past the eye's outer corner to the cheek (a strand
+        # falling over the face; through the eye's middle it hid the tired lids P-A4 reads)
         d0 = core.az_el(part - 6, 70)
         hit, nor = core.ray(head, d0 * 3, -d0)
-        p1 = core.ray_front(head, -0.06 * sx, ctx.P["eye_z"] + 0.20 * H)
-        p2 = core.ray_front(head, -0.20 * sx, ctx.P["eye_z"] - 0.02 * H)
-        p3 = core.ray_front(head, -0.30 * sx, ctx.P["eye_z"] - 0.24 * H)
+        p1 = core.ray_front(head, -0.10 * sx, ctx.P["eye_z"] + 0.19 * H)
+        p2 = core.ray_front(head, -0.32 * sx, ctx.P["eye_z"] + 0.01 * H)
+        p3 = core.ray_front(head, -0.37 * sx, ctx.P["eye_z"] - 0.22 * H)
         if hit is not None and all(q[0] is not None for q in (p1, p2, p3)):
             pts = [hit + nor * 0.04, p1[0] + p1[1] * 0.05, p2[0] + p2[1] * 0.06, p3[0] + p3[1] * 0.05]
             el += core.clump(pts, [nor, p1[1], p2[1], p3[1]], 0.07, 0.05, 0.035, n=16, lift=0.0, taper_at=0.6,
