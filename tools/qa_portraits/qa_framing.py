@@ -4,7 +4,8 @@ Usage: python3 -I tools/qa_portraits/qa_framing.py PORTRAIT_DIR [--strict]
 
 Per file (every number is a fraction of the file's own size, so 512 and 256 masters are judged alike):
 - size: cmd_* 512×588, ldr_* and ruler* 256×294 (§7.12); aspect 0.8707 +- 0.003; RGBA with transparent top corners;
-- top: the highest opaque row >= 0.051 h (30 px of 588); the ruler and the leaders (crown, headgear) >= 0.085 h;
+- top: the highest opaque row >= 0.051 h (30 px of 588); the ruler and the leaders (crown, headgear) >= 0.085 h; a
+  designed overflow (the kit's meta "top_exempt" ID group: Rai's banner) is printed and the rest of the figure gated;
 - sides: above 0.70 h nothing within 0.055 w of either side (the album crop, the fan, the chip);
 - fringe: semi-transparent edge pixels darker than L* 6 <= 1 % (un-premultiplied black halos);
 - with the kit's meta/<name>.json: eye line 0.425 h +- 0.01, head centre x 0.50 w +- 0.025, chin <= 0.65 h,
@@ -35,6 +36,18 @@ def check(d, n):
     if max(a[0, 0], a[0, -1]) > 0.02:
         prob.append("top corner alpha")
     rows = np.where((a > 0.5).sum(axis=1) >= 2)[0]
+    overflow = ""
+    m0 = Q.meta(d, n) or {}
+    if m0.get("top_exempt") and len(rows):
+        # a designed overflow of the top (Rai's banner, §7.2 "знамя за верх кадра"; meta top_exempt names its ID
+        # group): the gate reads the rest of the figure, the overflow is printed (as portrait_qa's P-A6 does)
+        masks, _ = Q.ids(d, n)
+        if masks is not None and m0["top_exempt"] in masks:
+            rest = (a > 0.5) & ~masks[m0["top_exempt"]]
+            rows_r = np.where(rest.sum(axis=1) >= 2)[0]
+            if len(rows_r):
+                overflow = "  %s by design from %.3f h" % (m0["top_exempt"], rows[0] / h)
+                rows = rows_r
     top = rows[0] / h if len(rows) else 1.0
     tmin = Q.TOP_MIN if n.startswith("cmd_") else Q.TOP_MIN_HEADGEAR
     if top < tmin:
@@ -74,6 +87,7 @@ def check(d, n):
         if out > r:
             prob.append("head outside the chip circle (%.0f > %.0f px)" % (out, r))
         info += "  chip %.0f/%.0f px (corner %.0f)" % (out, r, far)
+    info += overflow
     return size, prob, top, info
 
 

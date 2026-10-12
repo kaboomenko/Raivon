@@ -48,7 +48,7 @@ CHARS = {
         # art director note 1); a soft #7A3216 crevice tone between the strand groups; the moustache in a darker
         # rust, so it reads as hair over the lip, not a fleshy upper lip
         beard=dict(style="pear", color="#C8652F", tip="#D88048", root="#8E3E1C", edge="#74301A", crevice="#7A3216",
-                   wider=0.12, below=0.45, moustache=True, moustache_color="#A04A22", moustache_dark="#6A2810",
+                   wider=0.12, below=0.45, moustache=True, moustache_color="#A04A22", moustache_dark="#76301A",
                    moustache_light="#B5562B"),
         scar=dict(near=True, **{"from": (-0.34, 0.01), "to": (-0.23, -0.14)}),
         body=dict(shoulders=2.0),
@@ -58,10 +58,10 @@ CHARS = {
                 # a laced jerkin closed under the beard (the beard lies on slate: dL* >= 15, §7.4; #3F4D5E a step
                 # darker, #3B4859: the smile measured 14.7 at 64 samples); no shirt collar —
                 # the beard covers the neck
-                # (shade 0.94 -> 0.87 down the jerkin, not 0.80: under the beard's shadow the bottom went past the
+                # (shade 0.94 -> 0.92 down the jerkin, not 0.80 / 0.87: under the beard's shadow the bottom went past the
                 # albedo floor — dark pixels, §7.4)
                 dict(kind="vest", id="jerkin", color="#3B4859", z0=-1.32, z1=-0.645, thick=0.032, rough=0.9, sheen=0.4,
-                     shade=(0.94, 0.87),
+                     shade=(0.94, 0.92),
                      open=[(-1.40, 0.10), (-1.15, 0.05), (-0.85, 0.05), (-0.70, 0.10), (-0.66, 0.16)]),
                 dict(kind="belt", z=-1.09, w=0.13, color="#6B4226", buckle="#E0AD45", over=0.05),
             ]),
@@ -131,7 +131,7 @@ CHARS = {
         # lightest at the tip, darkest where it grows out of the dark hair at the root
         # the bob's darks lifted a step over the albedo floor (#1E1A1C / #121012 rendered 2.7 % of the figure under
         # L* 17, §7.4's dark budget is 3 % for pupils, lashes, mouth and seams together)
-        hair=dict(style="bob", color="#363032", dark="#2E2A2C", light="#544C4E", crevice="#2E2A30", near_len=0.10,
+        hair=dict(style="bob", color="#463E40", dark="#3E3638", light="#605658", crevice="#3C3742", near_len=0.10,
                   far_len=0.26, streak="#C8CCD4", streak_tip="#B8BCC4", streak_mid="#A9ADB5", streak_root="#8E929A",
                   streak_crevice="#8E929A"),
         body=dict(shoulders=1.95),
@@ -199,7 +199,7 @@ CHARS = {
                 # open in front down to the clasp
                 # the darks lifted (#4E3A2E / #2E221C rendered 4.2 % of the figure under L* 17: §7.4 allows 3 % for
                 # pupils, lashes, mouth and seams together)
-                dict(kind="fur", id="fur", color="#6B5040", dark="#5E4A3A", light="#8A6850", crevice="#54402F",
+                dict(kind="fur", id="fur", color="#6B5040", dark="#664F3E", light="#8A6850", crevice="#5E4836",
                      r=0.70, r_in=0.30, t=0.11, front_z=-1.05, side_z=-0.94, back_z=-0.86, open=0.10,
                      # fewer, larger, smoother curls (art director note 3: no cauliflower)
                      clumps=dict(n=70, len=0.11, w=0.06, th=0.036), detail="fur", min_px=8000, signature=True,
@@ -287,7 +287,7 @@ CHARS = {
         hair=dict(style="fringe", color="#FFF6CC", dark="#E8D490", light="#FFFCEE", crevice="#7A5A20", tip_el=45,
                   locks=[(-36, 0.12, 14, 0.95), (-14, 0.13, 20, 1.2), (8, 0.12, 22, 0.95), (26, 0.10, 20, 0.7),
                          (42, 0.085, 16, 0.55)]),
-        headgear=dict(kind="hood", color="#4E6B3A", thick=0.075, peak=0.25, edge_r=0.05),
+        headgear=dict(kind="hood", color="#527040", thick=0.075, peak=0.25, edge_r=0.05),     # #4E6B3A a hair lighter: dark budget
         body=dict(shoulders=1.75),
         costume=dict(
             base=dict(color="#6B4A2A", rough=0.6, sheen=0.15),
@@ -451,7 +451,8 @@ CHARS = {
         mouth=dict(lip="#B8645A", line=0.20,
                    calm=dict(type="closed", w=0.27, near=0.04, far=0.005),
                    smile=dict(type="open", w=0.34, h=0.13, near=0.05, far=0.035, dz=-0.012)),
-        hair=dict(style="quiff", color="#4A3424", dark="#3A2818", light="#6A4C34", crevice="#24160C"),
+        # the darks a step over the albedo floor (#3A2818 / #24160C went under L* 17 in the quiff's shade: §7.4 budget)
+        hair=dict(style="quiff", color="#4A3424", dark="#42301F", light="#6A4C34", crevice="#3A2818"),
         beard=dict(style="thin", color="#3A2414", tip="#3A2414", root="#2E1C10", crevice="#1E120A", thick=0.04,
                    curl=0.02),
         # the ear flaps hang down over the ears (a flying cap's; turned up and out they read as horns, P2 sheet)

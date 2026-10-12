@@ -1844,7 +1844,8 @@ static func draw_flat(ci: RID, rect: Rect2, sb: StyleBoxFlat, host: CanvasItem, 
 ## batches; baked, it is one textured rect among them. A text that keeps changing (a timer, a growing stock) stays
 ## live: a text bakes once it has held for STILL_MS. The label keeps everything (text, size, theme, layout); while
 ## its bake shows it draws no glyph (visible_characters 0, counted after shaping so its size does not change) and
-## this child draws the image in its place, in the same draw order.
+## this child draws the image in its place, in the same draw order. A one-line label's image covers only the part
+## its glyphs reach (span_of).
 class KitText extends Control:
 	const STILL_MS := 1200
 	var _armed := false
