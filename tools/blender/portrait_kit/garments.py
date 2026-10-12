@@ -91,7 +91,9 @@ def vest(ctx, ly, name):
     else:
         m = core.grad_mat(ctx, name, core.hex_scale(ly["color"], top_k), core.hex_scale(ly["color"], bot_k), z0, z1,
                           rough=ly.get("rough", 0.85), sheen=ly.get("sheen", 0.35))
-    core.finish(o, m, sub=2)
+    # a smooth plate needs one subdivision level, not two (83k -> 21k triangles: Bram's E4 was 546k, over the 500k
+    # budget of §7.11)
+    core.finish(o, m, sub=1 if ly.get("plate") else 2)
     ctx.add(o, _group(ly), ctx.objs["torso"], kind="surface")
     ctx.outer.append(o)
     ctx.objs[ly.get("id", name)] = o
