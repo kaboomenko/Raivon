@@ -65,6 +65,8 @@ def _finish_hair(ctx, el, col, name="hair", res=0.011, signature=False, cut=True
     if cut:
         el = _cut(ctx, el)
     mat = _hair_mat(ctx, "hair_" + name, col)
+    if name == "hair":      # a character may coarsen its main hair mass (Rai's long hair: P-A10's 500k triangles)
+        res = max(res, ctx.ch["hair"].get("res", res))
     o = core.mb_mesh(ctx, "Hair" + name, el, res, mat, smooth_iter=smooth_iter, name=name)
     ctx.add(o, "hair", ctx.objs["head"], kind="embed", head=True)
     if signature:
@@ -460,7 +462,8 @@ def _short(ctx):
 def _flattop(ctx):
     """A flat-top crop (§7.6 Frey: "площадка", a 0.035 H shell with a flat top, a crisp hairline, stubble in the
     shader): a sheet whose thickness fills the head's dome up to a flat plane (the square top of her "T"
-    signature) and is 0.035 H on the sides; full thickness right up to the hairline (no fade: a crisp edge)."""
+    signature) and is 0.035 H on the sides; a crisp hairline where the shell thins to 0.3 of itself (a full-thickness
+    edge read as a cap's rim); the crown planed off level after meshing."""
     head = ctx.objs["head"]
     hr = ctx.ch["hair"]
     crown = ctx.L["crown"]
@@ -474,12 +477,24 @@ def _flattop(ctx):
         t = side_t
         if n.z > 0.2:
             # up to the flat plane, but the walls stay near-vertical: the outward reach is held to 1.5 x the side
-            # thickness (a forward-tilted normal near the hairline would otherwise push a brim over the forehead)
+            # thickness (filling to a box round the skull overhung the temples like a mushroom cap)
             horiz = math.sqrt(max(1e-4, 1 - n.z * n.z))
             t = max(t, min((z_top - h.z) / max(n.z, 0.3), 1.5 * side_t / horiz, hr.get("max_t", 0.2)))
-        return t * (0.45 + 0.55 * core.smoothstep(0.0, 0.05, h.z - hl(h)))
+        # crisp but thin at the hairline (a full-thickness edge read as a knitted cap's rim over the forehead)
+        return t * (0.3 + 0.7 * core.smoothstep(0.0, 0.05, h.z - hl(h)))
     el = core.sheet_elems(samples, s, thick)
     o = _finish_hair(ctx, el, hr["color"], res=0.010, signature=True, smooth_iter=3)
+    # the flat top itself: the metaball sheet rounds every edge, so the crown is planed off at the flat plane (a
+    # level "площадка" with a soft-cornered rim, not a dome that reads as a knitted cap)
+    flat = z_top - hr.get("plane", 0.02) * H
+    to_head = head.matrix_world.inverted() @ o.matrix_world
+    back = to_head.inverted()
+    for v in o.data.vertices:
+        q = to_head @ v.co
+        if q.z > flat:
+            q.z = flat + (q.z - flat) * hr.get("plane_k", 0.15)
+            v.co = back @ q
+    o.data.update()
     return o
 
 

@@ -493,7 +493,8 @@ def wrench(ctx, pr):
     head.rotation_quaternion = Vector((0, 0, 1)).rotation_difference(d)
     core.finish(head, iron, sub=1)
     ctx.add(head, grp, bar, kind="embed")
-    ctx.sig_objs += [bar, head]
+    if pr.get("signature", True):      # Olm: off — his signature is the brass goggles (the jaws are a far-side mark)
+        ctx.sig_objs += [bar, head]
     ctx.L["wrench_top"] = c
 
 
@@ -821,7 +822,7 @@ def badge_relief(ctx, pr):
         door = core.box("badge_door", at(0, -0.18, 0.040), (size * 0.11, size * 0.16, 0.016), dark, bev=0.003)
         door.rotation_mode = "QUATERNION"
         door.rotation_quaternion = tw.rotation_quaternion
-        ctx.add(door, grp, plate, kind="embed")
+        ctx.add(door, grp, tw, kind="embed")        # set into the tower's face (the plate lies 0.02 H behind it)
     else:   # wings round a sky hex
         sky = core.principled(ctx, "badge_sky", pr.get("hex", "#6FA8DC"), rough=0.3, coat=0.4)
         hx = core.cylinder("badge_hex", at(0, 0, 0.012), size * 0.17, 0.024, sky, nrm=nn, verts=6, bev=0.004)

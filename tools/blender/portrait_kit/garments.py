@@ -574,9 +574,10 @@ def pauldrons(ctx, ly, name):
                 a = -a_max * 0.92 + 2 * a_max * 0.92 * ii / 14
                 d = (out * math.cos(a) + fwd * math.sin(a)) * math.cos(e) + up * math.sin(e)
                 pts.append(c + d * (R + 0.016))
-            st = core.curve("%s_stripe%+d_%d" % (name, s, i), pts, [1.0] * len(pts), 0.012, stripe)
+            st = core.curve("%s_stripe%+d_%d" % (name, s, i), pts, [1.0] * len(pts), ly.get("stripe_r", 0.012), stripe)
             st.scale = (1, 1, 1)
             ctx.add(st, "detail:" + ly.get("detail", "pauldrons"), o, kind="embed")
+            ctx.sig_objs.append(st)          # part of the plate (and of its colour in P-A9's signature group)
             parent = o
     ctx.details[ly.get("detail", "pauldrons")] = ly.get("min_px", 10000)
 

@@ -15,14 +15,16 @@ leaders' moods, which share the costume):
 - dark pixels (L* < 17, the albedo floor #2A2A30) <= 3 % of the opaque pixels (with the ID pass, also split INFO:
   the exempt groups of §7.4 — pupils, lash lines, mouth, glasses — vs the rest).
 ID rules (only with the kit's sidecars ids/<name>.png + meta/<name>.json):
-- hair, headgear or beard next to the face vs skin: |dL*| >= 15 or dE76 >= 30;   - brows vs skin: |dL*| >= 18;
+- hair, headgear or beard next to the face vs skin: |dL*| >= 15 or dE76 >= 30;   - brows vs skin: |dL*| >= 18 (the
+  skin's global median; INFO: the same against the skin within 8 px of the brows);
 - hair / beard vs skin AT THE EDGE (art director note 1): a 3 px band each side of the boundary, the mouth region
   (within 0.2 H of the mouth) and the rest apart: skin L* - hair L* >= 12 in each, where the hair is darker than the
   skin (platinum or white hair: INFO); INFO line: the hue of the skin (all / lit) against the hair and the beard;
 - iris vs sclera: dL* >= 30;   - beard vs each garment it lies on (costume:<id> groups): |dL*| >= 15;
 - signature vs plate (B, both palettes): dE76 >= 25;
-- the lit cheek (the brightest 30 % of the skin pixels: the key-lit side of the face): median L* 70-82 and median
-  HSV S >= 0.35.
+- the lit cheek (the brightest 30 % of the skin pixels: the key-lit side of the face): median L* from
+  min(70, L* of the skin albedo - 8) to 82 (the albedo from the kit's meta "skin_albedo"; 70 without it) and median
+  HSV S >= 0.35, >= 0.27 for peach-pink skin (the lit cheek's hue <= 16 deg) — §7.4 as decided after P1.
 A folder that holds only some of the 150 names is fine. Exit 1 with --strict when a gated rule fails.
 """
 import os
@@ -178,7 +180,16 @@ def id_rules(im, masks, m, name):
     brow = med(grp("brow"))
     if skin is not None and brow is not None:
         dl = abs(brow[0] - skin[0])
-        out.append(("brow-skin", dl, dl >= 18, "|dL*| %.1f (target 20)" % dl))
+        # INFO beside the gated global median: the skin right round the brows (8 px at 512) — on a bald, lit dome
+        # (Kort, Olm) the global skin median sits far above the forehead the brows are read against
+        bm_ = grp("brow")
+        kr = max(2, int(round(8 * w / 512)))
+        ring = (np.asarray(Image.fromarray((bm_ * 255).astype(np.uint8)).filter(ImageFilter.MaxFilter(2 * kr + 1)))
+                > 127) & ~bm_ & grp("skin")
+        extra = ""
+        if ring.sum() >= 30:
+            extra = "; ring (INFO) |dL*| %.1f" % abs(brow[0] - float(np.median(lab[..., 0][ring])))
+        out.append(("brow-skin", dl, dl >= 18, "|dL*| %.1f (target 20)%s" % (dl, extra)))
     iris, sclera = med(grp("iris")), med(grp("sclera"))
     if iris is not None and sclera is not None:
         dl = sclera[0] - iris[0]
@@ -221,8 +232,24 @@ def id_rules(im, masks, m, name):
         lit = sk & (lab[..., 0] >= cut)
         L = float(np.median(lab[..., 0][lit]))
         S = float(np.median(Q.hsv_s(im[..., :3][lit])))
-        out.append(("lit cheek L*", L, 70 <= L <= 82, "L* %.1f (70-82)" % L))
-        out.append(("lit cheek S", S, S >= 0.35, "S %.2f (>= 0.35)" % S))
+        # the floor follows the skin (§7.4, decided after P1): min(70, the albedo's L* - 8) — a T4-T6 face cannot
+        # reach 70 without bleaching; files without the kit's skin_albedo keep 70
+        lo = 70.0
+        if m.get("skin_albedo"):
+            alb = Q.srgb_to_lab(np.array(Q.hex_rgb(m["skin_albedo"]), dtype=np.float32))
+            lo = min(70.0, float(alb[0]) - 8.0)
+        # the S floor: 0.27 for peach-pink skin (the lit cheek's hue <= 16 deg: AgX turns more saturation salmon),
+        # 0.35 otherwise
+        rgb = np.median(im[..., :3][lit], axis=0)
+        mx, mn = float(rgb.max()), float(rgb.min())
+        hue = 0.0
+        if mx - mn > 1e-6 and mx == rgb[0]:
+            hue = 60.0 * (((rgb[1] - rgb[2]) / (mx - mn)) % 6)
+        elif mx - mn > 1e-6:
+            hue = 60.0 * ((rgb[2] - rgb[0]) / (mx - mn) + 2) if mx == rgb[1] else 60.0 * ((rgb[0] - rgb[1]) / (mx - mn) + 4)
+        s_lo = 0.27 if hue <= 16.0 else 0.35
+        out.append(("lit cheek L*", L, lo <= L <= 82, "L* %.1f (%.0f-82)" % (L, lo)))
+        out.append(("lit cheek S", S, S >= s_lo, "S %.2f (>= %.2f, hue %.0f°)" % (S, s_lo, hue)))
     return out
 
 

@@ -260,7 +260,7 @@ def hair_mat(ctx, name, col, z0, z1, dark=None, light=None, rough=0.6, crevice=N
         # a cropped coat (Frey's flat top, §7.6 "щетина в шейдере"): fine speckles of the light tone and a fine bump,
         # so the shell reads as short hair, not a cap
         nz = nt.nodes.new("ShaderNodeTexNoise")
-        nz.inputs["Scale"].default_value = 520.0
+        nz.inputs["Scale"].default_value = 110.0     # ~2-3 px grains at 512 (at 520 they averaged out to a flat cap)
         nz.inputs["Detail"].default_value = 2.0
         sp = node_math(nt, "GREATER_THAN", nz.outputs["Fac"], 0.56)
         base = node_mix(nt, node_math(nt, "MULTIPLY", sp, stubble), base, light or hex_mix(col, "#ffffff", 0.25))

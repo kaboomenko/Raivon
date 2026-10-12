@@ -316,6 +316,7 @@ def landmarks_json(ctx, path, png_path, ids_png, sig_png, size, floating, rows, 
                 mouth_open=bool(getattr(ctx, "mouth_open", False)), glasses=bool(getattr(ctx, "glasses", False)),
                 top_exempt=next((p.group for p in ctx.parts if p.obj in getattr(ctx, "skyline_exempt", [])), None),
                 wink=ctx.L.get("wink"), lids=[e["open"] for e in sorted(ctx.objs["eyes"], key=lambda e: e["side"])],
+                skin_albedo=skin_albedo(ctx),
                 signature=ctx.ch.get("signature", {}).get("name"), floating=floating, contacts=rows,
                 details=ctx.details, detail_groups=getattr(ctx, "detail_groups", {}), frame=ctx.frame, stats=stats)
     if getattr(ctx, "lens_paths", None) and ids_png:
@@ -325,6 +326,23 @@ def landmarks_json(ctx, path, png_path, ids_png, sig_png, size, floating, rows, 
     with open(path, "w") as f:
         json.dump(meta, f, indent=1)
     return meta
+
+
+def skin_albedo(ctx):
+    """The skin's albedo as the shader uses it (the chars hex after its HSV saturation / value), sRGB hex: §7.4's lit
+    cheek floor is min(70, L* of this - 8)."""
+    import colorsys
+    from .style import SKIN_SAT
+    ch = ctx.ch
+    hx = ch["skin"].lstrip("#")
+    r, g, b = (int(hx[i:i + 2], 16) / 255.0 for i in (0, 2, 4))
+    tone = ch.get("skin_tone")
+    sat = ch.get("skin_sat", SKIN_SAT.get(tone, 1.0) if tone else 1.0)
+    val = ch.get("skin_value", 1.04)
+    if sat != 1.0 or val != 1.04:        # face.skin_color applies the node only then (value 1.04 = no node)
+        h, s, v = colorsys.rgb_to_hsv(r, g, b)
+        r, g, b = colorsys.hsv_to_rgb(h, min(1.0, s * sat), min(1.0, v * val))
+    return "#%02X%02X%02X" % tuple(int(round(max(0.0, min(1.0, c)) * 255)) for c in (r, g, b))
 
 
 # ------------------------------------------------------------------ lens contrast (glasses)
