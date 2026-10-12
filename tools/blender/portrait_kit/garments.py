@@ -8,8 +8,8 @@ character. Kinds: vest, collar, belt, bib (also an apron or a stole), strap, fro
 metaball sheet collar with soft clumps, never a torus), buttons, lapels, quilt (a gambeson's stitched channels),
 pauldrons (layered plates cast onto the flat shoulder tops), cloak (a cape shell over the shoulders and arms, open
 in front), cape_collar (a tall stand collar framing the head from behind), jabot (tiers of pleated lace),
-neckerchief, clasp, pocket. Every layer registers the object it lies on (the contact test) and adds itself to
-ctx.outer (what later layers and props are cast onto).
+neckerchief, clasp, pocket, piping (a cord along a front path). Every layer registers the object it lies on (the
+contact test) and adds itself to ctx.outer (what later layers and props are cast onto).
 """
 import math
 
@@ -36,7 +36,7 @@ def build_layers(ctx):
         fn = {"vest": vest, "collar": collar, "belt": belt, "bib": bib, "strap": strap, "frogging": frogging,
               "placket": placket, "fur": fur, "buttons": buttons, "lapels": lapels, "quilt": quilt,
               "pauldrons": pauldrons, "cloak": cloak, "cape_collar": cape_collar, "jabot": jabot,
-              "neckerchief": neckerchief, "clasp": clasp, "pocket": pocket}[ly["kind"]]
+              "neckerchief": neckerchief, "clasp": clasp, "pocket": pocket, "piping": piping}[ly["kind"]]
         fn(ctx, ly, "%s%d" % (ly["kind"], i))
         core.update()
 
@@ -417,6 +417,26 @@ def fur(ctx, ly, name):
     if ly.get("signature"):
         ctx.sig_objs.append(o)
     return o
+
+
+def piping(ctx, ly, name):
+    """A piped edge (Irma's riding jacket: the orange edge of its closure, §7.6 accent): a round cord along a path of
+    front points (x in shoulder units, z), cast onto the costume along the view axis and lifted off it by its own
+    radius — a costume part with a body, not a painted line."""
+    k = ctx.shoulder_k
+    r = ly.get("r", 0.012)
+    pts, hosts = [], []
+    path = core.catmull([Vector((x * k, 0.0, z)) for x, z in ly["path"]], ly.get("n", 28))
+    for q in path:
+        h, nn, ob = core.ray_any(ctx.outer, (q.x, -2.0, q.z), (0, 1, 0))
+        if h is not None:
+            pts.append(h + nn * (r * 0.6))
+            hosts.append(ob)
+    if len(pts) < 3:
+        return None
+    c = core.curve(name, pts, [1.0] * len(pts), r, core.principled(ctx, name, ly["color"], rough=0.45, coat=0.2))
+    ctx.add(c, _group(ly), max(set(hosts), key=hosts.count), kind="surface")     # on what it was cast onto
+    return c
 
 
 def buttons(ctx, ly, name):

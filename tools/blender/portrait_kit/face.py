@@ -267,6 +267,12 @@ def eye_mat(ctx, name, iris_hex, ri, sx):
     lift = ctx.ch["eyes"].get("iris_lift", 0.0)    # a light iris (Rai's raivite: P-A8 iris L* 70-85)
     mid = core.hex_mix(core.hex_scale(iris_hex, 0.52), iris_hex, lift)
     dk = core.hex_mix(core.hex_scale(iris_hex, 0.25), core.hex_scale(iris_hex, 0.55), lift)
+    lk = ctx.ch["eyes"].get("limbal_k")
+    if lk is not None:
+        # a character's own limbal ring darkness and width (Rai's light glowing iris: a strong dark ring keeps the
+        # iris an iris against the white at 64 px; the ring itself does not glow)
+        dk = core.hex_scale(iris_hex, lk)
+        lim = lim * ctx.ch["eyes"].get("limbal_w", 1.0)
     lt = core.hex_mix(core.hex_scale(iris_hex, 0.95), "#ffffff", lift * 0.35)
     stops = [(0.0, "#e9e2da"), (1 - ri - e, C["sclera"]), (1 - ri, dk),
              (1 - ri + lim, core.hex_mix(core.hex_scale(iris_hex, 0.45), iris_hex, lift * 0.7)),
@@ -278,7 +284,8 @@ def eye_mat(ctx, name, iris_hex, ri, sx):
     if glow:
         # a softly glowing iris (Rai, §7.4: emission <= 0.6, the iris L* <= 85): the iris ring only (not the pupil,
         # not the white), by the same radial gradient
-        ring = core.node_math(nt, "MULTIPLY", core.node_math(nt, "GREATER_THAN", g.outputs["Fac"], 1 - ri),
+        inner = 1 - ri + (lim if lk is not None else 0.0)      # a character's own dark ring does not glow
+        ring = core.node_math(nt, "MULTIPLY", core.node_math(nt, "GREATER_THAN", g.outputs["Fac"], inner),
                               core.node_math(nt, "LESS_THAN", g.outputs["Fac"], 1 - rp))
         b = nt.nodes["Principled BSDF"]
         b.inputs["Emission Color"].default_value = core.rgba(iris_hex)

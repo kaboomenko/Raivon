@@ -239,7 +239,8 @@ def floor_albedo(nt, sock, floor="#2A2A30"):
     return sc.outputs["Vector"]
 
 
-def hair_mat(ctx, name, col, z0, z1, dark=None, light=None, rough=0.6, crevice=None, edge=None, stubble=0.0):
+def hair_mat(ctx, name, col, z0, z1, dark=None, light=None, rough=0.6, crevice=None, edge=None, stubble=0.0,
+             grain=None):
     """Hair, fur, beards: object-Z gradient (`dark` at z0, `light` at z1; hair: +8 % L* on top) x AO crevice tint
     (§7.11), held at the albedo floor (§7.4: the crevice tint multiplies, so dark hair would otherwise drop far below
     it). edge = (point attribute, colour, strength): a tone painted where the attribute is 1 (a beard's root band
@@ -262,6 +263,15 @@ def hair_mat(ctx, name, col, z0, z1, dark=None, light=None, rough=0.6, crevice=N
         nz = nt.nodes.new("ShaderNodeTexNoise")
         nz.inputs["Scale"].default_value = 110.0     # ~2-3 px grains at 512 (at 520 they averaged out to a flat cap)
         nz.inputs["Detail"].default_value = 2.0
+        if grain:
+            # anisotropic grains (x, y, z scales): stretched along Z they read as brushed-up bristles on a flat-top's
+            # walls and as dots on its top
+            tc = nt.nodes.new("ShaderNodeTexCoord")
+            mp = nt.nodes.new("ShaderNodeMapping")
+            mp.inputs["Scale"].default_value = tuple(grain)
+            nt.links.new(tc.outputs["Object"], mp.inputs[0])
+            nt.links.new(mp.outputs[0], nz.inputs["Vector"])
+            nz.inputs["Scale"].default_value = 1.0
         sp = node_math(nt, "GREATER_THAN", nz.outputs["Fac"], 0.56)
         base = node_mix(nt, node_math(nt, "MULTIPLY", sp, stubble), base, light or hex_mix(col, "#ffffff", 0.25))
         bn = nt.nodes.new("ShaderNodeBump")

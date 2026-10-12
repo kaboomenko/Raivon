@@ -194,6 +194,13 @@ def id_rules(im, masks, m, name):
     if iris is not None and sclera is not None:
         dl = sclera[0] - iris[0]
         out.append(("iris-sclera", dl, dl >= 30, "dL* %.1f" % dl))
+        pupil = med(grp("pupil"))
+        if iris[0] > sclera[0] - 15 and pupil is not None:
+            # a light (glowing) iris — Rai's, which P-A8 wants at L* 70-85 while the white renders ~71: the numbers of
+            # the replacement rule proposed for the main session's decision (iris-sclera dE76 >= 12, pupil-iris
+            # dL* >= 40), INFO only — the gate above stays as §7.4 has it
+            out.append(("glowing iris (INFO)", 0.0, True, "iris-sclera dE76 %.1f, pupil-iris dL* %.1f" % (
+                float(Q.de76(iris, sclera)), iris[0] - pupil[0])))
     bm = grp("beard")
     if bm is not None and bm.sum() > 50:
         k = max(3, int(round(6 * w / 512)))
@@ -250,6 +257,18 @@ def id_rules(im, masks, m, name):
         s_lo = 0.27 if hue <= 16.0 else 0.35
         out.append(("lit cheek L*", L, lo <= L <= 82, "L* %.1f (%.0f-82)" % (L, lo)))
         out.append(("lit cheek S", S, S >= s_lo, "S %.2f (>= %.2f, hue %.0f°)" % (S, s_lo, hue)))
+        # INFO: the same sample on the face only (skin below the brows' lowest point): on a bald head the brightest
+        # 30 % of all the skin is the rim-lit dome, not the key-lit cheek (Kort, Olm) — numbers for the main session
+        brows = m.get("brows") or []
+        if brows:
+            yb = max(p[1] for b in brows for p in b)
+            face = sk.copy()
+            face[: int(yb) + 1] = False
+            if face.sum() > 100:
+                cut_f = np.percentile(lab[..., 0][face], 70)
+                lit_f = face & (lab[..., 0] >= cut_f)
+                out.append(("lit cheek, face only (INFO)", 0.0, True, "L* %.1f S %.2f" % (
+                    float(np.median(lab[..., 0][lit_f])), float(np.median(Q.hsv_s(im[..., :3][lit_f]))))))
     return out
 
 

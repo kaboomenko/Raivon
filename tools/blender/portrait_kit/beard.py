@@ -6,13 +6,16 @@ its lower lip and a little chin clear, its corners covered). Converted to a mesh
 
 Styles (chars.py "beard": {"style": ...}):
   pear   — wider than the jaw by `wider` W on each side, `below` H under the chin, two rounded lower lobes (Bram's
-           signature: the lower head wider than the top), with a bushy moustache;
+           signature: the lower head wider than the top), with a bushy moustache; `widest` (H over the chin) and
+           `profile` (the half width down the beard) shape the pear;
   walrus — a walrus moustache (Kort): `w` W wide, hanging `drop` H below the mouth, its ends below the chin; the
            mouth hidden in the calm, a window over the open laugh and the ends lifted `smile_lift` H;
-  short  — a short beard along the jaw (Seir: 0.06 H) with a moustache;
+  short  — a short beard along the jaw (Seir: 0.06 H) with a moustache; its clumps ride inside the sheet
+           (clump_lift), so the union does not swell past the set thickness;
   long   — a long beard (Rai): `below` H under the chin, three big lobes converging to a point, the moustache
            flowing into it;
-  thin   — a thin moustache (Hawk: 0.04 H, the ends curled up 0.02 H);
+  thin   — a thin moustache (Hawk: 0.04 H, the ends curled up 0.02 H): two tapered halves parted at the philtrum,
+           inside the mouth's width;
   chops  — mutton-chop sideburns (Olm: 0.16 W), the chin bare.
 """
 import math
@@ -323,8 +326,11 @@ def _short(ctx, bd):
             if h0 is None or h1 is None:
                 continue
             tip = h1 + Vector((0, -0.005, -0.025 - 0.015 * (1 - u)))
-            el += core.clump([h0 + n0 * t * 0.4, h1 + n1 * t * 0.5, tip], [n0, n1, n1], 0.06, 0.055, t * 0.6, n=12,
-                             lift=0.0, taper_at=0.6, tip=0.6, stiff=2.6, flat=0.8)
+            # (the clumps ride in the sheet, not on it: lifted onto its surface they doubled the beard to a 0.2 H
+            # cotton-wool mass round the jaw, P2 review; §7.6 asks 0.06 H)
+            cl = bd.get("clump_lift", 0.4)
+            el += core.clump([h0 + n0 * t * cl, h1 + n1 * t * cl * 1.25, tip], [n0, n1, n1], 0.06, 0.055,
+                             t * bd.get("clump_th", 0.6), n=12, lift=0.0, taper_at=0.6, tip=0.6, stiff=2.6, flat=0.8)
     if open_m:
         zs = [q[1] for q in ctx.mouth_pts]
         el.append(dict(co=(0.0, ctx.L["face_y"] - 0.05, (min(zs) + max(zs)) / 2), half=(0.14 * sx, 0.08, 0.07),
@@ -432,14 +438,19 @@ def _thin(ctx, bd):
     base = mz + bd.get("above", 0.035) * H
     mat = core.hair_mat(ctx, "beard", bd["color"], mz - 0.05, mz + 0.1, dark=bd.get("tip"), light=bd.get("root"),
                         crevice=bd.get("crevice"))
+    # two tapered halves parted at the philtrum, kept inside the mouth's width (§7.6 0.04 H, the ends up 0.02):
+    # one long bar past the corners read as a stick or a cigarette across the lip at 128 px (P2 review)
+    half_w = mp.get("w", 0.27) * H / 2
+    x0, x1 = bd.get("part", 0.022), bd.get("reach", 0.92) * half_w / sx
     for sd in (-1, 1):
         lift = (mp.get("near" if sd < 0 else "far", 0.0)) * H
         pts, rad = [], []
         n = 9
         for i in range(n):
             f = i / (n - 1)
-            x = sd * (0.012 + 0.20 * f) * sx
-            z = base - 0.004 * math.sin(math.pi * f) + lift * f ** 2 + bd.get("curl", 0.02) * H * core.smoothstep(0.7, 1.0, f) * 1.4
+            x = sd * (x0 + (x1 - x0) * f) * sx
+            z = (base - 0.004 * math.sin(math.pi * f) + lift * f ** 2
+                 + bd.get("curl", 0.02) * H * core.smoothstep(0.6, 1.0, f) * 1.4)
             if mtop and mtop[0][0] - 0.01 <= x <= mtop[-1][0] + 0.01:
                 z = max(z, core.lerp_table(mtop, x) + t * 0.7)
             z = min(z, nz - t * 0.9)
@@ -447,7 +458,9 @@ def _thin(ctx, bd):
             if h is None:
                 continue
             pts.append(h + nn * t * 0.25)
-            rad.append(0.55 + 0.45 * math.sin(math.pi * min(1.0, 0.25 + f * 0.9)) * (1 - 0.6 * f ** 3))
+            # rounded at the parting, fullest a third of the way out, tapering to a fine upturned tip
+            rad.append((0.55 + 0.45 * math.sin(math.pi * min(1.0, f * 1.6)))
+                       * (1 - 0.75 * core.smoothstep(0.45, 1.0, f)))
         o = core.curve("moustache%+d" % sd, pts, rad, t / 2, mat)
         ctx.add(o, "beard", head, kind="surface", head=True)
 

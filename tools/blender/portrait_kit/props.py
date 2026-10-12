@@ -3,9 +3,10 @@ column of §7.6: the spoon, the millstone amulet on its cord and the sleeve chev
 bandage roll on the satchel strap (Lira); the glasses with nose pads and the pointer (Vega: held by the near hand,
 hand-free dropped); the wrench in the apron pocket and the pencil behind the ear (Olm); the raven and the bow tip
 (Vik); the hourglass on a chain to a button (Kort); the spyglass (Seir: in the near hand, hand-free on a strap) and
-the earring ring; Frey's stud and tower badge; Irma's gauntlet (on the near hand at the collar, hand-free tucked
-under the strap); Hawk's silk scarf and wings badge; Vance's chess queen (pinched at the chin, hand-free a pendant),
-brooch and hairpin; Rai's staff and banner with the game's white eagle. Hands: body.hand.
+the earring ring; Frey's stud and tower badge; Irma's gauntlet (on the near hand at the collar, hand-free one
+gauntlet tucked under the strap, cuff up, glove hanging below); Hawk's silk scarf and wings badge; Vance's chess
+queen (pinched at the chin, hand-free a pendant), brooch and hairpin; Rai's staff and banner with the game's white
+eagle. The raven may turn and lean (Vik: in profile, beak out, leaning away from the hood). Hands: body.hand.
 
 A character's props are data (chars.py "props": [{"kind": ...}, ...]); every prop registers its parent (contacts)
 and, when §14 P-A8 lists it, its detail name and minimum visible pixel count.
@@ -723,8 +724,8 @@ def spyglass(ctx, pr):
     k = ctx.shoulder_k
     ln = pr.get("len", 0.8) * H
     r = pr.get("d", 0.11) * H / 2
-    ang = math.radians(pr.get("ang", 50))
     held = bool(pr.get("hand")) and ctx.hands
+    ang = math.radians(pr.get("ang_hand", pr.get("ang", 50)) if held else pr.get("ang", 50))
     dw = pr.get("dir_world_hand", pr.get("dir_world")) if held else pr.get("dir_world")
     if dw:
         back = core.world_dir(ctx, dw)                          # given in picture terms (x right, y away, z up)
@@ -1120,8 +1121,8 @@ def banner(ctx, pr):
 def gauntlet(ctx, pr):
     """Irma's gauntlet (§7.6: the near hand holds up the raised collar, a flared cuff 0.30 H with an orange piping;
     hand-free: the gauntlets tucked behind a strap, §7.5): with pr["hand"] a gloved hand (body.hand, grip "edge") at
-    the collar and the flared cuff round its wrist; otherwise two gauntlets (cuff + flat glove) tucked under the chest
-    strap, their fingers hanging out."""
+    the collar and the flared cuff round its wrist; otherwise one gauntlet tucked under the chest strap — the flared
+    cuff up out of the strap, the glove with its fingers hanging below it."""
     leather = core.principled(ctx, "gauntlet", pr.get("color", "#3A3C46"), rough=0.45, coat=0.25)
     orange = core.principled(ctx, "gauntlet_pipe", pr.get("piping", "#F08A24"), rough=0.45, coat=0.2)
     grp = _detail(ctx, pr, "gauntlet", 1500)
@@ -1142,35 +1143,49 @@ def gauntlet(ctx, pr):
     pts = ctx.L.get(pr.get("on", "strap"))
     if strap is None or not pts:
         return
-    # hand-free: a lighter leather than the jacket (in the jacket's own #3A3C46 the pair melted into it)
+    # hand-free (§7.5 "краги — за ремнём"; the P2 reviewer's call for §7.15 q3): ONE gauntlet tucked under the chest
+    # strap near its upper (near-side) end — the flared 0.30 H cuff standing up out of the strap, its orange piping
+    # on the open rim, the glove hanging below the strap with three finger lobes and a thumb, so it has a glove's
+    # silhouette (a pair of cones with mitten blobs read as two funnels or binoculars, P2 review). A lighter leather
+    # than the jacket (in the jacket's own #3A3C46 it melted into it).
     glove_m = core.principled(ctx, "gauntlet_free", pr.get("free_color", pr.get("color", "#3A3C46")), rough=0.45,
                               coat=0.25)
-    for j, zt in enumerate(pr.get("z", (-0.95, -1.06))):
-        p = min(pts, key=lambda q: abs(q.z - zt))
-        h, nn, _ = core.ray_any([strap], (p.x, -2.0, p.z), (0, 1, 0))
-        if h is None:
-            continue
-        # the pair side by side, splayed a little (one tube each read as a single dark bottle, P2 review), the
-        # flared cuffs on top with a broad orange piping, four fingers hanging out under the strap
-        spread = pr.get("spread", 0.10)
-        down = Vector((0.18 * (1 if j else -1), 0, -1)).normalized()
-        cuff_l = pr.get("cuff", 0.30) * H * 0.75
-        prof = [(0.045, 0.0), (0.062, cuff_l * 0.5), (0.095, cuff_l)]
-        c0 = h + nn * 0.05 - down * cuff_l * 0.55 + Vector(((1 if j else -1) * spread * 0.5, 0, 0))
-        cf = _lathe("gauntlet_cuff%d" % j, prof, glove_m, seg=28, axis=-down, base=c0 + down * cuff_l)
-        cf.scale = (1.0, 0.55, 1.0)
-        ctx.add(cf, grp, strap, kind="free")
-        pipe = core.torus("gauntlet_pipe%d" % j, c0, 0.095, pr.get("pipe_r", 0.016), orange, nrm=-down, seg=28,
-                          rseg=8)
-        pipe.scale = (1.0, 0.55, 1.0)
-        ctx.add(pipe, grp, cf, kind="free")
-        # a flat glove folded over the strap: the palm and the fingers as one soft, slightly flared lobe (four thin
-        # fingers read as a puppet's legs), the thumb a small lobe at its side
-        el = [dict(co=c0 + down * (cuff_l + 0.06), half=(0.075, 0.03, 0.08), stiff=2.4,
-                   rot=core.frame_quat(down, nn)),
-              dict(co=c0 + down * (cuff_l + 0.15), half=(0.072, 0.026, 0.07), stiff=2.4,
-                   rot=core.frame_quat(down, nn)),
-              dict(co=c0 + down * (cuff_l + 0.07) + Vector(((-1 if j else 1) * 0.07, 0, 0)), half=(0.024, 0.022, 0.045),
-                   stiff=2.6, rot=core.frame_quat(down, nn))]
-        gl = core.mb_mesh(ctx, "Glove%d" % j, el, 0.007, glove_m, smooth_iter=2, name="glove%d" % j)
-        ctx.add(gl, grp, cf, kind="free")
+    zt = pr.get("tuck_z", -0.92)
+    p = min(pts, key=lambda q: abs(q.z - zt))
+    h, nn, _ = core.ray_any([strap], (p.x, -2.0, p.z), (0, 1, 0))
+    if h is None:
+        return
+    k = pr.get("scale", 1.0)
+    lean = math.radians(pr.get("lean", 14))                 # the top leaning out toward the near side
+    up = Vector((-math.sin(lean), 0.0, math.cos(lean)))
+    up = (up - nn * up.dot(nn)).normalized()
+    across = nn.cross(up).normalized()
+    cuff_l = pr.get("cuff", 0.30) * H * k
+    r0, r1 = 0.050 * k, pr.get("flare", 0.115) * k            # the wrist and the flared opening
+    wrist = h + nn * (0.030 * k) - up * 0.01
+    prof = [(r0, 0.0), (r0 * 1.08, cuff_l * 0.35), ((r0 + r1) * 0.55, cuff_l * 0.7), (r1, cuff_l)]
+    cf = _lathe("gauntlet_cuff", prof, glove_m, seg=32, axis=up, base=wrist)
+    ctx.add(cf, grp, strap, kind="free")
+    pipe = core.torus("gauntlet_pipe", wrist + up * cuff_l, r1, pr.get("pipe_r", 0.022) * k, orange, nrm=up, seg=32,
+                      rseg=8)
+    ctx.add(pipe, grp, cf, kind="free")
+    # the glove under the strap: a flat palm, three finger lobes and a thumb, hanging down, its back to the camera
+    down = -up
+    palm_c = wrist + down * (0.09 * k) + nn * 0.012
+    q = core.frame_quat(down, nn)
+    el = [dict(co=palm_c, half=(0.075 * k, 0.03 * k, 0.085 * k), stiff=2.4, rot=q),
+          dict(co=wrist + down * 0.02 * k, half=(0.055 * k, 0.03 * k, 0.04 * k), stiff=2.4, rot=q)]
+    for dx, ln in ((-0.048, 0.095), (0.0, 0.11), (0.048, 0.095)):
+        a = palm_c + down * 0.07 * k + across * dx * k
+        b = a + down * ln * k + across * dx * 0.25 * k
+        for t in (0.0, 0.5, 1.0):
+            el.append(dict(co=a.lerp(b, t), half=(0.024 * k, 0.022 * k, 0.03 * k), stiff=2.6, rot=q))
+    th0 = palm_c + across * 0.075 * k
+    for t in (0.0, 0.5, 1.0):
+        el.append(dict(co=th0 + (across * 0.04 + down * 0.06) * k * t, half=(0.022 * k, 0.021 * k, 0.028 * k),
+                       stiff=2.6, rot=q))
+    gl = core.mb_mesh(ctx, "Glove", el, 0.006, glove_m, smooth_iter=2, name="glove")
+    ctx.add(gl, grp, cf, kind="free")
+    # the strap passes over the wrist: the glove goes under it (the contact: the glove touches the strap)
+    ctx.add(core.uvsphere("glove_touch", h + nn * 0.004, (0.02, 0.02, 0.004), glove_m, 8, 4), grp, strap,
+            kind="surface")

@@ -3,6 +3,7 @@ goggles (Olm's brass pair on the dome, Irma's rubber driving goggles on the hair
 (Rai). Hats are seated on the hair: 24 rim samples cast onto the built hair, the rim 0.01 H into it (§7.5); the hair
 under a hat is culled before it is meshed (`plan` -> ctx.hair_cut) so only the escape locks below the rim remain.
 
+hood     — Vik's hood with its soft peak (the peak measured as its own ID region, `_region_slot`);
 kerchief — a soft cloth shell over the hair (a metaball sheet sampled on the head above an edge line that runs high
            over the forehead, over the ears and low at the nape; its thickness clears the hair cap), a folded hem
            along its front edge (one clean, smooth rolled rim — no torn hairline, no ribbing), a knot at the back of
@@ -133,8 +134,11 @@ def _surf(ctx):
 def hood(ctx, hg):
     """A hood (§7.6 Vik: #4E6B3A, shell 0.04 H, edge 0.05 H, a soft peak 0.25 H back): a cloth sheet over the head
     and hair outside the face opening (an edge line high on the forehead, down the cheeks behind the jaw), clearing
-    the hair; a rolled edge round the opening; the soft peak — a tapering chain of balls from the crown's back, up and
-    back; the lower part drapes round the neck to the shoulders (it meets the cloak)."""
+    the hair; a rolled edge round the opening; the soft peak — a tapering chain of balls from the crown's back that
+    stands `peak` H clear of the hood's own surface, up and back at `peak_dir`, its tip drooping; the lower part
+    drapes round the neck to the shoulders (it meets the cloak). The peak is one smooth surface with the hood but
+    its own ID region (detail:hood_peak: the faces outside the hood built without it) and the only part of the hood
+    in the signature mask."""
     head = ctx.objs["head"]
     hair = ctx.objs.get("hair")
     edge_tbl = hg.get("edge", [(0, 46), (40, 40), (62, 22), (76, -10), (88, -60), (180, -90)])

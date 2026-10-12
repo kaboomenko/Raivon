@@ -6,9 +6,13 @@
                         sclera / iris / pupil split by the same gradient as its shader (the eyeball is built only
                         inside its almond, so the white never shows outside the lids); 1 sample, box filter,
                         Standard view, transparent film; glass lenses hidden (the irises behind them count)
+                        A part's second material slot can be its own group (ctx.slot_groups: Vik's hood peak); the
+                        slots are replaced in place (materials.clear() would reset every face to slot 0 — the
+                        head's open-mouth pocket, slot 1, is the "mouth" group)
   DIR/ids/NAME.json     {"colors": {group: [r, g, b]}}
   DIR/ids/NAME_sig.png  the signature mask (the signature objects white, everything else a holdout — every material
-                        slot, so an open mouth's pocket walls on the head's slot 1 stay out of it)
+                        slot, so an open mouth's pocket walls on the head's slot 1 stay out of it; of an object in
+                        ctx.sig_slots only those slots: Vik's hood counts its peak, not the whole hood)
   DIR/meta/NAME.json    projected landmarks in PNG px: eye_y, chin_y, crown_y, skyline_y, head_box, sig_box, h_px,
                         iris centres, eye openings (and the design opening), the lids' opening per eye (lids), a
                         winking eye (wink: "near" / "far"), the eyes' almond outlines (eye_almond),

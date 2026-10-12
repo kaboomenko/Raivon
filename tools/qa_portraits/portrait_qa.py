@@ -29,11 +29,14 @@ Checks (PASS / FAIL / INFO with numbers, one line each, into OUT_DIR/report.txt)
                   What "seated" covers: eye_almond comes from the same face.Almond that clips the lens, so this is a
                   regression guard — it catches a lid shell that no longer covers the lens top, an eye drawn over
                   the face's outline or a shifted almond; it cannot prove the eye sits in its lids (a white sliver
-                  under the rim inside the outline passes): judge that on the face crops at 512
+                  under the rim inside the outline passes): judge that on the face crops at 512. A winking eye
+                  (meta "wink") skips its opening, iris, pupil and catchlight; its brow keeps both brow gates
   P-A4 smile      calm / smile pairs with meta: both mouth corners >= 6 px higher, in the picture and with the pose
                   held (head-local corners); open smiles: cavity >= 900 px² on the master, teeth visible
   P-A7            meta "floating" empty; one alpha island; every detail:* at least its P-A8 pixel count (a detail the
-                  kit measures on another group says so in meta "detail_groups": Hawk's helmet = the "hat")
+                  kit measures on another group says so in meta "detail_groups": Hawk's helmet = the "hat", which
+                  holds only the cap and its flaps; a part of one surface gets its own group instead — Vik's hood
+                  peak is detail:hood_peak, the hood's faces outside the hood built without it)
   P-A8 extra      Vega's raised brow >= 15 px, Kort's lids <= 0.6, Rai's iris L* 70-85, Irma's orange >= 3 %
   P-A9            the mean dE76 of the four largest colour groups (hair + beard, clothes, hat or skin, signature)
                   between any two era-1 commanders >= 15 (matrix in OUT_DIR/de76_matrix.txt); signatures unique
@@ -347,7 +350,10 @@ def readability(d, n, a, masks, m):
                 if px == 128:
                     out.append(("eye %s closed (wink)" % side, 1, 0))
                 if i < len(brows):
+                    # the brow over a winking eye is still gated, thickness and (64 px) length both
                     out.append(("%d brow %s thick" % (px, side), _thick(brows[i]) * k, 3 if px == 128 else 2))
+                    if px == 64:
+                        out.append(("64 brow %s long" % side, _long(brows[i]) * k, 6))
                 continue
             if i < len(brows):
                 out.append(("%d brow %s thick" % (px, side), _thick(brows[i]) * k, 3 if px == 128 else 2))
