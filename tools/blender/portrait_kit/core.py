@@ -240,23 +240,27 @@ def floor_albedo(nt, sock, floor="#2A2A30"):
 
 
 def hair_mat(ctx, name, col, z0, z1, dark=None, light=None, rough=0.6, crevice=None, edge=None, stubble=0.0,
-             grain=None):
+             grain=None, spec=0.5, fleck=None, edge_last=False):
     """Hair, fur, beards: object-Z gradient (`dark` at z0, `light` at z1; hair: +8 % L* on top) x AO crevice tint
     (§7.11), held at the albedo floor (§7.4: the crevice tint multiplies, so dark hair would otherwise drop far below
     it). edge = (point attribute, colour, strength): a tone painted where the attribute is 1 (a beard's root band
-    along the face)."""
+    along the face; a crop's faded edge — then `edge_last` paints it over the stubble speckles, whose colour `fleck`
+    is the light tone unless given)."""
     if name in ctx.mats:
         return ctx.mats[name]
-    m = principled(ctx, name, col, rough=rough)
+    m = principled(ctx, name, col, rough=rough, spec=spec)
     nt = m.node_tree
     b = nt.nodes["Principled BSDF"]
     dark = dark or hex_scale(col, 0.72)
     light = light or hex_mix(col, "#ffffff", 0.12)
     base = node_ramp(nt, node_obj_axis(nt, "Z", z0, z1), [(0.0, dark), (0.55, col), (1.0, light)])
-    if edge:
+
+    def paint_edge(sock):
         at = nt.nodes.new("ShaderNodeAttribute")
         at.attribute_name = edge[0]
-        base = node_mix(nt, node_math(nt, "MULTIPLY", at.outputs["Fac"], edge[2], clamp=True), base, edge[1])
+        return node_mix(nt, node_math(nt, "MULTIPLY", at.outputs["Fac"], edge[2], clamp=True), sock, edge[1])
+    if edge and not edge_last:
+        base = paint_edge(base)
     if stubble:
         # a cropped coat (Frey's flat top, §7.6 "щетина в шейдере"): fine speckles of the light tone and a fine bump,
         # so the shell reads as short hair, not a cap
@@ -273,12 +277,14 @@ def hair_mat(ctx, name, col, z0, z1, dark=None, light=None, rough=0.6, crevice=N
             nt.links.new(mp.outputs[0], nz.inputs["Vector"])
             nz.inputs["Scale"].default_value = 1.0
         sp = node_math(nt, "GREATER_THAN", nz.outputs["Fac"], 0.56)
-        base = node_mix(nt, node_math(nt, "MULTIPLY", sp, stubble), base, light or hex_mix(col, "#ffffff", 0.25))
+        base = node_mix(nt, node_math(nt, "MULTIPLY", sp, stubble), base, fleck or light)
         bn = nt.nodes.new("ShaderNodeBump")
         bn.inputs["Strength"].default_value = 0.35
         bn.inputs["Distance"].default_value = 0.002
         nt.links.new(nz.outputs["Fac"], bn.inputs["Height"])
         nt.links.new(bn.outputs["Normal"], b.inputs["Normal"])
+    if edge and edge_last:
+        base = paint_edge(base)
     nt.links.new(floor_albedo(nt, ao_crevice(nt, base, crevice or hex_scale(col, 0.5))), b.inputs["Base Color"])
     return m
 

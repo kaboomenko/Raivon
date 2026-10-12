@@ -366,16 +366,16 @@ def skin_albedo(ctx):
     """The skin's albedo as the shader uses it (the chars hex after its HSV saturation / value), sRGB hex: §7.4's lit
     cheek floor is min(70, L* of this - 8)."""
     import colorsys
-    from .style import SKIN_SAT
+    from .style import SKIN_CHROMA, SKIN_SAT
     ch = ctx.ch
     hx = ch["skin"].lstrip("#")
     r, g, b = (int(hx[i:i + 2], 16) / 255.0 for i in (0, 2, 4))
     tone = ch.get("skin_tone")
-    sat = ch.get("skin_sat", SKIN_SAT.get(tone, 1.0) if tone else 1.0)
+    # the key-lit side's saturation (face.skin_color: the tone's boost x the set's chroma k)
+    sat = ch.get("skin_sat", SKIN_SAT.get(tone, 1.0) if tone else 1.0) * SKIN_CHROMA["k"]
     val = ch.get("skin_value", 1.04)
-    if sat != 1.0 or val != 1.04:        # face.skin_color applies the node only then (value 1.04 = no node)
-        h, s, v = colorsys.rgb_to_hsv(r, g, b)
-        r, g, b = colorsys.hsv_to_rgb(h, min(1.0, s * sat), min(1.0, v * val))
+    h, s, v = colorsys.rgb_to_hsv(r, g, b)
+    r, g, b = colorsys.hsv_to_rgb(h, min(1.0, s * sat), min(1.0, v * val))
     return "#%02X%02X%02X" % tuple(int(round(max(0.0, min(1.0, c)) * 255)) for c in (r, g, b))
 
 

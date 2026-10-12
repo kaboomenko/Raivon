@@ -90,6 +90,14 @@ SKIN = {"T1": "#F4B48E", "T2": "#F0A274", "T3": "#DE9A6C", "T4": "#C47A4E", "T5"
 # back per tone so the lit skin keeps HSV S >= 0.35 (§7.4). Measured on the ID pass (lit cheek = brightest 30 % of
 # the skin): T2 x1.15 -> S 0.40, T1 needs more, darker tones less.
 SKIN_SAT = {"T1": 1.24, "T2": 1.15, "T3": 1.08, "T4": 1.05, "T5": 1.0, "T6": 1.0}
+# Art director note (h) on the P2 fix sheet (2026-10-12): the skins read too saturated and orange under AgX Punchy
+# (Olm and Kort sunburnt red-orange) — every skin's chroma down ~15-20 %, the cheeks rosy only on the blush. The
+# saturation above (or a character's skin_sat) x k: the subsurface scattering amplifies albedo saturation, so k 0.94
+# measured -15 to -20 % median C* on the rendered skin (k 0.90: -28 %); the warm hollow (AO) tint mixes `hollow` of
+# #C0503A into the skin (0.35 before). The blush is painted after the chroma (face.skin_color), so it stays rosy. A
+# shadow-side rolloff by the key's N.L was tried and dropped: the darkest skin is the neck in the head's cast shadow,
+# which N.L does not reach (shadow x0.3 moved the median C* 3 %).
+SKIN_CHROMA = {"k": 0.94, "hollow": 0.30}
 
 C = {
     "lash": "#2A1712", "pupil": "#1E1A24", "sclera": "#F7F3EE", "mouth_in": "#74282E", "teeth": "#FBF6EA",

@@ -892,12 +892,19 @@ def scarf(ctx, pr):
         # the end flutters back over the far shoulder (art director, P2 sheet: sticking straight out sideways it read
         # as a sausage): up and out from the knot to the shoulder line, then streaming back and down behind it in two
         # soft waves, a half fold (the ribbon turns over once) and narrower
+        # (P2 fix sheet, art director note i: still out sideways at out 0.75 — the end now crosses the far
+        # shoulder within `cross` of its length, `out` H to the right, then streams back behind the shoulder, `back`
+        # H away from the camera, its end rising `end_up` (negative: falling) from `drop_from` of its length on, and
+        # sagging `droop`)
         back = -cam
+        cross = pr.get("cross", 0.5)
         for i in range(n):
             t = i / (n - 1)
-            p = (knot + right * (ln * pr.get("out", 0.42) * math.sin(math.pi * 0.5 * min(1.0, t * 1.3)))
-                 + back * (ln * pr.get("back", 0.55) * t ** 1.4)
-                 + Vector((0, 0, pr.get("lift", 0.16) * math.sin(math.pi * min(1.0, t * 1.6)) - 0.10 * t * t
+            p = (knot + right * (ln * pr.get("out", 0.42) * math.sin(math.pi * 0.5 * min(1.0, t / cross)))
+                 + back * (ln * pr.get("back", 0.55) * core.smoothstep(cross * 0.4, 1.0, t))
+                 + Vector((0, 0, pr.get("lift", 0.16) * math.sin(math.pi * 0.5 * min(1.0, t / cross))
+                           + pr.get("end_up", 0.0) * core.smoothstep(pr.get("drop_from", cross), 1.0, t)
+                           - pr.get("droop", 0.10) * t * t
                            + 0.035 * math.sin(2 * math.pi * t * 2.0) * t)))
             pts.append(p)
             tw = math.radians(pr.get("fold", 180) * core.smoothstep(0.25, 0.75, t))
@@ -1125,7 +1132,9 @@ def gauntlet(ctx, pr):
     """Irma's gauntlet (§7.6: the near hand holds up the raised collar, a flared cuff 0.30 H with an orange piping;
     hand-free: the gauntlets tucked behind a strap, §7.5): with pr["hand"] a gloved hand (body.hand, grip "edge") at
     the collar and the flared cuff round its wrist; otherwise one gauntlet tucked under the chest strap — the flared
-    cuff up out of the strap, the glove with its fingers hanging below it."""
+    cuff (`cuff` H, opening `flare`) up out of the strap, the glove under it (`palm` below the wrist, `palm_k` its
+    length scale) with its fingers
+    (x `fingers` long) folded `fold` deg toward the camera and curling up (`curl`), the thumb optional (`thumb`)."""
     leather = core.principled(ctx, "gauntlet", pr.get("color", "#3A3C46"), rough=0.45, coat=0.25)
     orange = core.principled(ctx, "gauntlet_pipe", pr.get("piping", "#F08A24"), rough=0.45, coat=0.2)
     grp = _detail(ctx, pr, "gauntlet", 1500)
@@ -1172,21 +1181,30 @@ def gauntlet(ctx, pr):
     pipe = core.torus("gauntlet_pipe", wrist + up * cuff_l, r1, pr.get("pipe_r", 0.022) * k, orange, nrm=up, seg=32,
                       rseg=8)
     ctx.add(pipe, grp, cf, kind="free")
-    # the glove under the strap: a flat palm, three finger lobes and a thumb, hanging down, its back to the camera
+    # the glove under the strap: a short flat palm, then the fingers folded over toward the camera (`fold` deg from
+    # straight down) and curling up at the tips, palm up — a limp glove tucked in a strap. Hanging straight down
+    # below a 0.30 H cuff it read as a forearm and a hand on her chest (P2 review)
     down = -up
-    palm_c = wrist + down * (0.09 * k) + nn * 0.012
+    fold = math.radians(pr.get("fold", 0.0))
+    fdir = (down * math.cos(fold) + nn * math.sin(fold)).normalized()
+    palm_c = wrist + down * (pr.get("palm", 0.07) * k) + nn * 0.012
     q = core.frame_quat(down, nn)
-    el = [dict(co=palm_c, half=(0.075 * k, 0.03 * k, 0.085 * k), stiff=2.4, rot=q),
-          dict(co=wrist + down * 0.02 * k, half=(0.055 * k, 0.03 * k, 0.04 * k), stiff=2.4, rot=q)]
+    qf = core.frame_quat(fdir, (nn * math.cos(fold) - down * math.sin(fold)).normalized())
+    pk = pr.get("palm_k", 1.0)          # a smaller palm: the glove pushed under the strap, only its fingers out
+    el = [dict(co=palm_c, half=(0.075 * k, 0.03 * k, 0.065 * k * pk), stiff=2.4, rot=q),
+          dict(co=wrist + down * 0.02 * k, half=(0.055 * k, 0.03 * k, 0.04 * k * pk), stiff=2.4, rot=q)]
+    curl = pr.get("curl", 0.0)
+    fl = pr.get("fingers", 1.0)          # finger length scale: short tips peeking out under the strap
     for dx, ln in ((-0.048, 0.095), (0.0, 0.11), (0.048, 0.095)):
-        a = palm_c + down * 0.07 * k + across * dx * k
-        b = a + down * ln * k + across * dx * 0.25 * k
+        a = palm_c + down * 0.05 * k + across * dx * k
         for t in (0.0, 0.5, 1.0):
-            el.append(dict(co=a.lerp(b, t), half=(0.024 * k, 0.022 * k, 0.03 * k), stiff=2.6, rot=q))
-    th0 = palm_c + across * 0.075 * k
-    for t in (0.0, 0.5, 1.0):
-        el.append(dict(co=th0 + (across * 0.04 + down * 0.06) * k * t, half=(0.022 * k, 0.021 * k, 0.028 * k),
-                       stiff=2.6, rot=q))
+            c = a + (fdir * t + up * curl * t * t) * ln * fl * k + across * dx * 0.25 * k * t
+            el.append(dict(co=c, half=(0.024 * k, 0.022 * k, 0.03 * k), stiff=2.6, rot=qf))
+    if pr.get("thumb", True):
+        th0 = palm_c + across * 0.075 * k
+        for t in (0.0, 0.5, 1.0):
+            el.append(dict(co=th0 + (across * 0.04 + fdir * 0.06) * k * t, half=(0.022 * k, 0.021 * k, 0.028 * k),
+                           stiff=2.6, rot=qf))
     gl = core.mb_mesh(ctx, "Glove", el, 0.006, glove_m, smooth_iter=2, name="glove")
     ctx.add(gl, grp, cf, kind="free")
     # the strap passes over the wrist: the glove goes under it (the contact: the glove touches the strap)

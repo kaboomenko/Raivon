@@ -18,9 +18,11 @@ Styles (chars.py "hair": {"style": ...}):
   fringe   — only what a hood shows: 6-10 tapered wisps from under the hood's rim, swept to the far side and
              overlapping, their pointed tips on the brow line, light at the tips (Vik);
   short    — short hair swept back, culled under a hat, escape locks below its rim (Seir);
-  flattop  — a lofted block (vertical walls on the parietal ridge, a level top plane), faded thin sides with skin at
-             the temples and over the ears, and a bristle edge of short tapered spikes along the front hairline and
-             the top's front edge; Z-stretched stubble grains in the shader (Frey);
+  flattop  — a brush cut with a flat top: one shell grown out of the scalp, filling a rounded cut volume (walls
+             leaning in, a level top just over the crown, rounded corners) and a thin crop where the skull bulges
+             past it; the crop's colour fades to a skin-mixed tone above the ears, the front rises from a visible
+             hairline; bristle tips along the top's rim, lighter at the tips; Z-stretched stubble grains in the
+             shader (Frey);
   ponytail — hair drawn up to a high gather, a fringe to the far side and a tail of 7 clumps arcing over and behind
              the head (Irma);
   bun      — hair swept up to a tall vertical bun coiled round its axis (Vance);
@@ -490,124 +492,207 @@ def _short(ctx):
 
 # ------------------------------------------------------------------ flat top (Frey)
 def _flattop(ctx):
-    """A flat-top crop (§7.6 Frey: "площадка" with a flat top, a crisp hairline, stubble in the shader; her "T"
-    signature's square top): three parts, all the "hair" group —
-      - the block: a solid lofted round the skull — vertical walls standing on the parietal ridge (`wall` H under the
-        crown, the skull's own radius there + the crop, so it never overhangs the temples like a mushroom cap) up to a
-        level top plane `top` H over the crown, its upper edge rounded by `corner` H: the top shows as a straight line
-        in the level camera (a metaball shell planed after meshing still read as a rounded fleece cap, P2 review);
-      - the faded sides: a thin crop (`side` H) on the skull from the hairline up into the block — high over the ears
-        and receding at the temples, so skin shows there — shaded down toward a darker, skin-mixed tone at its lower
-        edge (the fade);
-      - the bristle edge: short tapered spikes (curves) along the front hairline, pointing up and out, uneven in
-        length and lean, and a row of shorter ones along the top's front edge — an irregular hairline of bristle tips
-        instead of a noise displacement ("stucco").
-    The block's shader adds Z-stretched grains (brushed-up bristles on the walls, dots on the top): a warm mid-brown
-    with darker crevices low and lighter tips on top."""
+    """A brush cut with a flat top (§7.6 Frey: "площадка" with a flat top, a crisp hairline, stubble in the shader;
+    her "T" signature's square top). One shell grown out of the scalp along its normals, thick where it fills a cut
+    volume and a thin crop elsewhere, plus a row of bristle tips along the top's rim — all the "hair" group:
+      - the cut volume (per azimuth, in the (radius, z) plane): a wall that leans in by `lean` (sides, front) from
+        `ridge` H under the crown (the sides) or the hairline (the front), a level top `top` H over the crown, the
+        corner between them rounded by `corner` H. Where the scalp lies inside it the shell fills out to its walls
+        (the squared top); where the skull bulges past it (the temples, over the ears, the back) the shell is a crop
+        `side` H thin;
+      - the fade: the crop and the fill meet in a smooth max (fillet `ramp` H), so the hair grows out of the scalp
+        instead of standing on it with a ledge (a block on a foot read as a hat, a fez, a pillbox, P2 reviews); the
+        crop's colour grades toward a skin-mixed tone (`fade`) where the shell is thin (a point attribute), so the
+        sides fade down to skin above the ears; the front rises over `front_ramp` H from the hairline to `front` H,
+        a brushed-up front edge on bare forehead skin;
+      - the bristle edge: many short tapered tips along the top's rim (a point attribute lightens them toward the
+        tip), and a sparse row of fine tips on the front hairline.
+    The shell's shader adds Z-stretched grains (brushed-up bristles on the walls, dots on the top), a matte warm
+    brown: darker low, a little lighter on top, never cream (a pale block read as foam or cork)."""
     head = ctx.objs["head"]
     hr = ctx.ch["hair"]
     crown = ctx.L["crown"]
-    side_t = hr.get("side", 0.014) * H
-    z_top = crown.z + hr.get("top", 0.10) * H
-    z_wall = crown.z - hr.get("wall", 0.21) * H
-    rc = hr.get("corner", 0.035) * H
-    out = hr.get("wall_out", 0.012)
+    side_t = hr.get("side", 0.008) * H
+    t_front = hr.get("front", 0.05) * H
+    fr = hr.get("front_ramp", 0.05) * H
+    z_top = crown.z + hr.get("top", 0.035) * H
+    rc = hr.get("corner", 0.05) * H
+    z_ridge = crown.z - hr.get("ridge", 0.22) * H
+    k_bl = hr.get("ramp", 0.06) * H
+    fband = hr.get("fade_band", 0.08) * H
+    fw0, fw1 = hr.get("front_w", (25.0, 55.0))
+    lean_f, lean_s = (math.tan(math.radians(a)) for a in hr.get("lean", (35.0, 25.0)))
     hl = hairline_fn(hr.get("hairline", [(0, 0.31), (30, 0.30), (55, 0.24), (75, 0.15), (95, 0.07), (130, -0.08),
                                          (180, -0.20)]))
+    c0 = Vector((0.0, 0.0, crown.z * 0.25))
+
+    def hit(az, el):
+        d = core.az_el(az, el)
+        return core.ray(head, c0 + d * 3.0, -d)
 
     def skull_r(az, z):
         d = Vector((math.sin(math.radians(az)), -math.cos(math.radians(az)), 0.0))
         h, _ = core.ray(head, Vector((0, 0, z)) + d * 2.0, -d)
-        return Vector((h.x, h.y)).length if h is not None else 0.3
+        return Vector((h.x, h.y)).length if h is not None else 0.0
+
+    def smax(a, b, k):
+        h = max(k - abs(a - b), 0.0) / k
+        return max(a, b) + h * h * k * 0.25
+
     n_az = 96
     azs = [-180 + 360 * i / n_az for i in range(n_az)]
-    # the block's foot: on the ridge round the sides and back, but down to the hairline over the forehead — the front
-    # face rises from the hairline (a block set on the ridge all round read as a hat), the temples stay bare
-    z_front = hl(Vector((0.0, -1.0, 0.0))) + hr.get("front_lift", 0.012)
-    fw = hr.get("front_w", 34.0)
-    z_foot = [z_wall + (min(z_front, z_wall) - z_wall) * (1 - core.smoothstep(fw * 0.45, fw, abs(a))) for a in azs]
-    # the walls: the skull's radius at the foot, the crop over it; a whisker narrower toward the top (a flat-top's
-    # walls taper in a little, they never flare)
-    r_wall = [max(skull_r(a, zf), skull_r(a, z_wall)) + side_t + out for a, zf in zip(azs, z_foot)]
-    rows = []
-    # (z per azimuth, radius per azimuth): below the foot the block hugs the skull (it merges into the faded sides),
-    # then stands vertical, then rounds over into the flat top
-    for dz in (-0.05, -0.025):
-        zz = [zf + dz for zf in z_foot]
-        rows.append((zz, [skull_r(a, z) + side_t * 0.8 for a, z in zip(azs, zz)]))
-    taper = hr.get("taper", 0.03)
-    n_wall = 7
-    for k in range(n_wall + 1):
-        zz = [zf + (z_top - rc - zf) * k / n_wall for zf in z_foot]
-        rows.append((zz, [r * (1 - taper * (z - z_wall) / max(z_top - z_wall, 1e-6)) for r, z in zip(r_wall, zz)]))
-    for k in range(1, 7):
-        th = math.radians(90 * k / 6)
-        z = z_top - rc + rc * math.sin(th)
-        rows.append(([z] * n_az, [r * (1 - taper) - rc + rc * math.cos(th) for r in r_wall]))
+    cols = []
+    for az in azs:
+        f = 1.0 - core.smoothstep(fw0, fw1, abs(az))
+        d = Vector((math.sin(math.radians(az)), -math.cos(math.radians(az)), 0.0))
+        zh = hl(d)
+        z_ref = z_ridge + (zh + fr - z_ridge) * f
+        r0 = skull_r(az, z_ref) + side_t + (t_front - side_t) * f
+        lean = lean_s + (lean_f - lean_s) * f
+        nl = math.sqrt(1.0 + lean * lean)
+
+        def sdf(q, r0=r0, lean=lean, nl=nl, z_ref=z_ref):
+            # the rounded intersection of the leaning wall and the level top, in this azimuth's (r, z) plane
+            a = (Vector((q.x, q.y)).length - r0 + lean * (q.z - z_ref)) / nl + rc
+            b = q.z - z_top + rc
+            return math.hypot(max(a, 0.0), max(b, 0.0)) + min(max(a, b), 0.0) - rc
+        # where the scalp meets the hairline (the shell starts just under it, tucked into the skin)
+        el0 = None
+        prev = -72.0
+        for el in range(-70, 88, 3):
+            h, _ = hit(az, el)
+            if h is not None and h.z >= hl(h) - 0.02:
+                lo, hi = prev, float(el)
+                for _ in range(5):
+                    mid = (lo + hi) / 2
+                    hm, _ = hit(az, mid)
+                    if hm is not None and hm.z >= hl(hm) - 0.02:
+                        hi = mid
+                    else:
+                        lo = mid
+                el0 = hi
+                break
+            prev = float(el)
+        if el0 is None:
+            el0 = 60.0
+        col = []
+        for s in (0.0, 0.015, 0.035, 0.06, 0.09, 0.13, 0.18, 0.24, 0.31, 0.38, 0.45, 0.52, 0.59, 0.65, 0.71, 0.76,
+                  0.81, 0.85, 0.89, 0.925, 0.955, 0.98, 1.0):
+            el = el0 + (87.0 - el0) * s
+            p, n = hit(az, el)
+            if p is None:
+                continue
+            u = p.z - hl(p)
+            crop_s = -0.006 + (side_t + 0.006) * core.smoothstep(-0.012, 0.02, u)
+            crop_f = -0.006 + (t_front + 0.006) * core.smoothstep(-0.012, fr, u)
+            crop = crop_s + (crop_f - crop_s) * f
+            g = core.smoothstep(0.0, fr, u)
+            # fill out to the cut volume along the normal (a few sphere-tracing steps from the scalp)
+            t = -sdf(p)
+            for _ in range(4):
+                t = t - sdf(p + n * t)
+            t = min(t, 0.35 * H)
+            # the fill grows in over `front_ramp` above the hairline (g): at and under the hairline the shell is the
+            # crop alone, tucked into the skin
+            th = crop + g * (smax(crop, t, k_bl) - crop) if t > crop - k_bl else crop
+            q = p + n * th
+            # the fade (0 = hair, 1 = the skin-mixed tone): the hair's colour grades to the skin over `fade_band` H
+            # above the hairline on the sides and the back (a fade), over a crisp 0.025 H at the front (the hairline)
+            fd = 1.0 - core.smoothstep(-0.004, fband + (0.025 * H - fband) * f, u)
+            col.append((q, th, fd))
+        cols.append(col)
+    # equal row counts per column (a miss drops a row): pad from the top
+    n_rows = min(len(c) for c in cols)
+    cols = [c[:n_rows - 1] + [c[-1]] for c in cols]
     bm = bmesh.new()
-    rings = []
-    for zz, rr in rows:
-        rings.append([bm.verts.new((r * math.sin(math.radians(a)), -r * math.cos(math.radians(a)), z))
-                      for a, r, z in zip(azs, rr, zz)])
-    for r0, r1 in zip(rings, rings[1:]):
-        for i in range(n_az):
-            j = (i + 1) % n_az
-            bm.faces.new((r0[i], r0[j], r1[j], r1[i]))
-    top_c = bm.verts.new((0.0, 0.0, z_top))
+    fade_v = []
+    grid = []
+    for col in cols:
+        ring = []
+        for q, th, fd in col:
+            ring.append(bm.verts.new(q))
+            fade_v.append(fd)
+        grid.append(ring)
     for i in range(n_az):
-        bm.faces.new((rings[-1][i], rings[-1][(i + 1) % n_az], top_c))
-    bot_c = bm.verts.new((0.0, 0.0, min(rows[0][0]) - 0.05))
+        a, b = grid[i], grid[(i + 1) % n_az]
+        for k in range(n_rows - 1):
+            bm.faces.new((a[k], b[k], b[k + 1], a[k + 1]))
+    top_c = bm.verts.new((0.0, 0.0, max(c[-1][0].z for c in cols)))
+    fade_v.append(0.0)
     for i in range(n_az):
-        bm.faces.new((rings[0][(i + 1) % n_az], rings[0][i], bot_c))
+        bm.faces.new((grid[i][-1], grid[(i + 1) % n_az][-1], top_c))
     bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
     blk = core.mesh_obj("hair", bm)
-    mat = core.hair_mat(ctx, "hair_hair", hr["color"], z_wall - 0.10, z_top, dark=hr.get("dark"), light=hr.get("light"),
-                        crevice=hr.get("crevice"), stubble=hr.get("stubble", 0.0), grain=hr.get("grain"))
+    attr = blk.data.color_attributes.new("fade", "FLOAT_COLOR", "POINT")
+    for i, v in enumerate(fade_v):
+        attr.data[i].color = (v, v, v, 1.0)
+    # the faded edge's tone: the skin as the shader paints it, a little toward the hair's dark (stubble on skin)
+    from .qa import skin_albedo
+    fade_col = hr.get("fade") or core.hex_mix(skin_albedo(ctx), hr.get("dark", hr["color"]), hr.get("fade_mix", 0.25))
+    mat = core.hair_mat(ctx, "hair_hair", hr["color"], z_ridge - 0.04, z_top, dark=hr.get("dark"), light=hr.get("light"),
+                        crevice=hr.get("crevice"), stubble=hr.get("stubble", 0.0), grain=hr.get("grain"),
+                        rough=hr.get("rough", 0.6), spec=hr.get("spec", 0.5), fleck=hr.get("fleck"),
+                        edge=("fade", fade_col, 1.0), edge_last=True)
     core.finish(blk, mat, sub=1)
     ctx.add(blk, "hair", head, kind="embed", head=True)
     ctx.sig_objs.append(blk)
     ctx.objs["hair"] = blk
-    # the faded sides: a thin crop under the block, fading at the hairline; the lower edge mixed toward the skin
-    samples, s = core.surface_samples(head, 3200, lambda h, n, d: hl(h) < h.z < z_wall + 0.02)
-    el = core.sheet_elems(samples, s, lambda h, n: side_t * (0.35 + 0.65 * core.smoothstep(0.0, 0.06, h.z - hl(h))))
-    side_m = core.hair_mat(ctx, "hair_sides", hr.get("side_color", hr["color"]), hl(Vector((1.0, 0.0, 0.0))) - 0.02,
-                           z_wall, dark=hr.get("fade", hr.get("dark")), light=hr.get("side_color", hr["color"]),
-                           crevice=hr.get("crevice"),
-                           stubble=hr.get("stubble", 0.0) * 0.6)
-    sides = core.mb_mesh(ctx, "Hairsides", el, 0.009, side_m, smooth_iter=2, name="hair_sides")
-    ctx.add(sides, "hair", head, kind="embed", head=True)
-    # the bristle edge: short tapered spikes, irregular (the character's rng)
+    # the bristle edge: tapered tips (5-sided cones) in one mesh, the tip lighter (a point attribute)
     rng = ctx.rng
-    tip_m = core.hair_mat(ctx, "hair_bristle", hr.get("light", hr["color"]), z_wall - 0.1, z_top, dark=hr["color"],
-                          light=hr.get("light"), crevice=hr.get("crevice"))
-    rows_b = hr.get("bristles", [(-62, 62, 34, 0.045, "front"), (-58, 58, 28, 0.028, "top")])
-    bid = 0
-    for a0, a1, n, ln, where in rows_b:
-        for i in range(n):
-            az = a0 + (a1 - a0) * (i + rng.uniform(-0.35, 0.35)) / max(1, n - 1)
-            d = Vector((math.sin(math.radians(az)), -math.cos(math.radians(az)), 0.0))
-            if where == "front":
-                # on the front hairline, from the skin up the block's front wall, leaning out and up
-                zf_ = core.lerp_table(sorted(zip(azs, z_foot)), az)
-                z0 = max(hl(d * 0.4), zf_ - 0.02) + rng.uniform(-0.006, 0.01)
-                h0, n0 = core.ray(head, Vector((0, 0, z0)) + d * 2.0, -d)
-                if h0 is None:
-                    continue
-                base = h0 + n0 * side_t * 0.4
-                up = (Vector((0, 0, 1)) * rng.uniform(0.75, 1.0) + n0 * rng.uniform(0.35, 0.7)).normalized()
-            else:
-                # along the top's front edge: short tips standing up from the rounded corner
-                r_e = core.lerp_table(sorted(zip(azs, r_wall)), az) * (1 - taper) - rc * 0.55
-                base = Vector((d.x * r_e, d.y * r_e, z_top - rc * 0.45))
-                up = (Vector((0, 0, 1)) + d * rng.uniform(0.15, 0.45)).normalized()
-            L = ln * H * rng.uniform(0.65, 1.25)
-            side = up.cross(d).normalized()
-            pts = [base - up * L * 0.25, base + up * L * 0.45 + side * rng.uniform(-0.2, 0.2) * L,
-                   base + up * L + side * rng.uniform(-0.35, 0.35) * L]
-            c = core.curve("bristle%03d" % bid, pts, [1.0, 0.7, 0.05], hr.get("bristle_r", 0.011), tip_m, order=3)
-            ctx.add(c, "hair", blk, kind="embed", head=True)
-            ctx.sig_objs.append(c)
-            bid += 1
+    tip_m = core.hair_mat(ctx, "hair_bristle", hr["color"], z_ridge - 0.04, z_top, dark=hr["color"],
+                          light=hr.get("light"), crevice=hr.get("crevice"), rough=hr.get("rough", 0.6),
+                          spec=hr.get("spec", 0.5), edge=("tip", hr.get("tip", hr.get("light", hr["color"])), 1.0))
+    bm = bmesh.new()
+    tipv = []
+
+    def cone(base, up, ln, r0):
+        side = up.cross(Vector((0, 0, 1)) if abs(up.z) < 0.9 else Vector((1, 0, 0))).normalized()
+        side2 = up.cross(side).normalized()
+        ring = []
+        for j in range(5):
+            a = 2 * math.pi * j / 5
+            ring.append(bm.verts.new(base - up * ln * 0.35 + (side * math.cos(a) + side2 * math.sin(a)) * r0))
+            tipv.append(0.0)
+        apex = bm.verts.new(base + up * ln)
+        tipv.append(1.0)
+        for j in range(5):
+            bm.faces.new((ring[j], ring[(j + 1) % 5], apex))
+        bm.faces.new(list(reversed(ring)))
+
+    def col_at(az):
+        x = (az + 180.0) / 360.0 * n_az
+        i0 = int(math.floor(x)) % n_az
+        return cols[i0], cols[(i0 + 1) % n_az], x - math.floor(x)
+    a0, a1, n_top, ln_top, r_top = hr.get("bristles_top", (-115.0, 115.0, 150, 0.032, 0.0075))
+    for i in range(n_top):
+        az = a0 + (a1 - a0) * (i + rng.uniform(-0.45, 0.45)) / max(1, n_top - 1)
+        ca, cb, w = col_at(az)
+        # the rim: the outermost point of the rounded corner (where the shell's profile turns over into the top)
+        zr = z_top - rc * rng.uniform(0.25, 0.6)
+        ka = min(range(n_rows), key=lambda k: abs(ca[k][0].z - zr) + (0.0 if ca[k][1] > side_t * 3 else 1.0))
+        kb = min(range(n_rows), key=lambda k: abs(cb[k][0].z - zr) + (0.0 if cb[k][1] > side_t * 3 else 1.0))
+        base = ca[ka][0].lerp(cb[kb][0], w)
+        out = Vector((base.x, base.y, 0.0)).normalized()
+        up = (Vector((0, 0, 1)) * rng.uniform(0.8, 1.0) + out * rng.uniform(0.25, 0.65)
+              + out.cross(Vector((0, 0, 1))) * rng.uniform(-0.2, 0.2)).normalized()
+        cone(base, up, ln_top * H * rng.uniform(0.6, 1.35), r_top * H * rng.uniform(0.8, 1.2))
+    a0, a1, n_fr, ln_fr, r_fr = hr.get("bristles_front", (-46.0, 46.0, 50, 0.018, 0.0045))
+    for i in range(n_fr):
+        az = a0 + (a1 - a0) * (i + rng.uniform(-0.4, 0.4)) / max(1, n_fr - 1)
+        ca, cb, w = col_at(az)
+        # just above the hairline, where the crop has grown to the brushed-up front (the first rows are tucked)
+        kk = next((k for k in range(n_rows) if ca[k][1] > t_front * 0.45), 4)
+        base = ca[kk][0].lerp(cb[kk][0], w)
+        out = Vector((base.x, base.y, 0.0)).normalized()
+        up = (Vector((0, 0, 1)) * rng.uniform(0.7, 1.0) + out * rng.uniform(0.3, 0.6)).normalized()
+        cone(base, up, ln_fr * H * rng.uniform(0.6, 1.3), r_fr * H * rng.uniform(0.8, 1.2))
+    tips = core.mesh_obj("hair_tips", bm)
+    attr = tips.data.color_attributes.new("tip", "FLOAT_COLOR", "POINT")
+    for i, v in enumerate(tipv):
+        attr.data[i].color = (v, v, v, 1.0)
+    core.finish(tips, tip_m)
+    ctx.add(tips, "hair", blk, kind="embed", head=True)
+    ctx.sig_objs.append(tips)
     return blk
 
 

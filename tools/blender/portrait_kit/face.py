@@ -34,6 +34,7 @@ from mathutils import Matrix, Vector
 from . import core, style, head as head_mod
 from .core import H, S
 from .style import C
+from .style import SKIN_CHROMA
 from .style import SKIN_SAT as S_SAT
 
 
@@ -84,12 +85,14 @@ def skin_color(ctx, nt):
     # blush opacity at the apple's centre = the character's share (§7.3: men 15 %, women 25 %, young 30 %; a smile +10 %)
     blush = ch.get("blush", S["blush"]["f" if ctx.female else "m"]) + (0.10 if ctx.smile else 0.0)
     fac = core.node_math(nt, "MULTIPLY", add, blush, clamp=True)
-    base = core.node_mix(nt, fac, col, C["blush"])
-    # the warm tone of the hollows (AO) instead of grey
+    base = core.node_mix(nt, 0.0, col, col)
+    # the warm tone of the hollows (AO) instead of grey (weaker since the P2 fix sheet: a strong red-orange hollow
+    # tint saturated every shadow, art director note h)
     ao = nt.nodes.new("ShaderNodeAmbientOcclusion")
     ao.samples = 8
     ao.inputs["Distance"].default_value = 0.05 * H
-    warm = core.node_ramp(nt, ao.outputs["AO"], [(0.0, core.hex_mix(col, "#c0503a", 0.35)), (0.72, "#ffffff")])
+    warm = core.node_ramp(nt, ao.outputs["AO"], [(0.0, core.hex_mix(col, "#c0503a", SKIN_CHROMA["hollow"])),
+                                                 (0.72, "#ffffff")])
     base = core.node_mix(nt, 1.0, base, warm, "MULTIPLY")
     nose = ch.get("nose", {})
     if nose.get("tip") and ctx.L.get("nose_tip_guess") is not None:
@@ -111,16 +114,18 @@ def skin_color(ctx, nt):
             acc = bl if acc is None else core.node_math(nt, "MAXIMUM", acc, bl)
         sharp = core.node_math(nt, "GREATER_THAN", acc, 0.35)
         base = core.node_mix(nt, core.node_math(nt, "MULTIPLY", sharp, k), base, colr)
+    # the saturation: the tone's (or the character's) boost x the set's chroma k (art director note h: every skin a
+    # step less chroma; the subsurface scattering amplifies it, so k 0.94 takes the rendered chroma down ~15-20 %)
     tone = ch.get("skin_tone")
-    sat = ch.get("skin_sat", S_SAT.get(tone, 1.0) if tone else 1.0)
+    sat = ch.get("skin_sat", S_SAT.get(tone, 1.0) if tone else 1.0) * SKIN_CHROMA["k"]
     val = ch.get("skin_value", 1.04)       # a hooded face (Vik) is lifted a little out of the hood's shade
-    if sat != 1.0 or val != 1.04:
-        hs = nt.nodes.new("ShaderNodeHueSaturation")
-        hs.inputs["Saturation"].default_value = sat
-        hs.inputs["Value"].default_value = val
-        nt.links.new(base, hs.inputs["Color"])
-        base = hs.outputs[0]
-    return base
+    hs = nt.nodes.new("ShaderNodeHueSaturation")
+    hs.inputs["Saturation"].default_value = sat
+    hs.inputs["Value"].default_value = val
+    nt.links.new(base, hs.inputs["Color"])
+    base = hs.outputs[0]
+    # the blush on top, after the chroma: the cheeks stay rosy (the note: "keep cheeks rosy only on the cheek blush")
+    return core.node_mix(nt, fac, base, C["blush"])
 
 
 def plan_skin_paint(ctx):

@@ -597,10 +597,14 @@ class KitBake extends Node:
 	const POLL_N := 48  ## owners whose place is looked at per frame (in turn)
 	const OPAQUE := 0.999  ## a modulate α below this: seen through, its image made at that α (draw, _fade_alpha)
 	const FADE_MIN := 0.05  ## below this α (all but gone: a fade's first frames) no image is made at it
-	const FRAGMENTED := 0.6  ## a full atlas with less than this share in use is in pieces, not full: what fits none waits
+	## A full atlas with less than this share in use is in pieces, not full: what fits none waits (_defer). At k ≠ 1 a
+	## long list fills more of it (its rows' images at several sub-pixel offsets): at 1080 × 1918 the Chronicle's fast
+	## scroll found no piece for a 558 px title at 66 % in use, and the atlas started over mid-scroll (an ~800 draw burst).
+	const FRAGMENTED := 0.8
 	const DEFER_MAX := 24  ## images waiting so for a piece large enough before the atlas starts over all the same
 	const DEFER_RETRY_MS := 300  ## the waiting images are tried again after this long
 	const DEFER_TRIES := 3  ## an image that found no piece this many times takes the full atlas's way (compaction)
+	const CELL_Y := 8  ## px: an image's room in the atlas is a multiple of this tall (_cell)
 	const PHASES := 8.0  ## sub-pixel offset steps per px and axis: owners that close share a bake (made at the first's)
 	## Logical px of straight edge a sliced bake keeps past each corner: what is stretched must be uniform, and the
 	## antialiased edge of a StyleBoxFlat is not, for a few px past where its corner arc ends (the half-pixel offsets
@@ -1254,7 +1258,7 @@ class KitBake extends Node:
 		for key in jobs:
 			var j: Dictionary = jobs[key]
 			var px: Vector2i = j["px"]
-			var cell := px + Vector2i(2, 2)  # a 1 px clear gutter round each image
+			var cell := _cell(px)
 			if x + cell.x > STAGE.x:
 				x = 0
 				y += row
@@ -1279,10 +1283,10 @@ class KitBake extends Node:
 			if slot.size.x == 0:
 				var tries := int(_defer_n.get(key, 0))
 				if used() < FRAGMENTED and _defer.size() < DEFER_MAX and tries < DEFER_TRIES:
-					# half empty, but in pieces too small for it (a long list's rows dropped here and there): it waits — its
-					# owners draw its vectors — instead of the atlas starting over (every image drawn as vectors at once until
-					# the round lands: a burst of draw calls in the middle of a scroll); tried again shortly, when what went
-					# out of sight has given its room up — DEFER_TRIES times, then the atlas is compacted after all
+					# a fifth or more free, but in pieces too small for it (a long list's rows dropped here and there): it
+					# waits — its owners draw its vectors — instead of the atlas starting over (every image drawn as vectors at
+					# once until the round lands: a burst of draw calls in the middle of a scroll); tried again shortly, when
+					# what went out of sight has given its room up — DEFER_TRIES times, then the atlas is compacted after all
 					if _defer.is_empty():
 						_defer_at = Time.get_ticks_msec()
 					_defer[key] = j
@@ -1330,7 +1334,7 @@ class KitBake extends Node:
 			stage.add_child(holder)
 			_nodes.append(holder)
 			_round.append({"key": key, "base": j["base"], "off": j["off"], "pp": pp, "at": Vector2i(x, y),
-				"slot": slot, "cell": cell, "gen": _gen})
+				"slot": slot, "cell": cell, "px": px, "gen": _gen})
 			x += cell.x
 			row = maxi(row, cell.y)
 			ext = ext.max(Vector2i(x, y + row))
@@ -1345,6 +1349,12 @@ class KitBake extends Node:
 		_round_at = Time.get_ticks_msec()
 		stage.render_target_update_mode = SubViewport.UPDATE_ONCE
 		_state = 1
+
+	## The atlas room an image of `px` takes: a 1 px clear gutter round it, its height rounded up to CELL_Y — the rows of
+	## a long list (titles, subtitles: a few px apart in height) then leave room their successors fit in when they are
+	## dropped (at 1080 × 1918 a 389 × 87 title found only 84 px tall pieces at 71 % in use, and the atlas started over).
+	static func _cell(px: Vector2i) -> Vector2i:
+		return Vector2i(px.x + 2, (px.y + 2 + CELL_Y - 1) / CELL_Y * CELL_Y)
 
 	## The packer: an empty skyline over the whole atlas.
 	func _pack_reset() -> void:
@@ -1489,7 +1499,7 @@ class KitBake extends Node:
 			if live.has(key):
 				continue
 			var s: Rect2i = slots[key]
-			_release(Rect2i(s.position - Vector2i(1, 1), s.size + Vector2i(2, 2)))
+			_release(Rect2i(s.position - Vector2i(1, 1), _cell(s.size)))
 			slots.erase(key)
 			made.erase(key)
 			n += 1
@@ -1617,7 +1627,7 @@ class KitBake extends Node:
 				waiting.erase(r["key"])
 				if int(r["gen"]) == _gen:  # (a reset in between: its place is gone)
 					var s: Rect2i = r["slot"]
-					slots[r["key"]] = Rect2i(s.position + Vector2i(1, 1), (r["cell"] as Vector2i) - Vector2i(2, 2))
+					slots[r["key"]] = Rect2i(s.position + Vector2i(1, 1), r["px"] as Vector2i)
 					made[r["key"]] = [r["off"], r["pp"]]
 					alts[r["base"]] = r["key"]
 				for id in ws:

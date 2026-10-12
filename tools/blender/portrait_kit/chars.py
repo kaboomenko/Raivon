@@ -7,8 +7,9 @@ the leaders and the ruler keep the old builder in portrait_assets.py until P3 ad
 pose (§7.5: Vega's pointer, Seir's spyglass, Vance's queen, Irma's gauntlet) builds the hand when the character's
 "hands" is on (default) and its hand-free fallback otherwise (KIT_HANDS=0 / 1 forces either, for the review of §7.15
 q3). Vega's is off (decided after P1: she carries no pointer), Vance's and Irma's too (the P2 reviewer's decision: the
-queen pendant; one gauntlet tucked under the chest strap); their hands are built only under KIT_HANDS=1. Seir keeps
-his hand (the P2 reviewer's decision), the spyglass rising behind the beard and the back of the head.
+queen pendant; one gauntlet tucked under the chest strap), and Seir's since the P2 fix review (the hand on the
+shoulder read as a fist from the back at 512 and an orange lump at 128; the spyglass on its strap behind the back,
+the eyepiece over the near shoulder, reads cleaner); their hands are built only under KIT_HANDS=1.
 
 Units: lengths in H (head height without hair) unless noted; x / z offsets of marks are in head units relative to
 the eye line; colours are albedo sRGB. Moods are deltas over the calm face (§7.9).
@@ -173,7 +174,7 @@ CHARS = {
                               cuff="#F2F2F2"))],
         pose=dict(body=26, head=4, roll=3, nod=4),
         pose_smile=dict(roll=-2, nod=0),
-        signature=dict(name="chisel bob + glasses bar; arrow right", zone="far side"),   # the arrow: with P2's hand
+        signature=dict(name="chisel bob + glasses bar", zone="head width; top"),   # no pointer since P1
     ),
     # ---------------------------------------------------------------- Kort (rare): §7.6
     "cmd_kort": dict(
@@ -191,7 +192,10 @@ CHARS = {
         # tries measured 9-16). A matte skin (specular 0.08): the rim light's sheen on the bald dome is what §7.4's
         # lit-cheek sample (the brightest 30 % of the skin) caught, and it greyed it under the 0.27 floor (0.22 at the
         # default 0.35)
-        skin="#C87C72", skin_tone="T2", blush=0.28, skin_sat=1.26, skin_value=0.95, skin_spec=0.08,
+        # (P2 fix sheet: still tomato-red beside Bram and Olm at hue 11 deg, S 0.55 — a weathered rose-beige #C88878
+        # under the set's lower chroma, art director note h: x1.36 x k 0.94, value 0.92 renders hue 15 deg, median C*
+        # 34 (-17 %), the lit cheek S 0.28 (peach-pink floor 0.27) and the white brows 20 L* over the skin)
+        skin="#C88878", skin_tone="T2", blush=0.28, skin_sat=1.36, skin_value=0.92, skin_spec=0.08,
         # heavy lids 0.50 with a crease, grey-blue, small "spark" catchlights; the smile opens them to 0.70
         eyes=dict(sclera=0.18, open=0.50, iris="#8AA0B4", iris_shade=0.85, tilt=-0.10, arch=0.06, catch_k=1.0,
                   iris_k=1.08, pupil=0.62,
@@ -304,7 +308,9 @@ CHARS = {
     "cmd_vik": dict(
         name="Vik", rarity="common", female=False,
         head=dict(shape="long", wh=0.80, h_px=264, eye_line=0.46, cheeks=1.0),
-        skin="#F2A276", skin_tone="T2", blush=0.30, skin_value=1.0,
+        # (value 0.86, a tanned ranger: with the set's lower skin chroma, art director note h, the straw no longer
+        # separates from the face by colour — it does by value, hair vs skin |dL*| >= 15, §7.4)
+        skin="#F2A276", skin_tone="T2", blush=0.30, skin_value=0.86,
         paint=[dict(at=(0.0, -0.13), r=0.13, color="#D9825A", k=0.32)],          # the tan across the nose
         eyes=dict(sclera=0.22, open=0.85, iris="#C98A2E", iris_shade=0.85, tilt=0.06, arch=0.26,
                   smile=dict(open=0.74, low=0.22, bow=0.3, arch=0.3)),
@@ -322,7 +328,9 @@ CHARS = {
         # between them (wide, even ones fused into one cream band), a deep crevice tone and darker roots under the
         # hood; the lit straw stays light (#FFEFA6): hair vs skin dE76 >= 30 (§7.4) — a mid-tone straw (#F2D672,
         # #F8E28E) measured 23-27 on his tanned T2
-        hair=dict(style="fringe", color="#FFEFA6", dark="#E0BC66", light="#FFFCE6", crevice="#5E4214", rim_el=50,
+        # (P2 fix sheet: the pale cream wisps read as icing — the straw warmer and a step deeper, the lit tips
+        # #F8E296, the roots and crevices darker so the clumps part; the set's less saturated skin keeps dE76 >= 30)
+        hair=dict(style="fringe", color="#FFEC9E", dark="#C8984A", light="#FFF2B0", crevice="#4A3010", rim_el=50,
                   wisps=[(-44, 0.08, 18, 0.06, 0.014), (-31, 0.085, 24, 0.0, 0.036), (-17, 0.085, 28, 0.03, 0.016),
                          (-4, 0.09, 30, -0.01, 0.040), (9, 0.085, 30, 0.04, 0.018), (22, 0.08, 28, 0.05, 0.038),
                          (34, 0.07, 22, 0.11, 0.016), (44, 0.065, 16, 0.14, 0.030)]),
@@ -361,6 +369,10 @@ CHARS = {
     # ---------------------------------------------------------------- Seir (rare): §7.6
     "cmd_seir": dict(
         name="Seir", rarity="rare", female=False,
+        # hand-free (§7.15 q3, the P2 fix review): the spyglass on its strap behind the back, its eyepiece over the
+        # near shoulder behind the ear (§7.6 "без кисти — на ремне за спиной, окуляр над плечом"); the held pose
+        # (KIT_HANDS=1) read as a fist seen from the back at 512 and an orange lump at 128
+        hands=False,
         head=dict(shape="square", wh=0.88, h_px=272, eye_line=0.48, jaw=-0.03, cheeks=1.1),
         skin=SKIN["T4"], skin_tone="T4", blush=0.32,
         paint=[dict(at=(0.0, -0.20), r=0.07, color="#D0604A", k=0.35)],          # the ruddy nose
@@ -392,7 +404,7 @@ CHARS = {
                 dict(kind="buttons", id="btn", r=0.036, color="#E0AD45",
                      at=[(-0.22, -0.98), (0.22, -0.98), (-0.20, -1.14), (0.20, -1.14)]),
             ]),
-        # held (the P2 reviewer's call for §7.15 q3): the near hand on the near shoulder by the collar, the tube
+        # held (KIT_HANDS=1 only since the P2 fix review): the near hand on the near shoulder by the collar, the tube
         # rising up and back at 58 deg (world) so it passes behind the ear and the back hair and its eyepiece ends
         # under the tricorn's near corner — "за головой". Drawn out to 0.95 H (a telescope's sections extended): at
         # §7.6's 0.8 H the eyepiece stops at ear level whatever the angle, and aimed out to the left at 48 deg (the
@@ -416,7 +428,7 @@ CHARS = {
         # lit cheek S >= 0.35 (§7.4): a matter skin (roughness 0.62, specular 0.22) and x1.22 — the flat-top bares
         # the temples and forehead, and the key's sheen on them greyed the brightest skin pixels to S 0.33 (more
         # saturation alone did not lift them)
-        skin=SKIN["T5"], skin_tone="T5", blush=0.2, skin_sat=1.22, skin_rough=0.62, skin_spec=0.22,
+        skin=SKIN["T5"], skin_tone="T5", blush=0.2, skin_sat=1.10, skin_rough=0.62, skin_spec=0.22,
         eyes=dict(sclera=0.19, open=0.72, iris="#8A5A2E", tilt=0.0, arch=0.18, flick=0.028,
                   smile=dict(open=0.62, low=0.20, bow=0.3, arch=0.24)),
         brows=dict(shape="straight", thick=0.075, color="#2A2020", arch=0.01, len=1.25, inner=-0.01, gap=0.04,
@@ -432,10 +444,11 @@ CHARS = {
         # #2A2420 (the art director's P2 note b: hair lighter than the uniform; a dark shell read as a beanie) nor the
         # grey-beige #A8907A (read grey-haired): darker crevices low, lighter tips on top; its value keeps hair vs the
         # T5 skin >= 15 L* (§7.4)
-        hair=dict(style="flattop", color="#BA8250", dark="#784A28", light="#DCAA70", crevice="#3A2010",
-                  fade="#4E301C", side_color="#8A5632", side=0.010, top=0.07, wall=0.18, corner=0.03, stubble=0.7,
-                  grain=(150, 150, 34),
-                  bristles=[(-62, 62, 34, 0.04, "front"), (-58, 58, 26, 0.022, "top")],
+        hair=dict(style="flattop", color="#BE8E60", dark="#B08254", light="#BE8E60", crevice="#6A4428",
+                  tip="#C89C6E", fleck="#C49466", side=0.008, front=0.04, front_ramp=0.09, top=0.03,
+                  corner=0.07, ridge=0.16, ramp=0.10, lean=(35.0, 10.0), stubble=0.35, grain=(150, 150, 34),
+                  fade_band=0.035, bristles_front=(0.0, 0.0, 0, 0.0, 0.0),
+                  rough=0.78, spec=0.3,
                   # the corners recede at the temples (a straight line across the forehead read as a cap's rim)
                   hairline=[(0, 0.31), (16, 0.315), (30, 0.29), (42, 0.265), (56, 0.25), (72, 0.21), (92, 0.14),
                             (130, -0.03), (180, -0.18)]),
@@ -503,8 +516,12 @@ CHARS = {
                 dict(kind="strap", id="strap", color="#2E2E34", **{"from": (-0.40, -0.72), "to": (0.45, -1.6)},
                      w=0.075),
             ]),
+        # (a shorter cuff with a stronger flare, the glove pushed under the strap with only short finger tips
+        # peeking out below it: the 0.30 H straight cuff with the glove hanging below it read as a forearm and a hand
+        # on her chest, P2 review; folded palm up toward the camera it read as an open hand)
         props=[dict(kind="gauntlet", on="strap", color="#3A3C46", piping="#F08A24", free_color="#5E606C",
-                    pipe_r=0.024, tuck_z=-0.93, lean=16, scale=1.0, flare=0.115,
+                    pipe_r=0.024, tuck_z=-0.93, lean=16, scale=1.0, cuff=0.22, flare=0.13, fold=12, curl=0.0,
+                    palm=0.0, palm_k=0.5, fingers=0.42, thumb=False,
                     hand=dict(grip="wrap", curl=0.85, target=(-0.20, -0.36, -0.62), axis=(0.25, 0.4, 1.0),
                               radius=0.03, elbow=(-0.40, -0.45, -1.75), sleeve="#3A3C46", detail="gauntlet"))],
         pose=dict(body=28, head=12, roll=-5, nod=5),
@@ -552,8 +569,8 @@ CHARS = {
         # sausage, P2 sheet)
         # the scarf end wider (0.13 H at its tip, the fold kept): at 0.06 H it read as a thin ribbon (P2 review; §7.6
         # 0.9 x 0.18 H)
-        props=[dict(kind="scarf", style="back", len=0.9, w=(0.09, 0.17), thick=0.012, out=0.75, back=0.32, lift=0.30,
-                    detail="scarf"),
+        props=[dict(kind="scarf", style="back", len=0.9, w=(0.09, 0.17), thick=0.012, out=0.62, back=0.30, lift=0.14,
+                    end_up=-0.40, droop=0.0, cross=0.5, detail="scarf"),
                dict(kind="badge_relief", style="wings", at=(-0.24, -1.02), size=0.24, color="#E8B23A", hex="#6FA8DC",
                     detail="wings")],
         pose=dict(body=22, head=10, roll=7, nod=3),
@@ -603,7 +620,7 @@ CHARS = {
                dict(kind="hairpin", t=0.35)],
         pose=dict(body=26, head=6, roll=4, nod=5),
         pose_smile=dict(roll=-3, nod=3),
-        signature=dict(name="tall vertical bun + queen at the chin", zone="top centre; chin"),
+        signature=dict(name="tall vertical bun + queen pendant on the jabot", zone="top centre; chest"),
     ),
     # ---------------------------------------------------------------- Rai (legendary): §7.6
     "cmd_rai": dict(
@@ -642,10 +659,11 @@ CHARS = {
                 # the robe's neckline in the stole's blue (a stand band round the neck): above the stole's top edge a
                 # sliver of the white robe showed beside the beard (beard vs costume dL* 4.8). The stole itself cannot
                 # start higher: a bib projected above the torso's top stays a flat sheet in front of the chest
-                dict(kind="collar", color="#2252EC", z=-0.68, h=0.11, out=0.0, flare=0.016),
+                # (an upright band, `stand`: the funnel following the shoulder slope read as a flat plate, P2 review)
+                dict(kind="collar", color="#2252EC", z=-0.68, h=0.11, out=0.03, flare=0.014, stand=True),
                 dict(kind="cloak", id="cloak", color="#173C86", rough=0.92, sheen=0.1, spec=0.15, shade=(0.84, 0.88),
                      z1=-0.64,
-                     gap=0.012, flare=0.06, open=[(-1.9, 0.50), (-1.2, 0.48), (-0.85, 0.48), (-0.66, 0.52)]),
+                     gap=0.012, flare=0.06, open=[(-1.9, 0.52), (-1.2, 0.50), (-0.85, 0.52), (-0.66, 0.57)]),
                 dict(kind="cape_collar", color="#1E4FA8", z0=-0.72, top_z=0.02, r0=0.30, r1=0.58, open=58,
                      piping="#C8CCD4", detail="collar", min_px=4000),
                 # the beard lies on the stole (§7.6 "борода лежит на синем палантине"); 0.42 W at its top: wider
@@ -653,8 +671,9 @@ CHARS = {
                 # blades in front of the chest
                 # (#2252EC, a step more saturated than #2B5FD9: with more of the stole showing, Rai's clothes median
                 # sat dE76 17 from Vance's violet and their P-A9 mean fell to 15.0)
-                dict(kind="bib", id="stole", color="#2252EC", w=0.42, top=-0.665, bottom=-2.0, straps=False,
-                     over_last=False),
+                # (the top corners rounded, `round`: the square near corner folded into a pale flat triangle, P2 review)
+                dict(kind="bib", id="stole", color="#2252EC", w=0.46, top=-0.665, bottom=-2.0, straps=False,
+                     over_last=False, round=0.10),
             ]),
         props=[dict(kind="banner", x=0.50, y=0.32, top=0.80, w=0.40, h=0.60)],
         pose=dict(body=18, head=4, roll=0, nod=2),

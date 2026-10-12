@@ -92,7 +92,10 @@ def vest(ctx, ly, name):
 
 def collar(ctx, ly, name):
     """A stand collar around the neck base: a short tube with real thickness and a rounded top edge (§7.3: no flat
-    triangle). Height in H; 'open' leaves a front gap (a V)."""
+    triangle). Height in H; 'gap' leaves a front gap (a V). By default each ring follows the torso at its height (low
+    on the shoulder slope that makes a funnel); 'stand' keeps the top ring's section all the way down — an upright
+    band that rises out of the costume (Rai: the funnel lay on the shoulder slope and read as a flat plate at the neck,
+    P2 review)."""
     spec = ctx.torso_spec
     zb = ly.get("z", -0.66)
     hgt = ly.get("h", 0.06) * H
@@ -102,7 +105,7 @@ def collar(ctx, ly, name):
     rings = []
     for k in range(5):
         z = zb + hgt * k / 4
-        hx, hy, n, yo = core.ring_at(spec, min(z, -0.40))
+        hx, hy, n, yo = core.ring_at(spec, min(zb + hgt if ly.get("stand") else z, -0.40))
         grow = out + ly.get("flare", 0.02) * k / 4
         rings.append(core.superellipse_ring(bm, z, hx + grow, hy + grow, n, yo, seg=seg))
     for r0, r1 in zip(rings, rings[1:]):
@@ -192,9 +195,12 @@ def bib(ctx, ly, name):
     bm = bmesh.new()
     nx, nz = 10, 24
     grid = []
-    for j in range(nz + 1):
+    rnd = ly.get("round", 0.0)       # rounded top corners (radius): square ones folded into flat triangles where
+    for j in range(nz + 1):          # they ran past the torso's slope (Rai's stole, P2 review)
         z = bottom + (top - bottom) * j / nz
         ww = w * (1.0 + 0.25 * (1 - j / nz))           # a little wider toward the waist
+        if rnd and z > top - rnd:
+            ww -= rnd * (1.0 - math.sqrt(max(0.0, 1.0 - ((z - (top - rnd)) / rnd) ** 2)))
         row = [bm.verts.new((-ww + 2 * ww * i / nx, -1.2, z)) for i in range(nx + 1)]
         grid.append(row)
     for j in range(nz):
@@ -609,12 +615,15 @@ def pauldrons(ctx, ly, name):
 
 def cloak(ctx, ly, name):
     """A cloak (Vik, Rai): a shell round the shoulders, arms and back from the neck base down out of the frame, its
-    rings the hull of the torso and the arms plus a gap, open in front (the opening widens downward), 0.03 H thick,
-    bevelled, Subsurf 2."""
+    rings the hull of the torso and the arms plus a gap, open in front (`open`: the half width per height; each ring
+    an arc from one edge of the opening round the back to the other), 0.03 H thick, bevelled, Subsurf 2."""
     spec = ctx.torso_spec
     z0, z1 = ly.get("z0", -1.9), ly.get("z1", -0.64)
     nz, seg = 20, 72
     gap = ly.get("gap", 0.025)
+    op = ly.get("open", [(-1.9, 0.30), (-1.2, 0.20), (-0.85, 0.12), (-0.66, 0.10)])
+    # the arcs keep the full ring's density (72 round the whole), so a wide opening costs fewer faces (P-A10)
+    seg = max(24, int(round(seg * (1.0 - 0.5 * min(1.0, max(w for _, w in op) * ctx.shoulder_k / 0.62)) + 4)))
     bm = bmesh.new()
     rings = []
     for i in range(nz):
@@ -626,15 +635,23 @@ def cloak(ctx, ly, name):
         hy2 = max(hy, ay + 0.05) + gap
         hx2 = hx2 * (1 - top) + (hx + gap) * top
         hy2 = hy2 * (1 - top) + (hy + gap) * top
-        rings.append(core.superellipse_ring(bm, z, hx2, hy2, ly.get("n", 2.6), yo + ly.get("dy", 0.02), seg=seg))
+        # the ring as an arc round the back from one edge of the front opening to the other (half width `open` at
+        # this height): the opening's edges are smooth lines (deleting the faces whose centres fell inside it left a
+        # stair-step on the front edge, P2 review)
+        w = core.lerp_table(op, z) * ctx.shoulder_k
+        nn_ = ly.get("n", 2.6)
+        r = min(1.0, (w / hx2) ** (nn_ / 2.0)) if hx2 > 1e-6 else 1.0
+        a1, a2 = 2 * math.pi - math.acos(-r), 2 * math.pi - math.acos(r)
+        ring = []
+        for k in range(seg):
+            a = a2 + (a1 + 2 * math.pi - a2) * k / (seg - 1)
+            c, s_ = math.cos(a), math.sin(a)
+            ring.append(bm.verts.new((hx2 * math.copysign(abs(c) ** (2 / nn_), c),
+                                      hy2 * math.copysign(abs(s_) ** (2 / nn_), s_) + yo + ly.get("dy", 0.02), z)))
+        rings.append(ring)
     for r0, r1 in zip(rings, rings[1:]):
-        for i in range(seg):
-            j = (i + 1) % seg
-            bm.faces.new((r0[i], r0[j], r1[j], r1[i]))
-    op = ly.get("open", [(-1.9, 0.30), (-1.2, 0.20), (-0.85, 0.12), (-0.66, 0.10)])
-    kill = [f for f in bm.faces if f.calc_center_median().y < 0
-            and abs(f.calc_center_median().x) < core.lerp_table(op, f.calc_center_median().z) * ctx.shoulder_k]
-    bmesh.ops.delete(bm, geom=kill, context="FACES")
+        for i in range(seg - 1):
+            bm.faces.new((r0[i], r0[i + 1], r1[i + 1], r1[i]))
     o = core.mesh_obj(name, bm)
     core.solidify(o, max(S["layer_min"] * H, ly.get("thick", 0.03)), offset=1.0)
     sh_top, sh_bot = ly.get("shade", (1.06, 0.88))     # Rai: a darker top, so the key-lit shoulders stay deep blue
