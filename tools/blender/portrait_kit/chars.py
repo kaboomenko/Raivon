@@ -742,8 +742,9 @@ CHARS.update({
             # the calm frame is kept (§7.9): a -5/-6 deg nod put the heavy jaw past P-A6 (chin 387 / 394 > 381),
             # so his nod is smaller and the slump is carried by the roll
             angry=dict(pose_angry=dict(nod=-2.0), brows=dict(angry=dict(inner=-0.075, outer=0.025, in_dx=0.02, thick_k=1.15)),
-                       mouth=dict(angry=dict(type="open", shape="trap", w=0.30, h=0.11, near=-0.02, far=-0.02,
-                                             lower_teeth=True, fangs=True, dz=-0.008))),
+                       # w 0.33 h 0.15, lower: the 0.30 x 0.11 roar hid under the moustache (29.5 px2 at 128 px)
+                       mouth=dict(angry=dict(type="open", shape="trap", w=0.33, h=0.15, near=-0.02, far=-0.02,
+                                             lower_teeth=True, fangs=True, dz=-0.020))),
             cunning=dict(eyes=dict(cunning=dict(open=[0.22, 0.66], tilt=-0.05, arch=0.08, low=0.06)),
                          mouth=dict(cunning=dict(type="closed", w=0.30, near=0.045, far=-0.005, sag=0.004))),
             tired=dict(pose_tired=dict(nod=-1.5, roll=-5.0)),
@@ -834,9 +835,11 @@ CHARS.update({
         eyes=dict(sclera=0.19, open=0.60, iris="#6A8AA0", iris_shade=0.9, tilt=-0.04, arch=0.06),
         brows=dict(shape="bushy", thick=0.085, color="#ECEEF2", arch=0.02, len=1.3, outer=-0.03),
         nose=dict(type="aquiline", len=0.24, w=0.07, proj=0.075, hump=0.01, drop=0.21, tip="#C8806A", tip_k=0.35),
+        # the soft smile opens on the upper teeth: closed, under the sleepy lids it read as his tired face in the
+        # blind sort (P3: smile and tired swapped)
         mouth=dict(lip="#A8605A", line=0.20,
                    calm=dict(type="closed", w=0.25, near=0.004, far=0.004),
-                   smile=dict(type="closed", w=0.28, near=0.04, far=0.035, sag=0.01)),
+                   smile=dict(type="open", w=0.31, h=0.12, near=0.045, far=0.04, dz=-0.012, teeth=0.32)),
         hair=dict(style="bald", bald=True, color="#B8B8C0"),
         beard=dict(style="braids", color="#E0E2E8", tip="#EEF0F4", root="#C4C6CE", crevice="#7A7C88", below=0.66,
                    mass_below=0.20, bead="#C8B48A", moustache=True, moustache_color="#E2E4EA",
@@ -858,6 +861,7 @@ CHARS.update({
                        zone="near shoulder; lower face width"),
         moods=dict(
             tired=dict(eyes=dict(tired=dict(open=0.10, tilt=0.15, arch=0.04))),
+            smile=dict(eyes=dict(smile=dict(open=[0.60, 0.60], low=0.13, bow=0.3, arch=0.10, tilt=-0.04))),
             cunning=dict(brows=dict(cunning=dict(lift=(-0.025, 0.10), arch_far=0.03, arch_near=-0.02)), eyes=dict(cunning=dict(open=[0.12, 0.74], tilt=0.0, arch=0.12))),
             angry=dict(brows=dict(angry=dict(inner=-0.075, outer=0.02, in_dx=0.02, thick_k=1.2)),
                        mouth=dict(angry=dict(type="closed", w=0.25, near=-0.03, far=-0.03, crease=0.024))),
@@ -902,8 +906,10 @@ CHARS.update({
         pose=dict(body=22, head=8, roll=-3, nod=4),
         signature=dict(name="iron diadem with two wolf-ear spikes + white wolf stole", zone="top centre; shoulders"),
         moods=dict(
-            angry=dict(mouth=dict(angry=dict(type="open", shape="clench", w=0.27, h=0.07, near=-0.015, far=-0.015,
+            # clenched teeth 0.09 high (0.07 gave 33 px2 at 128 px, P-A3 asks >= 40); smile lids kept >= 6 px at 128
+            angry=dict(mouth=dict(angry=dict(type="open", shape="clench", w=0.27, h=0.09, near=-0.015, far=-0.015,
                                              dz=-0.004))),
+            smile=dict(eyes=dict(smile=dict(open=[0.66, 0.66], low=0.14))),
             cunning=dict(mouth=dict(cunning=dict(type="closed", w=0.25, near=0.035, far=0.0, sag=0.002))),
             tired=dict(hair=dict(across=True)),
         ),
@@ -947,9 +953,12 @@ CHARS.update({
             cunning=dict(eyes=dict(cunning=dict(open=[0.40, 0.58], tilt=0.12, arch=0.10)),
                          mouth=dict(cunning=dict(type="closed", w=0.27, near=0.05, far=0.0)),
                          **{"props~": {"monocle": dict(glint=3.0)}}),
+            # clench 0.10 high (0.07: 29.8 px2 at 128 px); the smile keeps the lids >= 6 px at 128 (4.5 with the default)
             angry=dict(beard=dict(curl=-0.05),
-                       mouth=dict(angry=dict(type="open", shape="clench", w=0.28, h=0.07, near=-0.02, far=-0.02))),
-            tired=dict(pose_tired=dict(nod=-4.5, roll=-2.0),
+                       mouth=dict(angry=dict(type="open", shape="clench", w=0.29, h=0.10, near=-0.02, far=-0.02))),
+            smile=dict(eyes=dict(smile=dict(open=[0.62, 0.62], low=0.12))),
+            # lids 0.26: the default 0.30 measured 0.52 of his calm opening (P-A4 asks 0.30-0.50)
+            tired=dict(pose_tired=dict(nod=-4.5, roll=-2.0), eyes=dict(tired=dict(open=0.26, tilt=0.22, arch=0.10, low=0.0)),
                        **{"props~": {"monocle": dict(hang=True, hang_at=(-0.14, -1.0), chain_to=(-0.34, -0.80))}}),
         ),
     ),
@@ -982,12 +991,14 @@ CHARS.update({
                      clumps=dict(n=60, len=0.16, w=0.05, th=0.022, tip=0.25), smooth=2),
                 dict(kind="strap", id="strap", color="#6A4A30", w=0.07, **{"from": (0.42, -0.72), "to": (-0.45, -1.6)}),
             ]),
-        props=[dict(kind="feathers", len=0.5, w=0.11, back_k=0.3, out_k=1.6, color="#2E2E36", sheen="#4A5470", bead="#C8902A"),
+        # broader feathers (0.58 x 0.18): at 0.50 x 0.11 they gave 5.2 % of the 48 px head-zone mask, P-A3 asks >= 8 %
+        props=[dict(kind="feathers", len=0.58, w=0.18, back_k=0.3, out_k=0.9, color="#2E2E36", sheen="#4A5470", bead="#C8902A"),
                dict(kind="pendant", at=(-0.08, -1.0), color="#C8902A")],
         pose=dict(body=22, head=10, roll=-4, nod=-1),
         signature=dict(name="three black feathers up-back", zone="top back"),
         moods=dict(
             tired=dict(**{"props~": {"feathers": dict(droop=20)}}),
+            smile=dict(eyes=dict(smile=dict(open=[0.62, 0.62], low=0.12))),     # lids >= 6 px at 128 (5.0 before)
             cunning=dict(mouth=dict(cunning=dict(type="closed", w=0.27, near=0.05, far=-0.01))),
         ),
     ),
@@ -1033,7 +1044,7 @@ CHARS.update({
             angry=dict(pose_angry=dict(nod=-3.0), beard=dict(jut=0.06),
                        brows=dict(angry=dict(inner=-0.075, outer=0.025, in_dx=0.02, thick_k=1.25)),
                        fx=dict(angry=dict(blush=0.05, nose_red=0.12)),    # deep skin: the full flush read orange
-                       mouth=dict(angry=dict(type="open", shape="clench", w=0.27, h=0.07, near=-0.015, far=-0.015))),
+                       mouth=dict(angry=dict(type="open", shape="clench", w=0.27, h=0.085, near=-0.015, far=-0.015))),
             cunning=dict(brows=dict(cunning=dict(lift=(0.0, 0.10), arch_far=0.02))),
             tired=dict(pose_tired=dict(nod=-3.0, roll=-3.0), eyes=dict(tired=dict(open=0.26))),
         ),
@@ -1072,7 +1083,7 @@ CHARS.update({
         moods=dict(
             smile=dict(eyes=dict(smile=dict(open=[0.60, 0.60], low=0.12))),
             tired=dict(hair=dict(across=True), eyes=dict(tired=dict(open=0.26, tilt=0.22, arch=0.10, low=0.0))),
-            angry=dict(mouth=dict(angry=dict(type="open", shape="clench", w=0.26, h=0.07, near=-0.01, far=-0.02))),
+            angry=dict(mouth=dict(angry=dict(type="open", shape="clench", w=0.26, h=0.09, near=-0.01, far=-0.02))),
         ),
     ),
     # ---------------------------------------------------------------- Consul Arman the Nocturne (Lakes, Owl)
