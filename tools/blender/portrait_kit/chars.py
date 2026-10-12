@@ -464,7 +464,9 @@ CHARS = {
                 dict(kind="collar", color="#1F7040", z=-0.64, h=0.08, out=0.016, flare=0.02),
                 # fewer, softer channels (art director, P2 sheet: twelve dark seams read as a radiator)
                 dict(kind="quilt", on="torso", color="#1B6239", z=(-1.45, -0.74), dx=0.26, w=0.66, r=0.006),
-                dict(kind="pauldrons", color="#C8D0DA", stripe="#2E8A50", stripe_r=0.02, n=3, spread=88, detail="pauldrons",
+                # steel with a faint green cast and brighter enamel: with the art director's dark-brown hair (P3) her
+                # dark signature came within P-A9 mean dE 14.9 of Vega's (>= 15); now 15.2 at the same frame
+                dict(kind="pauldrons", color="#B8D2C6", stripe="#2E9A56", stripe_r=0.02, n=3, spread=88, detail="pauldrons",
                      min_px=10000),
             ]),
         props=[dict(kind="badge_relief", style="tower", at=(-0.26, -0.95), size=0.24, color="#C8CCD4", dark="#2C4434",
@@ -997,7 +999,8 @@ CHARS.update({
         pose=dict(body=22, head=10, roll=-4, nod=-1),
         signature=dict(name="three black feathers up-back", zone="top back"),
         moods=dict(
-            tired=dict(**{"props~": {"feathers": dict(droop=20)}}),
+            # drooping −20° they swing out to the near side: a narrower fan keeps the frame (side band 28 px) at his H
+            tired=dict(**{"props~": {"feathers": dict(droop=20, out_k=0.5)}}),
             smile=dict(eyes=dict(smile=dict(open=[0.62, 0.62], low=0.12))),     # lids >= 6 px at 128 (5.0 before)
             cunning=dict(mouth=dict(cunning=dict(type="closed", w=0.27, near=0.05, far=-0.01))),
         ),
@@ -1034,7 +1037,7 @@ CHARS.update({
             ]),
         # the shield rises behind the far shoulder beside the head (lower it hid wholly behind the box beard: 529 px of
         # the 2000 P-A8 asks); painted dark steel with a copper rim, as the light-steel disc melted into the grey beard
-        props=[dict(kind="shield", side="far", r=0.40, x=0.52, turn=42, up=0.35, dz=0.40, color="#363E4A",
+        props=[dict(kind="shield", side="far", r=0.40, x=0.52, turn=42, up=0.35, dz=0.50, color="#363E4A",
                     edge="#A87A50", edge_metal=True, rim=0.045, rivets=12, detail="shield", min_px=2000)],
         pose=dict(body=16, head=4, roll=0, nod=-3),
         signature=dict(name="box beard + one massive shield pauldron on the far shoulder",
@@ -1396,7 +1399,13 @@ _FREY_E3 = "#1A5A44"      # dE76 20.6 to E1 as rendered (the olive mix left him 
 # E4 plates of the slate / graphite / black-leather commanders converged (bram-vega 3.4, bram-irma 3.9, vega-irma
 # 5.6): Bram's plates a step bluer, Vega's a step lighter (Irma's keep the formula); Hawk's E4 suit sky-tinted, apart
 # from Rai's white plates (2.2)
-_BRAM_E4 = "#4A6488"      # dE76 17.1 to E1
+_BRAM_E4 = "#3B4F78"      # dE76 12.7 to E1 as rendered (P3: #4A6488 sat 7.7 from Rai's, 9.3 from Seir's E4 plates)
+# P3, every E4 pair >= 12 (§7.7): Frey's plates a step darker than the formula (5.5 from Lira's), Vik's vest a step more
+# olive (11.5 from Lira's), Rai's plates his own deep raivite (see cmd_rai); Seir's E3 tunic keeps its sea-wave hue
+# instead of the olive mix (9.9 from Vega's graphite)
+_FREY_E4 = "#20653B"      # dE76 8.5 to E1 as rendered
+_VIK_E4 = "#687841"       # dE76 5.7 to E1 as rendered
+_SEIR_E3 = "#1E596D"      # dE76 2.2 to E1 as rendered
 _VEGA_E4 = "#6C7280"      # dE76 ~19 to E1
 
 
@@ -1544,7 +1553,7 @@ ERA_LOOKS.update({
                 **{"props~": {"raven": dict(variant="clockwork", color="#2E3038", sheen="#5A5E6A"), "bow": None},
                    "props+": [dict(kind="binoculars", at=(0.10, -1.04), size=0.20)]}),
         4: dict(costume=dict(base=dict(color=_UNDER, rough=0.7, sheen=0.2), layers=[
-                    _plate(_E("#4E6B3A", 4), z0=-1.40, z1=-0.68),
+                    _plate(_VIK_E4, z0=-1.40, z1=-0.68),
                     dict(kind="pauldrons", color=_E("#4E6B3A", 4), painted=True, stripe="#5AE07A", stripe_emit=0.0,
                          n=1, spread=80, bands=[(92, 30)], detail="pauldrons", min_px=2000),
                     dict(kind="strip", id="glow", color="#5AE07A", emit=1.1, w=0.045, detail="glow", min_px=80,
@@ -1635,8 +1644,8 @@ ERA_LOOKS.update({
                 headgear=dict(CHARS["cmd_seir"]["headgear"], id="tricorn_gold", trim="#E8B23A", tape2=True,
                               badge=dict(kind="disc", size=0.10, color="#F2F2F2", g=0.5, metal=0.0, rough=0.5)),
                 **{"props~": {"spyglass": dict(bands="#E8B23A")}}),
-        3: dict(costume=dict(base=dict(color=_E("#175A72", 3), rough=0.85, sheen=0.25), layers=[
-                    dict(kind="collar", color=_E("#175A72", 3), z=-0.64, h=0.08, out=0.004, flare=0.02, gap=0.06),
+        3: dict(costume=dict(base=dict(color=_SEIR_E3, rough=0.85, sheen=0.25), layers=[
+                    dict(kind="collar", color=_SEIR_E3, z=-0.64, h=0.08, out=0.004, flare=0.02, gap=0.06),
                     dict(kind="neckerchief", color="#F2F2F2", z=-0.64),
                     dict(kind="buttons", id="btn", r=0.034, color="#E8B23A",
                          at=[(-0.20, -0.98), (0.20, -0.98), (-0.19, -1.14), (0.19, -1.14)])]),
@@ -1686,7 +1695,7 @@ ERA_LOOKS.update({
                          detail="pauldrons", min_px=10000)]),
                 **{"props~": {"badge_relief": dict(at=(-0.27, -1.02))}}),
         4: dict(costume=dict(base=dict(color=_UNDER, rough=0.7, sheen=0.2), layers=[
-                    _plate(_E("#1F7040", 4)),
+                    _plate(_FREY_E4),
                     dict(kind="collar", color="#C8D0DA", metal=True, z=-0.66, h=0.08, out=0.03, flare=0.025,
                          piping="#3AD07A", piping_r=0.02),
                     dict(kind="pauldrons", color="#C8D0DA", stripe="#3AD07A", stripe_emit=1.0, stripe_r=0.022, n=3,
@@ -1809,7 +1818,9 @@ ERA_LOOKS.update({
                     CHARS["cmd_rai"]["costume"]["layers"][3]]),
                 **{"props~": {"banner": dict(color="#9AA4B0", staff_metal=0.5, staff_rough=0.3)}}),
         4: dict(costume=dict(base=dict(color=_UNDER, rough=0.7, sheen=0.2), layers=[
-                    _plate("#46566E", metallic=0.35),
+                    # §7.6 asks white-silver plates; on the legendary orange plate B they melted (band dL* 3.9, 83 %),
+                    # and #46566E sat 7.7 from Bram's E4: his own deep raivite #1E4FA8 (§7.6 palette) instead
+                    _plate("#1E4FA8", metallic=0.35),
                     dict(kind="strip", id="seam1", color="#3A8DFF", emit=1.4, w=0.042, detail="glow", min_px=80,
                          path=[(-0.40, -0.80), (-0.36, -1.0), (-0.34, -1.3)]),
                     CHARS["cmd_rai"]["costume"]["layers"][0],
