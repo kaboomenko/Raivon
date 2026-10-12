@@ -601,7 +601,7 @@ class KitBake extends Node:
 	const DEFER_MAX := 24  ## images waiting so for a piece large enough before the atlas starts over all the same
 	const DEFER_RETRY_MS := 300  ## the waiting images are tried again after this long
 	const DEFER_TRIES := 3  ## an image that found no piece this many times takes the full atlas's way (compaction)
-	const PHASES := 8.0  ## sub-pixel offsets a bake is made at, per pixel and axis
+	const PHASES := 8.0  ## sub-pixel offset steps per px and axis: owners that close share a bake (made at the first's)
 	## Logical px of straight edge a sliced bake keeps past each corner: what is stretched must be uniform, and the
 	## antialiased edge of a StyleBoxFlat is not, for a few px past where its corner arc ends (the half-pixel offsets
 	## of a scaled canvas show it).
@@ -828,11 +828,12 @@ class KitBake extends Node:
 		var g := o * k_
 		return Vector2(fposmod(g.x, 1.0), fposmod(g.y, 1.0))
 
-	## offset_of at this canvas scale, quantised to 1/8 px: a bake is made at it, so its texels land on the screen's
-	## pixels as the vectors would.
+	## offset_of at this canvas scale: a bake is made at it, so its texels land on the screen's pixels as the vectors
+	## would. Exact, not quantised: the bake's key takes it to 1/8 px (draw: owners that close share one image), but the
+	## image is made at its first asker's very offset — a hard edge inside a shape (a title plate's highlight band, its
+	## lip) that falls near a pixel centre at k ≠ 1 is then on the same row as the vectors', not one row off.
 	func frac_of(ci: CanvasItem, p: Vector2) -> Vector2:
-		var g := offset_of(ci, p, kv)
-		return Vector2(fposmod(roundf(g.x * PHASES) / PHASES, 1.0), fposmod(roundf(g.y * PHASES) / PHASES, 1.0))
+		return offset_of(ci, p, kv)
 
 	## Draws the baked layers `key` into `rect` on the canvas item `ci` (a RID). `size`: the logical size the layers
 	## are made at (`make` returns a Control that draws them, its origin at (0, 0)); `m`: slice margins (left, top,
@@ -859,7 +860,8 @@ class KitBake extends Node:
 		if fa < 1.0:
 			base += "|a%.3f" % fa
 			mod = Color(mod.r, mod.g, mod.b, mod.a / fa)
-		var full := "%s/%d,%d" % [base, roundi(f.x * PHASES), roundi(f.y * PHASES)]
+		var ph := int(PHASES)
+		var full := "%s/%d,%d" % [base, posmod(roundi(f.x * PHASES), ph), posmod(roundi(f.y * PHASES), ph)]
 		var e := _ref(ci, owner if owner != null else host, hh)  # (its commands are being recorded anew)
 		var slot: Variant = slots.get(full)
 		if slot != null and _squeeze and not in_sight(hh, rect, pad):

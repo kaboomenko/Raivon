@@ -615,17 +615,20 @@ CHARS = {
                 # matte, a step deeper (#173C86, sheen 0.1, low specular) and darker at the top (shade): the sheen,
                 # the key and the rim's grazing highlight lit the shoulder tops to L* 72-81 beside the white beard
                 # (beard vs clothes dL* 2.1, §7.4 needs 15)
-                # (the front opening wider, so the beard's far side lies on the stole: the cloak's rim-lit far edge
-                # touched it, beard vs clothes dL* 3.7, P2 review; at the neck it stays narrower and the stole starts
-                # higher, so no sliver of the white robe shows beside the beard)
+                # (the front opening wider, so the beard lies on the stole: the cloak's rim-lit far edge touched it,
+                # beard vs clothes dL* 3.7, P2 review)
+                # the robe's neckline in the stole's blue (a stand band round the neck): above the stole's top edge a
+                # sliver of the white robe showed beside the beard (beard vs costume dL* 4.8). The stole itself cannot
+                # start higher: a bib projected above the torso's top stays a flat sheet in front of the chest
+                dict(kind="collar", color="#2B5FD9", z=-0.68, h=0.11, out=0.0, flare=0.016),
                 dict(kind="cloak", id="cloak", color="#173C86", rough=0.92, sheen=0.1, spec=0.15, shade=(0.84, 0.88),
                      z1=-0.64,
-                     gap=0.03, flare=0.06, open=[(-1.9, 0.50), (-1.2, 0.48), (-0.85, 0.45), (-0.66, 0.32)]),
+                     gap=0.012, flare=0.06, open=[(-1.9, 0.50), (-1.2, 0.48), (-0.85, 0.48), (-0.66, 0.52)]),
                 dict(kind="cape_collar", color="#1E4FA8", z0=-0.72, top_z=0.02, r0=0.30, r1=0.58, open=58,
                      piping="#C8CCD4", detail="collar", min_px=4000),
                 # wide enough that the beard lies on the stole, not the cloak's lit shoulders (§7.6 "борода лежит на
                 # синем палантине")
-                dict(kind="bib", id="stole", color="#2B5FD9", w=0.48, top=-0.60, bottom=-2.0, straps=False,
+                dict(kind="bib", id="stole", color="#2B5FD9", w=0.42, top=-0.665, bottom=-2.0, straps=False,
                      over_last=False),
             ]),
         props=[dict(kind="banner", x=0.50, y=0.32, top=0.80, w=0.40, h=0.60)],
