@@ -120,9 +120,30 @@ def skin_color(ctx, nt):
     sat = ch.get("skin_sat", S_SAT.get(tone, 1.0) if tone else 1.0) * SKIN_CHROMA["k"]
     val = ch.get("skin_value", 1.04)       # a hooded face (Vik) is lifted a little out of the hood's shade
     hs = nt.nodes.new("ShaderNodeHueSaturation")
-    hs.inputs["Saturation"].default_value = sat
     hs.inputs["Value"].default_value = val
     nt.links.new(base, hs.inputs["Color"])
+    lit = SKIN_CHROMA.get("lit", 1.0)
+    if lit != 1.0:
+        # the key-lit side keeps its saturation (x lit where N . key >= hi, x 1 at <= lo): AgX desaturates the
+        # highlights — the reason for §7.4's lit-cheek floor — so the set's lower chroma lands on the mid-tones and
+        # shadows that read orange at the album size, not on the lit cheek
+        key = style.LIGHT["key"]
+        kd = (Vector(key["loc"]) - Vector(key["target"])).normalized()
+        geo = nt.nodes.new("ShaderNodeNewGeometry")
+        dot = nt.nodes.new("ShaderNodeVectorMath")
+        dot.operation = "DOT_PRODUCT"
+        nt.links.new(geo.outputs["Normal"], dot.inputs[0])
+        dot.inputs[1].default_value = tuple(kd)
+        mr = nt.nodes.new("ShaderNodeMapRange")
+        mr.interpolation_type = "SMOOTHSTEP"
+        mr.inputs[1].default_value = SKIN_CHROMA["lo"]
+        mr.inputs[2].default_value = SKIN_CHROMA["hi"]
+        mr.inputs[3].default_value = sat
+        mr.inputs[4].default_value = sat * lit
+        nt.links.new(dot.outputs["Value"], mr.inputs[0])
+        nt.links.new(mr.outputs[0], hs.inputs["Saturation"])
+    else:
+        hs.inputs["Saturation"].default_value = sat
     base = hs.outputs[0]
     # the blush on top, after the chroma: the cheeks stay rosy (the note: "keep cheeks rosy only on the cheek blush")
     return core.node_mix(nt, fac, base, C["blush"])

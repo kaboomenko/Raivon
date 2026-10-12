@@ -308,9 +308,9 @@ CHARS = {
     "cmd_vik": dict(
         name="Vik", rarity="common", female=False,
         head=dict(shape="long", wh=0.80, h_px=264, eye_line=0.46, cheeks=1.0),
-        # (value 0.86, a tanned ranger: with the set's lower skin chroma, art director note h, the straw no longer
+        # (value 0.80, a tanned ranger: with the set's lower skin chroma, art director note h, the straw no longer
         # separates from the face by colour — it does by value, hair vs skin |dL*| >= 15, §7.4)
-        skin="#F2A276", skin_tone="T2", blush=0.30, skin_value=0.86,
+        skin="#F2A276", skin_tone="T2", blush=0.30, skin_value=0.80,
         paint=[dict(at=(0.0, -0.13), r=0.13, color="#D9825A", k=0.32)],          # the tan across the nose
         eyes=dict(sclera=0.22, open=0.85, iris="#C98A2E", iris_shade=0.85, tilt=0.06, arch=0.26,
                   smile=dict(open=0.74, low=0.22, bow=0.3, arch=0.3)),
@@ -330,7 +330,7 @@ CHARS = {
         # #F8E28E) measured 23-27 on his tanned T2
         # (P2 fix sheet: the pale cream wisps read as icing — the straw warmer and a step deeper, the lit tips
         # #F8E296, the roots and crevices darker so the clumps part; the set's less saturated skin keeps dE76 >= 30)
-        hair=dict(style="fringe", color="#FFEC9E", dark="#C8984A", light="#FFF2B0", crevice="#4A3010", rim_el=50,
+        hair=dict(style="fringe", color="#FFF0AA", dark="#C8984A", light="#FFF4B8", crevice="#4A3010", rim_el=50,
                   wisps=[(-44, 0.08, 18, 0.06, 0.014), (-31, 0.085, 24, 0.0, 0.036), (-17, 0.085, 28, 0.03, 0.016),
                          (-4, 0.09, 30, -0.01, 0.040), (9, 0.085, 30, 0.04, 0.018), (22, 0.08, 28, 0.05, 0.038),
                          (34, 0.07, 22, 0.11, 0.016), (44, 0.065, 16, 0.14, 0.030)]),
@@ -569,8 +569,10 @@ CHARS = {
         # sausage, P2 sheet)
         # the scarf end wider (0.13 H at its tip, the fold kept): at 0.06 H it read as a thin ribbon (P2 review; §7.6
         # 0.9 x 0.18 H)
-        props=[dict(kind="scarf", style="back", len=0.9, w=(0.09, 0.17), thick=0.012, out=0.62, back=0.30, lift=0.14,
-                    end_up=-0.40, droop=0.0, cross=0.5, detail="scarf"),
+        # (P2 fix sheet, art director note i: at out 0.75 the end still stuck out sideways — now it crosses the fur
+        # over the far shoulder and falls back behind it, its end dropping past the shoulder line)
+        props=[dict(kind="scarf", style="back", len=0.9, w=(0.09, 0.17), thick=0.012, out=0.56, back=0.45, lift=0.20,
+                    end_up=-0.42, droop=0.0, cross=0.75, drop_from=0.40, fold=140, detail="scarf"),
                dict(kind="badge_relief", style="wings", at=(-0.24, -1.02), size=0.24, color="#E8B23A", hex="#6FA8DC",
                     detail="wings")],
         pose=dict(body=22, head=10, roll=7, nod=3),
@@ -659,11 +661,17 @@ CHARS = {
                 # the robe's neckline in the stole's blue (a stand band round the neck): above the stole's top edge a
                 # sliver of the white robe showed beside the beard (beard vs costume dL* 4.8). The stole itself cannot
                 # start higher: a bib projected above the torso's top stays a flat sheet in front of the chest
-                # (an upright band, `stand`: the funnel following the shoulder slope read as a flat plate, P2 review)
-                dict(kind="collar", color="#2252EC", z=-0.68, h=0.11, out=0.03, flare=0.014, stand=True),
+                # (P2 fix review: the funnel's top showed as a flat ellipse plate at the neck — a rolled piping in the
+                # cape collar's deep blue along its top edge makes it read as a band; an upright band, `stand`, was
+                # tried and dropped: narrower at the foot, it bared the cloak's rim-lit shoulder top beside the beard,
+                # beard vs clothes dL* 7)
+                dict(kind="collar", color="#2252EC", z=-0.68, h=0.11, out=0.0, flare=0.016, piping="#1E4FA8",
+                     piping_r=0.016),
+                # (the opening a little wider, most at the top: the cloak's edges are now exact arcs, not the outer
+                # side of deleted faces, and the rim-lit far shoulder top touched the beard, beard vs clothes dL* 7)
                 dict(kind="cloak", id="cloak", color="#173C86", rough=0.92, sheen=0.1, spec=0.15, shade=(0.84, 0.88),
                      z1=-0.64,
-                     gap=0.012, flare=0.06, open=[(-1.9, 0.52), (-1.2, 0.50), (-0.85, 0.52), (-0.66, 0.57)]),
+                     gap=0.012, flare=0.06, open=[(-1.9, 0.54), (-1.2, 0.52), (-0.85, 0.56), (-0.66, 0.64)]),
                 dict(kind="cape_collar", color="#1E4FA8", z0=-0.72, top_z=0.02, r0=0.30, r1=0.58, open=58,
                      piping="#C8CCD4", detail="collar", min_px=4000),
                 # the beard lies on the stole (§7.6 "борода лежит на синем палантине"); 0.42 W at its top: wider
@@ -671,8 +679,10 @@ CHARS = {
                 # blades in front of the chest
                 # (#2252EC, a step more saturated than #2B5FD9: with more of the stole showing, Rai's clothes median
                 # sat dE76 17 from Vance's violet and their P-A9 mean fell to 15.0)
-                # (the top corners rounded, `round`: the square near corner folded into a pale flat triangle, P2 review)
-                dict(kind="bib", id="stole", color="#2252EC", w=0.46, top=-0.665, bottom=-2.0, straps=False,
+                # (the top corners rounded, `round`, and 0.45 W: the square near corner folded into a pale flat
+                # triangle on the shoulder slope, P2 review; at 0.50 and more the corners fold back in and the far one
+                # sticks out as a blade)
+                dict(kind="bib", id="stole", color="#2252EC", w=0.45, top=-0.665, bottom=-2.0, straps=False,
                      over_last=False, round=0.10),
             ]),
         props=[dict(kind="banner", x=0.50, y=0.32, top=0.80, w=0.40, h=0.60)],
