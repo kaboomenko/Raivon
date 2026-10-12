@@ -402,9 +402,11 @@ def hourglass(ctx, pr):
     r = hgt * 0.30
     c = h + nrm * (r + 0.012)
     bronze = core.principled(ctx, "bronze", pr.get("color", "#B0803A"), rough=0.32, metal=0.55)
-    glass = core.principled(ctx, "hg_glass", "#E8F0F4", rough=0.05, coat=0.5, spec=0.8)
+    # (no coat and a low specular: the bright reflections on the bulbs read as white sand, P2 review)
+    glass = core.principled(ctx, "hg_glass", "#E8F0F4", rough=0.05, coat=pr.get("glass_coat", 0.5),
+                            spec=pr.get("glass_spec", 0.8))
     b = glass.node_tree.nodes["Principled BSDF"]
-    b.inputs["Alpha"].default_value = 0.35
+    b.inputs["Alpha"].default_value = pr.get("glass_alpha", 0.35)
     sand = core.principled(ctx, "sand", pr.get("sand", "#E8A33A"), rough=0.7)
     grp = _detail(ctx, pr, "hourglass", 500)
     for s_ in (-1, 1):
@@ -579,6 +581,12 @@ def raven(ctx, pr):
         return
     feet = h
     face = (cam * math.cos(math.radians(pr.get("turn", 25))) + right * math.sin(math.radians(pr.get("turn", 25)))).normalized()
+    # leaning out, away from the head (roll about its facing axis, + = toward the screen's left): the bird's head and
+    # back stand clear of the hood's outline with a gap of background between them (P-A2: a bird pressed against the
+    # hood merged into one slope at 48 px)
+    roll = math.radians(pr.get("roll", 0.0))
+    up = (up * math.cos(roll) - right * math.sin(roll)).normalized()
+    face = (face - up * face.dot(up)).normalized()
     side = up.cross(face).normalized()
     s = size / 0.55
     el = []

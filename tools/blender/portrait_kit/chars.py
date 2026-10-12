@@ -6,8 +6,8 @@ P1 (the kit proof): Bram, Lira and Vega in era 1, calm and smile. P2: all twelve
 the leaders and the ruler keep the old builder in portrait_assets.py until P3 adds them here). A prop with a "hand"
 pose (§7.5: Vega's pointer, Seir's spyglass, Vance's queen, Irma's gauntlet) builds the hand when the character's
 "hands" is on (default) and its hand-free fallback otherwise (KIT_HANDS=0 / 1 forces either, for the review of §7.15
-q3). Vega's is off (decided after P1: she carries no pointer) and Vance's (P2 review: the pendant fallback won); their
-hands are built only under KIT_HANDS=1.
+q3). Vega's is off (decided after P1: she carries no pointer), Vance's and Irma's too (P2 review: the queen pendant and
+the gauntlets under the strap won); their hands are built only under KIT_HANDS=1. Seir keeps his hand.
 
 Units: lengths in H (head height without hair) unless noted; x / z offsets of marks are in head units relative to
 the eye line; colours are albedo sRGB. Moods are deltas over the calm face (§7.9).
@@ -41,15 +41,20 @@ CHARS = {
                    # h 0.12 (§7.3 norm): at 0.14 the opening reached the chin and the beard under it sat in a
                    # deep shadow shelf (dark pixels past §7.4's 3 %)
                    smile=dict(type="open", w=0.34, h=0.12, near=0.045, far=0.03, dz=-0.012)),
+        # a closer crop (a thin cap, flatter locks): the crown visibly narrower than the pear beard at 48 px (P-A2: the
+        # thick dome was as wide as the beard, so his "pear" read as a plain bust)
         hair=dict(style="swept", color="#B5562B", dark="#5A200C", light="#B5562B", crevice="#46180A",
-                  sideburns=True),
+                  sideburns=True, sheet=(0.022, 0.014), lock_th=0.042, lock_lift=0.3),
         # the beard #C8652F (§7.6) shaded hair-like but the other way up: lit lobe tips #D88048 on the slate jerkin
         # (dL* >= 15), roots #8E3E1C and a #74301A band along the cheek (beard vs skin >= 15, also at the boundary:
         # art director note 1); a soft #7A3216 crevice tone between the strand groups; the moustache in a darker
         # rust, so it reads as hair over the lip, not a fleshy upper lip
         beard=dict(style="pear", color="#C8652F", tip="#D88048", root="#8E3E1C", edge="#74301A", crevice="#7A3216",
-                   wider=0.12, below=0.45, moustache=True, moustache_color="#A04A22", moustache_dark="#76301A",
-                   moustache_light="#B5562B"),
+                   # 0.16 W past the jaw each side (§7.6 0.12 W) and full over its upper half: at 0.12 the pear only
+                   # widened over the chest, where the shoulders hide it in the 48 px silhouette (P-A2)
+                   wider=0.16, below=0.45, profile=[(-1.0, 0.80), (0.0, 1.0), (0.3, 0.97), (0.6, 0.78), (0.85, 0.56),
+                                                    (1.0, 0.44)],
+                   moustache=True, moustache_color="#A04A22", moustache_dark="#76301A", moustache_light="#B5562B"),
         scar=dict(near=True, **{"from": (-0.34, 0.01), "to": (-0.23, -0.14)}),
         body=dict(shoulders=2.0),
         costume=dict(
@@ -170,7 +175,9 @@ CHARS = {
         # "T2 румяный" as a deeper rosy pink (#D88878): the white brows measured only 12.6 L* over the skin at #F2A07E
         # (§7.4: white brows >= 18 L* lighter than the skin); the pink hue (<= 16 deg) keeps it from going pumpkin
         # orange as it darkens (and takes §7.4's S floor 0.27 for peach-pink skin)
-        skin="#D88878", skin_tone="T2", blush=0.28, skin_sat=1.32,
+        # (saturation a step down from 1.32: the lit cheek measured S 0.58 at hue 15 deg, a tomato beside Olm and Bram —
+        # P2 review; still rosy, over §7.4's 0.27 floor for peach-pink skin)
+        skin="#D88878", skin_tone="T2", blush=0.28, skin_sat=1.12,
         # heavy lids 0.50 with a crease, grey-blue, small "spark" catchlights; the smile opens them to 0.70
         eyes=dict(sclera=0.18, open=0.50, iris="#8AA0B4", iris_shade=0.85, tilt=-0.10, arch=0.06, catch_k=1.0,
                   iris_k=1.08, pupil=0.62,
@@ -182,11 +189,14 @@ CHARS = {
         mouth=dict(lip="#C4675A", line=0.20,
                    calm=dict(type="closed", w=0.26, near=-0.005, far=-0.005),
                    smile=dict(type="open", w=0.32, h=0.12, near=0.035, far=0.03, dz=-0.012)),
+        # the white tufts tucked close behind the ears (sticking out sideways they read as hood points or horns at
+        # 48 px and fed the P-A2 confusion with Vik and Bram)
         hair=dict(style="tufts", bald=True, color="#FCFCFF", dark="#EEEEF4", light="#FFFFFF", crevice="#C4C8D6",
-                  tufts=dict(band_az=100, band_lo=-26, band_hi=6, out=0.12, up=0.30,
-                             fans=[(104, 8, 1.1, 0.065, 5), (126, 0, 0.95, 0.06, 4)])),
-        # the walrus moustache, white #EDEDF2, 0.85 W wide, hanging 0.25 H below the mouth (§7.6)
-        beard=dict(style="walrus", color="#EDEDF2", tip="#FFFFFF", root="#D4D6DE", crevice="#7E8496", w=0.85,
+                  tufts=dict(band_az=100, band_lo=-26, band_hi=4, out=0.0, up=0.04,
+                             fans=[(108, 2, 1.0, 0.06, 4), (128, -4, 0.9, 0.055, 3)])),
+        # the walrus moustache, white #EDEDF2, hanging 0.25 H below the mouth (§7.6), its ends pushed out past the jaw
+        # (1.1 W, not 0.85: the ends must break the face's outline so his shape is wide and low at 48 px — P-A2)
+        beard=dict(style="walrus", color="#EDEDF2", tip="#FFFFFF", root="#D4D6DE", crevice="#7E8496", w=1.10,
                    drop=0.30, smile_lift=0.04),
         age=dict(forehead=3, crows=3, nasolabial=False, k=0.45, smile_k=0.55),
         body=dict(shoulders=2.15, neck=0.55),
@@ -199,14 +209,18 @@ CHARS = {
                 # open in front down to the clasp
                 # the darks lifted (#4E3A2E / #2E221C rendered 4.2 % of the figure under L* 17: §7.4 allows 3 % for
                 # pupils, lashes, mouth and seams together)
-                dict(kind="fur", id="fur", color="#6B5040", dark="#664F3E", light="#8A6850", crevice="#5E4836",
-                     r=0.70, r_in=0.30, t=0.11, front_z=-1.05, side_z=-0.94, back_z=-0.86, open=0.10,
-                     # fewer, larger, smoother curls (art director note 3: no cauliflower)
-                     clumps=dict(n=70, len=0.11, w=0.06, th=0.036), detail="fur", min_px=8000, signature=True,
-                     smooth=3),
+                # karakul in ribbons (§7.6): a flatter sheet with flat C-shaped curl ribbons half sunk into it, AO in
+                # the grooves between them (round clumps on a thick roll read as chocolate mousse, P2 review); wider
+                # over the shoulders (his "shoulder width" zone: wide and low at 48 px)
+                dict(kind="fur", id="fur", color="#6B5040", dark="#664F3E", light="#8E6C52", crevice="#4E3A2C",
+                     r=0.80, r_in=0.30, t=0.085, front_z=-1.05, side_z=-0.94, back_z=-0.86, open=0.10,
+                     clumps=dict(n=95, len=0.13, w=0.034, th=0.024, curl=0.5, sink=0.88, rise=0.0, balls=7, tip=0.45),
+                     detail="fur", min_px=8000, signature=True, smooth=2, res=0.011),
                 dict(kind="clasp", color="#B0803A", z=-0.90, x=0.075),
             ]),
-        props=[dict(kind="hourglass", at=(-0.23, -0.93), h=0.22, button="button_0", sag=0.02)],
+        # amber sand (§7.6 "янтарный песок"), a clearer glass: through the 0.35 glass the sand read white (P2 review)
+        props=[dict(kind="hourglass", at=(-0.23, -0.93), h=0.22, button="button_0", sag=0.02, sand="#D8801C",
+                    glass_alpha=0.08, glass_coat=0.0, glass_spec=0.2)],
         pose=dict(body=16, head=2, roll=0, nod=-4),
         pose_smile=dict(roll=-3, nod=2),
         signature=dict(name="dome + walrus moustache + dark fur collar", zone="lower face width; shoulders"),
@@ -280,14 +294,16 @@ CHARS = {
         mouth=dict(lip="#C4675A", line=0.20,
                    calm=dict(type="closed", w=0.25, near=0.03, far=0.005),
                    smile=dict(type="open", w=0.32, h=0.11, near=0.075, far=0.035, dz=-0.01, fang="near")),
-        # straw lifted toward pale cream (#EBD27A measured hair-skin dE 20.6, #FAEBA2 24.5, a golden #F6D85E 20.4 —
-        # yellow chroma sits on the skin's own b*; P-A5 needs 30): lightness and a cooler hue separate it; five broad
-        # locks swept to the far side, overlapping, the far ones short so the far brow shows (six even ones read as a
-        # row of teeth)
-        hair=dict(style="fringe", color="#FFF6CC", dark="#E8D490", light="#FFFCEE", crevice="#7A5A20", tip_el=45,
-                  locks=[(-36, 0.12, 14, 0.95), (-14, 0.13, 20, 1.2), (8, 0.12, 22, 0.95), (26, 0.10, 20, 0.7),
-                         (42, 0.085, 16, 0.55)]),
-        headgear=dict(kind="hood", color="#527040", thick=0.075, peak=0.25, edge_r=0.05),     # #4E6B3A a hair lighter: dark budget
+        # straw (§7.6 #EBD27A) as a mid-tone with light tips and dark crevices between the clumps: seven tapered
+        # wisps from under the hood onto the brows (a flat pale cream #FFF6CC, chosen for hair-skin dE, rendered them
+        # as white pebbles, P2 review); value keeps hair vs skin dE76 >= 30 (§7.4)
+        hair=dict(style="fringe", color="#FAE6A2", dark="#DCBE6C", light="#FFF8D8", crevice="#7A5A22", rim_el=50),
+        # the soft peak stands 0.25 H clear of the hood (§7.6), up and back, a little toward the near side so the
+        # level 3/4 camera sees it side-on; #4E6B3A a hair lighter: dark budget
+        # (the front edge a little higher than the kit's default, so the fringe has a forehead to fall over)
+        headgear=dict(kind="hood", color="#527040", thick=0.075, peak=0.30, edge_r=0.05, peak_at=(-160, 44),
+                      peak_dir=(-138, 22), droop=0.10,
+                      edge=[(0, 53), (40, 46), (62, 24), (76, -10), (88, -60), (180, -90)]),
         body=dict(shoulders=1.75),
         costume=dict(
             base=dict(color="#6B4A2A", rough=0.6, sheen=0.15),
@@ -298,7 +314,10 @@ CHARS = {
                 dict(kind="strap", id="strap", color="#4E3620", **{"from": (0.40, -0.72), "to": (-0.45, -1.6)},
                      w=0.07),
             ]),
-        props=[dict(kind="raven", x=-0.70, y=0.10, size=0.55, turn=30),
+        # the raven in profile, beak out to the left (a bird's eye looks at you from the side of its head: its near
+        # eye and catchlight face the camera), out on the shoulder and leaning away from the hood — a notch of
+        # background between bird and hood at 48 px (P-A2: pressed against the hood it merged into one slope)
+        props=[dict(kind="raven", x=-0.70, y=0.10, size=0.55, turn=-55, roll=8),
                dict(kind="bow", x0=0.66, y=0.26, z0=-0.86, len=0.6, lean=10)],
         pose=dict(body=18, head=14, roll=-6, nod=2),
         pose_smile=dict(roll=-4, nod=2),

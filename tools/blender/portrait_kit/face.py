@@ -124,8 +124,9 @@ def plan_skin_paint(ctx):
     """Painted marks need surface points (head-local object coordinates, ray cast on the head before the skin
     material is finalised):
       - age (§7.3 "Возраст"): chars "age": {"forehead": n lines, "crows": n per eye, "nasolabial": bool, "k": depth,
-        "smile_k": depth in the smile} — soft darker grooves 0.012 H wide with a bump (the cage is too coarse for
-        0.012 H brush grooves, so they are paint + bump);
+        "smile_k": depth in the smile, "bump": False, "step": 1.2} — soft darker lines 0.012 H wide (the cage is too
+        coarse for 0.012 H brush grooves, so they are paint; a bump is optional — it re-evaluates the blob network
+        three more times, and at P2 it doubled the bald commanders' frame time and beaded the lines);
       - "paint": [{"at": (x, z) in H from the eye line (x: + far side), "r": H, "color", "k"}] soft patches (Vik's tan
         across the nose, Seir's ruddy nose);
       - "oil": {"from": (x, z), "to": (x, z), "color", "k"} a smear (§7.3 #5A4A44 alpha 0.7, 0.18 x 0.05 H) —

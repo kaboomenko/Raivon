@@ -395,10 +395,15 @@ def fur(ctx, ly, name):
         tang = nor.orthogonal().normalized()
         tang = (Matrix.Rotation(a, 3, nor) @ tang).normalized()
         ln = cl.get("len", 0.07) * rng.uniform(0.8, 1.2)
-        p0 = hit + nor * (t * 0.85)
-        el += core.clump([p0 - tang * ln * 0.5, p0 + nor * 0.01, p0 + tang * ln * 0.5], [nor, nor, nor],
-                         cl.get("w", 0.035), cl.get("w", 0.035) * 0.8, cl.get("th", 0.03), n=6, lift=0.0, taper_at=0.6,
-                         tip=0.6, stiff=2.6, flat=0.9)
+        p0 = hit + nor * (t * cl.get("sink", 0.85))
+        # curl > 0: a C-shaped ribbon (the middle pushed sideways), lying flat on the sheet — karakul in ribbons, not
+        # round lumps (P2 review: "chocolate mousse")
+        bend = Vector()
+        if cl.get("curl"):
+            bend = nor.cross(tang).normalized() * ln * cl["curl"] * (1 if rng.random() < 0.5 else -1)
+        el += core.clump([p0 - tang * ln * 0.5, p0 + nor * cl.get("rise", 0.01) + bend, p0 + tang * ln * 0.5],
+                         [nor, nor, nor], cl.get("w", 0.035), cl.get("w", 0.035) * 0.8, cl.get("th", 0.03),
+                         n=cl.get("balls", 6), lift=0.0, taper_at=0.6, tip=cl.get("tip", 0.6), stiff=2.6, flat=0.9)
     col = ly["color"]
     m = core.hair_mat(ctx, name, col, -1.0, -0.55, dark=ly.get("dark"), light=ly.get("light"),
                       crevice=ly.get("crevice"), rough=0.75)

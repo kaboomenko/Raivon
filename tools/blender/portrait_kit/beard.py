@@ -68,13 +68,14 @@ def _pear(ctx, bd):
     wide = jaw_x + bd.get("wider", 0.12) * ctx.W          # half width of the beard's widest row
     tip_z = chin_z - bd.get("below", 0.45) * H              # the lowest point (lobe bottoms)
     fy = ctx.L["face_y"]
-    zj = chin_z + 0.07                                      # the widest row, at the jaw line
+    zj = chin_z + bd.get("widest", 0.07)                    # the widest row (at the jaw line by default)
     th = bd.get("clump_th", 0.06)
+    prof = bd.get("profile", [(-1.0, 0.78), (0.0, 1.0), (0.3, 0.90), (0.6, 0.68), (0.85, 0.50), (1.0, 0.42)])
 
     def half_w(z):
         """The pear's half width at z: the sideburns' width up on the cheek, widest at the jaw, two lobes at the tip."""
         t = (zj - z) / (zj - tip_z)
-        return wide * core.lerp_table([(-1.0, 0.78), (0.0, 1.0), (0.3, 0.90), (0.6, 0.68), (0.85, 0.50), (1.0, 0.42)], t)
+        return wide * core.lerp_table(prof, t)
 
     def guide(x, z):
         """A point of the guide surface and its normal: on the face above the chin (the beard's own thickness in

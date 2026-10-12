@@ -170,25 +170,64 @@ def hood(ctx, hg):
             a = math.radians(-118 + 236 * i / 25 + 180)
             co = Vector((r * math.sin(a), 0.10 + r * -math.cos(a) * 0.9, z))
             el.append(dict(co=co, half=0.075, stiff=2.0))
-    # the peak: up and back from the crown, tapering to a rounded tip
+    # the peak: a soft tapering cone that leaves the hood's crown at the back and stands `peak` H clear of the hood's
+    # own surface (§7.6 "мягкий пик 0.25 H назад"; measured from the base of the cone it stood only 15-20 px past the
+    # dome, P2 review), up and back at `peak_dir` (azimuth, elevation in head space: a little toward the near side, so
+    # the level 3/4 camera sees it side-on instead of foreshortened behind the head), its tip drooping a little
     pk = hg.get("peak", 0.25) * H
-    pd = core.az_el(180, hg.get("peak_el", 48))
+    pd = core.az_el(*hg.get("peak_at", (180, 48)))
     ph, pn = core.ray(head, pd * 3, -pd)
-    base = ph + pn * th * 0.6
-    d = Vector(hg.get("peak_dir", (0.0, 0.80, 0.60))).normalized()
-    for k in range(16):
-        t = k / 15
-        # a soft cone: wide where it leaves the hood's crown, bending a little down toward its rounded tip
-        c = base + d * ((pk + th) * 1.1 * t) + Vector((0, 0.02 * t, -0.05 * t * t))
-        el.append(dict(co=c, half=0.13 * (1 - 0.78 * t ** 0.8) + 0.008, stiff=2.0))
+    t_here = thick(ph, pn)
+    base = ph + pn * t_here * 0.45
+    d = core.az_el(*hg.get("peak_dir", (180, 37)))
+    inside = t_here * 0.55 / max(d.dot(pn), 0.35)          # from the base to the hood's outer surface along d
+    r0 = hg.get("peak_r", 0.13)
+    peak_el = []
+    n_pk = 22
+    for k in range(n_pk):
+        t = k / (n_pk - 1)
+        ln = (inside + pk) * t
+        # a soft cone: wide where it leaves the hood, its last third bending down toward a rounded tip
+        c = base + d * ln + Vector((0, 0, -hg.get("droop", 0.06) * core.smoothstep(0.45, 1.0, t) * t))
+        peak_el.append(dict(co=c, half=r0 * (1 - 0.80 * t ** 0.85) + 0.010, stiff=2.0))
     m = core.fabric(ctx, "hood", hg["color"], z0=-0.7, z1=0.6, rough=0.85, sheen=0.35)
-    o = core.mb_mesh(ctx, "Hood", el, 0.013, m, smooth_iter=3, name="hood")
+    o = core.mb_mesh(ctx, "Hood", el + peak_el, 0.013, m, smooth_iter=3, name="hood")
     ctx.add(o, "hat", head, kind="embed", head=True)
     ctx.objs["hood"] = o
-    ctx.sig_objs.append(o)
+    # the peak is one surface with the hood (a smooth metaball union) but its own ID region: the hood's faces outside
+    # the same hood built without the peak (a hidden proxy) go to material slot 1 — the ID pass colours them
+    # detail:hood_peak and the signature mask takes only them (P-A8 "пик капюшона 1500" and the 48 px signature share
+    # measured the whole hood before: every gate passed a peak that hardly showed, P2 review)
+    dome = core.mb_mesh(ctx, "HoodDome", el, 0.013, m, smooth_iter=3, name="hood_dome")
+    _region_slot(ctx, o, dome, m, "detail:hood_peak", margin=hg.get("peak_margin", 0.012))
+    bpy.data.objects.remove(dome, do_unlink=True)
     ctx.details["hood_peak"] = hg.get("min_px", 1500)
-    # the peak is one surface with the hood (a smooth metaball union): measured on the whole "hat" group
-    ctx.detail_groups = dict(getattr(ctx, "detail_groups", {}), hood_peak="hat")
+
+
+def _region_slot(ctx, obj, without, mat, group, margin=0.01, signature=True):
+    """Faces of `obj` lying more than `margin` outside the mesh `without` (the same part built without one feature)
+    go to material slot 1 (the same material in the beauty render); the ID pass colours that slot `group` and, with
+    `signature`, the signature mask takes only that slot (ctx.slot_groups / ctx.sig_slots)."""
+    from mathutils.bvhtree import BVHTree
+    core.update()
+    wm = without.data        # both raw (before their identical Smooth modifiers): like is compared with like
+    tree = BVHTree.FromPolygons([v.co.copy() for v in wm.vertices], [tuple(p.vertices) for p in wm.polygons])
+    inv = without.matrix_world.inverted() @ obj.matrix_world
+    me = obj.data
+    if len(me.materials) < 2:
+        me.materials.append(mat)
+    n_in = 0
+    for f in me.polygons:
+        c = inv @ f.center
+        loc, nor, _, dist = tree.find_nearest(c)
+        out = loc is not None and (c - loc).dot(nor) > 0 and dist > margin
+        f.material_index = 1 if out else 0
+        n_in += out
+    me.update()
+    ctx.slot_groups = dict(getattr(ctx, "slot_groups", {}), **{obj.name: {1: group}})
+    if signature:
+        ctx.sig_slots = dict(getattr(ctx, "sig_slots", {}), **{obj.name: {1}})
+    return n_in
 
 
 # ------------------------------------------------------------------ tricorn (Seir)

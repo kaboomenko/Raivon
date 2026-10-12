@@ -165,6 +165,22 @@ def _skin_id(name, ctx, table):
     return m
 
 
+def _assign_slots(o, mats):
+    """Replace an object's materials slot by slot, in place: materials.clear() resets every face's material index to
+    0, so a part's second slot (the head's open-mouth pocket, Vik's hood peak) would vanish from the pass. Slots past
+    `mats` take its first material."""
+    have = len(o.data.materials)
+    if have == 0:
+        o.data.materials.append(mats[0])
+        have = 1
+    for i in range(max(have, len(mats))):
+        mt = mats[i] if i < len(mats) else mats[0]
+        if i < have:
+            o.data.materials[i] = mt
+        else:
+            o.data.materials.append(mt)
+
+
 def _flat_settings(size):
     sc = bpy.context.scene
     sc.cycles.samples = 1
@@ -210,14 +226,22 @@ def id_pass(ctx, path_png, path_json, path_sig, size):
                 cache[grp] = _flat("id_" + grp, _id_color(table, grp))
             m = cache[grp]
         n_slots = len(o.data.materials)
-        o.data.materials.clear()
-        o.data.materials.append(m)
-        if o.name == "head" and n_slots > 1:
+        new = [m]
+        slots = getattr(ctx, "slot_groups", {}).get(o.name)
+        if slots:
+            # a region of one surface measured as its own part (Vik's hood peak: headgear._region_slot)
+            for i in range(1, max(n_slots, max(slots) + 1)):
+                g = slots.get(i, grp)
+                if g not in cache:
+                    cache[g] = _flat("id_" + g, _id_color(table, g))
+                new.append(cache[g])
+        elif o.name == "head" and n_slots > 1:
             # slot 1 of the head: an open mouth's pocket walls (face.carve_mouth transfers the dark interior onto
             # the cut), the "mouth" group
             if "mouth" not in cache:
                 cache["mouth"] = _flat("id_mouth", _id_color(table, "mouth"))
-            o.data.materials.append(cache["mouth"])
+            new.append(cache["mouth"])
+        _assign_slots(o, new)
     for L in [o for o in sc.objects if o.type == "LIGHT"]:
         L.hide_render = True
     sc.world.node_tree.nodes["Background"].inputs["Strength"].default_value = 0.0
@@ -234,15 +258,15 @@ def id_pass(ctx, path_png, path_json, path_sig, size):
     nt.links.new(ho.outputs[0], nt.nodes["Material Output"].inputs["Surface"])
     white = _flat("id_sig", (255, 255, 255))
     sig = {o.name for o in ctx.sig_objs}
+    sig_slots = getattr(ctx, "sig_slots", {})       # only some slots of an object (Vik's hood: the peak region)
     for o in sc.objects:
         if o.type not in ("MESH", "CURVE") or o.hide_render:
             continue
         n_slots = max(1, len(o.data.materials))
-        o.data.materials.clear()
         # every slot (the head's slot 1 — an open mouth's pocket walls — left empty rendered as an opaque default
         # surface: the teeth / mouth showed up in the signature mask)
-        for _ in range(n_slots):
-            o.data.materials.append(white if o.name in sig else hold)
+        _assign_slots(o, [white if ((i in sig_slots[o.name]) if o.name in sig_slots else (o.name in sig)) else hold
+                          for i in range(n_slots)])
     sc.render.filepath = path_sig
     bpy.ops.render.render(write_still=True)
 

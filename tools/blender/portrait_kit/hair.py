@@ -83,7 +83,11 @@ def _swept(ctx):
     sx = ctx.P["hx"] / 0.48
     hl = hairline_fn([(0, 0.30), (30, 0.28), (60, 0.2), (80, 0.12), (100, 0.08), (140, -0.10), (180, -0.20)])
     samples, s = core.surface_samples(head, 2400, lambda h, n, d: h.z > hl(h) + 0.02)
-    el = core.sheet_elems(samples, s, lambda h, n: (0.035 + 0.03 * core.smoothstep(0.1, 0.45, h.z))
+    # a character may thin the cap (Bram: a close crop under the locks, so the crown is visibly narrower than the
+    # pear beard at 48 px — P-A2)
+    t0, t1 = hr.get("sheet", (0.035, 0.03))
+    th_l, lift_l = hr.get("lock_th", 0.05), hr.get("lock_lift", 0.45)
+    el = core.sheet_elems(samples, s, lambda h, n: (t0 + t1 * core.smoothstep(0.1, 0.45, h.z))
                           * (0.5 + 0.5 * core.smoothstep(0.0, 0.08, h.z - hl(h))))
     crown = core.az_el(175, 72)
     # front: broad flattened locks sweeping toward the far side (+X), tips hanging over the forehead
@@ -95,13 +99,13 @@ def _swept(ctx):
         if hit is None:
             continue
         hang = hit + nor * 0.045 + Vector((math.sin(math.radians(az + sweep)) * 0.05, -0.03, -0.03))
-        el += core.ribbon_lock(head, [crown, mid, tip_d, hang], w * sx, w * 0.8 * sx, 0.05, n=14, lift=0.45,
+        el += core.ribbon_lock(head, [crown, mid, tip_d, hang], w * sx, w * 0.8 * sx, th_l, n=14, lift=lift_l,
                                free_tail=1)
     # sides and back: locks from the crown down to the hairline; short over the ears (ears stay free)
     for az, el_end, w in [(-76, 18, 0.07), (-98, 10, 0.07), (76, 20, 0.07), (98, 12, 0.07), (-125, 0, 0.08),
                           (125, 2, 0.08), (-152, -8, 0.085), (152, -6, 0.085), (180, -12, 0.085)]:
         el += core.ribbon_lock(head, [crown, core.az_el(az, (72 + el_end) / 2), core.az_el(az, el_end)], w * sx,
-                               w * 0.75 * sx, 0.045, n=12, lift=0.4)
+                               w * 0.75 * sx, th_l * 0.9, n=12, lift=lift_l * 0.9)
     # sideburns: short flat locks in front of the ears down to the beard line (no skin gap between hair and beard)
     if hr.get("sideburns"):
         for s_ in (-1, 1):
@@ -417,23 +421,43 @@ def _fringe(ctx):
     hl = hairline_fn([(0, 0.26), (40, 0.22), (70, 0.12), (90, 0.02), (130, -0.10), (180, -0.20)])
     samples, s = core.surface_samples(head, 2000, lambda h, n, d: h.z > hl(h) + 0.015)
     el = core.sheet_elems(samples, s, lambda h, n: 0.035)
-    tip_el = hr.get("tip_el", 30)
-    locks = hr.get("locks", [(-42, 0.088, -4, 0.75), (-26, 0.098, 4, 1.1), (-10, 0.10, 10, 1.25), (6, 0.098, 14, 1.0),
-                             (22, 0.092, 18, 1.15), (38, 0.085, 20, 0.85)])
-    for az, w, sweep, length in locks:
-        root = core.az_el(az * 0.8, 62)
-        mid = core.az_el(az + sweep * 0.5, 48)
-        tip_d = core.az_el(az + sweep, tip_el + 6 * (1.1 - length))
-        hit, nor = core.ray(head, tip_d * 3, -tip_d)
-        if hit is None:
+    # the escape locks (§7.5 step 3: 6-10 below the rim): long tapered wisps rooted under the hood, out past its rim
+    # and down over the forehead to a pointed tip on (or just over) the brow line, overlapping their neighbours. Only
+    # the rounded ends of short locks used to clear the rim — three smooth ovoids on the brows, "pebbles", P2 review.
+    # (azimuth, width, sweep to the far side in deg, tip height over the brow line in H, lift off the skin)
+    brow_z = ctx.P["eye_z"] + ctx.P["sclera_h"] * 0.5 + 0.05 * H
+    rim_el = hr.get("rim_el", 44)
+    # (diagonal, swept to the far side and overlapping from the rim down: vertical, evenly spaced spikes read as a
+    # row of fangs)
+    for az, w, sweep, tip_dz, lift in hr.get("wisps", [(-46, 0.10, 20, 0.05, 0.018), (-33, 0.11, 24, 0.00, 0.024),
+                                                       (-20, 0.115, 28, -0.025, 0.030), (-7, 0.115, 30, 0.01, 0.032),
+                                                       (6, 0.11, 30, -0.015, 0.030), (19, 0.10, 28, 0.03, 0.026),
+                                                       (31, 0.09, 24, 0.06, 0.022), (42, 0.08, 18, 0.09, 0.018)]):
+        root_d = core.az_el(az * 0.8, rim_el + 14)
+        rim_d = core.az_el(az + sweep * 0.3, rim_el)
+        hr_, nr_ = core.ray(head, root_d * 3, -root_d)
+        hm_, nm_ = core.ray(head, rim_d * 3, -rim_d)
+        tip_az = az + sweep
+        tz = brow_z + tip_dz * H
+        ht_, nt_ = core.ray_front(head, math.sin(math.radians(tip_az)) * 0.40 * sx, tz)
+        if hr_ is None or hm_ is None or ht_ is None:
             continue
-        hang = hit + nor * 0.035 + Vector((math.sin(math.radians(az + sweep)) * 0.03, -0.02, -0.07 * length))
-        el += core.ribbon_lock(head, [root, mid, tip_d, hang], w * sx, w * 0.78 * sx, 0.048, n=16, lift=0.45,
-                               free_tail=1, taper_at=0.86, wmin=0.05)
-    for s_ in (-1, 1):
-        el += core.ribbon_lock(head, [core.az_el(s_ * 60, 44), core.az_el(s_ * 74, 22), core.az_el(s_ * 80, 4)],
-                               0.07 * sx, 0.045 * sx, 0.04, n=10, lift=0.4, taper_at=0.6)
-    _finish_hair(ctx, el, hr["color"], cut=False)
+        mid = hm_.lerp(ht_, 0.5)
+        hmid, nmid = core.ray(head, mid * 3, -mid.normalized())
+        if hmid is None:
+            continue
+        pts = [hr_ + nr_ * 0.03, hm_ + nm_ * 0.045, hmid + nmid * (0.02 + lift), ht_ + nt_ * (0.012 + lift * 0.6)]
+        nrs = [nr_, nm_, nmid, nt_]
+        el += core.clump(pts, nrs, w * sx, w * 0.8 * sx, 0.030, n=18, lift=0.0, taper_at=0.38, tip=0.10, stiff=2.6,
+                         flat=0.7)
+    # (no temple locks: the hood covers the temples, and in its shade they only darkened the hair beside the face)
+    # shaded the other way up (light at the tips, which hang lowest; the roots under the hood darker): a straw
+    # mid-tone whose clumps part in AO crevices — not a flat near-white (hair vs skin keeps dE76 >= 30 by value)
+    mat = core.hair_mat(ctx, "hair_hair", hr["color"], brow_z + 0.22, brow_z + 0.02, dark=hr.get("dark"),
+                        light=hr.get("light"), crevice=hr.get("crevice"))
+    o = core.mb_mesh(ctx, "Hairhair", el, 0.008, mat, smooth_iter=2, name="hair")
+    ctx.add(o, "hair", head, kind="embed", head=True)
+    ctx.objs["hair"] = o
 
 
 # ------------------------------------------------------------------ short (Seir; under hats)
