@@ -745,8 +745,8 @@ func _place_ghost(pos: Vector2) -> void:
 
 func _on_card_input(event: InputEvent, card: String) -> void:
 	if _locked.has(card):
-		if event is InputEventScreenTouch or event is InputEventMouseButton:
-			if event.pressed:
+		if event is InputEventScreenTouch or (event is InputEventMouseButton and event.device != InputEvent.DEVICE_ID_EMULATION):
+			if event.pressed:  # (a touch's emulated mouse press is the same tap: one toast, not «×2»)
 				# «Ракета — откроется на уровне развития 8» (no «УР8», §3.7): the stub has no room for its name
 				toast(tr("battle.card_locked") % [_card_name(card), int(_locked[card])], "lock", "info", true)
 		return
@@ -1199,11 +1199,12 @@ func show_result(stars: int, captured: int, lost: int, score: float, control: in
 	]
 	if pocket > 0:
 		tiles.append({"icon": "white_flag", "value": "+%d" % pocket, "caption": tr("result.pocket")})
-	tiles.append_array([
-		{"icon": "orders", "value": "%d%%" % control, "caption": tr("result.control")},
-		{"icon": "treaty", "value": ("+" if score > 0.05 else "") + Kit.fmt_dec(score, 1), "caption": tr("result.score"),
-			"value_color": Kit.NEG_CREAM if score < -0.05 else Kit.INK_TEXT},
-	])
+	if pocket <= 0 or lost <= 0:
+		# four tiles at most: with a pocket and losses both, «Фронт» goes (the war bar over the window shows it), so
+		# no caption is cut («Захваче…»)
+		tiles.append({"icon": "orders", "value": "%d%%" % control, "caption": tr("result.control")})
+	tiles.append({"icon": "treaty", "value": ("+" if score > 0.05 else "") + Kit.fmt_dec(score, 1), "caption": tr("result.score"),
+		"value_color": Kit.NEG_CREAM if score < -0.05 else Kit.INK_TEXT})
 	if lost > 0:
 		tiles.append({"icon": "hex_tile", "value": Kit.MINUS + str(lost), "caption": tr("result.lost"), "value_color": Kit.NEG_CREAM})
 	var well := Kit.well(box, Rect2(32, 326, w - 64.0, 214))
@@ -1211,7 +1212,7 @@ func show_result(stars: int, captured: int, lost: int, score: float, control: in
 	var tw := (well.size.x - 32.0 - 12.0 * (n - 1)) / n
 	for i in n:
 		var o: Dictionary = tiles[i]
-		o["icon_side"] = 72.0 if n <= 3 else (64.0 if n == 4 else 52.0)
+		o["icon_side"] = 72.0 if n <= 3 else 64.0
 		Kit.tile(well, Rect2(16.0 + i * (tw + 12.0), 16, tw, 182), o)
 	if note:
 		var nl := Kit.label(tr("result.note"), 28, Kit.SOFT_CREAM, false)
