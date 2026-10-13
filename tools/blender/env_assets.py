@@ -1493,6 +1493,61 @@ def mine():
                 z0=0.115)
 
 
+def _blob(R, n=32, lobes=((3, 0.08, 1.0), (5, 0.05, 2.0)), sx=1.0, sy=1.0):
+    """A soft rounded outline: r(θ) = R·(1 + Σ a·sin(kθ + φ)), n points (no corners, §6.1 rule 2)."""
+    pts = []
+    for i in range(n):
+        t = i / n * math.tau
+        r = R * (1.0 + sum(a * math.sin(k * t + ph) for k, a, ph in lobes))
+        pts.append((sx * r * math.cos(t), sy * r * math.sin(t)))
+    return pts
+
+
+def dark_lake():
+    """The Dark Lake (canon §5.1: dormant oil; art pass 5, A1) — replaces map_view's placeholder, a near-black 9-sided
+    disc (0.07, 0.06, 0.12) with sharp corners and three loose rocks, the darkest and crudest shape on the map. A
+    rounded pond (soft lobed outline, no corners) of still violet-black oil with an oily sheen (its own glossy
+    material, kept out of the bake like the oil fields' crude, albedo #2E2B42 — no darker than §6.1's ≈ #2A2A30), pale
+    lilac sheen streaks and a few oil bubbles on it; a ring of wet dark mud and a sandy shore that fades into the
+    hex's grass; clumps of chunky reeds with brown heads, rounded mossy rocks and a dead stump on the shore."""
+    shore = tex("plaster", "#B9A27E", 2.0)
+    wet = tex("plaster", "#857360", 2.5)
+    oil = kit.mat("dark_lake", "#2E2B42", 0.08, 0.55)
+    ev.extrude(_blob(0.66, lobes=((3, 0.07, 1.0), (5, 0.04, 2.0))), -0.01, 0.008, shore)
+    ev.extrude(_blob(0.6, lobes=((3, 0.08, 1.1), (5, 0.05, 2.1))), -0.01, 0.013, wet)
+    ev.extrude(_blob(0.55, lobes=((3, 0.08, 1.1), (5, 0.05, 2.1))), -0.004, 0.017, oil)
+    sheen = flat("lake_sheen", "#57557E", 0.3)
+    for (x, y, a, b, rz) in ((-0.12, 0.1, 0.16, 0.035, 0.4), (0.15, -0.12, 0.12, 0.03, -0.3), (0.05, 0.28, 0.09, 0.025,
+                                                                                               0.9)):
+        o = ev.extrude(_blob(1.0, n=16, lobes=((2, 0.05, 0.3),), sx=a, sy=b), 0.017, 0.0185, sheen)
+        o.rotation_euler.z = rz
+        o.location = (x, y, 0.0)
+    for (x, y, r) in ((0.02, -0.02, 0.028), (-0.24, -0.16, 0.02), (0.26, 0.14, 0.022)):  # slow oil bubbles
+        ev.uvs(r, (x, y, 0.017), oil, 10, 5, (1.0, 1.0, 0.7))
+    rk = granite_paint(moss_at=0.65, scale=6.0, moss_z=0.0, cover=0.5)
+    for k, (a, r, s_) in enumerate(((0.6, 0.66, 0.085), (2.5, 0.64, 0.065), (4.3, 0.67, 0.08), (5.5, 0.62, 0.055))):
+        soft_block(r * math.cos(a), r * math.sin(a), s_ * 2.4, s_ * 2.0, s_ * 1.5, rk, 120 + k, rz=a, sub=1,
+                   cuts=(2, 3), bevel=0)
+    reed = flat("reed", "#6E9A48", 0.85)
+    reed_l = flat("reed_l", "#8DB45A", 0.85)
+    head = flat("reed_head", "#7A5232", 0.85)
+    rnd = random.Random(31)
+    for (a, r) in ((1.5, 0.6), (3.4, 0.58), (5.0, 0.6), (0.1, 0.57)):  # reed clumps at the water's edge
+        cx_, cy2 = r * math.cos(a), r * math.sin(a)
+        for j in range(5):
+            b = j / 5 * math.tau + rnd.uniform(-0.3, 0.3)
+            d = 0.0 if j == 0 else rnd.uniform(0.025, 0.045)
+            x, y = cx_ + d * math.cos(b), cy2 + d * math.sin(b)
+            h = rnd.uniform(0.15, 0.22)
+            lean = (rnd.uniform(-0.02, 0.02), rnd.uniform(-0.02, 0.02))
+            ev.cn(0.024, h, (x, y, h / 2), reed if j % 2 else reed_l, 6).rotation_euler = (lean[1] * 4, -lean[0] * 4, 0)
+            if j % 2 == 0:
+                cy(0.016, 0.055, (x + lean[0] * 0.6, y + lean[1] * 0.6, h * 0.78), head, 6)
+    bark = tex("wood", "#8A6A4A", 2.0)  # a dead stump on the shore, its pale broken top
+    cy(0.035, 0.09, (-0.5, 0.36, 0.045), bark, 8)
+    cy(0.036, 0.008, (-0.5, 0.36, 0.093), flat("stump_top", "#C9A878", 0.8), 8)
+
+
 ASSETS = {
     "tree_pine": tree_pine,
     "tree_round": tree_round,
@@ -1505,6 +1560,7 @@ ASSETS = {
     "mine": mine,
     "bush": bush,
     "flowers": flowers,
+    "dark_lake": dark_lake,
 }
 
 
