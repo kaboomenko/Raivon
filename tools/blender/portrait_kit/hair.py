@@ -991,7 +991,9 @@ def _curls(ctx):
         el_ = math.degrees(math.asin(max(-1.0, min(1.0, d.z))))
         if abs(az) < 58 and el_ < 34:          # the face stays open
             continue
-        if el_ < core.lerp_table([(0, 20), (60, -6), (90, -38), (130, -44), (180, -40)], abs(az)):
+        # (`low`: the cloud's lower edge per azimuth — Mirosya's coils by the jaw sat on the cheeks beside the mouth:
+        # hair vs skin at the edge, mouth region, dL* 2.9 < 12, fix round)
+        if el_ < core.lerp_table(hr.get("low", [(0, 20), (60, -6), (90, -38), (130, -44), (180, -40)]), abs(az)):
             continue
         hit, nor = core.ray(head, d * 3, -d)
         if hit is None:
@@ -1028,8 +1030,8 @@ def _curls(ctx):
         if out > 0.08:
             el.append(dict(co=hit + nor * out * 0.5, half=min(out * 0.55, 0.14), stiff=2.0))
     # fringe curls along the forehead's edge
-    for az in ((-34, -12, 10, 32) if hr.get("coils") else (-36, -20, -4, 12, 28, 42)):
-        d = core.az_el(az, 33)
+    for az in ((-30, -8, 14) if hr.get("coils") else (-36, -20, -4, 12, 28, 42)):
+        d = core.az_el(az, 36 if hr.get("coils") else 33)
         hit, nor = core.ray(head, d * 3, -d)
         if hit is None:
             continue

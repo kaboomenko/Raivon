@@ -449,10 +449,11 @@ CHARS = {
         # shadowed far side stays above the albedo floor (dark <= 3 %: the warm #3A2A20 gave dE 28.3 and 3.1 %)
         # (P3 review: one crisp straight hairline, hard rims over the ears, the bristle only on the top crest, a
         # greyer brown than her brows) — temple corners and a sideburn notch in the hairline, larger tips along the
-        # whole outline (short ones at the front lit the hairline: hair vs skin dE76 29.7 < 30). The ash brown stays (a
-        # warmer one toward her brows, #3A302C / #362C28, measured hair vs skin dE76 23-30 / |dL*| 10-13 < 30 / 15)
-        hair=dict(style="flattop", color="#3C3230", dark="#3E3430", light="#4E423A", crevice="#443A34",
-                  tip="#54463E", fleck="#4C4038", side=0.008, front=0.035, front_ramp=0.09, top=0.022,
+        # whole outline (short ones at the front lit the hairline: hair vs skin dE76 29.7 < 30). The brown a touch
+        # cooler ash, not warmer toward her brows as the review asked: #3A302C / #362C28 measured hair vs skin dE76
+        # 23-30 / |dL*| 10-13 (§7.4 asks 30 / 15), #3C3230 29.9 in E2; #3A3234 gives 32.8-33.1
+        hair=dict(style="flattop", color="#3A3234", dark="#3C3436", light="#4C4442", crevice="#423A3A",
+                  tip="#544A46", fleck="#4A4040", side=0.008, front=0.035, front_ramp=0.09, top=0.022,
                   corner=0.13, ridge=0.16, ramp=0.12, lean=(35.0, 22.0), stubble=0.4, grain=(150, 150, 34),
                   fade_band=0.05, fade_mix=0.4, bristles_front=(0.0, 0.0, 0, 0.0, 0.0),
                   bristles_top=(-135.0, 135.0, 130, 0.046, 0.011),
@@ -742,7 +743,7 @@ CHARS.update({
                      z1=-0.70, thick=0.035),
                 dict(kind="piping", color="#F08A24", r=0.02, path=[(-0.42, -0.74), (-0.2, -0.80), (0.0, -0.82),
                                                                    (0.2, -0.80), (0.42, -0.74)]),
-                dict(kind="cloak", id="cape", color="#8A2620", z1=-0.64, gap=0.03, flare=0.10, shade=(1.0, 0.85),
+                dict(kind="cloak", id="cape", color="#6A1C18", z1=-0.64, gap=0.03, flare=0.10, shade=(1.0, 0.85),
                      open=[(-1.9, 0.52), (-1.2, 0.50), (-0.85, 0.46), (-0.66, 0.40)]),
                 dict(kind="belt", z=-1.30, w=0.13, color="#86241E", buckle="#F08A24", over=0.05),
                 # (fewer, larger, smoother clumps: 70 small ones read lumpy, P3 review / art director note 3)
@@ -750,8 +751,9 @@ CHARS.update({
                      r=0.95, r_in=0.30, t=0.11, front_z=-1.0, side_z=-0.95, back_z=-0.85, open=0.16,
                      clumps=dict(n=38, len=0.18, w=0.085, th=0.04, curl=0.15), smooth=4),
             ]),
-        # the wolf head lies on the near shoulder's pelt (§7.8; P3 review: lifted 0.30 it sat on top of his head)
-        props=[dict(kind="wolf_head", x=-0.52, y=0.10, size=0.62, lift=0.0, turn=25, color="#8E8882", dark="#6A6460",
+        # the wolf head on the near shoulder's pelt, rearing up to ear height (§7.8; P3 review: lifted 0.30 it sat on
+        # top of his head; flat on the shoulder line his 48 px head zone matched Bram's, P-A1 0.873)
+        props=[dict(kind="wolf_head", x=-0.52, y=0.10, size=0.66, lift=0.16, turn=25, color="#8E8882", dark="#6A6460",
                     light="#C8C2BC", min_px=2500),
                dict(kind="fang", side="near", len=0.07, r=0.022),
                dict(kind="pendant", at=(0.02, -1.02))],
@@ -786,7 +788,8 @@ CHARS.update({
         # fewer, larger curls, each a smooth puff with a raised coil spiralling over it (art director note 3: no
         # lumpy cauliflower; P3 review: 75 small lobed curls read as one)
         hair=dict(style="curls", color="#A85A24", dark="#7A3C14", light="#D8884A", crevice="#5A2A10", width=1.4,
-                  n=40, curl=0.12, coils=True, turns=1.6),
+                  n=40, curl=0.12, coils=True, turns=1.6,
+                  low=[(0, 20), (60, 6), (90, -20), (130, -40), (180, -40)]),
         body=dict(shoulders=2.0),
         costume=dict(
             # a green bodice in the shawl's opening and a broad green ribbon: the Hamlets' green as the accent (§7.8
@@ -805,8 +808,11 @@ CHARS.update({
         pose=dict(body=18, head=8, roll=4, nod=1),
         signature=dict(name="copper curl cloud + gold chain + monocle", zone="head width"),
         moods=dict(
-            cunning=dict(eyes=dict(cunning=dict(open=[0.90, 0.42], tilt=0.0, arch=0.18, low=0.0)),
-                         mouth=dict(cunning=dict(type="closed", w=0.27, near=0.045, far=0.0)),
+            # (fix round blind sort: calm and cunning swapped at 138 px — a stronger smirk, the far brow higher)
+            cunning=dict(eyes=dict(cunning=dict(open=[0.90, 0.38], tilt=0.0, arch=0.18, low=0.04)),
+                         brows=dict(cunning=dict(lift=(-0.025, 0.12), arch_far=0.04, arch_near=-0.02)),
+                         mouth=dict(cunning=dict(type="closed", w=0.28, near=0.065, far=-0.005, sag=0.004)),
+                         pose_cunning=dict(roll=7.0, head=-5.0),
                          **{"props~": {"monocle": dict(glint=3.0, r=1.45)}}),
             # angry: puffed cheeks, pursed lips (§7.8)
             angry=dict(mouth=dict(angry=dict(type="closed", w=0.17, near=-0.02, far=-0.02, sag=-0.004,
@@ -860,7 +866,9 @@ CHARS.update({
     "ldr_order": dict(
         name="Torvald", leader=True, female=False, tall_headgear=True, plate="#704FD1",
         head=dict(shape="long", wh=0.84, h_px=264, eye_line=0.47, brow_ridge=1.7, cheeks=0.95, muzzle=1.05),
-        skin="#CC7A66", skin_tone="T3", blush=0.18, skin_sat=1.10, skin_value=0.92, skin_spec=0.08,
+        # (P3 review asked skin_sat ~1.1 — it read orange-red; at 1.10 his lit cheek S fell to 0.22-0.26 < 0.27: 1.18
+        # with a matte skin)
+        skin="#CC7A66", skin_tone="T3", blush=0.18, skin_sat=1.18, skin_value=0.92, skin_spec=0.05, skin_rough=0.6,
         eyes=dict(sclera=0.19, open=0.60, iris="#6A8AA0", iris_shade=0.9, tilt=-0.04, arch=0.06),
         brows=dict(shape="bushy", thick=0.085, color="#ECEEF2", arch=0.02, len=1.3, outer=-0.03),
         nose=dict(type="aquiline", len=0.24, w=0.07, proj=0.075, hump=0.01, drop=0.21, tip="#C8806A", tip_k=0.35),
@@ -884,7 +892,7 @@ CHARS.update({
                                                                    (0.07, -1.8)]),
                 # the Order's violet as the accent (§7.8 rule 3, >= 10 %; P3 review: 2.0 % with the piping alone): a
                 # broad sash from the far shoulder to the near hip, under the shield
-                dict(kind="strap", id="sash", color="#6A48C8", w=0.15, **{"from": (0.44, -0.72), "to": (-0.52, -1.62)}),
+                dict(kind="strap", id="sash", color="#4E3496", w=0.17, **{"from": (0.44, -0.72), "to": (-0.52, -1.62)}),
             ]),
         props=[dict(kind="shield", side="near", r=0.32, x=0.50, turn=35, up=0.5, color="#C8B48A", relief="hex",
                     edge="#A8946A", detail="shield", min_px=8000)],
@@ -946,7 +954,11 @@ CHARS.update({
             angry=dict(mouth=dict(angry=dict(type="open", shape="clench", w=0.27, h=0.09, near=-0.015, far=-0.015,
                                              dz=-0.004))),
             smile=dict(eyes=dict(smile=dict(open=[0.66, 0.66], low=0.14))),
-            cunning=dict(mouth=dict(cunning=dict(type="closed", w=0.25, near=0.035, far=0.0, sag=0.002))),
+            # (fix round blind sort: calm and cunning swapped at 138 px)
+            cunning=dict(eyes=dict(cunning=dict(open=[0.36, 0.62], tilt=-0.02, arch=0.10, low=0.06)),
+                         brows=dict(cunning=dict(lift=(-0.025, 0.12), arch_far=0.035, arch_near=-0.02)),
+                         mouth=dict(cunning=dict(type="closed", w=0.26, near=0.05, far=-0.004, sag=0.003)),
+                         pose_cunning=dict(roll=7.0, head=-5.0)),
             tired=dict(hair=dict(across=True, across_off=0.11,
                                  across_path=[(0.0, 0.27), (-0.22, 0.11), (-0.34, -0.20)])),
         ),
@@ -990,8 +1002,10 @@ CHARS.update({
         moods=dict(
             # §7.9: his calm already smirks, so cunning raises the corner to +0.045 over it (near 0.075) and squints
             # the near eye hard behind the glinting monocle (P3 review: calm and cunning were swapped in a blind sort)
-            cunning=dict(eyes=dict(cunning=dict(open=[0.28, 0.60], tilt=0.12, arch=0.10, low=0.08)),
+            cunning=dict(eyes=dict(cunning=dict(open=[0.28, 0.46], tilt=0.12, arch=0.10, low=0.08)),
+                         brows=dict(cunning=dict(lift=(-0.03, 0.13), arch_far=0.04, arch_near=-0.02)),
                          mouth=dict(cunning=dict(type="closed", w=0.28, near=0.075, far=-0.005, sag=0.004)),
+                         pose_cunning=dict(roll=7.0, head=-5.0),
                          fx=dict(cunning=dict(cheek=(0.045, 0.0), cheek_amt=0.010)),
                          **{"props~": {"monocle": dict(glint=3.0)}}),
             # clench 0.10 high (0.07: 29.8 px2 at 128 px); the smile keeps the lids >= 6 px at 128 (4.5 with the default)
@@ -1036,15 +1050,24 @@ CHARS.update({
                 dict(kind="strap", id="strap2", color="#B07028", w=0.12, **{"from": (-0.42, -0.72), "to": (0.45, -1.6)}),
             ]),
         # broader feathers (0.58 x 0.18): at 0.50 x 0.11 they gave 5.2 % of the 48 px head-zone mask, P-A3 asks >= 8 %
-        props=[dict(kind="feathers", len=0.58, w=0.18, back_k=0.3, out_k=0.9, color="#2E2E36", sheen="#4A5470", bead="#C8902A"),
+        props=[dict(kind="feathers", len=0.62, w=0.20, back_k=0.3, out_k=0.9, color="#2E2E36", sheen="#4A5470", bead="#C8902A"),
                dict(kind="pendant", at=(-0.08, -1.0), color="#C8902A")],
         pose=dict(body=22, head=10, roll=-4, nod=-1),
         signature=dict(name="three black feathers up-back", zone="top back"),
         moods=dict(
             # drooping −20° they swing out to the near side: a narrower fan keeps the frame (side band 28 px) at his H
-            tired=dict(**{"props~": {"feathers": dict(droop=20, out_k=0.5)}}),
+            # (fix round blind sort at 138 px: calm / tired and angry / cunning swapped — the paint mask over his eyes
+            # hides the lids and brows: each mood made louder)
+            tired=dict(eyes=dict(tired=dict(open=0.24, tilt=0.24, arch=0.10, low=0.0)),
+                       brows=dict(tired=dict(inner=0.045, outer=-0.04, arch=-0.005)),
+                       **{"props~": {"feathers": dict(droop=20, out_k=0.5)}}),
             smile=dict(eyes=dict(smile=dict(open=[0.62, 0.62], low=0.12))),     # lids >= 6 px at 128 (5.0 before)
-            cunning=dict(mouth=dict(cunning=dict(type="closed", w=0.27, near=0.05, far=-0.01))),
+            cunning=dict(eyes=dict(cunning=dict(open=[0.36, 0.64], tilt=-0.03, arch=0.08, low=0.06)),
+                         brows=dict(cunning=dict(lift=(0.0, 0.12), arch_far=0.04, arch_near=0.0)),
+                         mouth=dict(cunning=dict(type="closed", w=0.27, near=0.06, far=-0.01, sag=0.004))),
+            angry=dict(brows=dict(angry=dict(inner=-0.08, outer=0.025, in_dx=0.02, thick_k=1.2)),
+                       mouth=dict(angry=dict(type="open", shape="trap", w=0.32, h=0.14, near=-0.02, far=-0.02,
+                                             lower_teeth=True, fangs=True, dz=-0.016))),
         ),
     ),
     # ---------------------------------------------------------------- Archmaster Ormdek the Stone (Conclave, Turtle)
@@ -1052,7 +1075,7 @@ CHARS.update({
         name="Ormdek", leader=True, female=False, tall_headgear=True, plate="#D18D4F",
         head=dict(shape="square", wh=1.05, n_top=3.4, h_px=258, eye_line=0.49, jaw=0.08, brow_ridge=1.6, cheeks=1.0, muzzle=1.1,
                   chin=0.02),
-        skin="#9A5E4C", skin_tone="T5", blush=0.12, skin_sat=1.12, skin_spec=0.04, skin_rough=0.66,
+        skin="#9A5E4C", skin_tone="T5", blush=0.12, skin_sat=1.30, skin_value=0.95, skin_spec=0.04, skin_rough=0.66,
         eyes=dict(sclera=0.18, open=0.66, iris="#7A8A9A", iris_shade=0.9, tilt=-0.06, arch=0.05),
         brows=dict(shape="straight", thick=0.09, color="#B4B4BC", arch=0.0, len=1.3, inner=-0.01, rough=0.6),
         nose=dict(type="straight", w=0.085, drop=0.21, k=1.05, tip="#8A4E34", tip_k=0.3),
@@ -1060,9 +1083,10 @@ CHARS.update({
                    calm=dict(type="closed", w=0.26, near=-0.005, far=-0.005),
                    smile=dict(type="open", w=0.30, h=0.10, near=0.03, far=0.03, dz=-0.008, teeth=0.45)),
         hair=dict(style="bald", bald=True, color="#9A9AA2"),
-        # (the box a little narrower, wider -0.02 not +0.06: at +0.06 it hid the far-shoulder shield wholly, P3 review)
+        # (the box narrower, wider 0.02 not 0.06: at 0.06 it hid the far-shoulder shield wholly, P3 review; at -0.02
+        # his 48 px head zone came within IoU 0.864 of Bram's)
         beard=dict(style="box", color="#A0A0A8", tip="#B8B8C0", root="#8A8A94", crevice="#5A5A66", below=0.42,
-                   wider=-0.02, moustache=True, moustache_color="#A8A8B0", moustache_dark="#8A8A94",
+                   wider=0.02, moustache=True, moustache_color="#A8A8B0", moustache_dark="#8A8A94",
                    moustache_light="#C4C4CA", signature=True),
         headgear=dict(kind="shell", id="steel_plate", color="#C0C8D0", mat="metal", rough=0.3, metallic=0.5,
                       edge=[(0, 52), (40, 48), (80, 40), (120, 34), (180, 30)], thick=0.04, roll=0.02, res=0.012,
@@ -1101,7 +1125,7 @@ CHARS.update({
             angry=dict(pose_angry=dict(nod=-3.0), beard=dict(jut=0.06),
                        brows=dict(angry=dict(inner=-0.075, outer=0.025, in_dx=0.02, thick_k=1.25)),
                        fx=dict(angry=dict(blush=0.05, nose_red=0.12)),    # deep skin: the full flush read orange
-                       mouth=dict(angry=dict(type="open", shape="clench", w=0.27, h=0.085, near=-0.015, far=-0.015))),
+                       mouth=dict(angry=dict(type="open", shape="clench", w=0.28, h=0.098, near=-0.015, far=-0.015))),
             cunning=dict(brows=dict(cunning=dict(lift=(0.0, 0.10), arch_far=0.02))),
             tired=dict(pose_tired=dict(nod=-3.0, roll=-3.0), eyes=dict(tired=dict(open=0.26))),
         ),
@@ -1467,7 +1491,8 @@ _BRAM_E4 = "#3B4F78"      # dE76 12.7 to E1 as rendered (P3: #4A6488 sat 7.7 fro
 _FREY_E4 = "#20653B"      # dE76 8.5 to E1 as rendered
 _VIK_E4 = "#687841"       # dE76 5.7 to E1 as rendered
 _SEIR_E3 = "#1E596D"      # dE76 2.2 to E1 as rendered
-_VEGA_E4 = "#646A78"      # dE76 ~17 to E1 (a step darker in the fix round: the band on the blue rare plate, 14.9)
+_VEGA_E4 = "#606A84"      # dE76 ~17 to E1; fix round: darker for the band on the blue rare plate (14.9 at #6C7280)
+                          # and bluer, apart from Irma's E4 black (#646A78 measured 10.8 from it)
 
 
 ERA_LOOKS.update({
@@ -1674,7 +1699,7 @@ ERA_LOOKS.update({
                 # the clear HUD strip a little taller than the eyes, its thin frame wires above the lids and below the
                 # lower rims, the white line under the irises (§7.6 "прозрачная, тонкая белая линия"): the wires ran
                 # across the irises and cut the pupils to 1.8 px at 64 px (P3 review)
-                headgear=dict(kind="visor", id="hud_strip", on="head", el=-4, span=48, h=0.10, dh=13, off=0.11,
+                headgear=dict(kind="visor", id="hud_strip", on="head", el=-4, span=44, h=0.10, dh=13, off=0.11,
                               tint="#EEF6FF", frame="#C8CCD4", frame_r=0.007, line="#FFFFFF", line_emit=0.6,
                               detail="hud", min_px=300,
                               extra=[dict(kind="headset", sides=(1,), color="#3A4150", accent="#C8CCD4", mic=True)]),
@@ -1738,7 +1763,7 @@ ERA_LOOKS.update({
                               brim=dict(w=0.12, ang=-14, front=56, color="#2E2A2C", mat="leather"),
                               badge=dict(kind="wave_hex", size=0.12, color="#E8B23A", g=0.12, wave="#2F8FB0")),
                 **{"props~": {"spyglass": dict(color="#C8CCD4", rough=0.22)},
-                   "props+": [dict(kind="chevrons", style="ring", n=2, at=(0.82, 0.88), r=0.016, color="#E8B23A",
+                   "props+": [dict(kind="chevrons", style="ring", n=2, at=(0.34, 0.40), r=0.016, color="#E8B23A",
                                    detail="cuff_stripes", min_px=60)]}),
         4: dict(costume=dict(base=dict(color=_UNDER, rough=0.7, sheen=0.2), layers=[
                     _plate(_E("#175A72", 4)),
@@ -1920,18 +1945,21 @@ ERA_LOOKS.update({
         # with raivite seams, under the deep-blue cloak of E1-E3 kept over the shoulders and the blue stole under the
         # beard — the dark masses carry the value step against the orange plate (P3 review: the all-dark-blue raivite
         # plates of the previous round broke his white identity, main colour dE76 56.4 and rim 39 %)
+        # (fix round: mid silver #C4CCD8 rendered at the legendary plate's value — band dL* 4.5-6.9, melt 57-66 % —
+        # and sat dE76 6.4 from Hawk's sky-white E4 suit; bright white-silver keeps the robe's white of E1-E3, L* >= 82
+        # on the orange plate, §7.4) — the stole is laid on the plate so the white beard lies on blue, not on white
         4: dict(costume=dict(base=dict(color=_UNDER, rough=0.7, sheen=0.2), layers=[
-                    _plate("#C4CCD8", metallic=0.35, rough=0.35),
+                    _plate("#ECEFF5", metallic=0.18, rough=0.35),
+                    dict(CHARS["cmd_rai"]["costume"]["layers"][3], over_last=True),
                     dict(kind="strip", id="seam1", color="#3A8DFF", emit=1.4, w=0.045, detail="glow", min_px=80,
-                         path=[(-0.44, -0.84), (-0.42, -1.05), (-0.40, -1.35)]),
+                         path=[(-0.52, -0.86), (-0.50, -1.05), (-0.48, -1.35)]),
                     dict(kind="strip", id="seam2", color="#3A8DFF", emit=1.4, w=0.045, detail="glow2", min_px=40,
-                         path=[(0.44, -0.84), (0.42, -1.05), (0.40, -1.35)]),
+                         path=[(0.52, -0.86), (0.50, -1.05), (0.48, -1.35)]),
                     CHARS["cmd_rai"]["costume"]["layers"][0],
                     CHARS["cmd_rai"]["costume"]["layers"][1],
-                    dict(kind="pauldrons", color="#C8CCD4", stripe="#3A8DFF", stripe_emit=1.2, n=2, spread=84,
+                    dict(kind="pauldrons", color="#E4E8F0", stripe="#3A8DFF", stripe_emit=1.2, n=2, spread=84,
                          bands=[(96, 40), (52, 8)], grow=0.035, lift=0.02, detail="pauldrons", min_px=2000),
-                    CHARS["cmd_rai"]["costume"]["layers"][2],
-                    CHARS["cmd_rai"]["costume"]["layers"][3]]),
+                    CHARS["cmd_rai"]["costume"]["layers"][2]]),
                 headgear=dict(CHARS["cmd_rai"]["headgear"], emit=2.0),
                 **{"props~": {"banner": dict(light=0.9, color="#C8CCD4", staff_metal=0.5, cloth="#3A70E0",
                                              alpha=0.7)}}),
@@ -1953,7 +1981,7 @@ ERA_LOOKS.update({
         # (P3 review: §7.10 asks a blue-grey greatcoat with a gold standing collar — royal blue with the collar hidden
         # under the beard): greyer within the §7.7 main-colour gate (dE76 <= 22 to the saturated E1 blue), and a tall
         # gold stand collar that shows at both sides of the round beard
-        3: dict(costume=dict(base=dict(color="#5470B8", rough=0.9, sheen=0.25), layers=[
+        3: dict(costume=dict(base=dict(color="#5C7AD0", rough=0.9, sheen=0.25), layers=[
                     dict(kind="collar", color="#E8B23A", z=-0.68, h=0.16, out=0.09, flare=0.07, metal=True, stand=True,
                          thick=0.035),
                     dict(kind="buttons", id="btn", at=[(-0.30, -0.92), (-0.31, -1.08), (-0.31, -1.24)], r=0.032,
@@ -1970,10 +1998,10 @@ ERA_LOOKS.update({
                     dict(kind="piping", color="#E8B23A", r=0.022, path=_FRONT),
                     dict(kind="piping", color="#E8B23A", r=0.02, path=[(-0.36, -0.84), (-0.35, -1.05), (-0.34, -1.5)]),
                     dict(kind="piping", color="#E8B23A", r=0.02, path=[(0.36, -0.84), (0.35, -1.05), (0.34, -1.5)]),
-                    dict(kind="collar", color="#F2F4F8", metal=True, metallic=0.3, rough=0.35, z=-0.68, h=0.10,
-                         out=0.04, flare=0.03, piping="#E8B23A", piping_r=0.018),
-                    dict(kind="pauldrons", color="#F2F4F8", painted=True, stripe="#E8B23A", n=2, spread=88,
-                         bands=[(98, 42), (54, 8)], grow=0.03, lift=0.03, detail="pauldrons", min_px=2000),
+                    dict(kind="collar", color="#F2F4F8", metal=True, metallic=0.3, rough=0.35, z=-0.70, h=0.06,
+                         out=0.04, flare=0.02, piping="#E8B23A", piping_r=0.018),
+                    dict(kind="pauldrons", color="#5A7CE8", painted=True, stripe="#F2F4F8", stripe_r=0.018, n=2,
+                         spread=88, bands=[(98, 42), (54, 8)], grow=0.03, lift=0.03, detail="pauldrons", min_px=2000),
                     dict(kind="strip", id="raivite", color="#3A8DFF", emit=1.0, w=0.06, detail="glow", min_px=80,
                          path=[(-0.66, -1.10), (-0.34, -1.15), (0.0, -1.17), (0.34, -1.15), (0.66, -1.10)])]),
                 headgear=dict(CHARS["ruler"]["headgear"], emit=1.6),
