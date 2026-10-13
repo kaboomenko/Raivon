@@ -171,6 +171,15 @@ func _run() -> void:
 		if c["owner"] == Types.NOBODY and Types.is_passable(c):
 			c["owner"] = Types.PLAYER
 			c["controller"] = Types.PLAYER
+	# the goal met (07 §3.1): signalled once, the «Мир» tab's dot, «Расширить мир» on the big button with nothing selected
+	g.ui.close_modal()
+	g.mode = g.Mode.MAP
+	g._econ_tick()
+	g._select(-1)
+	_check(int(g.stats.get("goal_signal", 0)) == 1 and g.ui._action2_kind == "expand" and g.hud.tab_dot_rect("world").size.x > 0.0,
+		"chapter goal met: signalled, the World tab's dot, «Расширить мир» (%s)" % g.ui._action2_kind)
+	g._on_action("expand")
+	_check(g.tab == "world" and g.chapter == 1, "«Расширить мир» opens the World tab at the chapter card")
 	g._on_world_action("expand")
 	_check(g.chapter == 2 and econ.res["raivite"] >= rv0 + 210, "chapter I completes: legacy +200 Raivites, chapter II opens")
 	g.ui.close_modal()
@@ -299,8 +308,10 @@ func _run() -> void:
 	g.truce = {}
 	g._declare(MapGen.BARONS, War.recommend_goals(g.sim, MapGen.BARONS, 1)[0])
 	g._start_offensive()
-	# Airstrike opens at DL6 (canon §9.9): locked in the hand before; the Barons (Wolf) play it only from DL6
-	_check(not g._hand().has("airstrike") and g.ui._locked.has("airstrike"), "airstrike locked below DL6")
+	# cards open by DL (canon §9.9): at DL1 the hand is «Атака» and «Оборона», the next card (Котёл, DL2) shows locked
+	# at the tray's end as a teaser outside the hand; the Barons (Wolf) play the airstrike only from DL6
+	_check(not g._hand().has("airstrike") and not g._hand().has("encircle") and g.ui._locked.has("encircle")
+		and g.ui._locked.size() == 1 and g._hand_display() == ["attack", "defense"], "airstrike locked below DL6")
 	_check(not g.ai.airstrike, "DL1 Barons don't fly")
 	var army: Dictionary = {}
 	for a in g.armies:
@@ -353,6 +364,33 @@ func _run() -> void:
 	g.queue_free()
 	await process_frame
 
+	# 5a. FTUE war 1 as the coach leads it (08 §8.3 F04–F07): the ghost's drag brings a second army beside the flag,
+	# «Атака» onto the flag takes it — the first offensive ends on ★★★
+	var gw := await _new_game()
+	gw.ftue = 1
+	gw._ftue_tick(0.1)
+	gw._on_action("declare")
+	gw._on_action("offensive")
+	gw._ftue_tick(0.1)
+	var cp: Array = gw._ftue_ghost_pair()
+	var ca = gw.battle.army_at(cp[0], Types.PLAYER) if cp.size() == 2 else null
+	if ca != null:
+		gw.battle.issue(Types.PLAYER, {"t": "attack", "army": ca["id"], "target": cp[1]})
+		gw._ftue_attacked()
+		for i in 120:
+			if gw.sim.cells[cp[1]]["controller"] == Types.PLAYER:
+				break
+			gw._battle_step()
+	var fh1: int = gw.flag_hex
+	gw._ftue_tick(7.0)  # past step 4's 6 s: no more ghost
+	_check(gw.ftue == 4 and gw.battle.issue(Types.PLAYER, {"t": "card", "card": "attack", "target": fh1}), "step 4: «Атака» onto the flag")
+	while gw.battle != null and not gw.battle.over:
+		gw._battle_step()
+	var res1: Dictionary = gw.battle.result()
+	_check(War.offensive_stars(res1["captured"], fh1, res1["routed_player_armies"]) == 3, "FTUE war 1 as coached ends on ★★★ (flag taken, %s)" % str(res1["captured"]))
+	gw.queue_free()
+	await process_frame
+
 	# 5. FTUE: guided first war (canon §14.3)
 	g = await _new_game()
 	g.ftue = 1
@@ -363,8 +401,12 @@ func _run() -> void:
 	g._on_action("offensive")
 	_check(g.ftue == 3 and g.battle.duration_ticks() == 600, "FTUE offensive is 60 s")
 	_check(not g.ui._action2.visible, "no «Отступить» in the tutorial's offensive")
+	_check(g._hand() == ["attack", "defense"] and g.ui._locked.is_empty(), "FTUE war 1 hand: «Атака» and «Оборона», no locked card")
+	_check(g.battle.garrison[g.flag_hex] == 0, "FTUE war 1: the flag's garrison stands down")
 	g._ftue_tick(0.1)
 	_check(g.ui._ghost_from.x >= 0, "FTUE ghost finger shown")
+	var gp: Array = g._ftue_ghost_pair()
+	_check(gp.size() == 2 and g.sim.neighbors[gp[1]].has(g.flag_hex), "FTUE ghost leads to a hex beside the flag (%s)" % str(gp))
 	while g.battle != null and not g.battle.over:
 		if g.battle.tick % 20 == 0:
 			g._bot_move()
@@ -379,6 +421,8 @@ func _run() -> void:
 		_check(g.ftue == 0, "FTUE coach hidden during the ceremony")
 		for i in 80:
 			g._step_ceremony(0.1)
+		var dbl = g.ui._modal.find_child("double", true, false) if g.ui._modal != null else null
+		_check(dbl == null, "no rewarded «×2» on the tutorial's treaty (canon §14.3: no ads in the FTUE)")
 		g._end_ceremony()
 		# FTUE 2:30 (canon §14.3): the 3-tap flag comes first, the tour resumes on «Готово»
 		_check(g.ui.has_modal() and g.stats.has("flag_wizard"), "the flag wizard opens after the first peace")
@@ -413,7 +457,9 @@ func _run() -> void:
 					break
 		g._select(fh)
 		g._fort_action()
-		_check(g.ftue == 0 and not g._raid.is_empty(), "FTUE: fence started, marauder raid scheduled")
+		_check(g.ftue == 0 and not g._raid.is_empty() and int(g._raid["at"]) - g.now_s() <= g.RAID_SEC, "FTUE: fence started, marauder raid scheduled")
+		g._ftue_tick(0.1)
+		_check(g.ui._coach.visible and g.ui._coach_lbl.text == g.tr("ftue.raid"), "FTUE: the advisor counts the raid down")
 		g.time_offset += 60
 		g._econ_tick()
 		var raided := false
@@ -421,6 +467,9 @@ func _run() -> void:
 			if String(it["title"]) == "inbox.raid.title":
 				raided = true
 		_check(raided and g._raid.is_empty(), "FTUE: the raid breaks against the fence")
+		_check(g.ftue == 0 and g._raid_hold > 0, "FTUE: the lesson holds on the fence before war 2")
+		g.time_offset += g.RAID_HOLD_SEC
+		g._econ_tick()
 		# war 2 with the Hamlets: encirclement card, then spare or plunder (canon §14.3, 6:00–9:30)
 		if g.ftue == 10:
 			g.truce = {}
@@ -430,6 +479,7 @@ func _run() -> void:
 			_check(g.ftue == 11, "FTUE war 2 declared")
 			g._on_action("offensive")
 			_check(g.ftue == 12 and g.battle.duration_ticks() == 600, "FTUE war 2 offensive (encircle hint)")
+			_check(g._hand() == ["attack", "encircle", "defense"], "FTUE war 2 hand brings «Котёл» in")
 			while g.battle != null and not g.battle.over:
 				if g.battle.tick % 20 == 0:
 					g._bot_move()
@@ -441,6 +491,11 @@ func _run() -> void:
 				_check(g.ftue == 15, "FTUE war 2 peace with plunder choice")
 				g._sign_peace()
 				_check(g.ftue == 0, "FTUE complete after war 2")
+				for i in 80:
+					g._step_ceremony(0.1)
+				g._end_ceremony()
+				_check(g.ui.has_modal() and g.ui._modal.find_child("ok", true, false) != null, "the tutorial closes on Bram's card")
+				g.ui.close_modal()
 		else:
 			print("NOTE  FTUE war 2 skipped (ftue=%d)" % g.ftue)
 	# Market (05 §13): card in the Buildings tab, exchange, trader lot once a day
@@ -685,6 +740,12 @@ func _run() -> void:
 	# the hand (03 §5.2): «Атака» + 4 slots of the player's choice
 	var hand0: Array = g._hand_display()
 	_check(hand0[0] == "attack" and hand0.size() <= 1 + g._hand_slots(), "the default hand: «Атака» + slots")
+	var res_b: Dictionary = g.econ._find_type("residence")
+	var lvl_b: int = int(res_b["level"])
+	res_b["level"] = 6
+	_check(g._default_hand() == ["attack", "breakthrough", "airstrike", "encircle", "defense"] and g._hand_teaser() == "landing",
+		"DL6 default hand: open cards only (4 of 5 slots), «Десант» only teases (%s)" % str(g._default_hand()))
+	res_b["level"] = lvl_b
 	g._open_hand_picker()
 	_check(g.ui.has_modal(), "the hand picker opens")
 	g.ui.close_modal()

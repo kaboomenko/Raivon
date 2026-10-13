@@ -208,14 +208,17 @@ def hood(ctx, hg):
     else:
         m = core.grad_mat(ctx, "hood", core.hex_scale(hg["color"], 1.05),
                           core.hex_scale(hg["color"], hg.get("shade_low", 0.92)), -0.7, 0.6, rough=0.85, sheen=0.35)
-    o = core.mb_mesh(ctx, "Hood", el + peak_el, 0.013, m, smooth_iter=3, name="hood")
+    # `res`: the metaball polygon size (0.013; Vik's E4 tech hood 0.0155 — its 105k triangles put the busy E4 look past
+    # §7.14 P-A10's 500k, P3 review)
+    res = hg.get("res", 0.013)
+    o = core.mb_mesh(ctx, "Hood", el + peak_el, res, m, smooth_iter=3, name="hood")
     ctx.add(o, "hat", head, kind="embed", head=True)
     ctx.objs["hood"] = o
     # the peak is one surface with the hood (a smooth metaball union) but its own ID region: the hood's faces outside
     # the same hood built without the peak (a hidden proxy) go to material slot 1 — the ID pass colours them
     # detail:hood_peak and the signature mask takes only them (P-A8 "пик капюшона 1500" and the 48 px signature share
     # measured the whole hood before: every gate passed a peak that hardly showed, P2 review)
-    dome = core.mb_mesh(ctx, "HoodDome", el, 0.013, m, smooth_iter=3, name="hood_dome")
+    dome = core.mb_mesh(ctx, "HoodDome", el, res, m, smooth_iter=3, name="hood_dome")
     _region_slot(ctx, o, dome, m, "detail:hood_peak", margin=hg.get("peak_margin", 0.012))
     bpy.data.objects.remove(dome, do_unlink=True)
     ctx.details["hood_peak"] = hg.get("min_px", 1500)
@@ -1356,7 +1359,11 @@ def crown(ctx, hg):
     mh = hg.get("merlon", 0.14) * H
     mw = hg.get("merlon_w", 0.15) * H
     gem = core.principled(ctx, "crown_gem", "#3A8DFF", rough=0.15, coat=0.6, emit="#3A8DFF", es=hg.get("emit", 1.0))
-    white = core.principled(ctx, "crown_eagle", "#F6F6F2", rough=0.5, coat=0.3)
+    white = core.principled(ctx, "crown_eagle", "#FFFFFF", rough=0.4, coat=0.2)
+    # the merlons in a satin gold without the clear coat (P3 review: the coat mirrored the sky-blue rim light, so the
+    # rim side of every merlon went near-white)
+    mgold = core.principled(ctx, "crown_merlon_gold", hg.get("color", "#E8B23A"), rough=0.42, metal=0.5, coat=0.0)
+    gem_k = hg.get("gem_k", 1.0)      # E4: larger stones (at the same size 1.6 vs 1.0 emission did not read, P3 review)
     for k, az in enumerate(hg.get("merlons", (-96, -48, 0, 48, 96))):
         a = math.radians(az)
         r = core.lerp_table([(q[0], q[1]) for q in ring], az) + 0.012 + 0.015
@@ -1365,26 +1372,30 @@ def crown(ctx, hg):
         base = Vector((c.x, c.y, 0.0)) + out * r
         base.z = z
         # a block with a rounded top (a box with a big bevel), its face toward `out`
-        mb = core.box("crown_merlon%d" % k, base + Vector((0, 0, mh * 0.45)), (mw, 0.032, mh), gold, bev=mw * 0.42, segs=6)
+        mb = core.box("crown_merlon%d" % k, base + Vector((0, 0, mh * 0.45)), (mw, 0.032, mh), mgold, bev=mw * 0.42,
+                      segs=6)
         mb.rotation_mode = "QUATERNION"
         mb.rotation_quaternion = Vector((0, -1, 0)).rotation_difference(out)
         ctx.add(mb, grp, band, kind="embed", head=True)
         objs.append(mb)
-        st = core.cylinder("crown_raivite%d" % k, base + Vector((0, 0, mh * 0.40)) + out * 0.026, mw * 0.27, 0.02, gem,
-                           nrm=out, verts=6, bev=0.004)
+        # (the middle stone sits lower, under the eagle)
+        st = core.cylinder("crown_raivite%d" % k, base + Vector((0, 0, mh * (0.30 if az == 0 else 0.40))) + out * 0.026,
+                           mw * 0.27 * gem_k, 0.02, gem, nrm=out, verts=6, bev=0.004)
         ctx.add(st, "detail:crown_gems", mb, kind="embed", head=True)
         if az == 0:
             # the white eagle (the game's emblem outline) on the middle merlon, over the stone
             from .props import EAGLE
             bm = bmesh.new()
-            s_ = mw * 0.55
+            # (P3 review: at 0.55 of the merlon over the stone it read as a grey notch) larger, its wings and head
+            # rising over the merlon's top as a white silhouette on the blue velvet, standing off the gold
+            s_ = mw * 0.78
             rt = out.cross(Vector((0, 0, 1))).normalized() * -1
-            ctr = base + Vector((0, 0, mh * 0.80)) + out * 0.022
+            ctr = base + Vector((0, 0, mh * 0.88)) + out * 0.022
             vs = [bm.verts.new(ctr + rt * (x * s_) + Vector((0, 0, y * s_ * 0.8))) for x, y in EAGLE]
             bm.faces.new(vs)
             bmesh.ops.triangulate(bm, faces=bm.faces[:])
             eg = core.mesh_obj("crown_eagle", bm)
-            core.solidify(eg, 0.01, offset=0.0)
+            core.solidify(eg, 0.014, offset=0.0)
             core.finish(eg, white, smooth=False)
             ctx.add(eg, "detail:crown_eagle", mb, kind="embed", head=True)
             ctx.details["crown_eagle"] = hg.get("eagle_px", 30)

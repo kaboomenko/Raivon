@@ -49,8 +49,9 @@ enum Mode { MAP, WAR, BATTLE, RESULT, PEACE, CEREMONY }
 const MAP_SEED := 20261004
 const HAND := ["attack", "breakthrough", "airstrike", "encircle", "defense"]
 const AIRSTRIKE_DL := 6
-## When each card opens (canon §9.9) — cards outside the list are open from DL1 in this build.
-const CARD_DL := {"airstrike": 6, "landing": 7, "missile": 8}
+## When each card opens (canon §9.9): «Атака» and «Оборона» from DL1, «Окружение» DL2, «Прорыв» DL3, «Авиаудар» DL6,
+## «Десант» DL7, «Ракетный удар» DL8.
+const CARD_DL := {"encircle": 2, "breakthrough": 3, "airstrike": 6, "landing": 7, "missile": 8}
 const AIR_ARCHETYPES := ["wolf", "raven"]  # AI hands with «Авиаудар» (03 §19.4)
 const CHAPTER_GOALS: Array[int] = [0, 20, 36, 56, 88]  # official hexes per chapter (canon §12.1)
 const COLONIZE_SEC: Array[int] = [0, 60, 300, 900, 1800]  # 1 min in chapter I, 5 / 15 / 30 min later (canon §12.1)
@@ -90,7 +91,13 @@ var swap_offer_at := {}    # state -> when it next looks for a swap to propose (
 var swap_offer := {}       # the AI's pending proposal {state, give, get, until, auto}
 var pacts := {}            # state -> non-aggression pact end (canon §10.8, 06 §11)
 var _ftue_next := 0  # step to resume after the peace ceremony
-var _raid := {}  # FTUE marauder raid: {hex, at}
+var _raid := {}  # FTUE marauder raid: {hex, at, from}
+const FTUE_PEACE1_HEXES := 3  # the first treaty's land (canon §14.3: «+3 гекса (стало 10)»)
+const RAID_SEC := 12  # the FTUE raid comes this long after the fence is ordered (the coach counts it down)
+const RAID_HOLD_SEC := 3  # after it breaks on the fence the camera stays there this long before war 2's step
+var _raid_hold := 0  # unix time until which the broken raid holds the lesson (0: none)
+var _raid_hex := -1  # the fence hex of the raid lesson
+var _tutorial_end := false  # war 2's treaty is signed: the tutorial's closing card comes after its ceremony
 var econ  # Economy (scripts/sim/economy.gd)
 var deposits  # Deposits (scripts/sim/deposits.gd)
 var first_convoy_done := false
@@ -701,7 +708,9 @@ func _level_primary(b: Dictionary, kind: String, caption: String) -> void:
 func _primary_for_selection() -> void:
 	ui.set_action("", "")
 	if selected < 0:
-		if _best_target() >= 0:
+		if mode == Mode.MAP and _can_expand():  # the chapter's goal is met: its climax comes first (07 §3.1 `ready`)
+			ui.set_primary("expand", tr("ui.expand_world"), "go", true, "globe")
+		elif _best_target() >= 0:
 			ui.set_primary("pick_target", tr("ui.pick_target"), "war")
 		else:
 			_pick_wait()
@@ -796,6 +805,35 @@ func _convoy_primary(primary: bool) -> void:
 		var dep: Dictionary = deposits.at(selected)
 		ui.set_action("convoy", tr("ui.send_convoy"), GameUI.fmt_num(int(dep["amount"])), "info",
 			String(Hud.RES_ICON.get(String(dep["res"]), "crate")))
+
+
+## The chapter's goal is met and nothing stands in the way of «Мир расширяется» (07 §3.1 `ready`): no war, the chapter
+## not closed yet.
+func _can_expand() -> bool:
+	return not chapter_done and war.is_empty() and _player_hexes() >= _chapter_goal()
+
+
+## The chapter's goal reached by any hex gain — a settlement, a treaty, a swap, a separate peace (07 §3.1 `goal_met`):
+## once a chapter (the flag is saved with the stats) a toast, a fanfare and a volley over the capital; on the map with
+## no war the selection is let go, so the big button says «Расширить мир» at once. The «Мир» tab's badge follows
+## `_can_expand` (_econ_tick).
+func _check_chapter_goal() -> void:
+	if chapter_done or int(stats.get("goal_signal", 0)) >= chapter or _player_hexes() < _chapter_goal():
+		return
+	stats["goal_signal"] = chapter
+	ui.toast(tr("toast.chapter_goal") % _chapter_roman(), "globe")
+	sfx.play("fanfare")
+	map_view.fireworks(map_view.cell_world(sim.states[Types.PLAYER]["capital_id"]), 3)
+	hud.set_tab_badge("world", -1 if _can_expand() else 0, "go")
+	if mode == Mode.MAP and war.is_empty() and not ui.has_modal():
+		_select(-1)
+	_autosave()
+
+
+## The World tab at its first card, the chapter (the trophy, «Расширить мир»): the row scrolls back to it and it bumps.
+func _open_world_chapter() -> void:
+	_open_tab("world")
+	ui.focus_first_card()
 
 
 ## «Выбрать цель» with nothing left to pick: locked, the reason in the tooltip — the soonest end of a truce or pact
@@ -958,6 +996,8 @@ func _on_action(kind: String) -> void:
 			_colonize(selected)
 		"pick_target":
 			_pick_target()
+		"expand":  # «Расширить мир»: the World tab at the chapter's card, its «Расширить» starts the ceremony
+			_open_world_chapter()
 		"upgrade":  # the hex's building: «Здания» at its card
 			var ub: Dictionary = econ.building_at(selected) if selected >= 0 else {}
 			_open_tab("buildings")
@@ -1028,8 +1068,11 @@ func _on_hud_button(name: String) -> void:
 			_fort_action()
 		"tower":
 			_tower_action()
-		"trophy":
-			ui.toast(tr("toast.chapter_progress") % [_player_hexes(), _chapter_goal()])
+		"trophy":  # the chapter's card (07 §3.1: the ring opens the chapter card); in a battle only its count
+			if mode in [Mode.MAP, Mode.WAR]:
+				_open_world_chapter()
+			else:
+				ui.toast(tr("toast.chapter_progress") % [_chapter_roman(), tr(_chapter_name_key()), _player_hexes(), _chapter_goal()], "trophy")
 		"book":
 			_open_chronicle()
 		"profile":
@@ -1587,6 +1630,7 @@ func _separate_peace(s: int) -> void:
 	_normalize_armies()
 	map_view.sync_armies(armies, null)
 	_refresh_ui()
+	_check_chapter_goal()
 	_autosave()
 
 
@@ -2098,6 +2142,7 @@ func _swap_execute(s: int, give: Array, get_l: Array, gold: int, overpay: float)
 	_post("inbox.swap.title", L.pack("inbox.swap.text", [_state_key(s), _cell_key(give[0]), _cell_key(get_l[0]), give.size(), get_l.size()]))
 	ui.toast(tr("toast.swap") % [get_l.size(), _state_name(s)])
 	_refresh_ui()
+	_check_chapter_goal()
 	_autosave()
 	return true
 
@@ -2736,8 +2781,13 @@ func _chapter_goal() -> int:
 
 
 ## The open chapter's number as it is written in the game: «I» … «V».
-func _chapter_roman() -> String:
-	return ["I", "II", "III", "IV", "V"][clampi(chapter, 1, 5) - 1]
+func _chapter_roman(ch := -1) -> String:
+	return ["I", "II", "III", "IV", "V"][clampi(chapter if ch < 0 else ch, 1, 5) - 1]
+
+
+## The translation key of a chapter's name («Долина», «Речной край», …); the open chapter by default.
+func _chapter_name_key(ch := -1) -> String:
+	return "chapter.name.%d" % clampi(chapter if ch < 0 else ch, 1, LAST_CHAPTER)
 
 
 ## Every AI state of the open world (chapter I: Barons, Hamlets; chapter II adds the League and the Order).
@@ -2803,6 +2853,7 @@ func _finish_colonize(id: int) -> void:
 	map_view.mark_dirty()
 	ui.toast(tr("toast.colonized") % _cell_name(id), "hex_tile")  # the chapter count: the cup button / World tab
 	_select(id)
+	_check_chapter_goal()
 
 
 func _declare(enemy: int, goal: int) -> void:
@@ -2958,16 +3009,28 @@ func _start_offensive() -> void:
 	# the hegemon's energy ×1.1 (07 §3.7)
 	var opts := {"attacker": Types.PLAYER, "defender": enemy, "ai_energy_mult": 660 if bool(sim.states[enemy].get("hegemon", false)) else 600, "cards": _hand()}
 	if ftue > 0:
-		# tutorial offensives are short and the enemy plays no cards (canon §14.3)
+		# tutorial offensives are short and the enemy plays no cards (canon §14.3); the tour skips the waits between
+		# them, the armies' refill too (war 1's flag fight must not leave war 2 unwinnable)
+		for a in _player_armies():
+			a["str"] = a["max_str"]
 		opts["ai_energy_mult"] = 0
 		opts["ticks"] = FTUE_OFFENSIVE_SEC * Battle.TICKS_PER_SEC
 		ftue = 12 if ftue >= 10 else 3
 	opts.merge(_apply_commanders())
 	ui.cost_discount = {"landing": int(opts.get("landing_discount", 0))}
 	battle = Battle.new(sim, armies, opts)
+	if ftue == 3 and flag_hex >= 0:
+		# war 1's flag can be taken (canon §14.3: the first offensive ends on ★★★): its garrison and fort stand down —
+		# the army on it still fights, two armies flanking it win (step 3 brings the second one up, step 4 strikes)
+		battle.garrison[flag_hex] = 0
+		if int(sim.cells[flag_hex]["fort"]) > 0:
+			sim.cells[flag_hex]["fort"] = 0
+			map_view.refresh_hex(flag_hex)
 	ai = BattleAI.new(enemy)
 	ai.airstrike = ftue == 0 and _state_dl(enemy) >= AIRSTRIKE_DL and String(sim.states[enemy]["archetype"]) in AIR_ARCHETYPES
 	_show_hand()
+	if ftue == 12:
+		ui.pop_card("encircle")  # war 2 brings «Котёл» into the hand: it pops in as step 12 points at it
 	var other := ai_war_of(enemy)
 	if other >= 0:
 		# window of opportunity (canon §10.10): fighting another AI, its other borders hold 30% weaker garrisons
@@ -2993,44 +3056,79 @@ func _hand_slots() -> int:
 	return 5 if econ.dev_level() >= 6 else 4
 
 
+## True when the player may play `card` (canon §9.9 by DL). The tutorial's war 2 teaches «Окружение» (canon §14.3):
+## open there even if the tour reached it before DL2.
+func _card_open(card: String) -> bool:
+	return econ.dev_level() >= int(CARD_DL.get(card, 1)) or (card == "encircle" and ftue >= 10)
+
+
 ## The player's own hand (03 §5.2) once they pick it: «Атака» + the chosen open cards in slot order; until then
-## the default below.
+## the default below. Only open cards: a locked one is never in the hand (it would fill a slot that cannot play).
 func _hand_display() -> Array:
+	var fh := _ftue_hand()
+	if not fh.is_empty():
+		return fh
 	if not hand_pick.is_empty():
 		var out: Array = ["attack"]
 		for c in hand_pick:
-			if out.size() <= _hand_slots() and econ.dev_level() >= int(CARD_DL.get(c, 1)):
+			if out.size() <= _hand_slots() and _card_open(String(c)):
 				out.append(c)
 		if out.size() > 1:
 			return out
 	return _default_hand()
 
 
-## The default hand: before DL6 it teases the airstrike; from DL6 the 5th slot takes the landing (DL7 opens it),
-## at DL8 the missile replaces the encirclement.
+## The tutorial's hands (canon §14.3): war 1 teaches the swipe and «Атака» — «Атака» and «Оборона» only; war 2 brings
+## «Котёл» in (step 12 points at it). [] outside the tutorial.
+func _ftue_hand() -> Array:
+	if ftue <= 0:
+		return []
+	return ["attack", "encircle", "defense"] if ftue >= 10 else ["attack", "defense"]
+
+
+## The default hand: «Атака» and the open slot cards in canonical order, as many as the slots hold (4, from DL6 5); at
+## DL8 the missile comes before the encirclement, which then drops out of a full hand.
 func _default_hand() -> Array:
-	var dl: int = econ.dev_level()
-	if dl < 6:
-		return ["attack", "breakthrough", "airstrike", "encircle", "defense"]
-	if dl < 8:
-		return ["attack", "breakthrough", "airstrike", "encircle", "defense", "landing"]
-	return ["attack", "breakthrough", "airstrike", "landing", "missile", "defense"]
+	var order: Array = SLOT_CARDS.duplicate()
+	if econ.dev_level() >= 8:
+		order = ["breakthrough", "airstrike", "landing", "missile", "defense", "encircle"]
+	var out: Array = ["attack"]
+	for c in order:
+		if out.size() > _hand_slots():
+			break
+		if _card_open(String(c)):
+			out.append(c)
+	return out
 
 
-## The hand row of the battle UI: the cards of this DL, those not open yet greyed with their DL.
+## The next card to open (canon §9.9), shown locked at the end of the battle tray as a teaser — not part of the hand
+## and not counted in its slots; "" at DL8 and in the tutorial (a dead card there only distracts).
+func _hand_teaser() -> String:
+	if ftue > 0:
+		return ""
+	var best := ""
+	for c in SLOT_CARDS:
+		if not _card_open(String(c)) and (best == "" or int(CARD_DL[c]) < int(CARD_DL[best])):
+			best = c
+	return best
+
+
+## The hand row of the battle UI: the hand, then the teaser greyed with its DL (it does not take a slot).
 func _show_hand() -> void:
+	var row: Array = _hand_display()
 	var locked := {}
-	for c in _hand_display():
-		if econ.dev_level() < int(CARD_DL.get(c, 1)):
-			locked[c] = int(CARD_DL.get(c, 1))
-	ui.set_hand(_hand_display())
+	var tz := _hand_teaser()
+	if tz != "" and not row.has(tz):
+		row = row + [tz]
+		locked[tz] = int(CARD_DL.get(tz, 1))
+	ui.set_hand(row)
 	ui.set_locked(locked)
 
 
 func _hand() -> Array:
 	var hand: Array = []
 	for c in _hand_display():
-		if econ.dev_level() >= int(CARD_DL.get(c, 1)):
+		if _card_open(String(c)):
 			hand.append(c)
 	for k in war:
 		if String(k).begins_with("ally_"):
@@ -3436,20 +3534,44 @@ func _open_peace() -> void:
 			d["tile"] = String(desc["tile"]) if ResourceLoader.exists("res://assets/ui/cards/tile_%s.png" % String(desc["tile"]).get_slice("_dl", 0)) \
 				else String(desc["tile_alt"])
 			d["goal"] = h == war["goal"]
+		elif d["kind"] == "pocket":
+			# a pocket shows its most valuable hex (its render on the tile); a one-hex pocket is named after it, so two
+			# pockets never read the same («Котёл из 1» twice)
+			var mh: int = d["hexes"][0]
+			for ph in d["hexes"]:
+				if int(sim.cells[ph]["value"]) > int(sim.cells[mh]["value"]):
+					mh = ph
+			var pdesc := _describe(mh)
+			d["tile"] = String(pdesc["tile"]) if ResourceLoader.exists("res://assets/ui/cards/tile_%s.png" % String(pdesc["tile"]).get_slice("_dl", 0)) \
+				else String(pdesc["tile_alt"])
+			d["label"] = tr("demand.pocket_at") % _cell_name(mh) if (d["hexes"] as Array).size() == 1 else L.t(String(d["label"]))
 		else:
 			d["label"] = L.t(String(d["label"]))
 	# unnamed hexes share their terrain's name: number the repeats («Лес 1», «Лес 2») so the tiles can be told apart
 	var seen := {}
 	for d in _demands:
-		if d["kind"] == "annex":
+		if d["kind"] in ["annex", "pocket"]:
 			seen[d["label"]] = int(seen.get(d["label"], 0)) + 1
 	var nth := {}
 	for d in _demands:
-		if d["kind"] == "annex" and int(seen[d["label"]]) > 1:
+		if d["kind"] in ["annex", "pocket"] and int(seen[d["label"]]) > 1:
 			nth[d["label"]] = int(nth.get(d["label"], 0)) + 1
 			d["label"] = "%s %d" % [d["label"], nth[d["label"]]]
 	_chosen = {}
-	for d in War.recommend_package(sim, war, _demands, ws["score"]):
+	var pack: Array = War.recommend_package(sim, war, _demands, ws["score"])
+	if ftue > 0 and ftue < 14:
+		# the first treaty comes prefilled as the canon's parchment (08 §8.3 F11): the goal and the best hexes beside it,
+		# FTUE_PEACE1_HEXES in all — what the war won beyond them goes back, the rest of the points into opinion; the
+		# chapter keeps its pace (10 of 20 after it, canon §14.3) however well the coached first offensive went
+		var land := 0
+		var kept: Array = []
+		for d in pack:
+			var n: int = (d["hexes"] as Array).size()
+			if d["kind"] in ["annex", "pocket"] and land + n <= FTUE_PEACE1_HEXES:
+				kept.append(d)
+				land += n
+		pack = kept
+	for d in pack:
 		_chosen[d["id"]] = true
 	if ftue >= 14:
 		ftue = 15
@@ -3559,7 +3681,7 @@ func _sign_peace() -> void:
 	if ftue >= 15:
 		ftue = 0
 		ui.coach_hide()
-		ui.toast(tr("toast.tutorial_done"))
+		_tutorial_end = true  # the closing card comes after this ceremony (_end_ceremony → _tutorial_card)
 	elif ftue > 0:
 		ftue = 0
 		_ftue_next = 7
@@ -3738,7 +3860,8 @@ func _step_ceremony(delta: float) -> void:
 		for i in volleys:
 			get_tree().create_timer(0.45 * i + 0.3).timeout.connect(sfx.play.bind("firework", 0, -8.0))
 		var active_after := maxf(0.5, 7.0 - t)
-		ui.show_ceremony_counters(_ceremony["lines"], _end_ceremony, _double_trophies if int(_ceremony["gold_packs"]) > 0 or not _ceremony.get("loot", {}).is_empty() else Callable(), active_after,
+		var spoils: bool = int(_ceremony["gold_packs"]) > 0 or not _ceremony.get("loot", {}).is_empty()
+		ui.show_ceremony_counters(_ceremony["lines"], _end_ceremony, _double_trophies if spoils and _ads_allowed() else Callable(), active_after,
 			_ceremony.get("items", []))
 
 
@@ -3762,6 +3885,15 @@ func _reward_pill(rw: Dictionary) -> Array:
 		"cosmetic":
 			return [["gift", tr("ceremony.cosmetic")]]
 	return [["", "+1"]]
+
+
+## Rewarded ads wait for the tutorial to end and the 10th minute of play (canon §14.3 «Реклама»: none in the FTUE,
+## rewarded from minute 10): no «×2» on the tutorial's treaties.
+const AD_AFTER_SEC := 600
+
+
+func _ads_allowed() -> bool:
+	return ftue <= 0 and _ftue_next <= 0 and not _tutorial_end and now_s() - installed_at >= AD_AFTER_SEC
 
 
 ## Rewarded ad «×2 трофеи» — SDK stub until monetization lands (canon §14.10).
@@ -3789,8 +3921,59 @@ func _end_ceremony() -> void:
 	map_view.mark_dirty()
 	_ceremony = {}
 	_set_mode(Mode.MAP)
-	if _player_hexes() >= _chapter_goal() and not chapter_done:
-		ui.toast(tr("toast.chapter_goal"), "globe")
+	if _tutorial_end:
+		_tutorial_end = false
+		_tutorial_card()
+	_check_chapter_goal()
+
+
+## The tutorial's close (canon §14.3, 9:30–10:00) after war 2's ceremony: Bram on a card — the chapter's bar
+## («Глава I «Долина»» 15/20), the next step («Освойте ещё 5 гексов»), what already runs on its own — and one
+## «Вперёд», which picks the next hex to take (_pick_target: a hex to settle while both neighbours are under a truce).
+func _tutorial_card() -> void:
+	var goal := _chapter_goal()
+	var have := _player_hexes()
+	var lines: Array = [tr("chapter.full") % [_chapter_roman(), tr(_chapter_name_key())],
+		{"bar": {"frac": clampf(float(have) / maxf(1.0, goal), 0.0, 1.0), "icon": "hex_tile", "text": "%d/%d" % [mini(have, goal), goal], "role": "info"}}]
+	# the next step: the hexes still to take — or, the goal already met by the tour's wars, the World tab's «Расширить»
+	lines.append(tr("tut.next") % L.plural(goal - have, "plural.hexes") if have < goal else tr("toast.chapter_goal") % _chapter_roman())
+	var chips := _running_timers(now_s())
+	if not chips.is_empty():
+		lines.append({"chips": chips})
+	ui.show_info(tr("tut.title"), lines, tr("tut.go"), func():
+		ui.close_modal()
+		if _can_expand():
+			_open_world_chapter()
+		else:
+			_pick_target(), "go", "trophy", {"id": "cmd_bram", "mood": "smile", "say": tr("tut.say")})
+
+
+## What already runs on its own (canon §14.3 «Открытые таймеры»): builds, the research, a settlement, carts on the
+## road, a new army, the next free War Crate — paper chips «[icon] 14:32», the soonest first, four at most.
+func _running_timers(now: int) -> Array:
+	var all: Array = []
+	for b in econ.buildings:
+		if int(b["upgrade_end"]) > now:
+			all.append([int(b["upgrade_end"]) - now, "hammer"])
+	if not research.current.is_empty() and int(research.current.get("end", 0)) > now:
+		all.append([int(research.current["end"]) - now, "flask"])
+	for h in colonizing:
+		if int(colonizing[h]) > now:
+			all.append([int(colonizing[h]) - now, "orders"])
+	for cv in deposits.convoys:
+		if int(cv.get("back", 0)) > now:
+			all.append([int(cv["back"]) - now, "cart"])
+	if not training.is_empty() and int(training["end"]) > now:
+		all.append([int(training["end"]) - now, "helmet"])
+	cases.claim_free_crates(now)
+	var crate: int = cases.free_crate_left(now)
+	if crate > 0:
+		all.append([crate, "chest_wood"])
+	all.sort_custom(func(a: Array, b: Array) -> bool: return int(a[0]) < int(b[0]))
+	var out: Array = []
+	for t in all.slice(0, 4):
+		out.append({"icon": String(t[1]), "text": GameUI.fmt_time(int(t[0]))})
+	return out
 
 
 func _open_defeat_or_white(score: float) -> void:
@@ -3971,6 +4154,10 @@ func _econ_tick() -> void:
 	# in battle the folder tabs lie under the battle tray: no free-builders count on them (it would peek over the tray)
 	var free_builders: int = econ.builders + econ.bonus_builders - econ.busy_builders(now) if mode != Mode.BATTLE else 0
 	hud.set_resources(econ.res, econ.income_per_hour(sim), econ.storage_cap(), free_builders, econ.builders + econ.bonus_builders)
+	# «Мир расширяется» waits on the World tab: a green dot on it (07 §3.1 `ready`); not over the battle tray
+	hud.set_tab_badge("world", -1 if mode != Mode.BATTLE and _can_expand() else 0, "go")
+	if mode == Mode.MAP and not ui.has_modal():
+		_check_chapter_goal()  # a gain no call site saw (a loaded save, a debug step)
 	hud.set_level(econ.dev_level())
 	hud.set_mail(_unread())
 	_market_hint()
@@ -4109,11 +4296,13 @@ func _fort_action() -> void:
 	map_view.burst(selected, Color(1.0, 0.85, 0.3))
 	_stat("forts")
 	if ftue == 9:
-		# scripted marauder raid breaks against the new fence (canon §14.3, 5:00–6:00)
+		# scripted marauder raid breaks against the new fence (canon §14.3, 5:00–6:00): the advisor counts it down
+		# (_raid_lesson), an arrow from the wild land shows where it comes from
 		ftue = 0
 		_ftue_next = 10  # then war 2 with the Hamlets
-		_raid = {"hex": selected, "at": now + 25}
-		ui.coach_hide()
+		_raid = {"hex": selected, "at": now + RAID_SEC, "from": _raid_source(selected)}
+		if int(_raid["from"]) >= 0:
+			map_view.strike_arrow(int(_raid["from"]), selected, GameUI.fmt_time(RAID_SEC))
 	_econ_tick()
 	_autosave()
 
@@ -4554,6 +4743,18 @@ func _stars() -> Array:
 	return STARS + (STARS_2 if chapter >= 2 else []) + (STARS_3 if chapter >= 3 else []) + (STARS_4 if chapter >= 4 else [])
 
 
+## The chapter a star belongs to: «c2_…» → 2, …; chapter I's have no prefix.
+func _star_chapter(id: String) -> int:
+	for k in [2, 3, 4]:
+		if id.begins_with("c%d_" % k):
+			return k
+	return 1
+
+
+func _chapter_stars(ch: int) -> Array:
+	return [STARS, STARS, STARS_2, STARS_3, STARS_4][clampi(ch, 1, 4)]
+
+
 func _star_progress(st: Array) -> int:
 	var key: String = st[2]
 	if key == "":
@@ -4584,7 +4785,7 @@ func _star_progress(st: Array) -> int:
 
 func _world_items() -> Array:
 	var items: Array = [{"kind": "chapter", "hexes": _player_hexes(), "goal": _chapter_goal(), "done": chapter_done,
-		"can_expand": _player_hexes() >= _chapter_goal() and war.is_empty() and not chapter_done}]
+		"can_expand": _can_expand()}]
 	if _orders_open():
 		bp.refresh(now_s())
 		items.append({"kind": "star", "id": "pass", "icon": "medal", "open": true, "claimed": false,
@@ -4645,9 +4846,12 @@ func _on_world_action(id: String) -> void:
 			econ.res["raivite"] = int(econ.res["raivite"]) + 10
 			sfx.play("capture")
 			ui.toast(tr("toast.star"), "star")
-			if stars_claimed.size() == _stars().size():
-				_post("inbox.all_stars.title", "inbox.all_stars.text")
-				ui.toast(tr("toast.all_stars"))
+			var ch := _star_chapter(id)
+			if _chapter_stars(ch).all(func(s2: Array) -> bool: return stars_claimed.has(s2[0])):
+				# every star of that chapter (07 §3.3): its cosmetic is not in the catalog yet (07 §16.1 Q2) — named, and
+				# the claim stays on record in stars_claimed for the update that brings it
+				_post(L.pack("inbox.all_stars.title", [_chapter_roman(ch)]), L.pack("inbox.all_stars.text", ["chapter.reward.%d" % ch]))
+				ui.toast(tr("toast.all_stars") % [_chapter_roman(ch), tr(_chapter_name_key(ch))], "trophy")
 	_econ_tick()
 	_autosave()
 
@@ -4707,7 +4911,7 @@ func _grant_legacy(ch: int) -> String:
 		var co: Dictionary = Cases.cosmetic(cid)
 		var cat := String(co.get("category", ""))
 		var cname := String(co.get("name_en" if Cases.is_english() else "name", ""))
-		parts.append("%s «%s»" % [Cases.category_name(cat), cname])
+		parts.append(tr("legacy.cosmetic") % [Cases.category_name(cat), cname])
 		var t := {"title": cname, "caption": Cases.category_name(cat), "face": tint.call(String(co.get("rarity", "rare")))}
 		if cat == "cos_border_ink":  # the ink itself, as in the Atelier
 			t["swatch"] = cid
@@ -4718,7 +4922,7 @@ func _grant_legacy(ch: int) -> String:
 		econ.res["raivite"] = int(econ.res["raivite"]) + rv
 		parts.append(tr("legacy.raivite") % rv)
 		_legacy_got.append({"icon": "raivite", "value": GameUI.fmt_num(rv)})
-	return tr("legacy.line") % [ch, ", ".join(parts)]
+	return tr("legacy.line") % [_chapter_roman(ch), ", ".join(parts)]
 
 
 # ---------------------------------------------------------------------- «Военный пропуск» (canon §15.6, 09 §9.12)
@@ -4739,7 +4943,7 @@ func _pass_text(r: Array) -> String:
 			return tr("pass.rw_speed") % int(r[1])
 		"cosmetic":
 			var co: Dictionary = Cases.cosmetic(String(r[1]))
-			return "%s «%s»" % [Cases.category_name(String(co.get("category", ""))), String(co.get("name_en" if Cases.is_english() else "name", ""))]
+			return tr("legacy.cosmetic") % [Cases.category_name(String(co.get("category", ""))), String(co.get("name_en" if Cases.is_english() else "name", ""))]
 	return ""
 
 
@@ -5022,7 +5226,9 @@ func _open_calendar() -> void:
 		elif k == n:
 			state = "today"
 		days.append({"day": d, "text": " + ".join(parts), "state": state, "key": not bool(e[1]), "rw": e[0]})
-	ui.show_calendar({"cycle": cyc, "days": days, "pending": calendar.pending, "can_double": calendar.can_double(),
+	# the ×2 is a video: not before the tutorial's 10th minute (a subscriber's comes without one, canon §14.3, §15.9)
+	var dbl: bool = calendar.can_double() and (_ads_allowed() or patent.active(now_s()))
+	ui.show_calendar({"cycle": cyc, "days": days, "pending": calendar.pending, "can_double": dbl,
 		"patent": patent.active(now_s())},
 		func(double: bool): _claim_calendar(double))
 
@@ -5086,8 +5292,9 @@ func _complete_chapter() -> void:
 	ui.toast(_grant_legacy(chapter))
 	map_view.fireworks(map_view.cell_world(sim.states[Types.PLAYER]["capital_id"]), 5)
 	sfx.play("fanfare")
-	_post("inbox.chapter_done.title", "inbox.chapter_done.text")
-	ui.toast(tr("toast.chapter_done"), "globe")
+	_post(L.pack("inbox.chapter_done.title", [_chapter_roman(), _chapter_name_key()]),
+		L.pack("inbox.chapter_done.text", ["legacy.what.%d" % chapter, _chapter_roman(chapter + 1)]))
+	ui.toast(tr("toast.chapter_done") % [_chapter_roman(), tr(_chapter_name_key()), _chapter_roman(chapter + 1)], "globe")
 	_autosave()
 
 
@@ -5164,7 +5371,7 @@ func _world_expansion() -> void:
 		rows.append(row)
 	var lines: Array = [tr("expansion.world2") % [hexes_after, hexes_after - hexes_before]]
 	if legacy != "":  # what the chapter left: reward tiles (the commander, the builder, the cosmetic, raivites)
-		lines.append({"tiles": _legacy_got.duplicate(), "head": tr("legacy.head") % (next_ch - 1), "tile_h": 168.0})
+		lines.append({"tiles": _legacy_got.duplicate(), "head": tr("legacy.head") % _chapter_roman(next_ch - 1), "tile_h": 168.0})
 	lines.append({"rows": rows})
 	var goal := _chapter_goal()
 	lines.append(tr("expansion.goal" + sfx_key))  # the goal as a bar: hexes held of the chapter's goal
@@ -5532,7 +5739,7 @@ func _finish_training() -> void:
 func _open_hand_picker() -> void:
 	var open: Array = ["attack"]
 	for c in SLOT_CARDS:
-		if econ.dev_level() >= int(CARD_DL.get(c, 1)):
+		if _card_open(String(c)):
 			open.append(c)
 	var chosen: Array = _hand_display().slice(1)
 	ui.show_hand_picker(open, chosen, _hand_slots(), func(c: String):
@@ -6248,7 +6455,7 @@ func _army_items(now: int) -> Array:
 			"upkeep": roundi(int(a["max_str"]) / 10000.0 * (1.5 if not war.is_empty() else 1.0) * (1.0 - 0.03 * research.level("thrift"))),
 			"refilling": int(a["str"]) < int(a["max_str"]), "cmd": commanders.cmd_of(int(a["id"])),
 			"cmd_rarity": _cmd_rarity(commanders.cmd_of(int(a["id"]))) if commanders.cmd_of(int(a["id"])) != "" else "",
-			"cmd_free": ftue == 0 and _cmd_owned_count() > 0, "dl": econ.dev_level()})
+			"cmd_free": ftue == 0 and _cmd_owned_count() > 0, "dl": econ.dev_level(), "ad_ok": _ads_allowed()})
 		i += 1
 	var dl: int = econ.dev_level()
 	var cost := _train_cost()
@@ -6442,9 +6649,13 @@ func _unread() -> int:
 
 
 func _ai_tick(now: int) -> void:
+	if not _raid.is_empty() and now < int(_raid["at"]) and int(_raid.get("from", -1)) >= 0:
+		map_view.strike_arrow(int(_raid["from"]), int(_raid["hex"]), GameUI.fmt_time(int(_raid["at"]) - now))
 	if not _raid.is_empty() and now >= int(_raid["at"]) and mode in [Mode.MAP, Mode.WAR]:
 		var h: int = _raid["hex"]
 		_raid = {}
+		map_view.strike_arrow(-1, -1, "")
+		rig.focus(map_view.cell_world(h))  # the camera goes to the fence as the raid hits it
 		map_view.burst(h, Color(1.0, 0.6, 0.3), true)
 		map_view.floater(h, tr("floater.raid_repelled"), Color(0.75, 0.85, 1.0))
 		_stat("defenses")
@@ -6452,9 +6663,13 @@ func _ai_tick(now: int) -> void:
 		sfx.play("repelled")
 		_post("inbox.raid.title", L.pack("inbox.raid.text", [_cell_key(h)]))
 		ui.toast(tr("toast.raid_repelled"))
-		if _ftue_next == 10:
+		if _ftue_next == 10:  # the lesson holds on the fence a moment before war 2's step takes the camera away
 			_ftue_next = 0
-			ftue = 10 if _hamlets_target() >= 0 else 0
+			_raid_hex = h
+			_raid_hold = now + RAID_HOLD_SEC
+	if _raid_hold > 0 and now >= _raid_hold and mode in [Mode.MAP, Mode.WAR]:
+		_raid_hold = 0
+		ftue = 10 if _hamlets_target() >= 0 else 0
 	if ultimatum_at > 0 and now >= ultimatum_at and ultimatum.is_empty() and war.is_empty() and mode == Mode.MAP and _truce_left(MapGen.BARONS) == 0:
 		_issue_ultimatum(now)
 	if not ultimatum.is_empty() and now >= int(ultimatum["deadline"]) and mode in [Mode.MAP, Mode.WAR]:
@@ -6873,8 +7088,82 @@ func _hamlets_target() -> int:
 	return goals[0] if goals.size() > 0 else -1
 
 
+## Step 3's ghost drag in war 1 (canon §14.3: the first offensive ends on ★★★, the flag taken): towards the flag — an
+## army that does not touch the flag yet onto a winnable hex beside it, so that two armies flank the flag for step 4's
+## «Атака»; else any army onto a hex beside the flag; else (no flag left to take) the easiest win. [from, to] or [].
+func _ftue_ghost_pair() -> Array:
+	var fh := flag_hex if flag_hex >= 0 and battle.can_target(Types.PLAYER, flag_hex) else -1
+	var pair: Array = []
+	var best := -1.0
+	for a in armies:
+		if a["side"] != Types.PLAYER or battle.army_at(a["hex"], Types.PLAYER) == null:
+			continue
+		var by_flag: bool = fh >= 0 and sim.neighbors[a["hex"]].has(fh)
+		for n in sim.neighbors[a["hex"]]:
+			if n < 0 or not battle.can_target(Types.PLAYER, n):
+				continue
+			var f: float = battle.forecast(Types.PLAYER, [a["id"]], n)["f"]
+			var score := f
+			if fh >= 0 and n != fh and f >= 1.0 and sim.neighbors[n].has(fh):
+				score += 50.0 if by_flag else 100.0
+			if score > best:
+				best = score
+				pair = [int(a["hex"]), n]
+	return pair
+
+
+## The FTUE raid as a lesson (canon §14.3, 5:00–6:00), while `ftue` is 0 between the fence and war 2: as the marauders
+## come the advisor says so with their time on his chip and the fence hex stays framed — no dim, the map stays free;
+## once the raid breaks on the fence its line holds there RAID_HOLD_SEC (_ai_tick) before war 2's step moves the camera.
+## True while it shows.
+func _raid_lesson() -> bool:
+	var h := -1
+	var text := ""
+	var chip := ""
+	if not _raid.is_empty():
+		h = int(_raid["hex"])
+		text = tr("ftue.raid")
+		chip = GameUI.fmt_time(maxi(0, int(_raid["at"]) - now_s()))
+	elif _raid_hold > 0:
+		h = _raid_hex
+		text = tr("ftue.raid_done")
+	if h < 0 or mode not in [Mode.MAP, Mode.WAR] or ui.has_modal():
+		return false
+	if _ftue_shown != -2 or _ftue_line != text + chip:
+		_ftue_shown = -2
+		_ftue_line = text + chip
+		ui.coach(text, Vector2(-1, -1), chip)
+	ui.coach_target(rig.cam.unproject_position(map_view.cell_world(h) + Vector3(0, 0.8, 0)))
+	ui.coach_mode("ring")
+	return true
+
+
+## Where the FTUE marauders come from: a camp within 3 steps of the fence, else a wild hex 2 steps off (a longer arrow
+## reads as «from out there»), else the nearest wild one; -1 when there is none.
+func _raid_source(fence: int) -> int:
+	var seen := {fence: 0}
+	var q: Array = [fence]
+	var wild := -1
+	while not q.is_empty():
+		var h: int = q.pop_front()
+		if h != fence and int(sim.cells[h]["owner"]) == Types.NOBODY:
+			if not camps.at(h).is_empty():
+				return h
+			if wild < 0 or (int(seen[wild]) < 2 and int(seen[h]) == 2):
+				wild = h
+		if int(seen[h]) >= 3:
+			continue
+		for n in sim.neighbors[h]:
+			if n >= 0 and not seen.has(n) and Types.is_passable(sim.cells[n]):
+				seen[n] = int(seen[h]) + 1
+				q.append(n)
+	return wild
+
+
 func _ftue_tick(delta: float) -> void:
 	if ftue <= 0:
+		if _raid_lesson():
+			return
 		if _ftue_shown != 0:
 			_ftue_shown = 0
 			ui.coach_hide()
@@ -6978,13 +7267,18 @@ func _ftue_tick(delta: float) -> void:
 			near = [ui.plunder_rect(1)]
 			var fr: Rect2 = ui.modal_rect()  # … and the whole treaty stays in reach: the choice, then «Подписать мир»
 			reveal = fr.grow_individual(0, 42.0, 0, 0) if fr.size.x > 0.0 else Rect2()
-	if _ftue_shown != ftue or _ftue_line != line:
+	var text := tr(line)
+	if ftue == 10:  # war 2's goal by its name: «Вольные Хутора заняли «Хуторские нивы»…» (not always a mine)
+		text = text % _cell_name(maxi(0, _hamlets_target()))
+	elif ftue == 13:
+		text = text % _cell_name(int(war.get("goal", 0)))
+	if _ftue_shown != ftue or _ftue_line != text:
 		if _ftue_shown != ftue:
 			_ftue_t = 0.0
 		_ftue_shown = ftue
-		_ftue_line = line
+		_ftue_line = text
 		var chip := GameUI.fmt_time(FTUE_OFFENSIVE_SEC) if ftue == 2 or ftue == 11 else ""  # «Начните наступление!» [1:00]
-		ui.coach(tr(line), point, chip)
+		ui.coach(text, point, chip)
 	_ftue_t += delta
 	if point.x >= 0.0:
 		ui.coach_target(point)
@@ -6997,24 +7291,19 @@ func _ftue_tick(delta: float) -> void:
 		hud.set_currency_input(not shut)
 	if (ftue == 4 or ftue == 13) and _ftue_t > 6.0:
 		ui.coach_hide()
+	var cam: Camera3D = rig.cam
 	if ftue == 3 and battle != null:
-		# show the easiest win: the best forecast among idle army → adjacent target pairs
-		var from := -1
-		var to := -1
-		var best := -1.0
-		for a in armies:
-			if a["side"] != Types.PLAYER or battle.army_at(a["hex"], Types.PLAYER) == null:
-				continue
-			for n in sim.neighbors[a["hex"]]:
-				if n >= 0 and battle.can_target(Types.PLAYER, n):
-					var f: float = battle.forecast(Types.PLAYER, [a["id"]], n)["f"]
-					if f > best:
-						best = f
-						from = a["hex"]
-						to = n
-		if from >= 0:
-			var cam: Camera3D = rig.cam
-			ui.coach_ghost(cam.unproject_position(map_view.cell_world(from) + Vector3(0, 0.3, 0)), cam.unproject_position(map_view.cell_world(to) + Vector3(0, 0.3, 0)))
+		var pair := _ftue_ghost_pair()
+		if not pair.is_empty():
+			ui.coach_ghost(cam.unproject_position(map_view.cell_world(pair[0]) + Vector3(0, 0.3, 0)),
+				cam.unproject_position(map_view.cell_world(pair[1]) + Vector3(0, 0.3, 0)))
+	elif ftue == 4 and battle != null and _ftue_t <= 6.0:
+		# «Атака» onto the flag: the card's ghost goes from the card to the flag hex while it can still be taken
+		var cr: Rect2 = ui.card_rect("attack")
+		if cr.size.x > 0.0 and flag_hex >= 0 and battle.validate(Types.PLAYER, {"t": "card", "card": "attack", "target": flag_hex}):
+			ui.coach_ghost(cr.get_center(), cam.unproject_position(map_view.cell_world(flag_hex) + Vector3(0, 0.3, 0)))
+		else:
+			ui.coach_ghost(Vector2(-1, -1), Vector2(-1, -1))
 
 
 # ====================================================================== frame
@@ -7107,6 +7396,8 @@ func _hex_dist(a: int, b: int) -> int:
 func _demo(spec: String) -> void:
 	var parts := spec.split(":")
 	var what := parts[0]
+	if not what.begins_with("ftue"):  # a mid-game state: past the tutorial's 10 minutes without ads (_ads_allowed)
+		installed_at = mini(installed_at, now_s() - AD_AFTER_SEC)
 	if what.begins_with("ftue"):  # ftue:N — the tutorial at step N (war 2's steps on war 1's screens)
 		ftue = 1
 		_burned_mill()
@@ -7289,9 +7580,12 @@ func _demo(spec: String) -> void:
 			_patent_tick(now_s())
 		_open_patent()
 		return
-	if what == "hand":  # the hand picker at DL6 (5 slots, the airstrike open); hand:tab — the Army tab card
+	if what == "hand":  # the hand picker at DL6 (5 slots, the airstrike open); hand:tab — the Army tab card;
+		# hand:default — the default hand (open cards only: 4 of 5 slots, «Десант» opens at DL7)
 		econ._find_type("residence")["level"] = 6
-		hand_pick = ["breakthrough", "airstrike", "defense", "encircle"]
+		hand_pick = [] if parts.size() > 1 and parts[1] == "default" else ["breakthrough", "airstrike", "defense", "encircle"]
+		if parts.size() > 1 and parts[1] == "default":
+			parts = PackedStringArray(["hand"])
 		_open_tab("army")
 		_econ_tick()
 		if parts.size() < 2:

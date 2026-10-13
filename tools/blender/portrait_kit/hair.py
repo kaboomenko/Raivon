@@ -1093,9 +1093,11 @@ def _owl(ctx):
         # from the crown down over the forehead's edge and the temples, their tips free
         # (P3 review round 9: thin free tips hung over the forehead like icing drips) — four broad flat locks lying on
         # the scalp, their rounded ends just over the hairline, so the edge is scalloped, not dripping
-        for az, e in ((-40, 30), (-14, 38), (12, 37), (40, 30)):
+        # (narrower than the gaps between them and thicker, so each lock stands out of the sheet with a groove on
+        # either side: strand groups, not one smooth shell)
+        for az, e in ((-50, 27), (-27, 34), (-4, 38), (19, 37), (42, 31)):
             el += core.ribbon_lock(head, [core.az_el(az * 0.5 + 20, 66), core.az_el(az, e + 8), core.az_el(az, e - 3)],
-                                   0.13 * sx, 0.12 * sx, 0.04, n=14, lift=0.5, taper_at=0.9)
+                                   0.085 * sx, 0.08 * sx, 0.055, n=14, lift=0.62, taper_at=0.9)
     tf = hr.get("tufts", {})
     ln = tf.get("len", 0.34) * H
     for sd in (-1, 1):

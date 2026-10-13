@@ -594,6 +594,18 @@ func set_locked(locked: Dictionary) -> void:
 			_card_state(c, "")
 
 
+## A card that has just come into the hand (the tutorial's «Котёл», canon §14.3): it pops in 0.6 → 1.12 → 1 (360 ms).
+func pop_card(card: String) -> void:
+	var p: Control = _cards.get(card)
+	if p == null or not is_instance_valid(p) or Kit._dur(0.2) <= 0.0:
+		return
+	p.pivot_offset = p.size * 0.5
+	p.scale = Vector2(0.6, 0.6)
+	var tw := p.create_tween()
+	tw.tween_property(p, "scale", Vector2(1.12, 1.12), 0.2).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_property(p, "scale", Vector2.ONE, 0.16).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN_OUT)
+
+
 ## Shows the «Союзный корпус» card when an ally fights in this war and it was not played yet.
 func set_corps(available: bool) -> void:
 	if _cards.has("corps"):
@@ -788,7 +800,7 @@ const PRIMARY_LOOK := {
 	"wait": ["lock", "hourglass"], "repairing": ["lock", "hourglass"], "convoy_status": ["lock", "hourglass"],
 	"upgrade_locked": ["lock", "lock"], "upgrading": ["lock", "hourglass"],
 	"tower": ["go", "tower"], "fort": ["go", "fort"], "tower_up": ["go", "tower"], "fort_up": ["go", "fort"],
-	"pick_wait": ["lock", "hourglass"], "ai_claimed": ["lock", "hourglass"],
+	"pick_wait": ["lock", "hourglass"], "ai_claimed": ["lock", "hourglass"], "expand": ["go", "globe"],
 }
 ## The irreversible big-button actions are held, not tapped (10 §2.1 rule 8): «Война!» 0.8 s (canon §10.3, 03 §3.4),
 ## «Отступить» 0.5 s (03 §5.5). A tap that lets go early does nothing and the tooltip says to hold; the first 3 times
@@ -1304,7 +1316,7 @@ func show_peace(enemy: String, budget: float, control: int, demands: Array, chos
 		var on: Array = g["on"]
 		var cost := float(d["cost"])
 		var fits := used + cost <= budget + 0.0001
-		var o := {"title": String(d["label"]), "icon_side": 100.0, "pill_inside": true,
+		var o := {"title": String(d["label"]), "icon_side": 100.0, "pill_inside": true, "wrap_title": String(d["kind"]) == "pocket",
 			"pill": [["treaty", Kit.fmt_dec(cost, 1), on.is_empty() and not fits]],
 			"selected": not on.is_empty(), "count": on.size() if ids.size() > 1 else 0, "dim": on.is_empty() and not fits}
 		var tex := _tile_tex(String(d.get("tile", "")))
@@ -1604,11 +1616,20 @@ func show_ceremony_counters(lines: Array, on_done: Callable, on_double := Callab
 		gate["open"] = true
 		for b in buttons:
 			if is_instance_valid(b):
+				(b as Kit.KitButton).fill = -1.0
 				(b as Kit.KitButton).enabled = true
 				(b as Kit.KitButton).rebuild()
 	if active_after <= 0.0:
 		open.call()
 	else:
+		# while it waits «Забрать» fills with green from the left — it is coming, not broken (§1 rule 5: grey alone
+		# reads as «unavailable»)
+		done.fill = 0.0
+		var ftw := done.create_tween()
+		ftw.tween_method(func(k: float) -> void:
+			if is_instance_valid(done) and done.fill >= 0.0:
+				done.fill = k
+				done.queue_redraw(), 0.0, 1.0, active_after)
 		get_tree().create_timer(active_after).timeout.connect(open)
 
 
@@ -3888,15 +3909,16 @@ func _army_card(it: Dictionary) -> Control:
 			cp.add_to_group("kit_era")  # (redrawn when the era's renders change: set_portrait_era)
 		opts["chip"] = {"node": cp} if cp != null else {"plus": true}
 		opts["chip_cb"] = func(): army_action.emit(id, "cmd")
-	if it["refilling"]:
+	if it["refilling"] and bool(it.get("ad_ok", true)):
 		# [ad] +29%: what the video gives (the word «Пополнить» does not fit an XS button beside the ad icon); the
-		# time to a full army instead once the game passes it
+		# time to a full army instead once the game passes it. No video in the tutorial and its first 10 minutes
+		# (ad_ok, canon §14.3): the strength alone then, the readiness bar under the name still filling
 		var cap := "+%d%%" % (100 - pct) if not it.has("refill_left") else fmt_time(int(it["refill_left"]))
 		opts["cta"] = {"role": "go", "caption": cap, "icon": "ad", "cb": func(): army_action.emit(id, "refill")}
 		tip.append(tr("army.tip.refill"))
 		opts["details"] = "\n".join(tip)
 	else:
-		opts["stat"] = {"icon": "swords", "text": fmt_num(int(it["str"])), "check": true}
+		opts["stat"] = {"icon": "swords", "text": fmt_num(int(it["str"])), "check": not it["refilling"]}
 	return Kit.card(tex, String(it["name"]), opts)
 
 
@@ -5449,7 +5471,7 @@ func _chapter_card(it: Dictionary) -> Control:
 		stat.erase("bar_frac")
 		stat["check"] = true
 		opts["stat"] = stat
-		opts["details"] = tr("world.chapter_done")
+		opts["details"] = tr("world.chapter_done") % ROMAN[clampi(_world_chapter + 1, 1, ROMAN.size() - 1)]
 	elif bool(it.get("can_expand", false)):
 		opts["cta"] = {"role": "go", "caption": tr("world.expand"), "icon": "globe", "cb": func(): world_action.emit("expand")}
 	else:
@@ -6271,6 +6293,26 @@ func scroll_to_card(title: String) -> void:
 		_bscroll.ensure_control_visible(pick)
 
 
+## The row's first card — the World tab's chapter — brought back into view and bumped once (1 → 1.06 → 1, 300 ms):
+## the trophy and «Расширить мир» land on it.
+func focus_first_card() -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame  # the row's sort and its scroll reset (_fill_panel) land first
+	if _brow == null or not _bpanel.is_visible_in_tree():
+		return
+	_bscroll.scroll_horizontal = 0
+	for ch in _brow.get_children():
+		var kc := ch as Kit.KitCard
+		if kc == null or kc.is_queued_for_deletion():
+			continue
+		kc.pivot_offset = kc.size * 0.5
+		if Kit._dur(0.12) > 0.0:
+			var tw := kc.create_tween()
+			tw.tween_property(kc, "scale", Vector2(1.06, 1.06), 0.12).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+			tw.tween_property(kc, "scale", Vector2.ONE, 0.18).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		return
+
+
 ## That card whole (the coach keeps it lit around its button: which building it is).
 func tray_card_rect(title := "") -> Rect2:
 	var pick := _tray_card(title)
@@ -6299,7 +6341,7 @@ func seal_rect() -> Rect2:
 	return _seal_btn.get_global_rect()
 
 
-## One plunder segment of the treaty (0 «Нет» … 3), while the treaty is open.
+## One plunder segment of the treaty (0 «Пощадить» … 3), while the treaty is open.
 func plunder_rect(i := 0) -> Rect2:
 	if _modal == null or not is_instance_valid(_plunder_seg) or not _modal.is_ancestor_of(_plunder_seg):
 		return Rect2()

@@ -88,6 +88,7 @@ form.encircle,Окружение +30%,Encirclement +30%
 form.corridor,Коридор,Corridor
 form.salient,Выступ −15%,Salient −15%
 demand.pocket,Котёл из %d,Pocket of %d
+demand.pocket_at,Котёл «%s»,Pocket “%s”
 demand.contribution,Контрибуция,Indemnity
 demand.reparations,Репарации,Reparations
 tile.hex,Гекс,Hex
@@ -146,7 +147,7 @@ result.win,Успех!,Success!
 result.draw,Ничья,Draw
 result.defeat_title,Поражение,Defeat
 result.peace,К миру,To peace
-plunder.spare,Нет,None
+plunder.spare,Пощадить,Spare
 plunder.light,30%,30%
 plunder.medium,45%,45%
 plunder.heavy,60%,60%
@@ -205,8 +206,21 @@ dipl.opinion,Мнение %s,Opinion %s
 dipl.war,Война,War
 dipl.gift,Подарок,Gift
 world.chapter1,Глава I «Долина»,Chapter I “The Valley”
+chapter.name.1,Долина,The Valley
+chapter.name.2,Речной край,River Country
+chapter.name.3,Континент,The Continent
+chapter.name.4,Индустриальный пояс,The Industrial Belt
+chapter.full,Глава %s «%s»,Chapter %s “%s”
+chapter.reward.1,рамка флага «Хозяин долины»,the “Master of the Valley” flag frame
+chapter.reward.2,элемент герба «Речная лилия»,the “River Lily” crest piece
+chapter.reward.3,салют мира «Континентальный»,the “Continental” peace fireworks
+chapter.reward.4,печать мира «Стальной штамп»,the “Steel Stamp” peace seal
+legacy.what.1,Капитан Лира и 200 Райвитов,Captain Lira and 200 Raivites
+legacy.what.2,Полковник Фрей и чернила границы «Речные»,Colonel Frey and the “River” border ink
+legacy.what.3,Генерал Хоук и 4-й строитель,General Hawk and the 4th builder
+legacy.what.4,Император Рай и рамка «Ветеран»,Emperor Rai and the “Veteran” frame
 world.hexes,Гексов: %d из %d,Hexes: %d of %d
-world.chapter_done,Пройдена! Глава II — скоро,Complete! Chapter II soon
+world.chapter_done,Пройдена! Глава %s — скоро,Complete! Chapter %s soon
 world.expand,Расширить,Expand
 world.hint,Мир и колонизация приносят гексы — каждый на счету,Peace and colonization bring hexes — every one counts
 world.claimed,Получено,Claimed
@@ -281,6 +295,7 @@ ui.peace_btn,Мир,Peace
 ui.offensive,В атаку!,Attack!
 ui.retreat,Отступить,Retreat
 ui.pick_target,Выбрать цель,Pick target
+ui.expand_world,Расширить мир,Expand world
 ui.convoy_status,Обоз вернётся через %s,The convoy is back in %s
 ui.send_convoy,Обоз,Convoy
 ui.finish,Готово,Finish
@@ -298,7 +313,7 @@ ui.hold_retreat,"Удерживайте, чтобы отступить",Hold to 
 ui.ai_settling,Осваивают %s · %s,%s are settling it · %s
 ui.pick_wait,Перемирие: новая цель через %s,Truce: a new target in %s
 ui.pick_none,Целей рядом нет,No targets nearby
-toast.chapter_progress,Глава I «Долина»: %d / %d гексов,Chapter I “The Valley”: %d / %d hexes
+toast.chapter_progress,Глава %s «%s»: %d / %d гексов,Chapter %s “%s”: %d / %d hexes
 toast.chronicle_locked,Летопись откроется после главы I,The Chronicle opens after Chapter I
 toast.occupied_hex,%s: оккупирован (%s). Станет вашим только по мирному договору.,%s: occupied (%s). It becomes yours only by a peace treaty.
 tile.occupied,Оккупирован: %s,Occupied by %s
@@ -354,7 +369,7 @@ ceremony.plunder,"Разграблено: %d золота, %d еды, %d мет�
 ceremony.indemnity,Контрибуция: +%d золота,Indemnity: +%d gold
 ceremony.reparations,Репарации: 10% производства на 24ч,Reparations: 10% of output for 24h
 toast.test_ad_double,Тестовая сборка: реклама не подключена — трофеи удвоены,Test build: ads aren't connected. Spoils doubled
-toast.chapter_goal,Цель главы выполнена — вкладка «Мир»,Chapter goal reached: open the World tab
+toast.chapter_goal,Цель главы %s выполнена — откройте «Мир»,Chapter %s goal reached: open the World tab
 result.white_peace,Белый мир: всё вернётся владельцам,White peace: everything returns to its owners
 toast.white_peace_signed,Белый мир подписан,White peace signed
 result.defeat,Грабёж 60%,60% plundered
@@ -392,12 +407,12 @@ star.defense,Отбейте набег или удар,Repel a raid or a strike
 star.defense.short,Отбейте набег,Repel a raid
 star.dl3,Достигните УР3,Reach DL3
 toast.star,Звезда главы: +10 Райвитов и час производства,Chapter star: +10 Raivites and 1 h of output
-inbox.all_stars.title,Все звёзды главы I,All Chapter I stars
-inbox.all_stars.text,Награда: чернила границы «Долина» (косметика).,Reward: “Valley” border ink (cosmetic).
-toast.all_stars,Все звёзды главы! Чернила границы «Долина» — ваши,All chapter stars! The “Valley” border ink is yours
-inbox.chapter_done.title,Глава I «Долина» завершена,Chapter I “The Valley” complete
-inbox.chapter_done.text,Наследие: Капитан Лира и 200 Райвитов. Глава II «Речной край» скоро — за туманом уже видны паруса.,Legacy: Captain Lira and 200 Raivites. Chapter II “Riverlands” is coming soon: sails already loom through the fog.
-toast.chapter_done,"Глава I пройдена! +200 Райвитов, Капитан Лира. Глава II — скоро","Chapter I complete! +200 Raivites, Captain Lira. Chapter II soon"
+inbox.all_stars.title,Все звёзды главы %s,All Chapter %s stars
+inbox.all_stars.text,Награда главы — %s. Она придёт в коллекцию с обновлением игры.,The chapter's reward is %s. It will reach your collection with a game update.
+toast.all_stars,Все звёзды главы %s «%s»!,All stars of Chapter %s “%s”!
+inbox.chapter_done.title,Глава %s «%s» завершена,Chapter %s “%s” complete
+inbox.chapter_done.text,Наследие: %s. Глава %s скоро — за туманом уже видны паруса.,Legacy: %s. Chapter %s is coming soon: sails already loom through the fog.
+toast.chapter_done,Глава %s «%s» пройдена! Глава %s — скоро,Chapter %s “%s” complete! Chapter %s soon
 leader.barons,Барон Гродек Клык,Baron Grodek the Fang
 leader.barons.desc,"Мало крепостей, много армий, частые ультиматумы","Few forts, many armies, frequent ultimatums"
 leader.hamlets,Голова Мирося Златоуст,Headwoman Mirosya Goldmouth
@@ -448,20 +463,26 @@ inbox.war_cap.white,Война длилась 2 ч — белый мир.,The wa
 toast.war_cap_white,Кап войны: белый мир,War cap: white peace
 ftue.1,Бароны сожгли нашу мельницу! Удерживайте «Война!».,The Barons burned our mill! Hold “War!”.
 ftue.2,Начните наступление!,Launch an offensive!
-ftue.3,Тяните от своей армии на вражеский гекс — она пойдёт в атаку.,Drag from your army onto an enemy hex to attack.
-ftue.4,Отлично! «Атака» бросает в бой все армии рядом. Захватите ещё!,Great! “Attack” sends every army nearby into battle. Take more!
+ftue.3,Тяните от армии на гекс у флага — она пойдёт в атаку.,Drag from your army onto the hex by the flag to attack.
+ftue.4,«Атака» бросает в бой все армии рядом. Возьмите флаг — три звезды!,“Attack” sends every army nearby into battle. Take the flag: three stars!
 ftue.5,Земля пока лишь занята. Подпишите мир — и граница сдвинется.,Captured land is only occupied. Sign a peace to move the border.
 ftue.6,"Удерживайте «Подписать мир», чтобы заключить договор.",Hold “Sign peace” to sign the treaty.
 ftue.7,Откройте «Здания» и улучшите Резиденцию — халупы станут избами.,Open “Buildings” and upgrade the Residence: huts become cottages.
 ftue.7b,Улучшите Резиденцию — халупы станут избами.,Upgrade the Residence: huts become cottages.
 ftue.8,Жёлтый контур — ресурсы даром. Коснитесь жилы и пошлите обоз.,"A yellow outline means free resources. Tap the vein, send a convoy."
 ftue.9,Укрепите границу: выберите гекс у Баронов и нажмите «Форт».,Fortify the border: pick a hex by the Barons and tap “Fort”.
-ftue.10,Вольные Хутора заняли шахту у нашей границы. Удерживайте «Война!».,The Free Hamlets seized a mine on our border. Hold “War!”.
+ftue.10,Вольные Хутора заняли «%s»! Удерживайте «Война!».,The Free Hamlets seized “%s”! Hold “War!”.
 ftue.11,Начните наступление!,Launch an offensive!
-ftue.12,«Котёл» режет снабжение: бросьте его на врага рядом с вашей армией.,“Encircle” cuts supply: drop it on an enemy hex next to your army.
-ftue.13,Отлично! Окружённые гексы сдаются быстрее. Захватите шахту!,Great! Encircled hexes fall faster. Capture the mine!
+ftue.12,Новая карта «Котёл»: бросьте её на врага рядом с армией.,New card “Encircle”: drop it on an enemy hex by your army.
+ftue.13,Отлично! Окружённые гексы сдаются быстрее. Захватите «%s»!,Great! Encircled hexes fall faster. Capture “%s”!
 ftue.14,Подпишите мир с Хуторами.,Sign a peace with the Hamlets.
 ftue.15,Пощадить Хутора (+20 к мнению) или разграбить? Выберите и подпишите.,"Spare the Hamlets (+20 opinion) or plunder them? Choose, then sign."
+ftue.raid,Мародёры идут с диких земель! Плетень их встретит.,Marauders are coming from the wildlands! The palisade will meet them.
+ftue.raid_done,Видите? Плетень выстоял — набег отбит.,See? The palisade held: the raid is repelled.
+tut.title,Обучение пройдено!,Tutorial complete!
+tut.say,"Держава ваша! Пока идут таймеры, займите ещё земли.","The realm is yours! While the timers run, claim more land."
+tut.next,Освойте ещё %s,Claim another %s
+tut.go,Вперёд,Onward
 ftue.advisor,Сержант Брам,Sergeant Bram
 toast.cloud_loaded,Загружено облачное сохранение,Cloud save restored
 res.name.gold,Золото,Gold
@@ -773,10 +794,11 @@ inbox.coalition_war.title,Война с коалицией,War with a coalition
 inbox.coalition_war.text,"%s ведёт коалицию из %d государств. Их армии сильнее, но победа принесёт Триумф.","%s leads a coalition of %d states. Their armies are stronger, but victory brings a Triumph."
 ceremony.triumph,Триумф! Трофейный сундук: %d золота и 30 Райвитов,Triumph! Trophy chest: %d gold and 30 Raivites
 star.c3_triumph,Триумф: выиграйте войну с коалицией,Triumph: win a war against a coalition
-legacy.line,Наследие главы %d: %s,Chapter %d legacy: %s
+legacy.line,Наследие главы %s: %s,Chapter %s legacy: %s
+legacy.cosmetic,%s «%s»,%s “%s”
 legacy.builder,4-й строитель,4th builder
 legacy.raivite,%d Райвитов,%d Raivites
-legacy.head,Наследие главы %d,Chapter %d legacy
+legacy.head,Наследие главы %s,Chapter %s legacy
 story.ch2_league,"Лига приветствует нового соседа. Надеюсь, вы умеете не только воевать.","The League welcomes you, neighbour. Can you do more than fight?"
 story.ch2_order,"Мы строили стены сто лет. Посмотрим, сколько строили вы.",Our walls took a hundred years. Let us see how long yours took.
 story.ch3_alvaria,Альвария не просит. Альвария напоминает: дань до заката.,Alvaria does not ask. Alvaria reminds: tribute by sunset.

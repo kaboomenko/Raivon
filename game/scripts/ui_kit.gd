@@ -2773,6 +2773,7 @@ class KitButton extends Panel:
 	var enabled := true
 	var hold := false
 	var hold_sec := 1.2
+	var fill := -1.0  ## 0..1: a disabled button «charging» toward enabled — its face fills with go from the left; < 0: none
 	var hit_pad := 0.0
 	var round_btn := false
 	var icon_scale := 0.0  ## icon-only buttons: icon side as a share of the height
@@ -3288,6 +3289,12 @@ class KitButton extends Panel:
 			paint_body(self, d, size, press)
 		var inner := Rect2(out, dy + out, w - 2.0 * out, h - dy - 2.0 * out)
 		var face_h := inner.size.y - lip_now
+		if fill >= 0.0 and not enabled:  # waiting to open (the ceremony's «Забрать»): go creeps over the grey face
+			var fk := clampf(fill, 0.0, 1.0)
+			_sb.bg_color = SELF.alpha(SELF.face_of(role), 0.55)
+			_sb.set_corner_radius_all(int(minf(maxf(0.0, r - out), inner.size.x * fk * 0.5)))
+			if fk > 0.0:
+				draw_style_box(_sb, Rect2(inner.position, Vector2(inner.size.x * fk, face_h)))
 		if _hold_t > 0.0:
 			var k := clampf(_hold_t / maxf(0.05, hold_sec), 0.0, 1.0)
 			_sb.bg_color = Color(1, 1, 1, 0.75)

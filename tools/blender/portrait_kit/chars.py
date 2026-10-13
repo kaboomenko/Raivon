@@ -452,11 +452,15 @@ CHARS = {
         # whole outline (short ones at the front lit the hairline: hair vs skin dE76 29.7 < 30). The brown a touch
         # cooler ash, not warmer toward her brows as the review asked: #3A302C / #362C28 measured hair vs skin dE76
         # 23-30 / |dL*| 10-13 (§7.4 asks 30 / 15), #3C3230 29.9 in E2; #3A3234 gives 32.8-33.1
-        hair=dict(style="flattop", color="#3A3234", dark="#3C3436", light="#4C4442", crevice="#423A3A",
-                  tip="#544A46", fleck="#4A4040", side=0.008, front=0.035, front_ramp=0.09, top=0.022,
+        # (P3 review round 9: the ash #3A3234 is not the dark brown asked, and the thin needles vanished at 64 px)
+        # — a warm dark brown at her brows' hue (#36281F, rendered hue 21°) dark enough that hair vs skin passes by
+        # |dL*| 15.2-15.3 (dE76 29.2-29.5); 90 short wide 7-sided tufts, lighter at the tips, along the whole top
+        # outline (the dark share this adds is the hair's, a designated dark mass: 3.7 %, "other" 1.3 %)
+        hair=dict(style="flattop", color="#36281F", dark="#32241C", light="#4A382C", crevice="#2E2018",
+                  tip="#5C4636", fleck="#44322A", side=0.008, front=0.035, front_ramp=0.09, top=0.022,
                   corner=0.13, ridge=0.16, ramp=0.12, lean=(35.0, 22.0), stubble=0.4, grain=(150, 150, 34),
                   fade_band=0.05, fade_mix=0.4, bristles_front=(0.0, 0.0, 0, 0.0, 0.0),
-                  bristles_top=(-135.0, 135.0, 130, 0.046, 0.011),
+                  bristles_top=(-140.0, 140.0, 90, 0.05, 0.02), bristle_sides=7,
                   rough=0.78, spec=0.3,
                   # a shallow temple corner and a sideburn notch in front of the ear (a deeper temple recession bared
                   # lit skin under the hair's edge: hair vs skin dE76 29.6 < 30)
@@ -1560,8 +1564,9 @@ ERA_LOOKS.update({
         4: dict(costume=dict(base=dict(color=_UNDER, rough=0.7, sheen=0.2), layers=[
                     _plate(_BRAM_E4),
                     dict(kind="collar", color="#B9C7D6", metal=True, z=-0.66, h=0.07, out=0.03, flare=0.02),
+                    # (grow 0.005: they showed 3921-3991 px of their own 4000, P-A8)
                     dict(kind="pauldrons", color=_BRAM_E4, painted=True, stripe="#F0A830", n=2, spread=84,
-                         bands=[(92, 36), (44, 0)], detail="pauldrons", min_px=4000),
+                         bands=[(92, 36), (44, 0)], grow=0.005, detail="pauldrons", min_px=4000),
                     dict(kind="strip", id="amber", color="#F0A830", emit=1.1, w=0.05, detail="glow", min_px=100,
                          path=[(-0.62, -1.22), (-0.3, -1.25), (0.0, -1.26), (0.3, -1.25), (0.62, -1.22)]),
                     dict(kind="belt", z=-1.09, w=0.13, color="#6B4226", buckle="#E0AD45", over=0.058)]),
@@ -1687,12 +1692,15 @@ ERA_LOOKS.update({
                          piping="#3A4150", piping_r=0.016),
                     dict(kind="pauldrons", color=_E("#4E6B3A", 4), painted=True, stripe="#3A4150", stripe_r=0.014,
                          n=1, spread=96, bands=[(-24, -78)], grow=0.012, detail="armplate", min_px=300),
-                    dict(kind="pauldrons", color=_E("#4E6B3A", 4), painted=True, stripe="#5AE07A", stripe_emit=0.0,
-                         n=2, spread=88, bands=[(98, 40), (54, 6)], grow=0.03, lift=0.02, detail="pauldrons",
-                         min_px=2000),
+                    # (P3 review round 9: green on green, small) light sage rims on the plates and the pauldrons
+                    # for a value step, the pauldrons standing further off so the far one breaks the shoulder line
+                    dict(kind="piping", color="#D4E0BC", r=0.022, path=_FRONT),
+                    dict(kind="pauldrons", color=_E("#4E6B3A", 4), painted=True, stripe="#D4E0BC", stripe_emit=0.0,
+                         stripe_r=0.022, n=2, spread=90, bands=[(98, 40), (54, 6)], grow=0.045, lift=0.035,
+                         detail="pauldrons", min_px=2000),
                     dict(kind="strip", id="glow", color="#5AE07A", emit=1.1, w=0.045, detail="glow", min_px=80,
                          path=[(-0.30, -0.80), (-0.32, -1.0), (-0.34, -1.2)])]),
-                headgear=dict(CHARS["cmd_vik"]["headgear"], id="tech_hood", color=_E("#3E6234", 4),
+                headgear=dict(CHARS["cmd_vik"]["headgear"], id="tech_hood", color=_E("#3E6234", 4), res=0.0155,
                               extra=[dict(kind="visor", el=52, span=58, h=0.075, dh=6, glow=1.1, tint="#5AE07A",
                                           frame="#3A4150", off=0.035, detail="visor", min_px=150)]),
                 **{"props~": {"raven": None, "bow": None},
@@ -1801,7 +1809,9 @@ ERA_LOOKS.update({
                               brim=dict(w=0.12, ang=-14, front=56, color="#2E2A2C", mat="leather"),
                               badge=dict(kind="wave_hex", size=0.12, color="#E8B23A", g=0.12, wave="#2F8FB0")),
                 **{"props~": {"spyglass": dict(color="#C8CCD4", rough=0.22)},
-                   "props+": [dict(kind="chevrons", style="ring", n=2, at=(0.34, 0.40), r=0.016, color="#E8B23A",
+                   # (at 0.20 / 0.26 of the arm, the visible upper sleeve: at 0.34 / 0.40 they fell behind the
+                   # spyglass and the frame's bottom, 0 and 5 px of 60, P-A8)
+                   "props+": [dict(kind="chevrons", style="ring", n=2, at=(0.20, 0.26), r=0.018, color="#E8B23A",
                                    detail="cuff_stripes", min_px=60)]}),
         4: dict(costume=dict(base=dict(color=_UNDER, rough=0.7, sheen=0.2), layers=[
                     _plate(_E("#175A72", 4)),
@@ -2022,8 +2032,10 @@ ERA_LOOKS.update({
         # (P3 review: §7.10 asks a blue-grey greatcoat with a gold standing collar — royal blue with the collar hidden
         # under the beard): greyer within the §7.7 main-colour gate (dE76 <= 22 to the saturated E1 blue), and a tall
         # gold stand collar that shows at both sides of the round beard
-        3: dict(costume=dict(base=dict(color="#5C7AD0", rough=0.9, sheen=0.25), layers=[
-                    dict(kind="collar", color="#E8B23A", z=-0.68, h=0.16, out=0.09, flare=0.07, metal=True, stand=True,
+        # (P3 review round 9: E2 and E3 alike at 74 px, the collar hidden) the coat greyer toward the §7.7 limit, the
+        # gold stand collar taller and wider so its sides rise past the round beard
+        3: dict(costume=dict(base=dict(color="#6476B4", rough=0.9, sheen=0.25), layers=[
+                    dict(kind="collar", color="#E8B23A", z=-0.68, h=0.22, out=0.12, flare=0.11, metal=True, stand=True,
                          thick=0.035),
                     dict(kind="buttons", id="btn", at=[(-0.30, -0.92), (-0.31, -1.08), (-0.31, -1.24)], r=0.032,
                          color="#E8B23A"),
@@ -2045,7 +2057,7 @@ ERA_LOOKS.update({
                          spread=88, bands=[(98, 42), (54, 8)], grow=0.03, lift=0.03, detail="pauldrons", min_px=2000),
                     dict(kind="strip", id="raivite", color="#3A8DFF", emit=1.0, w=0.046, detail="glow", min_px=80,
                          path=[(-0.66, -1.10), (-0.34, -1.15), (0.0, -1.17), (0.34, -1.15), (0.66, -1.10)])]),
-                headgear=dict(CHARS["ruler"]["headgear"], emit=1.6),
+                headgear=dict(CHARS["ruler"]["headgear"], emit=1.6, gem_k=1.3),
                 **{"props~": {"chain": None}}),
     },
 })
