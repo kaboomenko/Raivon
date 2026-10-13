@@ -666,7 +666,11 @@ def pauldrons(ctx, ly, name):
             core.bevel(o, 0.008, 3)
             core.finish(o, steel, sub=1)
             ctx.add(o, "detail:" + ly.get("detail", "pauldrons"), parent, kind="surface")
-            ctx.sig_objs.append(o)
+            # a signature only where the character's sheet says so (Frey's widest shoulders, `signature=True`): every
+            # E4 pauldron counted as its wearer's signature before (Bram E4 / the ruler E4 signature box, P-A9's
+            # signature colours; P3 review)
+            if ly.get("signature"):
+                ctx.sig_objs.append(o)
             # the enamel stripe along the lower edge
             e = math.radians(e0 + (e1 - e0) * 0.22)
             pts = []
@@ -677,7 +681,8 @@ def pauldrons(ctx, ly, name):
             st = core.curve("%s_stripe%+d_%d" % (name, s, i), pts, [1.0] * len(pts), ly.get("stripe_r", 0.012), stripe)
             st.scale = (1, 1, 1)
             ctx.add(st, "detail:" + ly.get("detail", "pauldrons"), o, kind="embed")
-            ctx.sig_objs.append(st)          # part of the plate (and of its colour in P-A9's signature group)
+            if ly.get("signature"):
+                ctx.sig_objs.append(st)      # part of the plate (and of its colour in P-A9's signature group)
             parent = o
     ctx.details[ly.get("detail", "pauldrons")] = ly.get("min_px", 10000)
 
@@ -729,7 +734,8 @@ def cloak(ctx, ly, name):
     else:
         m = core.grad_mat(ctx, name, core.hex_scale(ly["color"], sh_top), core.hex_scale(ly["color"], sh_bot), z0, z1,
                           rough=ly.get("rough", 0.85), sheen=ly.get("sheen", 0.35), spec=ly.get("spec", 0.5))
-    core.finish(o, m, sub=2)
+    # `sub`: Subsurf levels (2; 1 quarters the faces where a busy look runs past §7.14 P-A10's 500k triangles)
+    core.finish(o, m, sub=ly.get("sub", 2))
     ctx.add(o, _group(ly), ctx.objs["torso"], kind="surface")
     ctx.outer.append(o)
     ctx.objs[ly.get("id", name)] = o
@@ -767,7 +773,8 @@ def cape_collar(ctx, ly, name):
     core.bevel(o, 0.008, 2)
     m = core.grad_mat(ctx, name, core.hex_scale(ly["color"], 1.1), core.hex_scale(ly["color"], 0.92), zb, zt,
                       rough=0.75, sheen=0.4)
-    core.finish(o, m, sub=2)
+    # `sub`: Subsurf levels (2; 1 quarters the faces where a busy look runs past §7.14 P-A10's 500k triangles)
+    core.finish(o, m, sub=ly.get("sub", 2))
     ctx.add(o, "detail:" + ly.get("detail", "cape_collar"), ctx.objs["torso"], kind="embed")
     ctx.details[ly.get("detail", "cape_collar")] = ly.get("min_px", 4000)
     ctx.sig_objs.append(o)

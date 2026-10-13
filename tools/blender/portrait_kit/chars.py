@@ -476,7 +476,7 @@ CHARS = {
                 # steel with a faint green cast and brighter enamel: with the art director's dark-brown hair (P3) her
                 # dark signature came within P-A9 mean dE 14.9 of Vega's (>= 15); now 15.2 at the same frame
                 dict(kind="pauldrons", color="#B8D2C6", stripe="#2E9A56", stripe_r=0.02, n=3, spread=88, detail="pauldrons",
-                     min_px=10000),
+                     min_px=10000, signature=True),
             ]),
         props=[dict(kind="badge_relief", style="tower", at=(-0.26, -0.95), size=0.24, color="#C8CCD4", dark="#2C4434",
                     detail="badge"),
@@ -725,9 +725,11 @@ CHARS.update({
                    calm=dict(type="closed", w=0.30, near=-0.012, far=0.012),
                    smile=dict(type="open", w=0.36, h=0.12, near=0.045, far=0.04, dz=-0.012, lower_teeth=True,
                               lower_share=0.22, teeth=0.32)),
-        hair=dict(style="mane", res=0.015, color="#524E56", dark="#48444C", light="#6E6872", crevice="#423E46",
+        # (a step darker, toward §7.8's black: the #524E56 mane rendered mid-grey, P3 review; kept above the albedo
+        # floor #2A2A30 and the dark-share gate)
+        hair=dict(style="mane", res=0.015, color="#46424C", dark="#3E3A44", light="#625C68", crevice="#38343E",
                   temples="#A8A8B0"),
-        beard=dict(style="forked", color="#524E56", tip="#6E6872", root="#48444C", crevice="#423E46", below=0.48,
+        beard=dict(style="forked", color="#46424C", tip="#625C68", root="#3E3A44", crevice="#38343E", below=0.48,
                    moustache=True, moustache_color="#403C40", moustache_dark="#363236", moustache_light="#5E585E",
                    signature=True),
         body=dict(shoulders=2.05),
@@ -743,7 +745,8 @@ CHARS.update({
                      z1=-0.70, thick=0.035),
                 dict(kind="piping", color="#F08A24", r=0.02, path=[(-0.42, -0.74), (-0.2, -0.80), (0.0, -0.82),
                                                                    (0.2, -0.80), (0.42, -0.74)]),
-                dict(kind="cloak", id="cape", color="#6A1C18", z1=-0.64, gap=0.03, flare=0.10, shade=(1.0, 0.85),
+                # (Subsurf 1: at 2 the cape's 55k triangles put him at 548k, past §7.14 P-A10's 500k; P3 review)
+                dict(kind="cloak", id="cape", color="#6A1C18", z1=-0.64, gap=0.03, flare=0.10, shade=(1.0, 0.85), sub=1,
                      open=[(-1.9, 0.52), (-1.2, 0.50), (-0.85, 0.46), (-0.66, 0.40)]),
                 dict(kind="belt", z=-1.30, w=0.13, color="#86241E", buckle="#F08A24", over=0.05),
                 # (fewer, larger, smoother clumps: 70 small ones read lumpy, P3 review / art director note 3)
@@ -755,8 +758,8 @@ CHARS.update({
         # top of his head; on the shoulder line his 48 px head zone matched Bram's and Kort's, P-A1 0.873 / 0.857;
         # x -0.51, lift 0.27: at -0.52 the angry pose put its ear 14 px from the frame side at 256 (P-A6 band 14.1);
         # at -0.505 / 0.26 the head zone rose to 0.850 vs Bram's — 0.847 / 16 px here)
-        props=[dict(kind="wolf_head", x=-0.51, y=0.10, size=0.66, lift=0.27, turn=25, color="#8E8882", dark="#6A6460",
-                    light="#C8C2BC", min_px=2500),
+        props=[dict(kind="wolf_head", x=-0.55, y=-0.10, size=0.66, lift=0.18, turn=10, color="#8E8882", dark="#6A6460",
+                    light="#C8C2BC", iris="#E0A830", eye_r=0.03, min_px=2500),
                dict(kind="fang", side="near", len=0.07, r=0.022),
                dict(kind="pendant", at=(0.02, -1.02))],
         pose=dict(body=20, head=8, roll=-6, nod=-3),
@@ -837,7 +840,8 @@ CHARS.update({
                    smile=dict(type="closed", w=0.29, near=0.06, far=0.05, sag=0.012)),
         # (strands: a broken hairline and feathered tufts of three clumps each — the smooth shell with one hard edge
         # read as a grey cat-ear beanie, P3 review)
-        hair=dict(style="owl", color="#4C4652", dark="#403A44", light="#7A7282", crevice="#342E38", strands=True,
+        # (the highlight back at #6A6272: #7A7282 cut hair vs skin to |dL*| 13.3 on the smile, P3 review)
+        hair=dict(style="owl", color="#4C4652", dark="#403A44", light="#6A6272", crevice="#342E38", strands=True,
                   tufts=dict(az=118, el=44, out=42, len=0.50, w=0.17)),
         body=dict(shoulders=1.9),
         costume=dict(
@@ -850,7 +854,8 @@ CHARS.update({
                 # showed: 0.0 %, P3 review)
                 dict(kind="strap", id="stole", color="#1E9C8E", w=0.16, **{"from": (-0.20, -0.70), "to": (-0.30, -1.95)}),
                 dict(kind="strap", id="stole2", color="#1E9C8E", w=0.16, **{"from": (0.20, -0.70), "to": (0.30, -1.95)}),
-                dict(kind="ruff", id="ruff", color="#F4F2EE", z=-0.62, r=0.40, pleats=26, amp=0.045,
+                # (r 0.41: at 0.40 the ruff showed 725-748 px of its own 750, P-A8)
+                dict(kind="ruff", id="ruff", color="#F4F2EE", z=-0.62, r=0.41, pleats=26, amp=0.045,
                      detail="ruff", min_px=3000, signature=True),
             ]),
         props=[dict(kind="glasses", shape="round", color="#6A4A30", tortoise="#B07A40", frame=0.03, w=1.65, h=1.5,
@@ -1080,7 +1085,11 @@ CHARS.update({
         name="Ormdek", leader=True, female=False, tall_headgear=True, plate="#D18D4F",
         head=dict(shape="square", wh=1.05, n_top=3.4, h_px=258, eye_line=0.49, jaw=0.08, brow_ridge=1.6, cheeks=1.0, muzzle=1.1,
                   chin=0.02),
-        skin="#9A5E4C", skin_tone="T5", blush=0.12, skin_sat=1.30, skin_value=0.95, skin_spec=0.04, skin_rough=0.66,
+        # the round-8 skin (x1.12, spec 0.10: rendered median C* 30, like Iveta's and Arman's deep skin); the round-9
+        # x1.30 matte skin rendered C* 48 rust-orange, the copper plate's hue, against art director note (h) (P3
+        # review). His lit cheek S is measured on the bald lit dome (the brightest 30 % of all skin); the face-only
+        # sample is reported beside it
+        skin="#9A5E4C", skin_tone="T5", blush=0.12, skin_sat=1.12, skin_spec=0.10,
         eyes=dict(sclera=0.18, open=0.66, iris="#7A8A9A", iris_shade=0.9, tilt=-0.06, arch=0.05),
         brows=dict(shape="straight", thick=0.09, color="#B4B4BC", arch=0.0, len=1.3, inner=-0.01, rough=0.6),
         nose=dict(type="straight", w=0.085, drop=0.21, k=1.05, tip="#8A4E34", tip_k=0.3),
@@ -1132,7 +1141,13 @@ CHARS.update({
                        brows=dict(angry=dict(inner=-0.075, outer=0.025, in_dx=0.02, thick_k=1.25)),
                        fx=dict(angry=dict(blush=0.05, nose_red=0.12)),    # deep skin: the full flush read orange
                        mouth=dict(angry=dict(type="open", shape="clench", w=0.28, h=0.098, near=-0.015, far=-0.015))),
-            cunning=dict(brows=dict(cunning=dict(lift=(0.0, 0.10), arch_far=0.02))),
+            # (P3 review blind sort: calm and cunning swapped) the far brow up 0.16, the near one down, the near eye
+            # narrowed, the near moustache tip lifted over a one-sided mouth corner (the box beard hides the lips)
+            cunning=dict(eyes=dict(cunning=dict(open=[0.36, 0.64], tilt=-0.04, arch=0.06, low=0.06)),
+                         brows=dict(cunning=dict(lift=(-0.025, 0.16), arch_far=0.04, arch_near=-0.02)),
+                         mouth=dict(cunning=dict(type="closed", w=0.26, near=0.06, far=-0.01, sag=0.004)),
+                         beard=dict(moustache_lift=(0.035, 0.0)),
+                         pose_cunning=dict(roll=6.0, head=-5.0)),
             tired=dict(pose_tired=dict(nod=-3.0, roll=-3.0), eyes=dict(tired=dict(open=0.26))),
         ),
     ),
@@ -1152,7 +1167,9 @@ CHARS.update({
         # black-violet (§7.8 #3A2A48) with lilac highlights: the pale lavender #726290 merged with her cape
         # and with Sairin's hair (P3 review); the dark-pixel share this costs is reported (§7.4 dark gate)
         # (rendered: hair median L* 39.2 a* 17 b* -19, next to the face L* 24.1; cape L* 50.5, 11.4 above the hair)
-        hair=dict(style="straight", color="#502A66", dark="#48245E", light="#8058A8", crevice="#3A2050", part=36,
+        # (P3 review round 9: the lilac sheen #8058A8 lifted the lit crown to a violet L* 39 median — the sheen a
+        # step darker and redder, so the crown stays black-violet and moves off Sairin's steel blue)
+        hair=dict(style="straight", color="#52225E", dark="#481E56", light="#743476", crevice="#381A48", part=36,
                   drop=-0.70),
         body=dict(shoulders=1.85),
         costume=dict(
@@ -1176,8 +1193,11 @@ CHARS.update({
         moods=dict(
             # (fix-round sort: smile and cunning swapped — her calm already smirks) the smile wide and even with the
             # cheeks up, the cunning one-sided with the far brow high and the glance
-            smile=dict(eyes=dict(smile=dict(open=[0.56, 0.56], low=0.16)),
-                       mouth=dict(smile=dict(type="closed", w=0.31, near=0.065, far=0.06, sag=0.012)),
+            # (P3 review round 9: her closed smile read as the calm smirk, and the eyes 5.5 px < 6 at 128) a small
+            # open smile showing the upper teeth, the eyes a little more open
+            smile=dict(eyes=dict(smile=dict(open=[0.62, 0.62], low=0.14)),
+                       mouth=dict(smile=dict(type="open", w=0.29, h=0.075, near=0.06, far=0.05, dz=-0.008,
+                                             teeth=0.5)),
                        fx=dict(smile=dict(cheek=(0.06, 0.06), cheek_amt=0.02))),
             cunning=dict(eyes=dict(cunning=dict(open=[0.38, 0.62], tilt=0.04, arch=0.12, low=0.06)),
                          brows=dict(cunning=dict(lift=(-0.025, 0.12), arch_far=0.035, arch_near=-0.02)),
@@ -1816,7 +1836,7 @@ ERA_LOOKS.update({
                     dict(kind="collar", color="#B8D2C6", metal=True, z=-0.715, h=0.10, out=0.03, flare=0.025,
                          piping="#2E9A56", piping_r=0.016),
                     dict(kind="pauldrons", color="#B8D2C6", stripe="#2E9A56", stripe_r=0.02, n=3, spread=88,
-                         lift=0.02, detail="pauldrons", min_px=10000)]),
+                         lift=0.02, detail="pauldrons", min_px=10000, signature=True)]),
                 **{"props~": {"badge_relief": dict(at=(-0.26, -1.0))}}),
         3: dict(costume=dict(base=dict(color=_FREY_E3, rough=0.9, sheen=0.25), layers=[
                     dict(kind="collar", color=_FREY_E3, z=-0.64, h=0.08, out=0.004, flare=0.02),
@@ -1827,7 +1847,7 @@ ERA_LOOKS.update({
                          **{"from": (0.36, -0.70), "to": (0.20, -1.5)}),
                     dict(kind="belt", z=-1.30, w=0.11, color="#4E3620", buckle="#C8CCD4", over=0.05),
                     dict(kind="pauldrons", color="#A8B8B2", stripe="#2E8A50", stripe_r=0.02, n=3, spread=88,
-                         lift=0.02, detail="pauldrons", min_px=10000)]),
+                         lift=0.02, detail="pauldrons", min_px=10000, signature=True)]),
                 **{"props~": {"badge_relief": dict(at=(-0.27, -1.02))}}),
         4: dict(costume=dict(base=dict(color=_UNDER, rough=0.7, sheen=0.2), layers=[
                     _plate(_FREY_E4),
@@ -1839,7 +1859,7 @@ ERA_LOOKS.update({
                     dict(kind="pauldrons", color="#C8D0DA", stripe="#2E8A50", stripe_r=0.016, n=1, spread=96,
                          bands=[(-26, -80)], grow=0.012, detail="armplate", min_px=300),
                     dict(kind="pauldrons", color="#C8D0DA", stripe="#3AD07A", stripe_emit=1.0, stripe_r=0.022, n=3,
-                         spread=88, lift=0.025, detail="pauldrons", min_px=10000)]),
+                         spread=88, lift=0.025, detail="pauldrons", min_px=10000, signature=True)]),
                 **{"props~": {"badge_relief": dict(at=(-0.26, -1.0), glow_rim="#5AE07A", glow=1.3)}}),
     },
     # ---------------------------------------------------------------- Irma
@@ -1974,11 +1994,13 @@ ERA_LOOKS.update({
                          path=[(-0.52, -0.86), (-0.50, -1.05), (-0.48, -1.35)]),
                     dict(kind="strip", id="seam2", color="#3A8DFF", emit=1.4, w=0.045, detail="glow2", min_px=40,
                          path=[(0.52, -0.86), (0.50, -1.05), (0.48, -1.35)]),
+                    # the cloak and the cape collar at Subsurf 1 (57k + 55k triangles at 2 put E4 at 555k, past
+                    # §7.14 P-A10's 500k; P3 review)
                     CHARS["cmd_rai"]["costume"]["layers"][0],
-                    CHARS["cmd_rai"]["costume"]["layers"][1],
+                    dict(CHARS["cmd_rai"]["costume"]["layers"][1], sub=1),
                     dict(kind="pauldrons", color="#E4E8F0", stripe="#3A8DFF", stripe_emit=1.2, n=2, spread=84,
                          bands=[(96, 40), (52, 8)], grow=0.035, lift=0.02, detail="pauldrons", min_px=2000),
-                    CHARS["cmd_rai"]["costume"]["layers"][2]]),
+                    dict(CHARS["cmd_rai"]["costume"]["layers"][2], sub=1)]),
                 headgear=dict(CHARS["cmd_rai"]["headgear"], emit=2.0),
                 **{"props~": {"banner": dict(light=0.9, color="#C8CCD4", staff_metal=0.5, cloth="#3A70E0",
                                              alpha=0.7)}}),

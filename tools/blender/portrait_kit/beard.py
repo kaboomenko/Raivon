@@ -208,6 +208,8 @@ def _moustache(ctx, bd):
             # a groomed moustache lifted off the lip with its tips up (the ruler's closed smile shows under it,
             # §7.10; P3 review: the mouth hid under it and the face read neutral)
             ml = bd["moustache_lift"]
+            if isinstance(ml, (list, tuple)):     # (near, far): a one-sided lift (Ormdek's cunning corner)
+                ml = ml[0] if s_ < 0 else ml[1]
             chain = [(x, dy, z + ml * (0.4 + 1.2 * core.smoothstep(0.1, 0.26, x)), r) for x, dy, z, r in chain]
         mtop = ctx.L.get("mouth_top") if getattr(ctx, "mouth_open", False) else None
         for x, dy, z, r in chain:
@@ -357,7 +359,7 @@ HANG = {
     # Grodek (§7.8 "раздвоенная чёрная борода"): wide, splitting into two points with a notch between them
     "forked": dict(wider=0.05, below=0.52, profile=[(-1.0, 0.80), (0.0, 1.0), (0.3, 0.96), (0.6, 0.86),
                                                      (0.85, 0.76), (1.0, 0.70)],
-                   lobes=[(-0.55, 1.0), (0.55, 1.0)], mode="fork"),
+                   lobes=[(-0.6, 1.0), (0.6, 1.0)], mode="fork", notch=0.12),
     # Ormdek (§7.8 "борода-короб, срезанная прямоугольником"): straight sides, a flat bottom
     "box": dict(wider=0.08, below=0.44, profile=[(-1.0, 0.86), (0.0, 1.0), (0.5, 1.0), (1.0, 0.97)],
                 lobes=[(0.0, 1.0)], mode="straight"),
@@ -377,7 +379,7 @@ def _long(ctx, bd):
     box (straight sides, a flat bottom), goatee (the chin only), round (a rounded bottom). The pear's construction (a
     guide surface: the face, then an analytic shape below the chin) with the style's profile and lobes."""
     d = dict(HANG[bd["style"]])
-    d.update({k: v for k, v in bd.items() if k in ("wider", "below", "profile", "lobes", "mode", "width")})
+    d.update({k: v for k, v in bd.items() if k in ("wider", "below", "profile", "lobes", "mode", "width", "notch")})
     head = ctx.objs["head"]
     sx = ctx.P["hx"] / 0.48
     line = _beard_line(ctx, bd)
@@ -420,9 +422,14 @@ def _long(ctx, bd):
         return h.y < 0.12
     samples, s = core.surface_samples(head, 1300, keep)
     el = core.sheet_elems(samples, s, lambda h, n: 0.036 + 0.026 * core.smoothstep(0.0, 0.2, line(h.x) - h.z))
+    # `notch` (H, "fork"): the cleft between the two points — the centre fill stops above it and a negative wedge
+    # cuts it (P3 review: Grodek's fork read as one dark mass with a faint notch; >= 0.06 H asked)
+    notch = d.get("notch", 0.0) * H if mode == "fork" else 0.0
     for k in range(8):
         t = k / 7
         z = zj - (zj - tip_z) * (0.05 + 0.8 * t)
+        if notch and z < tip_z + notch * 1.6:
+            continue
         w = half_w(z)
         g, _ = guide(0.0, z)
         el.append(dict(co=(0.0, g.y + 0.12, z), half=(0.8 * w, 0.12, 0.12), stiff=2.0))
@@ -467,6 +474,10 @@ def _long(ctx, bd):
             nrs.append(n_)
         el += core.clump(pts, nrs, w0, w1, th, n=26, lift=0.0, taper_at=0.6,
                          tip=0.4 if mode != "straight" else 0.85, stiff=2.8, flat=0.75, root=0.2)
+    if notch:
+        g, _ = guide(0.0, tip_z + notch * 0.5)
+        for zz, hx in ((tip_z - 0.04, 0.11), (tip_z + notch * 0.40, 0.075), (tip_z + notch * 0.80, 0.04)):
+            el.append(dict(co=(0.0, g.y + 0.06, zz), half=(hx * sx, 0.30, notch * 0.45), stiff=3.0, neg=True))
     if bd.get("jut"):
         # anger pushes the beard forward (Ormdek, §7.8 "борода выпячивается")
         for e in el:

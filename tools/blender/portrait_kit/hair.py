@@ -646,18 +646,22 @@ def _flattop(ctx):
     bm = bmesh.new()
     tipv = []
 
+    # `bristle_sides`: the tips' cross-section (5: a needle; 7 with a wide base: a short tuft — P3 review: thin
+    # needles along the top vanished at 64 px and the dome read as a knit cap)
+    nsd = hr.get("bristle_sides", 5)
+
     def cone(base, up, ln, r0):
         side = up.cross(Vector((0, 0, 1)) if abs(up.z) < 0.9 else Vector((1, 0, 0))).normalized()
         side2 = up.cross(side).normalized()
         ring = []
-        for j in range(5):
-            a = 2 * math.pi * j / 5
+        for j in range(nsd):
+            a = 2 * math.pi * j / nsd
             ring.append(bm.verts.new(base - up * ln * 0.35 + (side * math.cos(a) + side2 * math.sin(a)) * r0))
             tipv.append(0.0)
         apex = bm.verts.new(base + up * ln)
         tipv.append(1.0)
-        for j in range(5):
-            bm.faces.new((ring[j], ring[(j + 1) % 5], apex))
+        for j in range(nsd):
+            bm.faces.new((ring[j], ring[(j + 1) % nsd], apex))
         bm.faces.new(list(reversed(ring)))
 
     def col_at(az):
@@ -1087,13 +1091,11 @@ def _owl(ctx):
     if hr.get("strands"):
         # a broken hairline (P3 review: the smooth crown with one hard edge read as a cat-ear beanie): short locks
         # from the crown down over the forehead's edge and the temples, their tips free
-        for az, e, ln_ in ((-44, 30, 0.9), (-26, 36, 1.0), (-8, 40, 0.8), (14, 38, 0.9), (36, 32, 0.8), (58, 24, 0.7)):
-            tip = core.az_el(az, e - 9 * ln_)
-            th_, tn_ = core.ray(head, tip * 3, -tip)
-            if th_ is None:
-                continue
-            el += core.ribbon_lock(head, [core.az_el(az * 0.5 + 20, 66), core.az_el(az, e + 6), th_ + tn_ * 0.035],
-                                   0.075 * sx, 0.05 * sx, 0.035, n=12, lift=0.45, free_tail=1, taper_at=0.5)
+        # (P3 review round 9: thin free tips hung over the forehead like icing drips) — four broad flat locks lying on
+        # the scalp, their rounded ends just over the hairline, so the edge is scalloped, not dripping
+        for az, e in ((-40, 30), (-14, 38), (12, 37), (40, 30)):
+            el += core.ribbon_lock(head, [core.az_el(az * 0.5 + 20, 66), core.az_el(az, e + 8), core.az_el(az, e - 3)],
+                                   0.13 * sx, 0.12 * sx, 0.04, n=14, lift=0.5, taper_at=0.9)
     tf = hr.get("tufts", {})
     ln = tf.get("len", 0.34) * H
     for sd in (-1, 1):
@@ -1104,10 +1106,13 @@ def _owl(ctx):
         out = math.radians(tf.get("out", 30))
         # strand groups (`strands`): each tuft three clumps fanned a little apart, the middle one longest — feathered
         # owl tufts, not one smooth horn
-        fan = [(0.0, 1.0, 1.0)] if not hr.get("strands") else [(-9.0, 0.78, 0.62), (0.0, 1.0, 0.72), (10.0, 0.84, 0.6)]
-        for da, lk, wk in fan:
+        # (P3 review round 9: at +-9/10 deg the three read as one smooth horn — fanned 22 deg apart and split front
+        # to back, narrower, so three distinct tips show from the camera)
+        fan = [(0.0, 1.0, 1.0, 0.0)] if not hr.get("strands") else [(-22.0, 0.72, 0.52, -0.25), (0.0, 1.0, 0.62, 0.0),
+                                                                     (22.0, 0.80, 0.50, 0.30)]
+        for da, lk, wk, dy in fan:
             o2 = out + math.radians(da)
-            d = Vector((sd * math.sin(o2) * 1.0, 0.35 + 0.012 * da * sd, math.cos(o2))).normalized()
+            d = Vector((sd * math.sin(o2) * 1.0, 0.35 + dy, math.cos(o2))).normalized()
             d = (d + nor * 0.35).normalized()
             l2 = ln * lk
             pts = [hit - nor * 0.02, hit + nor * 0.05 + d * l2 * 0.30, hit + nor * 0.06 + d * l2 * 0.65, hit + d * l2]

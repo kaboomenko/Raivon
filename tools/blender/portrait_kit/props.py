@@ -1549,7 +1549,9 @@ def wolf_head(ctx, pr):
         el.append(dict(co=P(-0.02, -0.02, sd * 0.11), half=0.07 * s, stiff=2.4))
     mat = core.hair_mat(ctx, "wolf", pr.get("color", "#6E6862"), base.z - 0.1, base.z + 0.25, dark=pr.get("dark"),
                         light=pr.get("light"), crevice=pr.get("crevice", "#3A3634"))
-    head = core.mb_mesh(ctx, "Wolf", el, 0.010, mat, smooth_iter=2, name="wolf_head")
+    # the polygon size follows the head's size (0.010 at 0.42 H): Grodek's 0.66 H head at 0.010 cost 52k triangles
+    # (§7.14 P-A10 500k a file; P3 review)
+    head = core.mb_mesh(ctx, "Wolf", el, 0.010 * max(1.0, s ** 0.5), mat, smooth_iter=2, name="wolf_head")
     grp = _detail(ctx, pr, "wolf_head", 2500)
     ctx.add(head, grp, perch, kind="surface")
     ctx.sig_objs.append(head)
@@ -1569,10 +1571,30 @@ def wolf_head(ctx, pr):
     nose = core.uvsphere("wolf_nose", P(0.285, 0.005), (0.035 * s, 0.03 * s, 0.028 * s), dark, 16, 8)
     ctx.add(nose, grp, head, kind="embed")
     for sd in (-1, 1):
-        d = (face * 0.6 + side * sd * 0.7 + up * 0.4).normalized()
+        # (with `iris`: the eyes set to the front of the skull over the snout, both visible at 80 px)
+        d = ((face * 0.85 + side * sd * 0.42 + up * 0.32) if pr.get("iris") else
+             (face * 0.6 + side * sd * 0.7 + up * 0.4)).normalized()
         hh, nh = core.ray(head, P(0.05, 0.08, sd * 0.05) + d * 0.5, -d)
         if hh is not None:
-            ey = core.uvsphere("wolf_eye%+d" % sd, hh + nh * 0.004, (0.022 * s, 0.022 * s, 0.012 * s), dark, 12, 6)
+            er = pr.get("eye_r", 0.022)
+            if pr.get("iris"):
+                # an amber wolf's eye with a dark pupil and a dark rim (P3 review: the small dark beads did not read
+                # at 80 px; the head read as a grey lump)
+                iris = core.principled(ctx, "wolf_iris", pr["iris"], rough=0.25, coat=0.6)
+                ey = core.uvsphere("wolf_eye%+d" % sd, hh + nh * 0.002, (er * s * 1.25, er * s * 1.25, 0.012 * s),
+                                   dark, 16, 8)
+                core.align_z(ey, nh)
+                ctx.add(ey, grp, head, kind="embed")
+                ir = core.uvsphere("wolf_iris%+d" % sd, hh + nh * 0.006, (er * s, er * s * 0.9, 0.010 * s), iris,
+                                   16, 8)
+                core.align_z(ir, nh)
+                ctx.add(ir, grp, ey, kind="embed")
+                pu = core.uvsphere("wolf_pupil%+d" % sd, hh + nh * 0.012, (er * s * 0.45, er * s * 0.45, 0.006 * s),
+                                   dark, 12, 6)
+                core.align_z(pu, nh)
+                ctx.add(pu, grp, ir, kind="embed")
+                continue
+            ey = core.uvsphere("wolf_eye%+d" % sd, hh + nh * 0.004, (er * s, er * s, 0.012 * s), dark, 12, 6)
             core.align_z(ey, nh)
             ctx.add(ey, grp, head, kind="embed")
     ctx.L["wolf_head"] = base
