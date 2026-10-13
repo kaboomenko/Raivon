@@ -99,7 +99,31 @@ func _run() -> void:
 	if bh >= 0:
 		g._select(bh)
 		_check(g.ui._action2_kind == "", "declare disabled during the truce")
+	# «Выбрать цель»: a war goal of a state the player may attack (the Hamlets, no truce) before land to settle
+	var ham_goals: Array = War.recommend_goals(g.sim, MapGen.HAMLETS, 1)
+	g._select(-1)
+	_check(g.ui._action2_kind == "pick_target", "nothing selected: «Выбрать цель»")
 	g._pick_target()
+	if ham_goals.size() > 0:
+		_check(g.selected == ham_goals[0] and g.ui._action2_kind == "declare" and g.ui._action2.hold,
+			"«Выбрать цель» goes to the war goal of a state without a truce; «Война!» is held (hex %d)" % g.selected)
+	g.truce[MapGen.HAMLETS] = int(Time.get_unix_time_from_system()) + 1800
+	# a wild hex an AI is settling is never a target, and never a green «Занять» (02 §10.2)
+	var claim := -1
+	for c in g.sim.cells:
+		if c["owner"] == Types.NOBODY and Types.is_passable(c) and g._touches_player(c["id"]) and g.camps.at(c["id"]).is_empty():
+			claim = c["id"]
+			break
+	if claim >= 0:
+		g.ai_colonizing[MapGen.HAMLETS] = {"hex": claim, "at": g.now_s() + 3 * 3600}
+		g._select(claim)
+		_check(g.ui._action2_kind == "" and String(g.ui._primary_args[0]) == "ai_claimed" and g.ui._primary_reason.contains("·"),
+			"a hex an AI settles: «Занять» locked with the AI and its time (%s: %s)" % [String(g.ui._primary_args[0]), g.ui._primary_reason])
+	g._select(-1)
+	g._pick_target()
+	_check(g.selected >= 0 and g.sim.cells[g.selected]["owner"] == Types.NOBODY and g._ai_claimed(g.selected) < 0,
+		"every neighbour under a truce: «Выбрать цель» goes to a wild hex free to settle (hex %d)" % g.selected)
+	g.ai_colonizing = {}
 	if g.selected >= 0 and g.sim.cells[g.selected]["owner"] == Types.NOBODY:
 		var n0: int = g._player_hexes()
 		var gold0: int = g.econ.res["gold"]
@@ -186,21 +210,26 @@ func _run() -> void:
 			break
 	if fhex >= 0:
 		g._select(fhex)
+		var dk := String(g.ui._primary_args[0])
+		_check(dk in ["tower", "fort"] and not (g.ui._action2.price as Array).is_empty(),
+			"an own hex without a building offers its defence with a price (%s)" % dk)
 		g._fort_action()
 		g.time_offset += 3600
 		g._econ_tick()
 		_check(g.sim.cells[fhex]["fort"] == 1, "fort button builds a level-1 fortification")
 	# deposit + convoy (canon §5.2): the first convoy is the fast FTUE one
+	# the big button on the player's own deposit; on a wild one next to the realm it is «Занять», the convoy beside it
 	var dhex := -1
 	for dep in g.deposits.active:
-		if g.deposits.can_send(g.sim, dep["hex"], econ.dev_level()) == "":
+		if g.deposits.can_send(g.sim, dep["hex"], econ.dev_level()) == "" and (dhex < 0 or g.sim.cells[dep["hex"]]["owner"] == Types.PLAYER):
 			dhex = dep["hex"]
-			break
 	if dhex >= 0:
 		var res_key: String = g.deposits.at(dhex)["res"]
 		var before: int = econ.res[res_key]
 		g._select(dhex)
-		_check(g.ui._action2_kind == "convoy", "deposit hex offers a convoy")
+		var wild_next: bool = g.sim.cells[dhex]["owner"] == Types.NOBODY and g._touches_player(dhex)
+		_check(g.ui._action2_kind == "convoy" or (wild_next and g.ui._action_kind == "convoy" and String(g.ui._primary_args[0]) == "colonize"),
+			"deposit hex offers a convoy")
 		g._on_action("convoy")
 		g.time_offset += 61
 		g._econ_tick()
@@ -252,6 +281,8 @@ func _run() -> void:
 	_check(ham_armies > 0, "Hamlets receive field armies on war")
 	g._start_offensive()
 	_check(g.mode == g.Mode.BATTLE, "offensive starts")
+	_check(g.ui._action2.visible and g.ui._action2.hold and is_equal_approx(g.ui._action2.hold_sec, 0.5),
+		"«Отступить» is held 0.5 s (a double tap on «В атаку!» does not retreat)")
 	g._on_action("retreat")
 	for i in 30:
 		g._process(0.1)
@@ -331,6 +362,7 @@ func _run() -> void:
 	_check(g.ftue == 2, "FTUE step: declared")
 	g._on_action("offensive")
 	_check(g.ftue == 3 and g.battle.duration_ticks() == 600, "FTUE offensive is 60 s")
+	_check(not g.ui._action2.visible, "no «Отступить» in the tutorial's offensive")
 	g._ftue_tick(0.1)
 	_check(g.ui._ghost_from.x >= 0, "FTUE ghost finger shown")
 	while g.battle != null and not g.battle.over:
@@ -450,6 +482,7 @@ func _run() -> void:
 	_check(g._march_pick == int(ma["id"]), "March: waiting for a destination")
 	g._on_hex_tapped(Vector2i(int(g.sim.cells[dest]["q"]), int(g.sim.cells[dest]["r"])))
 	_check(g.March.is_marching(ma), "March ordered to hex %d" % dest)
+	_check(g.selected == dest and g.ui._action2_kind == "march_stop", "the destination stays selected with «Стоп» and the time")
 	var secs: int = g.March.seconds_left(g.sim, ma, g.now_s())
 	g.time_offset += secs
 	g._step_marches()

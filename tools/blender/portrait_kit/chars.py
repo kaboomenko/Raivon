@@ -752,8 +752,10 @@ CHARS.update({
                      clumps=dict(n=38, len=0.18, w=0.085, th=0.04, curl=0.15), smooth=4),
             ]),
         # the wolf head on the near shoulder's pelt, rearing up to ear height (§7.8; P3 review: lifted 0.30 it sat on
-        # top of his head; on the shoulder line his 48 px head zone matched Bram's and Kort's, P-A1 0.873 / 0.857)
-        props=[dict(kind="wolf_head", x=-0.52, y=0.10, size=0.66, lift=0.26, turn=25, color="#8E8882", dark="#6A6460",
+        # top of his head; on the shoulder line his 48 px head zone matched Bram's and Kort's, P-A1 0.873 / 0.857;
+        # x -0.51, lift 0.27: at -0.52 the angry pose put its ear 14 px from the frame side at 256 (P-A6 band 14.1);
+        # at -0.505 / 0.26 the head zone rose to 0.850 vs Bram's — 0.847 / 16 px here)
+        props=[dict(kind="wolf_head", x=-0.51, y=0.10, size=0.66, lift=0.27, turn=25, color="#8E8882", dark="#6A6460",
                     light="#C8C2BC", min_px=2500),
                dict(kind="fang", side="near", len=0.07, r=0.022),
                dict(kind="pendant", at=(0.02, -1.02))],
@@ -920,9 +922,11 @@ CHARS.update({
         mouth=dict(lip="#A85868", line=0.19,
                    calm=dict(type="closed", w=0.25, near=0.004, far=0.0),
                    smile=dict(type="closed", w=0.28, near=0.04, far=0.03, sag=0.008)),
-        # blue-black (§7.8 #2A2A3A, "форму несут блики"): a steel-blue black at L* ~24 with blue-white highlights,
-        # a hue family apart from Vedana's violet (P3 review: both read as the same pale lavender, dE76 7.3)
-        hair=dict(style="straight", res=0.015, color="#2E3A4E", dark="#2C3648", light="#7E92B8", crevice="#2A3244",
+        # blue-black (§7.8 #2A2A3A, "форму несут блики"): a saturated steel-blue black with blue highlights, a hue
+        # family apart from Vedana's violet (P3 review: both read as the same pale lavender, dE76 7.3). Rendered: all
+        # hair px median L* 36.9 (b* -14), next to the face L* 18.8; darker albedo only crushed the near-face part
+        # to black (L* 17) and moved the median 1-2 L*, the sheen carries the lit crown
+        hair=dict(style="straight", res=0.015, color="#1E3458", dark="#1A2E50", light="#5878B8", crevice="#18223A",
                   part=0.0, drop=-0.68),
         headgear=dict(kind="diadem", color="#5A6270", w=0.07, el=(40, 22), spike=0.38, spike_az=34, back=27, out=16,
                       detail="diadem", min_px=1500),
@@ -1145,9 +1149,10 @@ CHARS.update({
         mouth=dict(lip="#6A2A48", line=0.19,
                    calm=dict(type="closed", w=0.25, near=0.03, far=0.0),
                    smile=dict(type="closed", w=0.28, near=0.065, far=0.04, sag=0.01)),
-        # black-violet (§7.8 #3A2A48) at L* ~27 with lilac highlights: the pale lavender #726290 merged with her cape
+        # black-violet (§7.8 #3A2A48) with lilac highlights: the pale lavender #726290 merged with her cape
         # and with Sairin's hair (P3 review); the dark-pixel share this costs is reported (§7.4 dark gate)
-        hair=dict(style="straight", color="#54406C", dark="#4E3A64", light="#9478BA", crevice="#46345A", part=36,
+        # (rendered: hair median L* 39.2 a* 17 b* -19, next to the face L* 24.1; cape L* 50.5, 11.4 above the hair)
+        hair=dict(style="straight", color="#502A66", dark="#48245E", light="#8058A8", crevice="#3A2050", part=36,
                   drop=-0.70),
         body=dict(shoulders=1.85),
         costume=dict(
@@ -1712,8 +1717,8 @@ ERA_LOOKS.update({
                 # lower rims, the white line under the irises (§7.6 "прозрачная, тонкая белая линия"): the wires ran
                 # across the irises and cut the pupils to 1.8 px at 64 px (P3 review)
                 headgear=dict(kind="visor", id="hud_strip", on="head", el=-4, span=44, h=0.10, dh=13, off=0.11,
-                              tint="#EEF6FF", frame="#C8CCD4", frame_r=0.007, line="#FFFFFF", line_emit=0.6,
-                              detail="hud", min_px=300,
+                              tint="#EEF6FF", frame="#C8CCD4", frame_r=0.007, frame_ends=True, line="#FFFFFF",
+                              line_emit=0.6, detail="hud", min_px=300,
                               extra=[dict(kind="headset", sides=(1,), color="#3A4150", accent="#C8CCD4", mic=True,
                                           mic_r=0.018)]),
                 **{"props~": {"glasses": None}}),
@@ -1960,9 +1965,10 @@ ERA_LOOKS.update({
         # plates of the previous round broke his white identity, main colour dE76 56.4 and rim 39 %)
         # (fix round: mid silver #C4CCD8 rendered at the legendary plate's value — band dL* 4.5-6.9, melt 57-66 % —
         # and sat dE76 6.4 from Hawk's sky-white E4 suit; bright white-silver keeps the robe's white of E1-E3, L* >= 82
-        # on the orange plate, §7.4) — the stole is laid on the plate so the white beard lies on blue, not on white
+        # on the orange plate, §7.4) — the stole is laid on the plate so the white beard lies on blue, not on white;
+        # a warm ivory white, not the blue-white #ECEFF5: that sat dE76 11.6 from Hawk's E4 suit (era pair >= 12)
         4: dict(costume=dict(base=dict(color=_UNDER, rough=0.7, sheen=0.2), layers=[
-                    _plate("#ECEFF5", metallic=0.18, rough=0.35),
+                    _plate("#F2F0EA", metallic=0.18, rough=0.35),
                     dict(CHARS["cmd_rai"]["costume"]["layers"][3], over_last=True),
                     dict(kind="strip", id="seam1", color="#3A8DFF", emit=1.4, w=0.045, detail="glow", min_px=80,
                          path=[(-0.52, -0.86), (-0.50, -1.05), (-0.48, -1.35)]),
@@ -2005,7 +2011,7 @@ ERA_LOOKS.update({
                 **{"props~": {"chain": None}}),
         # (P3 review: §7.10 "сине-белая скруглённая броня с золотыми кантами и полосой райвита" read as plain blue,
         # glow 0.18 %): white pauldrons and gorget with gold rims, gold piping down the blue plate, the raivite strip
-        # wider and higher where the beard does not cover it
+        # wider and higher where the beard does not cover it (w 0.046: at 0.06 the E4 glow was 3.46 % > 3 % budget)
         4: dict(costume=dict(base=dict(color=_UNDER, rough=0.7, sheen=0.2), layers=[
                     _plate("#5A7CE8"),        # L* +12 not +6: the beard on the plate (P-A5 beard-clothes 12.7)
                     dict(kind="piping", color="#E8B23A", r=0.022, path=_FRONT),
@@ -2015,7 +2021,7 @@ ERA_LOOKS.update({
                          out=0.04, flare=0.02, piping="#E8B23A", piping_r=0.018),
                     dict(kind="pauldrons", color="#5A7CE8", painted=True, stripe="#F2F4F8", stripe_r=0.018, n=2,
                          spread=88, bands=[(98, 42), (54, 8)], grow=0.03, lift=0.03, detail="pauldrons", min_px=2000),
-                    dict(kind="strip", id="raivite", color="#3A8DFF", emit=1.0, w=0.06, detail="glow", min_px=80,
+                    dict(kind="strip", id="raivite", color="#3A8DFF", emit=1.0, w=0.046, detail="glow", min_px=80,
                          path=[(-0.66, -1.10), (-0.34, -1.15), (0.0, -1.17), (0.34, -1.15), (0.66, -1.10)])]),
                 headgear=dict(CHARS["ruler"]["headgear"], emit=1.6),
                 **{"props~": {"chain": None}}),

@@ -4435,7 +4435,10 @@ func _along(cart: Node3D, route: Array, f: float, back: bool) -> Vector3:
 	return pts[pts.size() - 1]
 
 
+## «1:05» / «1:02:03». A convoy due back but not yet counted in (the economy ticks once a second) reads «0:00», never
+## «0:-10».
 static func _fmt_left(sec: int) -> String:
+	sec = maxi(0, sec)
 	if sec >= 3600:
 		return "%d:%02d:%02d" % [sec / 3600, (sec % 3600) / 60, sec % 60]
 	return "%d:%02d" % [sec / 60, sec % 60]

@@ -787,11 +787,25 @@ const PRIMARY_LOOK := {
 	"truce": ["lock", "hourglass"], "core": ["lock", "lock"], "camp_far": ["lock", "lock"], "camp_wait": ["lock", "hourglass"],
 	"wait": ["lock", "hourglass"], "repairing": ["lock", "hourglass"], "convoy_status": ["lock", "hourglass"],
 	"upgrade_locked": ["lock", "lock"], "upgrading": ["lock", "hourglass"],
+	"tower": ["go", "tower"], "fort": ["go", "fort"], "tower_up": ["go", "tower"], "fort_up": ["go", "fort"],
+	"pick_wait": ["lock", "hourglass"], "ai_claimed": ["lock", "hourglass"],
 }
+## The irreversible big-button actions are held, not tapped (10 §2.1 rule 8): «Война!» 0.8 s (canon §10.3, 03 §3.4),
+## «Отступить» 0.5 s (03 §5.5). A tap that lets go early does nothing and the tooltip says to hold; the first 3 times
+## a kind shows (in a session, as the treaty's «Удерживайте, чтобы подписать») its plate says «Держите» (short: the
+## kind's icon keeps its place beside the caption).
+const PRIMARY_HOLD := {"declare": 0.8, "retreat": 0.5}
+const PRIMARY_HOLD_TIP := {"declare": "ui.hold_declare", "retreat": "ui.hold_retreat"}
+## A new kind on the big button ignores taps this long: a double tap on «В атаку!» / «Выбрать цель» / «Занять» must not
+## land its second tap on the action that replaced it («Отступить», «Война!», «Ускорить» for Raivites).
+const PRIMARY_GUARD_MS := 400
 ## The status button's look by kind: [role, icon, the plate's icon]. Both ad buttons are secondary (info, §2: an ad
 ## button is the secondary one when a main action stands beside it — the paid repair / «Улучшить» on the big button),
 ## so the big button stays the one loud thing (§1.1). The ruin's plate carries an hourglass: «−50%» of that time.
-const STATUS_LOOK := {"peace": ["go", "dove", ""], "repair_ad": ["info", "ad", ""], "ruin_halve": ["info", "ad", "hourglass"]}
+## «Обоз» is the secondary action of a wild deposit next to the realm («Занять» is the big button): its plate the
+## cargo (the resource's icon comes with the call), and «convoy_status» the time until the cart is back.
+const STATUS_LOOK := {"peace": ["go", "dove", ""], "repair_ad": ["info", "ad", ""], "ruin_halve": ["info", "ad", "hourglass"],
+	"convoy": ["info", "cart", ""], "convoy_status": ["lock", "cart", "hourglass"]}
 const BIG_RECT := Rect2(652, 1536, 277, 124)  # the big button: L, the one loud thing on the map (§1.1)
 const RETREAT_RECT := Rect2(652, 1564, 277, 96)  # «Отступить» in battle: M, a secondary action
 const STATUS_RECT := Rect2(652, 1438, 277, 88)  # the status button: M, in the hex panel's slot
@@ -805,6 +819,8 @@ var _timer_tw: Tween  # the «final push» pulse
 var _primary_args: Array = []  # the last set_primary / set_action arguments: both run every frame in battle
 var _status_args: Array = []
 var _primary_reason := ""  # the tooltip of a disabled big button
+var _primary_since := -100000  # Time.get_ticks_msec() when the big button last changed its kind (PRIMARY_GUARD_MS)
+static var _primary_hints := {}  # hold kind -> times it showed with the «Держите» plate (the first 3, PRIMARY_HOLD)
 
 
 func _build_action() -> void:
@@ -843,6 +859,7 @@ func _build_action() -> void:
 	_action2 = Kit.button(_bottom, BIG_RECT, "info", "", {"size": "L", "cb": _on_primary})
 	_action2.name = "big_button"
 	(_action2 as Kit.KitButton).denied.connect(_on_primary_denied)
+	(_action2 as Kit.KitButton).released_early.connect(_on_primary_early)
 	_action.visible = false
 	_action2.visible = false
 
@@ -854,13 +871,14 @@ func _is_tap(e: InputEvent) -> bool:
 ## The status slot (§5, §6 HUD) — kind "" hides it. Kind «timer»: the battle timer plate (hourglass, the time in
 ## TIMER 60, `sub` under it; bg "war" is the final push: the number turns red and pulses every second). Any other
 ## kind: a button M in the hex panel's slot («peace»: go + dove, `sub` the war score in a chip; «repair_ad»: info + the
-## ad icon; «ruin_halve»: info + the ad icon, `sub` the ruin's time left in a chip with an hourglass). `bg` is a role
-## name or, from older callers, a colour (Kit.role_of); STATUS_LOOK wins over it.
-func set_action(kind: String, title: String, sub := "", bg: Variant = "go") -> void:
+## ad icon; «ruin_halve»: info + the ad icon, `sub` the ruin's time left in a chip with an hourglass; «convoy»: info +
+## the cart, `sub` the cargo with `plate_icon` the resource's). `bg` is a role name or, from older callers, a colour
+## (Kit.role_of); STATUS_LOOK wins over it.
+func set_action(kind: String, title: String, sub := "", bg: Variant = "go", plate_icon := "") -> void:
 	_action_kind = kind
 	_action.visible = kind != ""
 	var role := String(bg) if bg is String else Kit.role_of(bg)
-	var args := [kind, title, sub, role]
+	var args := [kind, title, sub, role, plate_icon]
 	if args == _status_args:
 		return
 	var was_timer := _status_args.size() > 0 and String(_status_args[0]) == "timer"
@@ -899,7 +917,8 @@ func set_action(kind: String, title: String, sub := "", bg: Variant = "go") -> v
 	b.role = String(look[0]) if Kit.ROLE.has(String(look[0])) else "go"
 	b.icon = String(look[1])
 	b.caption = title
-	b.price = [[String(look[2]), sub, sub.begins_with(Kit.MINUS)]] if sub != "" else []  # a negative war score reads red
+	var pi := plate_icon if plate_icon != "" else String(look[2])
+	b.price = [[pi, sub, sub.begins_with(Kit.MINUS)]] if sub != "" else []  # a negative war score reads red
 	b.enabled = true
 	b.rebuild()
 
@@ -909,17 +928,26 @@ func set_action(kind: String, title: String, sub := "", bg: Variant = "go") -> v
 ## `icon` only for kinds it does not list). `price`: the plate's items [[icon, text, short], …] — a cost (two at
 ## most; `short` paints a missing amount red) or a time ([["", "2:57"]]). Disabled, it is grey and a tap shakes it
 ## and shows `reason` in a tooltip; disabled only for want of a resource (a `short` item), it keeps its role and the
-## red number instead (§4.1 «Не хватает»). `_action2_kind` is the kind only while enabled (the tests read it).
+## red number instead (§4.1 «Не хватает»). `_action2_kind` is the kind only while enabled (the tests read it). The
+## kinds of PRIMARY_HOLD are held; a new kind ignores taps for PRIMARY_GUARD_MS (_on_primary).
 func set_primary(kind: String, title: String, color: Variant = "info", enabled := true, icon := "", price: Array = [], reason := "") -> void:
 	_action2_kind = kind if enabled else ""
 	_action2.visible = kind != ""
 	var args := [kind, title, color, enabled, icon, price, reason]
 	if args == _primary_args:
 		return
+	var fresh := _primary_args.is_empty() or String(_primary_args[0]) != kind
 	_primary_args = args
 	_primary_reason = reason if reason != "" else title
+	if fresh:
+		_primary_since = Time.get_ticks_msec()
 	if kind == "":
 		return
+	var held := PRIMARY_HOLD.has(kind) and enabled
+	if held and fresh:
+		_primary_hints[kind] = int(_primary_hints.get(kind, 0)) + 1
+	if held and price.is_empty() and int(_primary_hints.get(kind, 0)) <= 3:
+		price = [["", tr("ui.hold")]]  # «Держите» on the plate: the first 3 times (the tooltip says it on an early let-go)
 	var role := String(color) if color is String else Kit.role_of(color)
 	var look: Array = PRIMARY_LOOK.get(kind, [role, icon])
 	role = String(look[0])
@@ -938,15 +966,28 @@ func set_primary(kind: String, title: String, color: Variant = "info", enabled :
 	b.caption = title
 	b.price = price
 	b.enabled = enabled or (short and role != "lock")
+	b.hold = held
+	b.hold_sec = float(PRIMARY_HOLD.get(kind, b.hold_sec))
 	b.rebuild()
 
 
 func _on_primary() -> void:
+	# a tap right after the kind changed is the second half of a double tap on the action before it: dropped (a held
+	# kind takes longer than the guard anyway)
+	if Time.get_ticks_msec() - _primary_since < PRIMARY_GUARD_MS and not (_action2 as Kit.KitButton).hold:
+		return
 	if _action2_kind == "":  # shown as available but short of a resource: shake and say what is missing
 		Kit.shake(_action2)
 		_on_primary_denied()
 		return
 	action_pressed.emit(_action2_kind)
+
+
+## A held kind let go before its time: nothing happened — the tooltip says to hold it.
+func _on_primary_early() -> void:
+	var kind := String(_primary_args[0]) if _primary_args.size() > 0 else ""
+	if PRIMARY_HOLD_TIP.has(kind):
+		Kit.tooltip(_action2, (_action2 as Kit.KitButton).caption.replace("\n", " "), tr(String(PRIMARY_HOLD_TIP[kind])))
 
 
 func _on_primary_denied() -> void:
@@ -6218,6 +6259,16 @@ func first_card_cta_rect(title := "") -> Rect2:
 		_bscroll.ensure_control_visible(pick)  # once: the player may scroll the row away again
 		_coach_scrolled = pick
 	return r
+
+
+## Brings the card titled `title` into the row's view once the row is laid out (the big button «Улучшить» on a city,
+## farm or mine opens «Здания» at that building's card).
+func scroll_to_card(title: String) -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame  # the row's sort and its scroll reset (_fill_panel) land first
+	var pick := _tray_card(title)
+	if pick != null and pick.title == title:
+		_bscroll.ensure_control_visible(pick)
 
 
 ## That card whole (the coach keeps it lit around its button: which building it is).

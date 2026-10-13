@@ -1187,7 +1187,13 @@ def visor(ctx, hg):
         # the frame wires carry the P-A8 detail of a clear visor (Vega's HUD: its glass reads as "glass" in the ID pass,
         # so the detail measured 0 px, P3 review)
         fgrp = grp if (hg.get("glow") or hg.get("detail")) else "hat"
-        for rows, nm in ((rows_top, "visor_top"), (rows_bot, "visor_bot")):
+        wires = [(rows_top, "visor_top"), (rows_bot, "visor_bot")]
+        if hg.get("frame_ends"):
+            # closed ends: a short upright wire over each end face of the strip (Vega E4: the far end face of the
+            # glass, seen edge-on past the cheek, rendered as a 6 px opaque sliver apart from the head, P-A7 islands)
+            wires += [([a, a.lerp(b, 0.5), b], "visor_end%d" % i)
+                      for i, (a, b) in enumerate(((rows_top[0], rows_bot[0]), (rows_top[-1], rows_bot[-1])))]
+        for rows, nm in wires:
             cu = core.curve(nm, rows, [1.0] * len(rows), hg.get("frame_r", 0.012), fm, order=3)
             ctx.add(cu, fgrp, strip, kind="embed", head=True)
     if hg.get("line"):

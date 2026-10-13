@@ -2795,6 +2795,7 @@ class KitButton extends Panel:
 	var _scrolled := false  # a scroll around the button began to move during this press
 	var _void := false  # the press turned into a swipe: its release does nothing
 	var _hold_t := -1.0
+	var _hold_fired := false  # this press already acted by its hold: its release must not act again
 	var _built := false
 	var _in_rebuild := false
 	var _scan_queued := false
@@ -3301,6 +3302,7 @@ class KitButton extends Panel:
 		queue_redraw()
 		if _hold_t >= hold_sec:
 			_hold_t = -1.0
+			_hold_fired = _down
 			set_process(false)
 			queue_redraw()
 			if cb.is_valid():
@@ -3357,6 +3359,7 @@ class KitButton extends Panel:
 			if _down:
 				return  # the emulated mouse twin of a touch
 			_down = true
+			_hold_fired = false
 			_press_g = SELF.screen_pos(self, e)
 			_travel = 0.0
 			_scrolled = false
@@ -3375,6 +3378,9 @@ class KitButton extends Panel:
 				return
 			SELF.press_out(self)
 			var inside := _has_point(pos)
+			if _hold_fired:  # the hold acted already (the button may have turned into another action meanwhile)
+				_hold_fired = false
+				return
 			if hold:
 				var was := _hold_t >= 0.0
 				_hold_t = -1.0

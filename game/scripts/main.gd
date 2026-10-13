@@ -591,7 +591,11 @@ func _refresh_ui() -> void:
 			if not _march_primary():
 				_offensive_primary()
 		Mode.BATTLE:
-			ui.set_primary("retreat", tr("ui.retreat"), "info")
+			# the tutorial's offensives cannot be left: no «Отступить» to slip onto from «В атаку!» (canon §14.3)
+			if ftue in [3, 4, 12, 13]:
+				ui.set_primary("", "")
+			else:
+				ui.set_primary("retreat", tr("ui.retreat"), "info")
 		_:
 			ui.set_action("", "")
 			ui.set_primary("", "")
@@ -626,20 +630,56 @@ func _price_items(cost: Dictionary) -> Array:
 	return out
 
 
-## «Улучшить» on an own hex opens the Buildings tab; its plate shows what the hex's building's next level costs (a
-## bare hex: no plate). A building that cannot grow for another reason than the store or the builders is not offered
-## in green (docs/ui_style.md §4.1 «Недоступно»): the lock role and icon, the short reason on the plate — the hexes
-## the realm needs, the level, the chapter — and the whole reason in the tooltip; one being built is locked with the
-## hourglass and its time left (as «Ремонт»).
+## The big button on an own hex. Its building's next level, priced (docs/ui_style.md §6: never a green «Улучшить»
+## without a price): the city, farm, mine, port, base or capital building — «Улучшить» opens «Здания» at its card —
+## and on any other hex the defence the hex can take (_defense_primary), built or upgraded on the spot.
 func _upgrade_primary(hex: int) -> void:
 	var b: Dictionary = econ.building_at(hex)
-	var why: String = econ.can_upgrade(b, now_s()) if not b.is_empty() else ""
-	if b.is_empty() or why == "" or why.begins_with("err.not_enough") or why == "err.builders_busy":
-		ui.set_primary("upgrade", tr("ui.upgrade"), "go", true, "", _price_items(econ.upgrade_cost(b)) if not b.is_empty() else [])
+	if b.is_empty() or String(Economy.BUILDINGS[String(b["type"])]["class"]) == "defense":
+		_defense_primary(hex)
+		return
+	_level_primary(b, "upgrade", tr("ui.upgrade"))
+
+
+## «Башня» / «Форт» on an own hex without a hex building (canon §7): a tower on open plain (a plain hex with nothing
+## on it, while the realm is under its 2 × DL towers), a fort on any other land; a fort or tower already standing is
+## upgraded instead (the hex's own kind first). The tool buttons' actions run straight from the big button
+## (_tower_action / _fort_action) with the price on its plate.
+func _defense_primary(hex: int) -> void:
+	var c: Dictionary = sim.cells[hex]
+	var have := {}
+	for b in econ.buildings_at(hex):
+		if String(b["type"]) in ["fort", "tower"]:
+			have[String(b["type"])] = b
+	var now := now_s()
+	var type := "tower" if String(c["kind"]) == "plain" and String(c["terrain"]) == "plain" else "fort"
+	if not have.has(type) and have.size() > 0:
+		type = "fort" if type == "tower" else "tower"
+	elif have.is_empty() and type == "tower" and econ.can_build(sim, "tower", hex, now).begins_with("err.tower_limit"):
+		type = "fort"
+	if have.has(type):
+		_level_primary(have[type], type + "_up", tr("ui.upgrade"))
+		return
+	var why: String = econ.can_build(sim, type, hex, now)
+	var caption := tr("hud.tool." + type)
+	if why == "" or why.begins_with("err.not_enough") or why == "err.builders_busy" or why == "err.treasury_empty":
+		ui.set_primary(type, caption, "go", why == "", "", _price_items(econ.build_cost(type)), L.t(why) if why != "" else "")
+	else:  # the hex cannot take it (occupied in a war): locked, the reason in the tooltip
+		ui.set_primary("upgrade_locked", caption, "lock", false, "", [], L.t(why))
+
+
+## A building's next level on the big button as `kind`: the price on the plate (short: the number red, the tap says
+## what is missing; the builders busy: grey, the tap says so); a level the building cannot take for another reason is
+## locked (docs/ui_style.md §4.1 «Недоступно»): the short reason on the plate — the hexes the realm needs, the level,
+## the chapter — the whole one in the tooltip; one under way is locked with the hourglass and its time left.
+func _level_primary(b: Dictionary, kind: String, caption: String) -> void:
+	var why: String = econ.can_upgrade(b, now_s())
+	if why == "" or why.begins_with("err.not_enough") or why == "err.builders_busy" or why == "err.treasury_empty":
+		ui.set_primary(kind, caption, "go", why == "", "", _price_items(econ.upgrade_cost(b)), L.t(why) if why != "" else "")
 		return
 	if why == "err.upgrading":
 		var t := GameUI.fmt_time(maxi(0, int(b["upgrade_end"]) - now_s()))
-		ui.set_primary("upgrading", tr("ui.upgrade"), "lock", false, "", [["", t]], tr("bld.tip.left") % t)
+		ui.set_primary("upgrading", caption, "lock", false, "", [["", t]], tr("bld.tip.left") % t)
 		return
 	var n := int(why.get_slice("|", 1)) if why.contains("|") else 0
 	var plate: Array = []
@@ -650,15 +690,21 @@ func _upgrade_primary(hex: int) -> void:
 			plate = [["", tr("dl.short") % n]]
 		"err.chapter_locked":
 			plate = [["", tr("world.chapter") % GameUI.ROMAN[clampi(n, 0, GameUI.ROMAN.size() - 1)]]]
-	ui.set_primary("upgrade_locked", tr("ui.upgrade"), "lock", false, "", plate, L.t(why))
+	ui.set_primary("upgrade_locked", caption, "lock", false, "", plate, L.t(why))
 
 
 ## The big button for the selected hex on the map (docs/ui_style.md §6 HUD: short captions, the cost or the time in
-## the plate, the long reason of a disabled one in its tooltip).
+## the plate, the long reason of a disabled one in its tooltip). Nothing selected: «Выбрать цель», or locked with the
+## reason while no target is left (_pick_wait). An army marching to the hex: «Стоп» with its time (the player just
+## ordered it). A deposit on someone else's land does not hide whose land it is: the war logic runs as on any of
+## their hexes; a wild one next to the realm is «Занять» with the convoy beside it (the status button).
 func _primary_for_selection() -> void:
 	ui.set_action("", "")
 	if selected < 0:
-		ui.set_primary("pick_target", tr("ui.pick_target"), "war")
+		if _best_target() >= 0:
+			ui.set_primary("pick_target", tr("ui.pick_target"), "war")
+		else:
+			_pick_wait()
 		return
 	var c: Dictionary = sim.cells[selected]
 	if c["owner"] == Types.PLAYER and econ.damaged.has(selected):
@@ -673,15 +719,13 @@ func _primary_for_selection() -> void:
 			if _ad_left("ad_repair", 3) > 0:  # once today's videos are spent the hex panel comes back instead
 				ui.set_action("repair_ad", tr("ui.repair_ad"), "", "go")
 		return
+	if not _army_bound_for(selected).is_empty():
+		_march_primary()
+		return
 	var dep: Dictionary = deposits.at(selected)
-	if not dep.is_empty():
-		var cv: Dictionary = deposits.convoy_for(selected)
-		if not cv.is_empty():
-			var t := GameUI.fmt_time(int(cv["back"]) - now_s())
-			ui.set_primary("convoy_status", tr("ui.send_convoy"), "lock", false, "", [["", t]], tr("ui.convoy_status") % t)
-		else:
-			var reason: String = deposits.can_send(sim, selected, econ.dev_level())
-			ui.set_primary("convoy", tr("ui.send_convoy"), "go", reason == "", "", [], L.t(reason) if reason != "" else "")
+	var wild_next: bool = c["owner"] == Types.NOBODY and _touches_player(selected)
+	if not dep.is_empty() and (c["owner"] == Types.PLAYER or (c["owner"] == Types.NOBODY and not wild_next)):
+		_convoy_primary(true)  # own land, or wild land out of reach of settlers: the convoy is the one thing to do
 		return
 	if not Types.is_passable(c):
 		ui.set_primary("", "")
@@ -699,12 +743,19 @@ func _primary_for_selection() -> void:
 			ui.set_primary("colonize_now", tr("ui.finish"), "go")
 		else:
 			ui.set_primary("colonize_now", tr("ui.speedup"), "gold", true, "", [["raivite", GameUI.fmt_num(price), int(econ.res["raivite"]) < price]])
-	elif c["owner"] == Types.NOBODY and _touches_player(selected):
+	elif wild_next and _ai_claimed(selected) >= 0:
+		# an AI settles it (02 §10.2): never a green «Занять» that the tap then refuses
+		var s := _ai_claimed(selected)
+		var t := GameUI.fmt_time(maxi(0, int(ai_colonizing[s]["at"]) - now_s()))
+		ui.set_primary("ai_claimed", tr("ui.colonize"), "lock", false, "", [["", t]], tr("ui.ai_settling") % [_state_short(s), t])
+	elif wild_next:
 		var cost := _colonize_cost()
 		var gold_ok: bool = econ.res["gold"] >= cost
 		var why := "" if gold_ok and colonizing.is_empty() else (tr("toast.no_gold") if not gold_ok else tr("toast.colonizing"))
 		ui.set_primary("colonize", tr("ui.colonize"), "go", econ.res["gold"] >= cost and colonizing.is_empty(), "",
 			[["coin", GameUI.fmt_num(cost), not gold_ok]], why)
+		if not dep.is_empty():
+			_convoy_primary(false)  # the deposit's convoy beside «Занять»
 	elif c["owner"] != Types.PLAYER and c["owner"] != Types.NOBODY:
 		var left := _truce_left(c["owner"])
 		if left > 0:
@@ -727,6 +778,47 @@ func _primary_for_selection() -> void:
 		ui.set_action("ruin_halve", tr("ui.ruin_halve"), GameUI.fmt_time(econ.ruin_left(now_s())), "info")
 
 
+## The selected deposit's convoy: on the big button (`primary`), else as the status button beside «Занять». A cart on
+## its way is a lock with the time until it is back.
+func _convoy_primary(primary: bool) -> void:
+	var cv: Dictionary = deposits.convoy_for(selected)
+	if not cv.is_empty():
+		var t := GameUI.fmt_time(maxi(0, int(cv["back"]) - now_s()))
+		if primary:
+			ui.set_primary("convoy_status", tr("ui.send_convoy"), "lock", false, "", [["", t]], tr("ui.convoy_status") % t)
+		else:
+			ui.set_action("convoy_status", tr("ui.send_convoy"), t)
+		return
+	var reason: String = deposits.can_send(sim, selected, econ.dev_level())
+	if primary:
+		ui.set_primary("convoy", tr("ui.send_convoy"), "go", reason == "", "", [], L.t(reason) if reason != "" else "")
+	else:
+		var dep: Dictionary = deposits.at(selected)
+		ui.set_action("convoy", tr("ui.send_convoy"), GameUI.fmt_num(int(dep["amount"])), "info",
+			String(Hud.RES_ICON.get(String(dep["res"]), "crate")))
+
+
+## «Выбрать цель» with nothing left to pick: locked, the reason in the tooltip — the soonest end of a truce or pact
+## (its time on the plate), our own settlers still at work, else no target at all.
+func _pick_wait() -> void:
+	var soon := 0
+	for s in _ai_states():
+		if allies.has(s):
+			continue
+		var left := maxi(_truce_left(s), _pact_left(s))
+		if left > 0 and (soon == 0 or left < soon):
+			soon = left
+	var settling := maxi(0, int(colonizing.values().min()) - now_s()) if not colonizing.is_empty() else 0
+	if settling > 0 and (soon == 0 or settling <= soon):  # our settlers free the wild land first
+		var t := GameUI.fmt_time(settling)
+		ui.set_primary("pick_wait", tr("ui.pick_target"), "lock", false, "", [["", t]], tr("tile.settling") % t)
+	elif soon > 0:
+		var t := GameUI.fmt_time(soon)
+		ui.set_primary("pick_wait", tr("ui.pick_target"), "lock", false, "", [["", t]], tr("ui.pick_wait") % t)
+	else:
+		ui.set_primary("pick_wait", tr("ui.pick_target"), "lock", false, "", [], tr("ui.pick_none"))
+
+
 ## «В атаку!», or a march timer while every army is still on its way to the front (none touches the enemy). The
 ## enemy of the next offensive is the one on the war bar.
 func _offensive_primary() -> void:
@@ -746,9 +838,10 @@ func _offensive_primary() -> void:
 		ui.set_primary("offensive", tr("ui.offensive"), "war")
 
 
-## March button for an own army on the selected hex (MAP and WAR). True when it took the primary slot.
+## March button for an own army on the selected hex, or on its way to it (the destination stays selected after the
+## order: «Стоп» with the time left), in MAP and WAR. True when it took the primary slot.
 func _march_primary() -> bool:
-	var a := _army_at(selected)
+	var a := _march_army(selected)
 	if a.is_empty():
 		return false
 	if _march_pick == int(a["id"]):
@@ -768,6 +861,24 @@ func _army_at(hex: int) -> Dictionary:
 		if int(a["hex"]) == hex and int(a["str"]) > 0:
 			return a
 	return {}
+
+
+## The player's army marching to `hex` (its destination), else {}.
+func _army_bound_for(hex: int) -> Dictionary:
+	if hex < 0:
+		return {}
+	for id in _march_dest:
+		if int(_march_dest[id]) == hex:
+			var a := _army_by_id(int(id))
+			if not a.is_empty() and March.is_marching(a):
+				return a
+	return {}
+
+
+## The army the march buttons act on for `hex`: one standing there, else one marching to it.
+func _march_army(hex: int) -> Dictionary:
+	var a := _army_at(hex)
+	return a if not a.is_empty() else _army_bound_for(hex)
 
 
 func _army_by_id(id: int) -> Dictionary:
@@ -847,8 +958,19 @@ func _on_action(kind: String) -> void:
 			_colonize(selected)
 		"pick_target":
 			_pick_target()
-		"upgrade":
+		"upgrade":  # the hex's building: «Здания» at its card
+			var ub: Dictionary = econ.building_at(selected) if selected >= 0 else {}
 			_open_tab("buildings")
+			if not ub.is_empty():
+				ui.scroll_to_card(tr(String(Economy.BUILDINGS[String(ub["type"])]["name"])))
+		"tower", "tower_up":
+			_tower_action()
+		"fort", "fort_up":
+			_fort_action()
+		"convoy_status":  # the status button beside «Занять» while the cart is out
+			var scv: Dictionary = deposits.convoy_for(selected) if selected >= 0 else {}
+			if not scv.is_empty():
+				ui.toast(tr("ui.convoy_status") % GameUI.fmt_time(maxi(0, int(scv["back"]) - now_s())), "cart")
 		"colonize_now":
 			_speedup_colonize(selected)
 		"convoy":
@@ -875,7 +997,7 @@ func _on_action(kind: String) -> void:
 			_march_pick = -1
 			_refresh_ui()
 		"march_stop":
-			var ms := _army_at(selected)
+			var ms := _march_army(selected)
 			if not ms.is_empty():
 				March.stop(ms)
 				_step_marches()
@@ -2391,13 +2513,14 @@ func _describe(id: int) -> Dictionary:
 		title = tr("tile.camp")
 		chips.append(["coins", "%d/3" % camps.rewards_left(now_s())])
 		lines.append(tr("tile.camp_loot") % [tr("res.name." + String(cm["res"])), camps.rewards_left(now_s())])
-	elif not dep.is_empty():
+	elif not dep.is_empty() and own in [Types.PLAYER, Types.NOBODY]:
+		# own or wild land: the deposit is what the hex is about (a state's hex keeps its own face: the deposit is a
+		# chip there, below)
 		title = tr(String(Deposits.NAMES.get(String(dep["res"]), "tile.deposit_name")))  # no «(M)» size letter (§3.7): the amount chip says how much
 		tile_key = "deposit_" + String(dep["res"])
 		tile_icon = String(Hud.RES_ICON.get(String(dep["res"]), "crate"))
-		chips.append([String(Hud.RES_ICON.get(String(dep["res"]), "crate")), GameUI.fmt_num(int(dep["amount"]))])
-		chips.append(["hourglass", GameUI.fmt_time(int(dep["gather_sec"]))])
-		lines.append(tr("tile.deposit") % [int(dep["amount"]), tr("res.gen." + String(dep["res"])), GameUI.fmt_time(int(dep["gather_sec"]))])
+		chips.append_array(_deposit_chips(id, dep))
+		lines.append_array(_deposit_lines(id, dep))
 	elif not Types.is_passable(c):
 		lines.append(tr("tile.impassable"))
 	elif ctrl == Types.PLAYER:
@@ -2424,6 +2547,11 @@ func _describe(id: int) -> Dictionary:
 			var left: int = maxi(0, int(colonizing[id]) - now_s())
 			chips.append(["hourglass", GameUI.fmt_time(left)])
 			lines.append(tr("tile.settling") % GameUI.fmt_time(left))
+		elif own == Types.NOBODY and _ai_claimed(id) >= 0:  # an AI's settlers: their time, not ours
+			var s := _ai_claimed(id)
+			var t := GameUI.fmt_time(maxi(0, int(ai_colonizing[s]["at"]) - now_s()))
+			chips.append(["hourglass", t])
+			lines.append(tr("ui.ai_settling") % [_state_short(s), t])
 		elif own == Types.NOBODY and _touches_player(id):
 			chips.append(["hourglass", GameUI.fmt_time(_colonize_seconds())])
 			lines.append(tr("tile.settle_time") % GameUI.fmt_time(_colonize_seconds()))
@@ -2433,6 +2561,9 @@ func _describe(id: int) -> Dictionary:
 		if def > 0:
 			chips.append(["fort", "+%d%%" % def])
 			lines.append(tr("tile.def") % def)
+	if not dep.is_empty() and own not in [Types.PLAYER, Types.NOBODY]:
+		chips.append(_deposit_chips(id, dep)[0])  # a deposit on a state's land: one chip beside its value
+		lines.append_array(_deposit_lines(id, dep))
 	if c["kind"] == "capital" and not chips.any(func(ch): return String(ch[0]) == "crown"):
 		chips.push_front(["crown", ""])  # an own capital: the crown first (icon-only, it shares a row with the income)
 	if String(c["kind"]) in ["oil", "dark_lake"]:
@@ -2455,6 +2586,24 @@ func _describe(id: int) -> Dictionary:
 		"tile_alt": String(c["terrain"]),
 		"tile_icon": tile_icon,
 	}
+
+
+## A deposit's chips on the hex panel: [its cargo, the gather time] — or, while a convoy is out to it, [the cart and
+## the time until it is back, the cargo]: the panel then tells the same time as the big button's plate.
+func _deposit_chips(id: int, dep: Dictionary) -> Array:
+	var cargo := [String(Hud.RES_ICON.get(String(dep["res"]), "crate")), GameUI.fmt_num(int(dep["amount"]))]
+	var cv: Dictionary = deposits.convoy_for(id)
+	if not cv.is_empty():
+		return [["cart", GameUI.fmt_time(maxi(0, int(cv["back"]) - now_s()))], cargo]
+	return [cargo, ["hourglass", GameUI.fmt_time(int(dep["gather_sec"]))]]
+
+
+func _deposit_lines(id: int, dep: Dictionary) -> Array:
+	var out := [tr("tile.deposit") % [int(dep["amount"]), tr("res.gen." + String(dep["res"])), GameUI.fmt_time(int(dep["gather_sec"]))]]
+	var cv: Dictionary = deposits.convoy_for(id)
+	if not cv.is_empty():
+		out.append(tr("ui.convoy_status") % GameUI.fmt_time(maxi(0, int(cv["back"]) - now_s())))
+	return out
 
 
 ## A state's name for a tight chip: its short form (state.barons.short «Бароны») when the language has one.
@@ -2525,22 +2674,52 @@ func _truce_left(s: int) -> int:
 	return maxi(0, int(truce.get(s, 0) - Time.get_unix_time_from_system()))
 
 
-## FTUE helper: jump to the best war goal against the Barons (or a free hex to colonize during a truce).
+## «Выбрать цель»: the camera flies to the best next step (_best_target). Nothing left: the big button locks with the
+## reason (_pick_wait; its tap says it) — the tutorial calls this every frame, so no toast here.
 func _pick_target() -> void:
-	var target := -1
-	if _truce_left(MapGen.BARONS) == 0:
-		var g := War.recommend_goals(sim, MapGen.BARONS, 1)
-		target = g[0] if g.size() > 0 else -1
+	var target := _best_target()
 	if target < 0:
-		for c in sim.cells:
-			if c["owner"] == Types.NOBODY and Types.is_passable(c) and _touches_player(c["id"]):
-				target = c["id"]
-				break
-	if target < 0:
-		ui.toast(tr("toast.no_targets"))
+		_primary_for_selection()
 		return
 	rig.focus(map_view.cell_world(target))
 	_select(target)
+
+
+## The best target for «Выбрать цель», or -1: first a war goal — the most valuable border hex (War.recommend_goals)
+## of any AI state the player may attack now (no war on, no truce, no pact, not an ally; in the tutorial the Barons
+## only, the Hamlets' war 2 has its own step) — then a wild hex next to the realm that settlers can take now (no AI
+## settling it, no camp, ours not busy; the most valuable first, a deposit on it is welcome), then a marauder camp the
+## armies can reach. Never a hex whose big button would only refuse.
+func _best_target() -> int:
+	var best := -1
+	var best_v := -1
+	if war.is_empty():
+		for s in ([MapGen.BARONS] if ftue > 0 else _ai_states()):
+			if allies.has(s) or _truce_left(s) > 0 or _pact_left(s) > 0:
+				continue
+			var g := War.recommend_goals(sim, s, 1)
+			if g.size() > 0 and int(sim.cells[g[0]]["value"]) > best_v:
+				best = g[0]
+				best_v = int(sim.cells[g[0]]["value"])
+	if best >= 0:
+		return best
+	if colonizing.is_empty():
+		for c in sim.cells:
+			var id: int = c["id"]
+			if c["owner"] != Types.NOBODY or c["controller"] != Types.NOBODY or not Types.is_passable(c) or not _touches_player(id):
+				continue
+			if _ai_claimed(id) >= 0 or not camps.at(id).is_empty():
+				continue
+			if int(c["value"]) > best_v:
+				best = id
+				best_v = int(c["value"])
+	if best >= 0:
+		return best
+	if war.is_empty():
+		for cm in camps.active:
+			if Camps.attackable(sim, int(cm["hex"])):
+				return int(cm["hex"])
+	return -1
 
 
 func _colonize_cost() -> int:
@@ -3813,7 +3992,7 @@ func _econ_tick() -> void:
 		ui.show_world(_world_items())
 	elif tab == "development" and mode in [Mode.MAP, Mode.WAR]:
 		ui.show_buildings(_research_items(now))
-	if mode == Mode.MAP and selected >= 0:
+	if mode == Mode.MAP:  # nothing selected too: «Выбрать цель» locks and unlocks with the truces
 		_primary_for_selection()
 	elif mode == Mode.WAR and not _march_primary():
 		_offensive_primary()

@@ -292,6 +292,12 @@ ui.pact_short,Пакт,Pact
 ui.core_protected,Ядро неприкосновенно,Core is off-limits
 ui.core,Ядро,Core
 ui.declare_war,Война!,War!
+ui.hold,Держите,Hold
+ui.hold_declare,"Удерживайте, чтобы объявить войну",Hold to declare war
+ui.hold_retreat,"Удерживайте, чтобы отступить",Hold to retreat
+ui.ai_settling,Осваивают %s · %s,%s are settling it · %s
+ui.pick_wait,Перемирие: новая цель через %s,Truce: a new target in %s
+ui.pick_none,Целей рядом нет,No targets nearby
 toast.chapter_progress,Глава I «Долина»: %d / %d гексов,Chapter I “The Valley”: %d / %d hexes
 toast.chronicle_locked,Летопись откроется после главы I,The Chronicle opens after Chapter I
 toast.occupied_hex,%s: оккупирован (%s). Станет вашим только по мирному договору.,%s: occupied (%s). It becomes yours only by a peace treaty.
@@ -305,7 +311,6 @@ tile.impassable,Непроходимо,Impassable
 tile.income,+%d %s/ч,+%d %s/h
 tile.deposit,"Залежь: %d %s, сбор за %s","Deposit: %d %s, gathered in %s"
 tile.deposit_name,Залежь,Deposit
-toast.no_targets,Пока целей нет — дождитесь конца перемирия,No targets yet. Wait for the truce to end
 toast.colonizing,Уже идёт колонизация,A colonization is already under way
 toast.no_gold,Не хватает золота,Not enough gold
 toast.settlers,Поселенцы в пути: «%s» станет вашим через %s,Settlers on the way: “%s” will be yours in %s
@@ -407,7 +412,7 @@ opinion.ally,Друг державы,Friend of the realm
 dipl.peace,Мир,Peace
 dipl.truce,Перемирие %s,Truce %s
 toast.no_border,Нет общей границы для войны,No shared border for a war
-toast.target_chosen,Цель выбрана — нажмите «Объявить войну»,Target selected: tap “Declare war”
+toast.target_chosen,Цель выбрана — удерживайте «Война!»,Target selected: hold “War!”
 toast.gift_daily,Подарок этому соседу — раз в сутки,One gift per neighbor per day
 toast.gift_thanks,%s благодарит за подарок,%s thanks you for the gift
 toast.alliances_later,Союзы откроются позже,Alliances unlock later
@@ -441,7 +446,7 @@ inbox.war_cap.title,Кап войны,War cap
 inbox.war_cap.peace,Война длилась 2 ч — подписан рекомендованный мир.,The war lasted 2 h: the recommended peace was signed.
 inbox.war_cap.white,Война длилась 2 ч — белый мир.,The war lasted 2 h: white peace.
 toast.war_cap_white,Кап войны: белый мир,War cap: white peace
-ftue.1,Бароны сожгли нашу мельницу! Объявите им войну.,The Barons burned our mill! Declare war on them.
+ftue.1,Бароны сожгли нашу мельницу! Удерживайте «Война!».,The Barons burned our mill! Hold “War!”.
 ftue.2,Начните наступление!,Launch an offensive!
 ftue.3,Тяните от своей армии на вражеский гекс — она пойдёт в атаку.,Drag from your army onto an enemy hex to attack.
 ftue.4,Отлично! «Атака» бросает в бой все армии рядом. Захватите ещё!,Great! “Attack” sends every army nearby into battle. Take more!
@@ -451,7 +456,7 @@ ftue.7,Откройте «Здания» и улучшите Резиденци�
 ftue.7b,Улучшите Резиденцию — халупы станут избами.,Upgrade the Residence: huts become cottages.
 ftue.8,Жёлтый контур — ресурсы даром. Коснитесь жилы и пошлите обоз.,"A yellow outline means free resources. Tap the vein, send a convoy."
 ftue.9,Укрепите границу: выберите гекс у Баронов и нажмите «Форт».,Fortify the border: pick a hex by the Barons and tap “Fort”.
-ftue.10,Вольные Хутора заняли шахту у нашей границы. Объявите им войну!,The Free Hamlets seized a mine on our border. Declare war on them!
+ftue.10,Вольные Хутора заняли шахту у нашей границы. Удерживайте «Война!».,The Free Hamlets seized a mine on our border. Hold “War!”.
 ftue.11,Начните наступление!,Launch an offensive!
 ftue.12,«Котёл» режет снабжение: бросьте его на врага рядом с вашей армией.,“Encircle” cuts supply: drop it on an enemy hex next to your army.
 ftue.13,Отлично! Окружённые гексы сдаются быстрее. Захватите шахту!,Great! Encircled hexes fall faster. Capture the mine!
