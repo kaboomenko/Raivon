@@ -1,0 +1,52 @@
+{
+ "title": "Portrait tails in the UI files, face crops, hero chests, art follow-ups",
+ "common": "Project: /home/user/Raivon — «Raivon: Territory Wars», portrait mobile hex strategy in Godot 4.5.1 (Mobile renderer). The owner plays the test builds; the brief: work 24/7, make the game perfect, never ask the owner. The commander/leader portrait kit v2 is finished (150 files in game/assets/ui/portraits, game/scripts/cmd_portrait.gd: plate B, halo, locked silhouette, mipmaps, era cache, `_drawn`), and so are the HUD performance pass and the playtest fix batches. What is left are the portrait follow-ups that needed the UI files (docs/art_direction.md §7.12 «Следом…», §7.15 п.4, docs/dev/backlog.md «Хвосты портретов»). Know: docs/art_direction.md §7 (portraits, chests), docs/ui_style.md (design system, Kit.RARITY, bake/draw-call rules), docs/00_brief.md п.35–38.\nRules: another agent (art pass 5) edits tools/blender/env_assets.py, industry_assets.py, prop_assets.py and game/assets/models — do not touch them. Godot: /opt/godot/Godot_v4.5.1-stable_linux.x86_64; imports only under `flock -w 1800 /tmp/raivon_godot.lock` (check `pgrep -fa -- '--import'`). Screenshots: tools/godot_shot.sh OUT.png [--demo=...] [--tab=...] --lang=ru --shot-delay=3 (demos: commanders[:card|tab|locked], shop, royal, pass, calendar, calendar:pick, inbox, profile, dip2, ultimatum, peace_offer, ftue:1, expansion_d10, …; grep the demo list in main.gd); read every PNG you make; crop and zoom (python PIL) to judge edges at real size. Keep the draw-call budget: godot_shot prints `perf draw_calls=… draws_canvas` — every screen stays at or below its current canvas count + 2 (ui_kit.gd KitBake rules: a direct TextureRect outside the bake costs a call). Strings: game/locale/strings.csv (ru+en). Tests: game/tests (test_flow must keep all PASS lines and 0 SCRIPT ERROR; tools/ui_lint.py; tools/check_strings.py). Never git commit/add/push/checkout/stash/reset — the main session commits. Scratch: /tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/tails/<step>/. The P4 follow-up notes (with line numbers as of their HEAD — re-check) are copied into each step below.",
+ "steps": [
+  {
+   "id": "T1_portrait_ui",
+   "title": "Portrait follow-ups in the UI files",
+   "owner_files": [
+    "game/scripts/game_ui.gd",
+    "game/scripts/hud.gd",
+    "game/scripts/shop_ui.gd",
+    "game/scripts/ui_kit.gd",
+    "game/scripts/main.gd",
+    "docs/art_direction.md"
+   ],
+   "instructions": "Do every item; verify each in the code first and adapt if the note is wrong (say so):\n1. Mipmaps on direct portrait TextureRects. ui_kit.gd `_card_rect()` after `t.texture = tex`: `if tex != null and tex.resource_path.begins_with(\"res://assets/ui/portraits/\"): t.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS` (covers shop reveal, pass reward, chapter legacy tile). game_ui.gd `_coach_bust_frame()` after `pic.texture = tex`: the same filter (the 160×184 advisor shows stair-stepped hair edges).\n2. Reward tiles in the player's era: shop_ui.gd `_reward_look()` (replace the raw `load(p)` with `GameUI.CmdPortrait._render(cmd)`, fall back to icon \"shard\"), game_ui.gd `_pass_look_rw()` (same with `CmdPortrait._render(String(rw[1]))`), main.gd `_grant_legacy()` (same; `ct[\"icon_side\"] = 100.0`). Then put commander rewards on their rarity plate (Kit.RARITY, plate B look of cmd_portrait — reuse CmdPortrait as the tile art when it fits the bake, otherwise a plate behind the texture); the raw render now fills only ~55 % of the 87×100 tile — the head must read at 48–52 px.\n3. Inbox advisor mood: game_ui.gd `_inbox_row()` sets mood on the KitStill wrapper, so the advisor is calm. Give `_cmd_face()` a `mood := \"\"` parameter (set `p.mood` before `_still_portrait(p)`) and call it with \"smile\" there.\n4. Diplomacy card: `_diplomacy_card()` `_leader_bust(it, Rect2(22, -14, 128, 147))` → about `Rect2(40, -8, 92, 106)` so the state name no longer covers the mouth and Mirosya's curls are not clipped; check all 10 leaders in dip2 / the diplomacy tab.\n5. Ruler crown margin: game_ui.gd `show_profile()` and hud.gd `_build_crest()` centre the 256×294 ruler with KEEP_ASPECT_COVERED, the crown is 3–5 px from the well top. Top-anchored cover (`STRETCH_SCALE`, size = (w, w × 294/256), y = 0) → ~11 px profile / ~8 px HUD.\n6. HUD crest sky: hud.gd `_build_crest()` `sky.texture = Kit.vgradient(Kit.SKY_TOP, Kit.SKY_LOW)` makes the ruler's rim melt (41 %). Use `Kit.vgradient(Kit.SKY_TOP.lightened(0.18), Kit.SKY_TOP)` (rim 29–34 % in E1–E4, passes ≥ 25 %) and update the «Плита» line in docs/art_direction.md §7.10 to the colours you ship; measure the rim contrast yourself in all 4 eras (tools/qa_portraits has the rim tool — read its usage).\n7. Fan busts follow the era: game_ui.gd `_commanders_card()`: after `pics[slot[r]] = CmdPortrait.new(...)` add the node to group \"kit_era\" so `set_portrait_era` redraws it at once.\n8. Toasts over modal titles: the chronicle toast («Летопись: …») lands on the open album window's title banner (DL6/DL8). In `_toast_y()` / `_toast_build`: while a modal window is open, place toasts below that window's title banner (or at the bottom safe area above the tray) so no title is ever covered; keep the queue/merge behaviour; check with the commanders album open and a chronicle toast, and with shop/pass/calendar open.\n9. Docs: in docs/art_direction.md §7.12 mark the shipped «Следом» items as done (one line each with the function names); leave face crops and hero chests for step T2.\nVerify: BEFORE and AFTER screenshots of every place you touch (royal reveal, pass, chapter legacy tile/expansion_d10, ftue:1 advisor, inbox, dip2 + diplomacy tab, profile, HUD crest E1–E4 (--dl / era demos), commanders:tab with an era change, a toast over the album); zoomed crops; canvas draw counts before/after per screen; tests, ui_lint, check_strings.",
+   "verify": "before/after pairs + crops in scratch tails/T1_portrait_ui; draw counts table; test_flow PASS, 0 SCRIPT ERROR; lint + strings clean"
+  },
+  {
+   "id": "T2_face_crops_hero_chests",
+   "title": "Face crops for slots ≤ 72 px and 256 px hero chests",
+   "owner_files": [
+    "tools/blender/portrait_assets.py",
+    "tools/blender/portrait_kit/",
+    "tools/blender/icon_assets.py",
+    "tools/qa_portraits/",
+    "tools/qa_icons/",
+    "game/assets/ui/portraits/",
+    "game/assets/ui/icons/",
+    "game/scripts/cmd_portrait.gd",
+    "game/scripts/game_ui.gd",
+    "game/scripts/shop_ui.gd",
+    "game/scripts/ui_kit.gd",
+    "docs/art_direction.md",
+    "docs/ui_style.md"
+   ],
+   "instructions": "Two parts (docs/art_direction.md §7.12 «Не отгружаются», §7.13 «Выход», §7.15 п.4).\nA. Face crops. Slots ≤ 72 px (commander picker 72, inbox/calendar 64, «Армия» fan 58×70, army chip Ø38 — table §7.12) show the whole bust, so the head is 27–40 px. `tools/blender/portrait_assets.py --frame=face` renders a square face frame (+31 % head at 64 px). Render face crops for the files those slots actually use (find them in game_ui.gd / hud.gd / cmd_portrait.gd: probably the 12 commanders × 4 eras calm, maybe smile — decide from the code, do not render what no slot shows), at 256×256 (they are drawn at ≤ 72 px; mipmaps on), names `face_<base name>.png` in game/assets/ui/portraits, RGBA transparent, same light/style as the busts. Renders are slow (≈45–60 s per frame on 4 cores, another agent renders in Blender too) — render in one background batch, check a sheet early on 3 files before the full batch. Run the portrait QA that applies (framing/contrast/eras tools in tools/qa_portraits; add a face-frame mode if a check assumes the bust frame). In cmd_portrait.gd: when the node's drawn size is ≤ 72 px and a face file exists for the same era/mood chain, use it (keep the fallback chain and the API; locked silhouette and plate/halo still apply; era cache purge covers the new files). Check the git .gitignore rule for portraits/*.import (a negation exists for cmd_*.png.import — add one for face_*.png.import) and set mipmaps/generate=true in their imports.\nB. Hero chests 256 px. The chest masters 256 px from C1 are kept in the scratchpad (find them: grep icon_assets.py for where it saves masters; if lost, re-render with icon_assets.py at 256 without the 128 downscale but with the INK rim scaled). Ship hero versions `chest_wood_hero.png`, `chest_silver_hero.png`, `chest_royal_hero.png` (+ chest_cards if the opening uses it) into game/assets/ui/icons (mipmaps on), and use them only where a chest is drawn larger than ~110 px: the shop chest tiles and the chest opening / royal reveal (shop_ui.gd). They are drawn outside the KitBake icon atlas (a TextureRect with mipmaps), so measure the canvas draw count on shop and royal before/after (≤ +2 each); everywhere else the 128 atlas icons stay.\nVerify: before/after screenshots of every slot ≤ 72 px (commander picker, inbox, calendar, calendar:pick, commanders:tab fan, a map army chip at strat/mid zoom) and of shop + royal reveal + opening; zoomed crops; head-height table (px) before/after; draw counts; test_flow, ui_lint, check_strings; update §7.12/§7.13/§7.15 lines to what shipped.",
+   "verify": "sheets of face crops; before/after pairs; head-height table; draw counts; tests"
+  },
+  {
+   "id": "Z1_art_followups",
+   "title": "Apply the art pass 5 follow-ups that need the game scripts, final check",
+   "owner_files": [
+    "game/scripts/map_view.gd",
+    "game/scripts/main.gd",
+    "docs/dev/"
+   ],
+   "instructions": "The art pass 5 agent (step A1_fresh_look, plan docs/dev/art_pass5_plan.json) could not edit map_view.gd and wrote its placement changes as follow-ups: its report is the JSON value of key \"A1_fresh_look_fix\" (or \"A1_fresh_look_impl\" if there was no fix) in /tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/resume_args.json when the main session put it there; patch files are in /tmp/claude-0/-home-user-Raivon/6fa81df3-3b92-5348-855c-cb135734d3b5/scratchpad/art5/A1/ (followup_*.patch, e.g. the dark lake placement using the baked model). Read them, apply what is right to the current map_view.gd (line numbers moved — re-locate), and verify: screenshots at strat/mid/close of the touched hexes (dark lake, mountains, camps, mines, oil — whatever the follow-ups name), perf lines (3D draws ≤ ~330 with shadows on strat/battle), tests. If a follow-up is wrong, say why and skip it.",
+   "verify": "before/after shots of the touched hexes; perf; test_flow"
+  }
+ ]
+}
