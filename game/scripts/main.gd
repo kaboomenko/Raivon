@@ -2248,6 +2248,13 @@ func _ai_swap_package(s: int) -> Dictionary:
 	for a in mine:
 		for b in theirs:
 			packs.append([[a], [b]])
+	# two for one (≤2 a side, 06 §9.1 S4): the AI asks a pair of the player's neighbouring hexes for one of its own —
+	# the fair way to swap a hex it values double (near its capital) now that it never asks for gold on top
+	for i in mine.size():
+		for j in range(i + 1, mine.size()):
+			if (sim.neighbors[mine[i]] as Array).has(mine[j]):
+				for b in theirs:
+					packs.append([[mine[i], mine[j]], [b]])
 	# two a side: pairs of neighbouring hexes on each side
 	for i in mine.size():
 		for j in range(i + 1, mine.size()):
@@ -4799,11 +4806,11 @@ func _send_convoy(hex: int) -> void:
 
 ## Income bubbles (05 §5.2): a tap on any coin is «Собрать всё», so a few coins say there is income to collect. A
 ## coin over every hex that held 15 min of income covered the buildings, the army plates and the march chip of a
-## 40-hex realm (playtest B). Now a hex shows its coin when its pool is BUBBLE_FULL of its 8 h cap (a long absence:
-## every full hex asks to be collected), and the BUBBLE_TOP fullest hexes always do once they hold 15 min of income
-## (so there is always something to tap). The vein keeps its crystal bubble.
+## 40-hex realm (playtest B). Now only the BUBBLE_TOP fullest hexes on the screen show one (of those holding 15 min of
+## income; the fullest of the whole realm when none is in view), so there is always a coin to tap where the player
+## looks and never a field of them (02 §19.2: one shared «Собрать всё» sign at the realm's zoom, not a coin per hex);
+## the vein keeps its crystal bubble.
 const BUBBLE_TOP := 3
-const BUBBLE_FULL := 0.5
 
 
 func _update_bubbles() -> void:
@@ -4811,7 +4818,7 @@ func _update_bubbles() -> void:
 		map_view.set_bubbles({})
 		return
 	var data := {}
-	var cands: Array = []  # [amount, hex, res, full]
+	var cands: Array = []  # [amount, hex, res]
 	for h in econ.stock:
 		var st: Dictionary = econ.stock[h]
 		var inc: Dictionary = econ.hex_income(sim, int(h))
@@ -4822,14 +4829,12 @@ func _update_bubbles() -> void:
 		if best == "":
 			continue
 		var amount: int = st[best]
-		var rate := int(inc.get(best, 0))
-		if amount >= 10 and amount * 4 >= rate:
-			cands.append([amount, int(h), best, rate > 0 and amount >= BUBBLE_FULL * Economy.POOL_HOURS * rate])
+		if amount >= 10 and amount * 4 >= int(inc.get(best, 0)):
+			cands.append([amount, int(h), best])
 	cands.sort_custom(func(a: Array, b: Array) -> bool: return int(a[0]) > int(b[0]) if int(a[0]) != int(b[0]) else int(a[1]) < int(b[1]))
-	for i in cands.size():
-		var it: Array = cands[i]
-		if i < BUBBLE_TOP or bool(it[3]):
-			data[int(it[1])] = {"res": String(it[2]), "amount": int(it[0])}
+	var seen: Array = cands.filter(func(it: Array) -> bool: return map_view.on_screen(int(it[1])))
+	for it in (seen if not seen.is_empty() else cands).slice(0, BUBBLE_TOP):
+		data[int(it[1])] = {"res": String(it[2]), "amount": int(it[0])}
 	for h in econ.vein_secs:
 		if econ.vein_amount(int(h)) >= 1:
 			data[int(h)] = {"res": "raivite", "amount": econ.vein_amount(int(h))}
@@ -4978,17 +4983,12 @@ func _apply_case_rewards(results: Array) -> Dictionary:
 
 
 ## Demo helper: the player settles a corridor up to a hex of `s` and wraps around it, so their border bends.
-## The hex sits ≥3 from the AI's capital: a hex nearer it the AI values double (_swap_value), and an AI proposal never
-## asks the player to pay on top (_ai_swap_package), so no swap of it could be offered.
 func _demo_salient(s: int) -> void:
 	var core := MapGen.core_of(sim, s)
-	var cap: int = sim.states[s]["capital_id"]
 	var q := -1
 	var best := 0
 	for c in sim.cells:
 		if c["owner"] != s or core.has(c["id"]) or not _swappable(c["id"], s):
-			continue
-		if cap >= 0 and HexGrid.distance(HexGrid.axial(c), HexGrid.axial(sim.cells[cap])) <= 2:
 			continue
 		var free := 0
 		for n in sim.neighbors[c["id"]]:

@@ -4256,6 +4256,20 @@ func has_bubble(hex: int) -> bool:
 	return _bubbles.has(hex)
 
 
+## Whether a hex's bubble point (2 over its centre) is on the open map: in front of the camera, inside the view and
+## clear of the HUD — its top bar (12 % of the height), its bottom panels (22 %) and the button columns down the left
+## and right edges (13 % of the width each: a coin there showed half, under the buttons).
+func on_screen(hex: int) -> bool:
+	var vp := get_viewport() if is_inside_tree() else null
+	var cam := vp.get_camera_3d() if vp != null else null
+	if cam == null:
+		return true
+	var p := cell_world(hex) + Vector3(0, 2.0, 0)
+	var r := vp.get_visible_rect()
+	r = r.grow_individual(-0.13 * r.size.x, -0.12 * r.size.y, -0.13 * r.size.x, -0.22 * r.size.y)
+	return not cam.is_position_behind(p) and r.has_point(cam.unproject_position(p))
+
+
 ## The income bubbles keep about their size on screen as the camera comes close: a world-sized coin grew three times
 ## from the default view to the close-up one and hid the buildings, the army plates and the march chip (playtest B).
 ## Full size from BUBBLE_DEPTH (the default zoom's camera distance) out; closer, the coin shrinks with the depth to the
