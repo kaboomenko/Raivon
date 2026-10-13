@@ -1092,8 +1092,10 @@ CHARS.update({
         # the round-8 skin (x1.12, spec 0.10: rendered median C* 30, like Iveta's and Arman's deep skin); the round-9
         # x1.30 matte skin rendered C* 48 rust-orange, the copper plate's hue, against art director note (h) (P3
         # review). His lit cheek S is measured on the bald lit dome (the brightest 30 % of all skin); the face-only
-        # sample is reported beside it
-        skin="#9A5E4C", skin_tone="T5", blush=0.12, skin_sat=1.12, skin_spec=0.10,
+        # sample is reported beside it. Spec 0.03 / rough 0.72 (P3 fix round 11): at spec 0.10 the key's sheen
+        # whitened the lit dome and nose (lit S 0.13, face-only S 0.21, the skin read dusty pink); matte, the same
+        # x1.12 albedo renders median C* 29 and the face-only lit S 0.29 without raising the chroma
+        skin="#9A5E4C", skin_tone="T5", blush=0.12, skin_sat=1.12, skin_spec=0.03, skin_rough=0.72,
         eyes=dict(sclera=0.18, open=0.66, iris="#7A8A9A", iris_shade=0.9, tilt=-0.06, arch=0.05),
         brows=dict(shape="straight", thick=0.09, color="#B4B4BC", arch=0.0, len=1.3, inner=-0.01, rough=0.6),
         nose=dict(type="straight", w=0.085, drop=0.21, k=1.05, tip="#8A4E34", tip_k=0.3),
@@ -1173,7 +1175,10 @@ CHARS.update({
         # (rendered: hair median L* 39.2 a* 17 b* -19, next to the face L* 24.1; cape L* 50.5, 11.4 above the hair)
         # (P3 review round 9: the lilac sheen #8058A8 lifted the lit crown to a violet L* 39 median — the sheen a
         # step darker and redder, so the crown stays black-violet and moves off Sairin's steel blue)
-        hair=dict(style="straight", color="#52225E", dark="#481E56", light="#743476", crevice="#381A48", part=36,
+        # (P3 review round 2: still a saturated violet, L* 37 median) a darker albedo and sheen at the same violet
+        # chroma: L* 34.6 C* 26 (the sky fill lifts any darker albedo to L* ~34); a greyer dark (#40204C, L* 33.7
+        # C* 17) came within dE76 12 of Sairin's hair, this keeps 17.1
+        hair=dict(style="straight", color="#44185A", dark="#3A1450", light="#62287E", crevice="#2E1040", part=36,
                   drop=-0.70),
         body=dict(shoulders=1.85),
         costume=dict(
