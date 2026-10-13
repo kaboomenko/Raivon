@@ -448,9 +448,8 @@ CHARS = {
         # ash dark brown, less saturated than the T5 skin, so hair vs skin passes §7.4 by dE76 >= 30 (31) while the
         # shadowed far side stays above the albedo floor (dark <= 3 %: the warm #3A2A20 gave dE 28.3 and 3.1 %)
         # (P3 review: one crisp straight hairline, hard rims over the ears, the bristle only on the top crest, a
-        # greyer brown than her brows) — temple recessions and a sideburn notch in the hairline, a wider stubble fade
-        # into the skin, larger tips along the whole outline (short ones at the front lit the hairline: hair vs skin
-        # dE76 29.7 < 30). The ash brown stays (a
+        # greyer brown than her brows) — temple corners and a sideburn notch in the hairline, larger tips along the
+        # whole outline (short ones at the front lit the hairline: hair vs skin dE76 29.7 < 30). The ash brown stays (a
         # warmer one toward her brows, #3A302C / #362C28, measured hair vs skin dE76 23-30 / |dL*| 10-13 < 30 / 15)
         hair=dict(style="flattop", color="#3C3230", dark="#3E3430", light="#4E423A", crevice="#443A34",
                   tip="#54463E", fleck="#4C4038", side=0.008, front=0.035, front_ramp=0.09, top=0.022,
@@ -458,8 +457,10 @@ CHARS = {
                   fade_band=0.05, fade_mix=0.4, bristles_front=(0.0, 0.0, 0, 0.0, 0.0),
                   bristles_top=(-135.0, 135.0, 130, 0.046, 0.011),
                   rough=0.78, spec=0.3,
-                  hairline=[(0, 0.305), (12, 0.31), (26, 0.325), (38, 0.335), (50, 0.30), (64, 0.235), (78, 0.15),
-                            (88, 0.07), (96, 0.09), (110, 0.07), (130, -0.03), (180, -0.18)]),
+                  # a shallow temple corner and a sideburn notch in front of the ear (a deeper temple recession bared
+                  # lit skin under the hair's edge: hair vs skin dE76 29.6 < 30)
+                  hairline=[(0, 0.31), (16, 0.315), (30, 0.30), (42, 0.29), (54, 0.26), (68, 0.21), (80, 0.15),
+                            (88, 0.07), (96, 0.10), (110, 0.07), (130, -0.03), (180, -0.18)]),
         # 2.6 W across the pauldrons (§7.6 "самые широкие плечи (2.6 W, наплечники из 3 пластин)"): the bust 2.25 W,
         # the plates add the rest (a 2.6 W torso alone runs past the frame's side band at every head size)
         body=dict(shoulders=2.15, absolute=True),
@@ -1088,8 +1089,9 @@ CHARS.update({
             ]),
         # the shield on the far shoulder line (§7.8 "щит-наплечник на дальнем плече"), rising above the shoulder's
         # silhouette beside the beard, its painted face turned toward the camera so the rivet ring and the copper rim
-        # read (P3 review: raised to the ear and seen edge-on it read as an earcup)
-        props=[dict(kind="shield", side="far", r=0.40, x=0.52, turn=72, up=0.14, dz=0.20, out=0.0, color="#363E4A",
+        # read (P3 review: raised to the ear and seen edge-on it read as an earcup); x 0.49: at 0.52 the smile's roll
+        # pushed it past the frame's 28 px side band
+        props=[dict(kind="shield", side="far", r=0.40, x=0.49, turn=72, up=0.14, dz=0.20, out=0.0, color="#363E4A",
                     edge="#B87440", edge_metal=True, rim=0.05, rivets=12, detail="shield", min_px=2000)],
         pose=dict(body=24, head=4, roll=0, nod=-3),         # (24 not 16: the far shoulder and its shield clear the beard)
         signature=dict(name="box beard + one massive shield pauldron on the far shoulder",

@@ -227,7 +227,7 @@ def id_rules(im, masks, m, name):
             # the gate is §7.4's |dL*| >= 15; dE76 is printed (INFO) because a ginger beard on a slate-blue coat
             # separates by hue where the value step is short (P3: Bram's eras)
             out.append(("beard-clothes", worst[0], worst[0] >= 15,
-                        "|dL*| %.1f (vs %s; dE76 %.1f INFO)" % worst))
+                        "|dL*| %.1f (vs %s, dE76 %.1f INFO)" % worst))
     if name.startswith("ldr_"):
         # §7.8 rule 3: the state's colour as an accent (sash, lining, stone) >= 10 % of the costume — the costume
         # groups and their details (costume, costume:<id>, metal, detail:<name>) whose rendered colour lies within
@@ -345,9 +345,16 @@ def main():
             for kk, v in masks.items():
                 if kk in ("lash", "pupil", "mouth", "glass", "catch") or kk.startswith("detail:glasses"):
                     ex |= v
+            # the designated dark masses (hair, beard and the signature: Vedana's and Sairin's black hair, the dark
+            # wing, §7.8) apart from the rest — the numbers for the proposed exemption (P3 fix round)
+            dm = np.zeros_like(dark)
+            for kk, v in masks.items():
+                if kk in ("hair", "beard", "signature"):
+                    dm |= v
             tot = max(1, int(op.sum()))
-            idl.append("dark by part (INFO): exempt %.1f%%, other %.1f%%" % (100.0 * (dark & ex).sum() / tot,
-                                                                         100.0 * (dark & ~ex).sum() / tot))
+            idl.append("dark by part (INFO): exempt %.1f%%, hair/beard/signature %.1f%%, other %.1f%%" % (
+                100.0 * (dark & ex).sum() / tot, 100.0 * (dark & ~ex & dm).sum() / tot,
+                100.0 * (dark & ~ex & ~dm).sum() / tot))
             for rule, v, ok, txt in id_rules(im, masks, Q.meta(d, n) or {}, n):
                 idl.append("%s %s%s" % (rule, txt, "" if ok else " FAIL"))
                 if rule.endswith("(INFO)"):

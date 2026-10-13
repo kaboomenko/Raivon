@@ -42,7 +42,9 @@ MAIN_GROUP = {"cmd_olm": "detail:apron",     # (the apron is a P-A8 detail group
               # Frey's E2-E3 green uniform under the steel cuirass (the cuirass is the larger group; §7.6 names the
               # green first and the steel as trim), Rai's white robe under the blue stole (§7.6: "белое одеяние" first)
               "cmd_frey_e2": "costume", "cmd_frey_e3": "costume",
-              "cmd_rai": "costume", "cmd_rai_e2": "costume", "cmd_rai_e3": "costume"}
+              "cmd_rai": "costume", "cmd_rai_e2": "costume", "cmd_rai_e3": "costume",
+              # Rai's E4 silver plates under the E1-E3 cloak and stole (§7.6 "бело-серебряные пластины" first)
+              "cmd_rai_e4": "costume:plate"}
 
 
 def clothes_lab(rgba, masks, prefer=None):
