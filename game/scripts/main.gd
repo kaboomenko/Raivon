@@ -7593,4 +7593,8 @@ func _shot(path: String) -> void:
 	print("shot saved ", path)
 	if OS.get_cmdline_user_args().has("--perf-tree"):  # canvas draws per HUD subtree (game/tools/perf_probe.gd)
 		await load("res://tools/perf_probe.gd").run(get_tree(), path + ".tree.txt")
-	get_tree().quit()
+	# Everything is written (the PNG, the perf lines; print flushes stdout in this debug build). A normal quit tears
+	# the renderer down, and under xvfb + lavapipe that teardown sometimes never returns: the run then held the shot
+	# lock (tools/godot_shot.sh) until its time limit. The process ends itself instead — nothing is left to save
+	# (a scripted run never autosaves).
+	OS.kill(OS.get_process_id())

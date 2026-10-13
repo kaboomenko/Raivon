@@ -1242,8 +1242,9 @@ def headset(ctx, hg):
             mz = ctx.L["mouth_z"]
             a = c + Vector((side * 0.03, -0.04, -0.03))
             b = Vector((side * 0.20, ctx.L["face_y"] - 0.06, mz + 0.01))
-            boom = core.curve("headset_mic", [a, (a + b) / 2 + Vector((side * 0.05, -0.04, -0.02)), b], [1, 1, 1], 0.012,
-                              m, order=3)
+            # (`mic_r`: a thicker boom — at 0.012 Vega's far-side boom broke into a separate 6 px alpha island at 512)
+            boom = core.curve("headset_mic", [a, (a + b) / 2 + Vector((side * 0.05, -0.04, -0.02)), b], [1, 1, 1],
+                              hg.get("mic_r", 0.012), m, order=3)
             ctx.add(boom, grp, cup, kind="embed", head=True)
             tip = core.uvsphere("headset_mic_tip", b, (0.022, 0.022, 0.022), acc, 12, 6)
             ctx.add(tip, grp, boom, kind="embed", head=True)

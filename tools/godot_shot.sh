@@ -38,7 +38,11 @@ done
 GODOT=/opt/godot/Godot_v4.5.1-stable_linux.x86_64
 LOCK=/tmp/raivon_godot.lock
 LOCK_WAIT=1800  # s to wait for another godot run
-RUN_LIMIT=900   # s for this godot run
+# s for this godot run. A plain shot takes ~20-70 s and the game ends its own process once the PNG is saved
+# (main.gd _shot: a normal quit could hang in the renderer teardown under xvfb/lavapipe and hold the lock); the
+# --perf-tree probes (the breakdown, the shop tabs, the fling) walk many frames and get the old 15 min.
+RUN_LIMIT=300
+case " $* " in *" --perf-tree "*) RUN_LIMIT=900 ;; esac
 cd "$(dirname "$0")/../game"
 START=$(date +%s)
 # Several agents shoot in parallel: the lock serialises godot runs (and `godot --import`, which should take the same

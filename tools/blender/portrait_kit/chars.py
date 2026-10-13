@@ -752,8 +752,8 @@ CHARS.update({
                      clumps=dict(n=38, len=0.18, w=0.085, th=0.04, curl=0.15), smooth=4),
             ]),
         # the wolf head on the near shoulder's pelt, rearing up to ear height (§7.8; P3 review: lifted 0.30 it sat on
-        # top of his head; flat on the shoulder line his 48 px head zone matched Bram's, P-A1 0.873)
-        props=[dict(kind="wolf_head", x=-0.52, y=0.10, size=0.66, lift=0.16, turn=25, color="#8E8882", dark="#6A6460",
+        # top of his head; on the shoulder line his 48 px head zone matched Bram's and Kort's, P-A1 0.873 / 0.857)
+        props=[dict(kind="wolf_head", x=-0.52, y=0.10, size=0.66, lift=0.26, turn=25, color="#8E8882", dark="#6A6460",
                     light="#C8C2BC", min_px=2500),
                dict(kind="fang", side="near", len=0.07, r=0.022),
                dict(kind="pendant", at=(0.02, -1.02))],
@@ -815,7 +815,8 @@ CHARS.update({
                          pose_cunning=dict(roll=7.0, head=-5.0),
                          **{"props~": {"monocle": dict(glint=3.0, r=1.45)}}),
             # angry: puffed cheeks, pursed lips (§7.8)
-            angry=dict(mouth=dict(angry=dict(type="closed", w=0.17, near=-0.02, far=-0.02, sag=-0.004,
+            angry=dict(brows=dict(angry=dict(inner=-0.085, outer=0.03, in_dx=0.02, thick_k=1.25, arch=-0.01)),
+                       mouth=dict(angry=dict(type="closed", w=0.17, near=-0.02, far=-0.02, sag=-0.004,
                                              crease=0.03)),
                        fx=dict(angry=dict(cheek_amt=0.035, cheek=(0.0, 0.0)))),
             tired=dict(hair=dict(flat=0.62)),
@@ -1114,8 +1115,9 @@ CHARS.update({
         # the shield on the far shoulder line (§7.8 "щит-наплечник на дальнем плече"), rising above the shoulder's
         # silhouette beside the beard, its painted face turned toward the camera so the rivet ring and the copper rim
         # read (P3 review: raised to the ear and seen edge-on it read as an earcup); x 0.49: at 0.52 the smile's roll
-        # pushed it past the frame's 28 px side band
-        props=[dict(kind="shield", side="far", r=0.40, x=0.49, turn=72, up=0.14, dz=0.20, out=0.0, color="#363E4A",
+        # pushed it past the frame's 28 px side band; dz 0.34: seated on the shoulder its top rises beside the beard
+        # (at 0.20 his 48 px head zone matched Bram's, P-A1 0.865)
+        props=[dict(kind="shield", side="far", r=0.40, x=0.50, turn=72, up=0.14, dz=0.34, out=0.0, color="#363E4A",
                     edge="#B87440", edge_metal=True, rim=0.05, rivets=12, detail="shield", min_px=2000)],
         pose=dict(body=24, head=4, roll=0, nod=-3),         # (24 not 16: the far shoulder and its shield clear the beard)
         signature=dict(name="box beard + one massive shield pauldron on the far shoulder",
@@ -1167,7 +1169,15 @@ CHARS.update({
         pose=dict(body=26, head=8, roll=3, nod=3),
         signature=dict(name="dark wing rising over the far shoulder", zone="far side"),
         moods=dict(
-            smile=dict(eyes=dict(smile=dict(open=[0.60, 0.60], low=0.12))),
+            # (fix-round sort: smile and cunning swapped — her calm already smirks) the smile wide and even with the
+            # cheeks up, the cunning one-sided with the far brow high and the glance
+            smile=dict(eyes=dict(smile=dict(open=[0.56, 0.56], low=0.16)),
+                       mouth=dict(smile=dict(type="closed", w=0.31, near=0.065, far=0.06, sag=0.012)),
+                       fx=dict(smile=dict(cheek=(0.06, 0.06), cheek_amt=0.02))),
+            cunning=dict(eyes=dict(cunning=dict(open=[0.38, 0.62], tilt=0.04, arch=0.12, low=0.06)),
+                         brows=dict(cunning=dict(lift=(-0.025, 0.12), arch_far=0.035, arch_near=-0.02)),
+                         mouth=dict(cunning=dict(type="closed", w=0.25, near=0.05, far=-0.012, sag=0.003)),
+                         pose_cunning=dict(roll=7.0, head=-5.0)),
             tired=dict(hair=dict(across=True), eyes=dict(tired=dict(open=0.26, tilt=0.22, arch=0.10, low=0.0))),
             angry=dict(mouth=dict(angry=dict(type="open", shape="clench", w=0.26, h=0.09, near=-0.01, far=-0.02))),
         ),
@@ -1182,7 +1192,9 @@ CHARS.update({
         nose=dict(type="straight", w=0.05, drop=0.21, k=1.05, tip="#6A3828", tip_k=0.2),
         mouth=dict(lip="#5A3028", line=0.20,
                    calm=dict(type="closed", w=0.27, near=0.016, far=0.01),
-                   smile=dict(type="closed", w=0.30, near=0.055, far=0.05, sag=0.01)),
+                   # an open smile with the upper teeth (closed, under the tilted hat, it read as his calm face in the
+                   # fix-round sort)
+                   smile=dict(type="open", w=0.32, h=0.11, near=0.05, far=0.045, dz=-0.012, teeth=0.32)),
         hair=dict(style="short", color="#E4E6EC", dark="#B8BCC8", light="#FFFFFF", crevice="#7A8094",
                   escape=[(-72, 26, 4, 0.065), (-88, 20, -6, 0.06), (78, 24, 4, 0.06)]),
         headgear=dict(kind="hat", id="top_hat", color="#222C48", mat="velvet", h=0.36, rim_dz=0.01, tilt=-4,
@@ -1702,7 +1714,8 @@ ERA_LOOKS.update({
                 headgear=dict(kind="visor", id="hud_strip", on="head", el=-4, span=44, h=0.10, dh=13, off=0.11,
                               tint="#EEF6FF", frame="#C8CCD4", frame_r=0.007, line="#FFFFFF", line_emit=0.6,
                               detail="hud", min_px=300,
-                              extra=[dict(kind="headset", sides=(1,), color="#3A4150", accent="#C8CCD4", mic=True)]),
+                              extra=[dict(kind="headset", sides=(1,), color="#3A4150", accent="#C8CCD4", mic=True,
+                                          mic_r=0.018)]),
                 **{"props~": {"glasses": None}}),
     },
     # ---------------------------------------------------------------- Kort
