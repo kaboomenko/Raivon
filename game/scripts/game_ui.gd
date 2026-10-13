@@ -1533,7 +1533,10 @@ func show_ceremony_counters(lines: Array, on_done: Callable, on_double := Callab
 			var parts: Array = []
 			for pi in pill:
 				parts.append(String((pi as Array)[1]))
-			rest.append(String((it as Dictionary).get("name", "")) + " " + " ".join(parts) if (it as Dictionary).has("name") else " ".join(parts))
+			var line := String((it as Dictionary).get("name", "")) + " " + " ".join(parts) if (it as Dictionary).has("name") else " ".join(parts)
+			if int((it as Dictionary).get("lost", 0)) > 0:  # (what burned of it shows here too: «Еда +42 · Склад полон»)
+				line += " · " + tr("ceremony.storage_full")
+			rest.append(line)
 		var icons: Array = []
 		for it in tiles.slice(5):
 			icons.append(String((it as Dictionary).get("icon", "")))
