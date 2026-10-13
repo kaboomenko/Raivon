@@ -68,6 +68,7 @@ rs.colonization.desc,−10% цены колонизации,−10% colonization 
 rs.branch.army,Армия,Army
 rs.branch.economy,Экономика,Economy
 err.unlock_dl,Откроется на уровне развития %d,Unlocks at development level %d
+battle.card_locked,«%s» откроется на уровне развития %d,“%s” unlocks at development level %d
 err.academy_busy,Академия занята,Academy is busy
 err.max,Максимум,Maxed out
 err.need_academy,Нужна Академия ур. %d или УР выше,Needs Academy Lv %d or a higher DL
@@ -159,6 +160,7 @@ peace.offer,"Подпишу, если не больше %s",I'll sign for %s at 
 peace.demands,Требования,Demands
 peace.hold_hint,"Удерживайте, чтобы подписать",Hold to sign
 peace.over,Требования дороже ваших очков мира,The demands cost more than your peace points
+peace.budget_rest,%s / %s · остаток: мнение +%s,%s / %s · rest: opinion +%s
 ceremony.double,×2,×2
 ceremony.title,Победа!,Victory!
 ceremony.claim,Забрать,Claim
@@ -207,7 +209,7 @@ dipl.war,Война,War
 dipl.gift,Подарок,Gift
 world.chapter1,Глава I «Долина»,Chapter I “The Valley”
 chapter.name.1,Долина,The Valley
-chapter.name.2,Речной край,River Country
+chapter.name.2,Речной край,The River Lands
 chapter.name.3,Континент,The Continent
 chapter.name.4,Индустриальный пояс,The Industrial Belt
 chapter.full,Глава %s «%s»,Chapter %s “%s”
@@ -222,6 +224,7 @@ legacy.what.4,Император Рай и рамка «Ветеран»,Emperor
 world.hexes,Гексов: %d из %d,Hexes: %d of %d
 world.chapter_done,Пройдена! Глава %s — скоро,Complete! Chapter %s soon
 world.expand,Расширить,Expand
+world.expand_war,"Завершите войну, чтобы открыть новые земли",End the war to open new lands
 world.hint,Мир и колонизация приносят гексы — каждый на счету,Peace and colonization bring hexes — every one counts
 world.claimed,Получено,Claimed
 world.chapter,Глава %s,Chapter %s
@@ -313,7 +316,7 @@ ui.hold_retreat,"Удерживайте, чтобы отступить",Hold to 
 ui.ai_settling,Осваивают %s · %s,%s are settling it · %s
 ui.pick_wait,Перемирие: новая цель через %s,Truce: a new target in %s
 ui.pick_none,Целей рядом нет,No targets nearby
-toast.chapter_progress,Глава %s «%s»: %d / %d гексов,Chapter %s “%s”: %d / %d hexes
+toast.chapter_progress,Глава %s «%s»: %d / %d гексов,Chapter %s “%s”: %d / %d hexes
 toast.chronicle_locked,Летопись откроется после главы I,The Chronicle opens after Chapter I
 toast.occupied_hex,%s: оккупирован (%s). Станет вашим только по мирному договору.,%s: occupied (%s). It becomes yours only by a peace treaty.
 tile.occupied,Оккупирован: %s,Occupied by %s
@@ -345,6 +348,7 @@ floater.routed,Армия разбита,Army routed
 result.retreat,Вы отступили,You retreated
 result.wiped,Все армии сломлены,All armies broken
 result.timeout,Время вышло,Time's up
+result.goals,Все цели взяты,All targets taken
 toast.adjacent_only,Только на соседний гекс,Adjacent hexes only
 toast.no_energy,Не хватает энергии (нужно %d),Not enough energy (need %d)
 toast.hex_busy,Гекс занят,Hex is taken
@@ -370,6 +374,7 @@ ceremony.indemnity,Контрибуция: +%d золота,Indemnity: +%d gold
 ceremony.reparations,Репарации: 10% производства на 24ч,Reparations: 10% of output for 24h
 toast.test_ad_double,Тестовая сборка: реклама не подключена — трофеи удвоены,Test build: ads aren't connected. Spoils doubled
 toast.chapter_goal,Цель главы %s выполнена — откройте «Мир»,Chapter %s goal reached: open the World tab
+toast.chapter_goal_war,"Цель главы %s выполнена — завершите войну, чтобы расширить мир",Chapter %s goal reached: end the war to expand the world
 result.white_peace,Белый мир: всё вернётся владельцам,White peace: everything returns to its owners
 toast.white_peace_signed,Белый мир подписан,White peace signed
 result.defeat,Грабёж 60%,60% plundered
@@ -407,11 +412,15 @@ star.defense,Отбейте набег или удар,Repel a raid or a strike
 star.defense.short,Отбейте набег,Repel a raid
 star.dl3,Достигните УР3,Reach DL3
 toast.star,Звезда главы: +10 Райвитов и час производства,Chapter star: +10 Raivites and 1 h of output
-inbox.all_stars.title,Все звёзды главы %s,All Chapter %s stars
-inbox.all_stars.text,Награда главы — %s. Она придёт в коллекцию с обновлением игры.,The chapter's reward is %s. It will reach your collection with a game update.
+inbox.all_stars.title,Все звёзды главы I,All Chapter I stars
+inbox.chapter_stars.title,Все звёзды главы %s,All Chapter %s stars
+inbox.all_stars.text,Награда главы — рамка флага «Хозяин долины». Она придёт в коллекцию с обновлением игры.,The chapter's reward is the “Master of the Valley” flag frame. It will reach your collection with a game update.
+inbox.chapter_stars.text,Награда главы — %s. Она придёт в коллекцию с обновлением игры.,The chapter's reward is %s. It will reach your collection with a game update.
 toast.all_stars,Все звёзды главы %s «%s»!,All stars of Chapter %s “%s”!
-inbox.chapter_done.title,Глава %s «%s» завершена,Chapter %s “%s” complete
-inbox.chapter_done.text,Наследие: %s. Глава %s скоро — за туманом уже видны паруса.,Legacy: %s. Chapter %s is coming soon: sails already loom through the fog.
+inbox.chapter_done.title,Глава I «Долина» завершена,Chapter I “The Valley” complete
+inbox.chapter_end.title,Глава %s «%s» завершена,Chapter %s “%s” complete
+inbox.chapter_done.text,Наследие: Капитан Лира и 200 Райвитов. Глава II скоро — за туманом уже видны паруса.,Legacy: Captain Lira and 200 Raivites. Chapter II is coming soon: sails already loom through the fog.
+inbox.chapter_end.text,Наследие: %s. Глава %s скоро — за туманом уже видны паруса.,Legacy: %s. Chapter %s is coming soon: sails already loom through the fog.
 toast.chapter_done,Глава %s «%s» пройдена! Глава %s — скоро,Chapter %s “%s” complete! Chapter %s soon
 leader.barons,Барон Гродек Клык,Baron Grodek the Fang
 leader.barons.desc,"Мало крепостей, много армий, частые ультиматумы","Few forts, many armies, frequent ultimatums"
@@ -463,8 +472,10 @@ inbox.war_cap.white,Война длилась 2 ч — белый мир.,The wa
 toast.war_cap_white,Кап войны: белый мир,War cap: white peace
 ftue.1,Бароны сожгли нашу мельницу! Удерживайте «Война!».,The Barons burned our mill! Hold “War!”.
 ftue.2,Начните наступление!,Launch an offensive!
-ftue.3,Тяните от армии на гекс у флага — она пойдёт в атаку.,Drag from your army onto the hex by the flag to attack.
-ftue.4,«Атака» бросает в бой все армии рядом. Возьмите флаг — три звезды!,“Attack” sends every army nearby into battle. Take the flag: three stars!
+ftue.3,Цель — «%s». Тяните от армии на гекс рядом с ней.,The goal is “%s”. Drag from your army onto a hex next to it.
+ftue.3_any,Тяните от армии на гекс рядом с целью — она пойдёт в атаку.,Drag from your army onto a hex next to the goal to attack.
+ftue.4,«Атака» бросает в бой все армии рядом. Возьмите «%s» — три звезды!,“Attack” sends every army nearby into battle. Take “%s”: three stars!
+ftue.4_any,«Атака» бросает в бой все армии рядом. Возьмите цель — три звезды!,“Attack” sends every army nearby into battle. Take the goal: three stars!
 ftue.5,Земля пока лишь занята. Подпишите мир — и граница сдвинется.,Captured land is only occupied. Sign a peace to move the border.
 ftue.6,"Удерживайте «Подписать мир», чтобы заключить договор.",Hold “Sign peace” to sign the treaty.
 ftue.7,Откройте «Здания» и улучшите Резиденцию — халупы станут избами.,Open “Buildings” and upgrade the Residence: huts become cottages.
@@ -472,9 +483,11 @@ ftue.7b,Улучшите Резиденцию — халупы станут и�
 ftue.8,Жёлтый контур — ресурсы даром. Коснитесь жилы и пошлите обоз.,"A yellow outline means free resources. Tap the vein, send a convoy."
 ftue.9,Укрепите границу: выберите гекс у Баронов и нажмите «Форт».,Fortify the border: pick a hex by the Barons and tap “Fort”.
 ftue.10,Вольные Хутора заняли «%s»! Удерживайте «Война!».,The Free Hamlets seized “%s”! Hold “War!”.
+ftue.10_any,Вольные Хутора вышли к нашей границе! Удерживайте «Война!».,The Free Hamlets have pushed up to our border! Hold “War!”.
 ftue.11,Начните наступление!,Launch an offensive!
 ftue.12,Новая карта «Котёл»: бросьте её на врага рядом с армией.,New card “Encircle”: drop it on an enemy hex by your army.
 ftue.13,Отлично! Окружённые гексы сдаются быстрее. Захватите «%s»!,Great! Encircled hexes fall faster. Capture “%s”!
+ftue.13_any,Отлично! Окружённые гексы сдаются быстрее. Захватите цель войны!,Great! Encircled hexes fall faster. Capture the war goal!
 ftue.14,Подпишите мир с Хуторами.,Sign a peace with the Hamlets.
 ftue.15,Пощадить Хутора (+20 к мнению) или разграбить? Выберите и подпишите.,"Spare the Hamlets (+20 opinion) or plunder them? Choose, then sign."
 ftue.raid,Мародёры идут с диких земель! Плетень их встретит.,Marauders are coming from the wildlands! The palisade will meet them.
@@ -579,10 +592,10 @@ cell.ch2_port_salt,Соляная пристань,Salt Wharf
 cell.ch2_base,Речная застава,River Outpost
 expansion.title,Мир расширяется!,The world expands!
 expansion.world2,Мир вырос до %d гексов (+%d),The world grew to %d hexes (+%d)
-expansion.goal,Цель главы II «Речной край»,Chapter II “River Country” goal
+expansion.goal,Цель главы II «Речной край»,Chapter II “The River Lands” goal
 expansion.advisor,«Долина признала наш флаг. Но за холмами слышен шум рек и чужих барабанов».,“The valley has accepted our banner. But beyond the hills we hear rivers and foreign drums.”
 inbox.expansion.title,Мир расширяется,The world expands
-inbox.expansion.text,"Открыт «Речной край»: мир вырос с %d до %d гексов, у нас новые соседи — Речная Лига и Орден Камня. Цель главы II — %d гексов.","“River Country” is open: the world grew from %d to %d hexes, and we have new neighbours, the River League and the Order of Stone. Chapter II goal: %d hexes."
+inbox.expansion.text,"Открыт «Речной край»: мир вырос с %d до %d гексов, у нас новые соседи — Речная Лига и Орден Камня. Цель главы II — %d гексов.","“The River Lands” are open: the world grew from %d to %d hexes, and we have new neighbours, the River League and the Order of Stone. Chapter II goal: %d hexes."
 dl.short,УР%d,DL%d
 inbox.ai_dl.title,Сосед окреп,A neighbour grows stronger
 inbox.ai_dl.text,"%s достигли УР%d: армии сильнее, облик меняется.",%s reached DL%d: stronger armies and a new look.
@@ -697,9 +710,9 @@ cell.ch3_base_steppe,Степной форт,Steppe Fort
 cell.ch3_base_taiga,Таёжный кордон,Taiga Cordon
 cell.ch3_vein,Кристалл континента,Continental Crystal
 kind.factory,Завод,Factory
-expansion.goal3,Цель главы III «Континент»,Chapter III “Continent” goal
+expansion.goal3,Цель главы III «Континент»,Chapter III “The Continent” goal
 expansion.advisor3,«Реки наши. За устьем лежит континент — и правит там Альвария».,“The rivers are ours. Past the river mouth lies the continent — and Alvaria rules it.”
-inbox.expansion3.text,"Открыт «Континент»: мир вырос с %d до %d гексов, новые соседи — Альвария, Сарен и Серая Стая. Цель главы III — %d гексов.","“Continent” is open: the world grew from %d to %d hexes, and our new neighbours are Alvaria, Saren and the Grey Pack. Chapter III goal: %d hexes."
+inbox.expansion3.text,"Открыт «Континент»: мир вырос с %d до %d гексов, новые соседи — Альвария, Сарен и Серая Стая. Цель главы III — %d гексов.","“The Continent” is open: the world grew from %d to %d hexes, and our new neighbours are Alvaria, Saren and the Grey Pack. Chapter III goal: %d hexes."
 star.c3_factory,Индустрия: присоедините завод,Industry: annex a factory
 star.c3_oil2,Нефтяной пояс: владейте 2 нефтяными гексами,Oil belt: hold 2 oil hexes
 star.c3_hegemon,Укротитель волков: победный мир с Альварией,Wolf tamer: a victorious peace with Alvaria
@@ -760,9 +773,9 @@ cell.ch4_base_canyon,Каньонная база,Canyon Base
 cell.ch4_base_rail,Бронепоездное депо,Armoured Train Depot
 cell.ch4_base_lake,Озёрная база,Lake Base
 cell.ch4_vein,Кристалл пояса,Belt Crystal
-expansion.goal4,Цель главы IV «Индустриальный пояс»,Chapter IV “Industrial Belt” goal
+expansion.goal4,Цель главы IV «Индустриальный пояс»,Chapter IV “The Industrial Belt” goal
 expansion.advisor4,«Континент склонил знамёна. Дым на горизонте — это заводы Индустриального пояса».,“The continent has lowered its banners. The smoke on the horizon is the factories of the Industrial Belt.”
-inbox.expansion4.text,"Открыт «Индустриальный пояс»: мир вырос с %d до %d гексов, новые соседи — Стальной Конклав, Вейлмарк и Республика Озёр. Цель главы IV — %d гексов.","“Industrial Belt” is open: the world grew from %d to %d hexes, and our new neighbours are the Steel Conclave, Veilmark and the Lake Republic. Chapter IV goal: %d hexes."
+inbox.expansion4.text,"Открыт «Индустриальный пояс»: мир вырос с %d до %d гексов, новые соседи — Стальной Конклав, Вейлмарк и Республика Озёр. Цель главы IV — %d гексов.","“The Industrial Belt” is open: the world grew from %d to %d hexes, and our new neighbours are the Steel Conclave, Veilmark and the Lake Republic. Chapter IV goal: %d hexes."
 star.c4_conclave,Сталь против стали: победный мир с Конклавом,Steel against steel: a victorious peace with the Conclave
 star.c4_ultrafence,Ультразабор: постройте укрепление ур. 8,Ultra-fence: build a level 8 fort
 star.c4_pocket8,Большой котёл: заберите котёл из 8+ гексов,Great pocket: take a pocket of 8+ hexes

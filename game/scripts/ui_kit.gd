@@ -944,8 +944,11 @@ class KitBake extends Node:
 				else:
 					if hh != null and not parked.is_empty():
 						parked.erase(hh.get_instance_id())
-					if not jobs.has(full) or not (jobs[full]["make"] as Callable).is_valid() or _orphan(full):  # (its first asker is gone)
-						jobs[full] = {"size": size, "px": pxs, "off": f, "pp": pp, "base": base, "make": make, "alpha": fa}
+					# a job keeps the maker of the owner that asked for it first; once that owner is gone (its modal closed) its
+					# maker may capture freed nodes, so the next live asker's maker takes its place
+					if not jobs.has(full) or not (jobs[full]["make"] as Callable).is_valid() or _orphan(full) or _maker_gone(jobs[full]):
+						jobs[full] = {"size": size, "px": pxs, "off": f, "pp": pp, "base": base, "make": make, "alpha": fa,
+							"by": weakref(owner) if owner != null else null}
 					if owner != null:
 						if not waiting.has(full):
 							waiting[full] = {}
@@ -1305,6 +1308,12 @@ class KitBake extends Node:
 		waiting.erase(key)
 		return true
 
+	## True when the owner whose maker a job holds was freed: calling that maker would hand its captures nulls («Lambda
+	## capture … was freed»). The others waiting for the job are asked to draw again and bring their own (_stage_round).
+	func _maker_gone(j: Dictionary) -> bool:
+		var by: Variant = j.get("by")
+		return by != null and (by as WeakRef).get_ref() == null
+
 	## Packs waiting jobs into the stage and the atlas and renders them on the stage this frame.
 	func _stage_round() -> void:
 		if owners.size() > 4096:  # forget the freed ones
@@ -1397,7 +1406,7 @@ class KitBake extends Node:
 			done.append(key)
 			if not _defer_n.is_empty():
 				_defer_n.erase(key)
-			var n: Control = (j["make"] as Callable).call(j["size"]) if (j["make"] as Callable).is_valid() else null
+			var n: Control = (j["make"] as Callable).call(j["size"]) if (j["make"] as Callable).is_valid() and not _maker_gone(j) else null
 			if n == null:  # its asker is gone, or what it asked for has changed: the others waiting ask again
 				_release(slot)
 				var ws: Dictionary = waiting.get(key, {})

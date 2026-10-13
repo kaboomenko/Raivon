@@ -417,7 +417,13 @@ func _build_battle() -> void:
 	_battle.visible = false
 
 
-## The hand's card row (canon §9.9: «Атака» + 4 slots, 5 from DL6): n cards share the tray, w = (612 − 8(n − 1))/n.
+## The hand's card row (canon §9.9: «Атака» + 4 slots, 5 from DL6): the playable cards share the tray's 612 px,
+## w = (room − 8(n − 1))/n, at most the five-card width (a short hand keeps the cards' portrait shape) and centred;
+## a card not open yet (set_locked: the teaser) is a narrow locked stub at the row's end that takes little of it.
+const CARD_W_MAX := 116.0  # (612 − 4·8)/5
+const TEASER_W := 64.0
+
+
 func _build_cards(order: Array) -> void:
 	for c in _cards.keys():
 		if c != "corps":
@@ -426,10 +432,20 @@ func _build_cards(order: Array) -> void:
 			_card_names.erase(c)
 			_card_look.erase(c)
 	_hand_order = order.duplicate()
-	var n := maxi(1, order.size())
-	var w := (612.0 - 8.0 * (n - 1)) / n
-	for i in order.size():
-		_battle_card(String(order[i]), Rect2(20.0 + i * (w + 8.0), CARD_Y, w, CARD_H))
+	var stubs := 0
+	for c in order:
+		stubs += int(_locked.has(c))
+	var n := maxi(1, order.size() - stubs)
+	var room := 612.0 - stubs * (TEASER_W + 8.0)
+	var w := minf(CARD_W_MAX, (room - 8.0 * (n - 1)) / n)
+	var x := 20.0 + (612.0 - (n * w + 8.0 * (n - 1) + stubs * (TEASER_W + 8.0))) * 0.5
+	for c in order:
+		var stub := _locked.has(c)
+		var cw := TEASER_W if stub else w
+		_battle_card(String(c), Rect2(x, CARD_Y, cw, CARD_H))
+		if stub:  # no room for its name: the lock and its DL say it (a tap names it, _on_card_input)
+			(_card_names[c] as Control).visible = false
+		x += cw + 8.0
 
 
 ## A card of the hand (§6 «Бой»): a slate card (R 20, INK 4, lip 6) whose art fills the face (R 14), the name in
@@ -731,7 +747,8 @@ func _on_card_input(event: InputEvent, card: String) -> void:
 	if _locked.has(card):
 		if event is InputEventScreenTouch or event is InputEventMouseButton:
 			if event.pressed:
-				toast(tr("err.unlock_dl") % int(_locked[card]), "lock")  # «Откроется на уровне развития 6» (no «УР6», §3.7)
+				# «Ракета — откроется на уровне развития 8» (no «УР8», §3.7): the stub has no room for its name
+				toast(tr("battle.card_locked") % [_card_name(card), int(_locked[card])], "lock")
 		return
 	if event is InputEventScreenTouch or event is InputEventMouseButton:
 		var pressed: bool = event.pressed
@@ -1289,8 +1306,14 @@ func show_peace(enemy: String, budget: float, control: int, demands: Array, chos
 	ti.position = Vector2(bx, 180)
 	box.add_child(ti)
 	var frac := used / budget if budget > 0.0 else 0.0
-	var bud := Kit.bar(box, Rect2(bx + 60.0, 186, w - 32.0 - bx - 60.0, 40), minf(frac, 1.0), "war" if over else "go",
-		"%s / %s" % [Kit.fmt_dec(used, 1), Kit.fmt_dec(budget, 1)], true)
+	# the points left over become the loser's opinion of us, +1 a point (canon §10.1; 06 §2.2 «остаток → мнение +4»):
+	# the bar says so, so an unfilled parchment reads as a choice, not as points thrown away
+	var rest := budget - used
+	var cap := "%s / %s" % [Kit.fmt_dec(used, 1), Kit.fmt_dec(budget, 1)]
+	if not over and rest >= 0.05:
+		var rs := Kit.fmt_dec(rest, 1)
+		cap = tr("peace.budget_rest") % [Kit.fmt_dec(used, 1), Kit.fmt_dec(budget, 1), rs.trim_suffix(",0").trim_suffix(".0")]
+	var bud := Kit.bar(box, Rect2(bx + 60.0, 186, w - 32.0 - bx - 60.0, 40), minf(frac, 1.0), "war" if over else "go", cap, true)
 	bud.name = "budget"
 	# the demands; a list longer than the screen holds says so: «✓ chosen/all» on the header
 	var sec_w := w - 64.0
@@ -5459,7 +5482,7 @@ func show_world(items: Array) -> void:
 
 
 ## The chapter (§6 Мир): the hex on paper, «Глава I», its hexes on a bar; «Расширить» once the goal is met and the
-## war is over; a check when it is done.
+## war is over (grey while a war goes on, 07 §3.1 `goal_met`); a check when it is done.
 func _chapter_card(it: Dictionary) -> Control:
 	var h := int(it.get("hexes", 0))
 	var g := maxi(1, int(it.get("goal", 1)))
@@ -5474,6 +5497,10 @@ func _chapter_card(it: Dictionary) -> Control:
 		opts["details"] = tr("world.chapter_done") % ROMAN[clampi(_world_chapter + 1, 1, ROMAN.size() - 1)]
 	elif bool(it.get("can_expand", false)):
 		opts["cta"] = {"role": "go", "caption": tr("world.expand"), "icon": "globe", "cb": func(): world_action.emit("expand")}
+	elif bool(it.get("goal_met", false)):  # 07 §3.1 goal_met at war: the button grey till the peace, its tap says why
+		var why := tr("world.expand_war")
+		opts["cta"] = {"role": "go", "caption": tr("world.expand"), "icon": "globe", "enabled": false, "reason": why}
+		opts["details"] = tr("world.hexes") % [h, g] + "\n" + why
 	else:
 		opts["stat"] = stat
 	return Kit.card(Kit.icon_tex("hex_tile"), title, opts)

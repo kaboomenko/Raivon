@@ -6,6 +6,7 @@ extends SceneTree
 const Types := preload("res://scripts/sim/types.gd")
 const MapGen := preload("res://scripts/sim/map_gen.gd")
 const War := preload("res://scripts/sim/war.gd")
+const Kit := preload("res://scripts/ui_kit.gd")
 
 var fails := 0
 
@@ -171,8 +172,21 @@ func _run() -> void:
 		if c["owner"] == Types.NOBODY and Types.is_passable(c):
 			c["owner"] = Types.PLAYER
 			c["controller"] = Types.PLAYER
-	# the goal met (07 §3.1): signalled once, the «Мир» tab's dot, «Расширить мир» on the big button with nothing selected
+	# the goal met at war (07 §3.1 goal_met, E1): no «откройте «Мир»» yet — the war's own line; the World card's
+	# «Расширить» grey with its reason; the signal itself waits for the peace
 	g.ui.close_modal()
+	g.war = {"enemy": MapGen.BARONS, "goal": -1, "ai_goal": -1}
+	g.ui._toast_queue = []
+	g.ui._toast_cur = {}
+	g._check_chapter_goal()
+	var wtexts: Array = g.ui._toast_queue.map(func(t): return String(t["text"])) + [String(g.ui._toast_cur.get("text", ""))]
+	var wcard: Dictionary = g._world_items()[0]
+	_check(int(g.stats.get("goal_signal", 0)) == 0 and int(g.stats.get("goal_war_signal", 0)) == 1 and not bool(wcard["can_expand"]) \
+		and bool(wcard["goal_met"]) and not " ".join(wtexts).contains(g.tr("toast.chapter_goal") % "I") \
+		and " ".join(wtexts).contains(g.tr("toast.chapter_goal_war") % "I"),
+		"chapter goal met at war: the war's line, no «откройте «Мир»», «Расширить» waits (%s)" % str(wtexts))
+	g.war = {}
+	# the goal met (07 §3.1): signalled once, the «Мир» tab's dot, «Расширить мир» on the big button with nothing selected
 	g.mode = g.Mode.MAP
 	g._econ_tick()
 	g._select(-1)
@@ -384,10 +398,14 @@ func _run() -> void:
 	var fh1: int = gw.flag_hex
 	gw._ftue_tick(7.0)  # past step 4's 6 s: no more ghost
 	_check(gw.ftue == 4 and gw.battle.issue(Types.PLAYER, {"t": "card", "card": "attack", "target": fh1}), "step 4: «Атака» onto the flag")
-	while gw.battle != null and not gw.battle.over:
+	while gw.battle != null and not gw.battle.over:  # then the player goes on attacking
+		if gw.battle.tick % 20 == 0 and gw.sim.cells[fh1]["controller"] == Types.PLAYER:
+			gw._bot_move()
 		gw._battle_step()
 	var res1: Dictionary = gw.battle.result()
 	_check(War.offensive_stars(res1["captured"], fh1, res1["routed_player_armies"]) == 3, "FTUE war 1 as coached ends on ★★★ (flag taken, %s)" % str(res1["captured"]))
+	_check(res1["reason"] == "goals" and (res1["captured"] as Array).size() == gw.FTUE_PEACE1_HEXES and gw.battle.tick < gw.battle.duration_ticks(),
+		"FTUE war 1 as coached ends once the flag and %d hexes are taken (08 F09: %s at tick %d)" % [gw.FTUE_PEACE1_HEXES, str(res1["captured"]), gw.battle.tick])
 	gw.queue_free()
 	await process_frame
 
@@ -407,17 +425,48 @@ func _run() -> void:
 	_check(g.ui._ghost_from.x >= 0, "FTUE ghost finger shown")
 	var gp: Array = g._ftue_ghost_pair()
 	_check(gp.size() == 2 and g.sim.neighbors[gp[1]].has(g.flag_hex), "FTUE ghost leads to a hex beside the flag (%s)" % str(gp))
+	_check(g._goal_tag == g.flag_hex and g.ui._coach_lbl.text == g.tr("ftue.3") % g._cell_name(g.flag_hex),
+		"FTUE war 1: the coach names the goal and a chip marks it («%s»)" % g.ui._coach_lbl.text)
+	var fh5: int = g.flag_hex
 	while g.battle != null and not g.battle.over:
 		if g.battle.tick % 20 == 0:
 			g._bot_move()
 		g._battle_step()
+	var r5: Dictionary = g.battle.result()
+	var c5: Array = r5["captured"]
+	_check((r5["reason"] == "goals") == (c5.has(fh5) and c5.size() >= g.FTUE_PEACE1_HEXES),
+		"FTUE war 1 ends early only on its targets (%s, %s at tick %d)" % [r5["reason"], str(c5), g.battle.tick])
 	g._end_offensive()
 	_check(g.ftue == 5 or g.ftue == 2, "FTUE after the offensive (step %d)" % g.ftue)
 	if g.ftue == 5:
 		g.ui.close_modal()
 		g._open_peace()
 		_check(g.ftue == 6, "FTUE peace step")
+		# the parchment takes the war's whole haul; the points left over say they become the Barons' opinion
+		var pk: Array = []
+		var spent := 0.0
+		var land_v := 0
+		for d in g._demands:
+			if g._chosen.has(d["id"]):
+				pk.append_array(d["hexes"])
+				spent += float(d["cost"])
+				for h in d["hexes"]:
+					land_v += int(g.sim.cells[h]["value"])
+		var all_in := true
+		for h in pk:
+			all_in = all_in and c5.has(h)
+		var sc5: float = War.war_score(g.sim, g.war)["score"]
+		var bud: Node = g.ui._modal.find_child("budget", true, false)
+		var cap5 := String((bud.get_node("label") as Label).text) if bud != null else ""
+		var rest5 := Kit.fmt_dec(sc5 - spent, 1).trim_suffix(",0").trim_suffix(".0")
+		_check(all_in and pk.size() == mini(c5.size(), g.FTUE_PEACE1_HEXES) and cap5 == g.tr("peace.budget_rest") % [Kit.fmt_dec(spent, 1), Kit.fmt_dec(sc5, 1), rest5],
+			"the first treaty takes the haul (3 hexes at most), the rest of the points go to opinion (%s of %s; «%s»)" % [str(pk), str(c5), cap5])
+		var op5: float = g._opinion_of(MapGen.BARONS)
+		var pl5: int = g.plunder_level
 		g._sign_peace()
+		var want5: float = -2.0 * land_v + Types.round1(sc5 - spent) + float(g.PLUNDER_OPINION[pl5])
+		_check(absf(g._opinion_of(MapGen.BARONS) - op5 - want5) < 0.2,
+			"the points left over become the Barons' opinion, +1 a point (%.1f → %.1f, want %+.1f)" % [op5, g._opinion_of(MapGen.BARONS), want5])
 		_check(g.ftue == 0, "FTUE coach hidden during the ceremony")
 		for i in 80:
 			g._step_ceremony(0.1)
@@ -471,6 +520,8 @@ func _run() -> void:
 		g.time_offset += g.RAID_HOLD_SEC
 		g._econ_tick()
 		# war 2 with the Hamlets: encirclement card, then spare or plunder (canon §14.3, 6:00–9:30)
+		# war 1 ended on its targets, far from the Hamlets: they come up to our border (ftue.10's provocation)
+		_check(g.ftue != 10 or g._hamlets_target() >= 0, "FTUE war 2 has a front with the Hamlets (goal %d)" % g._hamlets_target())
 		if g.ftue == 10:
 			g.truce = {}
 			g._ftue_tick(0.1)
@@ -480,10 +531,21 @@ func _run() -> void:
 			g._on_action("offensive")
 			_check(g.ftue == 12 and g.battle.duration_ticks() == 600, "FTUE war 2 offensive (encircle hint)")
 			_check(g._hand() == ["attack", "encircle", "defense"], "FTUE war 2 hand brings «Котёл» in")
+			var g2h: int = g.flag_hex
+			var g2f := false
+			for a2 in g.armies:
+				g2f = g2f or (int(a2["side"]) == MapGen.HAMLETS and int(a2["hex"]) == g2h)
+			_check(g2h >= 0 and g.battle.garrison[g2h] == 0 and not g2f, "FTUE war 2: its goal holds no garrison and no army (08 F27)")
 			while g.battle != null and not g.battle.over:
 				if g.battle.tick % 20 == 0:
 					g._bot_move()
 				g._battle_step()
+			var r52: Dictionary = g.battle.result()
+			var c52: Array = r52["captured"]
+			var core52 := MapGen.core_of(g.sim, MapGen.HAMLETS)
+			var land52 := c52.filter(func(h): return not core52.has(int(h)))
+			_check((r52["reason"] == "goals") == (land52.size() >= g.FTUE_PEACE2_HEXES and c52.has(g2h)),
+				"FTUE war 2 ends once its goal and %d hexes of land (no core) are taken (%s, %s)" % [g.FTUE_PEACE2_HEXES, r52["reason"], str(c52)])
 			g._end_offensive()
 			if g.ftue == 14:
 				g.ui.close_modal()
@@ -495,6 +557,7 @@ func _run() -> void:
 					g._step_ceremony(0.1)
 				g._end_ceremony()
 				_check(g.ui.has_modal() and g.ui._modal.find_child("ok", true, false) != null, "the tutorial closes on Bram's card")
+				print("NOTE  the tutorial ends at %d / %d hexes" % [g._player_hexes(), g._chapter_goal()])
 				g.ui.close_modal()
 		else:
 			print("NOTE  FTUE war 2 skipped (ftue=%d)" % g.ftue)

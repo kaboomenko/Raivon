@@ -93,6 +93,10 @@ var pacts := {}            # state -> non-aggression pact end (canon §10.8, 06 
 var _ftue_next := 0  # step to resume after the peace ceremony
 var _raid := {}  # FTUE marauder raid: {hex, at, from}
 const FTUE_PEACE1_HEXES := 3  # the first treaty's land (canon §14.3: «+3 гекса (стало 10)»)
+const FTUE_PEACE2_HEXES := 4  # war 2's land (canon §14.3: «+4 гекса», «Глава I: 14/20»)
+const FTUE_END_BEAT := 15  # ticks (1.5 s): a tutorial war ends this long after its last target falls (smoke, «Оккупировано»)
+var _ftue_end_tick := -1  # the tick a tutorial offensive ends on, once its targets are taken (-1: not yet)
+var _goal_tag := -1  # the hex whose goal chip a tutorial offensive shows (-1: none)
 const RAID_SEC := 12  # the FTUE raid comes this long after the fence is ordered (the coach counts it down)
 const RAID_HOLD_SEC := 3  # after it breaks on the fence the camera stays there this long before war 2's step
 var _raid_hold := 0  # unix time until which the broken raid holds the lesson (0: none)
@@ -816,9 +820,17 @@ func _can_expand() -> bool:
 ## The chapter's goal reached by any hex gain — a settlement, a treaty, a swap, a separate peace (07 §3.1 `goal_met`):
 ## once a chapter (the flag is saved with the stats) a toast, a fanfare and a volley over the capital; on the map with
 ## no war the selection is let go, so the big button says «Расширить мир» at once. The «Мир» tab's badge follows
-## `_can_expand` (_econ_tick).
+## `_can_expand` (_econ_tick). Reached at war, the world cannot expand yet (07 §3.1: «кольцо золотое, кнопка серая»,
+## E1): one quiet line says the war stands in the way, the World card's button stays grey, and the signal comes when
+## the war ends (_end_ceremony, else _econ_tick back on the map).
 func _check_chapter_goal() -> void:
 	if chapter_done or int(stats.get("goal_signal", 0)) >= chapter or _player_hexes() < _chapter_goal():
+		return
+	if not war.is_empty():
+		if int(stats.get("goal_war_signal", 0)) < chapter:
+			stats["goal_war_signal"] = chapter
+			ui.toast(tr("toast.chapter_goal_war") % _chapter_roman(), "globe")
+			_autosave()
 		return
 	stats["goal_signal"] = chapter
 	ui.toast(tr("toast.chapter_goal") % _chapter_roman(), "globe")
@@ -3016,16 +3028,27 @@ func _start_offensive() -> void:
 		opts["ai_energy_mult"] = 0
 		opts["ticks"] = FTUE_OFFENSIVE_SEC * Battle.TICKS_PER_SEC
 		ftue = 12 if ftue >= 10 else 3
+		if ftue == 12 and flag_hex >= 0:
+			_ftue_clear_goal(enemy)
 	opts.merge(_apply_commanders())
 	ui.cost_discount = {"landing": int(opts.get("landing_discount", 0))}
 	battle = Battle.new(sim, armies, opts)
-	if ftue == 3 and flag_hex >= 0:
+	_ftue_end_tick = -1
+	if (ftue == 3 or ftue == 12) and flag_hex >= 0:
 		# war 1's flag can be taken (canon §14.3: the first offensive ends on ★★★): its garrison and fort stand down —
-		# the army on it still fights, two armies flanking it win (step 3 brings the second one up, step 4 strikes)
+		# the army on it still fights, two armies flanking it win (step 3 brings the second one up, step 4 strikes).
+		# War 2's goal the same (08 §8.3 F27: «сценарный перевес F ≥1,5»), its army pulled back (_ftue_clear_goal):
+		# its front may be one hex wide, held by a single army
 		battle.garrison[flag_hex] = 0
 		if int(sim.cells[flag_hex]["fort"]) > 0:
 			sim.cells[flag_hex]["fort"] = 0
 			map_view.refresh_hex(flag_hex)
+	if (ftue == 3 or ftue == 12) and flag_hex >= 0:
+		# the coach names the goal (ftue.3/ftue.4/ftue.13): a chip on it says which hex that is — every hex of theirs
+		# flies the same banners
+		_goal_tag = flag_hex
+		var named := String(sim.cells[flag_hex]["name"]) != ""
+		map_view.hex_label(flag_hex, _cell_name(flag_hex) if named else "", MapView.C_WAR, "target")
 	ai = BattleAI.new(enemy)
 	ai.airstrike = ftue == 0 and _state_dl(enemy) >= AIRSTRIKE_DL and String(sim.states[enemy]["archetype"]) in AIR_ARCHETYPES
 	_show_hand()
@@ -3045,6 +3068,32 @@ func _start_offensive() -> void:
 	sfx.play("warn")
 	if ftue == 0:
 		ui.toast(tr("toast.to_battle"))
+
+
+## Tutorial war 2 (08 §8.3 F27): the enemy army standing on the goal falls back to the enemy hex farthest from our
+## land, so the goal holds no army when the offensive starts.
+func _ftue_clear_goal(enemy: int) -> void:
+	var held := {}
+	for a in armies:
+		if int(a["side"]) == enemy:
+			held[int(a["hex"])] = true
+	for a in armies:
+		if int(a["side"]) != enemy or int(a["hex"]) != flag_hex:
+			continue
+		var best := -1
+		var best_d := -1
+		for c in sim.cells:
+			var id: int = c["id"]
+			if int(c["controller"]) != enemy or held.has(id) or not Types.is_passable(c) or _touches_player(id):
+				continue
+			var d := _hex_dist(id, flag_hex)
+			if d > best_d:
+				best_d = d
+				best = id
+		if best >= 0:
+			held.erase(flag_hex)
+			held[best] = true
+			a["hex"] = best
 
 
 ## The war cards in hand: the base five, plus «Союзный корпус» while an ally fights in this war (canon §9.9).
@@ -3121,8 +3170,8 @@ func _show_hand() -> void:
 	if tz != "" and not row.has(tz):
 		row = row + [tz]
 		locked[tz] = int(CARD_DL.get(tz, 1))
+	ui.set_locked(locked)  # first: the row lays the teaser out as a narrow stub
 	ui.set_hand(row)
-	ui.set_locked(locked)
 
 
 func _hand() -> Array:
@@ -3172,6 +3221,31 @@ func _battle_step() -> void:
 	while _ev_i < battle.events.size():
 		_handle_event(battle.events[_ev_i])
 		_ev_i += 1
+	_ftue_war_done()
+
+
+## A tutorial offensive ends early once its targets are taken (08 §8.3 F09: «все 3 цели взяты → досрочно», ★★★): the
+## flag held and the land its treaty takes in hand — FTUE_PEACE1_HEXES in war 1, FTUE_PEACE2_HEXES in war 2 — so a
+## war's haul and its parchment agree (canon §14.3: «взяты 3 гекса… +3 гекса», «+4 гекса · 14/20»), however fast
+## the player goes on attacking. A short beat after the last capture lets its smoke and «Оккупировано» play; a slow
+## player gets the whole minute.
+func _ftue_war_done() -> void:
+	if battle == null or battle.over or flag_hex < 0:
+		return
+	var need := FTUE_PEACE1_HEXES if ftue in [3, 4] else (FTUE_PEACE2_HEXES if ftue in [12, 13] else 0)
+	if need <= 0:
+		return
+	if _ftue_end_tick < 0:
+		if int(sim.cells[flag_hex]["controller"]) != Types.PLAYER:
+			return
+		var core := MapGen.core_of(sim, battle.defender())  # the core is never ceded (decision 19): not the treaty's land
+		var land := 0
+		for h in battle.result()["captured"]:
+			land += int(not core.has(int(h)))
+		if land >= need:
+			_ftue_end_tick = battle.tick + FTUE_END_BEAT
+	elif battle.tick >= _ftue_end_tick:
+		battle._finish("goals")
 
 
 func _handle_event(ev: Dictionary) -> void:
@@ -3191,6 +3265,9 @@ func _handle_event(ev: Dictionary) -> void:
 			if mine and not war.is_empty() and ev["hex"] == war["goal"]:
 				_stat("goals")
 				ui.toast(tr("toast.goal_taken"), "target")
+			if mine and int(ev["hex"]) == _goal_tag:  # the tutorial's goal chip: taken, it goes
+				map_view.hex_label(_goal_tag, "")
+				_goal_tag = -1
 		"tower_hit":
 			map_view.tower_volley(int(ev["hex"]), int(ev["target"]))
 		"missile":
@@ -3326,6 +3403,9 @@ func _end_camp_fight() -> void:
 
 func _end_offensive() -> void:
 	ui.drop_toast(tr("toast.to_battle"))  # the battle's how-to is stale now: never over the result window
+	if _goal_tag >= 0:
+		map_view.hex_label(_goal_tag, "")
+		_goal_tag = -1
 	var res: Dictionary = battle.result()
 	var stars := War.offensive_stars(res["captured"], flag_hex, res["routed_player_armies"])
 	sfx.play("fanfare" if stars > 0 else "lost")
@@ -3358,11 +3438,11 @@ func _end_offensive() -> void:
 	if ftue == 0:
 		_schedule_counter()
 	_set_mode(Mode.RESULT)
-	var reason: String = tr(String({"retreat": "result.retreat", "wiped": "result.wiped"}.get(res["reason"], "result.timeout")))
+	var reason: String = tr(String({"retreat": "result.retreat", "wiped": "result.wiped", "goals": "result.goals"}.get(res["reason"], "result.timeout")))
 	ui.show_result(stars, res["captured"].size(), res["lost"].size(), ws["score"], ws["control"], reason,
 		func(): ui.close_modal(); _set_mode(Mode.WAR),
 		func(): ui.close_modal(); _open_peace(),
-		String({"retreat": "white_flag", "wiped": "swords"}.get(res["reason"], "hourglass")))
+		String({"retreat": "white_flag", "wiped": "swords", "goals": "target"}.get(res["reason"], "hourglass")))
 
 
 func _order_filter(screen: Vector2) -> bool:
@@ -3677,6 +3757,11 @@ func _sign_peace() -> void:
 		for h in d["hexes"]:
 			annexed_value += int(sim.cells[h]["value"])
 	_opinion_add(enemy, -2.0 * annexed_value)
+	if _last_score > 0.0:  # the points left over turn into the loser's opinion, +1 a point (canon §10.1)
+		var spent := 0.0
+		for d in chosen:
+			spent += float(d["cost"])
+		_opinion_add(enemy, maxf(0.0, Types.round1(_last_score - spent)))
 	_stat("peaces")
 	if _last_score > 0.0:
 		bp.gain("peace", now_s())
@@ -4810,7 +4895,7 @@ func _star_progress(st: Array) -> int:
 
 func _world_items() -> Array:
 	var items: Array = [{"kind": "chapter", "hexes": _player_hexes(), "goal": _chapter_goal(), "done": chapter_done,
-		"can_expand": _can_expand()}]
+		"can_expand": _can_expand(), "goal_met": not chapter_done and _player_hexes() >= _chapter_goal()}]
 	if _orders_open():
 		bp.refresh(now_s())
 		items.append({"kind": "star", "id": "pass", "icon": "medal", "open": true, "claimed": false,
@@ -4875,7 +4960,8 @@ func _on_world_action(id: String) -> void:
 			if _chapter_stars(ch).all(func(s2: Array) -> bool: return stars_claimed.has(s2[0])):
 				# every star of that chapter (07 §3.3): its cosmetic is not in the catalog yet (07 §16.1 Q2) — named, and
 				# the claim stays on record in stars_claimed for the update that brings it
-				_post(L.pack("inbox.all_stars.title", [_chapter_roman(ch)]), L.pack("inbox.all_stars.text", ["chapter.reward.%d" % ch]))
+				# (the bare inbox.all_stars.* keys stay chapter I's texts: letters saved by v0.9.0 hold them without args)
+				_post(L.pack("inbox.chapter_stars.title", [_chapter_roman(ch)]), L.pack("inbox.chapter_stars.text", ["chapter.reward.%d" % ch]))
 				ui.toast(tr("toast.all_stars") % [_chapter_roman(ch), tr(_chapter_name_key(ch))], "trophy")
 	_econ_tick()
 	_autosave()
@@ -5317,8 +5403,8 @@ func _complete_chapter() -> void:
 	ui.toast(_grant_legacy(chapter))
 	map_view.fireworks(map_view.cell_world(sim.states[Types.PLAYER]["capital_id"]), 5)
 	sfx.play("fanfare")
-	_post(L.pack("inbox.chapter_done.title", [_chapter_roman(), _chapter_name_key()]),
-		L.pack("inbox.chapter_done.text", ["legacy.what.%d" % chapter, _chapter_roman(chapter + 1)]))
+	_post(L.pack("inbox.chapter_end.title", [_chapter_roman(), _chapter_name_key()]),  # (inbox.chapter_done.*: v0.9.0 letters)
+		L.pack("inbox.chapter_end.text", ["legacy.what.%d" % chapter, _chapter_roman(chapter + 1)]))
 	ui.toast(tr("toast.chapter_done") % [_chapter_roman(), tr(_chapter_name_key()), _chapter_roman(chapter + 1)], "globe")
 	_autosave()
 
@@ -6678,7 +6764,13 @@ func _ai_tick(now: int) -> void:
 		map_view.strike_arrow(int(_raid["from"]), int(_raid["hex"]), GameUI.fmt_time(int(_raid["at"]) - now))
 	if not _raid.is_empty() and now >= int(_raid["at"]) and mode in [Mode.MAP, Mode.WAR]:
 		var h: int = _raid["hex"]
+		var src := int(_raid.get("from", -1))
 		_raid = {}
+		var band: Dictionary = camps.at(src) if src >= 0 else {}
+		if not band.is_empty():  # the band that broke on the fence was the camp's (F24): its tents stand empty
+			camps.active.erase(band)
+			camps.respawn.append(now + Camps.RESPAWN_SEC)
+			map_view.set_camps(camps.active)
 		map_view.strike_arrow(-1, -1, "")
 		rig.focus(map_view.cell_world(h))  # the camera goes to the fence as the raid hits it
 		map_view.burst(h, Color(1.0, 0.6, 0.3), true)
@@ -6687,15 +6779,16 @@ func _ai_tick(now: int) -> void:
 		bp.gain("defense", now_s())
 		sfx.play("repelled")
 		_post("inbox.raid.title", L.pack("inbox.raid.text", [_cell_key(h)]))
-		ui.toast(tr("toast.raid_repelled"))
+		if _ftue_next != 10:  # the tutorial's raid: Bram's line says it (ftue.raid_done), a queued toast would come late
+			ui.toast(tr("toast.raid_repelled"))
 		if _ftue_next == 10:  # the lesson holds on the fence a moment before war 2's step takes the camera away
 			_ftue_next = 0
 			_raid_hex = h
 			_raid_hold = now + RAID_HOLD_SEC
 	if _raid_hold > 0 and now >= _raid_hold and mode in [Mode.MAP, Mode.WAR]:
 		_raid_hold = 0
-		ftue = 10 if _hamlets_target() >= 0 else 0
-		if ftue == 0:  # no border with the Hamlets for war 2: the tour closes here, on its card
+		ftue = 10 if _hamlets_front() >= 0 else 0  # war 2's front: the Hamlets come up to our border if need be
+		if ftue == 0:  # no way to the Hamlets at all for war 2: the tour closes here, on its card
 			_tutorial_card()
 	if ultimatum_at > 0 and now >= ultimatum_at and ultimatum.is_empty() and war.is_empty() and mode == Mode.MAP and _truce_left(MapGen.BARONS) == 0:
 		_issue_ultimatum(now)
@@ -7115,6 +7208,73 @@ func _hamlets_target() -> int:
 	return goals[0] if goals.size() > 0 else -1
 
 
+## War 2's front (canon §14.3, 6:00: «Вольные Хутора заняли … у нашей границы»). War 1 ends once its targets fall, so
+## the realm may not touch the Free Hamlets yet: then they settle the shortest strip of wild land up to our border —
+## the provocation ftue.10 names, and its hex beside our border becomes war 2's goal. The strip keeps off camps,
+## deposits and hexes we or the Barons are settling (one the Hamlets settle is simply theirs sooner); at equal length
+## the hex touching most of our land wins (a wider front: war 2's armies stand there), then a mine, then value.
+## Returns war 2's goal, or -1 when there is none.
+func _hamlets_front() -> int:
+	var goal := _hamlets_target()
+	if goal >= 0 or not war.is_empty() or _truce_left(MapGen.HAMLETS) > 0:
+		return goal
+	var free := func(id: int) -> bool:
+		var c: Dictionary = sim.cells[id]
+		return int(c["owner"]) == Types.NOBODY and int(c["controller"]) == Types.NOBODY and Types.is_passable(c) \
+			and camps.at(id).is_empty() and deposits.at(id).is_empty() and not colonizing.has(id) \
+			and _ai_claimed(id) in [-1, MapGen.HAMLETS]  # their own settling there just ends sooner
+	var seeds: Array = []
+	for c in sim.cells:
+		if free.call(int(c["id"])) and _touches_player(int(c["id"])):
+			seeds.append(c)
+	var front := func(id: int) -> int:  # how many of our hexes it touches: our armies stand there in war 2
+		var n := 0
+		for x in sim.neighbors[id]:
+			n += int(x >= 0 and int(sim.cells[x]["owner"]) == Types.PLAYER)
+		return n
+	seeds.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var fa: int = front.call(int(a["id"]))
+		var fb: int = front.call(int(b["id"]))
+		if fa != fb:
+			return fa > fb
+		var ma := int(String(a["kind"]) == "mine")
+		var mb := int(String(b["kind"]) == "mine")
+		if ma != mb:
+			return ma > mb
+		if int(a["value"]) != int(b["value"]):
+			return int(a["value"]) > int(b["value"])
+		return int(a["id"]) < int(b["id"]))
+	var prev := {}  # wild hex -> the wild hex before it on the way from our border (-1: it touches the realm)
+	var q: Array = []
+	for c in seeds:
+		prev[int(c["id"])] = -1
+		q.append(int(c["id"]))
+	var end := -1
+	while not q.is_empty() and end < 0:
+		var h: int = q.pop_front()
+		if _touches_owner(h, MapGen.HAMLETS):
+			end = h
+			break
+		for n in sim.neighbors[h]:
+			if n >= 0 and not prev.has(n) and free.call(n):
+				prev[n] = h
+				q.append(n)
+	if end < 0:
+		return -1
+	var h := end
+	while h >= 0:  # from the Hamlets' side to ours: their green spreads up to the border
+		if _ai_claimed(h) == MapGen.HAMLETS:
+			ai_colonizing.erase(MapGen.HAMLETS)
+			map_view.hex_label(h, "")
+		sim.cells[h]["owner"] = MapGen.HAMLETS
+		sim.cells[h]["controller"] = MapGen.HAMLETS
+		map_view.refresh_hex(h)
+		map_view.burst(h, map_view.state_color(MapGen.HAMLETS), false)
+		h = int(prev[h])
+	map_view.mark_dirty()
+	return _hamlets_target()
+
+
 ## Step 3's ghost drag in war 1 (canon §14.3: the first offensive ends on ★★★, the flag taken): towards the flag — an
 ## army that does not touch the flag yet onto a winnable hex beside it, so that two armies flank the flag for step 4's
 ## «Атака»; else any army onto a hex beside the flag; else (no flag left to take) the easiest win. [from, to] or [].
@@ -7269,7 +7429,7 @@ func _ftue_tick(delta: float) -> void:
 			lift = [hud.tool_badge_rect("fort")]
 			cm = "ring"  # a border hex first, then the fort: both stay in reach
 		10:
-			var ht := _hamlets_target()
+			var ht := _hamlets_front()
 			if ht < 0 and mode == Mode.MAP:
 				ftue = 0
 				return
@@ -7297,10 +7457,14 @@ func _ftue_tick(delta: float) -> void:
 			var fr: Rect2 = ui.modal_rect()  # … and the whole treaty stays in reach: the choice, then «Подписать мир»
 			reveal = fr.grow_individual(0, 42.0, 0, 0) if fr.size.x > 0.0 else Rect2()
 	var text := tr(line)
-	if ftue == 10:  # war 2's goal by its name: «Вольные Хутора заняли «Хуторские нивы»…» (not always a mine)
-		text = text % _cell_name(maxi(0, _hamlets_target()))
-	elif ftue == 13:
-		text = text % _cell_name(int(war.get("goal", 0)))
+	# the wars' goals by their names (war 1: «Цель — «Ржавый узел»…», war 2: «…заняли «Хуторские нивы»», not always a
+	# mine); an unnamed hex has no name worth saying («Равнина»), so its line goes without one
+	var goal := flag_hex if ftue in [3, 4] else (_hamlets_target() if ftue == 10 else (int(war.get("goal", -1)) if ftue == 13 else -1))
+	if ftue in [3, 4, 10, 13]:
+		if goal >= 0 and String(sim.cells[goal]["name"]) != "":
+			text = text % _cell_name(goal)
+		else:
+			text = tr(line + "_any")
 	if _ftue_shown != ftue or _ftue_line != text:
 		if _ftue_shown != ftue:
 			_ftue_t = 0.0
