@@ -500,177 +500,131 @@ def lookout_l1(wood, plank, hide, torch_wood):
     torch(0.078, -0.14, H + 0.09, torch_wood)
 
 
+CAMP_RED = "#B8382C"  # the camp's war paint: a warm red that reads at the world zoom (RAG_RED went brown there)
+CAMP_EARTH = "#B39470"  # trampled earth, two steps lighter than the old #86684a mud (a dark brown disc on the map)
+
+
 def raider_camp():
-    """Marauder camp (reference frame 1, the enemy side: red war banners with a white beast's head, fires and
-    smoke): a sharpened-log palisade with a lashed gate frame, skulls and torches; hide tents painted with dark and
-    red bands, the chief's tent under a red awning; a camp fire with a tripod and cauldron (smoke marker for the
-    game); the red wolf banner; a raised lookout with a torch; a hide on a stretching frame, a woodpile, a weapon
-    rack, a pile of loot, trampled paths and grass at the foot of the stakes."""
-    dirt = tex("plaster", "#86684a", 1.4)
-    ev.pad(0.79, dirt, 0.006, 16, 0.05, 7)
-    ev.pad(0.42, tex("plaster", "#6f553c", 1.6), 0.01, 12, 0.12, 8)  # trampled centre
-    mud = flat("mud_path", "#674c36", 0.95)
-    flat_poly([(-0.12, -0.755), (-0.02, -0.74), (0.11, -0.755), (0.1, -0.62), (0.07, -0.5), (0.12, -0.36), (0.05, -0.27),
-               (-0.04, -0.3), (-0.07, -0.42), (-0.05, -0.56), (-0.1, -0.68)], 0.012, mud)  # worn from the gate in
-    flat_poly([(0.1, 0.0), (0.17, 0.06), (0.21, 0.15), (0.15, 0.19), (0.1, 0.12), (0.04, 0.06)], 0.012, mud)
-    lawn = flat("camp_lawn", "#5f7432", 0.95)  # tufty grass left where nobody walks, by the stakes
-    for (cx_, cy2, r_, n_, sd) in ((-0.56, 0.3, 0.1, 7, 1), (0.08, 0.64, 0.09, 6, 2), (-0.62, -0.32, 0.08, 6, 3),
-                                   (0.6, -0.34, 0.08, 6, 4), (-0.2, 0.62, 0.07, 6, 5)):
-        flat_poly(ev.ngon(r_, n_, 0.3, 1.3, 0.8, 0.25, sd), 0.0, lawn).location = (cx_, cy2, 0.009)
-    # ---- palisade ring with a gap at the front (−Y)
-    wd = tex("wood", "#6e4c30", 2.0)
-    wd2 = tex("wood", "#5a3e27", 2.0)
-    tip = flat("stake_tip", "#c9a471", 0.85)
+    """Marauder camp (reference frame 1, the enemy side: red war banners with a white beast's head, fires and smoke),
+    art pass 5 (A1) in «Raivon Soft» (§6.1 rule 5, «крупнее и меньше»; §6.2: the camp's stakes are one of the few
+    places for triangles, with rounded tips). The old camp filled the hex with a dark mud disc (#86684a) inside a ring
+    of 60 thin stakes and a scatter of small props — on the map it read as a brown wooden bowl. Now: a smaller patch
+    of lighter trampled earth with the hex's grass round it; a broken palisade of fewer, fatter stakes (34, r 0.036,
+    leaning out, two gaps besides the gate) on lashed rails; three big hide tents in cream with bold red and brown
+    bands (the chief's ridge tent under a red awning with a skull); a big camp fire in a stone ring with a tripod and
+    cauldron (smoke marker for the game); the red wolf banner, taller; the raised lookout; a loot pile (an open chest
+    of gold, crates, a barrel, sacks) and a weapon rack — few props, each big enough to read."""
+    ev.pad(0.62, tex("plaster", CAMP_EARTH, 1.4), 0.006, 14, 0.14, 7)
+    ev.pad(0.3, tex("plaster", "#A28462", 1.6), 0.011, 10, 0.16, 8)  # the beaten ground round the fire
+    # ---- broken palisade: fat sharpened logs on a ring, the gate at the front (−Y), two gaps
+    wd = tex("wood", "#8A6440", 2.0)
+    wd2 = tex("wood", "#755236", 2.0)
+    tip = flat("stake_tip", "#E0C290", 0.85)
     rnd = random.Random(11)
-    R = 0.74
-    n = 60
-    gap = math.radians(24)
+    R, n = 0.68, 34
+    gate, gaps = math.radians(22), (math.radians(172), math.radians(12))
+    sections, cur = [], []
     for k in range(n):
         a = -math.pi / 2 + (k + 0.5) * math.tau / n
-        if abs(math.atan2(math.sin(a + math.pi / 2), math.cos(a + math.pi / 2))) < gap:
+        rel = math.atan2(math.sin(a + math.pi / 2), math.cos(a + math.pi / 2))
+        if abs(rel) < gate or any(abs(math.atan2(math.sin(a - g), math.cos(a - g))) < math.radians(10) for g in gaps):
+            if cur:
+                sections.append(cur)
+            cur = []
             continue
-        if rnd.random() < 0.06:  # a missing log here and there
-            continue
-        rr = R + rnd.uniform(-0.012, 0.012)
+        rr = R + rnd.uniform(-0.015, 0.015)
         x, y = math.cos(a) * rr, math.sin(a) * rr
-        h = rnd.uniform(0.16, 0.24)
-        lean = 0.03 + rnd.uniform(-0.01, 0.015)
-        stake(x, y, h, 0.024, (math.cos(a) * lean + rnd.uniform(-0.01, 0.01), math.sin(a) * lean), wd if k % 3 else wd2,
-              tip)
-    # lashed cross rails in sections (inner side)
-    rail = tex("wood", "#7d5a38", 3.0)
-    sec = math.tau / 9
-    a = -math.pi / 2 + gap + 0.03
-    while a + sec * 0.6 < math.tau - math.pi / 2 - gap:
-        a1 = min(a + sec, math.tau - math.pi / 2 - gap - 0.03)
-        rr = R - 0.03
-        tube((math.cos(a) * rr, math.sin(a) * rr, 0.1 + rnd.uniform(-0.01, 0.01)),
-             (math.cos(a1) * rr, math.sin(a1) * rr, 0.11 + rnd.uniform(-0.01, 0.01)), 0.01, rail, n=4)
-        a = a1 + 0.02
-    # grass growing at the foot of the stakes, inside and out
-    grass = flat("camp_grass", "#5d7a2e", 0.9)
-    grass2 = flat("camp_grass2", "#8a9a40", 0.9)
-    for k in range(14):
-        a = -math.pi / 2 + gap + 0.15 + k * (math.tau - 2 * gap - 0.3) / 13
-        rr = R - 0.07 + rnd.uniform(-0.012, 0.012)
-        cx_, cy2 = math.cos(a) * rr, math.sin(a) * rr
-        for j in range(4):
-            b = j * math.tau / 4 + k
-            spike((cx_ + math.cos(b) * 0.014, cy2 + math.sin(b) * 0.014, 0.0),
-                  (cx_ + math.cos(b) * 0.04, cy2 + math.sin(b) * 0.04, 0.06 + 0.02 * ((j + k) % 3)), 0.011,
-                  grass if (j + k) % 2 else grass2, 3)
-    # gate: two tall posts, a lashed lintel log with a skull and bones, a torch on each post
+        # low at the front, tall at the back: the camera looks over the front run into the camp
+        front = max(0.0, -math.sin(a))
+        h = rnd.uniform(0.2, 0.27) - 0.09 * front
+        lean = 0.04 + rnd.uniform(-0.01, 0.015)
+        stake(x, y, h, 0.036, (math.cos(a) * lean, math.sin(a) * lean), wd if k % 3 else wd2, tip, n=6)
+        cur.append((x, y))
+    if cur:
+        sections.append(cur)
+    rail = tex("wood", "#8a6440", 3.0)
+    for sec in sections:  # one lashed rail along the inner side of each run of stakes
+        if len(sec) < 2:
+            continue
+        for (x0, y0), (x1, y1) in zip(sec[:-1], sec[1:]):
+            z0_, z1_ = 0.11 - 0.05 * max(0.0, -y0 / R), 0.115 - 0.05 * max(0.0, -y1 / R)
+            tube((x0 * 0.95, y0 * 0.95, z0_), (x1 * 0.95, y1 * 0.95, z1_), 0.014, rail, n=5)
+    # the gate: two tall posts, a lashed lintel with a horned skull, a torch on each post
     gp = []
     for sx in (-1, 1):
-        a = -math.pi / 2 + sx * (gap + 0.04)
+        a = -math.pi / 2 + sx * (gate + 0.05)
         x, y = math.cos(a) * R, math.sin(a) * R
-        stake(x, y, 0.36, 0.032, (0.0, -0.01), wd2, tip, n=6)
+        stake(x, y, 0.4, 0.045, (0.0, -0.01), wd2, tip, n=6)
         gp.append((x, y - 0.01))
-        torch(x, y - 0.045, 0.3, wd2)
-        tube((x, y - 0.01, 0.24), (x, y - 0.045, 0.24), 0.008, wd2, n=4)  # bracket
-    tube((gp[0][0] - 0.03, gp[0][1], 0.31), (gp[1][0] + 0.03, gp[1][1], 0.32), 0.02, wd2, n=6)
-    rope = flat("lash_rope", "#b49a6a", 0.8)
-    for (x, y) in gp:
-        tube((x, y, 0.29), (x, y, 0.34), 0.024, rope, n=6)
-    skull(0.0, gp[0][1] - 0.012, 0.255, 1.15)
-    tube((0.0, gp[0][1] - 0.004, 0.31), (0.0, gp[0][1] - 0.008, 0.285), 0.003, rope, n=3)
-    # ---- tents: hide and canvas with painted bands, patches; the chief's tent with a red awning
-    pA = tex("plaster", "#b8a684", 2.5)
-    pB = tex("plaster", "#6c6257", 2.5)
-    pC = tex("plaster", "#8b7a62", 2.5)
-    band_d = flat("tent_band_d", "#3e2f24", 0.9)
-    band_r = flat("tent_band_r", "#8a2a20", 0.85)
-    build_at(lambda: cone_tent(0.22, 0.4, tex("plaster", "#a38a66", 1.8), (pA, pB, pC, pA), 3,
-                               bands=((0.12, 0.2, band_d), (0.46, 0.53, band_r))), -0.3, 0.32, 0.0)
+        torch(x, y - 0.06, 0.34, wd2)
+        tube((x, y - 0.01, 0.27), (x, y - 0.06, 0.27), 0.01, wd2, n=4)
+    tube((gp[0][0] - 0.04, gp[0][1], 0.36), (gp[1][0] + 0.04, gp[1][1], 0.37), 0.026, wd2, n=6)
+    skull(0.0, gp[0][1] - 0.02, 0.3, 1.5)
+    # ---- three big hide tents: cream hide, bold red and brown bands, the chief's under a red awning
+    hide_a = tex("plaster", "#CDB78C", 2.5)
+    hide_b = tex("plaster", "#B39C76", 2.5)
+    band_d = flat("tent_band_d", "#5C4232", 0.9)
+    band_r = flat("tent_band_r", CAMP_RED, 0.85)
+    build_at(lambda: cone_tent(0.22, 0.44, tex("plaster", "#C4AC80", 1.8), (hide_b, hide_a, hide_b), 3,
+                               bands=((0.1, 0.22, band_d), (0.42, 0.56, band_r))), 0.3, 0.3, 0.3)
+    build_at(lambda: cone_tent(0.18, 0.36, tex("plaster", "#BCA47A", 1.8), (hide_a, hide_b), 4,
+                               bands=((0.12, 0.24, band_r), (0.5, 0.6, band_d))), -0.45, -0.18, -0.6)
 
     def chief_tent():
-        L_, W_, h_ = 0.32, 0.27, 0.21
-        ridge_tent(L_, W_, h_, tex("plaster", "#8f7a5a", 1.8), (pA, pB, pA, pC), seed=5,
-                   stripes=((-0.3, 0.035, band_d), (0.3, 0.035, band_d), (0.0, 0.03, band_r)))
-        awn = flat("awning", RAG_RED, 0.85)
-        y0, y1 = -L_ / 2, -L_ / 2 - 0.13
+        L_, W_, h_ = 0.38, 0.32, 0.26
+        ridge_tent(L_, W_, h_, tex("plaster", "#D2BC90", 1.8), (hide_b, hide_a), seed=5,
+                   stripes=((-0.32, 0.04, band_d), (0.32, 0.04, band_d), (0.0, 0.08, band_r)))
+        awn = flat("awning", CAMP_RED, 0.85)
+        y0, y1 = -L_ / 2, -L_ / 2 - 0.15
         for sx in (-1, 1):
-            tube((sx * 0.1, y1, -0.01), (sx * 0.1, y1, h_ * 0.7), 0.008, wd2, n=4)
-        dag = [(-0.11, y1, h_ * 0.69)] + [(-0.11 + 0.22 * k / 6, y1 - 0.004, h_ * (0.69 if k % 2 == 0 else 0.6))
-                                          for k in range(1, 6)] + [(0.11, y1, h_ * 0.69)]
-        mesh_obj([(0.0, y0 + 0.005, h_ * 0.86)] + dag, [tuple(range(len(dag) + 1))], awn)
-        skull(0.0, y0 - 0.012, h_ * 0.78, 0.9)
-    build_at(chief_tent, 0.25, 0.38, -0.45)
-    build_at(lambda: ridge_tent(0.22, 0.2, 0.15, tex("plaster", "#9a948a", 1.8), (pB, pA, pC), seed=9,
-                                stripes=((-0.25, 0.03, band_d), (0.25, 0.03, band_d))),
-             -0.5, -0.12, -math.pi / 2 - 0.35)
-    # ---- camp fire: stone ring, crossed logs, flame, a tripod with a cauldron; the game adds the smoke
-    fx, fy = 0.04, -0.06
-    rk = tex("plaster", "#7f7b75", 1.5)
-    for k in range(9):
-        a = k * math.tau / 9
-        ico(0.022, (fx + math.cos(a) * 0.075, fy + math.sin(a) * 0.075, 0.016), rk, (1.2, 1.0, 0.75))
-    ico(0.05, (fx, fy, 0.005), flat("ash", "#3a3330", 0.95), (1.2, 1.2, 0.25))
-    logm = tex("wood", "#5e3d24", 2.5)
+            tube((sx * 0.12, y1, -0.01), (sx * 0.12, y1, h_ * 0.72), 0.011, wd2, n=5)
+        dag = [(-0.13, y1, h_ * 0.7)] + [(-0.13 + 0.26 * k / 4, y1 - 0.004, h_ * (0.7 if k % 2 == 0 else 0.6))
+                                         for k in range(1, 4)] + [(0.13, y1, h_ * 0.7)]
+        mesh_obj([(0.0, y0 + 0.005, h_ * 0.88)] + dag, [tuple(range(len(dag) + 1))], awn)
+        skull(0.0, y0 - 0.014, h_ * 0.8, 1.2)
+    build_at(chief_tent, -0.27, 0.3, -0.55)
+    # ---- the camp fire: a ring of round stones, crossed logs, a big two-tone flame, a tripod with a cauldron
+    fx, fy = 0.04, -0.08
+    rk = tex("plaster", "#9A958E", 1.5)
+    for k in range(8):
+        a = k * math.tau / 8
+        ico(0.032, (fx + math.cos(a) * 0.1, fy + math.sin(a) * 0.1, 0.02), rk, (1.2, 1.0, 0.8))
+    ico(0.07, (fx, fy, 0.006), flat("ash", "#4A4240", 0.95), (1.2, 1.2, 0.25))
+    logm = tex("wood", "#6e4a2e", 2.5)
     for k in range(4):
         a = k * math.pi / 2 + 0.4
-        tube((fx + math.cos(a) * 0.065, fy + math.sin(a) * 0.065, 0.01), (fx, fy, 0.075), 0.011, logm, n=5)
-    cn(0.045, 0.11, (fx, fy, 0.065), glow("flame", FLAME, 3.0), 6)
-    cn(0.026, 0.08, (fx + 0.005, fy - 0.004, 0.06), glow("flame_y", FLAME_Y, 3.5), 6)
-    for k in range(3):  # tripod over the fire, a cauldron on a chain
+        tube((fx + math.cos(a) * 0.085, fy + math.sin(a) * 0.085, 0.012), (fx, fy, 0.09), 0.016, logm, n=5)
+    cn(0.06, 0.15, (fx, fy, 0.085), glow("flame", FLAME, 3.0), 7)
+    cn(0.035, 0.11, (fx + 0.006, fy - 0.006, 0.075), glow("flame_y", FLAME_Y, 3.5), 7)
+    for k in range(3):
         a = k * math.tau / 3 + 0.5
-        tube((fx + math.cos(a) * 0.11, fy + math.sin(a) * 0.11, -0.005), (fx, fy, 0.25), 0.009, wd2, n=4)
-    pot = flat("cauldron", "#2b2a2c", 0.5)
-    tube((fx, fy, 0.25), (fx, fy, 0.16), 0.004, pot, n=3)
-    lathe([(0.018, 0.115), (0.032, 0.13), (0.03, 0.16)], (pot, pot), 8, top=flat("stew", "#6b4a2a", 0.6),
+        tube((fx + math.cos(a) * 0.14, fy + math.sin(a) * 0.14, -0.005), (fx, fy, 0.3), 0.012, wd2, n=4)
+    pot = flat("cauldron", "#3A383C", 0.5)
+    tube((fx, fy, 0.3), (fx, fy, 0.2), 0.005, pot, n=3)
+    lathe([(0.024, 0.15), (0.042, 0.17), (0.04, 0.205)], (pot, pot), 10, top=flat("stew", "#7a5530", 0.6),
           loc=(fx, fy, 0.0))
-    bpy.ops.object.empty_add(location=(fx, fy, 0.2))
+    bpy.ops.object.empty_add(location=(fx, fy, 0.24))
     bpy.context.active_object.name = "smoke_fire"
-    # log seats
-    seat = tex("wood", "#7a5232", 2.5)
-    for a, ln in ((math.radians(200), 0.16), (math.radians(-20), 0.14)):
-        x, y = fx + math.cos(a) * 0.19, fy + math.sin(a) * 0.19
-        cy(0.026, ln, (x, y, 0.026), seat, 6, rot=(math.pi / 2, 0, a))
-    # ---- the red war banner with the white wolf, at the back of the camp
-    war_banner(0.0, 0.52, 0.86)
-    # ---- raised lookout over the palisade on the right
-    build_at(lambda: lookout_l1(wd, tex("wood", "#8a6440", 3.0), tex("plaster", "#7d6a50", 2.0), wd2), 0.5, 0.06,
-             -0.25)
-    # ---- a hide stretched on a frame, a woodpile
-    def hide_frame():
-        tube((-0.07, 0.0, -0.01), (-0.07, 0.0, 0.2), 0.01, wd2, n=4)
-        tube((0.07, 0.0, -0.01), (0.07, 0.0, 0.2), 0.01, wd2, n=4)
-        tube((-0.085, 0.0, 0.19), (0.085, 0.0, 0.19), 0.009, wd2, n=4)
-        tube((-0.075, 0.0, 0.035), (0.075, 0.0, 0.035), 0.009, wd2, n=4)
-        hide_pts = [(-0.05, 0.18), (0.0, 0.17), (0.05, 0.18), (0.058, 0.12), (0.048, 0.05), (0.0, 0.045),
-                    (-0.048, 0.05), (-0.058, 0.12)]
-        mesh_obj([(x, -0.004, z) for x, z in hide_pts], [tuple(range(len(hide_pts)))], flat("hide", "#9a7650", 0.9))
-        mesh_obj([(x * 0.5, -0.006, 0.112 + (z - 0.112) * 0.5) for x, z in hide_pts], [tuple(range(len(hide_pts)))],
-                 flat("hide_d", "#6e5034", 0.9))
-    build_at(hide_frame, -0.3, -0.03, 0.15)
-    def woodpile():
-        cap = flat("logcut", "#d9b27a", 0.8)
-        for row, ys in enumerate(((-0.028, 0.0, 0.028), (-0.014, 0.014))):
-            for yy in ys:
-                z = 0.016 + row * 0.026
-                tube((-0.07, yy, z), (0.07, yy, z), 0.014, tex("wood", "#7a5232", 3.0), n=5)
-                for sx in (-1, 1):
-                    mesh_obj([(sx * 0.0705, yy + 0.013 * math.cos(math.tau * k / 5), z + 0.013 * math.sin(
-                        math.tau * k / 5)) for k in range(5)], [tuple(range(5))], cap)
-    build_at(woodpile, -0.06, 0.24, 0.3)
-    # ---- weapon rack (front left) and a pile of loot (front right)
-    weapon_rack(-0.4, -0.4, 0.75, 3, 1, RAG_RED, 1)
-    crate(0.36, -0.36, 0.085, 0.3)
-    crate(0.44, -0.27, 0.07, -0.2)
-    crate(0.37, -0.35, 0.06, 0.6, z=0.085)
-    sack(0.47, -0.4, 1.0, 0.4)
-    sack(0.27, -0.44, 0.9, -0.5)
-    barrel(0.52, -0.18, lie=0.3)
-    # open chest with gold
-    build_at(lambda: (bx((0.08, 0.05, 0.04), (0, 0, 0.02), tex("wood", "#5e3d24", 3.0), bev=0),
-                      bx((0.085, 0.055, 0.008), (0, 0, 0.004), flat("iron", IRON, 0.5), bev=0),
-                      uvs(0.035, (0, 0, 0.038), flat("gold", GOLD, 0.35), 8, 4, (1.05, 0.65, 0.4)),
-                      bx((0.08, 0.012, 0.045), (0, 0.032, 0.058), tex("wood", "#5e3d24", 3.0), bev=0, rot=(-0.35, 0, 0))),
-             0.18, -0.4, 0.15)
-    # bones on the ground
-    bone = flat("bone", BONE, 0.7)
-    tube((-0.14, -0.3, 0.008), (-0.08, -0.33, 0.008), 0.006, bone, n=4)
-    tube((-0.12, -0.36, 0.008), (-0.09, -0.29, 0.008), 0.006, bone, n=4)
+    seat = tex("wood", "#8a6038", 2.5)
+    for a, ln in ((math.radians(205), 0.2), (math.radians(-25), 0.18)):
+        x, y = fx + math.cos(a) * 0.23, fy + math.sin(a) * 0.23
+        cy(0.034, ln, (x, y, 0.034), seat, 7, rot=(math.pi / 2, 0, a))
+    # ---- the red war banner with the white wolf, tall at the back of the camp
+    build_at(lambda: war_banner(0.0, 0.0, 0.86, cloth_c=CAMP_RED), 0.04, 0.5, s=1.2)
+    # ---- the raised lookout over the palisade on the right
+    build_at(lambda: lookout_l1(wd, tex("wood", "#9a7248", 3.0), tex("plaster", "#9c8462", 2.0), wd2), 0.47, -0.12,
+             -0.25, s=1.15)
+    # ---- the loot (front right) and a weapon rack (front left), few and big
+    build_at(lambda: (bx((0.11, 0.07, 0.055), (0, 0, 0.0275), tex("wood", "#6e4a2e", 3.0), bev=0),
+                      bx((0.115, 0.075, 0.011), (0, 0, 0.0055), flat("iron", "#4A4C52", 0.5), bev=0),
+                      uvs(0.048, (0, 0, 0.052), flat("gold", GOLD, 0.35), 8, 4, (1.05, 0.65, 0.42)),
+                      bx((0.11, 0.016, 0.06), (0, 0.044, 0.08), tex("wood", "#6e4a2e", 3.0), bev=0, rot=(-0.35, 0, 0))),
+             0.2, -0.42, 0.2)
+    crate(0.33, -0.33, 0.1, 0.3)
+    crate(0.34, -0.33, 0.07, 0.6, z=0.1)
+    barrel(0.43, -0.25, r=0.045, h=0.11)
+    sack(0.08, -0.47, 1.3, -0.4)
+    weapon_rack(-0.3, -0.42, 0.75, 3, 1, CAMP_RED, 1)
 
 
 def skull(x, y, z, s=1.0):

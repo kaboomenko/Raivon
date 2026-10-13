@@ -941,8 +941,10 @@ def oil_l1():
     kerb with a plank jetty and a trough from the derrick; a plank engine shed with a shingle roof, a lit window and
     a smoking iron flue; a staved storage vat with iron hoops; barrels stacked and standing, a barrel cart, a
     lantern on a post."""
-    pad(0.7, tex("plaster", "#8d7354", 3.0), 0.012, 16, 0.07, 21, 1.0, 0.95)
-    stain = tex("plaster", "#4a3a2c", 4.0)
+    # art pass 5 (A1): the yard two steps lighter (was #8d7354, stains #4a3a2c): with the black pond it read on the map
+    # as a dark brown disc like the old marauder camp
+    pad(0.7, tex("plaster", "#A88B66", 3.0), 0.012, 16, 0.07, 21, 1.0, 0.95)
+    stain = tex("plaster", "#6A5643", 4.0)
     ground_strip([(-0.3, -0.04), (0.08, -0.08), (0.14, 0.12), (0.06, 0.34), (-0.26, 0.32), (-0.32, 0.1)], stain,
                  0.006, 0.0135)
     timber = tex("wood", "#6e4526")

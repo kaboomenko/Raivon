@@ -229,7 +229,7 @@ def granite_paint(base=STONE_C["base"], top=STONE_C["top"], shade_c=STONE_C["sha
 
 
 def soft_block(cx, cy_, w, d, h, mt, seed, z0=-0.02, rz=0.0, cuts=(6, 10), sub=2, bevel=0.1, segs=2, top=0.62,
-               ground=0.15, sharp=50.0, min_bevel=0.08):
+               ground=0.15, sharp=50.0, min_bevel=0.08, taper=0.0, top_el=(1.05, 1.35), lean=(0.0, 0.0)):
     """A big rounded block of stone of «Raivon Soft» (§6.8: «крупные скруглённые глыбы, фаска 10 %, 2 сегмента») —
     it replaces the old sharp convex-hull tors.
     - An icosphere (sub 2) is cut by 6–10 random planes, each hole filled with one flat face: a chunky pebble whose
@@ -245,7 +245,10 @@ def soft_block(cx, cy_, w, d, h, mt, seed, z0=-0.02, rz=0.0, cuts=(6, 10), sub=2
     Edges between 24° and 50° (a flat face meeting the sphere's rest) already shade soft under the weighted normals,
     so the bevel goes to the face-to-face edges that read as sharp: ≈ 90 triangles a block before the bevel and
     ≈ 60–110 for it (beveling every edge over 24° cost 400–500 a block). sub=1 with bevel=0 is for pebbles (scree,
-    loose stones): about 30–45 triangles where nobody sees more."""
+    loose stones): about 30–45 triangles where nobody sees more.
+    taper (0 = a pebble's straight flanks): the footprint shrinks to (1 − taper) of itself at the top, so a tall
+    block becomes a rounded rock tooth — the peaks of the mountain massif; top_el: the elevation range (rad) of the
+    top cut's normal (lower = a steeper crest); lean (dx, dy): the top shifts by that much, the foot stays."""
     rnd = random.Random(seed)
     bm = bmesh.new()
     bmesh.ops.create_icosphere(bm, subdivisions=sub, radius=1.0)
@@ -256,7 +259,7 @@ def soft_block(cx, cy_, w, d, h, mt, seed, z0=-0.02, rz=0.0, cuts=(6, 10), sub=2
     az0 = rnd.uniform(0, math.tau)
     for k in range(n_cuts):
         if k == 0:  # the broad top face, slanted a little
-            el, off, az = rnd.uniform(1.05, 1.35), rnd.uniform(top, top + 0.1), rnd.uniform(0, math.tau)
+            el, off, az = rnd.uniform(*top_el), rnd.uniform(top, top + 0.1), rnd.uniform(0, math.tau)
         else:  # flanks all round (spread evenly with jitter), a few tilted up or down
             az = az0 + k / max(1, n_cuts - 1) * math.tau + rnd.uniform(-0.35, 0.35)
             el, off = rnd.uniform(-0.2, 0.55), rnd.uniform(0.68, 0.86)
@@ -273,7 +276,9 @@ def soft_block(cx, cy_, w, d, h, mt, seed, z0=-0.02, rz=0.0, cuts=(6, 10), sub=2
     c, s_ = math.cos(rz), math.sin(rz)
     for v in bm.verts:
         x, y, z = (v.co.x - mx) * sx, (v.co.y - my) * sy, z0 + ground * h + v.co.z * sz
-        v.co = Vector((cx + x * c - y * s_, cy_ + x * s_ + y * c, z))
+        t = min(1.0, max(0.0, (z - z0) / h))
+        x, y = x * (1.0 - taper * t), y * (1.0 - taper * t)
+        v.co = Vector((cx + x * c - y * s_ + lean[0] * t, cy_ + x * s_ + y * c + lean[1] * t, z))
     bmesh.ops.bisect_plane(bm, geom=bm.verts[:] + bm.edges[:] + bm.faces[:], plane_co=(0, 0, z0), plane_no=(0, 0, 1),
                            clear_inner=True)
     if bevel and segs and min(w, d, h) >= min_bevel:
@@ -325,7 +330,8 @@ def cull_hidden(objs, margin=0.003):
 
 
 def mountain_paint(grass_line=0.15, snow_edge=0.24):
-    """«Raivon Soft» massif (§6.3, §6.8: «горы — 3 мягких массива, снег мягкими шапками»): a meadow-green foot
+    """The B6 heightfield massif's paint; since art pass 5 only the grassy foot of mountain() uses it (grass_line
+    above the foot's top: all meadow). «Raivon Soft» massif (§6.3, §6.8): a meadow-green foot
     (a step under the §6.3 plain #74A645) whose rim climbs the slopes in broad soft tongues → warm grey stone
     (MOUNTAIN_C, in big soft patches, a pale sandy tone on the shoulders, a faint lilac lean on the steepest flanks
     — the model turns at random on the map, so the paint can only follow the slope, not the sun: a warm albedo lets
@@ -913,154 +919,123 @@ def crag():
         tall_pine(x, y, sc, seed=int(abs(x) * 100 + abs(y) * 10), n=18, na=9)
 
 
-# the massif's three broad masses, in units of the model radius / k: (x, y, height, radius, lobe phase, snow cap
-# depth — the top share of the mass's profile under snow)
-MASSES = [(-0.06, 0.12, 1.05, 0.82, 0.0, 0.17), (0.38, -0.12, 0.78, 0.6, 1.7, 0.12), (-0.36, -0.3, 0.6, 0.54, 3.1, 0.0)]
+# art pass 5 (A1): the massif's rock — a cool mid grey after the grey alpine peaks of reference frames 1–3 (the old
+# warm #7E6F5A read as a sand pile in game), a pale lit top on the up-facing facets, lilac on the steep and turned-away
+# ones; the light lifts a mountain's albedo ≈ ×1.4 on screen, so the base sits at L* ≈ 50 (≈ 68–72 lit)
+MASSIF_C = {"base": "#7D7873", "warm": "#87817A", "top": "#A29B8F", "shade": "#7C7892", "deep": "#6E6A6C"}
 
 
-def _smax(a, b, k):
-    """Polynomial smooth maximum (Inigo Quilez's smin, mirrored): a soft saddle instead of a crease."""
-    h = max(k - abs(a - b), 0.0) / k
-    return max(a, b) + h * h * k * 0.25
+def massif_paint(snow_z=0.6, snow_nz=0.3):
+    """The rock teeth of the massif (art pass 5): MASSIF_C grey in big soft patches and faint horizontal strata (the
+    layered cliffs of reference frame 3), a pale top on the up-facing facets, lilac on the steep and turned-away
+    ones, a deeper grey low down; soft snow caps on the up-facing facets of the high blocks (above snow_z, broken by
+    a broad noise; a steep facet stays bare rock), so a peak reads as snow over grey crags. Snow is the pale
+    blue-grey albedo the old caps used (#C6CEDF lit, #A9B4CF in the shade): the light lifts it to blue-white without
+    clipping to «white-hot» (§6.12)."""
+    def build():
+        p = Paint("massif")
+        col = p.mix(p.math("MULTIPLY", p.step(p.noise(3.0, 2.0), 0.35, 0.65), 0.7), MASSIF_C["base"], MASSIF_C["warm"])
+        band = p.noise(2.2, 2.0, stretch=(0.6, 0.6, 9.0))  # strata: flat bands in height
+        col = p.mix(p.math("MULTIPLY", p.step(band, 0.48, 0.62), 0.35), col, MASSIF_C["deep"])
+        col = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.55, 0.9), 0.75), col, MASSIF_C["top"])
+        col = p.mix(p.math("MULTIPLY", p.step(p.nz, 0.4, -0.1), 0.55), col, MASSIF_C["shade"])
+        col = p.mix(p.math("MULTIPLY", p.step(p.z, 0.22, 0.04), 0.4), col, MASSIF_C["deep"])
+        jit = p.math("MULTIPLY", p.math("SUBTRACT", p.noise(3.5, 2.0), 0.5), 0.45)  # a ragged snow line
+        sf = p.math("MULTIPLY", p.step(p.math("ADD", p.z, jit), snow_z - 0.03, snow_z + 0.05),
+                    p.step(p.math("ADD", p.nz, p.math("MULTIPLY", jit, 0.6)), snow_nz - 0.08, snow_nz + 0.08))
+        snow = p.mix(p.step(p.nz, 0.3, 0.85), "#A9B4CF", "#C6CEDF")
+        col = p.mix(sf, col, snow)
+        return p.done(col, 0.9)
+    return cached(("massif", snow_z, snow_nz), build)
 
 
-def _soft_abs(n, e=0.35):
-    """|n| with a broadly rounded bottom. A true |noise| crease is far narrower than the massif's mesh (ring spacing
-    ≈ 0.05), so every crest and gully became a mesh crease, and smooth shading drew it as a lilac hairline down the
-    slope (§6.1 rule 1). e = 0.35 rounds it over about one ring spacing: soft crests, no creases."""
-    return math.sqrt(n * n + e * e) - e
-
-
-def _mountain(x, y, k=0.84):
-    """Height and snow-cap factor of the massif at (x, y). «Raivon Soft» (§6.8): three broad masses with smoothstep
-    shoulders (a rounded dome, no spire; was four sharp peaks with a t^1.3 profile), joined by a p-norm (p = 5): a
-    smooth union whose saddles are broad and a little filled (×1.15), where a max — even a smooth max with k 0.25 —
-    left a gully about one ring spacing wide between two steep masses, drawn as a hairline down the slope. A
-    lobed footprint, faint rounded ridging (0.03, was 0.1) and fine noise (0.015, was 0.045). The cap factor is 1
-    at a mass's summit, 0 at the rim of its cap and negative below (mountain_paint reads it)."""
-    x, y = x / k, y / k
-    hp, cap = 0.0, -1.0
-    for px, py, H, R, ph, cd in MASSES:
-        dx, dy = x - px, y - py
-        th = math.atan2(dy, dx)
-        Rm = R * (1 + 0.16 * math.sin(3 * th + ph) + 0.03 * math.sin(7 * th + 2 * ph))
-        t = min(1.0, max(0.0, 1 - math.hypot(dx, dy) / Rm))
-        s = t * t * (3 - 2 * t)
-        hp += (H * s) ** 5
-        if cd:
-            cap = max(cap, (s - (1 - cd)) / cd)
-    h = hp ** 0.2
-    v = Vector((x * 3.5, y * 3.5, 0.7))
-    h += 0.07 * mnoise.noise(v) * (0.35 + h) + 0.015 * _soft_abs(mnoise.noise(v * 2.7))
-    h += 0.03 * h * (1.0 - _soft_abs(mnoise.noise(v * 1.6 + Vector((3.1, 0.0, 0.0)))))  # faint crests and gullies
+def _mound(x, y):
+    """Height of the massif's grassy foot at (x, y): one broad low dome (0.26 high) with a lobed rim, so the rock
+    teeth rise out of a hill rather than stand on the flat hex; it sinks a little at the rim (skirt below)."""
     r = math.hypot(x, y)
-    apron = 0.17 * max(0.0, 1 - r / 0.95) ** 1.1
-    h = _smax(h, apron, 0.08)
-    h -= 0.03 * min(1.0, max(0.0, (r - 0.78) / 0.17))
-    return h, min(1.0, max(-1.0, cap))
+    th = math.atan2(y, x)
+    R = 0.8 * (1 + 0.08 * math.sin(3 * th + 0.7) + 0.04 * math.sin(5 * th + 2.0))
+    t = min(1.0, max(0.0, 1 - r / R))
+    h = 0.26 * t * t * (3 - 2 * t)
+    v = Vector((x * 3.0, y * 3.0, 0.4))
+    h += 0.025 * mnoise.noise(v) * t
+    return h - 0.03 * min(1.0, max(0.0, (r - 0.7) / 0.1))
+
+
+# the rock masses of the massif: (x, y, w, d, h, z0, taper, seed, rz, lean, snow) — three peaks (the broad main one
+# at the back, two lower ones in front and to the sides: the three masses of §6.8), each with a snow cap over the top
+# `snow` share of its height (0 = bare rock), two shoulders behind and a low ledge in front, all leaning together
+MASSIF = [
+    (0.0, 0.1, 0.95, 0.85, 0.98, 0.06, 0.62, 301, 0.3, (0.02, -0.03), 0.42),
+    (0.37, -0.12, 0.56, 0.5, 0.74, 0.05, 0.58, 302, -0.5, (-0.05, 0.04), 0.4),
+    (-0.37, -0.17, 0.5, 0.46, 0.58, 0.05, 0.55, 303, 0.9, (0.05, 0.04), 0.36),
+    (0.4, 0.3, 0.46, 0.4, 0.5, 0.04, 0.45, 304, 0.2, (-0.04, -0.03), 0.0),
+    (-0.4, 0.24, 0.44, 0.4, 0.46, 0.04, 0.45, 305, -0.3, (0.04, -0.03), 0.0),
+    (0.02, -0.36, 0.52, 0.3, 0.3, 0.04, 0.25, 306, 0.1, (0.0, 0.03), 0.0),
+]
 
 
 def mountain():
-    """«Raivon Soft» mountain (§6.8): a friendly massif of three broad rounded masses with soft snow caps, smooth
-    shaded (was faceted spires), on a meadow foot with three rounded stones and the soft pines of the forests
-    climbing its lower slopes. Fewer triangles than the old massif (2378): a 15 × 30 ring mesh (930), six
-    221-triangle pines, three pebble blocks."""
-    mt = mountain_paint()
-    rings, segs, R = 15, 30, 0.8
+    """Mountain massif, art pass 5 (A1) after the grey alpine peaks of reference frames 1–3 in «Raivon Soft» (§6.8:
+    «горы — 3 мягких массива, снег мягкими шапками»). The B6 massif — one smooth heightfield of three blended masses —
+    read in game as a single beige cone (a sand pile or a volcano) on a lime apron. Now three rock teeth rise out of
+    a grassy hill: tall soft blocks (soft_block with taper: an icosahedron cut by planes into broad facets with
+    round 10 % bevels, narrowing to a crest) in cool grey with pale tops, lilac shade and faint strata, snow caps on
+    the up-facing facets of the three peaks, shoulder blocks and a front ledge round them (the faces buried in a
+    neighbour dropped), a few pebbles and the soft pines of the forests on the foot. Footprint radius 0.8 (the old
+    one); the map scales it ×1.5–1.75 on a mountain hex and ×1.5–2.8 on the horizon."""
+    grass = mountain_paint(grass_line=0.6)  # the old massif paint: below its grass line it is the meadow foot
+    rings, segs, R = 8, 24, 0.82
+    verts = [(0.0, 0.0, _mound(0.0, 0.0))]
     rnd = random.Random(21)
-    verts = [(0.0, 0.0, 0.0)]
     for i in range(1, rings + 1):
         for j in range(segs):
-            a = (j + (0.5 if i % 2 else 0.0)) / segs * math.tau
+            a = (j + (0.5 if i % 2 else 0.0)) / segs * math.tau + (rnd.uniform(-0.1, 0.1) / segs * math.tau if i < rings else 0)
             r = R * i / rings
-            if i < rings:
-                r += rnd.uniform(-0.2, 0.2) * R / rings
-                a += rnd.uniform(-0.15, 0.15) / segs * math.tau
-            else:
-                r -= rnd.uniform(0.0, 0.03)
-            verts.append([r * math.cos(a), r * math.sin(a), 0.0])
-    hc = [_mountain(x, y) for x, y, _ in verts]
-    verts = [(x, y, h) for (x, y, _), (h, _) in zip(verts, hc)]
-    caps = [c for _, c in hc]
+            x, y = r * math.cos(a), r * math.sin(a)
+            verts.append((x, y, _mound(x, y)))
 
     def vid(i, j):
         return 1 + (i - 1) * segs + (j % segs)
 
-    faces = []
-    for j in range(segs):
-        faces.append((0, vid(1, j), vid(1, j + 1)))
+    faces = [(0, vid(1, j), vid(1, j + 1)) for j in range(segs)]
     for i in range(1, rings):
         for j in range(segs):
             a, b, c, d = vid(i, j), vid(i + 1, j), vid(i + 1, j + 1), vid(i, j + 1)
-            if i % 2:  # inner ring offset by half a segment → alternate diagonals for even triangles
-                faces += [(a, b, c), (a, c, d)]
-            else:
-                faces += [(a, b, d), (b, c, d)]
-    # two passes of Laplacian smoothing of the heights (not the rim): whatever is narrower than the ring spacing
-    # (≈ 0.05) — noise bumps on the summits, the saddles between masses — would be a mesh crease, and smooth shading
-    # draws a crease as a hairline (§6.1 rule 1); smoothed, the massif reads as soft cushions
-    nbrs = [set() for _ in verts]
-    for f in faces:
-        for a in f:
-            nbrs[a].update(b for b in f if b != a)
-    inner = vid(rings, 0)  # the rim ring (and the skirt below it) keeps its heights
-    for _ in range(2):
-        zs = [v[2] for v in verts]
-        verts = [(x, y, 0.5 * zs[i] + 0.5 * sum(zs[n] for n in nbrs[i]) / len(nbrs[i])) if i < inner else (x, y, z)
-                 for i, (x, y, z) in enumerate(verts)]
-    # short skirt below the rim so the foot never floats
+            faces += [(a, b, c), (a, c, d)] if i % 2 else [(a, b, d), (b, c, d)]
     base = len(verts)
     for j in range(segs):
         vx, vy, _ = verts[vid(rings, j)]
         verts.append((vx * 0.98, vy * 0.98, -0.12))
-        caps.append(-1.0)
     for j in range(segs):
         a, b = vid(rings, j), vid(rings, j + 1)
         faces.append((a, base + j, base + (j + 1) % segs, b))
-    o = poly(verts, faces, [mt], flat_shade=False)  # smooth shaded (ev.lowpoly: smooth by angle, the skirt stays crisp)
-    at = o.data.attributes.new("cap", "FLOAT", "POINT")
-    at.data.foreach_set("value", caps)
-
-    # the props stand on the built (smoothed) surface, not on _mountain(): the two smoothing passes move it by
-    # −0.07…+0.08, and a pine seated on the analytic height showed its foot ring 0.04 above the downhill slope
+    foot = poly(verts, faces, [grass], flat_shade=False, name="foot")
+    at = foot.data.attributes.new("cap", "FLOAT", "POINT")
+    at.data.foreach_set("value", [-1.0] * len(verts))
     bvh = BVHTree.FromPolygons([Vector(v) for v in verts], faces)
 
     def height(x, y):
         hit = bvh.ray_cast(Vector((x, y, 3.0)), Vector((0.0, 0.0, -1.0)))[0]
         return hit.z if hit is not None else 0.0
 
-    def ground(x, y, rr):  # the lowest ground under a footprint of radius rr: nothing hangs over the slope
-        pts = [(x, y)] + [(x + f * rr * math.cos(k * math.tau / 8), y + f * rr * math.sin(k * math.tau / 8))
-                          for k in range(8) for f in (0.5, 1.0)]
-        return min(height(px, py) for px, py in pts) - 0.012
-
-    # rounded boulders on the grassy foot, on its gentlest spots (≈ 100° apart; the drop of the ground under their
-    # footprint is 0.02–0.03 there, where the old sites on the flanks of the masses dropped 0.04–0.09)
+    blocks = []
+    for (x, y, w, d, h, z0, taper, seed, rz, lean, cap) in MASSIF:
+        mt = massif_paint(snow_z=round(z0 + (1.0 - cap) * h, 3) if cap else 9.0)
+        blocks.append(soft_block(x, y, w, d, h, mt, seed, z0=z0, rz=rz, cuts=(5, 7), top=0.74, top_el=(0.9, 1.2),
+                                 ground=0.05, sharp=55.0, taper=taper, lean=lean))
+    cull_hidden(blocks)
+    # pebbles and pines on the grassy foot, clear of the rock
     rk = granite_paint(moss_at=0.7, scale=6.0, moss_z=0.0, cover=0.4)
-    stones = []
-    for k, (a, r, s) in enumerate([(5.1, 0.69, 0.06), (1.5, 0.69, 0.05), (3.3, 0.68, 0.055)]):
+    for k, (a, r, s_) in enumerate([(4.4, 0.66, 0.05), (2.2, 0.7, 0.045), (5.8, 0.62, 0.04)]):
         x, y = r * math.cos(a), r * math.sin(a)
-        stones.append((x, y))
-        # open at the bottom: the whole footprint (half-sizes 1.15·s × 0.95·s) must be under z0, which sinks the
-        # stone by the drop under its footprint; it grows by that drop, so it still stands 1.2·s out of the grass
-        z0 = ground(x, y, 1.2 * s)
-        soft_block(x, y, s * 2.3, s * 1.9, s * 1.2 + height(x, y) - z0, rk, 70 + k, z0=z0, rz=a, sub=1, cuts=(2, 3),
-                   bevel=0)
-    # the soft pines of the forests climb the lower slopes (reference frame 1), not only the grassy foot
-    placed = []
-    cand = [(a, r) for a in [i * 0.37 for i in range(17)] for r in (0.5, 0.58, 0.64, 0.7)]
-    random.Random(5).shuffle(cand)
+        z0 = height(x, y) - 0.02
+        soft_block(x, y, s_ * 2.2, s_ * 1.8, s_ * 1.3, rk, 70 + k, z0=z0, rz=a, sub=1, cuts=(2, 3), bevel=0)
     pine_mt, bark = pine_paint(), tex("wood", BARK_SOFT)
-    for a, r in cand:
+    for k, (a, r, s_) in enumerate([(4.95, 0.64, 0.5), (3.35, 0.66, 0.46), (1.25, 0.68, 0.44), (0.25, 0.7, 0.42),
+                                    (4.0, 0.7, 0.4), (5.6, 0.7, 0.44)]):
         x, y = r * math.cos(a), r * math.sin(a)
-        if (height(x, y) > 0.36 or any(math.dist((x, y), p) < 0.2 for p in placed)
-                or any(math.dist((x, y), p) < 0.14 for p in stones)):
-            continue
-        placed.append((x, y))
-        s_ = random.Random(len(placed)).uniform(0.46, 0.56)
-        tall_pine(x, y, s_, 30 + len(placed), pine_mt, bark, n=18, na=9, z=ground(x, y, 0.06 * s_))  # trunk r 0.055·s
-        if len(placed) >= 6:
-            break
+        tall_pine(x, y, s_, 30 + k, pine_mt, bark, n=18, na=9, z=height(x, y) - 0.012)
 
 
 def ripe_paint():
@@ -1383,30 +1358,34 @@ def windmill():
 
 
 def mine():
-    rk = rock_paint("#7f786e", "#a0978a", moss=("#4f7f2c", "#77a83a"), moss_at=0.82, top=None, shade_c=None, speck=0.35)
     dirt = ev.pad(0.6, ev.stone("#9a8f7f", 1.4), 0.012, 14, 0.12, 4, 1.0, 0.85)  # a flagged yard (reference frame 4)
     dirt.location.y = -0.12
-    # the quarried cliff of reference frame 4: three stepped tiers of cut grey blocks, highest at the back, with
-    # ledges a man could stand on — not a smooth mossy boulder
+    # the quarried cliff of reference frames 3–4: three stepped tiers of cut grey stone, highest at the back, with
+    # ledges a man could stand on. Art pass 5 (A1): the tiers are big rounded blocks (soft_block: flat cut tops, soft
+    # weighted normals, warm grey granite with pale tops and lilac shade, as the crag and the rocks) instead of sharp
+    # boxes in the old speckled paint, which read as a pile of grey cubes on the map
     rnd = random.Random(9)
-    cut = rock_paint("#7d776e", "#a39b8f", moss=None, scale=9.0, top=None, shade_c=None, speck=0.35)
-    cut_d = rock_paint("#6a645c", "#8a8278", moss=None, scale=9.0, top=None, shade_c=None, speck=0.35)
+    cut = granite_paint(moss=None, cracks=0.0, scale=5.0)
+    cut_d = granite_paint(base="#998E7D", top="#9C8E79", moss=None, warm="#9E9383", cracks=0.0, scale=5.0)
+    blocks = []
     for t, (y0, y1, zmax, xr) in enumerate(((0.0, 0.2, 0.3, 0.56), (0.17, 0.36, 0.48, 0.5), (0.33, 0.5, 0.66, 0.38))):
         x = -xr
-        while x < xr - 0.04:
-            w = rnd.uniform(0.11, 0.19)
-            w = min(w, xr - x)
-            h = zmax * rnd.uniform(0.82, 1.0) * (1.0 - 0.35 * (abs(x + w / 2) / xr) ** 2)
-            d = (y1 - y0) * rnd.uniform(0.9, 1.1)
-            bx((w * 0.98, d, h), (x + w / 2, (y0 + y1) / 2 + rnd.uniform(-0.015, 0.015), h / 2),
-               cut if (t + int(x * 10)) % 3 else cut_d, rnd.uniform(-0.08, 0.08), 0.008)
+        while x < xr - 0.05:
+            w = min(rnd.uniform(0.15, 0.22), xr - x)
+            h = zmax * rnd.uniform(0.84, 1.0) * (1.0 - 0.35 * (abs(x + w / 2) / xr) ** 2)
+            d = (y1 - y0) * rnd.uniform(1.0, 1.15)
+            blocks.append(soft_block(x + w / 2, (y0 + y1) / 2 + rnd.uniform(-0.015, 0.015), w * 1.06, d, h,
+                                     cut if (t + int(x * 10)) % 3 else cut_d, 90 + len(blocks), z0=-0.01,
+                                     rz=rnd.uniform(-0.1, 0.1), sub=1, cuts=(5, 6), bevel=0, top=0.4,
+                                     top_el=(1.48, 1.57), ground=0.0))
             x += w
-    rk = rock_paint("#7f786e", "#a0978a", moss=("#4f7f2c", "#77a83a"), moss_at=0.82, top=None, shade_c=None, speck=0.35)
-    boulder(-0.48, 0.0, 0.1, 0.09, 0.12, rk, 31, 12)
-    boulder(0.5, 0.04, 0.09, 0.08, 0.1, rk, 32, 12)
-    boulder(-0.33, -0.2, 0.06, 0.05, 0.06, rk, 34, 10)
+    cull_hidden(blocks)
+    rk = granite_paint(moss_at=0.7, scale=6.0, moss_z=0.0, cover=0.4)
+    soft_block(-0.48, 0.0, 0.2, 0.18, 0.13, rk, 31, sub=1, cuts=(2, 3), bevel=0)
+    soft_block(0.5, 0.04, 0.18, 0.16, 0.11, rk, 32, sub=1, cuts=(2, 3), bevel=0)
+    soft_block(-0.33, -0.2, 0.12, 0.1, 0.07, rk, 34, sub=1, cuts=(1, 2), bevel=0)
     # adit + timber frame
-    bx((0.22, 0.12, 0.26), (0, -0.04, 0.13), flat("adit", "#120d09", 1.0), 0, 0.0)
+    bx((0.22, 0.12, 0.26), (0, -0.04, 0.13), flat("adit", "#2E2A30", 1.0), 0, 0.0)  # §6.1 rule 3: no albedo under ≈ #2A2A30
     timber = tex("wood", "#6e4526")
     for dx in (-0.14, 0.14):
         bx((0.045, 0.045, 0.32), (dx, -0.1, 0.16), timber, 0, 0.006)
