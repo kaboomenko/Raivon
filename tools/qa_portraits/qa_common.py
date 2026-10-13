@@ -42,7 +42,14 @@ SKY = "#8FCDF2"  # the ruler (HUD, profile) and the advisor: ui_style SKY_TOP
 SKY_LOW = "#E3F4FD"  # ui_style SKY_LOW: the bottom of the HUD crest's sky gradient
 # The ruler is not drawn by CmdPortrait: hud.gd _build_crest puts it on a SKY_TOP -> SKY_LOW gradient (the crest, 74 x
 # 72) and game_ui.gd show_profile on flat SKY_TOP (104 x 104), both with no halo. A (top, bottom) pair is such a plain
-# plate: plate_rows / plate_image draw it as it is in every mode.
+# plate: plate_rows / plate_image draw it as it is in every mode. The crest is exactly §7.10's plate («небо #8FCDF2 ->
+# #E3F4FD»), and on it the rim gate fails (51 / 44 / 47 / 36 % for E1-E4, P4 fix2): the body near the pale bottom
+# (E1's white fur collar #F4F1EA 61 %, the pale E2-E4 coats 27-52 %) and the rim-lit edge of the head on the light
+# middle of the gradient (head rows < 0.60 h without the crown: 41 % on the crest, 11 % on flat SKY_TOP); qa_contrast
+# prints the head / body split. A conflict inside §7.10, open for the art director: a crest gradient that stays darker
+# (hud.gd, and §7.10's plate line with it: SKY_TOP.lightened(0.18) -> SKY_TOP gives 29-34 %, flat SKY_TOP 25-30 %) or
+# an art change (a blue-grey shade on the fur's outer edge) — which alone leaves the head and E2-E4 failing. The gate is
+# not relaxed.
 RULER_PLATES = [("hud", (SKY, SKY_LOW)), ("profile", (SKY, SKY))]
 # Plate gradients, top -> bottom of the picture: Godot's Color.lightened(a) = c + (1 - c) a, darkened(a) = c (1 - a)
 # on the sRGB values. "current" = cmd_portrait.gd _draw before P4; "B" = §7.4 (the game since P4), the gated one.

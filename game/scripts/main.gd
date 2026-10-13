@@ -558,6 +558,8 @@ func _quiet() -> bool:
 func _quiet_sync() -> void:
 	if _expanding and _expansion_win and not ui.has_modal():
 		_end_expansion()  # its window was closed some other way (a demo stepping on)
+	if not _quiet() and ui.docked_moment():
+		ui.dock(false)  # (a ceremony left some other way: the HUD's bottom never stays hidden on the map)
 	ui.set_quiet(_quiet())
 
 
@@ -1116,7 +1118,8 @@ func _on_hud_button(name: String) -> void:
 			if mode in [Mode.MAP, Mode.WAR]:
 				_open_world_chapter()
 			else:
-				ui.toast(tr("toast.chapter_progress") % [_chapter_roman(), tr(_chapter_name_key()), _player_hexes(), _chapter_goal()], "trophy")
+				ui.toast(tr("toast.chapter_progress") % [_chapter_roman(), tr(_chapter_name_key()), _player_hexes(), _chapter_goal()], "trophy",
+					"info", true)  # (the button's only answer here: never held in a battle)
 		"book":
 			_open_chronicle()
 		"profile":
@@ -3874,12 +3877,8 @@ func _ftue_peace1_pack(budget: float) -> Array:
 func _show_peace() -> void:
 	var ws := War.war_score(sim, war)
 	# the warehouse cannot take it all: the parchment says so before the seal (canon §4: the rest burns)
-	var parts := PackedStringArray()
 	var over := _peace_overflow()
-	for r in ["gold", "food", "metal"]:
-		if over.has(r):
-			parts.append("%s %s" % [Kit.fmt_num(int(over[r])), tr("res.gen." + r)])
-	var warn := tr("peace.storage_warn") % ", ".join(parts) if not parts.is_empty() else ""
+	var warn := tr("peace.storage_warn") % _amounts_text(over) if not over.is_empty() else ""
 	ui.show_peace(_state_short(int(war["enemy"])), ws["score"], ws["control"], _demands, _chosen, plunder_level,
 		_leader_portrait(int(war["enemy"])), map_view.team_look(int(war["enemy"]))["body"], warn)
 	_highlight_demands()
@@ -3926,6 +3925,9 @@ func _allies_annex(enemy: int) -> void:
 
 
 func _sign_peace() -> void:
+	# the spoils (plunder, triumph, indemnity) are priced on the realm as the treaty found it, before its land is
+	# annexed: the same basis the parchment's storage warning used (_peace_overflow), so the two agree
+	var gross0: Dictionary = econ.gross_per_hour(sim)
 	if not war.is_empty():
 		_allies_annex(int(war["enemy"]))
 	_last_score = War.war_score(sim, war)["score"] if not war.is_empty() else 0.0
@@ -4039,8 +4041,8 @@ func _sign_peace() -> void:
 	var got := {"gold": 0, "food": 0, "metal": 0, "raivite": 0}
 	var lost := {}
 	var extra: Array = []
-	var contrib_gold := _contrib_gold(int(res.get("gold_packs", 0)))
-	var loot := _plunder_loot(plunder_level, contrib_gold)
+	var contrib_gold := _contrib_gold(int(res.get("gold_packs", 0)), gross0)
+	var loot := _plunder_loot(plunder_level, contrib_gold, gross0)
 	if plunder_level > 0:
 		var took: Dictionary = econ.add_resources(loot)
 		lines.append(tr("ceremony.plunder") % [int(took.get("gold", 0)), int(took.get("food", 0)), int(took.get("metal", 0))])
@@ -4060,7 +4062,7 @@ func _sign_peace() -> void:
 	threat += annexed_threat + 5.0 * plunder_level
 	if war.has("coalition") and _last_score > 0.0 and not war.has("sep_defeat"):
 		# «Триумф» (canon §10.8): a won coalition war pays a golden trophy chest
-		var chest := _triumph_gold()
+		var chest := _triumph_gold(gross0)
 		var tc: int = int(econ.add_resources({"gold": chest}).get("gold", 0))
 		econ.res["raivite"] = int(econ.res["raivite"]) + 30
 		lines.append(tr("ceremony.triumph") % tc)
@@ -4088,7 +4090,7 @@ func _sign_peace() -> void:
 	var score: float = _last_score  # war score at signing (the war dict is cleared below)
 	var chest := "case_trophy_gold" if score >= 60.0 else ("case_trophy_silver" if score >= 30.0 else "case_trophy_bronze")
 	var opened: Dictionary = cases.open(chest, _case_ctx(), now_s())
-	_apply_case_rewards([opened])
+	var chest_burned := _apply_case_rewards([opened])
 	lines.append("%s: %s" % [Cases.case_name(chest), ShopUI.describe(opened["rewards"][0]) if opened["rewards"].size() > 0 else "—"])
 	# the tiles, the big ones first — land, the cities, the trophy chest, the gold, the reparations, Raivites — and
 	# the minor ones last (blueprints, food, metal): past 6 tiles those go into the «+N» tile (ui), not the chest
@@ -4106,11 +4108,25 @@ func _sign_peace() -> void:
 				tile["res"] = r  # (it flies into its plate when claimed)
 			if int(lost.get(r, 0)) > 0:
 				tile["lost"] = int(lost[r])
-				tile["lost_tip"] = tr("ceremony.lost_tip") % [Kit.fmt_num(int(lost[r])), tr("res.gen." + r)]
+				tile["lost_tip"] = tr("ceremony.lost_tip") % _amounts_text({r: int(lost[r])})
 			tiles.append(tile)
 	if opened["rewards"].size() > 0:
-		tiles.append({"kind": "tile", "icon": {"case_trophy_gold": "chest_royal", "case_trophy_silver": "chest_silver"}.get(chest, "chest_wood"),
-			"pill": _reward_pill(opened["rewards"][0]), "name": Cases.case_name(chest), "order": 2})
+		var rw0: Dictionary = opened["rewards"][0]
+		var chest_tile := {"kind": "tile", "icon": {"case_trophy_gold": "chest_royal", "case_trophy_silver": "chest_silver"}.get(chest, "chest_wood"),
+			"pill": _reward_pill(rw0), "name": Cases.case_name(chest), "order": 2}
+		if not chest_burned.is_empty() and String(rw0.get("kind", "")) == "res":
+			# the chest's own resources at a full warehouse: its pill says what was credited, its chip what burned
+			var cpill: Array = []
+			for k in rw0["res"]:
+				if int(rw0["res"][k]) > 0 and cpill.size() < 2:
+					cpill.append([String(Hud.RES_ICON.get(String(k), "crate")), "+" + Kit.fmt_num(int(rw0["res"][k]) - int(chest_burned.get(String(k), 0)))])
+			chest_tile["pill"] = cpill
+			var lost_n := 0
+			for k in chest_burned:
+				lost_n += int(chest_burned[k])
+			chest_tile["lost"] = lost_n
+			chest_tile["lost_tip"] = tr("ceremony.lost_tip") % _amounts_text(chest_burned)
+		tiles.append(chest_tile)
 	tiles.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a["order"]) < int(b["order"]))
 	items.append_array(tiles)
 	truce[enemy] = Time.get_unix_time_from_system() + TRUCE_SEC
@@ -4131,7 +4147,7 @@ func _sign_peace() -> void:
 		last_flip = maxf(last_flip, flip[id])
 	_ceremony = {"t": 0.0, "lines": lines, "items": items, "popped": {}, "counters": false, "zoom0": rig.zoom_target, "zoom1": zoom_out,
 		"center": center, "counters_at": maxf(4.0, last_flip + 0.5), "goal_taken": annexed.has(war["goal"]),
-		"gold_packs": int(res.get("gold_packs", 0)), "loot": loot}
+		"gold_packs": int(res.get("gold_packs", 0)), "contrib": contrib_gold, "loot": loot}
 	war = {}
 	flag_hex = -1
 	_set_mode(Mode.CEREMONY)
@@ -4143,19 +4159,18 @@ func _sign_peace() -> void:
 
 
 ## An indemnity of `packs` packages: 4 h of the enemy's gold production each (canon §10.1; the enemy economy is not
-## modelled yet, so the player's own, at least 60 an hour).
-func _contrib_gold(packs: int) -> int:
-	return packs * 4 * maxi(60, int(econ.gross_per_hour(sim).get("gold", 0))) if packs > 0 else 0
+## modelled yet, so the player's own, at least 60 an hour). `gross`: econ.gross_per_hour(sim) as the treaty found it.
+func _contrib_gold(packs: int, gross: Dictionary) -> int:
+	return packs * 4 * maxi(60, int(gross.get("gold", 0))) if packs > 0 else 0
 
 
 ## Plunder at `level` (canon §9.14): its share of the loser's exposed treasury — the AI economy is not simulated yet,
 ## so that treasury is 8 h of comparable production with the 40% protected share — within the 12 h loss cap, which
 ## the indemnity's gold counts against. {} at level 0.
-func _plunder_loot(level: int, contrib_gold: int) -> Dictionary:
+func _plunder_loot(level: int, contrib_gold: int, gross: Dictionary) -> Dictionary:
 	var loot := {}
 	if level <= 0:
 		return loot
-	var gross: Dictionary = econ.gross_per_hour(sim)
 	for r in ["gold", "food", "metal"]:
 		var ph: int = maxi(30, int(gross.get(r, 0)))
 		var exposed := int(ph * 8 * 0.6)
@@ -4165,8 +4180,8 @@ func _plunder_loot(level: int, contrib_gold: int) -> Dictionary:
 
 
 ## «Триумф» (canon §10.8): a won coalition war's golden trophy chest, 6 h of gold production.
-func _triumph_gold() -> int:
-	return 6 * maxi(60, int(econ.gross_per_hour(sim).get("gold", 0)))
+func _triumph_gold(gross: Dictionary) -> int:
+	return 6 * maxi(60, int(gross.get("gold", 0)))
 
 
 ## What the treaty on the parchment would burn past the warehouse (canon §4): the chosen indemnity, the plunder at
@@ -4178,11 +4193,12 @@ func _peace_overflow() -> Dictionary:
 	for d in _demands:
 		if _chosen.has(d["id"]) and String(d["kind"]) == "contribution":
 			packs += 1
-	var cg := _contrib_gold(packs)
-	var spoils := _plunder_loot(plunder_level, cg)
+	var gross: Dictionary = econ.gross_per_hour(sim)  # (the basis _sign_peace prices the spoils on)
+	var cg := _contrib_gold(packs, gross)
+	var spoils := _plunder_loot(plunder_level, cg, gross)
 	spoils["gold"] = int(spoils.get("gold", 0)) + cg
-	if war.has("coalition") and not war.has("sep_defeat"):
-		spoils["gold"] = int(spoils["gold"]) + _triumph_gold()
+	if war.has("coalition") and not war.has("sep_defeat") and War.war_score(sim, war)["score"] > 0.0:
+		spoils["gold"] = int(spoils["gold"]) + _triumph_gold(gross)
 	var cap: Dictionary = econ.storage_cap()
 	var out := {}
 	for r in ["gold", "food", "metal"]:
@@ -4190,6 +4206,15 @@ func _peace_overflow() -> Dictionary:
 		if int(spoils.get(r, 0)) > 0 and over > 0:
 			out[r] = over
 	return out
+
+
+## «2 854 золота» / «1 200 золота, 300 еды»: amounts by resource (gold, food, metal, oil order) for a line of text.
+func _amounts_text(amounts: Dictionary) -> String:
+	var parts := PackedStringArray()
+	for r in ["gold", "food", "metal", "oil", "raivite"]:
+		if int(amounts.get(r, 0)) > 0:
+			parts.append("%s %s" % [Kit.fmt_num(int(amounts[r])), tr("res.gen." + r)])
+	return ", ".join(parts)
 
 
 func _centroid(ids: Array) -> Vector3:
@@ -4264,7 +4289,7 @@ func _ads_allowed() -> bool:
 func _double_trophies() -> void:
 	ui.toast(tr("toast.test_ad_double"), "", "info", true)
 	econ.add_resources(_ceremony.get("loot", {}))
-	econ.add_resources({"gold": int(_ceremony["gold_packs"]) * 4 * maxi(60, int(econ.gross_per_hour(sim).get("gold", 0)))})
+	econ.add_resources({"gold": int(_ceremony.get("contrib", 0))})  # (the indemnity as the treaty priced it)
 	_ceremony["gold_packs"] = 0
 	_end_ceremony()
 
@@ -4517,13 +4542,7 @@ func _econ_tick() -> void:
 			_finish_colonize(h)
 		else:
 			map_view.hex_label(h, GameUI.fmt_time(int(colonizing[h]) - now), Kit.INK, "orders")  # an INK ring: the plain chip
-	# in battle the folder tabs lie under the battle tray: no free-builders count on them (it would peek over the tray)
-	var free_builders: int = econ.builders + econ.bonus_builders - econ.busy_builders(now) if mode != Mode.BATTLE else 0
-	var shown: Dictionary = econ.res
-	if _rv_shown_later > 0:
-		shown = econ.res.duplicate()
-		shown["raivite"] = maxi(0, int(shown.get("raivite", 0)) - _rv_shown_later)
-	hud.set_resources(shown, econ.income_per_hour(sim), econ.storage_cap(), free_builders, econ.builders + econ.bonus_builders)
+	_hud_resources(now)
 	# «Мир расширяется» waits on the World tab: a green dot on it (07 §3.1 `ready`); not over the battle tray
 	hud.set_tab_badge("world", -1 if mode != Mode.BATTLE and _can_expand() else 0, "go")
 	if mode == Mode.MAP and not ui.has_modal():
@@ -4556,6 +4575,18 @@ func _econ_tick() -> void:
 	_sync_tile()
 
 
+## The currency plates and the builders on the folder tabs, as the economy stands (the legacy's Raivites not yet, while
+## «Мир расширяется» keeps them for its «Продолжить»).
+func _hud_resources(now: int) -> void:
+	# in battle the folder tabs lie under the battle tray: no free-builders count on them (it would peek over the tray)
+	var free_builders: int = econ.builders + econ.bonus_builders - econ.busy_builders(now) if mode != Mode.BATTLE else 0
+	var shown: Dictionary = econ.res
+	if _rv_shown_later > 0:
+		shown = econ.res.duplicate()
+		shown["raivite"] = maxi(0, int(shown.get("raivite", 0)) - _rv_shown_later)
+	hud.set_resources(shown, econ.income_per_hour(sim), econ.storage_cap(), free_builders, econ.builders + econ.bonus_builders)
+
+
 ## Advances the economy to `now` and plays whatever it reports — a level done, a DL, a building unlocked, a fort
 ## refunded, a repair done. Every tick goes through here: Economy.tick hands its events over once, so a tick an action
 ## makes on its own (a repair, a fort, «Собрать всё», the market, an upgrade) would otherwise swallow them (B3: the
@@ -4563,6 +4594,7 @@ func _econ_tick() -> void:
 func _econ_sync(now: int) -> void:
 	for ev in econ.tick(sim, now):
 		_econ_event(ev)
+	_dl_play()  # a DL it reported: now, or once the moment is free (after the tick's own events, its unlocks with it)
 
 
 func _econ_event(ev: Dictionary) -> void:
@@ -4581,25 +4613,24 @@ func _econ_event(ev: Dictionary) -> void:
 			_rescale_armies()
 			if STORY_DL.has(econ.dev_level()):  # the advisor marks the big eras (07 §3.6–3.8)
 				_post("inbox.advisor.title", String(STORY_DL[econ.dev_level()]))
-			_dl_pending = maxi(_dl_pending, int(ev.get("level", econ.dev_level())))
+			var lvl := int(ev.get("level", econ.dev_level()))
+			if int(stats.get("dl_pending", 0)) <= 0:
+				stats["dl_from"] = lvl - 1
+			stats["dl_pending"] = maxi(int(stats.get("dl_pending", 0)), lvl)
 			if _dl_step == 0:
 				_dl_step = _coach_step()
-			_dl_play()
 		"building_unlocked":
-			var unl := tr("toast.unlocked") % tr(String(Economy.BUILDINGS[String(ev.get("building_type", "market"))]["name"]))
-			if _dl_pending > 0:
-				_dl_unlocks.append(unl)  # («Открыто: Рынок» comes with its DL's ceremony, after its toast)
-			else:
-				ui.toast(unl)
+			if int(stats.get("dl_pending", 0)) <= 0:  # (a DL's own unlocks come after its toast: _dl_play)
+				ui.toast(tr("toast.unlocked") % tr(String(Economy.BUILDINGS[String(ev.get("building_type", "market"))]["name"])))
 		"fort_refund":
 			ui.toast(tr("toast.fort_refund"))
 		"repair_done":
 			_repaired(int(ev["hex"]))
 
 
-var _dl_pending := 0  # a DL-up whose ceremony waits (0: none)
+## A DL-up whose toast, fanfare and ceremony wait (_dl_play) lives in `stats` — dl_pending (the level), dl_from (the DL
+## before it: the buildings opened past it are announced with it) — so a restart in between still plays it.
 var _dl_step := 0  # the coach step it landed in (0: none; -2: the raid lesson): it waits that step out
-var _dl_unlocks: Array = []  # the toasts of the buildings that DL opened, shown after its own
 
 
 ## The coach step on the screen now: the tutorial's step while its line shows, -2 for the raid lesson, else 0.
@@ -4614,19 +4645,22 @@ func _coach_step() -> int:
 ## plays in a protected moment (a battle, the treaty, the peace ceremony, «Мир расширяется»; 10 §3.4: the ceremonies
 ## queue peace → DL → expansion).
 func _dl_play() -> void:
-	if _dl_pending <= 0:
+	var lvl := int(stats.get("dl_pending", 0))
+	if lvl <= 0:
 		return
 	if _dl_step != 0 and _coach_step() == _dl_step:
 		return
 	_dl_step = 0
 	if _quiet() or mode not in [Mode.MAP, Mode.WAR]:
 		return
-	var lvl := _dl_pending
-	_dl_pending = 0
+	var from := int(stats.get("dl_from", lvl - 1))
+	stats.erase("dl_pending")
+	stats.erase("dl_from")
 	ui.toast(tr("toast.dl_up") % lvl, "castle_icon")
-	for t in _dl_unlocks:
-		ui.toast(String(t))
-	_dl_unlocks = []
+	for t in Economy.BUILDING_ORDER:  # «Открыто: Рынок» right after its DL's toast
+		var u := int(Economy.BUILDINGS[t]["unlock_dl"])
+		if u > from and u <= lvl and not econ._find_type(t).is_empty():
+			ui.toast(tr("toast.unlocked") % tr(String(Economy.BUILDINGS[t]["name"])))
 	sfx.play("fanfare")
 	_dl_ceremony()
 
@@ -4895,16 +4929,24 @@ func _on_open_case(case_id: String, times: int, pay: String) -> void:
 	_autosave()
 
 
-func _apply_case_rewards(results: Array) -> void:
+## Credits what the opened cases hold. Their resources fill the warehouse up to its cap (canon §4 lets cases go past it:
+## a step of its own, with test_flow's «collect all» check) — returns what burned, {res: amount}, {} when all fitted.
+func _apply_case_rewards(results: Array) -> Dictionary:
+	var burned := {}
 	for r in results:
 		for rw in r.get("rewards", []):
 			match String(rw.get("kind", "")):
 				"res":
-					econ.add_resources(rw["res"], true)  # crates and cases fill past the warehouse (canon §4)
+					var took: Dictionary = econ.add_resources(rw["res"])
+					for k in rw["res"]:
+						var lost: int = int(rw["res"][k]) - int(took.get(k, 0))
+						if lost > 0:
+							burned[String(k)] = int(burned.get(String(k), 0)) + lost
 				"speedup":
 					speed_minutes += int(rw["minutes"])
 				_:
 					pass  # shards, cosmetics and glitter are kept by the cases module itself
+	return burned
 
 
 ## Demo helper: the player settles a corridor up to a hex of `s` and wraps around it, so their border bends.
@@ -5809,11 +5851,10 @@ func _world_expansion() -> void:
 		ui.fly_marked()  # the legacy's Raivites fly into their plate now, and the plate counts them in
 		ui.close_modal()
 		_end_expansion()
-		_econ_tick()
+		_hud_resources(now_s())  # (only the plate: no economy or AI tick out of its schedule)
 		rig.focus(map_view.cell_world(sim.states[Types.PLAYER]["capital_id"]), 0.6)
 	ui.show_info(tr("expansion.title"), lines, tr("ui.continue"), go_on, "gold", "globe",
 		{"id": "cmd_bram", "mood": "smile", "say": tr("expansion.advisor" + sfx_key)})
-	ui.dock(true)  # (the window's own opening let the bottom groups out again)
 	_expansion_win = true
 	_autosave()
 

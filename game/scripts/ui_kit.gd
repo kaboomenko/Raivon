@@ -3339,6 +3339,7 @@ class KitButton extends Panel:
 			set_process(false)
 			queue_redraw()
 			if cb.is_valid():
+				SELF.mark_answer()  # (what it says now answers the player's hold)
 				cb.call()
 
 	## A scroll container around the button began to scroll (it tells every descendant, like BaseButton hears it):
@@ -5926,6 +5927,19 @@ class KitTip extends Control:
 
 
 static var _tip: Node
+## The frame of the player's last tap (GameUI._input) or hold firing (KitButton): a toast raised in it is the answer to
+## the player, never news to hold back (GameUI.toast in a protected moment).
+static var answer_frame := -1
+
+
+## This frame answers the player (a tap, a hold that fired): see `answer_frame`.
+static func mark_answer() -> void:
+	answer_frame = Engine.get_process_frames()
+
+
+## True while the code running now answers the player's own tap or hold (`answer_frame` is this frame).
+static func answering() -> bool:
+	return answer_frame == Engine.get_process_frames()
 
 
 ## Frees the tooltip on the screen, if any: a window that opens (or closes) and a change of screen take it away — on

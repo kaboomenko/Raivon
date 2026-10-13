@@ -770,8 +770,10 @@ func _on_card_input(event: InputEvent, card: String) -> void:
 func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		_finger_down = (event as InputEventScreenTouch).pressed
+		Kit.mark_answer()  # (a toast raised by this tap answers it: never held in a protected moment)
 	elif event is InputEventMouseButton and (event as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
 		_finger_down = (event as InputEventMouseButton).pressed
+		Kit.mark_answer()
 	if _drag_card != "":
 		var pos := Vector2.ZERO
 		var released := false
@@ -1032,6 +1034,7 @@ func has_modal() -> bool:
 var _closing: Control  # the window fading out
 var _closed_frame := -1
 var _docked := false  # a docked window or a post-battle one is open: the bottom groups are hidden under it
+var _dock_base := false  # main's dock(true): the moment itself (a ceremony, «Мир расширяется») keeps them hidden
 var on_dock := Callable()  # (docked: bool) — main hides the HUD's bottom group (tabs, tray, hex panel) with ours
 
 
@@ -1041,7 +1044,7 @@ func close_modal() -> void:
 	_modal = null
 	if m != null:
 		Kit.close_tip()  # a tooltip from the window goes with it
-	if _docked:
+	if _docked and not _dock_base:  # (a window closed in a docked moment leaves the bottom hidden)
 		_set_docked(false)
 	if m:
 		_closing = m
@@ -3218,9 +3221,16 @@ func _dlg_box(h: float, title: String, role: String, icon: String, cancel: Calla
 
 
 ## main's moments with no window of their own docked (the peace ceremony's border wave, «Мир расширяется»): the bottom
-## groups hide while `on`. A window opened meanwhile docks and undocks itself; dock(true) again after it opens.
+## groups hide while `on`, and a window opened and closed meanwhile (the mail) leaves them hidden. dock(false) lets
+## them out — at once, or when the window open then closes.
 func dock(on: bool) -> void:
-	_set_docked(on)
+	_dock_base = on
+	if on or _modal == null:
+		_set_docked(on)
+
+
+func docked_moment() -> bool:
+	return _dock_base
 
 
 ## The bottom groups (ours: the card row, the big button; the HUD's through `on_dock`) hide while a docked window or
@@ -6776,10 +6786,12 @@ var _toast_shown := 0.0  # seconds it has held (since it came in, or since the s
 var _toast_out := false  # it is fading out; the next one comes when it is gone
 ## A protected moment (a battle, its result, the treaty, a ceremony, «Мир расширяется»; docs/gdd/10 §3.4): main sets
 ## it. Ordinary news («info», not the answer to a tap) is held then — merged by text — and shown once the player is
-## back on the map; refusals («error»), tap answers (`now`) and the battle's own micro-toasts («battle») still show.
+## back on the map; refusals («error»), the battle's own micro-toasts («battle») and answers still show: `now`, or any
+## toast raised in the frame of the player's tap or hold (Kit.answering(): a HUD button, a purchase, the treaty).
 var quiet := false
 var _toast_held: Array = []  # {text, icon, kind, n} held while quiet, oldest first
 const TOAST_HELD_MAX := 6  ## held beyond this: the oldest goes (stale news)
+const TOAST_KEEP_YOUNG := 1.0  ## news on screen shorter than this when a protected moment starts is held, not lost
 
 
 ## A short message at the top of the free column (§4.10): a slate pill, the event's icon overhanging its left end, the
@@ -6801,7 +6813,10 @@ func toast(text: String, icon := "", kind := "info", now := false) -> void:
 		t = " ".join(words)
 	if t == "":
 		return
-	if quiet and kind == "info" and not now:
+	# the answer to the player — `now`, or raised by their tap or hold this frame (a HUD button in a battle, a purchase)
+	# — shows even in a protected moment; only news is held
+	var answer := now or Kit.answering()
+	if quiet and kind == "info" and not answer:
 		for q in _toast_held:
 			if String(q["text"]) == t:
 				q["n"] = int(q["n"]) + 1
@@ -6821,7 +6836,7 @@ func toast(text: String, icon := "", kind := "info", now := false) -> void:
 			if String(q["text"]) == t:
 				n += int(q["n"])
 		_toast_queue = _toast_queue.filter(func(q): return String(q["text"]) != t)
-		_toast_queue.push_front({"text": t, "icon": icon, "kind": kind, "n": n, "now": true})
+		_toast_queue.push_front({"text": t, "icon": icon, "kind": kind, "n": n, "answer": true})
 		while _toast_queue.size() > TOAST_QUEUE_MAX:
 			_toast_queue.pop_back()
 		if _toast_cur.is_empty():
@@ -6833,7 +6848,7 @@ func toast(text: String, icon := "", kind := "info", now := false) -> void:
 		if String(q["text"]) == t:
 			q["n"] = int(q["n"]) + 1
 			return
-	_toast_queue.append({"text": t, "icon": icon, "kind": kind, "n": 1})
+	_toast_queue.append({"text": t, "icon": icon, "kind": kind, "n": 1, "answer": answer})
 	while _toast_queue.size() > TOAST_QUEUE_MAX:
 		_toast_queue.pop_front()
 	if _toast_cur.is_empty():
@@ -6841,24 +6856,38 @@ func toast(text: String, icon := "", kind := "info", now := false) -> void:
 
 
 ## Enters or leaves a protected moment (see `quiet`). Entering it, the ordinary news waiting in the queue is held too
-## and the one on screen lets itself out; leaving it, the held news comes back into the queue, oldest first, as room
-## frees up (_process_toast).
+## and the one on screen lets itself out — held as well when it came in less than TOAST_KEEP_YOUNG ago (news a moment
+## before «Наступление» is not lost); leaving it, the held news comes back into the queue, oldest first, as room frees
+## up (_process_toast).
 func set_quiet(on: bool) -> void:
 	if on == quiet:
 		return
 	quiet = on
 	if not on:
 		return
+	var moved: Array = []
+	var news_on_screen := not _toast_cur.is_empty() and not _toast_out and String(_toast_cur["kind"]) == "info" \
+		and not bool(_toast_cur.get("answer", false))
+	if news_on_screen and _toast_shown < TOAST_KEEP_YOUNG:
+		moved.append({"text": _toast_cur["text"], "icon": _toast_cur["icon"], "kind": "info", "n": int(_toast_cur.get("n", 1))})
 	var keep: Array = []
 	for q in _toast_queue:
-		if String(q["kind"]) == "info" and not bool(q.get("now", false)):
-			_toast_held.append(q)
+		if String(q["kind"]) == "info" and not bool(q.get("answer", false)):
+			moved.append(q)
 		else:
 			keep.append(q)
 	_toast_queue = keep
+	for q in moved:
+		var merged := false
+		for h in _toast_held:
+			if String(h["text"]) == String(q["text"]):
+				h["n"] = int(h["n"]) + int(q["n"])
+				merged = true
+		if not merged:
+			_toast_held.append(q)
 	while _toast_held.size() > TOAST_HELD_MAX:
 		_toast_held.pop_front()
-	if not _toast_cur.is_empty() and not _toast_out and String(_toast_cur["kind"]) == "info" and not bool(_toast_cur.get("now", false)):
+	if news_on_screen:
 		_toast_shown = INF  # (out on the next frame: the 300 ms fade)
 
 

@@ -13,7 +13,8 @@ leaders' moods, which share the costume):
 - shoulder band (opaque pixels in rows 0.80-0.95 h) vs the plate pixel behind each (gradient + halo, qa_common.
   plate_image): median |dL*| >= 15 and pixels with |dL*| < 8 ("melting") <= 25 %;
 - silhouette rim (opaque pixels within 4 px of transparency at 512, scaled; rows < 0.92 h, the bottom edge cuts the
-  body): <= 35 % within dL* 8 of the plate;
+  body): <= 35 % within dL* 8 of the plate (the ruler's is also printed for the head, rows < 0.60 h, and the body
+  apart: INFO);
 - dark pixels (L* < 17, the albedo floor #2A2A30) <= 3 % of the opaque pixels (with the ID pass, also split INFO:
   the exempt groups of §7.4 — pupils, lash lines, mouth, glasses — vs the rest).
 ID rules (only with the kit's sidecars ids/<name>.png + meta/<name>.json):
@@ -57,10 +58,10 @@ def band_stats(im, plate_hex, mode):
     return float(np.median(dl)), float((dl < 8).mean())
 
 
-def rim_share(im, plate_hex, mode, exclude=None):
+def rim_share(im, plate_hex, mode, exclude=None, rows=None):
     """Share of the silhouette's inner rim (4 px at 512) within dL* 8 of the plate behind it (gradient + halo);
     `exclude` (a mask) leaves some pixels out (INFO only: the ruler's crown, whose gold §7.10 sets at dL* ~4 to the
-    sky)."""
+    sky); `rows` (lo, hi as fractions of h) keeps only that band of rows (INFO only: the ruler's head vs body)."""
     h, w = im.shape[:2]
     a = im[..., 3]
     px = max(2, int(round(4 * w / 512)))
@@ -68,6 +69,9 @@ def rim_share(im, plate_hex, mode, exclude=None):
     inner = np.asarray(m.filter(ImageFilter.MinFilter(2 * px + 1))) > 127
     ring = (a > 0.95) & ~inner
     ring[int(h * 0.92):] = False
+    if rows is not None:
+        ring[: int(h * rows[0])] = False
+        ring[int(h * rows[1]):] = False
     if exclude is not None:
         ring &= ~exclude
     if ring.sum() < 10:
@@ -330,6 +334,15 @@ def main():
                 tag, Q.plate_label(pc), "%5.1f" % b[0] if b else "  -  ", "%3.0f%%" % (b[1] * 100) if b else " - ",
                 "" if okb else " FAIL", "%3.0f%%" % (r * 100) if r is not None else " - ", "" if okr else " FAIL",
                 "%5.1f" % c[0] if c else "  -  ", "%3.0f%%" % (c[1] * 100) if c else " - "))
+            if n.startswith("ruler"):
+                # INFO for the art director's call on the HUD crest (§7.10 plate #8FCDF2 -> #E3F4FD vs the white fur
+                # #F4F1EA): where the rim melts — the head (hair, crown, face) or the body (collar, coat) near the
+                # pale bottom of the gradient
+                hd = rim_share(im, pc, "B", rows=(0.0, 0.60))
+                bd = rim_share(im, pc, "B", rows=(0.60, 0.92))
+                lines.append("%-9s rim by height (INFO): head (rows < 0.60 h) %s, body (0.60-0.92 h) %s" % (
+                    tag, "%3.0f%%" % (hd * 100) if hd is not None else " - ",
+                    "%3.0f%%" % (bd * 100) if bd is not None else " - "))
         ds = dark_share(im)
         okd = ds <= 0.03
         bad |= not okd

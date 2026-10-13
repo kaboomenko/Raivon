@@ -64,6 +64,10 @@ var locked := false:
 var mood := ""  # "" calm, "angry", "smile", "cunning", "tired" — a render of that mood if there is one, else calm
 var plate := Color(0, 0, 0, 0)  # a plate colour instead of the rarity's (AI leaders: their state's colour)
 var frame := true  # the rarity-coloured frame round the picture (off where the slot draws its own rim)
+## The render this bust last drew. Its canvas item keeps only the texture's RID, so this reference keeps the texture
+## alive until the bust redraws: when the era changes, _render lets the old era's renders go, and a bust not redrawn
+## yet (one outside the "kit_era" group) still shows its old face, not a white box.
+var _drawn: Texture2D
 
 
 func _init(id: String = "", r: String = "common", is_locked := false) -> void:
@@ -143,6 +147,7 @@ func _draw() -> void:
 	# a soft halo behind the head: concentric white discs, no dark outline (the «fishbowl» ring is gone)
 	_halo(Vector2(w * 0.5, h * 0.42), u)
 	var tex := _render(cmd, mood)
+	_drawn = tex
 	if tex != null:
 		# the bpy render: cover the box, keep the head, crop the torso — drawn through the rounded box (UVs), so its
 		# corners never poke out of the frame; a locked commander is its flat silhouette at α 0.3 (SILHOUETTE)
@@ -308,7 +313,8 @@ func _frame(rc: Color) -> void:
 static func _render(id: String, m := "") -> Texture2D:
 	if _cache_era != era:
 		# a new era: set_portrait_era redraws the busts on show with its renders (the KitStill bakes are keyed by era),
-		# and the old era's are never read again — let their 512×588 textures (≈ 1.5 MB each with mipmaps) go
+		# and the old era's are never read again — let their 512×588 textures (≈ 1.5 MB each with mipmaps) go; a bust
+		# not redrawn yet keeps the one it draws (_drawn) until it is
 		_renders.clear()
 		_mipped.clear()
 		_cache_era = era
@@ -338,8 +344,10 @@ static func _load_mipmapped(path: String) -> Texture2D:
 ## (mipmaps/generate=true; tracked in git through assets/ui/portraits/.gitignore). A texture imported without them (an
 ## .import lost or reset) gets them here, once per file (_load_mipmapped). With a RenderingDevice (Mobile, Forward+)
 ## the texture's own mip count is read without a readback, so an imported set with mipmaps costs nothing. The new
-## texture takes over the file's `path`: what keys a texture by resource_path (game_ui._mini_face, Kit's caches) stays
-## unique per file, and a load() of the file meanwhile returns this one.
+## texture carries the file's `path` as its resource_path (set_path_cache: outside the ResourceCache), so what keys a
+## texture by resource_path (game_ui._mini_face, Kit's caches) stays unique per file, and the import keeps its own
+## path and cache entry — a holder that load()ed the file (a shop reveal tile) is left alone; load() still gives the
+## import, so the direct users should take _render's texture (P4 follow-up a).
 static func _with_mipmaps(tex: Texture2D, path := "") -> Texture2D:
 	if tex == null:
 		return tex
@@ -354,5 +362,5 @@ static func _with_mipmaps(tex: Texture2D, path := "") -> Texture2D:
 	img.generate_mipmaps()
 	var mt := ImageTexture.create_from_image(img)
 	if path != "":
-		mt.take_over_path(path)
+		mt.set_path_cache(path)
 	return mt

@@ -1369,7 +1369,7 @@ bld.wh_for_lvl,для ур. %d,for Lv %d
 bld.wh_need_dl,Для УР%d нужен Склад ур. %d,DL%d needs Warehouse Lv %d
 bld.wh_need,Для «%s» ур. %d нужен Склад ур. %d,%s Lv %d needs Warehouse Lv %d
 ceremony.storage_full,Склад полон,Storage full
-ceremony.lost_tip,Сгорело %s %s: склад полон. Улучшите Склад,%s %s burned: storage full. Upgrade the Warehouse
+ceremony.lost_tip,Сгорело %s. Улучшите Склад,%s burned. Upgrade the Warehouse
 peace.storage_warn,Склад не вместит %s,Storage can't hold %s
 story.ch3_pack,Стая не трогает сильных. Пока вы сильны — спите спокойно.,"The Pack leaves the strong alone. While you stay strong, sleep easy."
 story.ch4_veilmark,"Вейлмарк умеет ждать. Мы ударим, когда вы отвернётесь.",Veilmark knows how to wait. We strike when you look away.
