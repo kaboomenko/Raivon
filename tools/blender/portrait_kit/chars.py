@@ -2032,9 +2032,11 @@ ERA_LOOKS.update({
         # (P3 review: §7.10 asks a blue-grey greatcoat with a gold standing collar — royal blue with the collar hidden
         # under the beard): greyer within the §7.7 main-colour gate (dE76 <= 22 to the saturated E1 blue), and a tall
         # gold stand collar that shows at both sides of the round beard
-        # (P3 review round 9: E2 and E3 alike at 74 px, the collar hidden) the coat greyer toward the §7.7 limit, the
-        # gold stand collar taller and wider so its sides rise past the round beard
-        3: dict(costume=dict(base=dict(color="#6476B4", rough=0.9, sheen=0.25), layers=[
+        # (P3 review round 9: E2 and E3 alike at 74 px, the collar hidden) the coat greyer and lighter (main colour
+        # dE76 18.5 to E1, 7.9 to E2, was 14.7 / 4.6; the darker #6476B4 put the beard on it at |dL*| 12.6 < 15), the
+        # gold stand collar taller and wider so its sides rise past the round beard (its gold sits near the sky's
+        # value like the crown's: sky rim 35.5 %, 33 % with the low collar; reported)
+        3: dict(costume=dict(base=dict(color="#6880CC", rough=0.9, sheen=0.25), layers=[
                     dict(kind="collar", color="#E8B23A", z=-0.68, h=0.22, out=0.12, flare=0.11, metal=True, stand=True,
                          thick=0.035),
                     dict(kind="buttons", id="btn", at=[(-0.30, -0.92), (-0.31, -1.08), (-0.31, -1.24)], r=0.032,

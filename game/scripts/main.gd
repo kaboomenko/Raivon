@@ -3560,17 +3560,7 @@ func _open_peace() -> void:
 	_chosen = {}
 	var pack: Array = War.recommend_package(sim, war, _demands, ws["score"])
 	if ftue > 0 and ftue < 14:
-		# the first treaty comes prefilled as the canon's parchment (08 §8.3 F11): the goal and the best hexes beside it,
-		# FTUE_PEACE1_HEXES in all — what the war won beyond them goes back, the rest of the points into opinion; the
-		# chapter keeps its pace (10 of 20 after it, canon §14.3) however well the coached first offensive went
-		var land := 0
-		var kept: Array = []
-		for d in pack:
-			var n: int = (d["hexes"] as Array).size()
-			if d["kind"] in ["annex", "pocket"] and land + n <= FTUE_PEACE1_HEXES:
-				kept.append(d)
-				land += n
-		pack = kept
+		pack = _ftue_peace1_pack(ws["score"])
 	for d in pack:
 		_chosen[d["id"]] = true
 	if ftue >= 14:
@@ -3579,6 +3569,41 @@ func _open_peace() -> void:
 		ftue = 6
 	_set_mode(Mode.PEACE)
 	_show_peace()
+
+
+## The first treaty comes prefilled as the canon's parchment (08 §8.3 F11): FTUE_PEACE1_HEXES hexes — the goal first,
+## then a hex beside the Free Hamlets (war 2 needs a common border with them), then the most valuable — within the
+## war score; what the war won beyond them goes back, the rest of the points into opinion. The chapter keeps its pace
+## (10 of 20 after it, canon §14.3) however well the coached first offensive went.
+func _ftue_peace1_pack(budget: float) -> Array:
+	var land: Array = []
+	for i in _demands.size():
+		var d: Dictionary = _demands[i]
+		if d["kind"] in ["annex", "pocket"]:
+			var touch := false
+			for h in d["hexes"]:
+				touch = touch or _touches_owner(int(h), MapGen.HAMLETS)
+			var rank := 0 if bool(d.get("goal", false)) else (1 if touch else 2)
+			var v := 0
+			for h in d["hexes"]:
+				v += int(sim.cells[h]["value"])
+			land.append([rank, -v, i, d])
+	land.sort_custom(func(a: Array, b: Array) -> bool:  # by rank, then value (most first), then the demands' own order
+		for j in 3:
+			if int(a[j]) != int(b[j]):
+				return int(a[j]) < int(b[j])
+		return false)
+	var out: Array = []
+	var n := 0
+	var used := 0.0
+	for e in land:
+		var d: Dictionary = e[3]
+		var k: int = (d["hexes"] as Array).size()
+		if n + k <= FTUE_PEACE1_HEXES and used + float(d["cost"]) <= budget + 0.0001:
+			out.append(d)
+			n += k
+			used += float(d["cost"])
+	return out
 
 
 func _show_peace() -> void:
@@ -6670,6 +6695,8 @@ func _ai_tick(now: int) -> void:
 	if _raid_hold > 0 and now >= _raid_hold and mode in [Mode.MAP, Mode.WAR]:
 		_raid_hold = 0
 		ftue = 10 if _hamlets_target() >= 0 else 0
+		if ftue == 0:  # no border with the Hamlets for war 2: the tour closes here, on its card
+			_tutorial_card()
 	if ultimatum_at > 0 and now >= ultimatum_at and ultimatum.is_empty() and war.is_empty() and mode == Mode.MAP and _truce_left(MapGen.BARONS) == 0:
 		_issue_ultimatum(now)
 	if not ultimatum.is_empty() and now >= int(ultimatum["deadline"]) and mode in [Mode.MAP, Mode.WAR]:
@@ -7133,6 +7160,8 @@ func _raid_lesson() -> bool:
 		_ftue_shown = -2
 		_ftue_line = text + chip
 		ui.coach(text, Vector2(-1, -1), chip)
+		if chip != "" and int(_raid.get("from", -1)) >= 0:  # the arrow's chip counts down with the advisor's
+			map_view.strike_arrow(int(_raid["from"]), h, chip)
 	ui.coach_target(rig.cam.unproject_position(map_view.cell_world(h) + Vector3(0, 0.8, 0)))
 	ui.coach_mode("ring")
 	return true

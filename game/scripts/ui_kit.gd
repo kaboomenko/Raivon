@@ -944,7 +944,7 @@ class KitBake extends Node:
 				else:
 					if hh != null and not parked.is_empty():
 						parked.erase(hh.get_instance_id())
-					if not jobs.has(full) or not (jobs[full]["make"] as Callable).is_valid():  # (its first asker is gone)
+					if not jobs.has(full) or not (jobs[full]["make"] as Callable).is_valid() or _orphan(full):  # (its first asker is gone)
 						jobs[full] = {"size": size, "px": pxs, "off": f, "pp": pp, "base": base, "make": make, "alpha": fa}
 					if owner != null:
 						if not waiting.has(full):
@@ -1293,6 +1293,18 @@ class KitBake extends Node:
 			_icon_round.append([path, cell, _gen])
 		_icons_new.clear()
 
+	## True when every owner that asked for the job `key` was freed before it was made (a modal closed in the frames it
+	## waited): its maker may capture them, and calling it would hand it nulls. False when no owner was recorded.
+	func _orphan(key: String) -> bool:
+		var ws: Dictionary = waiting.get(key, {})
+		if ws.is_empty():
+			return false
+		for id in ws:
+			if (ws[id] as WeakRef).get_ref() != null:
+				return false
+		waiting.erase(key)
+		return true
+
 	## Packs waiting jobs into the stage and the atlas and renders them on the stage this frame.
 	func _stage_round() -> void:
 		if owners.size() > 4096:  # forget the freed ones
@@ -1318,6 +1330,10 @@ class KitBake extends Node:
 		var done: Array = []
 		for key in jobs:
 			var j: Dictionary = jobs[key]
+			if _orphan(key):  # every owner that asked for it is gone (its modal closed): made for no one, dropped
+				done.append(key)
+				_defer_n.erase(key)
+				continue
 			var px: Vector2i = j["px"]
 			var cell := px + Vector2i(2, 2)  # a 1 px clear gutter round each image
 			if x + cell.x > STAGE.x:
