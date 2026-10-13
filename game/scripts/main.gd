@@ -1286,7 +1286,8 @@ func _ally_asks(ally: int, attacker: int) -> void:
 	], [
 		[tr("ally_ask.support2"), "go", support, {"price": [["coin", GameUI.fmt_num(cost), gold < cost]],
 			"short_reason": tr("ult.no_gold") % GameUI.fmt_num(cost - gold) if gold < cost else ""}],
-		[tr("ally_ask.refuse2"), "war", refuse, {"size": "M"}],  # the quiet secondary: one loud thing (§1 rule 1)
+		# the quiet secondary: one loud thing (§1 rule 1); a refusal is a choice, not an attack — the info role, not red
+		[tr("ally_ask.refuse2"), "info", refuse, {"size": "M"}],
 	], "war", "shield", {"id": _leader_portrait(ally), "plate": map_view.team_look(ally)["body"], "name": _state_short(ally),
 		"say": tr("ally_ask.say"), "chips": [{"kind": "owner", "icon": "swords", "text": _state_short(attacker),
 			"fill": map_view.team_look(attacker)["body"]}]})
@@ -1373,9 +1374,12 @@ func _coalition_tick(now: int) -> void:
 		threat_at = now
 	if alarm() >= 0.5 and not _alarm_warned:
 		_alarm_warned = true
-		# «Тревога соседей» 50%: the neighbours start whispering (07 §3.7 — the Grey Pack's leader once it exists)
-		var who := RingNext.PACK if sim.states.size() > RingNext.PACK else MapGen.BARONS
-		_post("inbox.alarm.title", L.pack("inbox.alarm.text", [String(LEADERS[who][0])]))
+		# «Тревога соседей» 50%: the neighbours start whispering (07 §3.7 — the Grey Pack's leader once it exists;
+		# before chapter III Baron Grodek says his own line, never the Pack's)
+		if sim.states.size() > RingNext.PACK:
+			_post("inbox.alarm.title", L.pack("inbox.alarm.text", [String(LEADERS[RingNext.PACK][0])]))
+		else:
+			_post("inbox.alarm.title", L.pack("inbox.alarm.text_barons", [String(LEADERS[MapGen.BARONS][0])]))
 		ui.toast(tr("toast.alarm"))
 	elif alarm() < 0.4:
 		_alarm_warned = false
@@ -1408,7 +1412,7 @@ func _coalition_tick(now: int) -> void:
 	coalition = {"leader": leader, "members": members, "at": now + COALITION_FORM_SEC}
 	coalition_last = now
 	_post("inbox.coalition.title", L.pack("inbox.coalition.text", [_state_key(leader), members.size()]))
-	ui.toast(tr("toast.coalition") % [_state_name(leader), members.size()])
+	ui.toast(tr("toast.coalition") % [_state_name(leader), members.size() - 1])  # «… : Бароны и ещё 1»
 	sfx.play("warn")
 
 
@@ -2255,8 +2259,8 @@ func _ai_swap_package(s: int) -> Dictionary:
 						packs.append([[mine[i], mine[j]], [theirs[k], theirs[l]]])
 	for p in packs:
 		var t := _swap_terms(s, p[0], p[1])
-		if float(t["pay"]) > 1.0:
-			continue
+		if float(t["pay"]) > 0.0:
+			continue  # the AI's own proposal never asks the player to pay on top (playtest B: «Вы доплачиваете 311»)
 		var cut := base - _border_len(s, _swap_over(s, p[0], p[1]))
 		var gain := 0
 		for h in p[1]:
@@ -2280,6 +2284,9 @@ func _show_swap_offer() -> void:
 		swap_offer = {}
 		return
 	var t := _swap_terms(s, give, get_l)
+	if int(t["gold"]) > 0:
+		swap_offer = {}  # the values moved since the offer (a new building, a lost neighbour): it would now cost gold
+		return
 	var gold := int(t["gold"])
 	var cash: int = econ.res["gold"]
 	var untag := func():
@@ -4424,7 +4431,12 @@ func _apply_defeat(enemy: int, lost: Array) -> void:
 	var dmg: Array = econ.damage_buildings(sim, lvl)
 	_show_damage()
 	_post("inbox.ruin.title", L.pack("inbox.ruin.text", [RUIN_PCT[lvl], RUIN_HOURS[lvl], dmg.size()]))
-	_finish_war(enemy, L.t(msg), "white_flag")
+	# the toast says what was lost in one line (the plunder and the ruin are in the inbox): «Мир с потерями · −2 гекса»
+	# under a scorched hex, «Мир с потерями» under the white flag when no hex went
+	if lost.is_empty():
+		_finish_war(enemy, tr("toast.defeat_peace"), "white_flag")
+	else:
+		_finish_war(enemy, tr("toast.defeat_lost") % L.plural(lost.size(), "plural.hexes"), "hex_scorched")
 
 
 const AI_PLUNDER_LVL := {"wolf": 3, "raven": 2, "fox": 1, "turtle": 1, "owl": 1}
@@ -4785,11 +4797,21 @@ func _send_convoy(hex: int) -> void:
 	_autosave()
 
 
+## Income bubbles (05 §5.2): a tap on any coin is «Собрать всё», so a few coins say there is income to collect. A
+## coin over every hex that held 15 min of income covered the buildings, the army plates and the march chip of a
+## 40-hex realm (playtest B). Now a hex shows its coin when its pool is BUBBLE_FULL of its 8 h cap (a long absence:
+## every full hex asks to be collected), and the BUBBLE_TOP fullest hexes always do once they hold 15 min of income
+## (so there is always something to tap). The vein keeps its crystal bubble.
+const BUBBLE_TOP := 3
+const BUBBLE_FULL := 0.5
+
+
 func _update_bubbles() -> void:
 	if mode not in [Mode.MAP, Mode.WAR]:
 		map_view.set_bubbles({})
 		return
 	var data := {}
+	var cands: Array = []  # [amount, hex, res, full]
 	for h in econ.stock:
 		var st: Dictionary = econ.stock[h]
 		var inc: Dictionary = econ.hex_income(sim, int(h))
@@ -4800,8 +4822,14 @@ func _update_bubbles() -> void:
 		if best == "":
 			continue
 		var amount: int = st[best]
-		if amount >= 10 and amount * 4 >= int(inc.get(best, 0)):
-			data[int(h)] = {"res": best, "amount": amount}
+		var rate := int(inc.get(best, 0))
+		if amount >= 10 and amount * 4 >= rate:
+			cands.append([amount, int(h), best, rate > 0 and amount >= BUBBLE_FULL * Economy.POOL_HOURS * rate])
+	cands.sort_custom(func(a: Array, b: Array) -> bool: return int(a[0]) > int(b[0]) if int(a[0]) != int(b[0]) else int(a[1]) < int(b[1]))
+	for i in cands.size():
+		var it: Array = cands[i]
+		if i < BUBBLE_TOP or bool(it[3]):
+			data[int(it[1])] = {"res": String(it[2]), "amount": int(it[0])}
 	for h in econ.vein_secs:
 		if econ.vein_amount(int(h)) >= 1:
 			data[int(h)] = {"res": "raivite", "amount": econ.vein_amount(int(h))}
@@ -4950,12 +4978,17 @@ func _apply_case_rewards(results: Array) -> Dictionary:
 
 
 ## Demo helper: the player settles a corridor up to a hex of `s` and wraps around it, so their border bends.
+## The hex sits ≥3 from the AI's capital: a hex nearer it the AI values double (_swap_value), and an AI proposal never
+## asks the player to pay on top (_ai_swap_package), so no swap of it could be offered.
 func _demo_salient(s: int) -> void:
 	var core := MapGen.core_of(sim, s)
+	var cap: int = sim.states[s]["capital_id"]
 	var q := -1
 	var best := 0
 	for c in sim.cells:
 		if c["owner"] != s or core.has(c["id"]) or not _swappable(c["id"], s):
+			continue
+		if cap >= 0 and HexGrid.distance(HexGrid.axial(c), HexGrid.axial(sim.cells[cap])) <= 2:
 			continue
 		var free := 0
 		for n in sim.neighbors[c["id"]]:
@@ -5923,8 +5956,12 @@ func _leader_portrait(s: int) -> String:
 	return String(LEADERS[s][0]).replace("leader.", "ldr_") if LEADERS.has(s) else ""
 
 
+## Opinion lives in −100…100 (canon §10.5): a run of insults never stores more than −100, so later amends count.
+const OPINION_MAX := 100.0
+
+
 func _opinion_add(s: int, v: float) -> void:
-	opinion[s] = float(opinion.get(s, 0.0)) + v
+	opinion[s] = clampf(float(opinion.get(s, 0.0)) + v, -OPINION_MAX, OPINION_MAX)
 
 
 ## Memory fades by 0.5 per hour toward zero (canon §10.5).
@@ -5940,14 +5977,17 @@ func _opinion_decay(now: int) -> void:
 		opinion[k] = move_toward(v, 0.0, 0.5 * hours)
 
 
+## The opinion a state acts on and the leader card shows: the stored memory plus the standing modifiers, in
+## −100…100 (the card showed «−106», and −150 stored gave −160).
 func _opinion_of(s: int) -> float:
 	var v: float = opinion.get(s, 0.0)
 	if alarm() >= 0.5:
 		v -= 10.0  # «Тревога соседей» 50%+: everyone is wary (canon §10.8)
 	for c in sim.cells:
 		if c["owner"] == Types.PLAYER and _touches_owner(c["id"], s):
-			return v - 10.0  # a shared border, permanently
-	return v
+			v -= 10.0  # a shared border, permanently
+			break
+	return clampf(v, -OPINION_MAX, OPINION_MAX)
 
 
 ## Translation key of the opinion word.
@@ -6862,7 +6902,7 @@ func _patent_tick(now: int) -> void:
 func _open_patent() -> void:
 	var now := now_s()
 	ui.show_patent({"active": patent.active(now), "days_left": patent.days_left(now), "trial": patent.trial_eligible(),
-		"can_buy": _payments_enabled(), "price": "$7.99", "trial_price": "$1.99"},
+		"can_buy": _payments_enabled(), "price": PATENT_PRICE, "trial_price": PATENT_TRIAL_PRICE},
 		func(sku: String): _on_buy_sku(sku),
 		func(): ui.toast(tr("patent.restored")))
 
@@ -6920,11 +6960,18 @@ func _intro_offer_check(day: int) -> void:
 	_show_intro_offer.call_deferred()
 
 
+## The patent's store prices (the window and the intro offer show the same ones).
+const PATENT_PRICE := "$7.99"
+const PATENT_TRIAL_PRICE := "$1.99"
+
+
 func _show_intro_offer() -> void:
 	var more := func(): _open_patent()
 	var later := func(): ui.close_modal()
 	# «Подробнее» opens the patent (nothing is bought here: info, not gold); ✕ is «Не сейчас»
-	ui.show_choice(tr("patent.offer_title"), [tr("patent.offer_line2"), tr("patent.trial") % ["$1.99", "$7.99"]], [
+	# the prices as the patent window and the store write them (Kit.store_price: RU «1,99 $», EN «$1.99», §3.7)
+	ui.show_choice(tr("patent.offer_title"), [tr("patent.offer_line2"),
+		tr("patent.trial") % [Kit.store_price(PATENT_TRIAL_PRICE), Kit.store_price(PATENT_PRICE)]], [
 		[tr("patent.offer_more"), "info", more],
 		[tr("patent.offer_later"), "info", later, {"cancel": true}],
 	], "gold", "charter")
@@ -8060,6 +8107,15 @@ func _update_minimap() -> void:
 
 # ====================================================================== debug / CI
 
+## The player's DL for tooling (--dl=, the demo hooks): the Residence's level with the buildings it opens
+## (Economy.set_dev_level), the armies at that DL's strength, the map's props. A real DL-up goes through the upgrade.
+func _set_dl(dl: int) -> void:
+	econ.set_dev_level(dl)
+	_rescale_armies()
+	_econ_tick()
+	map_view.refresh_props()
+
+
 ## `--lang=ru|en` is consumed first, by _init_language() in _ready, before the HUD and UI are built.
 func _handle_args() -> void:
 	for a in OS.get_cmdline_user_args():
@@ -8072,10 +8128,8 @@ func _handle_args() -> void:
 		elif a.begins_with("--select="):
 			var parts := a.substr(9).split(",")
 			_select(sim.id_at(int(parts[0]), int(parts[1])))
-		elif a.begins_with("--dl="):  # the player's development level for screenshots (the residence level)
-			econ._find_type("residence")["level"] = int(a.substr(5))
-			_econ_tick()
-			map_view.refresh_props()
+		elif a.begins_with("--dl="):  # the player's development level for screenshots: the DL's buildings, the armies
+			_set_dl(int(a.substr(5)))
 		elif a.begins_with("--ai-dl="):  # every AI state at that development level (late-game screenshots)
 			for st in _ai_states():
 				sim.states[st]["dev_level"] = int(a.substr(8))
@@ -8252,7 +8306,7 @@ func _demo(spec: String) -> void:
 		return
 	if what == "commanders":  # the collection mid-game (commanders:card — Vega's card; commanders:tab — the Army tab; commanders:locked — a locked card)
 		econ.res["gold"] = 40000
-		econ._find_type("residence")["level"] = int(parts[2]) if parts.size() > 2 else 4  # commanders:<view>:<DL>
+		_set_dl(int(parts[2]) if parts.size() > 2 else 4)  # commanders:<view>:<DL>
 		for id in ["cmd_lira", "cmd_vega", "cmd_frey", "cmd_seir", "cmd_irma", "cmd_bram", "cmd_vik"]:
 			cases.shards[id] = int(cases.shards.get(id, 0)) + Commanders.spent(_cmd_rarity(id), 1)
 		cases.shards["cmd_bram"] = int(cases.shards["cmd_bram"]) + 30
@@ -8287,7 +8341,7 @@ func _demo(spec: String) -> void:
 		return
 	if what == "hand":  # the hand picker at DL6 (5 slots, the airstrike open); hand:tab — the Army tab card;
 		# hand:default — the default hand (open cards only: 4 of 5 slots, «Десант» opens at DL7)
-		econ._find_type("residence")["level"] = 6
+		_set_dl(6)
 		hand_pick = [] if parts.size() > 1 and parts[1] == "default" else ["breakthrough", "airstrike", "defense", "encircle"]
 		if parts.size() > 1 and parts[1] == "default":
 			parts = PackedStringArray(["hand"])
@@ -8343,7 +8397,7 @@ func _demo(spec: String) -> void:
 	if what == "dip2":
 		await _world_expansion()
 		ui.close_modal()
-		econ._find_type("residence")["level"] = 3
+		_set_dl(3)
 		opinion[4] = 46.0
 		allies = [3]
 		_open_tab("diplomacy")
@@ -8351,8 +8405,7 @@ func _demo(spec: String) -> void:
 	if what == "oil":
 		await _world_expansion()
 		ui.close_modal()
-		econ._find_type("residence")["level"] = 5
-		_econ_tick()
+		_set_dl(5)
 		for c in sim.cells:
 			if c["kind"] == "oil":
 				_select(c["id"])
@@ -8496,8 +8549,7 @@ func _demo(spec: String) -> void:
 	if what == "ch3":  # chapter III «Континент»: ch3 — the ceremony, ch3:<kind> — a ring III feature up close
 		await _world_expansion()
 		ui.close_modal()
-		econ._find_type("residence")["level"] = 5
-		_econ_tick()
+		_set_dl(5)
 		if parts.size() > 1:
 			await _world_expansion()
 		else:
@@ -8662,9 +8714,10 @@ func _demo(spec: String) -> void:
 	_declare(enemy, War.recommend_goals(sim, enemy, 1)[0])
 	if what == "war":
 		return
+	if what == "missile":
+		_set_dl(8)  # before the offensive: the battle takes the armies at DL8 strength
 	_start_offensive()
 	if what == "missile":  # DL8 hand: a missile on a Barons tower and a landing behind the front
-		econ._find_type("residence")["level"] = 8
 		var tgt := -1
 		for c in sim.cells:
 			if tgt < 0 and battle.can_target(Types.PLAYER, c["id"]) and not battle.adjacent_idle_armies(Types.PLAYER, c["id"]).is_empty():

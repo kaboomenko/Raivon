@@ -2645,13 +2645,17 @@ static func clip_below(pts: PackedVector2Array, y: float) -> PackedVector2Array:
 
 ## An INK pill with [icon][number] per item. It lays its children out for any height and number size, so a button
 ## sizes it by its class. items: [[icon, text, short], …]; `short` (not enough) paints the number NEG. More than
-## two items, or `compact`, show the scarcest one and a «+N» (§4.1: the full list goes to the tooltip).
+## two items, or `compact`, show the scarcest ones and, in a chip at the end, the icons of the rest (§4.1: the full
+## list goes to the tooltip).
 class KitPrice extends Panel:
 	var items: Array = []
 	var compact := false
 	var _rows: Array = []  # [{ic: TextureRect or null, l: Label, text, short}]
 	var _more: Label
-	var _more_chip: Panel  # «+N»: a neutral count chip (§4.8: SLATE_WELL, white), not a number glued to the price
+	## The rest of the price: a neutral chip (§4.8: SLATE_WELL) with the icons of the resources left out, two at most
+	## (overlapped). It was a «+1» count, and a number after a price read as a bonus added to it (playtest A and B).
+	var _more_chip: Panel
+	var _more_icons: Array = []  # two TextureRects in the chip
 	var _more_sb: StyleBoxFlat
 	var _sb: StyleBoxFlat
 
@@ -2686,10 +2690,19 @@ class KitPrice extends Panel:
 		SELF.set_panel(_more_chip, _more_sb)
 		_more_chip.visible = false
 		add_child(_more_chip)
-		_more = SELF.label("", 24, TEXT, true)
+		_more = SELF.label("", 24, TEXT, true)  # «+N»: only when a left-out item has no icon
 		_more.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		_more.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		_more_chip.add_child(_more)
+		for i in 2:
+			var mi := TextureRect.new()
+			mi.name = "more_icon_%d" % i
+			mi.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			mi.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			mi.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			mi.visible = false
+			_more_chip.add_child(mi)
+			_more_icons.append(mi)
 
 	## The items shown: all of them (at most 2); of more, the first two with what is short first (callers order the
 	## items scarcest first) and «+N»; when compact, the scarcest one alone.
@@ -2736,25 +2749,42 @@ class KitPrice extends Panel:
 			x += tw
 		var more := _rows.size() - shown.size()
 		if more > 0:
-			# «+1»: how many other prices the tooltip lists — a count chip inside the plate's end (SLATE_WELL, white
-			# MICRO), so it never reads as a bonus added to the number before it
+			# the rest of the price as its resources' icons in a chip at the plate's end (the tooltip lists the
+			# numbers); more than two left out, or one without an icon, falls back to a «+N» count
+			var rest: Array = _rows.filter(func(r): return not shown.has(r))
+			var texs: Array = []
+			for r in rest.slice(0, 2):
+				if r["ic"] != null and (r["ic"] as TextureRect).texture != null:
+					texs.append((r["ic"] as TextureRect).texture)
+			var by_icon := rest.size() <= 2 and texs.size() == rest.size()  # 3+ left out: the «+N» count
 			var mt := "+%d" % more
 			var cn := 22
 			var ch := h - 8.0
-			var cw := maxf(ch, SELF.text_w(mt, cn, "d900", false) + 16.0)
+			var mi_side := ch - 6.0
+			var step := roundf(mi_side * 0.55)  # the second icon overlaps the first: one chip, two resources
+			var cw := (mi_side + 8.0 + step * (texs.size() - 1)) if by_icon else maxf(ch, SELF.text_w(mt, cn, "d900", false) + 16.0)
 			x += 6.0
 			if apply:
-				_more.text = mt
 				_more_chip.visible = true
 				_more_chip.position = Vector2(x, 4.0)
 				_more_chip.size = Vector2(cw, ch)
 				_more_sb.set_corner_radius_all(int(ch * 0.5))
 				_more_chip.queue_redraw()
-				SELF.style_label(_more, cn, TEXT, true)
-				_more.add_theme_font_override("font", SELF.font("d900"))
-				_more.add_theme_font_size_override("font_size", cn)
-				_more.position = Vector2(0, -1.0)
-				_more.size = Vector2(cw, ch)
+				_more.visible = not by_icon
+				for i in 2:
+					var mi: TextureRect = _more_icons[i]
+					mi.visible = by_icon and i < texs.size()
+					if mi.visible:
+						mi.texture = texs[i]
+						mi.size = Vector2(mi_side, mi_side)
+						mi.position = Vector2(4.0 + step * i, 3.0)
+				if not by_icon:
+					_more.text = mt
+					SELF.style_label(_more, cn, TEXT, true)
+					_more.add_theme_font_override("font", SELF.font("d900"))
+					_more.add_theme_font_size_override("font_size", cn)
+					_more.position = Vector2(0, -1.0)
+					_more.size = Vector2(cw, ch)
 			return x + cw + 4.0
 		if apply:
 			_more_chip.visible = false

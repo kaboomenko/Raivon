@@ -124,7 +124,7 @@ tab.development,Развитие,Research
 tab.diplomacy,Соседи,Realms
 tab.world,Мир,World
 tile.owner_you,Вы,You
-tile.owner_none,Ничья,Unclaimed
+tile.owner_none,Свободная,Unclaimed
 hud.per_hour,%s%s/ч,%s%s/h
 hud.tool.front,Фронт,Front
 hud.tool.capital,Столица,Capital
@@ -304,7 +304,7 @@ ui.pick_target,Выбрать цель,Pick target
 ui.expand_world,Расширить мир,Expand world
 ui.convoy_status,Обоз вернётся через %s,The convoy is back in %s
 ui.send_convoy,Обоз,Convoy
-ui.finish,Готово,Finish
+ui.finish,Завершить,Finish
 ui.speedup,Ускорить,Speed up
 ui.colonize,Занять,Settle
 ui.truce_timer,Перемирие: войну можно объявить через %s,Truce: you can declare war in %s
@@ -383,7 +383,9 @@ result.white_peace,Белый мир: всё вернётся владельца
 toast.white_peace_signed,Белый мир подписан,White peace signed
 result.defeat,Грабёж 60%,60% plundered
 inbox.defeat.title,Поражение в войне,Defeat in war
-inbox.defeat.text,"Мир с потерями: −%d гекс., разграблено %d золота, %d еды, %d металла. Щит 24 ч и «Реванш» +15%%","Peace with losses: −%d hexes; %d gold, %d food and %d metal plundered. 24 h shield and “Revenge” +15%%"
+inbox.defeat.text,"Мир с потерями. Потеряно гексов: %d. Разграблено: %d золота, %d еды, %d металла. Щит 24 ч и «Реванш» +15%%","Peace with losses. Hexes lost: %d. Plundered: %d gold, %d food, %d metal. 24 h shield and “Revenge” +15%%"
+toast.defeat_lost,Мир с потерями · −%s,Peace with losses · −%s
+toast.defeat_peace,Мир с потерями,Peace with losses
 toast.convoy_back,Обоз привёз: +%d %s,Convoy brought back: +%d %s
 toast.level_done,%s: уровень %d готов!,%s: level %d ready!
 toast.dl_up,Уровень развития %d! Открыты новые постройки,Development level %d! New buildings unlocked
@@ -802,7 +804,7 @@ alarm.at_war,Война с коалицией из %d государств,At wa
 alarm.hint,"Угроза растёт от присоединений и грабежа, спадает на 0,5 в час. Подарки и мир разваливают коалицию.",Threat grows with annexations and plunder and drops by 0.5 an hour. Gifts and peace break a coalition.
 dipl.in_coalition,В коалиции,In a coalition
 ally.alarm,Соседи насторожены — новых союзов нет,The neighbours are wary — no new alliances
-toast.coalition,Коалиция формируется: %s собирает %d государства против вас!,A coalition is forming: %s gathers %d states against you!
+toast.coalition,Против вас коалиция: %s и ещё %d,A coalition against you: %s and %d more
 toast.coalition_broken,Коалиция распалась,The coalition has fallen apart
 toast.coalition_war,Коалиция объявила войну: %s,The coalition declared war: %s
 inbox.coalition.title,Коалиция формируется,A coalition is forming
@@ -831,6 +833,7 @@ story.dl6,"«С конвейера сошли первые танки. Альв�
 story.dl8,«Над столицей поднялся первый небоскрёб. Ультразабор гудит энергосетью».,“The first skyscraper has risen over the capital. The ultra-fence hums with power.”
 inbox.alarm.title,Соседи шепчутся,The neighbours whisper
 inbox.alarm.text,"%s: «Стая чует, куда дует ветер. Пока — не в вашу сторону». Тревога соседей выше 50%%: мнение всех −10, новых союзов нет.","%s: “The Pack smells which way the wind blows. Not your way, for now.” Neighbours' alarm is above 50%%: opinion −10 for all, no new alliances."
+inbox.alarm.text_barons,"%s: «Мои бароны считают ваши флаги — и точат топоры». Тревога соседей выше 50%%: мнение всех −10, новых союзов нет.","%s: “My barons are counting your flags — and sharpening their axes.” Neighbours' alarm is above 50%%: opinion −10 for all, no new alliances."
 toast.alarm,Тревога соседей выше 50% — они насторожились,Neighbours' alarm is above 50% — they are wary
 ui.cancel,Отмена,Cancel
 swap.title,Обмен территориями,Territory swap
@@ -1143,7 +1146,7 @@ chr.ach_research_150.d,Завершите 150 уровней исследова�
 chr.ach_ultrafence_5,Ультраграница,Ultra-frontier
 chr.ach_ultrafence_5.d,Держите 5 укреплений ур. 8 одновременно,Hold 5 level 8 forts at once
 chr.ach_vein_4,Райвитовый пояс,Raivite Belt
-chr.ach_vein_4.d,Владейте 4 Райвитовыми жилами одновременно,Own 4 Raivite veins at once
+chr.ach_vein_4.d,Владейте 3 Райвитовыми жилами одновременно,Own 3 Raivite veins at once
 chr.ach_cmd_4,Штаб собран,Staff Assembled
 chr.ach_cmd_4.d,Откройте 4 из 8 командиров кампании,Unlock 4 of the 8 campaign commanders
 chr.ach_cmd_8,Генеральный штаб,General Staff
@@ -1228,7 +1231,7 @@ cmdr.rarity.common,Обычный,Common
 cmdr.rarity.rare,Редкий,Rare
 cmdr.rarity.epic,Эпический,Epic
 cmdr.rarity.legendary,Легендарный,Legendary
-cmdr.in_army,в %d-й армии,in army %d
+cmdr.in_army,Сейчас: %d-я армия,Now: army %d
 cmdr.pick_title,Командир %d-й армии,Commander of army %d
 cmdr.move_title,Перевести: %s,Transfer %s
 cmdr.move_text,Сейчас ведёт %d-ю армию. Перевести в %d-ю?,Leads army %d now. Move to army %d?

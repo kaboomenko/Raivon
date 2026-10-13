@@ -1186,8 +1186,8 @@ func _run() -> void:
 		var pk: Dictionary = g._ai_swap_package(fox)
 		if not pk.is_empty():
 			var cut: int = g._border_len(fox) - g._border_len(fox, g._swap_over(fox, pk["give"], pk["get"]))
-			_check(cut >= 2 and (pk["give"] as Array).size() <= 2 and float(g._swap_terms(fox, pk["give"], pk["get"])["pay"]) <= 1.0,
-				"the AI package shortens the border by %d edges, top-up ≤ 1 unit" % cut)
+			_check(cut >= 2 and (pk["give"] as Array).size() <= 2 and float(g._swap_terms(fox, pk["give"], pk["get"])["pay"]) <= 0.0,
+				"the AI package shortens the border by %d edges and asks no top-up (B4)" % cut)
 			g.swap_offer = {"state": fox, "give": pk["give"], "get": pk["get"], "until": g.now_s() + 86400, "auto": false}
 			g._show_swap_offer()
 			_check(g.ui.has_modal(), "the AI offer opens")

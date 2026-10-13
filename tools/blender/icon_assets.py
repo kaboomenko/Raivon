@@ -6,7 +6,7 @@ the horizon — for everything else.
 
 Run: python3 tools/blender/icon_assets.py [game/assets/ui] [name ...] [--raw=DIR] [--samples=64] [--force]
      [--check-only] [--strict]
-- With no names, renders every icon in ICONS (66 icons, about 4 minutes on 4 cores).
+- With no names, renders every icon in ICONS (67 icons, about 4 minutes on 4 cores).
 - coin, food, metal, raivite, oil, builder go to <out>/<name>.png (the HUD loads res://assets/ui/<name>.png);
   every other icon goes to <out>/icons/<name>.png.
 - Resume-safe: an icon whose output already exists is skipped; --force renders it again.
@@ -1541,6 +1541,30 @@ def hex_tile():
     _tilt(rx=52, rz=0)
 
 
+def hex_scorched():
+    """A lost hex (the result window's «Потеряно», B4): the land hex of hex_tile burnt — ash-brown top with a sooty
+    mottle, a charred stump instead of the tree, a few embers and a puff of smoke. No albedo under ≈ #2A2A30
+    (docs/art_direction.md §6.1 rule 3): the soot is a warm grey-brown, not black."""
+    ash = kit.noisy_mat("ash_t", "#7d6a5c", "#9a8676", 4.0)
+    dirt = kit.noisy_mat("dirt_s", "#a07a56", "#6e5040", 6.0)
+    kit.hex_prism("tile", (0, 0, 0), 0.62, 0.22, ash, dirt, 0.04)
+    soot = mat("soot", "#4a3f3a", 0.9)
+    for (x, y, sx, sy) in ((-0.2, -0.12, 1.3, 0.9), (0.24, -0.18, 1.0, 0.8), (0.0, 0.2, 1.1, 1.0)):
+        sphere("scorch", 0.13, (x, y, 0.0), soot, (sx, sy, 0.08), 2)  # flat sooty patches on the ground
+    char = mat("char", "#3e3430", 0.85)
+    stump = cyl("stump", 0.075, 0.2, (0.12, 0.3, 0.1), char, 8, 0.01, r2=0.055)
+    stump.rotation_euler.y = 0.08
+    snag = cyl("snag", 0.03, 0.16, (0.15, 0.31, 0.25), char, 6, 0.0)  # a broken branch stub
+    snag.rotation_euler = (0.0, 0.7, 0.3)
+    ember = mat("ember", "#ff8a2a", 0.5, emission="#ff7a1a", emit_strength=3.0)
+    for (x, y) in ((-0.22, -0.1), (0.26, -0.16), (-0.04, 0.18), (0.08, -0.32), (0.18, 0.36)):
+        sphere("ember", 0.04, (x, y, 0.02), ember, (1, 1, 0.7), 2)
+    smoke = mat("smoke", "#aaa3ae", 0.95)
+    for (x, y, z, r) in ((0.12, 0.3, 0.33, 0.1), (0.04, 0.28, 0.47, 0.13), (0.14, 0.26, 0.63, 0.1), (0.05, 0.25, 0.75, 0.07)):
+        sphere("smoke", r, (x, y, z), smoke, (1, 1, 0.9), 2)
+    _tilt(rx=52, rz=0)
+
+
 # ------------------------------------------------------------------ re-drawn resources
 
 
@@ -1620,7 +1644,7 @@ ICONS = {"coin": coin, "food": food, "metal": metal, "raivite": raivite, "oil": 
          "chest_royal": chest_royal, "chest_cards": chest_cards, "medal_bronze": medal_bronze,
          "medal_silver": medal_silver, "medal_gold": medal_gold, "shard": shard, "blueprint": blueprint, "xp": xp,
          "mason": mason, "white_flag": white_flag, "pencil": pencil, "sound_on": sound_on, "sound_off": sound_off,
-         "dice": dice, "eye_off": eye_off, "hex_tile": hex_tile}
+         "dice": dice, "eye_off": eye_off, "hex_tile": hex_tile, "hex_scorched": hex_scorched}
 
 # The share of the square the model's larger side fills (default FILL). 0.9 leaves 6 px of 128 round the model:
 # room for the 3 px rim and a little air. Thin or very round icons get a touch less, so they weigh the same.

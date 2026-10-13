@@ -1,11 +1,58 @@
 """Adds the title to the rendered key art → splash / loading screen and store art.
-Run: python3 tools/ui/compose_keyart.py RENDER.png OUT.png [--subtitle "Territory Wars"]"""
+Run: python3 tools/ui/compose_keyart.py RENDER.png OUT.png [--subtitle "Territory Wars"] [--allow-black]
+     python3 tools/ui/compose_keyart.py --check IMAGE.png   (the black-hole check alone; exit 1 on a hole)
+
+Before composing it checks the render for black holes in the land (black_runs): Cycles renders the overlap of two
+coplanar faces black, and nothing in the soft style is darker than ≈ #2A2A30 (docs/art_direction.md §6.1 rule 3), so a
+run of near-black pixels under the title band is a defect. A render with one is refused (exit 1) unless
+--allow-black is passed."""
 import sys
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
+
+BLACK_LEVEL = 24    # every channel under this (0–255) is "black"; the darkest soft albedo #2A2A30 is ~42
+BLACK_RUN = 10      # a horizontal run at least this long (px) counts
+LAND_FROM = 0.3     # the scan starts under the title band (a share of the height)
+
+
+def black_runs(img, level=BLACK_LEVEL, min_run=BLACK_RUN, top=LAND_FROM):
+    """Rows of `img` (under `top` × height) holding a run of ≥ min_run near-black pixels: [(y, x0, length)]."""
+    rgb = img.convert("RGB")
+    w, h = rgb.size
+    px = rgb.load()
+    out = []
+    for y in range(int(h * top), h):
+        run = 0
+        for x in range(w):
+            r, g, b = px[x, y]
+            run = run + 1 if max(r, g, b) < level else 0
+            if run == min_run:
+                out.append((y, x - min_run + 1, min_run))
+            elif run > min_run:
+                out[-1] = (y, out[-1][1], run)
+    return out
+
+
+def report_black(path, img):
+    runs = black_runs(img)
+    if not runs:
+        print("black-hole check: %s clean (no run of ≥%d px under rgb %d)" % (path, BLACK_RUN, BLACK_LEVEL))
+        return True
+    ys = [r[0] for r in runs]
+    xs = [r[1] for r in runs] + [r[1] + r[2] for r in runs]
+    print("black-hole check: %s FAILS: %d rows with near-black runs, longest %d px, box x %d–%d y %d–%d"
+          % (path, len(runs), max(r[2] for r in runs), min(xs), max(xs), min(ys), max(ys)))
+    return False
+
+
+if "--check" in sys.argv:
+    path = sys.argv[sys.argv.index("--check") + 1]
+    sys.exit(0 if report_black(path, Image.open(path)) else 1)
 
 src, out = sys.argv[1], sys.argv[2]
 subtitle = sys.argv[sys.argv.index("--subtitle") + 1] if "--subtitle" in sys.argv else "TERRITORY WARS"
 im = Image.open(src).convert("RGBA")
+if not report_black(src, im) and "--allow-black" not in sys.argv:
+    sys.exit(1)
 W, H = im.size
 BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 

@@ -1212,7 +1212,8 @@ func show_result(stars: int, captured: int, lost: int, score: float, control: in
 	tiles.append({"icon": "treaty", "value": ("+" if score > 0.05 else "") + Kit.fmt_dec(score, 1), "caption": tr("result.score"),
 		"value_color": Kit.NEG_CREAM if score < -0.05 else Kit.INK_TEXT})
 	if lost > 0:
-		tiles.append({"icon": "hex_tile", "value": Kit.MINUS + str(lost), "caption": tr("result.lost"), "value_color": Kit.NEG_CREAM})
+		# a scorched hex, not the grass one of «Захвачено»: the two tiles must not read alike
+		tiles.append({"icon": "hex_scorched", "value": Kit.MINUS + str(lost), "caption": tr("result.lost"), "value_color": Kit.NEG_CREAM})
 	var well := Kit.well(box, Rect2(32, 326, w - 64.0, 214))
 	var n := tiles.size()
 	var tw := (well.size.x - 32.0 - 12.0 * (n - 1)) / n

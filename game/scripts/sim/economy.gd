@@ -857,6 +857,22 @@ func _complete(b: Dictionary) -> void:
 				_events.append({"type": "building_unlocked", "building": nb["id"], "building_type": t})
 
 
+## The player's development level set at once (tooling: main.gd --dl=, the demo hooks, the test drivers), as if the
+## Residence had been upgraded to `dl`: the buildings opened by then are added at level 1 (_complete's unlock rule),
+## so a DL6 realm has its Market (no «Рынок открывается на УР2»). No events (no toasts); the caller rescales the
+## armies (main.gd _rescale_armies) and refreshes the map.
+func set_dev_level(dl: int) -> void:
+	var r := _find_type("residence")
+	if r.is_empty():
+		return
+	var lvl := clampi(dl, 1, 10)
+	r["level"] = lvl
+	r["upgrade_end"] = 0
+	for t in BUILDING_ORDER:
+		if int(BUILDINGS[t]["unlock_dl"]) <= lvl and _find_type(t).is_empty():
+			_add_building(t, -1, 1)
+
+
 func _complete_due(now: int) -> void:
 	# Time order, then id order — deterministic.
 	var due: Array = []

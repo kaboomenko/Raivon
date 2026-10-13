@@ -40,7 +40,7 @@ const LIST := [
 	["ach_research_50", "dev", "research_done", 50, 10, "", false],
 	["ach_research_150", "dev", "research_done", 150, 20, "", false],
 	["ach_ultrafence_5", "dev", "@fort8", 5, 15, "", false],
-	["ach_vein_4", "dev", "@veins", 4, 15, "", false],
+	["ach_vein_4", "dev", "@veins", 3, 15, "", false],  # 07 §7 says 4; the build's rings II–IV hold 3 veins (B4)
 	["ach_cmd_4", "cmd", "@cmd_det", 4, 25, "", false],
 	["ach_cmd_8", "cmd", "@cmd_det", 8, 15, "", false],
 	["ach_cmd_level_10", "cmd", "@cmd_level", 10, 10, "", false],

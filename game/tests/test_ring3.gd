@@ -96,6 +96,14 @@ func _initialize() -> void:
 		if int(c["owner"]) == Types.NOBODY and Types.is_passable(c):
 			_check(String(c["kind"]) in ["plain", "farm", "mine"], "F10: wild hex %d is ordinary, a farm or a mine (%s)" % [i, c["kind"]])
 		_check(String(c["name"]) != "" or c["kind"] == "plain", "named special %d" % i)
+	_check(_specials_clear(w, old_n, w.cells.size()), "ring III: every special hex ≥2 from every capital, none in a core (B4)")
+	for kind in ["factory", "military_base", "port", "raivite_vein"]:
+		var free := 0
+		for i in range(old_n, w.cells.size()):
+			var o := int(w.cells[i]["owner"])
+			if w.cells[i]["kind"] == kind and (o < 2 or not MapGen.core_of(w, o).has(i)):
+				free += 1
+		_check(free >= 1, "ring III: a %s can be won (%d outside the cores)" % [kind, free])
 	_check(RingNext.extend_chapter_three(w, 1), "idempotent")
 	_check(w.cells.size() == old_n + 86, "nothing added twice (%d new cells)" % (w.cells.size() - old_n))
 	# deterministic and valid for other seeds
@@ -111,13 +119,18 @@ func _initialize() -> void:
 		fb += "%d%s%d," % [c["q"], c["kind"], c["owner"]]
 	_check(fa == fb, "same seed, same ring")
 	var ok := 0
+	var clear := 0
 	for s in 6:
 		var x = _world(1000 + s)
+		var n2: int = x.cells.size()
 		if RingNext.extend_chapter_three(x, (1000 + s) ^ 0x3):
 			ok += 1
+			if _specials_clear(x, HexGrid.disk(MapGen.RADIUS).size(), x.cells.size()):  # rings II–III (chapter I's are its own)
+				clear += 1
 		else:
 			print("  seed %d: %s" % [1000 + s, RingNext.last_fail])
 	_check(ok == 6, "6 of 6 other seeds give a valid ring")
+	_check(clear == ok, "rings II–III of 6 other seeds: no special in a core (%d of %d)" % [clear, ok])
 	# Chapter IV «Индустриальный пояс» on top (canon §12.1, 02 §15.3–15.4)
 	var n3: int = w.cells.size()
 	t = Time.get_ticks_msec()
@@ -139,12 +152,45 @@ func _initialize() -> void:
 	_check(kinds4.get("port", 0) == 4 and kinds4.get("oil", 0) == 4 and kinds4.get("factory", 0) == 3 and kinds4.get("city", 0) == 5 \
 		and kinds4.get("military_base", 0) == 3 and kinds4.get("farm", 0) == 7 and kinds4.get("mine", 0) == 7, "ring IV quotas %s" % str(kinds4))
 	_check(bool(w.states[RingNext.CONCLAVE]["hegemon"]) and int(w.states[RingNext.CONCLAVE]["dev_level"]) == 8 and int(w.states[RingNext.LAKES]["dev_level"]) == 7, "the Conclave hegemon at DL8, the others at DL7")
+	_check(_specials_clear(w, n3, w.cells.size()), "ring IV: every special hex ≥2 from every capital, none in a core (B4)")
 	var ok4 := 0
+	var clear4 := 0
 	for s4 in 4:
 		var x4 = _world(2000 + s4)
 		RingNext.extend_chapter_three(x4, (2000 + s4) ^ 0x3)
 		if RingNext.extend_chapter_four(x4, (2000 + s4) ^ 0x4):
 			ok4 += 1
+			if _specials_clear(x4, HexGrid.disk(MapGen.RADIUS).size(), x4.cells.size()):
+				clear4 += 1
 	_check(ok4 == 4, "4 of 4 other seeds give a valid ring IV")
+	_check(clear4 == ok4, "rings II–IV of 4 other seeds: no special in a core (%d of %d)" % [clear4, ok4])
+	# old saves (save.gd regenerates the world from the seed and lays the saved owners over it by cell id): moving the
+	# specials out of the cores (B4) left the geometry, the land and the owners of the game's seed as v0.9.0 had them
+	var geo := ""
+	for c in w.cells:
+		geo += "%d,%d,%d,%s;" % [c["q"], c["r"], c["owner"], "W" if c["terrain"] in ["water", "mountain"] else "L"]
+	_check(w.cells.size() == 309 and geo.hash() == 2580325774, "the seed 20261004 world (rings II–IV) regenerates cell for cell as in v0.9.0 (%d cells, %d)" % [w.cells.size(), geo.hash()])
 	print("ALL RING III CHECKS PASSED" if fails == 0 else "%d FAILED" % fails)
 	quit(1 if fails > 0 else 0)
+
+
+## Every special hex of cells [from, to) is ≥ RingGen.CORE_GAP from every capital and in no state's core (prints the
+## first offender).
+static func _specials_clear(w, from: int, to: int) -> bool:
+	var caps: Array[Vector2i] = []
+	for st in w.states:
+		if int(st["capital_id"]) >= 0:
+			caps.append(Vector2i(int(w.cells[int(st["capital_id"])]["q"]), int(w.cells[int(st["capital_id"])]["r"])))
+	for i in range(from, to):
+		var c: Dictionary = w.cells[i]
+		if String(c["kind"]) in ["plain", "capital"]:
+			continue
+		var own := int(c["owner"])
+		if own >= 0 and MapGen.core_of(w, own).has(i):
+			print("  special %s %d in the core of %d" % [c["kind"], i, own])
+			return false
+		for cp in caps:
+			if HexGrid.distance(Vector2i(int(c["q"]), int(c["r"])), cp) < RingGen.CORE_GAP:
+				print("  special %s %d next to the capital at %s" % [c["kind"], i, cp])
+				return false
+	return true

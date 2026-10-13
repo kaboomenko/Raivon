@@ -74,6 +74,62 @@ static func _ang_diff(a: float, b: float) -> float:
 	return absf(wrapf(a - b, -PI, PI))
 
 
+## Special hexes keep CORE_GAP from every capital (playtest B4): a capital and its owned neighbours are its core
+## (MapGen.core_of), which no treaty cedes (war.gd decision 19), so a port, a vein or a factory there could never be
+## won — the chapter II star «c2_port» and the vein goals with it. After a ring's placement and terrain, every special
+## hex next to a capital moves to the nearest free plain hex at least CORE_GAP from every capital: one of the same
+## owner first (a farm or a mine within 3 hexes of its owner's capital first, F2), then the wild if `wild_ok` allows
+## the kind there, then another state; a port only to a hex by the water (`wet`). Only `kind`, `name` and the new hex's
+## terrain change, and no random number is drawn, so the geometry and the owners stay as they were: a saved world
+## regenerates cell for cell (save.gd keeps owners by cell id) and only these few specials move. False when one finds
+## no hex (the attempt is dropped).
+const CORE_GAP := 2
+
+
+static func clear_cores(land: Array, all_caps: Array[Vector2i], wet: Callable, wild_ok: Callable) -> bool:
+	var at := func(c: Dictionary) -> Vector2i:
+		return Vector2i(int(c["q"]), int(c["r"]))
+	var near_cap := func(c: Dictionary) -> bool:
+		for cp in all_caps:
+			if HexGrid.distance(at.call(c), cp) < CORE_GAP:
+				return true
+		return false
+	var own_cap := {}  # owner -> its capital on this ring
+	for c in land:
+		if c["kind"] == "capital":
+			own_cap[int(c["owner"])] = at.call(c)
+	for c in land:
+		var kind := String(c["kind"])
+		if kind == "plain" or kind == "capital" or not near_cap.call(c):
+			continue
+		var own := int(c["owner"])
+		var best: Dictionary = {}
+		var best_score := 1 << 30
+		for t in land:
+			if t["kind"] != "plain" or near_cap.call(t) or (kind == "port" and not wet.call(t)):
+				continue
+			var o := int(t["owner"])
+			var tier := 0 if o == own else (1 if o == Types.NOBODY else 2)
+			if o == Types.NOBODY and not bool(wild_ok.call(kind)):
+				continue
+			var f2 := 0
+			if kind in ["farm", "mine"] and own_cap.has(own) and (o != own or HexGrid.distance(at.call(t), own_cap[own]) > 3):
+				f2 = 1
+			var score: int = (tier * 2 + f2) * 1000 + HexGrid.distance(at.call(t), at.call(c))
+			if score < best_score or (score == best_score and HexGrid.hex_key(int(t["q"]), int(t["r"])) < HexGrid.hex_key(int(best["q"]), int(best["r"]))):
+				best_score = score
+				best = t
+		if best.is_empty():
+			last_fail = "core %s" % kind
+			return false
+		best["kind"] = kind
+		best["name"] = c["name"]
+		best["terrain"] = "plain"
+		c["kind"] = "plain"
+		c["name"] = ""
+	return true
+
+
 ## Builds the new cells as a separate list; {} when the attempt fails validation.
 static func _try(w: World, seed_value: int) -> Dictionary:
 	var rng := Rng.new(seed_value)
@@ -337,6 +393,17 @@ static func _try(w: World, seed_value: int) -> Dictionary:
 			c["terrain"] = "forest"
 		elif roll < 26:
 			c["terrain"] = "hills"
+	var all_caps: Array[Vector2i] = old_caps.duplicate()
+	for cp in caps:
+		all_caps.append(Vector2i(int(cp["q"]), int(cp["r"])))
+	var wet := func(c: Dictionary) -> bool:
+		for dv in HexGrid.DIRS:
+			var nk := HexGrid.hex_key(int(c["q"]) + dv.x, int(c["r"]) + dv.y)
+			if by_key.has(nk) and by_key[nk]["terrain"] == "water":
+				return true
+		return false
+	if not clear_cores(land, all_caps, wet, func(_k: String) -> bool: return true):
+		return {}
 	var add := {"cells": picked, "caps": [caps[0], caps[1]]}
 	if not validate(w, add).is_empty():
 		last_fail = str(validate(w, add)) + " step7"

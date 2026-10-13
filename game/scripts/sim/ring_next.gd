@@ -475,6 +475,16 @@ static func _try(w: World, cfg: Dictionary, seed_value: int) -> Dictionary:
 			c["terrain"] = "forest"
 		elif roll < 40:
 			c["terrain"] = "hills"
+	# no special next to a capital: the cores are never ceded (RingGen.clear_cores, playtest B4); the wild keeps
+	# only farms and mines (F10)
+	var wet := func(c: Dictionary) -> bool:
+		for nb in nbrs.call(c):
+			if nb["terrain"] == "water":
+				return true
+		return false
+	if not RingGen.clear_cores(land, all_caps, wet, func(k: String) -> bool: return k in ["farm", "mine"]):
+		last_fail = RingGen.last_fail
+		return {}
 	var add := {"cells": picked, "caps": caps}
 	var problems := validate(w, cfg, add)
 	if not problems.is_empty():
@@ -485,6 +495,7 @@ static func _try(w: World, cfg: Dictionary, seed_value: int) -> Dictionary:
 
 ## Special hexes (02 §15.2 step 9, §15.5): every capital gets a farm and a mine within 3 hexes on its own land
 ## (F2); oil fields and the vein stay out of the cores (F4, F9); the wild gets at most one farm and one mine (F10).
+## Then _try moves every special off the capitals' neighbours (RingGen.clear_cores: no special in any core).
 static func _place_specials(cfg: Dictionary, land: Array, caps: Array, nbrs: Callable, rng) -> bool:
 	var names: Dictionary = cfg["names"]
 	var used := {}  # kind -> names used

@@ -55,6 +55,13 @@ func _initialize() -> void:
 				if n >= 0 and w.cells[n]["terrain"] == "water":
 					wet = true
 			_check(wet, "port %d by the water" % i)
+	# no special hex next to a capital, so none in a core (a core is never ceded: war.gd decision 19; playtest B4)
+	_check(_specials_clear(w, old_n, w.cells.size()), "ring II: every special hex ≥2 from every capital, none in a core")
+	var free_ports := 0
+	for i in range(old_n, w.cells.size()):
+		if w.cells[i]["kind"] == "port" and int(w.cells[i]["owner"]) >= 2 and not MapGen.core_of(w, int(w.cells[i]["owner"])).has(i):
+			free_ports += 1
+	_check(free_ports >= 1, "a port can be won in chapter II (star c2_port): %d outside the cores" % free_ports)
 	# topology: old rim cells now see ring neighbours
 	var linked := false
 	for i in old_n:
@@ -85,12 +92,39 @@ func _initialize() -> void:
 			eq = false
 	_check(eq, "deterministic")
 	_check(RingGen.extend_chapter_two(w, 1) and w.cells.size() == w2.cells.size(), "idempotent")
-	# several seeds succeed
+	# several seeds succeed, none with a special in a core
 	var ok := 0
+	var clear := 0
 	for sd in range(1, 11):
 		var w3 := MapGen.generate_chapter_one(20261004)
+		var n0 := w3.cells.size()
 		if RingGen.extend_chapter_two(w3, sd * 7777):
 			ok += 1
+			if _specials_clear(w3, n0, w3.cells.size()):
+				clear += 1
 	_check(ok == 10, "ring found for 10/10 seeds (%d)" % ok)
+	_check(clear == 10, "no special in a core for 10/10 seeds (%d)" % clear)
 	print("ALL RING CHECKS PASSED" if fails == 0 else "%d FAILED" % fails)
 	quit(1 if fails > 0 else 0)
+
+
+## Every special hex of cells [from, to) is ≥ RingGen.CORE_GAP from every capital and in no state's core (prints the
+## first offender).
+static func _specials_clear(w, from: int, to: int) -> bool:
+	var caps: Array[Vector2i] = []
+	for st in w.states:
+		if int(st["capital_id"]) >= 0:
+			caps.append(Vector2i(int(w.cells[int(st["capital_id"])]["q"]), int(w.cells[int(st["capital_id"])]["r"])))
+	for i in range(from, to):
+		var c: Dictionary = w.cells[i]
+		if String(c["kind"]) in ["plain", "capital"]:
+			continue
+		var own := int(c["owner"])
+		if own >= 0 and MapGen.core_of(w, own).has(i):
+			print("  special %s %d in the core of %d" % [c["kind"], i, own])
+			return false
+		for cp in caps:
+			if HexGrid.distance(Vector2i(int(c["q"]), int(c["r"])), cp) < RingGen.CORE_GAP:
+				print("  special %s %d next to the capital at %s" % [c["kind"], i, cp])
+				return false
+	return true

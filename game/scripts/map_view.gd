@@ -2489,7 +2489,10 @@ class MapTag extends Node3D:
 ## Map plates are laid out in design pixels of the 941 × 1672 canvas (docs/ui_style.md); their texts are rasterised at
 ## RASTER × that size (crisp on a phone's denser screen) and drawn back at the design size by pixel_size.
 const RASTER := 1.5
-const PLATE_PRIO := MARK_PRIO + 4  # the plates' faces: over the strike arrow (+2/+3) and the income bubbles (+2..+4)
+## The plates' faces: over the strike arrow (+2/+3) and the whole income bubble (+2..+4, its «+N» text included), so
+## a timer chip, a march chip or an army plate is never covered by a coin (playtest B: they tied at +4 and a nearer
+## bubble's amount drew over the chip).
+const PLATE_PRIO := MARK_PRIO + 5
 const STACK_GAP := 4.0  # px kept between stacked plates
 ## The army plate (§4.14): a hex R 26 centred 40 px over the anchor, the 64 × 12 strength bar under it (its bottom at
 ## the anchor). The hex's lower tip (25 px under its centre: the corners are rounded by 0.22 R) clears the bar by 3 px:
@@ -4253,6 +4256,17 @@ func has_bubble(hex: int) -> bool:
 	return _bubbles.has(hex)
 
 
+## The income bubbles keep about their size on screen as the camera comes close: a world-sized coin grew three times
+## from the default view to the close-up one and hid the buildings, the army plates and the march chip (playtest B).
+## Full size from BUBBLE_DEPTH (the default zoom's camera distance) out; closer, the coin shrinks with the depth to the
+## power 0.75, so it still grows a little on screen (×1.3 at the closest zoom) and stays easy to tap.
+const BUBBLE_DEPTH := 22.0
+
+
+static func bubble_scale(depth: float) -> float:
+	return clampf(pow(maxf(depth, 0.1) / BUBBLE_DEPTH, 0.75), 0.4, 1.0)
+
+
 ## Text floating over a hex (colonization timers); "" removes it.
 var _march_paths := {}  # army id -> {"key": String, "node": Node3D}
 var fog_visible := {}  # hexes in the player's sight (canon §3.1); empty = everything visible
@@ -5364,9 +5378,12 @@ func _process(delta: float) -> void:
 		for m in _fill_mats:
 			(m as ShaderMaterial).set_shader_parameter("now", now)
 	var bt := Time.get_ticks_msec() / 1000.0
+	var cam := get_viewport().get_camera_3d() if not _bubbles.is_empty() else null
 	for h in _bubbles:
 		var bn: Node3D = _bubbles[h]
 		bn.position.y = 2.0 + 0.07 * sin(bt * 3.0 + h)
+		if cam != null:
+			bn.scale = Vector3.ONE * bubble_scale(cam.global_position.distance_to(bn.global_position))
 	_step_volleys(delta)
 	_step_planes(delta)
 	_step_flames(bt)
