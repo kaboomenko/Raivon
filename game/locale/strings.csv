@@ -90,6 +90,7 @@ form.corridor,Коридор,Corridor
 form.salient,Выступ −15%,Salient −15%
 demand.pocket,Котёл из %d,Pocket of %d
 demand.pocket_at,Котёл «%s»,Pocket “%s”
+map.pocket,Котёл: %d,Pocket: %d
 demand.contribution,Контрибуция,Indemnity
 demand.reparations,Репарации,Reparations
 tile.hex,Гекс,Hex
@@ -139,6 +140,7 @@ ui.last_stand,Последний рубеж +25%,Last stand +25%
 ui.final_rush,Финальный рывок!,Final push!
 ui.offensive_left,до конца боя,until the battle ends
 result.captured,Захвачено,Captured
+result.pocket,В котле,Encircled
 result.lost,Потеряно,Lost
 result.score,Очки мира,Peace points
 result.control,Фронт,Front
@@ -160,13 +162,14 @@ peace.offer,"Подпишу, если не больше %s",I'll sign for %s at 
 peace.demands,Требования,Demands
 peace.hold_hint,"Удерживайте, чтобы подписать",Hold to sign
 peace.over,Требования дороже ваших очков мира,The demands cost more than your peace points
-peace.budget_rest,%s / %s · остаток: мнение +%s,%s / %s · rest: opinion +%s
+peace.budget_rest,%s / %s · остаток: +%s к мнению,%s / %s · left over: +%s opinion
 ceremony.double,×2,×2
 ceremony.title,Победа!,Victory!
 ceremony.claim,Забрать,Claim
 ceremony.realm_cap,Держава,Realm
 ceremony.chapter_cap,Глава %s,Chapter %s
 ceremony.rep_hours,24ч,24h
+ceremony.opinion,Мнение,Opinion
 ceremony.cosmetic,Косметика,Cosmetic
 ui.continue,Продолжить,Continue
 ui.close,Закрыть,Close
@@ -372,6 +375,7 @@ ceremony.chapter,Глава %s: с %d до %d из %d,Chapter %s: %d to %d of %d
 ceremony.plunder,"Разграблено: %d золота, %d еды, %d металла","Plundered: %d gold, %d food, %d metal"
 ceremony.indemnity,Контрибуция: +%d золота,Indemnity: +%d gold
 ceremony.reparations,Репарации: 10% производства на 24ч,Reparations: 10% of output for 24h
+ceremony.opinion_line,Остаток очков: +%s к мнению,Points left over: +%s opinion
 toast.test_ad_double,Тестовая сборка: реклама не подключена — трофеи удвоены,Test build: ads aren't connected. Spoils doubled
 toast.chapter_goal,Цель главы %s выполнена — откройте «Мир»,Chapter %s goal reached: open the World tab
 toast.chapter_goal_war,"Цель главы %s выполнена — завершите войну, чтобы расширить мир",Chapter %s goal reached: end the war to expand the world
@@ -486,8 +490,10 @@ ftue.10,Вольные Хутора заняли «%s»! Удерживайте 
 ftue.10_any,Вольные Хутора вышли к нашей границе! Удерживайте «Война!».,The Free Hamlets have pushed up to our border! Hold “War!”.
 ftue.11,Начните наступление!,Launch an offensive!
 ftue.12,Новая карта «Котёл»: бросьте её на врага рядом с армией.,New card “Encircle”: drop it on an enemy hex by your army.
+ftue.12_pocket,Новая карта «Котёл»! Бросьте её на перешеек — земли за ним окажутся в котле.,New card “Encircle”! Drop it on the neck: the land behind it gets cut off.
 ftue.13,Отлично! Окружённые гексы сдаются быстрее. Захватите «%s»!,Great! Encircled hexes fall faster. Capture “%s”!
 ftue.13_any,Отлично! Окружённые гексы сдаются быстрее. Захватите цель войны!,Great! Encircled hexes fall faster. Capture the war goal!
+ftue.13_neck,Цель наша! Теперь перешеек — и котёл захлопнется.,The goal is ours! Now take the neck to close the pocket.
 ftue.14,Подпишите мир с Хуторами.,Sign a peace with the Hamlets.
 ftue.15,Пощадить Хутора (+20 к мнению) или разграбить? Выберите и подпишите.,"Spare the Hamlets (+20 opinion) or plunder them? Choose, then sign."
 ftue.raid,Мародёры идут с диких земель! Плетень их встретит.,Marauders are coming from the wildlands! The palisade will meet them.

@@ -748,7 +748,7 @@ func _on_card_input(event: InputEvent, card: String) -> void:
 		if event is InputEventScreenTouch or event is InputEventMouseButton:
 			if event.pressed:
 				# «Ракета — откроется на уровне развития 8» (no «УР8», §3.7): the stub has no room for its name
-				toast(tr("battle.card_locked") % [_card_name(card), int(_locked[card])], "lock")
+				toast(tr("battle.card_locked") % [_card_name(card), int(_locked[card])], "lock", "info", true)
 		return
 	if event is InputEventScreenTouch or event is InputEventMouseButton:
 		var pressed: bool = event.pressed
@@ -1175,7 +1175,9 @@ var _modal_buttons: Array = []  # the result's / the treaty's footer buttons [se
 ## raised); the reason in a chip (`reason_icon`: hourglass — time is up, white_flag — retreat, …); a well with the tiles [captured] [front] [peace points] (+ [lost] when not 0); the
 ## border note when land was taken; «Ещё бой» (info) and «К миру» (go). `defeat`: the war is lost whatever was taken
 ## (the defeat offer: the plate is «Поражение» even when the enemy holds no land to annex).
-func show_result(stars: int, captured: int, lost: int, score: float, control: int, reason: String, on_continue: Callable, on_peace: Callable, reason_icon := "hourglass", defeat := false) -> void:
+## `pocket`: the enemy's land in our pockets (canon §9.7) — a tile beside «Захвачено», so a treaty taking more land than
+## the offensive took reads true («+2 захвачено», «+2 в котле»).
+func show_result(stars: int, captured: int, lost: int, score: float, control: int, reason: String, on_continue: Callable, on_peace: Callable, reason_icon := "hourglass", defeat := false, pocket := 0) -> void:
 	defeat = defeat or lost > captured
 	var won := stars >= 1 and captured > 0 and not defeat
 	var role := "gold" if won else ("war" if defeat else "info")
@@ -1194,10 +1196,14 @@ func show_result(stars: int, captured: int, lost: int, score: float, control: in
 	_paper_chip(box, Vector2(w * 0.5, 284), reason_icon, reason, w - 64.0)
 	var tiles: Array = [
 		{"icon": "hex_tile", "value": ("+%d" % captured) if captured > 0 else "0", "caption": tr("result.captured")},
+	]
+	if pocket > 0:
+		tiles.append({"icon": "white_flag", "value": "+%d" % pocket, "caption": tr("result.pocket")})
+	tiles.append_array([
 		{"icon": "orders", "value": "%d%%" % control, "caption": tr("result.control")},
 		{"icon": "treaty", "value": ("+" if score > 0.05 else "") + Kit.fmt_dec(score, 1), "caption": tr("result.score"),
 			"value_color": Kit.NEG_CREAM if score < -0.05 else Kit.INK_TEXT},
-	]
+	])
 	if lost > 0:
 		tiles.append({"icon": "hex_tile", "value": Kit.MINUS + str(lost), "caption": tr("result.lost"), "value_color": Kit.NEG_CREAM})
 	var well := Kit.well(box, Rect2(32, 326, w - 64.0, 214))
@@ -1205,7 +1211,7 @@ func show_result(stars: int, captured: int, lost: int, score: float, control: in
 	var tw := (well.size.x - 32.0 - 12.0 * (n - 1)) / n
 	for i in n:
 		var o: Dictionary = tiles[i]
-		o["icon_side"] = 72.0 if n <= 3 else 64.0
+		o["icon_side"] = 72.0 if n <= 3 else (64.0 if n == 4 else 52.0)
 		Kit.tile(well, Rect2(16.0 + i * (tw + 12.0), 16, tw, 182), o)
 	if note:
 		var nl := Kit.label(tr("result.note"), 28, Kit.SOFT_CREAM, false)
@@ -6706,8 +6712,10 @@ var _toast_out := false  # it is fading out; the next one comes when it is gone
 ## A short message at the top of the free column (§4.10): a slate pill, the event's icon overhanging its left end, the
 ## text Rubik 800 26 in at most two lines. One toast at a time: the rest wait in a queue; the same text again while it
 ## shows (or waits) adds a «×2» hex badge instead of another toast. `icon`: a kit icon name (a legacy string's leading
-## pictograph becomes it); `kind` "error": a refusal, on the war face. Never takes input, never blocks anything.
-func toast(text: String, icon := "", kind := "info") -> void:
+## pictograph becomes it); `kind` "error": a refusal, on the war face. `now`: the answer to a tap — it goes ahead of the
+## waiting ones and the one on screen lets itself out at once, so the tap is answered in ~0.3 s, not after the queue.
+## Never takes input, never blocks anything.
+func toast(text: String, icon := "", kind := "info", now := false) -> void:
 	var t := text.strip_edges()
 	if Kit.has_picto(t):  # a legacy string: its first pictograph is the icon, the rest of them go
 		var parts := Kit.split_icons(t)
@@ -6724,6 +6732,20 @@ func toast(text: String, icon := "", kind := "info") -> void:
 		_toast_cur["n"] = int(_toast_cur["n"]) + 1
 		_toast_shown = 0.0  # it holds again from now
 		_toast_count(true)
+		return
+	if now:
+		var n := 1
+		for q in _toast_queue:
+			if String(q["text"]) == t:
+				n += int(q["n"])
+		_toast_queue = _toast_queue.filter(func(q): return String(q["text"]) != t)
+		_toast_queue.push_front({"text": t, "icon": icon, "kind": kind, "n": n})
+		while _toast_queue.size() > TOAST_QUEUE_MAX:
+			_toast_queue.pop_back()
+		if _toast_cur.is_empty():
+			_show_next_toast()
+		elif not _toast_out:
+			_toast_shown = INF  # the one on screen lets itself out on the next frame (_process_toast)
 		return
 	for q in _toast_queue:
 		if String(q["text"]) == t:

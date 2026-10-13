@@ -1,28 +1,45 @@
 extends Control
-## A commander's bust (04 §15.3–15.4): the bpy render (tools/blender/portrait_assets.py) on a rarity gradient, or the
-## 2D stand-in drawn from the portrait kit's parameters (uniform, head shape, hair, facial hair, headgear and the one
-## detail each has). The whole picture is a rounded box with a rarity-coloured frame (docs/ui_style.md §6 «Командиры»:
-## R 20, OUT 4 at full size, scaled down in small slots); a locked commander is a faint silhouette on a muted plate (the
-## screen adds the lock).
+## A commander's bust (04 §15.3–15.4, docs/art_direction.md §7.12): the bpy render (tools/blender/portrait_assets.py)
+## on plate B — a vertical gradient of the rarity colour, rc.lightened(0.18) at the top to rc at the bottom, with a soft
+## halo of concentric white circles behind the head (§7.4) — or the 2D stand-in drawn from the §7.6 palettes (uniform,
+## head shape, hair, facial hair, headgear and the one detail each has). The whole picture is a rounded box with a
+## rarity-coloured frame (docs/ui_style.md §6 «Командиры»: R 20, OUT 4 at full size, scaled down in small slots); a
+## locked commander is a flat INK silhouette (α 0.3) cut from the render's alpha, no detail inside, on a muted plate
+## (the screen adds the lock). The renders are filtered with mipmaps (the commanders' 512×588 imports have them), so
+## the small slots — the army chip, the fan, the calendar, baked through Kit.KitStill or not — do not shimmer.
 
 const Kit := preload("res://scripts/ui_kit.gd")
 ## The rarity colours are the kit's (§3.2: the gem and the tinted backdrop; purple is only EPIC).
 const RARITY := Kit.RARITY
-## skin, head [w, h], hair color, hair style, facial hair, headgear, uniform, accent
+## The 2D stand-in (drawn only when a render is missing): skin, head [w, h], hair color, hair style, facial hair,
+## headgear, uniform, accent — the albedos of docs/art_direction.md §7.6 (skin: the §7.4 tone of each face row, Bram's
+## T2 moved to peach-pink as decided after P1; hair; the palette's main cloth and its accent).
 const LOOK := {
-	"cmd_bram": [Color("e8b48e"), [0.36, 0.40], Color("b5562b"), "short", "beard", "", Color("d9c9a3"), Color("7a4e2d")],
-	"cmd_lira": [Color("f0c4a0"), [0.31, 0.40], Color("5a3420"), "braid", "", "kerchief", Color("3e9b5a"), Color("f2f2f2")],
-	"cmd_olm": [Color("e2b08c"), [0.28, 0.43], Color("c8c8c8"), "sides", "", "goggles", Color("7a4e2d"), Color("c9a24a")],
-	"cmd_vik": [Color("f2c8a4"), [0.29, 0.42], Color("e3c46a"), "messy", "", "hood", Color("4e6b3a"), Color("6b4a2a")],
-	"cmd_vega": [Color("e9bd99"), [0.30, 0.41], Color("2e2a2a"), "bob", "", "glasses", Color("44484f"), Color("c8ccd4")],
-	"cmd_kort": [Color("dca582"), [0.38, 0.41], Color("d8d8d8"), "bald", "mustache_long", "", Color("5d6236"), Color("b0803a")],
-	"cmd_seir": [Color("c98d68"), [0.33, 0.40], Color("cfcfcf"), "short", "beard_short", "tricorn", Color("1f6f8b"), Color("f2f2f2")],
-	"cmd_frey": [Color("e4b592"), [0.35, 0.39], Color("6b5a48"), "buzz", "", "", Color("3b5a44"), Color("9aa3ad")],
-	"cmd_irma": [Color("f1c9aa"), [0.30, 0.41], Color("efe9dc"), "ponytail", "", "goggles", Color("26272b"), Color("f08a24")],
-	"cmd_hawk": [Color("e6b996"), [0.31, 0.41], Color("4a3424"), "short", "mustache", "flight", Color("7a5133"), Color("6fa8dc")],
-	"cmd_vance": [Color("f0cdb2"), [0.30, 0.41], Color("d9d9de"), "updo", "", "brooch", Color("8e5bd0"), Color("e8e8f0")],
-	"cmd_rai": [Color("e7c0a0"), [0.33, 0.42], Color("f0f0f0"), "long", "beard_long", "circlet", Color("eef1f6"), Color("3a8dff")],
+	"cmd_bram": [Color("f2a88e"), [0.36, 0.40], Color("b5562b"), "short", "beard", "", Color("3f4d5e"), Color("e0ad45")],
+	"cmd_lira": [Color("f4b48e"), [0.31, 0.40], Color("5a3420"), "braid", "", "kerchief", Color("2e7a44"), Color("f2f0ea")],
+	"cmd_olm": [Color("f0a274"), [0.28, 0.43], Color("d0d0d4"), "sides", "", "goggles", Color("7a4e2d"), Color("c9a24a")],
+	"cmd_vik": [Color("f0a274"), [0.29, 0.42], Color("ebd27a"), "messy", "", "hood", Color("4e6b3a"), Color("6b4a2a")],
+	"cmd_vega": [Color("de9a6c"), [0.30, 0.41], Color("2e2a2a"), "bob", "", "glasses", Color("44484f"), Color("c8ccd4")],
+	"cmd_kort": [Color("f0a274"), [0.38, 0.41], Color("f0eef2"), "bald", "mustache_long", "", Color("5d6236"), Color("b0803a")],
+	"cmd_seir": [Color("c47a4e"), [0.33, 0.40], Color("cfcfd4"), "short", "beard_short", "tricorn", Color("175a72"), Color("f2f2f2")],
+	"cmd_frey": [Color("9a5a38"), [0.35, 0.39], Color("2a2420"), "buzz", "", "", Color("3b5a44"), Color("c8d0da")],
+	"cmd_irma": [Color("f4b48e"), [0.30, 0.41], Color("efe9dc"), "ponytail", "", "goggles", Color("3a3c46"), Color("f08a24")],
+	"cmd_hawk": [Color("de9a6c"), [0.31, 0.41], Color("4a3424"), "short", "mustache", "flight", Color("5a3a24"), Color("6fa8dc")],
+	"cmd_vance": [Color("f4b48e"), [0.30, 0.41], Color("d9d6e2"), "updo", "", "brooch", Color("4b2c78"), Color("8e5bd0")],
+	"cmd_rai": [Color("c47a4e"), [0.33, 0.42], Color("eef0f5"), "long", "beard_long", "circlet", Color("eef1f6"), Color("3a8dff")],
 }
+## The halo behind the head (§7.4 plate B): concentric white discs [radius × the short side, α] round (0.5 w, 0.42 h),
+## antialiased, no outline — about +4 (grey, orange) to +6 (purple, red) L* at the centre over plate B. (§7.4 says
+## «≈ +12 L*»; tools/qa_portraits gates the art against these three discs, and a +12 L* halo, α 0.25–0.45, takes the
+## silhouette rim of Olm, Seir, Rai and the ruler past P-A5's 35 % — P4 measure.) A locked plate: HALO_LOCKED each.
+const HALO := [[0.40, 0.05], [0.33, 0.05], [0.26, 0.05]]
+const HALO_LOCKED := 0.02
+## A locked commander: the render's alpha as a flat silhouette in the vertex colour (INK α 0.3) — the texture's
+## colours are dropped, so no goggles or grey hair show through; what is drawn without a texture (the plate, the halo,
+## the frame) keeps its colours (the default white texture's alpha is 1).
+const SILHOUETTE := "shader_type canvas_item;\nvarying vec4 v_col;\nvoid vertex() {\n\tv_col = COLOR;\n}\n" \
+	+ "void fragment() {\n\tCOLOR = vec4(v_col.rgb, v_col.a * texture(TEXTURE, UV).a);\n}\n"
+static var _sil_mat: ShaderMaterial
 
 static var _renders := {}  # "cmd_eN" -> Texture2D or null
 ## The uniform era of the portraits (04 §15.4): 1 DL1–3, 2 DL4–5, 3 DL6–7, 4 DL8–10 — set from the player's DL.
@@ -34,7 +51,11 @@ static func era_of(dl: int) -> int:
 
 var cmd := ""
 var rarity := "common"
-var locked := false
+var locked := false:
+	set(v):
+		locked = v
+		material = _silhouette() if v else null
+		queue_redraw()
 var mood := ""  # "" calm, "angry", "smile", "cunning", "tired" — a render of that mood if there is one, else calm
 var plate := Color(0, 0, 0, 0)  # a plate colour instead of the rarity's (AI leaders: their state's colour)
 var frame := true  # the rarity-coloured frame round the picture (off where the slot draws its own rim)
@@ -45,6 +66,23 @@ func _init(id: String = "", r: String = "common", is_locked := false) -> void:
 	rarity = r
 	locked = is_locked
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# the 512×588 renders shrink to 48–160 px slots: sample their mipmaps (also inside a KitStill bake)
+	texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+
+
+static func _silhouette() -> ShaderMaterial:
+	if _sil_mat == null:
+		var sh := Shader.new()
+		sh.code = SILHOUETTE
+		_sil_mat = ShaderMaterial.new()
+		_sil_mat.shader = sh
+	return _sil_mat
+
+
+## The halo behind the head: the HALO discs round `c` (`u`: the short side), antialiased, no outline.
+func _halo(c: Vector2, u: float) -> void:
+	for d in HALO:
+		draw_circle(c, u * float(d[0]), Color(1, 1, 1, HALO_LOCKED if locked else float(d[1])), true, -1.0, true)
 
 
 func _ellipse(c: Vector2, rx: float, ry: float, from := 0.0, to := TAU, n := 28) -> PackedVector2Array:
@@ -89,19 +127,20 @@ func _draw() -> void:
 		return
 	var rc: Color = RARITY.get(rarity, RARITY["common"]) if plate.a == 0.0 else plate
 	var box := _box()
-	# the plate: a vertical gradient of the rarity colour (a locked one: the colour washed into a muted grey)
-	var top := rc.lightened(0.08) if not locked else rc.lerp(Kit.CREAM_DEEP, 0.72)
-	var bot := rc.darkened(0.42) if not locked else top.darkened(0.32)
+	# plate B (§7.4): a vertical gradient of the rarity colour, lightened(0.18) at the top to the colour itself at the
+	# bottom — the dark costumes of §7.6 stand off it (a locked one: the colour washed into a muted grey)
+	var top := rc.lightened(0.18) if not locked else rc.lerp(Kit.CREAM_DEEP, 0.72)
+	var bot := rc if not locked else top.darkened(0.32)
 	var cols := PackedColorArray()
 	for v in box:
 		cols.append(top.lerp(bot, clampf(v.y / h, 0.0, 1.0)))
 	draw_polygon(box, cols)
-	# a soft halo behind the head
-	_fill(_ellipse(Vector2(w * 0.5, h * 0.42), u * 0.36, u * 0.36), Color(1, 1, 1, 0.1 if not locked else 0.05))
+	# a soft halo behind the head: concentric white discs, no dark outline (the «fishbowl» ring is gone)
+	_halo(Vector2(w * 0.5, h * 0.42), u)
 	var tex := _render(cmd, mood)
 	if tex != null:
 		# the bpy render: cover the box, keep the head, crop the torso — drawn through the rounded box (UVs), so its
-		# corners never poke out of the frame; a locked commander is its silhouette at α 0.3
+		# corners never poke out of the frame; a locked commander is its flat silhouette at α 0.3 (SILHOUETTE)
 		var ts := tex.get_size()
 		var sc := maxf(w / ts.x, h / ts.y)
 		var src := Rect2((ts.x - w / sc) / 2.0, 0, w / sc, h / sc)
@@ -140,7 +179,7 @@ func _draw() -> void:
 		for sx in [-1.0, 1.0]:
 			_fill(_ellipse(Vector2(w * 0.5 + sx * w * 0.27, sy - u * 0.02), u * 0.085, u * 0.035), acc)
 	if not locked and cmd == "cmd_kort":
-		_fill(_ellipse(Vector2(w * 0.5, sy - u * 0.04), u * 0.24, u * 0.06), Color("8a6a48"))  # fur collar
+		_fill(_ellipse(Vector2(w * 0.5, sy - u * 0.04), u * 0.24, u * 0.06), Color("6b5040"))  # fur collar
 	if not locked and cmd == "cmd_olm":
 		draw_line(Vector2(w * 0.38, sy - u * 0.04), Vector2(w * 0.4, h), Color("5a3820"), u * 0.02, true)  # apron straps
 		draw_line(Vector2(w * 0.62, sy - u * 0.04), Vector2(w * 0.6, h), Color("5a3820"), u * 0.02, true)
@@ -152,7 +191,7 @@ func _draw() -> void:
 	for sx in [-1.0, 1.0]:
 		_fill(_ellipse(hc + Vector2(sx * hw * 0.98, hh * 0.05), hw * 0.14, hh * 0.18), skin.darkened(0.08))
 	if not locked and cmd == "cmd_seir":
-		_fill(_ellipse(hc + Vector2(hw * 1.0, hh * 0.25), u * 0.012, u * 0.012, true), Color("e8c45a"))  # earring
+		_fill(_ellipse(hc + Vector2(hw * 1.0, hh * 0.25), u * 0.012, u * 0.012, true), Color("e8b23a"))  # earring
 	# hair on top
 	match style:
 		"short", "messy":
@@ -182,7 +221,7 @@ func _draw() -> void:
 			_fill(_ellipse(hc + Vector2(hw * 0.95, hh * (0.45 + i * 0.32)), hw * 0.17, hh * 0.17), hair.darkened(0.05))
 	# eyes, brows, mouth
 	var eye_y := hc.y - hh * 0.02
-	var eye_col := Color("3a8dff") if cmd == "cmd_rai" and not locked else Color(0.12, 0.1, 0.1)
+	var eye_col := Color("5aa8ff") if cmd == "cmd_rai" and not locked else Color(0.12, 0.1, 0.1)
 	for sx in [-1.0, 1.0]:
 		var ec := Vector2(hc.x + sx * hw * 0.38, eye_y)
 		if not locked:
@@ -231,7 +270,7 @@ func _draw() -> void:
 			_fill(PackedVector2Array([hc + Vector2(-hw * 1.45, -hh * 0.55), hc + Vector2(0, -hh * 1.45), hc + Vector2(hw * 1.45, -hh * 0.55), hc + Vector2(0, -hh * 0.75)]), Color("1d2533") if not locked else shade)
 			draw_line(hc + Vector2(-hw * 1.4, -hh * 0.57), hc + Vector2(hw * 1.4, -hh * 0.57), acc, u * 0.012, true)
 		"flight":
-			_fill(_ellipse(hc + Vector2(0, -hh * 0.3), hw * 1.12, hh * 0.86, PI, TAU), Color("6b4428") if not locked else shade)
+			_fill(_ellipse(hc + Vector2(0, -hh * 0.3), hw * 1.12, hh * 0.86, PI, TAU), Color("7a5133") if not locked else shade)
 			for sx in [-1.0, 1.0]:
 				_fill(_ellipse(hc + Vector2(sx * hw * 0.38, -hh * 0.72), hw * 0.26, hh * 0.17), Color("2a2a2a") if not locked else shade)
 				_fill(_ellipse(hc + Vector2(sx * hw * 0.38, -hh * 0.72), hw * 0.17, hh * 0.11), acc)
@@ -243,7 +282,7 @@ func _draw() -> void:
 			if not locked:
 				_fill(_ellipse(hc + Vector2(0, -hh * 0.98), u * 0.06, u * 0.06), Color(0.35, 0.6, 1.0, 0.3))
 	if not locked and cmd == "cmd_hawk":
-		_fill(_ellipse(Vector2(w * 0.5, sy - u * 0.01), u * 0.17, u * 0.05), Color("f4f4f4"))  # white scarf
+		_fill(_ellipse(Vector2(w * 0.5, sy - u * 0.01), u * 0.17, u * 0.05), Color("f6f6f2"))  # white scarf
 	_frame(rc)
 
 
@@ -271,6 +310,27 @@ static func _render(id: String, m := "") -> Texture2D:
 			var path := "res://assets/ui/portraits/%s.png" % name
 			if ResourceLoader.exists(path):
 				tex = load(path)
+				if id.begins_with("cmd_"):
+					tex = _with_mipmaps(tex)
 				break
 		_renders[key] = tex
 	return _renders[key]
+
+
+## The commanders' 512×588 renders are shown at 38–312 px (§7.12) and need mipmaps. Their .import files ask for them
+## (mipmaps/generate=true), but *.import is not in git (.gitignore): a fresh checkout imports the PNGs without, and then
+## the mipmaps are made here, once per texture (_renders caches it). With a RenderingDevice (Mobile, Forward+) the
+## texture's own mip count is read without a readback, so an imported set with mipmaps costs nothing.
+static func _with_mipmaps(tex: Texture2D) -> Texture2D:
+	if tex == null:
+		return tex
+	var rd := RenderingServer.get_rendering_device()
+	if rd != null:
+		var rid := RenderingServer.texture_get_rd_texture(tex.get_rid())
+		if rid.is_valid() and rd.texture_get_format(rid).mipmaps > 1:
+			return tex
+	var img := tex.get_image()
+	if img == null or img.is_empty() or img.has_mipmaps() or img.is_compressed():
+		return tex
+	img.generate_mipmaps()
+	return ImageTexture.create_from_image(img)

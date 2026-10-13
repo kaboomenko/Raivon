@@ -186,6 +186,17 @@ func _run() -> void:
 		and " ".join(wtexts).contains(g.tr("toast.chapter_goal_war") % "I"),
 		"chapter goal met at war: the war's line, no «откройте «Мир»», «Расширить» waits (%s)" % str(wtexts))
 	g.war = {}
+	# a tap's answer (a locked card, a refused drag) goes ahead of the waiting toasts and the one on screen lets itself
+	# out at once: no ~3 s behind the battle's how-to
+	g.ui._toast_queue = []
+	g.ui._toast_cur = {}
+	for tt in ["A", "B", "C"]:
+		g.ui.toast(tt)
+	g.ui.toast("D", "lock", "info", true)
+	var tq: Array = g.ui._toast_queue.map(func(t): return String(t["text"]))
+	_check(tq.size() > 0 and tq[0] == "D" and String(g.ui._toast_cur.get("text", "")) == "A" and g.ui._toast_shown == INF,
+		"a tap's toast jumps the queue, the one on screen goes (%s)" % str(tq))
+	g.ui._toast_queue = []
 	# the goal met (07 §3.1): signalled once, the «Мир» tab's dot, «Расширить мир» on the big button with nothing selected
 	g.mode = g.Mode.MAP
 	g._econ_tick()
@@ -533,22 +544,61 @@ func _run() -> void:
 			_check(g._hand() == ["attack", "encircle", "defense"], "FTUE war 2 hand brings «Котёл» in")
 			var g2h: int = g.flag_hex
 			var g2f := false
+			var mil_ok := true
 			for a2 in g.armies:
 				g2f = g2f or (int(a2["side"]) == MapGen.HAMLETS and int(a2["hex"]) == g2h)
+				if int(a2["side"]) == MapGen.HAMLETS:
+					mil_ok = mil_ok and int(a2["str"]) <= int(a2["max_str"]) / 2
 			_check(g2h >= 0 and g.battle.garrison[g2h] == 0 and not g2f, "FTUE war 2: its goal holds no garrison and no army (08 F27)")
+			# the pocket war 2 teaches (08 §8.3 F28–F30): a neck beside the goal whose fall cuts FTUE_POCKET_HEXES hexes of
+			# theirs off; step 12's ghost drags «Котёл» onto the neck, a «Котёл: 2» chip sits over the land behind it
+			var neck: int = g._ftue_neck
+			var pk2: Array = g._ftue_pocket.duplicate()
+			g._ftue_tick(0.1)
+			_check(neck >= 0 and (neck == g2h or g.sim.neighbors[g2h].has(neck)) and pk2.size() == g.FTUE_POCKET_HEXES and g._pocket_tag == int(pk2[0]) \
+				and g.ui._coach_lbl.text == g.tr("ftue.12_pocket") and g.ui._ghost_from.x >= 0 and mil_ok,
+				"FTUE war 2 plans a pocket: «Котёл» onto the neck %d cuts off %s (coach «%s»)" % [neck, str(pk2), g.ui._coach_lbl.text])
+			# played as coached: «Котёл» onto the neck, then the army the ghost drags — the goal, then the neck
+			_check(g.battle.issue(Types.PLAYER, {"t": "card", "card": "encircle", "target": neck}), "FTUE war 2: «Котёл» plays on the neck")
+			g._ftue_attacked()
+			var lines2 := {}
 			while g.battle != null and not g.battle.over:
+				if g.battle.tick % 10 == 0:
+					g._ftue_tick(0.1)
+					lines2[g.ui._coach_lbl.text] = true
+					var p2: Array = g._ftue_ghost_pair2()
+					var ga = g.battle.army_at(p2[0], Types.PLAYER) if not p2.is_empty() else null
+					if ga != null and g.battle.attacking(ga) == null:
+						g.battle.issue(Types.PLAYER, {"t": "attack", "army": ga["id"], "target": p2[1]})
 				if g.battle.tick % 20 == 0:
 					g._bot_move()
 				g._battle_step()
 			var r52: Dictionary = g.battle.result()
 			var c52: Array = r52["captured"]
-			_check((r52["reason"] == "goals") == (c52.size() >= g.FTUE_PEACE2_HEXES and c52.has(g2h)),
+			var haul2: Array = g._ftue_haul()
+			var core2 := MapGen.core_of(g.sim, MapGen.HAMLETS)
+			var in_pocket := true
+			for h in pk2:
+				in_pocket = in_pocket and g._pocket_land().has(h)
+			_check(neck == g2h or lines2.has(g.tr("ftue.13_neck")), "FTUE war 2: the coach turns to the neck once the goal is ours (%s)" % str(lines2.keys()))
+			_check((r52["reason"] == "goals") == (haul2.size() >= g.FTUE_PEACE2_HEXES and c52.has(g2h)),
 				"FTUE war 2 ends once its goal and %d hexes are taken (%s, %s)" % [g.FTUE_PEACE2_HEXES, r52["reason"], str(c52)])
+			_check(r52["reason"] == "goals" and in_pocket and haul2.size() == g.FTUE_PEACE2_HEXES and haul2.filter(func(h): return core2.has(h)).is_empty(),
+				"FTUE war 2 as coached closes its pocket: the haul is %d hexes, none of their core (captured %s, pocket %s)" % [haul2.size(), str(c52), str(g._pocket_land())])
 			g._end_offensive()
+			var mil_back := true
+			for a2 in g.armies:
+				if int(a2["side"]) == MapGen.HAMLETS:
+					mil_back = mil_back and int(a2["str"]) > int(a2["max_str"]) / 2
+			_check(mil_back and g._ftue_militia.is_empty(), "FTUE war 2's militia gets its strength back after the offensive")
 			if g.ftue == 14:
 				g.ui.close_modal()
 				g._open_peace()
 				_check(g.ftue == 15, "FTUE war 2 peace with plunder choice")
+				var pk_on := false
+				for d in g._demands:
+					pk_on = pk_on or (String(d["kind"]) == "pocket" and g._chosen.has(d["id"]))
+				_check(pk_on, "FTUE treaty 2 takes the pocket (08 F30: «… + котёл + 1 гекс»)")
 				g._sign_peace()
 				_check(g.ftue == 0, "FTUE complete after war 2")
 				for i in 80:
@@ -556,7 +606,11 @@ func _run() -> void:
 				g._end_ceremony()
 				_check(g.ui.has_modal() and g.ui._modal.find_child("ok", true, false) != null, "the tutorial closes on Bram's card")
 				print("NOTE  the tutorial ends at %d / %d hexes" % [g._player_hexes(), g._chapter_goal()])
+				_check(g._player_hexes() == 14, "the tutorial ends at 14 / 20 (canon §14.3: «Глава I: 14/20»)")
 				g.ui.close_modal()
+				_check(g._star_progress(g.STARS[2]) >= 1 and not g.stars_claimed.has("pocket"), "the chapter star «Котёл по договору» can be claimed after the tutorial")
+				g._on_world_action("pocket")
+				_check(g.stars_claimed.has("pocket"), "the pocket star claimed")
 		else:
 			print("NOTE  FTUE war 2 skipped (ftue=%d)" % g.ftue)
 	# Market (05 §13): card in the Buildings tab, exchange, trader lot once a day

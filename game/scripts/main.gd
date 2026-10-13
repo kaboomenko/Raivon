@@ -94,9 +94,16 @@ var _ftue_next := 0  # step to resume after the peace ceremony
 var _raid := {}  # FTUE marauder raid: {hex, at, from}
 const FTUE_PEACE1_HEXES := 3  # the first treaty's land (canon §14.3: «+3 гекса (стало 10)»)
 const FTUE_PEACE2_HEXES := 4  # war 2's land (canon §14.3: «+4 гекса», «Глава I: 14/20»)
+const FTUE_POCKET_HEXES := 2  # war 2's pocket (08 §8.3 F28–F30: «Котёл: 2», the treaty's «шахта + котёл + 1 гекс»)
 const FTUE_END_BEAT := 15  # ticks (1.5 s): a tutorial war ends this long after its last target falls (smoke, «Оккупировано»)
 var _ftue_end_tick := -1  # the tick a tutorial offensive ends on, once its targets are taken (-1: not yet)
 var _goal_tag := -1  # the hex whose goal chip a tutorial offensive shows (-1: none)
+var _ftue_neck := -1  # war 2's neck: the hex whose fall, after the goal's, closes the pocket (-1: no pocket to close)
+var _ftue_pocket: Array = []  # the Hamlets' land war 2 cuts off (_ftue_pocket_plan); its chip sits on the first hex
+var _ftue_militia := {}  # war 2's Hamlets armies: id -> strength before the offensive halved it (restored after)
+var _pockets_seen := {}  # enemy hexes an offensive already announced in a pocket («Котёл: N» floaters)
+var _pocket_tag := -1  # the hex whose «Котёл: N» chip war 2 shows over its pocket-to-be (-1: none)
+var _ftue_goal2 := -1  # war 2's goal once step 10 chose it (_hamlets_front): a border hex of theirs, a pocket behind it
 const RAID_SEC := 12  # the FTUE raid comes this long after the fence is ordered (the coach counts it down)
 const RAID_HOLD_SEC := 3  # after it breaks on the fence the camera stays there this long before war 2's step
 var _raid_hold := 0  # unix time until which the broken raid holds the lesson (0: none)
@@ -3028,8 +3035,15 @@ func _start_offensive() -> void:
 		opts["ai_energy_mult"] = 0
 		opts["ticks"] = FTUE_OFFENSIVE_SEC * Battle.TICKS_PER_SEC
 		ftue = 12 if ftue >= 10 else 3
-		if ftue == 12 and flag_hex >= 0:
-			_ftue_clear_goal(enemy)
+	_ftue_neck = -1
+	_ftue_pocket = []
+	_ftue_militia = {}
+	_pockets_seen = {}
+	if ftue == 12 and flag_hex >= 0:
+		var plan := _ftue_pocket_plan(enemy, flag_hex)
+		_ftue_neck = int(plan.get("neck", -1))
+		_ftue_pocket = plan.get("pocket", [])
+		_ftue_clear_goal(enemy)
 	opts.merge(_apply_commanders())
 	ui.cost_discount = {"landing": int(opts.get("landing_discount", 0))}
 	battle = Battle.new(sim, armies, opts)
@@ -3045,12 +3059,20 @@ func _start_offensive() -> void:
 			map_view.refresh_hex(flag_hex)
 	if (ftue == 3 or ftue == 12) and flag_hex >= 0:
 		# the coach names the goal (ftue.3/ftue.4/ftue.13): a chip on it says which hex that is — every hex of theirs
-		# flies the same banners
+		# flies the same banners; an unnamed one by its kind («Равнина»): an icon alone is lost on the hex's edge
 		_goal_tag = flag_hex
-		var named := String(sim.cells[flag_hex]["name"]) != ""
-		map_view.hex_label(flag_hex, _cell_name(flag_hex) if named else "", MapView.C_WAR, "target")
-	ai = BattleAI.new(enemy)
-	ai.airstrike = ftue == 0 and _state_dl(enemy) >= AIRSTRIKE_DL and String(sim.states[enemy]["archetype"]) in AIR_ARCHETYPES
+		map_view.hex_label(flag_hex, _cell_name(flag_hex), MapView.C_WAR, "target")
+	if not _ftue_pocket.is_empty():
+		# war 2's pocket-to-be (08 §8.3 F28: «Котёл: 2» over the land the neck holds): its chip, gone once it closes
+		_pocket_tag = int(_ftue_pocket[0])
+		map_view.hex_label(_pocket_tag, tr("map.pocket") % _ftue_pocket.size(), MapView.C_WAR, "white_flag")
+	for h in War.enemy_pocket_hexes(sim, war):  # pockets from before: only new ones are announced
+		_pockets_seen[h] = true
+	# tutorial war 2's militia holds its homes (08 §8.3 F27, «сценарный перевес»): no AI moves its armies into the neck
+	# or the pocket-to-be while the player learns to close it
+	ai = BattleAI.new(enemy) if ftue != 12 else null
+	if ai != null:
+		ai.airstrike = ftue == 0 and _state_dl(enemy) >= AIRSTRIKE_DL and String(sim.states[enemy]["archetype"]) in AIR_ARCHETYPES
 	_show_hand()
 	if ftue == 12:
 		ui.pop_card("encircle")  # war 2 brings «Котёл» into the hand: it pops in as step 12 points at it
@@ -3063,7 +3085,15 @@ func _start_offensive() -> void:
 	_acc = 0.0
 	_ev_i = 0
 	_select(-1)
-	rig.focus(_front_center(), 0.5)
+	if _ftue_pocket.is_empty():
+		rig.focus(_front_center(), 0.5)
+	else:
+		# war 2's whole lesson in frame: our armies at the goal, the goal, the neck and the pocket-to-be with its chip
+		var ids: Array = [flag_hex, _ftue_neck] + _ftue_pocket
+		for a in _player_armies():
+			if sim.neighbors[flag_hex].has(int(a["hex"])):
+				ids.append(int(a["hex"]))
+		rig.focus(_centroid(ids) - Vector3(0, 0, 0.4), 0.62)
 	_set_mode(Mode.BATTLE)
 	sfx.play("warn")
 	if ftue == 0:
@@ -3071,15 +3101,19 @@ func _start_offensive() -> void:
 
 
 ## Tutorial war 2 (08 §8.3 F27, «сценарный перевес»): the enemy army standing on the goal falls back to the enemy hex
-## farthest from our land, so the goal holds no army when the offensive starts, and the Hamlets' field armies are a
-## militia at half strength — the front may be one hex wide (_hamlets_front), pushed by a single army, and the war's
-## land (FTUE_PEACE2_HEXES) lies behind the goal.
+## farthest from our land (never into the neck or the pocket-to-be), so the goal holds no army when the offensive
+## starts, and the Hamlets' field armies fight it as a militia at half strength — for this offensive only: the
+## strength they had comes back at its end (_end_offensive), less what they lost. The front may be one hex wide
+## (_hamlets_front), pushed by a single army, and the war's land (FTUE_PEACE2_HEXES) lies behind the goal.
 func _ftue_clear_goal(enemy: int) -> void:
 	var held := {}
+	for h in _ftue_pocket + [_ftue_neck]:
+		held[int(h)] = true
 	for a in armies:
 		if int(a["side"]) == enemy:
 			held[int(a["hex"])] = true
-			a["str"] = int(a["max_str"]) / 2
+			_ftue_militia[int(a["id"])] = int(a["str"])
+			a["str"] = mini(int(a["str"]), int(a["max_str"]) / 2)
 	for a in armies:
 		if int(a["side"]) != enemy or int(a["hex"]) != flag_hex:
 			continue
@@ -3231,8 +3265,9 @@ func _battle_step() -> void:
 ## A tutorial offensive ends early once its targets are taken (08 §8.3 F09: «все 3 цели взяты → досрочно», ★★★): the
 ## flag held and the land its treaty takes in hand — FTUE_PEACE1_HEXES in war 1, FTUE_PEACE2_HEXES in war 2 — so a
 ## war's haul and its parchment agree (canon §14.3: «взяты 3 гекса… +3 гекса», «+4 гекса · 14/20»), however fast
-## the player goes on attacking. A short beat after the last capture lets its smoke and «Оккупировано» play; a slow
-## player gets the whole minute.
+## the player goes on attacking. War 2 waits for its pocket too while it can still close (F28–F30: «шахта + котёл +
+## 1 гекс»). A short beat after the last capture lets its smoke and «Оккупировано» play; a slow player gets the whole
+## minute.
 func _ftue_war_done() -> void:
 	if battle == null or battle.over or flag_hex < 0:
 		return
@@ -3240,12 +3275,121 @@ func _ftue_war_done() -> void:
 	if need <= 0:
 		return
 	if _ftue_end_tick < 0:
-		# every hex taken counts, the enemy's core too: the result's «+N» stays the haul the treaty shows (a core hex is
-		# never ceded, decision 19, so the war may bring a hex less, never a pile of hexes that silently go back)
-		if int(sim.cells[flag_hex]["controller"]) == Types.PLAYER and (battle.result()["captured"] as Array).size() >= need:
+		if int(sim.cells[flag_hex]["controller"]) == Types.PLAYER and _ftue_haul().size() >= need and not _ftue_pocket_open():
 			_ftue_end_tick = battle.tick + FTUE_END_BEAT
 	elif battle.tick >= _ftue_end_tick:
 		battle._finish("goals")
+
+
+## The land a tutorial war's treaty can take now: the hexes this offensive took and still holds, and the enemy's land
+## in our pockets — never the enemy's core (decision 19: a core hex taken goes back at the peace, so it is no haul).
+func _ftue_haul() -> Array:
+	var core := MapGen.core_of(sim, int(war["enemy"]))
+	var out: Array = []
+	for h in battle.result()["captured"]:
+		if not core.has(int(h)) and int(sim.cells[h]["controller"]) == Types.PLAYER:
+			out.append(int(h))
+	for h in War.enemy_pocket_hexes(sim, war):
+		if not core.has(h) and not out.has(h):
+			out.append(h)
+	return out
+
+
+## True while war 2's pocket can still close and has not: some of its land is still theirs and joined to them (the
+## neck stands). Once it closes, or the player took that land hex by hex, the war no longer waits for it.
+func _ftue_pocket_open() -> bool:
+	if _ftue_pocket.is_empty():
+		return false
+	var cut := War.enemy_pocket_hexes(sim, war)
+	for h in _ftue_pocket:
+		if cut.has(int(h)):
+			return false
+	for h in _ftue_pocket:
+		if int(sim.cells[h]["controller"]) == int(war["enemy"]):
+			return true
+	return false
+
+
+## War 2's pocket (08 §8.3 F28–F30): the hex whose fall, after the goal's, cuts land of theirs off from their capital —
+## the neck, an enemy hex beside the goal, or the goal itself when its fall alone does it (then it is the only one) —
+## and that land (their core never counts: it is never ceded). Of the necks, the one whose pocket is
+## FTUE_POCKET_HEXES wins, else the bigger pocket. {neck, pocket, fit} or {} when the goal has none.
+func _ftue_pocket_plan(enemy: int, goal: int) -> Dictionary:
+	var core := MapGen.core_of(sim, enemy)
+	var before := {}
+	for g in Topology.pockets(sim, enemy, Types.PLAYER):
+		for h in g:
+			before[h] = true
+	var best := {}
+	var c_goal: Dictionary = sim.cells[goal]
+	var keep_goal := int(c_goal["controller"])
+	for x in [goal] + Array(sim.neighbors[goal]):
+		if x < 0 or int(sim.cells[x]["controller"]) != enemy or core.has(x) or not Types.is_passable(sim.cells[x]):
+			continue
+		var c_x: Dictionary = sim.cells[x]
+		c_goal["controller"] = Types.PLAYER  # the goal and the neck taken, for a moment
+		c_x["controller"] = Types.PLAYER
+		var cut: Array = []
+		for g in Topology.pockets(sim, enemy, Types.PLAYER):
+			for h in g:
+				if not core.has(h) and not before.has(h):
+					cut.append(h)
+		c_x["controller"] = enemy
+		c_goal["controller"] = keep_goal
+		if cut.is_empty():
+			continue
+		var fit := absi(cut.size() - FTUE_POCKET_HEXES) * 100 - cut.size()
+		if best.is_empty() or fit < int(best["fit"]):
+			best = {"neck": x, "pocket": cut, "fit": fit}
+		if x == goal:
+			break  # the goal's own fall closes it: no neck after it ever comes into play
+	if not best.is_empty():
+		var pk: Array = best["pocket"]
+		pk.sort_custom(func(a: int, b: int) -> bool:  # the hex beside the neck first: the chip sits there
+			var na := int(sim.neighbors[a].has(int(best["neck"])))
+			var nb := int(sim.neighbors[b].has(int(best["neck"])))
+			return na > nb if na != nb else a < b)
+	return best
+
+
+## The war enemies' land in our pockets that a treaty can take (canon §9.7; their core never counts, decision 19).
+func _pocket_land() -> Array:
+	var out: Array = []
+	if war.is_empty():
+		return out
+	for sd in War.sides(war):
+		var core := MapGen.core_of(sim, sd)
+		for g in Topology.pockets(sim, sd, Types.PLAYER):
+			for h in g:
+				if not core.has(h):
+					out.append(h)
+	return out
+
+
+## A pocket the player's capture just closed (canon §9.7): «Котёл: N» with a white flag over its best hex, its land
+## flashing — it counts as ours in the war score and a treaty takes it at half price. Each pocket is told once an
+## offensive (_pockets_seen); the enemy's core in it is not counted (never ceded).
+func _announce_pockets() -> void:
+	if war.is_empty():
+		return
+	for sd in War.sides(war):
+		var core := MapGen.core_of(sim, sd)
+		for g in Topology.pockets(sim, sd, Types.PLAYER):
+			var land: Array = []
+			var fresh := false
+			for h in g:
+				if not core.has(h):
+					land.append(h)
+					fresh = fresh or not _pockets_seen.has(h)
+				_pockets_seen[h] = true
+			if not fresh or land.is_empty():
+				continue
+			var mh: int = land[0]
+			for h in land:
+				if int(sim.cells[h]["value"]) > int(sim.cells[mh]["value"]):
+					mh = h
+				map_view.burst(h, Color(1.0, 0.95, 0.85), false)
+			map_view.floater(mh, tr("map.pocket") % land.size(), Color(1.0, 0.88, 0.6), "white_flag")
 
 
 func _handle_event(ev: Dictionary) -> void:
@@ -3268,6 +3412,11 @@ func _handle_event(ev: Dictionary) -> void:
 			if mine and int(ev["hex"]) == _goal_tag:  # the tutorial's goal chip: taken, it goes
 				map_view.hex_label(_goal_tag, "")
 				_goal_tag = -1
+			if mine:
+				_announce_pockets()
+			if _pocket_tag >= 0 and not _ftue_pocket_open():  # the pocket closed (or was taken hex by hex): its chip goes
+				map_view.hex_label(_pocket_tag, "")
+				_pocket_tag = -1
 		"tower_hit":
 			map_view.tower_volley(int(ev["hex"]), int(ev["target"]))
 		"missile":
@@ -3406,6 +3555,17 @@ func _end_offensive() -> void:
 	if _goal_tag >= 0:
 		map_view.hex_label(_goal_tag, "")
 		_goal_tag = -1
+	if _pocket_tag >= 0:
+		map_view.hex_label(_pocket_tag, "")
+		_pocket_tag = -1
+	for a in armies:
+		# war 2's militia (_ftue_clear_goal) was at half strength for that offensive only: what it had comes back, less
+		# its losses in the same proportion
+		var was := int(_ftue_militia.get(int(a["id"]), -1))
+		if was > 0:
+			var halved := mini(was, int(a["max_str"]) / 2)
+			a["str"] = mini(int(a["max_str"]), int(a["str"]) * was / maxi(1, halved))
+	_ftue_militia = {}
 	var res: Dictionary = battle.result()
 	var stars := War.offensive_stars(res["captured"], flag_hex, res["routed_player_armies"])
 	sfx.play("fanfare" if stars > 0 else "lost")
@@ -3442,7 +3602,7 @@ func _end_offensive() -> void:
 	ui.show_result(stars, res["captured"].size(), res["lost"].size(), ws["score"], ws["control"], reason,
 		func(): ui.close_modal(); _set_mode(Mode.WAR),
 		func(): ui.close_modal(); _open_peace(),
-		String({"retreat": "white_flag", "wiped": "swords", "goals": "target"}.get(res["reason"], "hourglass")))
+		String({"retreat": "white_flag", "wiped": "swords", "goals": "target"}.get(res["reason"], "hourglass")), false, _pocket_land().size())
 
 
 func _order_filter(screen: Vector2) -> bool:
@@ -3478,7 +3638,7 @@ func _on_order_drag(phase: int, screen: Vector2) -> void:
 		_battle_tap(from)
 		return
 	if not sim.neighbors[from].has(hex):
-		ui.toast(tr("toast.adjacent_only"))
+		ui.toast(tr("toast.adjacent_only"), "", "info", true)
 		return
 	if battle.can_target(Types.PLAYER, hex):
 		if battle.issue(Types.PLAYER, {"t": "attack", "army": a["id"], "target": hex}):
@@ -3486,10 +3646,10 @@ func _on_order_drag(phase: int, screen: Vector2) -> void:
 			sfx.haptic(15)
 			_ftue_attacked()
 		else:
-			ui.toast(tr("toast.no_energy") % 2)
+			ui.toast(tr("toast.no_energy") % 2, "", "info", true)
 	elif sim.cells[hex]["controller"] == Types.PLAYER:
 		if not battle.issue(Types.PLAYER, {"t": "move", "army": a["id"], "to": hex}):
-			ui.toast(tr("toast.hex_busy"))
+			ui.toast(tr("toast.hex_busy"), "", "info", true)
 
 
 func _draw_order(from: int, to: int) -> void:
@@ -3584,7 +3744,7 @@ func _on_card_drop(card: String, screen: Vector2) -> void:
 	if id < 0:
 		return
 	if battle.energy_points(Types.PLAYER) < battle.card_cost(Types.PLAYER, card):
-		ui.toast(tr("toast.no_energy") % battle.card_cost(Types.PLAYER, card))
+		ui.toast(tr("toast.no_energy") % battle.card_cost(Types.PLAYER, card), "", "info", true)
 	elif not battle.card_ready(Types.PLAYER, card):
 		ui.toast(tr("toast.card_cooldown"))
 	elif battle.issue(Types.PLAYER, {"t": "card", "card": card, "target": id}):
@@ -3592,7 +3752,7 @@ func _on_card_drop(card: String, screen: Vector2) -> void:
 			_stat("cards")
 		_ftue_attacked()
 	else:
-		ui.toast(tr("toast.cant_target") % (tr("card.need_own") if Battle.CARDS[card]["target"] == "own" else tr("card.need_enemy")))
+		ui.toast(tr("toast.cant_target") % (tr("card.need_own") if Battle.CARDS[card]["target"] == "own" else tr("card.need_enemy")), "", "info", true)
 
 
 # ====================================================================== peace
@@ -3757,11 +3917,13 @@ func _sign_peace() -> void:
 		for h in d["hexes"]:
 			annexed_value += int(sim.cells[h]["value"])
 	_opinion_add(enemy, -2.0 * annexed_value)
-	if _last_score > 0.0:  # the points left over turn into the loser's opinion, +1 a point (canon §10.1)
+	var rest_op := 0.0  # the points left over turn into the loser's opinion, +1 a point (canon §10.1)
+	if _last_score > 0.0:
 		var spent := 0.0
 		for d in chosen:
 			spent += float(d["cost"])
-		_opinion_add(enemy, maxf(0.0, Types.round1(_last_score - spent)))
+		rest_op = maxf(0.0, Types.round1(_last_score - spent))
+		_opinion_add(enemy, rest_op)
 	_stat("peaces")
 	if _last_score > 0.0:
 		bp.gain("peace", now_s())
@@ -3889,6 +4051,11 @@ func _sign_peace() -> void:
 		lines.append(tr("ceremony.reparations"))
 		extra.append({"kind": "tile", "icon": "treaty", "pill": [["", "10%"], ["hourglass", tr("ceremony.rep_hours")]],
 			"name": tr("demand.reparations"), "order": 4})
+	if rest_op >= 0.05:
+		# the parchment's unspent points, as its bar said: the loser's opinion of us (08 §8.3 F13: «остаток → мнение»)
+		var ro := Kit.fmt_dec(rest_op, 1).trim_suffix(",0").trim_suffix(".0")
+		lines.append(tr("ceremony.opinion_line") % ro)
+		extra.append({"kind": "tile", "icon": "dove", "text": "+" + ro, "name": tr("ceremony.opinion"), "order": 4})
 	# trophy chest for a victorious peace: bronze < 30, silver < 60, gold ≥ 60 war score (canon §15.4)
 	var score: float = _last_score  # war score at signing (the war dict is cleared below)
 	var chest := "case_trophy_gold" if score >= 60.0 else ("case_trophy_silver" if score >= 30.0 else "case_trophy_bronze")
@@ -7200,6 +7367,8 @@ func _ftue_attacked() -> void:
 func _hamlets_target() -> int:
 	if not war.is_empty() or _truce_left(MapGen.HAMLETS) > 0:
 		return -1
+	if _ftue_goal2 >= 0 and War.recommend_goals(sim, MapGen.HAMLETS, 99).has(_ftue_goal2):
+		return _ftue_goal2  # step 10 chose it: the one with a pocket behind (_hamlets_front)
 	var core := MapGen.core_of(sim, MapGen.HAMLETS)
 	var goals := War.recommend_goals(sim, MapGen.HAMLETS, 3)
 	for g in goals:
@@ -7208,71 +7377,145 @@ func _hamlets_target() -> int:
 	return goals[0] if goals.size() > 0 else -1
 
 
-## War 2's front (canon §14.3, 6:00: «Вольные Хутора заняли … у нашей границы»). War 1 ends once its targets fall, so
-## the realm may not touch the Free Hamlets yet: then they settle the shortest strip of wild land up to our border —
-## the provocation ftue.10 names, and its hex beside our border becomes war 2's goal. The strip keeps off camps,
-## deposits and hexes we or the Barons are settling (one the Hamlets settle is simply theirs sooner); at equal length
-## the hex touching most of our land wins (a wider front: war 2's armies stand there), then a mine, then value.
-## Returns war 2's goal, or -1 when there is none.
+## War 2's front (canon §14.3, 6:00: «Вольные Хутора заняли … у нашей границы»; 08 §8.3 F25–F30). War 1 ends once
+## its targets fall, so the realm may not touch the Free Hamlets yet: then they settle a strip of wild land up to our
+## border — the provocation ftue.10 names. Its hex at our border is war 2's goal, its hex at their land the neck, and
+## behind the neck lies a tail of up to FTUE_POCKET_HEXES wild hexes that touches neither our land nor theirs nor the
+## rest of the strip: once the goal and the neck fall, the tail is cut off — the pocket war 2 teaches (F28 «Котёл: 2»,
+## F30 «… + котёл + 1 гекс»). Of the strips the one with a full tail wins, then a strip and tail of FTUE_PEACE2_HEXES,
+## then the shortest, then a mine at our border (F25: «Цель: Медная шахта»), then the widest front, then value. Wild
+## land here: no camps, deposits or hexes we or the Barons are settling (one the Hamlets settle is theirs sooner).
+## A realm that touches them already (a war 1 that ran on) gets the strip too when its border offers no pocket.
+## Returns war 2's goal (kept for war 2: _ftue_goal2), or -1 when there is none.
 func _hamlets_front() -> int:
-	var goal := _hamlets_target()
-	if goal >= 0 or not war.is_empty() or _truce_left(MapGen.HAMLETS) > 0:
-		return goal
+	if not war.is_empty() or _truce_left(MapGen.HAMLETS) > 0:
+		return -1
+	if _ftue_goal2 >= 0 and War.recommend_goals(sim, MapGen.HAMLETS, 99).has(_ftue_goal2):
+		return _ftue_goal2
+	# a border hex of theirs that already has the pocket behind it (a war 1 that reached them, or a strip settled
+	# before the game was saved) needs no new land
+	_ftue_goal2 = _hamlets_pocket_goal(true)
+	if _ftue_goal2 < 0:
+		_hamlets_settle()
+		_ftue_goal2 = _hamlets_pocket_goal(false)
+	if _ftue_goal2 < 0:
+		_ftue_goal2 = _hamlets_target()  # no pocket to be had: the plain front
+	return _ftue_goal2
+
+
+## A Hamlets border hex (a goal war 2 may name) with a neck beside it whose fall cuts land of theirs off
+## (_ftue_pocket_plan); `exact`: only a pocket of FTUE_POCKET_HEXES. Of several, the best-sized pocket, then a mine,
+## then value. -1 when none.
+func _hamlets_pocket_goal(exact: bool) -> int:
+	var best := -1
+	var best_key: Array = []
+	for g in War.recommend_goals(sim, MapGen.HAMLETS, 99):
+		var plan := _ftue_pocket_plan(MapGen.HAMLETS, g)
+		if plan.is_empty() or (exact and (plan["pocket"] as Array).size() != FTUE_POCKET_HEXES):
+			continue
+		var key: Array = [-int(plan["fit"]), int(String(sim.cells[g]["kind"]) == "mine"), int(sim.cells[g]["value"]), -g]
+		var better := best < 0
+		if not better:
+			for k in key.size():
+				if int(key[k]) != int(best_key[k]):
+					better = int(key[k]) > int(best_key[k])
+					break
+		if better:
+			best = g
+			best_key = key
+	return best
+
+
+## Step 10's provocation (see _hamlets_front): the Hamlets settle the strip and its tail — when the realm does not touch
+## them yet, the best strip there is (war 2 needs a front); when it does, only a strip with a full tail. Nothing when no
+## wild land leads from them to us.
+func _hamlets_settle() -> void:
 	var free := func(id: int) -> bool:
 		var c: Dictionary = sim.cells[id]
 		return int(c["owner"]) == Types.NOBODY and int(c["controller"]) == Types.NOBODY and Types.is_passable(c) \
 			and camps.at(id).is_empty() and deposits.at(id).is_empty() and not colonizing.has(id) \
-			and _ai_claimed(id) in [-1, MapGen.HAMLETS]  # their own settling there just ends sooner
-	var seeds: Array = []
-	for c in sim.cells:
-		if free.call(int(c["id"])) and _touches_player(int(c["id"])):
-			seeds.append(c)
-	var front := func(id: int) -> int:  # how many of our hexes it touches: our armies stand there in war 2
-		var n := 0
-		for x in sim.neighbors[id]:
-			n += int(x >= 0 and int(sim.cells[x]["owner"]) == Types.PLAYER)
-		return n
-	seeds.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-		var fa: int = front.call(int(a["id"]))
-		var fb: int = front.call(int(b["id"]))
-		if fa != fb:
-			return fa > fb
-		var ma := int(String(a["kind"]) == "mine")
-		var mb := int(String(b["kind"]) == "mine")
-		if ma != mb:
-			return ma > mb
-		if int(a["value"]) != int(b["value"]):
-			return int(a["value"]) > int(b["value"])
-		return int(a["id"]) < int(b["id"]))
-	var prev := {}  # wild hex -> the wild hex before it on the way from our border (-1: it touches the realm)
+			and _ai_claimed(id) in [-1, MapGen.HAMLETS]
+	var touches_hamlets := func(id: int) -> bool:
+		for n in sim.neighbors[id]:
+			if n >= 0 and int(sim.cells[n]["controller"]) == MapGen.HAMLETS:
+				return true
+		return false
+	# every wild hex's way to the Hamlets: a BFS from the hexes that touch them (the necks), one step at a time
+	var nxt := {}  # wild hex -> the next hex towards the Hamlets (-1: it touches them)
+	var dist := {}
 	var q: Array = []
-	for c in seeds:
-		prev[int(c["id"])] = -1
-		q.append(int(c["id"]))
-	var end := -1
-	while not q.is_empty() and end < 0:
+	for c in sim.cells:
+		var id: int = c["id"]
+		if free.call(id) and touches_hamlets.call(id):
+			nxt[id] = -1
+			dist[id] = 0
+			q.append(id)
+	while not q.is_empty():
 		var h: int = q.pop_front()
-		if _touches_owner(h, MapGen.HAMLETS):
-			end = h
-			break
 		for n in sim.neighbors[h]:
-			if n >= 0 and not prev.has(n) and free.call(n):
-				prev[n] = h
+			if n >= 0 and not dist.has(n) and free.call(n):
+				nxt[n] = h
+				dist[n] = int(dist[h]) + 1
 				q.append(n)
-	if end < 0:
-		return -1
-	var h := end
-	while h >= 0:  # from the Hamlets' side to ours: their green spreads up to the border
-		if _ai_claimed(h) == MapGen.HAMLETS:
+	var best := {}
+	for id in dist:
+		if not _touches_player(int(id)):
+			continue
+		var strip: Array = []  # from our border to their land
+		var h: int = id
+		while h >= 0:
+			strip.append(h)
+			h = int(nxt[h])
+		# the tail: wild land behind the neck that touches neither side nor the rest of the strip, nearest first — once
+		# the goal falls, the neck is the only way on, so even a player who strays from the coach closes the pocket
+		var tail: Array = []
+		var neck: int = strip[strip.size() - 1]
+		var tq: Array = [neck]
+		var seen := {}
+		for x in strip:
+			seen[x] = true
+		var off_strip := func(n: int) -> bool:
+			for m in sim.neighbors[n]:
+				if m >= 0 and m != neck and strip.has(m):
+					return false
+			return true
+		while not tq.is_empty() and tail.size() < FTUE_POCKET_HEXES:
+			var t: int = tq.pop_front()
+			for n in sim.neighbors[t]:
+				if tail.size() >= FTUE_POCKET_HEXES:
+					break
+				if n < 0 or seen.has(n):
+					continue
+				seen[n] = true
+				if free.call(n) and not _touches_player(n) and not touches_hamlets.call(n) and off_strip.call(n):
+					tail.append(n)
+					tq.append(n)
+		var front := 0  # how many of our hexes the goal touches: our armies stand there in war 2
+		for x in sim.neighbors[id]:
+			front += int(x >= 0 and int(sim.cells[x]["owner"]) == Types.PLAYER)
+		var key: Array = [int(tail.size() == FTUE_POCKET_HEXES), int(strip.size() + tail.size() == FTUE_PEACE2_HEXES),
+			-strip.size(), int(String(sim.cells[id]["kind"]) == "mine"), front, int(sim.cells[id]["value"]), -int(id)]
+		var better := best.is_empty()
+		if not better:
+			for k in key.size():
+				if int(key[k]) != int(best["key"][k]):
+					better = int(key[k]) > int(best["key"][k])
+					break
+		if better:
+			best = {"key": key, "land": strip + tail}
+	if best.is_empty() or (int(best["key"][0]) == 0 and not War.recommend_goals(sim, MapGen.HAMLETS, 1).is_empty()):
+		return  # a front without a full pocket behind it: the one the realm already has will do
+	var land: Array = best["land"]
+	land.reverse()  # from their side to ours: their green spreads up to the border
+	for x in land:
+		if _ai_claimed(x) == MapGen.HAMLETS:
 			ai_colonizing.erase(MapGen.HAMLETS)
-			map_view.hex_label(h, "")
-		sim.cells[h]["owner"] = MapGen.HAMLETS
-		sim.cells[h]["controller"] = MapGen.HAMLETS
-		map_view.refresh_hex(h)
-		map_view.burst(h, map_view.state_color(MapGen.HAMLETS), false)
-		h = int(prev[h])
+			map_view.hex_label(x, "")
+		sim.cells[x]["owner"] = MapGen.HAMLETS
+		sim.cells[x]["controller"] = MapGen.HAMLETS
+		map_view.refresh_hex(x)
+		map_view.burst(x, map_view.state_color(MapGen.HAMLETS), false)
 	map_view.mark_dirty()
-	return _hamlets_target()
 
 
 ## Step 3's ghost drag in war 1 (canon §14.3: the first offensive ends on ★★★, the flag taken): towards the flag — an
@@ -7296,6 +7539,30 @@ func _ftue_ghost_pair() -> Array:
 			if score > best:
 				best = score
 				pair = [int(a["hex"]), n]
+	return pair
+
+
+## Step 13's ghost drag in war 2: an army onto the goal while it is theirs, then (the goal ours) onto the neck while
+## the pocket can still close — from the army beside it that wins best; none while an army of ours already attacks
+## that hex. [from, to] or [].
+func _ftue_ghost_pair2() -> Array:
+	var tgt := -1
+	if flag_hex >= 0 and battle.can_target(Types.PLAYER, flag_hex):
+		tgt = flag_hex
+	elif _ftue_neck >= 0 and battle.can_target(Types.PLAYER, _ftue_neck) and _ftue_pocket_open():
+		tgt = _ftue_neck
+	if tgt < 0:
+		return []
+	for cl in battle.clashes:
+		if int(cl["target"]) == tgt and int(cl["side"]) == Types.PLAYER:
+			return []  # an army of ours is on it already: the finger waits for the hex to fall
+	var pair: Array = []
+	var best := -1.0
+	for a in battle.adjacent_idle_armies(Types.PLAYER, tgt):
+		var f: float = battle.forecast(Types.PLAYER, [a["id"]], tgt)["f"]
+		if f > best:
+			best = f
+			pair = [int(a["hex"]), tgt]
 	return pair
 
 
@@ -7385,6 +7652,9 @@ func _ftue_tick(delta: float) -> void:
 				target = ui.action_rect()
 		3, 13:
 			cm = "ring"
+			if ftue == 13 and battle != null and _ftue_neck >= 0 and int(sim.cells[flag_hex]["controller"]) == Types.PLAYER \
+					and int(sim.cells[_ftue_neck]["controller"]) != Types.PLAYER and _ftue_pocket_open():
+				line = "ftue.13_neck"  # the goal is ours: now the neck, and the pocket closes
 		4:
 			target = ui.card_rect("attack")
 			near = ui.hand_rects("attack")
@@ -7444,6 +7714,8 @@ func _ftue_tick(delta: float) -> void:
 			near = ui.hand_rects("encircle")
 			lift = [ui.card_cost_rect("encircle")]
 			cm = "ring"
+			if _ftue_neck >= 0:
+				line = "ftue.12_pocket"  # «Котёл» onto the neck: the land behind it is cut off (08 §8.3 F28)
 		14:
 			if mode == Mode.RESULT:
 				target = ui.modal_button_rect(1)
@@ -7460,13 +7732,15 @@ func _ftue_tick(delta: float) -> void:
 	# the wars' goals by their names (war 1: «Цель — «Ржавый узел»…», war 2: «…заняли «Хуторские нивы»», not always a
 	# mine); an unnamed hex has no name worth saying («Равнина»), so its line goes without one
 	var goal := flag_hex if ftue in [3, 4] else (_hamlets_target() if ftue == 10 else (int(war.get("goal", -1)) if ftue == 13 else -1))
-	if ftue in [3, 4, 10, 13]:
+	if line in ["ftue.3", "ftue.4", "ftue.10", "ftue.13"]:
 		if goal >= 0 and String(sim.cells[goal]["name"]) != "":
 			text = text % _cell_name(goal)
 		else:
 			text = tr(line + "_any")
+	if line == "ftue.13" and _ftue_shown == 13 and battle != null and flag_hex >= 0 and int(sim.cells[flag_hex]["controller"]) == Types.PLAYER:
+		text = _ftue_line  # the goal is ours and the neck's line is over (or never came): the line on screen stays
 	if _ftue_shown != ftue or _ftue_line != text:
-		if _ftue_shown != ftue:
+		if _ftue_shown != ftue or ftue == 13:  # step 13's second line (the neck) holds its own 6 s
 			_ftue_t = 0.0
 		_ftue_shown = ftue
 		_ftue_line = text
@@ -7497,6 +7771,21 @@ func _ftue_tick(delta: float) -> void:
 			ui.coach_ghost(cr.get_center(), cam.unproject_position(map_view.cell_world(flag_hex) + Vector3(0, 0.3, 0)))
 		else:
 			ui.coach_ghost(Vector2(-1, -1), Vector2(-1, -1))
+	elif ftue == 12 and battle != null and _ftue_neck >= 0:
+		# «Котёл» onto the neck (08 §8.3 F28: the ghost drags the card onto the pocket-to-be)
+		var ce: Rect2 = ui.card_rect("encircle")
+		if ce.size.x > 0.0 and battle.validate(Types.PLAYER, {"t": "card", "card": "encircle", "target": _ftue_neck}):
+			ui.coach_ghost(ce.get_center(), cam.unproject_position(map_view.cell_world(_ftue_neck) + Vector3(0, 0.3, 0)))
+		else:
+			ui.coach_ghost(Vector2(-1, -1), Vector2(-1, -1))
+	elif ftue == 13 and battle != null:
+		# an army onto the goal, then onto the neck, until it falls (the coach's line itself goes after 6 s)
+		var p2 := _ftue_ghost_pair2()
+		if p2.is_empty():
+			ui.coach_ghost(Vector2(-1, -1), Vector2(-1, -1))
+		else:
+			ui.coach_ghost(cam.unproject_position(map_view.cell_world(p2[0]) + Vector3(0, 0.3, 0)),
+				cam.unproject_position(map_view.cell_world(p2[1]) + Vector3(0, 0.3, 0)))
 
 
 # ====================================================================== frame
