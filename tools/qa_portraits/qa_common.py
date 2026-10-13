@@ -7,7 +7,7 @@ under `python3 -I`). Everything here is about the shipped RGBA PNGs and the kit'
 - the plates the game draws behind a portrait: both rarity palettes (ui_kit.gd Kit.RARITY and the GDD 04 §15.4 set
   that §7.4 quotes), the leaders' state colours exactly as the game passes them to CmdPortrait.plate
   (map_view.team_look(state)["body"] = SoftPalette.soft_team(state colour).body; the Barons are always the war
-  red #DD3A30), the ruler's SKY; and the two plate gradients (`current` = cmd_portrait.gd today, `B` = §7.4);
+  red #DD3A30), the ruler's SKY; and the two plate gradients (`current` = cmd_portrait.gd before P4, `B` = §7.4, the game since P4);
 - sRGB → CIE Lab, the premultiplied Lanczos downscale the asset pipeline uses, 48 px alpha masks;
 - the framing numbers of §7.14 P-A6 as fractions of the file's own size;
 - the sidecars the kit writes with --sidecars: meta/<name>.json (landmarks in PNG px) and ids/<name>.png (+ .json,
@@ -39,7 +39,7 @@ LEADER_PLATE = {"barons": "#DD3A30", "hamlets": "#4FD162", "league": "#32D1C2", 
                 "veilmark": "#58D14F", "lakes": "#42BED1"}
 SKY = "#8FCDF2"  # the ruler (HUD, profile) and the advisor: ui_style SKY_TOP
 # Plate gradients, top -> bottom of the picture: Godot's Color.lightened(a) = c + (1 - c) a, darkened(a) = c (1 - a)
-# on the sRGB values. "current" = cmd_portrait.gd _draw today; "B" = §7.4 (the P4 change), the gated one.
+# on the sRGB values. "current" = cmd_portrait.gd _draw before P4; "B" = §7.4 (the game since P4), the gated one.
 PLATE_MODES = {"current": (0.08, 0.42), "B": (0.18, 0.0)}
 
 ASPECT = 256 / 294  # 0.8707: _leader_bust hard-codes 128x147; every crop of the game assumes it
@@ -164,9 +164,11 @@ def plate_rows(c, n, mode="B"):
 
 def plate_image(c, w, h, mode="B"):
     """The whole plate the game draws behind a w x h picture (sRGB, (h, w, 3)): the vertical gradient of `mode` and its
-    halo behind the head, as cmd_portrait.gd draws them — "B" (§7.4): soft concentric circles, about +12 L* in total,
-    no outline (white α 0.05 at radii 0.40 / 0.33 / 0.26 u around (0.5 w, 0.42 h), u = min(w, h)); "current": one white
-    α 0.1 disc of radius 0.36 u (its thin darker outline is left out)."""
+    halo behind the head, as cmd_portrait.gd draws them — "B" (§7.4, cmd_portrait.gd HALO since P4): soft concentric
+    circles, no outline (white α 0.05 at radii 0.40 / 0.33 / 0.26 u around (0.5 w, 0.42 h), u = min(w, h)): +4 L* on
+    the grey and orange plates to +6 on purple and red at the centre (§7.4's «≈ +12 L*» would take 4 calm files more past
+    the 35 % rim gate, P4 measure); "current": the plate before P4, one white α 0.1 disc of radius 0.36 u (its thin
+    darker outline is left out)."""
     rows = plate_rows(c, h, mode)
     img = np.broadcast_to(rows[:, None, :], (h, w, 3)).astype(np.float32).copy()
     yy, xx = np.mgrid[0:h, 0:w]

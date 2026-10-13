@@ -2,8 +2,8 @@
 each portrait of docs/art_direction.md §7.6, plus the signature registry and its lint (no two ids share a
 signature; no two commanders wear the same headgear in one era).
 
-P1 (the kit proof): Bram, Lira and Vega in era 1, calm and smile. P2: all twelve commanders in era 1 (eras 2–4,
-the leaders and the ruler keep the old builder in portrait_assets.py until P3 adds them here). A prop with a "hand"
+P1 (the kit proof): Bram, Lira and Vega in era 1, calm and smile. P2: all twelve commanders in era 1. P3: eras 2–4,
+the ten leaders and the ruler (since P4 portrait_assets.py has no other builder). A prop with a "hand"
 pose (§7.5: Vega's pointer, Seir's spyglass, Vance's queen, Irma's gauntlet) builds the hand when the character's
 "hands" is on (default) and its hand-free fallback otherwise (KIT_HANDS=0 / 1 forces either, for the review of §7.15
 q3). Vega's is off (decided after P1: she carries no pointer), Vance's and Irma's too (the P2 reviewer's decision: the

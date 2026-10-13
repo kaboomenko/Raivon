@@ -542,10 +542,8 @@ func _run() -> void:
 				g._battle_step()
 			var r52: Dictionary = g.battle.result()
 			var c52: Array = r52["captured"]
-			var core52 := MapGen.core_of(g.sim, MapGen.HAMLETS)
-			var land52 := c52.filter(func(h): return not core52.has(int(h)))
-			_check((r52["reason"] == "goals") == (land52.size() >= g.FTUE_PEACE2_HEXES and c52.has(g2h)),
-				"FTUE war 2 ends once its goal and %d hexes of land (no core) are taken (%s, %s)" % [g.FTUE_PEACE2_HEXES, r52["reason"], str(c52)])
+			_check((r52["reason"] == "goals") == (c52.size() >= g.FTUE_PEACE2_HEXES and c52.has(g2h)),
+				"FTUE war 2 ends once its goal and %d hexes are taken (%s, %s)" % [g.FTUE_PEACE2_HEXES, r52["reason"], str(c52)])
 			g._end_offensive()
 			if g.ftue == 14:
 				g.ui.close_modal()

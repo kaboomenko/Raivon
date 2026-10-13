@@ -3070,13 +3070,16 @@ func _start_offensive() -> void:
 		ui.toast(tr("toast.to_battle"))
 
 
-## Tutorial war 2 (08 §8.3 F27): the enemy army standing on the goal falls back to the enemy hex farthest from our
-## land, so the goal holds no army when the offensive starts.
+## Tutorial war 2 (08 §8.3 F27, «сценарный перевес»): the enemy army standing on the goal falls back to the enemy hex
+## farthest from our land, so the goal holds no army when the offensive starts, and the Hamlets' field armies are a
+## militia at half strength — the front may be one hex wide (_hamlets_front), pushed by a single army, and the war's
+## land (FTUE_PEACE2_HEXES) lies behind the goal.
 func _ftue_clear_goal(enemy: int) -> void:
 	var held := {}
 	for a in armies:
 		if int(a["side"]) == enemy:
 			held[int(a["hex"])] = true
+			a["str"] = int(a["max_str"]) / 2
 	for a in armies:
 		if int(a["side"]) != enemy or int(a["hex"]) != flag_hex:
 			continue
@@ -3162,12 +3165,13 @@ func _hand_teaser() -> String:
 	return best
 
 
-## The hand row of the battle UI: the hand, then the teaser greyed with its DL (it does not take a slot).
+## The hand row of the battle UI: the hand, then the teaser greyed with its DL (it does not take a slot) while the
+## hand leaves it room: beside six cards a stub would only squeeze the playable ones.
 func _show_hand() -> void:
 	var row: Array = _hand_display()
 	var locked := {}
 	var tz := _hand_teaser()
-	if tz != "" and not row.has(tz):
+	if tz != "" and not row.has(tz) and row.size() <= 5:  # a full hand (6 cards, DL7) keeps the tray to playable cards
 		row = row + [tz]
 		locked[tz] = int(CARD_DL.get(tz, 1))
 	ui.set_locked(locked)  # first: the row lays the teaser out as a narrow stub
@@ -3236,13 +3240,9 @@ func _ftue_war_done() -> void:
 	if need <= 0:
 		return
 	if _ftue_end_tick < 0:
-		if int(sim.cells[flag_hex]["controller"]) != Types.PLAYER:
-			return
-		var core := MapGen.core_of(sim, battle.defender())  # the core is never ceded (decision 19): not the treaty's land
-		var land := 0
-		for h in battle.result()["captured"]:
-			land += int(not core.has(int(h)))
-		if land >= need:
+		# every hex taken counts, the enemy's core too: the result's «+N» stays the haul the treaty shows (a core hex is
+		# never ceded, decision 19, so the war may bring a hex less, never a pile of hexes that silently go back)
+		if int(sim.cells[flag_hex]["controller"]) == Types.PLAYER and (battle.result()["captured"] as Array).size() >= need:
 			_ftue_end_tick = battle.tick + FTUE_END_BEAT
 	elif battle.tick >= _ftue_end_tick:
 		battle._finish("goals")

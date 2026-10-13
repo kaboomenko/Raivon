@@ -16,8 +16,9 @@ Writes OUT_DIR/sheet_uses_<plate>_<palette>[_mip][_TAG].png. Rows (each cell cap
  6. the ruler: HUD 74×72 (brass, steel), profile 104 — when ruler*.png are present.
 Sampling emulates Godot's canvas: one bilinear tap per screen pixel with NO mipmaps (today's import); --mipmaps
 pre-filters minified textures by area (what P4's mipmaps + TEXTURE_FILTER_LINEAR_WITH_MIPMAPS give).
-Plate "B" = §7.4 (rc.lightened(0.18) -> rc, a soft halo of concentric circles, no dark ring); "current" =
-cmd_portrait.gd today (lightened(0.08) -> darkened(0.42), a white α0.1 halo with a darker outline).
+Plate "B" = §7.4, cmd_portrait.gd since P4 (rc.lightened(0.18) -> rc, a soft halo of concentric circles, no dark
+ring; a locked commander a flat INK α 0.3 silhouette); "current" = cmd_portrait.gd before P4 (lightened(0.08) ->
+darkened(0.42), a white α0.1 halo with a darker outline, the locked render multiplied by INK α 0.3).
 Works on a folder that holds only some of the 150 names: uses whose files are missing are left out (listed).
 """
 import os
@@ -194,9 +195,10 @@ def cmd_portrait(name, w, h, rarity="common", locked=False, mood="", era=1, plat
         top, bot = lightened(rc, 0.08), darkened(rc, 0.42)
     out = canvas(w, h)
     over(out, vgrad(w, h, top, bot), mask=box)
-    if b_mode and not locked:  # soft concentric halo, about +12 L* in total, no outline
+    if b_mode:  # soft concentric halo (cmd_portrait.gd HALO, HALO_LOCKED), +4–6 L* at the centre, no outline
         for k, (rr, a) in enumerate(((0.40, 0.05), (0.33, 0.05), (0.26, 0.05))):
-            over(out, solid(w, h, hexc("ffffff", a)), mask=ellipse_mask(w, h, w * .5, h * .42, u * rr, u * rr) * box)
+            over(out, solid(w, h, hexc("ffffff", 0.02 if locked else a)),
+                 mask=ellipse_mask(w, h, w * .5, h * .42, u * rr, u * rr) * box)
     else:
         hm = ellipse_mask(w, h, w * .5, h * .42, u * .36, u * .36)
         over(out, solid(w, h, hexc("ffffff", 0.1 if not locked else 0.05)), mask=hm * box)
@@ -209,7 +211,11 @@ def cmd_portrait(name, w, h, rarity="common", locked=False, mood="", era=1, plat
     th, tw = t.shape[:2]
     sc = max(w / tw, h / th)
     pic = sample(t, ((tw - w / sc) / 2, 0, w / sc, h / sc), w, h)
-    if locked:
+    if locked and b_mode:  # P4: a flat INK α 0.3 silhouette from the render's alpha (SILHOUETTE shader), no detail
+        mod = alpha(INK, 0.3)
+        pic = np.concatenate([np.broadcast_to(np.asarray(mod[:3], np.float32), pic.shape[:2] + (3,)),
+                              pic[..., 3:4] * mod[3]], axis=-1)
+    elif locked:  # before P4: the render multiplied by INK α 0.3 (goggles and grey hair showed through)
         mod = alpha(INK, 0.3)
         pic = pic * np.array(list(mod[:3]) + [mod[3]], np.float32)
     over(out, pic, mask=box)
