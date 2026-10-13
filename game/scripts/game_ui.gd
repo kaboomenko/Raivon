@@ -1039,6 +1039,8 @@ var on_dock := Callable()  # (docked: bool) — main hides the HUD's bottom grou
 func close_modal() -> void:
 	var m := _modal
 	_modal = null
+	if m != null:
+		Kit.close_tip()  # a tooltip from the window goes with it
 	if _docked:
 		_set_docked(false)
 	if m:
@@ -1053,6 +1055,7 @@ func close_modal() -> void:
 func _modal_box(rect: Rect2, parchment := false, title := "", icon := "", role := "info", closable := false, blocking := false, dim_a := -1.0) -> Panel:
 	# a window replaced in the same frame (a screen re-rendering itself) swaps without the pop-in
 	var swap := _modal != null or _closed_frame == Engine.get_process_frames()
+	Kit.close_tip()  # a tooltip left open on the screen under the window (CanvasLayer 90) would sit over it
 	close_modal()
 	if swap and is_instance_valid(_closing):
 		_closing.queue_free()
@@ -1242,8 +1245,9 @@ var _sealed := false  # seal_done fires once per treaty
 ## the line «Подпишу, если не больше 54,6», the budget bar L (used / budget, red when over), «Требования» — a grid of
 ## 3 tiles per row (render or icon, name, cost; chosen: a green rim and a check; the indemnity packages collapse into
 ## one tile «×N»), «Грабёж» in segments, «К войне» (info S) and «Подписать мир» (go L, hold 0.8 s → seal_done; lock
-## while the demands cost more than the budget). Rows that do not fit the screen scroll inside the well.
-func show_peace(enemy: String, budget: float, control: int, demands: Array, chosen: Dictionary, plunder := 1, portrait := "", plate := Kit.CLEAR) -> void:
+## while the demands cost more than the budget). Rows that do not fit the screen scroll inside the well. `warn`: what
+## the warehouse cannot take («Склад не вместит: 2 133 золота»), a NEG line with the crate under the plunder.
+func show_peace(enemy: String, budget: float, control: int, demands: Array, chosen: Dictionary, plunder := 1, portrait := "", plate := Kit.CLEAR, warn := "") -> void:
 	var fresh := not (_modal != null and _modal.has_meta("peace"))
 	if fresh:
 		_hold_hints += 1
@@ -1291,7 +1295,7 @@ func show_peace(enemy: String, budget: float, control: int, demands: Array, chos
 	var rows := maxi(1, ceili(groups.size() / 3.0))
 	var row_h := 212.0
 	var head := 258.0  # leader, bubble, budget
-	var tail := 24.0 + 48.0 + 12.0 + 80.0 + (52.0 if hint else 0.0) + 24.0 + 116.0 + 32.0  # plunder, hint, footer
+	var tail := 24.0 + 48.0 + 12.0 + 80.0 + (52.0 if hint else 0.0) + (52.0 if warn != "" else 0.0) + 24.0 + 116.0 + 32.0  # plunder, notes, footer
 	var max_h := Kit.vb(self) - 24.0 - 150.0
 	var room := max_h - head - 60.0 - tail  # the most the well may take
 	var well_h := 32.0 + rows * row_h - 12.0
@@ -1383,6 +1387,23 @@ func show_peace(enemy: String, budget: float, control: int, demands: Array, chos
 		if i != plunder:
 			plunder_selected.emit(i))
 	y += 60.0 + 80.0
+	if warn != "":
+		# the package and the plunder are more than the warehouse has room for: the rest would burn (canon §4)
+		var ws := Kit.fit_size(warn, 26, w - 64.0 - 44.0, "b800", 22, false)
+		var wl := Kit.label(warn, ws, Kit.NEG_CREAM, false)
+		wl.name = "storage_warn"
+		wl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		var ww := minf(Kit.text_w(warn, ws, "b800", false) + 2.0, w - 64.0 - 44.0)
+		var wx := roundf((w - ww - 44.0) * 0.5)
+		var wi := _icon_rect("crate", 36)
+		wi.position = Vector2(wx, y + 14.0)
+		box.add_child(wi)
+		wl.position = Vector2(wx + 44.0, y + 14.0)
+		wl.size = Vector2(ww, 36)
+		wl.clip_text = true
+		wl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		box.add_child(wl)
+		y += 52.0
 	if hint:
 		var hl := Kit.label(tr("peace.hold_hint"), 26, Kit.MUTED_CREAM, false)
 		hl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1614,6 +1635,15 @@ func show_ceremony_counters(lines: Array, on_done: Callable, on_double := Callab
 				t = Kit.tile(well, r, {"icon": String(it.get("icon", "")), "icon_side": 92.0, "pill": pill})
 				if it.has("res"):
 					flyers.append([t, String(it["res"]), String(it.get("icon", ""))])
+				if int(it.get("lost", 0)) > 0:
+					# the warehouse was full: what burned of it (canon §4) — a NEG chip on the tile's top edge, the amount
+					# in its tooltip; the pill says only what was credited
+					var lc := Kit.caption_pill(t, tr("ceremony.storage_full"), 34.0, Kit.face_of("war"), 22, 3)
+					lc.name = "lost"
+					lc.position = Vector2(roundf((r.size.x - lc.size.x) * 0.5), -14.0)
+					var tt2 := t
+					var tip2 := String(it.get("lost_tip", ""))
+					(t as Kit.KitTile).cb = func(): Kit.tooltip(tt2, tr("ceremony.storage_full"), tip2)
 			t.name = "reward_%d" % i
 			_pop_later(t, 0.35 + 0.08 * i)
 	elif not listed.is_empty():
@@ -1661,6 +1691,20 @@ func show_ceremony_counters(lines: Array, on_done: Callable, on_double := Callab
 				done.fill = k
 				done.queue_redraw(), 0.0, 1.0, active_after)
 		get_tree().create_timer(active_after).timeout.connect(open)
+
+
+## The open window's reward tiles marked to fly (a dialog tile with `fly`: the legacy's Raivites) fly into their plates.
+func fly_marked() -> void:
+	if _modal == null:
+		return
+	var srcs: Array = []
+	var stack: Array = [_modal]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		if n.has_meta("fly"):
+			srcs.append([n, String(n.get_meta("fly")), String(n.get_meta("fly_icon", n.get_meta("fly")))])
+		stack.append_array(n.get_children())
+	_fly_rewards(srcs)
 
 
 ## «Забрать» / «×2» of the ceremony once open: the rewards fly into their plates, then `cb` runs.
@@ -2987,7 +3031,10 @@ func _dlg_body(box: Control, w: float, y: float, p: Dictionary, lines: Array) ->
 						o["icon_side"] = 72.0
 					if o.has("swatch"):  # a border ink shows the ink itself (as in the Atelier)
 						o["pic_node"] = Kit.ink_swatch(String(o["swatch"]), float(o["icon_side"]))
-					Kit.tile(well, Rect2(x0 + i * (tw + 12.0), ty, tw, th), o)
+					var dt := Kit.tile(well, Rect2(x0 + i * (tw + 12.0), ty, tw, th), o)
+					if o.has("fly"):  # a reward that flies into its plate when the window is left (fly_marked)
+						dt.set_meta("fly", String(o["fly"]))
+						dt.set_meta("fly_icon", String(o.get("icon", "")))
 			y += wh + DLG_GAP
 		elif ln is Dictionary and (ln as Dictionary).has("bar"):  # progress: an icon and a bar L with «7/56» inside
 			var bd: Dictionary = ln["bar"]
@@ -3165,6 +3212,12 @@ func _dlg_box(h: float, title: String, role: String, icon: String, cancel: Calla
 			var m := _modal
 			_modal.gui_input.connect(func(e): if _is_tap(e) and _modal == m: cancel.call())
 	return box
+
+
+## main's moments with no window of their own docked (the peace ceremony's border wave, «Мир расширяется»): the bottom
+## groups hide while `on`. A window opened meanwhile docks and undocks itself; dock(true) again after it opens.
+func dock(on: bool) -> void:
+	_set_docked(on)
 
 
 ## The bottom groups (ours: the card row, the big button; the HUD's through `on_dock`) hide while a docked window or
@@ -5730,7 +5783,7 @@ func _reason_kind(reason: String) -> Array:
 	if m != null:
 		var n := m.get_string()
 		for k in [["err.need_residence", "level"], ["err.unlock_dl", "level"], ["err.need_academy", "academy"],
-				["err.need_hexes", "hexes"], ["err.chapter_locked", "chapter"]]:
+				["err.need_hexes", "hexes"], ["err.chapter_locked", "chapter"], ["err.storage_small", "storage"]]:
 			if reason == L.t(String(k[0]) + "|" + n):
 				return [k[1], n]
 	return ["wait", ""]
@@ -5795,6 +5848,13 @@ func _building_card(it: Dictionary) -> Control:
 		tip.append(tr("bld.tip.cost") % _cost_words(cost))
 	if reason != "" and rk[0] != "short" and not busy:
 		tip.append(reason)
+	var nf: Dictionary = it.get("need_for", {})
+	if not nf.is_empty():
+		tip.append(String(nf.get("tip", "")))  # the Warehouse: what its next levels are needed for
+		if not busy:
+			# a line over its name: «для УР6» with the building's icon (the Residence's crown)
+			opts["note"] = {"icon": String(BUILDING_ICONS.get(String(nf["type"]), "crown")),
+				"text": tr("bld.wh_for_dl") % int(nf["level"]) if String(nf["type"]) == "residence" else tr("bld.wh_for_lvl") % int(nf["level"])}
 	opts["details"] = "\n".join(tip.slice(0, 4))
 	if busy:
 		var speed_cb := func():
@@ -5842,6 +5902,9 @@ func _building_card(it: Dictionary) -> Control:
 			opts["cta"] = {"role": "lock", "icon": "lock", "caption": cap, "enabled": false, "reason": reason}
 	elif rk[0] == "hexes":
 		opts["cta"] = {"role": "lock", "icon": "hex_tile", "caption": String(rk[1]), "enabled": false, "reason": reason}
+	elif rk[0] == "storage":
+		# the price is over the warehouse's cap (B3): the Warehouse level it takes on the lock plate, the reason on a tap
+		opts["cta"] = {"role": "lock", "icon": "crate", "caption": tr("bld.lvl_short") % int(rk[1]), "enabled": false, "reason": reason}
 	else:
 		var go_cb := func():
 			if research:
@@ -6708,6 +6771,12 @@ var _toast_queue: Array = []  # waiting toasts: {text, icon, kind, n}
 var _toast_cur := {}  # the one on screen: {text, icon, kind, n, lines}; {} when none
 var _toast_shown := 0.0  # seconds it has held (since it came in, or since the same text came again)
 var _toast_out := false  # it is fading out; the next one comes when it is gone
+## A protected moment (a battle, its result, the treaty, a ceremony, «Мир расширяется»; docs/gdd/10 §3.4): main sets
+## it. Ordinary news («info», not the answer to a tap) is held then — merged by text — and shown once the player is
+## back on the map; refusals («error»), tap answers (`now`) and the battle's own micro-toasts («battle») still show.
+var quiet := false
+var _toast_held: Array = []  # {text, icon, kind, n} held while quiet, oldest first
+const TOAST_HELD_MAX := 6  ## held beyond this: the oldest goes (stale news)
 
 
 ## A short message at the top of the free column (§4.10): a slate pill, the event's icon overhanging its left end, the
@@ -6729,6 +6798,15 @@ func toast(text: String, icon := "", kind := "info", now := false) -> void:
 		t = " ".join(words)
 	if t == "":
 		return
+	if quiet and kind == "info" and not now:
+		for q in _toast_held:
+			if String(q["text"]) == t:
+				q["n"] = int(q["n"]) + 1
+				return
+		_toast_held.append({"text": t, "icon": icon, "kind": kind, "n": 1})
+		while _toast_held.size() > TOAST_HELD_MAX:
+			_toast_held.pop_front()
+		return
 	if not _toast_cur.is_empty() and not _toast_out and String(_toast_cur["text"]) == t:
 		_toast_cur["n"] = int(_toast_cur["n"]) + 1
 		_toast_shown = 0.0  # it holds again from now
@@ -6740,7 +6818,7 @@ func toast(text: String, icon := "", kind := "info", now := false) -> void:
 			if String(q["text"]) == t:
 				n += int(q["n"])
 		_toast_queue = _toast_queue.filter(func(q): return String(q["text"]) != t)
-		_toast_queue.push_front({"text": t, "icon": icon, "kind": kind, "n": n})
+		_toast_queue.push_front({"text": t, "icon": icon, "kind": kind, "n": n, "now": true})
 		while _toast_queue.size() > TOAST_QUEUE_MAX:
 			_toast_queue.pop_back()
 		if _toast_cur.is_empty():
@@ -6759,11 +6837,34 @@ func toast(text: String, icon := "", kind := "info", now := false) -> void:
 		_show_next_toast()
 
 
+## Enters or leaves a protected moment (see `quiet`). Entering it, the ordinary news waiting in the queue is held too
+## and the one on screen lets itself out; leaving it, the held news comes back into the queue, oldest first, as room
+## frees up (_process_toast).
+func set_quiet(on: bool) -> void:
+	if on == quiet:
+		return
+	quiet = on
+	if not on:
+		return
+	var keep: Array = []
+	for q in _toast_queue:
+		if String(q["kind"]) == "info" and not bool(q.get("now", false)):
+			_toast_held.append(q)
+		else:
+			keep.append(q)
+	_toast_queue = keep
+	while _toast_held.size() > TOAST_HELD_MAX:
+		_toast_held.pop_front()
+	if not _toast_cur.is_empty() and not _toast_out and String(_toast_cur["kind"]) == "info" and not bool(_toast_cur.get("now", false)):
+		_toast_shown = INF  # (out on the next frame: the 300 ms fade)
+
+
 ## Takes back a toast that no longer applies (the battle's how-to once the battle is over, so it never sits over the
 ## result window): it leaves the queue, or lets itself out now (the 300 ms fade) if it is on screen.
 func drop_toast(text: String) -> void:
 	var t := text.strip_edges()
 	_toast_queue = _toast_queue.filter(func(q): return String(q["text"]) != t)
+	_toast_held = _toast_held.filter(func(q): return String(q["text"]) != t)
 	if not _toast_cur.is_empty() and not _toast_out and String(_toast_cur["text"]) == t:
 		_toast_shown = INF  # its hold is over: _process_toast lets it out on the next frame
 
@@ -6890,6 +6991,17 @@ func _toast_count(pop: bool) -> void:
 ## Holds the toast on screen (TOAST_HOLD, + a line; less while others wait), keeps it under the war bar when the bar
 ## comes or goes, then lets it out (fades and rises 12 px over 300 ms) and brings the next one.
 func _process_toast(delta: float) -> void:
+	while not quiet and not _toast_held.is_empty() and _toast_queue.size() < TOAST_QUEUE_MAX:
+		var hq: Dictionary = _toast_held.pop_front()
+		var merged := false
+		for q in _toast_queue:
+			if String(q["text"]) == String(hq["text"]):
+				q["n"] = int(q["n"]) + int(hq["n"])
+				merged = true
+		if not merged:
+			_toast_queue.append(hq)
+		if _toast_cur.is_empty():
+			_show_next_toast()
 	if _toast_cur.is_empty() or _toast_out:
 		return
 	if _toast_nodes.is_empty() or not is_instance_valid(_toast_nodes[0]):

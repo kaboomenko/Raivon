@@ -42,6 +42,8 @@ func _init() -> void:
 		["market: rates, floor, warehouse cut, no raivites", _test_market],
 		["market trader: daily lots, one buy each, 04:00 refresh, save", _test_trader],
 		["trophy blueprints: store of 5, −10% left, −50% cap, defeat loss, save", _test_blueprints],
+		["a price over the warehouse's cap: err.storage_small with the level it needs", _test_storage_small],
+		["tick events are handed over once", _test_events_once],
 	]
 	for t in tests:
 		_errors.clear()
@@ -714,3 +716,63 @@ func _test_blueprints() -> void:
 	_check(int(rb.current["end"]) == 10000, "progress never drops below zero")
 	var rb2 = rb.from_dict(rb.to_dict())
 	_check(rb2.blueprints == rb.blueprints and int(rb2.current["dur"]) == 10000, "blueprints survive a save")
+
+
+## B3 (playtest B): DL6 costs 23 000 gold while Склад 5 holds 16 608 — «Не хватает золота» would never end, so the
+## reason names the Warehouse level the price needs (5 000 × 1,35^(ур−1): 23 000 → ур. 7; DL7's 46 000 → ур. 9).
+func _test_storage_small() -> void:
+	_eq(Economy.warehouse_for({}), 1, "no price: any warehouse")
+	_eq(Economy.warehouse_for({"gold": 16608, "seconds": 999999}), 5, "16 608 fits Склад 5 (the timer aside)")
+	_eq(Economy.warehouse_for({"gold": 16609}), 6, "one more needs Склад 6")
+	_eq(Economy.warehouse_for({"raivite": 999999, "metal": 100}), 1, "Raivites are not stored")
+	_eq(Economy.warehouse_for({"gold": 46000, "metal": 32000, "oil": 14000}), 9, "DL7 needs Склад 9")
+	var e := Economy.new(null, T0)  # (no world: the 44-hex gate of DL6 is not checked — chapter I has no 44 hexes)
+	e.chapter = 3
+	e._find_type("residence")["level"] = 5
+	var wh := e._find_type("warehouse")
+	wh["level"] = 5
+	for r in ["gold", "food", "metal", "oil"]:
+		e.res[r] = int(e.storage_cap()[r])
+	var res := e._find_type("residence")
+	_eq(e.can_upgrade(res, T0), "err.storage_small|7", "DL6 at Склад 5 (B: 23 000 of 16 608)")
+	_eq(e.storage_short(res), 7, "storage_short")
+	_check(not e.start_upgrade(int(res["id"]), T0), "not started")
+	_eq(e.can_upgrade(wh, T0), "", "the Warehouse itself is never held back by its size")
+	e.add_resources({"gold": 23000}, true)  # a crate past the cap (canon §4): the stock pays it now
+	_eq(e.can_upgrade(res, T0), "", "a stock over the cap pays the price: no lock")
+	e.res["gold"] = int(e.storage_cap()["gold"])
+	wh["level"] = 6
+	_eq(e.can_upgrade(res, T0), "err.storage_small|7", "Склад 6 (22 420) is still short")
+	wh["level"] = 7
+	for r in ["gold", "food", "metal", "oil"]:
+		e.res[r] = int(e.storage_cap()[r])
+	_eq(e.can_upgrade(res, T0), "", "Склад 7 holds it: the upgrade can start")
+	_eq(e.storage_short(res), 0, "nothing short")
+	e.res["gold"] = 100
+	_eq(e.can_upgrade(res, T0), "err.not_enough|res.gen.gold", "then it is only short of gold")
+	var w := _world()
+	var e2 := Economy.new(w, T0)
+	_eq(e2.can_build(w, "fort", _own_plain(w)[0], T0), "", "a fort's first level fits any warehouse")
+	var lang0 := TranslationServer.get_locale()
+	TranslationServer.set_locale("ru")
+	_eq(L.t("err.storage_small|7"), "Цена больше вместимости склада: нужен Склад ур. 7", "ru reason")
+	TranslationServer.set_locale("en")
+	_eq(L.t("err.storage_small|7"), "It costs more than storage holds: needs Warehouse Lv 7", "en reason")
+	TranslationServer.set_locale(lang0)
+
+
+## Economy.tick returns its events once and forgets them (main runs each tick through _econ_sync, so an action's own
+## tick never swallows them, B3); finish_now's completion comes with the next tick.
+func _test_events_once() -> void:
+	var w := _world()
+	var e := Economy.new(w, T0)
+	var wh := e._find_type("warehouse")
+	_check(e.start_upgrade(int(wh["id"]), T0), "started")
+	var ev := e.tick(w, T0 + 5)
+	_eq(ev.size(), 1, "the completion")
+	_eq(e.tick(w, T0 + 5).size(), 0, "not again")
+	_check(e.start_upgrade(int(e._find_type("barracks")["id"]), T0 + 5), "barracks")
+	e.res["raivite"] = 100
+	_check(e.finish_now(int(e._find_type("barracks")["id"]), T0 + 6), "finished now")
+	ev = e.tick(w, T0 + 6)
+	_eq(ev.size(), 1, "finish_now's event with the next tick")

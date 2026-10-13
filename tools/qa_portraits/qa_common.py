@@ -7,7 +7,8 @@ under `python3 -I`). Everything here is about the shipped RGBA PNGs and the kit'
 - the plates the game draws behind a portrait: both rarity palettes (ui_kit.gd Kit.RARITY and the GDD 04 §15.4 set
   that §7.4 quotes), the leaders' state colours exactly as the game passes them to CmdPortrait.plate
   (map_view.team_look(state)["body"] = SoftPalette.soft_team(state colour).body; the Barons are always the war
-  red #DD3A30), the ruler's SKY; and the two plate gradients (`current` = cmd_portrait.gd before P4, `B` = §7.4, the game since P4);
+  red #DD3A30), the ruler's two sky wells (hud.gd and game_ui.gd draw them, with no halo: RULER_PLATES); and the two
+  plate gradients (`current` = cmd_portrait.gd before P4, `B` = §7.4, the game since P4);
 - sRGB → CIE Lab, the premultiplied Lanczos downscale the asset pipeline uses, 48 px alpha masks;
 - the framing numbers of §7.14 P-A6 as fractions of the file's own size;
 - the sidecars the kit writes with --sidecars: meta/<name>.json (landmarks in PNG px) and ids/<name>.png (+ .json,
@@ -38,6 +39,11 @@ LEADER_PLATE = {"barons": "#DD3A30", "hamlets": "#4FD162", "league": "#32D1C2", 
                 "alvaria": "#E8873A", "saren": "#D95290", "pack": "#D1934F", "conclave": "#D18D4F",
                 "veilmark": "#58D14F", "lakes": "#42BED1"}
 SKY = "#8FCDF2"  # the ruler (HUD, profile) and the advisor: ui_style SKY_TOP
+SKY_LOW = "#E3F4FD"  # ui_style SKY_LOW: the bottom of the HUD crest's sky gradient
+# The ruler is not drawn by CmdPortrait: hud.gd _build_crest puts it on a SKY_TOP -> SKY_LOW gradient (the crest, 74 x
+# 72) and game_ui.gd show_profile on flat SKY_TOP (104 x 104), both with no halo. A (top, bottom) pair is such a plain
+# plate: plate_rows / plate_image draw it as it is in every mode.
+RULER_PLATES = [("hud", (SKY, SKY_LOW)), ("profile", (SKY, SKY))]
 # Plate gradients, top -> bottom of the picture: Godot's Color.lightened(a) = c + (1 - c) a, darkened(a) = c (1 - a)
 # on the sRGB values. "current" = cmd_portrait.gd _draw before P4; "B" = §7.4 (the game since P4), the gated one.
 PLATE_MODES = {"current": (0.08, 0.42), "B": (0.18, 0.0)}
@@ -108,7 +114,8 @@ def parse(argv):
 
 
 def plate_of(name, palette="ui"):
-    """The base plate colour the game draws behind `name` (rarity colour, the state's colour or SKY)."""
+    """The base plate colour the game draws behind `name` (rarity colour, the state's colour or SKY — the ruler's
+    plates in full: RULER_PLATES)."""
     if name.startswith("cmd_"):
         return PALETTES[palette][RARITY[name.split("_")[1]]]
     if name.startswith("ldr_"):
@@ -153,24 +160,37 @@ def darkened(c, a):
     return c * (1 - a)
 
 
+def plate_label(c):
+    """A plate as text: its hex, or "top>bottom" for a plain (top, bottom) plate."""
+    return "%s>%s" % c if isinstance(c, tuple) else str(c)
+
+
 def plate_rows(c, n, mode="B"):
-    """The plate's sRGB colour per row (n rows, top -> bottom) for base colour c (hex or rgb)."""
+    """The plate's sRGB colour per row (n rows, top -> bottom) for base colour c (hex or rgb), or a plain (top, bottom)
+    pair of hex colours (the ruler's sky wells: the same in every mode)."""
+    t = np.linspace(0, 1, n)[:, None]
+    if isinstance(c, tuple):
+        return hex_rgb(c[0]) * (1 - t) + hex_rgb(c[1]) * t
     if isinstance(c, str):
         c = hex_rgb(c)
     lt, dk = PLATE_MODES[mode]
-    t = np.linspace(0, 1, n)[:, None]
     return lightened(c, lt) * (1 - t) + darkened(c, dk) * t
 
 
 def plate_image(c, w, h, mode="B"):
     """The whole plate the game draws behind a w x h picture (sRGB, (h, w, 3)): the vertical gradient of `mode` and its
     halo behind the head, as cmd_portrait.gd draws them — "B" (§7.4, cmd_portrait.gd HALO since P4): soft concentric
-    circles, no outline (white α 0.05 at radii 0.40 / 0.33 / 0.26 u around (0.5 w, 0.42 h), u = min(w, h)): +4 L* on
-    the grey and orange plates to +6 on purple and red at the centre (§7.4's «≈ +12 L*» would take 4 calm files more past
-    the 35 % rim gate, P4 measure); "current": the plate before P4, one white α 0.1 disc of radius 0.36 u (its thin
-    darker outline is left out)."""
+    circles, no outline (white α 0.05 at radii 0.40 / 0.33 / 0.26 u around (0.5 w, 0.42 h), u = min(w, h)): at the
+    centre +3.2 L* (legendary orange) to +5.6 (epic purple) on Kit.RARITY, +2.6 to +7.2 on the leaders' state plates.
+    §7.4 asks «≈ +12 L*»; on the game's palette (Kit.RARITY) a +12 L* halo takes Olm E1 and Rai E1 (calm and smile)
+    and Rai's E4 smile past the 35 % rim gate, to 37–39 % (P4 measure; Seir E1 also fails, but only on the GDD teal
+    §7.15 retired; no leader fails) — the art director's call;
+    "current": the plate before P4, one white α 0.1 disc of radius 0.36 u (its thin darker outline is left out).
+    A plain (top, bottom) plate (RULER_PLATES) is its gradient alone, no halo, in every mode."""
     rows = plate_rows(c, h, mode)
     img = np.broadcast_to(rows[:, None, :], (h, w, 3)).astype(np.float32).copy()
+    if isinstance(c, tuple):
+        return img
     yy, xx = np.mgrid[0:h, 0:w]
     u = min(w, h)
     d = np.sqrt((xx - 0.5 * w) ** 2 + (yy - 0.42 * h) ** 2)

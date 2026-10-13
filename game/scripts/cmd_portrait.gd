@@ -29,9 +29,12 @@ const LOOK := {
 	"cmd_rai": [Color("c47a4e"), [0.33, 0.42], Color("eef0f5"), "long", "beard_long", "circlet", Color("eef1f6"), Color("3a8dff")],
 }
 ## The halo behind the head (§7.4 plate B): concentric white discs [radius × the short side, α] round (0.5 w, 0.42 h),
-## antialiased, no outline — about +4 (grey, orange) to +6 (purple, red) L* at the centre over plate B. (§7.4 says
-## «≈ +12 L*»; tools/qa_portraits gates the art against these three discs, and a +12 L* halo, α 0.25–0.45, takes the
-## silhouette rim of Olm, Seir, Rai and the ruler past P-A5's 35 % — P4 measure.) A locked plate: HALO_LOCKED each.
+## antialiased, no outline — at the centre +3.2 (legendary orange) to +5.6 (epic purple) L* over plate B of Kit.RARITY,
+## +2.6 to +7.2 over the leaders' state plates. §7.4 asks «≈ +12 L*»: tools/qa_portraits gates the art against these
+## three discs, and on Kit.RARITY a +12 L* halo (α ≈ 0.25–0.45) takes the silhouette rim of Olm E1 and Rai E1 (calm
+## and smile) and Rai's E4 smile past P-A5's 35 % (to 37–39 %; no leader; P4 measure) — +4–6 or +12 is the art
+## director's call. (The ruler is not drawn here: hud.gd and game_ui.gd show it on the sky with no halo.) A locked
+## plate: HALO_LOCKED each.
 const HALO := [[0.40, 0.05], [0.33, 0.05], [0.26, 0.05]]
 const HALO_LOCKED := 0.02
 ## A locked commander: the render's alpha as a flat silhouette in the vertex colour (INK α 0.3) — the texture's
@@ -41,7 +44,9 @@ const SILHOUETTE := "shader_type canvas_item;\nvarying vec4 v_col;\nvoid vertex(
 	+ "void fragment() {\n\tCOLOR = vec4(v_col.rgb, v_col.a * texture(TEXTURE, UV).a);\n}\n"
 static var _sil_mat: ShaderMaterial
 
-static var _renders := {}  # "cmd_eN" -> Texture2D or null
+static var _renders := {}  # "cmd_eN_mood" -> Texture2D or null — the current era's only (_render drops the rest)
+static var _mipped := {}  # a commander's file path -> its texture with mipmaps (one per file, see _load_mipmapped)
+static var _cache_era := 0  # the era _renders and _mipped hold
 ## The uniform era of the portraits (04 §15.4): 1 DL1–3, 2 DL4–5, 3 DL6–7, 4 DL8–10 — set from the player's DL.
 static var era := 1
 
@@ -301,6 +306,12 @@ func _frame(rc: Color) -> void:
 
 
 static func _render(id: String, m := "") -> Texture2D:
+	if _cache_era != era:
+		# a new era: set_portrait_era redraws the busts on show with its renders (the KitStill bakes are keyed by era),
+		# and the old era's are never read again — let their 512×588 textures (≈ 1.5 MB each with mipmaps) go
+		_renders.clear()
+		_mipped.clear()
+		_cache_era = era
 	var key := "%s_e%d_%s" % [id, era, m]
 	if not _renders.has(key):
 		var base := id if era == 1 else "%s_e%d" % [id, era]
@@ -309,19 +320,27 @@ static func _render(id: String, m := "") -> Texture2D:
 		for name in [base + ("_" + m if m != "" else ""), base, id + ("_" + m if m != "" else ""), id]:
 			var path := "res://assets/ui/portraits/%s.png" % name
 			if ResourceLoader.exists(path):
-				tex = load(path)
-				if id.begins_with("cmd_"):
-					tex = _with_mipmaps(tex)
+				tex = _load_mipmapped(path) if id.begins_with("cmd_") else load(path)
 				break
 		_renders[key] = tex
 	return _renders[key]
 
 
+## A commander's render with mipmaps, one texture per file however many keys fall back to it (a mood without its own
+## render shows the calm one).
+static func _load_mipmapped(path: String) -> Texture2D:
+	if not _mipped.has(path):
+		_mipped[path] = _with_mipmaps(load(path), path)
+	return _mipped[path]
+
+
 ## The commanders' 512×588 renders are shown at 38–312 px (§7.12) and need mipmaps. Their .import files ask for them
-## (mipmaps/generate=true), but *.import is not in git (.gitignore): a fresh checkout imports the PNGs without, and then
-## the mipmaps are made here, once per texture (_renders caches it). With a RenderingDevice (Mobile, Forward+) the
-## texture's own mip count is read without a readback, so an imported set with mipmaps costs nothing.
-static func _with_mipmaps(tex: Texture2D) -> Texture2D:
+## (mipmaps/generate=true; tracked in git through assets/ui/portraits/.gitignore). A texture imported without them (an
+## .import lost or reset) gets them here, once per file (_load_mipmapped). With a RenderingDevice (Mobile, Forward+)
+## the texture's own mip count is read without a readback, so an imported set with mipmaps costs nothing. The new
+## texture takes over the file's `path`: what keys a texture by resource_path (game_ui._mini_face, Kit's caches) stays
+## unique per file, and a load() of the file meanwhile returns this one.
+static func _with_mipmaps(tex: Texture2D, path := "") -> Texture2D:
 	if tex == null:
 		return tex
 	var rd := RenderingServer.get_rendering_device()
@@ -333,4 +352,7 @@ static func _with_mipmaps(tex: Texture2D) -> Texture2D:
 	if img == null or img.is_empty() or img.has_mipmaps() or img.is_compressed():
 		return tex
 	img.generate_mipmaps()
-	return ImageTexture.create_from_image(img)
+	var mt := ImageTexture.create_from_image(img)
+	if path != "":
+		mt.take_over_path(path)
+	return mt

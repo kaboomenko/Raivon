@@ -947,8 +947,9 @@ class KitBake extends Node:
 					# a job keeps the maker of the owner that asked for it first; once that owner is gone (its modal closed) its
 					# maker may capture freed nodes, so the next live asker's maker takes its place
 					if not jobs.has(full) or not (jobs[full]["make"] as Callable).is_valid() or _orphan(full) or _maker_gone(jobs[full]):
+						var asker: Object = owner if owner != null else host
 						jobs[full] = {"size": size, "px": pxs, "off": f, "pp": pp, "base": base, "make": make, "alpha": fa,
-							"by": weakref(owner) if owner != null else null}
+							"by": weakref(asker) if asker != null else null}
 					if owner != null:
 						if not waiting.has(full):
 							waiting[full] = {}
@@ -4064,6 +4065,7 @@ class KitCard extends Panel:
 ##          corner instead of a chip (an opinion «−10»)
 ##   dot: the role of a dot on the card's corner; dot_n: its number (-1: none)
 ##   timer: a time left («1ч 59м», WARN with the hourglass) on a line over the name (a busy card whose button pays)
+##   note: {icon, text}: a short WARN line with that icon in the timer's place («для УР6» on the Warehouse)
 ##   art_bar: {frac, role}: an S bar along the art's bottom, under the name
 ##   cta: {role, caption, icon, price ([[icon, text, short]] ≤ 2), cb, enabled, reason, short_reason} → an XS
 ##        button at (6, 114, 168, 46); without a cb it opens the card's tooltip; a disabled one shows `reason` when
@@ -4142,6 +4144,10 @@ static func card(art_tex: Texture2D, title: String, opts := {}) -> KitCard:
 	var long := text_w(title, ns, "d900", false) > nw
 	# a timer line («1ч 59м», opts.timer) stands over the name, which then keeps to one line
 	var timer_t := String(opts.get("timer", ""))
+	var timer_icon := "hourglass"
+	if timer_t == "" and opts.has("note"):
+		timer_t = String((opts["note"] as Dictionary).get("text", ""))
+		timer_icon = String((opts["note"] as Dictionary).get("icon", "hourglass"))
 	var two := long and timer_t == "" and title.strip_edges().contains(" ")  # two lines at 22; one long word is cut
 	if long:
 		ns = 22
@@ -4220,7 +4226,7 @@ static func card(art_tex: Texture2D, title: String, opts := {}) -> KitCard:
 		row.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		row.size = Vector2(26.0 + 4.0 + tw, 28.0)
 		row.position = Vector2(roundf((w - row.size.x) * 0.5), roundf(name_bottom - fh - 28.0 + 6.0))
-		var hg := _card_rect(icon_atlas("hourglass"), Rect2(0, 1, 26, 26))
+		var hg := _card_rect(icon_atlas(timer_icon), Rect2(0, 1, 26, 26))
 		hg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		row.add_child(hg)
 		var tl := label(timer_t, 22, WARN, true)
@@ -5920,6 +5926,14 @@ class KitTip extends Control:
 
 
 static var _tip: Node
+
+
+## Frees the tooltip on the screen, if any: a window that opens (or closes) and a change of screen take it away — on
+## its CanvasLayer 90 it would otherwise sit over whatever comes next until the next tap.
+static func close_tip() -> void:
+	if is_instance_valid(_tip):
+		_tip.queue_free()
+	_tip = null
 
 
 ## A cream bubble above (or under) `source`, never covering it, 16 px from the screen edges. `below`: under it when

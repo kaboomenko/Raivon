@@ -1,0 +1,5 @@
+# The commanders' 512×588 renders are drawn at 38–312 px and need mipmaps (docs/art_direction.md §7.12): their import
+# settings (mipmaps/generate=true, uid and dest paths kept) are tracked, so a fresh checkout, CI and the APK/iOS exports
+# import them the same way. The root .gitignore ignores *.import; the leaders' and the ruler's (256×294, default
+# settings) stay ignored.
+!cmd_*.png.import

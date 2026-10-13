@@ -392,7 +392,49 @@ func can_upgrade(b: Dictionary, now: int) -> String:
 			return NO_HEX_REASON[t]
 		if cls == "defense" and _synced and not bool(_own_ctrl.get(int(b["hex"]), false)):
 			return "err.hex_occupied"
+	var wh := storage_short(b)
+	if wh > 0:
+		return "err.storage_small|%d" % wh
 	return _can_pay_and_staff(t, upgrade_cost(b), now)
+
+
+## The Warehouse level a price needs: the lowest whose cap (STORAGE_CAP, per resource) holds each of its resources —
+## gold, food, metal, oil (Raivites and the timer aside). 1 for a price any warehouse holds.
+static func warehouse_for(cost: Dictionary) -> int:
+	var most := 0
+	for r in cost:
+		if String(r) in ["seconds", RAIVITE]:
+			continue
+		most = maxi(most, int(cost[r]))
+	for lvl in range(1, STORAGE_CAP.size()):
+		if STORAGE_CAP[lvl] >= most:
+			return lvl
+	return STORAGE_CAP.size()
+
+
+## > 0 when the next level of `b` costs more of some resource than the warehouse holds and the stock is short of it
+## (income and loot stop at the cap, canon §4, so «Не хватает» would never end): the Warehouse level the price needs.
+## 0 when the price fits — or the stock already pays it (crates and packs fill past the cap). The Warehouse itself is
+## never held back by its own size.
+func storage_short(b: Dictionary) -> int:
+	if b.is_empty() or String(b["type"]) == "warehouse":
+		return 0
+	return _storage_need(upgrade_cost(b))
+
+
+## The Warehouse level `cost` needs while a resource of it over the cap is short in the stock, else 0.
+func _storage_need(cost: Dictionary) -> int:
+	var lvl := maxi(1, _type_level("warehouse"))
+	var need := warehouse_for(cost)
+	if need <= lvl:
+		return 0
+	var cap: int = STORAGE_CAP[clampi(lvl, 1, STORAGE_CAP.size() - 1)]
+	for r in cost:
+		if String(r) in ["seconds", RAIVITE]:
+			continue
+		if int(cost[r]) > cap and int(res.get(r, 0)) < int(cost[r]):
+			return need
+	return 0
 
 
 func can_build(world: World, type: String, hex: int, now: int) -> String:
@@ -421,6 +463,9 @@ func can_build(world: World, type: String, hex: int, now: int) -> String:
 				towers += 1
 		if towers >= 2 * dev_level():
 			return "err.tower_limit|%d" % (2 * dev_level())
+	var wh := _storage_need(build_cost(type))
+	if wh > 0:
+		return "err.storage_small|%d" % wh
 	return _can_pay_and_staff(type, build_cost(type), now)
 
 

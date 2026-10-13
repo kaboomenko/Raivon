@@ -4,8 +4,10 @@ Usage: python3 -I tools/qa_portraits/qa_contrast.py PORTRAIT_DIR [--strict] [--q
 
 The game draws the plate, so the render must separate from it. Plates: a commander on its rarity colour in BOTH
 palettes (ui = Kit.RARITY, gdd = the 04 §15.4 set of §7.4), a leader on its state's colour exactly as the game
-passes it to CmdPortrait.plate, the ruler on SKY. Plate gradient "B" (§7.4: rc.lightened(0.18) -> rc) is GATED;
-today's gradient (lightened(0.08) -> darkened(0.42)) is printed as INFO.
+passes it to CmdPortrait.plate, the ruler on the two sky wells it is shown in (hud.gd crest SKY_TOP -> SKY_LOW,
+game_ui.gd profile flat SKY_TOP: no CmdPortrait, so no plate B and no halo; qa_common.RULER_PLATES). Plate gradient
+"B" (§7.4: rc.lightened(0.18) -> rc, with the halo) is GATED; the gradient before P4 (lightened(0.08) ->
+darkened(0.42)) is printed as INFO.
 Image rules (calm files: every era of a commander, each leader's calm, the ruler; --moods adds the smiles and the
 leaders' moods, which share the costume):
 - shoulder band (opaque pixels in rows 0.80-0.95 h) vs the plate pixel behind each (gradient + halo, qa_common.
@@ -90,7 +92,7 @@ def plates_for(name):
         return [("ui/" + r, Q.PLATES_UI[r]), ("gdd/" + r, Q.PLATES_GDD[r])]
     if name.startswith("ldr_"):
         return [("state", Q.LEADER_PLATE[name.split("_")[1]])]
-    return [("sky", Q.SKY)]
+    return list(Q.RULER_PLATES)
 
 
 def id_rules(im, masks, m, name):
@@ -325,7 +327,7 @@ def main():
                 tally["band current (INFO)"][1] += 1
             bad |= not (okb and okr)
             lines.append("%-9s %s  band B dL %s melt %s%s | rim %s%s | current dL %s melt %s" % (
-                tag, pc, "%5.1f" % b[0] if b else "  -  ", "%3.0f%%" % (b[1] * 100) if b else " - ",
+                tag, Q.plate_label(pc), "%5.1f" % b[0] if b else "  -  ", "%3.0f%%" % (b[1] * 100) if b else " - ",
                 "" if okb else " FAIL", "%3.0f%%" % (r * 100) if r is not None else " - ", "" if okr else " FAIL",
                 "%5.1f" % c[0] if c else "  -  ", "%3.0f%%" % (c[1] * 100) if c else " - "))
         ds = dark_share(im)
@@ -369,10 +371,11 @@ def main():
                 for kk, v in masks.items():
                     if kk.startswith("detail:crown"):
                         crown |= v
-                rc = rim_share(im, "#8FCDF2", "B", exclude=crown)
-                if rc is not None:
-                    idl.append("rim without the crown (INFO, §7.10 sets the gold at dL* ~4 to the sky) %.0f%%"
-                               % (rc * 100))
+                for tag, pc in plates_for(n):
+                    rc = rim_share(im, pc, "B", exclude=crown)
+                    if rc is not None:
+                        idl.append("rim without the crown on %s (INFO, §7.10 sets the gold at dL* ~4 to the sky) %.0f%%"
+                                   % (tag, rc * 100))
         fails += bad
         if not quiet or bad:
             print("%-22s dark %.1f%%%s%s" % (n, ds * 100, "" if okd else " FAIL", "   FAIL" if bad else ""))
