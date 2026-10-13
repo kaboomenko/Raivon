@@ -1197,10 +1197,11 @@ CHARS.update({
         moods=dict(
             # (fix-round sort: smile and cunning swapped — her calm already smirks) the smile wide and even with the
             # cheeks up, the cunning one-sided with the far brow high and the glance
-            # (P3 review round 9: her closed smile read as the calm smirk, and the eyes 5.5 px < 6 at 128) a small
-            # open smile showing the upper teeth, the eyes a little more open
+            # (P3 review round 9: her closed smile read as the calm smirk, and the eyes 5.5 px < 6 at 128) an open
+            # smile showing the upper teeth (h 0.10: at 0.075 the cavity was 696 px2 < P-A4's 900), the eyes a little
+            # more open
             smile=dict(eyes=dict(smile=dict(open=[0.62, 0.62], low=0.14)),
-                       mouth=dict(smile=dict(type="open", w=0.29, h=0.075, near=0.06, far=0.05, dz=-0.008,
+                       mouth=dict(smile=dict(type="open", w=0.31, h=0.10, near=0.06, far=0.05, dz=-0.010,
                                              teeth=0.5)),
                        fx=dict(smile=dict(cheek=(0.06, 0.06), cheek_amt=0.02))),
             cunning=dict(eyes=dict(cunning=dict(open=[0.38, 0.62], tilt=0.04, arch=0.12, low=0.06)),
