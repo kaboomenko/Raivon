@@ -601,16 +601,47 @@ def pauldrons(ctx, ly, name):
     stripe = core.principled(ctx, name + "_stripe", ly.get("stripe", "#3B7A52"), rough=0.35, coat=0.3,
                              emit=ly.get("stripe", "#3B7A52") if em else None, es=em)
     n = ly.get("n", 3)
-    for s in (-1, 1):
+    # `grow`: the plates' radius over the arm (H) — heavier armour stands further off the deltoid; `lift`: the dome's
+    # centre raised (H), so the top plate rises over the shoulder line; `sides`: (-1,) the near arm only (an arm plate)
+    for s in ly.get("sides", (-1, 1)):
         top, bot = (Vector(v) for v in ctx.objs["arm_axis%+d" % s])
         arm = ctx.objs["arm%+d" % s]
-        r_arm = 0.205 * k
-        c = top + Vector((s * 0.02, 0.0, -0.02))
+        r_arm = 0.205 * k + ly.get("grow", 0.0)
+        c = top + Vector((s * 0.02, 0.0, -0.02 + ly.get("lift", 0.0)))
         out = Vector((s, 0, 0))
         fwd = Vector((0, -1, 0))
         up = Vector((0, 0, 1))
         bands = ly.get("bands", [(96, 44), (56, 10), (22, -24)])[:n]
         parent = arm
+        grow = ly.get("grow", 0.0) + ly.get("lift", 0.0)
+        if grow > 0.004:
+            # plates standing off the arm (grow / lift) rest on a padded leather cap filling the gap under them (the
+            # contact check: the lowest plate floated 0.05 H off the deltoid)
+            r_in = 0.205 * k + 0.004
+            r_out = r_arm + 0.026 + 0.014 * (n - 1) - 0.004
+            e_lo, e_hi = min(b[1] for b in bands) + 6, max(b[0] for b in bands) - 4
+            a_pad = math.radians(ly.get("spread", 95) - 8 * (n - 1) - 6)
+            c0 = top + Vector((s * 0.02, 0.0, -0.02))
+            bm = bmesh.new()
+            nu, ne = 20, 8
+            grid = []
+            for j in range(ne + 1):
+                e = math.radians(e_lo + (e_hi - e_lo) * j / ne)
+                row = []
+                for ii in range(nu + 1):
+                    a = -a_pad + 2 * a_pad * ii / nu
+                    d = (out * math.cos(a) + fwd * math.sin(a)) * math.cos(e) + up * math.sin(e)
+                    row.append(bm.verts.new(c0.lerp(c, 0.5) + d * (r_in + r_out) * 0.5))
+                grid.append(row)
+            for j in range(ne):
+                for ii in range(nu):
+                    bm.faces.new((grid[j][ii], grid[j][ii + 1], grid[j + 1][ii + 1], grid[j + 1][ii]))
+            bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+            pad = core.mesh_obj("%s%+d_pad" % (name, s), bm)
+            core.solidify(pad, (r_out - r_in) + (c - c0).length, offset=0.0)
+            core.finish(pad, core.principled(ctx, name + "_pad", ly.get("pad", "#3A4150"), rough=0.6, coat=0.1), sub=1)
+            ctx.add(pad, "detail:" + ly.get("detail", "pauldrons"), arm, kind="embed")    # sunk into the deltoid
+            parent = pad
         # bottom-up: the lowest lame rests on the arm, each plate above overlaps (and rests on) the one under it
         for i, (e1, e0) in reversed(list(enumerate(bands))):
             R = r_arm + 0.026 + 0.014 * (n - 1 - i)

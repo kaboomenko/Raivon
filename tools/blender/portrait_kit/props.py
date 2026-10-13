@@ -1302,7 +1302,10 @@ def brooch(ctx, pr):
         return
     d = pr.get("d", 0.10) * H
     silver = core.principled(ctx, "silver", pr.get("color", "#C8CCD4"), rough=0.3, metal=0.55)
-    pearl = core.principled(ctx, "pearl", "#F4F0EA", rough=0.25, coat=0.6, sheen=0.3)
+    # a pearl (Vance) or a cut stone (`stone`: Vedana's green, her state's accent, §7.8)
+    stone = pr.get("stone")
+    pearl = core.principled(ctx, "brooch_stone" if stone else "pearl", stone or "#F4F0EA",
+                            rough=0.18 if stone else 0.25, coat=0.6, sheen=0.0 if stone else 0.3)
     grp = _detail(ctx, pr, "brooch", 150)
     fr = core.torus("brooch_frame", h + nn * 0.012, d * 0.45, 0.01, silver, nrm=nn, seg=32, rseg=8)
     fr.scale = (1.0, 1.0, 1.0)

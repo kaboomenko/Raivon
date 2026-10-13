@@ -825,6 +825,12 @@ def hat(ctx, hg):
     ctx.L["hat_top"] = top_z
     if hg.get("signature"):
         ctx.sig_objs += objs
+    if hg.get("tails"):
+        # kerchief tails knotted at the back under the hat (Lira E3 / E4, her signature in every era)
+        tl = hg["tails"]
+        rm = core.fabric(ctx, "hat_tails", tl["color"], rough=0.6, sheen=0.4)
+        surfs = [ob for ob in (crown, ctx.objs.get("hair"), ctx.objs["head"]) if ob is not None]
+        _knot_tails(ctx, tl, surfs, grp, rm)
     return crown
 
 
@@ -1062,30 +1068,40 @@ def shell(ctx, hg):
             core.solidify(st, 0.014, offset=0.0)
             core.finish(st, rm, sub=1)
             ctx.add(st, grp, o, kind="embed", head=True)
-        kd = core.az_el(rb.get("knot_az", -150), rb.get("knot_el", 10))
-        kh, kn = core.ray(o, kd * 3, -kd)
-        if kh is not None:
-            knot = kh + kn * 0.03
-            ko = core.uvsphere("shell_knot", knot, (0.05, 0.04, 0.045), rm, 16, 8)
-            ctx.add(ko, grp, o, kind="surface", head=True)
-            back = (Vector((kn.x, kn.y, 0)).normalized() * 0.4 + core.world_dir(ctx, (-1.0, 0.35, 0.0), head=True)).normalized()
-            side_ = Vector((0, 0, 1)).cross(back).normalized()
-            ln = rb.get("tail", 0.30)
-            for k_, (up, sw) in enumerate(((0.20, 0.16), (-0.5, -0.14))):
-                el2 = []
-                prev = knot
-                for i in range(1, 25):
-                    t = i / 24
-                    p = knot + back * (ln * t) + side_ * (sw * 0.3 * t) + Vector((0, 0, up * ln * 0.6 * t - 0.14 * t * t))
-                    fwd_ = (p - prev).normalized()
-                    el2.append(dict(co=p, half=(0.045 + 0.03 * t, 0.012, ln / 24 * 1.6), stiff=2.2,
-                                    rot=core.frame_quat(fwd_, side_.cross(fwd_).normalized())))
-                    prev = p
-                tl = core.mb_mesh(ctx, "STail%d" % k_, el2, 0.008, rm, smooth_iter=2, name="shell_tail%d" % k_)
-                ctx.add(tl, "detail:kerchief_tails", ko, kind="surface", head=True)
-                ctx.sig_objs.append(tl)
-            ctx.details["kerchief_tails"] = rb.get("min_px", 300)
+        _knot_tails(ctx, rb, [o], grp, rm)
     return o
+
+
+def _knot_tails(ctx, rb, surfs, grp, rm):
+    """A knot at (`knot_az`, `knot_el`) on the first of `surfs` it hits and two flat cloth tails flying back from it
+    (Lira's kerchief tails, §7.2 "Верх сзади": her signature in every era — on the E2 bonnet's ribbon, and since the P3
+    review on the E3 side cap and the E4 helmet, where the 48 px signature share fell under 8 % without them)."""
+    kd = core.az_el(rb.get("knot_az", -150), rb.get("knot_el", 10))
+    kh, kn, ob = core.ray_any(surfs, kd * 3, -kd)
+    if kh is None:
+        return None
+    knot = kh + kn * rb.get("knot_off", 0.03)
+    ko = core.uvsphere("shell_knot", knot, (0.05, 0.04, 0.045), rm, 16, 8)
+    ctx.add(ko, grp, ob, kind="surface", head=True)
+    back = (Vector((kn.x, kn.y, 0)).normalized() * 0.4 + core.world_dir(ctx, (-1.0, 0.35, 0.0), head=True)).normalized()
+    side_ = Vector((0, 0, 1)).cross(back).normalized()
+    ln = rb.get("tail", 0.30)
+    tw = rb.get("tail_w", 0.045)
+    for k_, (up, sw) in enumerate(((0.20, 0.16), (-0.5, -0.14))):
+        el2 = []
+        prev = knot
+        for i in range(1, 25):
+            t = i / 24
+            p = knot + back * (ln * t) + side_ * (sw * 0.3 * t) + Vector((0, 0, up * ln * 0.6 * t - 0.14 * t * t))
+            fwd_ = (p - prev).normalized()
+            el2.append(dict(co=p, half=(tw + tw * 0.67 * t, 0.012, ln / 24 * 1.6), stiff=2.2,
+                            rot=core.frame_quat(fwd_, side_.cross(fwd_).normalized())))
+            prev = p
+        tl = core.mb_mesh(ctx, "STail%d" % k_, el2, 0.008, rm, smooth_iter=2, name="shell_tail%d" % k_)
+        ctx.add(tl, "detail:kerchief_tails", ko, kind="surface", head=True)
+        ctx.sig_objs.append(tl)
+    ctx.details["kerchief_tails"] = rb.get("min_px", 300)
+    return ko
 
 
 def visor(ctx, hg):
@@ -1168,16 +1184,19 @@ def visor(ctx, hg):
             pivots.append(pv)
         if arms:
             ctx.add(strip, grp if hg.get("glow") else "glass", pivots[0], kind="embed", head=True)
+        # the frame wires carry the P-A8 detail of a clear visor (Vega's HUD: its glass reads as "glass" in the ID pass,
+        # so the detail measured 0 px, P3 review)
+        fgrp = grp if (hg.get("glow") or hg.get("detail")) else "hat"
         for rows, nm in ((rows_top, "visor_top"), (rows_bot, "visor_bot")):
             cu = core.curve(nm, rows, [1.0] * len(rows), hg.get("frame_r", 0.012), fm, order=3)
-            ctx.add(cu, grp if hg.get("glow") else "hat", strip, kind="embed", head=True)
+            ctx.add(cu, fgrp, strip, kind="embed", head=True)
     if hg.get("line"):
         # a thin white HUD line along the strip (Vega E4), glowing softly (<= 0.6, §7.4 HUD lenses)
         lm = core.emit_mat(ctx, "hud_line", hg["line"], hg.get("line_emit", 0.6))
         pts = [a.lerp(b, 0.62) + (a.lerp(b, 0.62) - Vector((0, 0.05, a.z))).normalized() * 0.008
                for a, b in zip(rows_top, rows_bot)]
         cu = core.curve("hud_line", pts[4:-4], [1.0] * len(pts[4:-4]), 0.0045, lm, order=3)
-        ctx.add(cu, "glass", strip, kind="embed", head=True)
+        ctx.add(cu, grp if hg.get("detail") else "glass", strip, kind="embed", head=True)
     if hg.get("detail"):
         ctx.details[hg["detail"]] = hg.get("min_px", 400)
     return strip

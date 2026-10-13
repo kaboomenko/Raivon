@@ -22,6 +22,8 @@ ID rules (only with the kit's sidecars ids/<name>.png + meta/<name>.json):
   skin (platinum or white hair: INFO); INFO line: the hue of the skin (all / lit) against the hair and the beard;
 - iris vs sclera: dL* >= 30;   - beard vs each garment it lies on (costume:<id> groups): |dL*| >= 15;
 - signature vs plate (B, both palettes): dE76 >= 25;
+- a leader's state colour as a costume accent (§7.8 rule 3): costume, metal and detail pixels within hue +-30 deg
+  (CIE LCh, C* > 15) of the state plate >= 10 % of them;
 - the lit cheek (the brightest 30 % of the skin pixels: the key-lit side of the face): median L* from
   min(70, L* of the skin albedo - 8) to 82 (the albedo from the kit's meta "skin_albedo"; 70 without it) and median
   HSV S >= 0.35, >= 0.27 for peach-pink skin (the lit cheek's hue <= 16 deg) — §7.4 as decided after P1.
@@ -226,6 +228,19 @@ def id_rules(im, masks, m, name):
             # separates by hue where the value step is short (P3: Bram's eras)
             out.append(("beard-clothes", worst[0], worst[0] >= 15,
                         "|dL*| %.1f (vs %s; dE76 %.1f INFO)" % worst))
+    if name.startswith("ldr_"):
+        # §7.8 rule 3: the state's colour as an accent (sash, lining, stone) >= 10 % of the costume — the costume
+        # groups and their details (costume, costume:<id>, metal, detail:<name>) whose rendered colour lies within
+        # hue +-30 deg of the state plate's (CIE LCh, C* > 15); P3 review: the accents §7.8 names were missing or hidden
+        cm = grp("costume", "metal", "detail")
+        if cm is not None and cm.sum() > 200:
+            pl = Q.srgb_to_lab(np.array(Q.hex_rgb(Q.LEADER_PLATE[name.split("_")[1]]), dtype=np.float32))
+            ph = np.degrees(np.arctan2(pl[2], pl[1]))
+            hue = np.degrees(np.arctan2(lab[..., 2], lab[..., 1]))
+            near = (np.abs((hue - ph + 180.0) % 360.0 - 180.0) <= 30.0) & (np.hypot(lab[..., 1], lab[..., 2]) > 15.0)
+            sh = float((cm & near).sum()) / float(cm.sum())
+            out.append(("accent share", sh, sh >= 0.10, "%.1f%% of the costume (>= 10 %%, state hue %.0f°)" % (
+                100.0 * sh, ph)))
     sg = grp("signature")
     if sg is not None and sg.sum() > 20:
         s = med(sg)

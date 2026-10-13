@@ -431,8 +431,12 @@ def check_ids(d, imgs, rep):
         m = Q.meta(d, n) or {}
         rd = readability(d, n, imgs[n], masks, m)
         bad = [r for r in rd if not r[3]]
+        # (the shares are small fractions: three decimals; the lids' share is a ceiling, ">" — "0.0<0.02 FAIL" hid
+        # both the value and the direction)
         rep.add("FAIL" if bad else "PASS", "P-A3 " + n, "; ".join(
-            "%s %.1f%s" % (lab, v, "" if ok else "<%g FAIL" % g) for lab, v, g, ok in rd))
+            ("%s %.3f%s" % (lab, v, "" if ok else ">%g FAIL" % g)) if "outside lids" in lab else
+            ("%s %.3f%s" % (lab, v, "" if ok else "<%g FAIL" % g)) if "share" in lab else
+            ("%s %.1f%s" % (lab, v, "" if ok else "<%g FAIL" % g)) for lab, v, g, ok in rd))
         cr = id_rules(imgs[n], masks, m, n)
         badc = [r for r in cr if not r[2]]
         rep.add("FAIL" if badc else "PASS", "P-A5 ids " + n, "; ".join(

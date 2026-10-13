@@ -204,6 +204,11 @@ def _moustache(ctx, bd):
                  (0.19, 0.0, -0.03, 0.046), (0.232, 0.024, -0.05, 0.034), (0.258, 0.042, -0.072, 0.024)]
         if ctx.smile:
             chain = [(x * 1.06, dy, z + 0.026 + 0.07 * core.smoothstep(0.1, 0.26, x), r) for x, dy, z, r in chain]
+        elif bd.get("moustache_lift"):
+            # a groomed moustache lifted off the lip with its tips up (the ruler's closed smile shows under it,
+            # §7.10; P3 review: the mouth hid under it and the face read neutral)
+            ml = bd["moustache_lift"]
+            chain = [(x, dy, z + ml * (0.4 + 1.2 * core.smoothstep(0.1, 0.26, x)), r) for x, dy, z, r in chain]
         mtop = ctx.L.get("mouth_top") if getattr(ctx, "mouth_open", False) else None
         for x, dy, z, r in chain:
             zc = top + z

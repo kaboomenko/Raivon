@@ -1000,30 +1000,44 @@ def _curls(ctx):
         side = abs(nor.x)
         out = 0.05 + max(0.0, half - abs(hit.x)) * side * 0.95 * core.smoothstep(-0.45, -0.05, hit.z)
         out *= 1.0 - 0.45 * core.smoothstep(0.15, 0.45, hit.z)      # a low crown: the cloud is wide, not tall
-        out *= flat if hit.z > 0.1 else 1.0
+        # flattened (the tired mood): the curls stay seated on the scalp and are pressed down along their normals —
+        # out and the curl's own height shrink on top, the sides spread a little. (Moving the top curls down in z
+        # bared a smooth scalp dome on the crown that read as balding, P3 review)
+        top = core.smoothstep(0.0, 0.2, hit.z)
+        out *= 1.0 + (flat - 1.0) * top + 0.35 * (1.0 - flat) * (1.0 - top)
         c = hit + nor * out
-        if flat < 1.0 and c.z > 0.2:
-            c.z = 0.2 + (c.z - 0.2) * flat
         t1 = nor.orthogonal().normalized()
         t1 = (Matrix.Rotation(rng.uniform(0, 2 * math.pi), 3, nor) @ t1).normalized()
         t2 = nor.cross(t1).normalized()
         r = cr * rng.uniform(0.85, 1.2)
-        el.append(dict(co=c - nor * r * 0.3, half=r * 0.9, stiff=2.2))
+        rise = 1.0 + (flat - 1.0) * top          # the curl's height off the cloud
         nl = hr.get("lobes", 5)          # fewer, rounder lobes per curl: big smooth clumps, not a cauliflower (AD)
+        if hr.get("coils"):
+            # a large smooth puff with one raised coil spiralling in on its face (art director note 3: fewer, larger
+            # clumps with a readable spiral — the lobed curls read as a lumpy cauliflower, P3 review)
+            el += _coil(c, nor, t1, t2, r, rise, rng.uniform(0, 2 * math.pi), hr.get("turns", 1.6))
+            if out > 0.08:
+                el.append(dict(co=hit + nor * out * 0.5, half=min(out * 0.55, 0.14), stiff=2.0))
+            continue
+        el.append(dict(co=c - nor * r * 0.3, half=r * 0.9, stiff=2.2))
         for k in range(nl):
             a = math.radians(-40 + 280 * k / max(1, nl - 1) * (4 / 5 if nl == 5 else 1.0))
-            el.append(dict(co=c + (t1 * math.cos(a) + t2 * math.sin(a)) * r * 0.85 + nor * r * 0.15,
+            el.append(dict(co=c + (t1 * math.cos(a) + t2 * math.sin(a)) * r * 0.85 + nor * r * 0.15 * rise,
                            half=r * hr.get("lobe_k", 0.55), stiff=2.8))
         # a filler between the scalp and the curl, so the cloud has no holes
         if out > 0.08:
             el.append(dict(co=hit + nor * out * 0.5, half=min(out * 0.55, 0.14), stiff=2.0))
     # fringe curls along the forehead's edge
-    for az in (-36, -20, -4, 12, 28, 42):
+    for az in ((-34, -12, 10, 32) if hr.get("coils") else (-36, -20, -4, 12, 28, 42)):
         d = core.az_el(az, 33)
         hit, nor = core.ray(head, d * 3, -d)
         if hit is None:
             continue
         c = hit + nor * 0.05 + Vector((0, -0.01, -0.01))
+        if hr.get("coils"):
+            t1 = nor.orthogonal().normalized()
+            el += _coil(c, nor, t1, nor.cross(t1).normalized(), cr * 0.72, 1.0, rng.uniform(0, 2 * math.pi), 1.4)
+            continue
         r = cr * 0.95
         el.append(dict(co=c, half=r * 0.9, stiff=2.2))
         for k in range(4):
@@ -1031,6 +1045,22 @@ def _curls(ctx):
             el.append(dict(co=c + Vector((math.cos(a) * r * 0.8, -0.01, math.sin(a) * r * 0.8)), half=r * 0.5,
                            stiff=2.8))
     _finish_hair(ctx, el, hr["color"], res=hr.get("res", 0.012), signature=True)
+
+
+def _coil(c, nor, t1, t2, r, rise, a0, turns):
+    """One cartoon curl: a smooth puff of radius r at c and a flattened clump spiralling in `turns` times over its
+    outer face (from 72 deg off the normal to 14), fused into it — a readable coil at 138 px (Mirosya's curls)."""
+    el = [dict(co=c - nor * r * 0.2, half=r * 1.0, stiff=2.0)]
+    path, nrs = [], []
+    for i in range(26):
+        t = i / 25
+        th_ = a0 + 2 * math.pi * turns * t
+        ph = math.radians(72 - 58 * t)
+        dd = (nor * math.cos(ph) + (t1 * math.cos(th_) + t2 * math.sin(th_)) * math.sin(ph)).normalized()
+        path.append(c - nor * r * 0.2 + dd * r * (0.98 + 0.08 * rise))
+        nrs.append(dd)
+    return el + core.clump(path, nrs, r * 0.34, r * 0.24, r * 0.16, n=34, lift=0.2, taper_at=0.75, tip=0.45,
+                           stiff=2.3)
 
 
 def _owl(ctx):
@@ -1052,6 +1082,16 @@ def _owl(ctx):
     for az, e in ((-24, 46), (-50, 34)):
         el += core.ribbon_lock(head, [core.az_el(28, 70), core.az_el(az * 0.4, 60), core.az_el(az, e)], 0.12 * sx,
                                0.10 * sx, 0.05, n=14, lift=0.5)
+    if hr.get("strands"):
+        # a broken hairline (P3 review: the smooth crown with one hard edge read as a cat-ear beanie): short locks
+        # from the crown down over the forehead's edge and the temples, their tips free
+        for az, e, ln_ in ((-44, 30, 0.9), (-26, 36, 1.0), (-8, 40, 0.8), (14, 38, 0.9), (36, 32, 0.8), (58, 24, 0.7)):
+            tip = core.az_el(az, e - 9 * ln_)
+            th_, tn_ = core.ray(head, tip * 3, -tip)
+            if th_ is None:
+                continue
+            el += core.ribbon_lock(head, [core.az_el(az * 0.5 + 20, 66), core.az_el(az, e + 6), th_ + tn_ * 0.035],
+                                   0.075 * sx, 0.05 * sx, 0.035, n=12, lift=0.45, free_tail=1, taper_at=0.5)
     tf = hr.get("tufts", {})
     ln = tf.get("len", 0.34) * H
     for sd in (-1, 1):
@@ -1060,11 +1100,17 @@ def _owl(ctx):
         if hit is None:
             continue
         out = math.radians(tf.get("out", 30))
-        d = Vector((sd * math.sin(out) * 1.0, 0.35, math.cos(out))).normalized()
-        d = (d + nor * 0.35).normalized()
-        pts = [hit - nor * 0.02, hit + nor * 0.05 + d * ln * 0.30, hit + nor * 0.06 + d * ln * 0.65, hit + d * ln]
-        el += core.clump(pts, [nor, nor, nor, nor], tf.get("w", 0.13), tf.get("w", 0.13) * 0.7, 0.08, n=22, lift=0.0,
-                         taper_at=0.25, tip=0.06, stiff=2.6, flat=0.8)
+        # strand groups (`strands`): each tuft three clumps fanned a little apart, the middle one longest — feathered
+        # owl tufts, not one smooth horn
+        fan = [(0.0, 1.0, 1.0)] if not hr.get("strands") else [(-9.0, 0.78, 0.62), (0.0, 1.0, 0.72), (10.0, 0.84, 0.6)]
+        for da, lk, wk in fan:
+            o2 = out + math.radians(da)
+            d = Vector((sd * math.sin(o2) * 1.0, 0.35 + 0.012 * da * sd, math.cos(o2))).normalized()
+            d = (d + nor * 0.35).normalized()
+            l2 = ln * lk
+            pts = [hit - nor * 0.02, hit + nor * 0.05 + d * l2 * 0.30, hit + nor * 0.06 + d * l2 * 0.65, hit + d * l2]
+            el += core.clump(pts, [nor, nor, nor, nor], tf.get("w", 0.13) * wk, tf.get("w", 0.13) * 0.7 * wk, 0.08,
+                             n=22, lift=0.0, taper_at=0.25, tip=0.06, stiff=2.6, flat=0.8)
     o = _finish_hair(ctx, el, hr["color"], signature=True)
     return o
 
@@ -1114,11 +1160,16 @@ def _straight(ctx):
         # falling over the face; through the eye's middle it hid the tired lids P-A4 reads)
         d0 = core.az_el(part - 6, 70)
         hit, nor = core.ray(head, d0 * 3, -d0)
-        p1 = core.ray_front(head, -0.10 * sx, ctx.P["eye_z"] + 0.19 * H)
-        p2 = core.ray_front(head, -0.32 * sx, ctx.P["eye_z"] + 0.01 * H)
-        p3 = core.ray_front(head, -0.37 * sx, ctx.P["eye_z"] - 0.22 * H)
+        # (`across_path`: [(x, dz in H)] x3 over the eye line — Sairin's centre parting put the default route along
+        # the near hair curtain, where it merged with it and never read, P3 review)
+        ap = hr.get("across_path", [(-0.10, 0.19), (-0.32, 0.01), (-0.37, -0.22)])
+        p1, p2, p3 = (core.ray_front(head, x_ * sx, ctx.P["eye_z"] + dz_ * H) for x_, dz_ in ap)
         if hit is not None and all(q[0] is not None for q in (p1, p2, p3)):
-            pts = [hit + nor * 0.04, p1[0] + p1[1] * 0.05, p2[0] + p2[1] * 0.06, p3[0] + p3[1] * 0.05]
+            # (`across_off`: held further off the forehead, so the lock falls in front of a diadem's band — Sairin's
+            # strand went under it and did not show, P3 review)
+            ao = hr.get("across_off", 0.05)
+            pts = [hit + nor * (0.04 + max(0.0, ao - 0.05)), p1[0] + p1[1] * ao, p2[0] + p2[1] * (ao + 0.01),
+                   p3[0] + p3[1] * 0.05]
             el += core.clump(pts, [nor, p1[1], p2[1], p3[1]], 0.07, 0.05, 0.035, n=16, lift=0.0, taper_at=0.6,
                              tip=0.3, stiff=2.6, flat=0.8)
     _finish_hair(ctx, el, hr["color"], res=hr.get("res", 0.012))
