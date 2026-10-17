@@ -929,9 +929,10 @@ def massif_paint(snow_z=0.6, snow_nz=0.3):
     """The rock teeth of the massif (art pass 5): MASSIF_C grey in big soft patches and faint horizontal strata (the
     layered cliffs of reference frame 3), a pale top on the up-facing facets, lilac on the steep and turned-away
     ones, a deeper grey low down; soft snow caps on the up-facing facets of the high blocks (above snow_z, broken by
-    a broad noise; a steep facet stays bare rock), so a peak reads as snow over grey crags. Snow is the pale
-    blue-grey albedo the old caps used (#C6CEDF lit, #A9B4CF in the shade): the light lifts it to blue-white without
-    clipping to «white-hot» (§6.12)."""
+    a broad noise; a steep facet stays bare rock), so a peak reads as snow over grey crags. Snow is a pale
+    blue-grey albedo, #B4C0DA lit and #A9B4CF in the shade: the old caps' #C6CEDF came out in game as (209, 219, 243),
+    S 0.14 V 0.95 — «white-hot» (§6.12: V > 0.92 and S < 0.18), 5 % of a close mountain frame once the rounder peaks
+    carried more snow; a step bluer and darker, the lit snow stays blue-white with S ≈ 0.2."""
     def build():
         p = Paint("massif")
         col = p.mix(p.math("MULTIPLY", p.step(p.noise(3.0, 2.0), 0.35, 0.65), 0.7), MASSIF_C["base"], MASSIF_C["warm"])
@@ -943,7 +944,7 @@ def massif_paint(snow_z=0.6, snow_nz=0.3):
         jit = p.math("MULTIPLY", p.math("SUBTRACT", p.noise(3.5, 2.0), 0.5), 0.45)  # a ragged snow line
         sf = p.math("MULTIPLY", p.step(p.math("ADD", p.z, jit), snow_z - 0.03, snow_z + 0.05),
                     p.step(p.math("ADD", p.nz, p.math("MULTIPLY", jit, 0.6)), snow_nz - 0.08, snow_nz + 0.08))
-        snow = p.mix(p.step(p.nz, 0.3, 0.85), "#A9B4CF", "#C6CEDF")
+        snow = p.mix(p.step(p.nz, 0.3, 0.85), "#A9B4CF", "#B4C0DA")
         col = p.mix(sf, col, snow)
         return p.done(col, 0.9)
     return cached(("massif", snow_z, snow_nz), build)
@@ -964,13 +965,17 @@ def _mound(x, y):
 
 # the rock masses of the massif: (x, y, w, d, h, z0, taper, seed, rz, lean, snow) — three peaks (the broad main one
 # at the back, two lower ones in front and to the sides: the three masses of §6.8), each with a snow cap over the top
-# `snow` share of its height (0 = bare rock), two shoulders behind and a low ledge in front, all leaning together
+# `snow` share of its height (0 = bare rock), two shoulders behind and a low ledge in front, all leaning together.
+# A1 review in game: the first teeth (taper 0.55–0.62, 5–7 cuts, a steep top cut) read on the map as a cluster of grey
+# crystals; now broader (×1.08), a little lower (×0.95) and blunter (taper ×0.72), the peaks and shoulders cut 7–9
+# times under a flatter top (rounded crests, wider 14 % bevels): soft massifs that keep the reference's grey alpine
+# peaks, with the snow line where it was (snow share recomputed for the lower blocks)
 MASSIF = [
-    (0.0, 0.1, 0.95, 0.85, 0.98, 0.06, 0.62, 301, 0.3, (0.02, -0.03), 0.42),
-    (0.37, -0.12, 0.56, 0.5, 0.74, 0.05, 0.58, 302, -0.5, (-0.05, 0.04), 0.4),
-    (-0.37, -0.17, 0.5, 0.46, 0.58, 0.05, 0.55, 303, 0.9, (0.05, 0.04), 0.36),
-    (0.4, 0.3, 0.46, 0.4, 0.5, 0.04, 0.45, 304, 0.2, (-0.04, -0.03), 0.0),
-    (-0.4, 0.24, 0.44, 0.4, 0.46, 0.04, 0.45, 305, -0.3, (0.04, -0.03), 0.0),
+    (0.0, 0.1, 1.026, 0.918, 0.931, 0.06, 0.446, 301, 0.3, (0.02, -0.03), 0.39),
+    (0.37, -0.12, 0.605, 0.54, 0.703, 0.05, 0.418, 302, -0.5, (-0.05, 0.04), 0.37),
+    (-0.37, -0.17, 0.54, 0.497, 0.551, 0.05, 0.396, 303, 0.9, (0.05, 0.04), 0.33),
+    (0.4, 0.3, 0.497, 0.432, 0.475, 0.04, 0.324, 304, 0.2, (-0.04, -0.03), 0.0),
+    (-0.4, 0.24, 0.475, 0.432, 0.437, 0.04, 0.324, 305, -0.3, (0.04, -0.03), 0.0),
     (0.02, -0.36, 0.52, 0.3, 0.3, 0.04, 0.25, 306, 0.1, (0.0, 0.03), 0.0),
 ]
 
@@ -980,7 +985,7 @@ def mountain():
     «горы — 3 мягких массива, снег мягкими шапками»). The B6 massif — one smooth heightfield of three blended masses —
     read in game as a single beige cone (a sand pile or a volcano) on a lime apron. Now three rock teeth rise out of
     a grassy hill: tall soft blocks (soft_block with taper: an icosahedron cut by planes into broad facets with
-    round 10 % bevels, narrowing to a crest) in cool grey with pale tops, lilac shade and faint strata, snow caps on
+    round 14 % bevels, narrowing to a rounded crest) in cool grey with pale tops, lilac shade and faint strata, snow caps on
     the up-facing facets of the three peaks, shoulder blocks and a front ledge round them (the faces buried in a
     neighbour dropped), a few pebbles and the soft pines of the forests on the foot. Footprint radius 0.8 (the old
     one); the map scales it ×1.5–1.75 on a mountain hex and ×1.5–2.8 on the horizon."""
@@ -1022,8 +1027,12 @@ def mountain():
     blocks = []
     for (x, y, w, d, h, z0, taper, seed, rz, lean, cap) in MASSIF:
         mt = massif_paint(snow_z=round(z0 + (1.0 - cap) * h, 3) if cap else 9.0)
-        blocks.append(soft_block(x, y, w, d, h, mt, seed, z0=z0, rz=rz, cuts=(5, 7), top=0.74, top_el=(0.9, 1.2),
-                                 ground=0.05, sharp=55.0, taper=taper, lean=lean))
+        if taper > 0.3:  # peaks and shoulders: many cuts under a flat top → a rounded crest
+            kw = dict(cuts=(7, 9), top_el=(1.15, 1.4), bevel=0.14)
+        else:  # the low front ledge: a plain rounded rock
+            kw = dict(cuts=(5, 7), top_el=(0.9, 1.2))
+        blocks.append(soft_block(x, y, w, d, h, mt, seed, z0=z0, rz=rz, top=0.74, ground=0.05, sharp=55.0,
+                                 taper=taper, lean=lean, **kw))
     cull_hidden(blocks)
     # pebbles and pines on the grassy foot, clear of the rock
     rk = granite_paint(moss_at=0.7, scale=6.0, moss_z=0.0, cover=0.4)
@@ -1357,6 +1366,11 @@ def windmill():
     return (0.0, hub_y, hub_z)
 
 
+# the quarry tiers' blocks: width range and plane cuts. A1 review in game: narrow blocks with 5–6 cuts (0.15–0.22)
+# stood like a crate of grey eggs; broader ones cut 7–9 times read as slabs of one cliff face (§6.1 rule 5)
+MINE_W, MINE_CUTS = (0.22, 0.3), (7, 9)
+
+
 def mine():
     dirt = ev.pad(0.6, ev.stone("#9a8f7f", 1.4), 0.012, 14, 0.12, 4, 1.0, 0.85)  # a flagged yard (reference frame 4)
     dirt.location.y = -0.12
@@ -1371,12 +1385,12 @@ def mine():
     for t, (y0, y1, zmax, xr) in enumerate(((0.0, 0.2, 0.3, 0.56), (0.17, 0.36, 0.48, 0.5), (0.33, 0.5, 0.66, 0.38))):
         x = -xr
         while x < xr - 0.05:
-            w = min(rnd.uniform(0.15, 0.22), xr - x)
+            w = min(rnd.uniform(MINE_W[0], MINE_W[1]), xr - x)
             h = zmax * rnd.uniform(0.84, 1.0) * (1.0 - 0.35 * (abs(x + w / 2) / xr) ** 2)
             d = (y1 - y0) * rnd.uniform(1.0, 1.15)
             blocks.append(soft_block(x + w / 2, (y0 + y1) / 2 + rnd.uniform(-0.015, 0.015), w * 1.06, d, h,
                                      cut if (t + int(x * 10)) % 3 else cut_d, 90 + len(blocks), z0=-0.01,
-                                     rz=rnd.uniform(-0.1, 0.1), sub=1, cuts=(5, 6), bevel=0, top=0.4,
+                                     rz=rnd.uniform(-0.1, 0.1), sub=1, cuts=MINE_CUTS, bevel=0, top=0.4,
                                      top_el=(1.48, 1.57), ground=0.0))
             x += w
     cull_hidden(blocks)
@@ -1507,12 +1521,14 @@ def dark_lake():
     """The Dark Lake (canon §5.1: dormant oil; art pass 5, A1) — replaces map_view's placeholder, a near-black 9-sided
     disc (0.07, 0.06, 0.12) with sharp corners and three loose rocks, the darkest and crudest shape on the map. A
     rounded pond (soft lobed outline, no corners) of still violet-black oil with an oily sheen (its own glossy
-    material, kept out of the bake like the oil fields' crude, albedo #2E2B42 — no darker than §6.1's ≈ #2A2A30), pale
+    material, kept out of the bake like the oil fields' crude, albedo #3E3A5C: SoftLook clamps its metallic to 0.25, so
+    the pond shows at about half its albedo's luminance — #2E2B42 measured L* ≈ 11 on screen in game, a black hole;
+    now ≈ 15–16, still the darkest water on the map), pale
     lilac sheen streaks and a few oil bubbles on it; a ring of wet dark mud and a sandy shore that fades into the
     hex's grass; clumps of chunky reeds with brown heads, rounded mossy rocks and a dead stump on the shore."""
     shore = tex("plaster", "#B9A27E", 2.0)
     wet = tex("plaster", "#857360", 2.5)
-    oil = kit.mat("dark_lake", "#2E2B42", 0.08, 0.55)
+    oil = kit.mat("dark_lake", "#3E3A5C", 0.08, 0.55)
     ev.extrude(_blob(0.66, lobes=((3, 0.07, 1.0), (5, 0.04, 2.0))), -0.01, 0.008, shore)
     ev.extrude(_blob(0.6, lobes=((3, 0.08, 1.1), (5, 0.05, 2.1))), -0.01, 0.013, wet)
     ev.extrude(_blob(0.55, lobes=((3, 0.08, 1.1), (5, 0.05, 2.1))), -0.004, 0.017, oil)

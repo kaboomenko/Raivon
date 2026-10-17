@@ -1412,7 +1412,8 @@ func _coalition_tick(now: int) -> void:
 	coalition = {"leader": leader, "members": members, "at": now + COALITION_FORM_SEC}
 	coalition_last = now
 	_post("inbox.coalition.title", L.pack("inbox.coalition.text", [_state_key(leader), members.size()]))
-	ui.toast(tr("toast.coalition") % [_state_name(leader), members.size() - 1])  # «… : Бароны и ещё 1»
+	# «… : Кремнёвые Бароны и ещё 1» — the name kept on one line of a two-line toast (no «Кремнёвые / Бароны»)
+	ui.toast(tr("toast.coalition") % [_state_name(leader).replace(" ", Kit.NBSP), members.size() - 1])
 	sfx.play("warn")
 
 
@@ -1496,7 +1497,7 @@ func _coalition_war(now: int) -> void:
 	sfx.play("warn")
 	var names: Array = []
 	for m in members:
-		names.append(_state_name(int(m)))
+		names.append(_state_name(int(m)).replace(" ", Kit.NBSP))  # a name is never split across the toast's lines
 	_post("inbox.coalition_war.title", L.pack("inbox.coalition_war.text", [_state_key(leader), members.size()]))
 	ui.toast(tr("toast.coalition_war") % ", ".join(names))
 	_set_mode(Mode.WAR)
@@ -2199,8 +2200,9 @@ func _swap_execute(s: int, give: Array, get_l: Array, gold: int, overpay: float)
 
 
 ## Swap offers from the AI (06 §9.1 S4): the Fox every 48 h, the Turtle and the Owl every 7 days — the best package
-## of ≤2 hexes a side that shortens the player's border with it by ≥2 edges and leaves the AI's valuation
-## (06 §15.2) not in deficit — with a top-up of at most 1 value unit (2 h of gold) where needed, the traders' way. The offer waits 24 h; the screen opens once the player is free.
+## of ≤2 hexes a side that shortens the player's border with it by ≥2 edges, or takes away a salient or an exclave of
+## the player's, and leaves the AI's valuation (06 §15.2) not in deficit without any top-up: the AI's own proposal
+## never asks the player for gold (playtest B4). The offer waits 24 h; the screen opens once the player is free.
 func _ai_swap_tick(now: int) -> void:
 	if not swap_offer.is_empty():
 		if now > int(swap_offer["until"]):
@@ -2229,6 +2231,34 @@ func _ai_swap_tick(now: int) -> void:
 		swap_offer = {"state": s, "give": best["give"], "get": best["get"], "until": now + 86400, "auto": save_enabled}
 		_post(L.pack("inbox.swap_offer.title", [_state_key(s)]), L.pack("inbox.swap_offer.text", [_state_key(s)]))
 		return
+
+
+## The player's border shape with `s` once `over` (hex -> new owner) is applied, for the AI's swap offers (06 §9.1 S4):
+## x — salients among the hexes of `near`: the player's hexes bordering ≥4 of `s`'s (canon «Уязвимый выступ»);
+## y — exclaves: the player's hexes with no path over the player's land to the capital (`own` hexes in all).
+func _swap_shape(s: int, over: Dictionary, near: Dictionary, own: int) -> Vector2i:
+	var sal := 0
+	for id in near:
+		if int(over.get(id, sim.cells[id]["owner"])) != Types.PLAYER:
+			continue
+		var k := 0
+		for nb in sim.neighbors[id]:
+			if nb >= 0 and int(over.get(nb, sim.cells[nb]["owner"])) == s:
+				k += 1
+		if k >= 4:
+			sal += 1
+	var cap: int = sim.states[Types.PLAYER]["capital_id"]
+	if cap < 0:
+		return Vector2i(sal, 0)
+	var seen := {cap: true}
+	var stack: Array = [cap]
+	while not stack.is_empty():
+		var h: int = stack.pop_back()
+		for nb in sim.neighbors[h]:
+			if nb >= 0 and not seen.has(nb) and int(over.get(nb, sim.cells[nb]["owner"])) == Types.PLAYER:
+				seen[nb] = true
+				stack.append(nb)
+	return Vector2i(sal, maxi(0, own - seen.size()))
 
 
 ## The package the AI proposes, or {}: `give` is what the player gives.
@@ -2264,18 +2294,37 @@ func _ai_swap_package(s: int) -> Dictionary:
 				for l in range(k + 1, theirs.size()):
 					if (sim.neighbors[theirs[k]] as Array).has(theirs[l]):
 						packs.append([[mine[i], mine[j]], [theirs[k], theirs[l]]])
+	var own := _player_hexes()
 	for p in packs:
 		var t := _swap_terms(s, p[0], p[1])
 		if float(t["pay"]) > 0.0:
 			continue  # the AI's own proposal never asks the player to pay on top (playtest B: «Вы доплачиваете 311»)
-		var cut := base - _border_len(s, _swap_over(s, p[0], p[1]))
+		var over := _swap_over(s, p[0], p[1])
+		var cut := base - _border_len(s, over)
+		if cut < 0:
+			continue
+		# salients and exclaves (S4: «исчезает выступ либо эксклав»): only the package's hexes and their neighbours
+		# can change; a package that makes a new one is never offered
+		var near := {}
+		for h in p[0] + p[1]:
+			near[h] = true
+			for nb in sim.neighbors[h]:
+				if nb >= 0:
+					near[nb] = true
+		var sh0 := _swap_shape(s, {}, near, own)
+		var sh1 := _swap_shape(s, over, near, own - (p[0] as Array).size() + (p[1] as Array).size())
+		if sh1.x > sh0.x or sh1.y > sh0.y:
+			continue
+		var shape := (sh0.x - sh1.x) + (sh0.y - sh1.y)
+		if cut < 2 and shape == 0:
+			continue
 		var gain := 0
 		for h in p[1]:
 			gain += int(sim.cells[h]["value"])
 		for h in p[0]:
 			gain -= int(sim.cells[h]["value"])
-		var score := float(cut) + 0.25 * gain - float(t["pay"])
-		if cut >= 2 and score > best_score:
+		var score := float(cut) + 2.0 * shape + 0.25 * gain
+		if score > best_score:
 			best_score = score
 			best = {"give": p[0], "get": p[1]}
 	return best
@@ -4430,7 +4479,9 @@ func _apply_defeat(enemy: int, lost: Array) -> void:
 	# plunder level by the winner's archetype (canon §10.4): Wolf 60%, Raven 45%, Fox / Turtle / Owl 30%
 	var lvl: int = AI_PLUNDER_LVL.get(String(sim.states[enemy]["archetype"]), 3)
 	var looted: Dictionary = econ.plunder(PLUNDER_PCT[lvl], g12)  # 12 h loss cap (canon §9.14, decision 20)
-	var msg := L.pack("inbox.defeat.text", [lost.size(), int(looted.get("gold", 0)), int(looted.get("food", 0)), int(looted.get("metal", 0))])
+	var plunder := [int(looted.get("gold", 0)), int(looted.get("food", 0)), int(looted.get("metal", 0))]
+	# no «Потеряно гексов: 0» when the peace took no land (B4 review): the text without the hex clause
+	var msg := L.pack("inbox.defeat.text_nohex", plunder) if lost.is_empty() else L.pack("inbox.defeat.text", [lost.size()] + plunder)
 	_post("inbox.defeat.title", msg)
 	# plunder also brings ruin (−20/30/40% for 4/6/8 h) and 1–3 damaged hex buildings (canon §9.14)
 	econ.apply_ruin(RUIN_PCT[lvl], RUIN_HOURS[lvl] * 3600, now_s())
@@ -4809,8 +4860,10 @@ func _send_convoy(hex: int) -> void:
 ## 40-hex realm (playtest B). Now only the BUBBLE_TOP fullest hexes on the screen show one (of those holding 15 min of
 ## income; the fullest of the whole realm when none is in view), so there is always a coin to tap where the player
 ## looks and never a field of them (02 §19.2: one shared «Собрать всё» sign at the realm's zoom, not a coin per hex);
-## the vein keeps its crystal bubble.
+## the vein keeps its crystal bubble. A coin that shows keeps its place while it stays on the open map and among the
+## BUBBLE_KEEP fullest there (hysteresis: a pan or a refresh no longer swaps coins in and out by a few gold; B4 review).
 const BUBBLE_TOP := 3
+const BUBBLE_KEEP := 5
 
 
 func _update_bubbles() -> void:
@@ -4833,7 +4886,19 @@ func _update_bubbles() -> void:
 			cands.append([amount, int(h), best])
 	cands.sort_custom(func(a: Array, b: Array) -> bool: return int(a[0]) > int(b[0]) if int(a[0]) != int(b[0]) else int(a[1]) < int(b[1]))
 	var seen: Array = cands.filter(func(it: Array) -> bool: return map_view.on_screen(int(it[1])))
-	for it in (seen if not seen.is_empty() else cands).slice(0, BUBBLE_TOP):
+	var pick: Array = []
+	if seen.is_empty():
+		pick = cands.slice(0, BUBBLE_TOP)
+	else:
+		for it in seen.slice(0, BUBBLE_KEEP):  # the coins already up stay while they rank in the top BUBBLE_KEEP
+			if pick.size() < BUBBLE_TOP and map_view.has_bubble(int(it[1])):
+				pick.append(it)
+		for it in seen:
+			if pick.size() >= BUBBLE_TOP:
+				break
+			if not pick.has(it):
+				pick.append(it)
+	for it in pick:
 		data[int(it[1])] = {"res": String(it[2]), "amount": int(it[0])}
 	for h in econ.vein_secs:
 		if econ.vein_amount(int(h)) >= 1:

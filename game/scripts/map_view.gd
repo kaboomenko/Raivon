@@ -4218,18 +4218,23 @@ func _tex(name: String) -> Texture2D:
 	return _tex_cache[name]
 
 
-## CoC-style bubbles over hexes with uncollected income: data = {hex: {"res": "gold", "amount": n}}.
+## CoC-style bubbles over hexes with uncollected income: data = {hex: {"res": "gold", "amount": n}}. A new bubble
+## grows in and a dropped one shrinks out (BUBBLE_POP s), so a coin never pops in or out between two refreshes.
 func set_bubbles(data: Dictionary) -> void:
 	for h in _bubbles.keys():
 		if not data.has(h):
-			_bubbles[h].queue_free()
+			var gone: Node3D = _bubbles[h]
 			_bubbles.erase(h)
+			gone.set_meta("out", true)
+			_bubbles_out.append(gone)
 	for h in data:
 		var node: Node3D = _bubbles.get(h)
 		var icon_name: String = {"gold": "coin", "food": "food", "metal": "metal", "raivite": "raivite"}.get(data[h]["res"], "coin")
 		if node == null:
 			node = Node3D.new()
-			node.position = cell_world(h) + Vector3(0, 2.0, 0)
+			node.position = cell_world(h) + Vector3(0, BUBBLE_LIFT, 0)
+			node.scale = Vector3.ONE * 0.001
+			node.set_meta("show", 0.0)
 			add_child(node)
 			for part in [["bg", "bubble", 0.0046, 0], ["icon", icon_name, 0.0032, 1]]:
 				var sp := Sprite3D.new()
@@ -4256,29 +4261,99 @@ func has_bubble(hex: int) -> bool:
 	return _bubbles.has(hex)
 
 
-## Whether a hex's bubble point (2 over its centre) is on the open map: in front of the camera, inside the view and
-## clear of the HUD — its top bar (12 % of the height), its bottom panels (22 %) and the button columns down the left
-## and right edges (13 % of the width each: a coin there showed half, under the buttons).
+## Whether a hex's bubble is on the open map: in front of the camera, its whole box (the coin and the «+N» under it)
+## SCREEN_EDGE inside the view and clear of the HUD's furniture over the map (_furniture: the resource band, the left
+## column, the minimap, the map tools with their captions, the bottom tabs and tray), so no coin shows half under a
+## button or the minimap (B4 review: the centre alone against fixed screen fractions let a coin's half under them).
 func on_screen(hex: int) -> bool:
 	var vp := get_viewport() if is_inside_tree() else null
 	var cam := vp.get_camera_3d() if vp != null else null
 	if cam == null:
 		return true
-	var p := cell_world(hex) + Vector3(0, 2.0, 0)
-	var r := vp.get_visible_rect()
-	r = r.grow_individual(-0.13 * r.size.x, -0.12 * r.size.y, -0.13 * r.size.x, -0.22 * r.size.y)
-	return not cam.is_position_behind(p) and r.has_point(cam.unproject_position(p))
+	var box := _bubble_box(hex, cam)
+	return box.has_area() and _free(box, _furniture(false), vp.get_visible_rect().grow(-SCREEN_EDGE))
 
 
 ## The income bubbles keep about their size on screen as the camera comes close: a world-sized coin grew three times
 ## from the default view to the close-up one and hid the buildings, the army plates and the march chip (playtest B).
 ## Full size from BUBBLE_DEPTH (the default zoom's camera distance) out; closer, the coin shrinks with the depth to the
-## power 0.75, so it still grows a little on screen (×1.3 at the closest zoom) and stays easy to tap.
+## power 0.75, so it still grows a little on screen (×1.3 at the closest zoom) and stays easy to tap. Its lift over the
+## hex shrinks with it (BUBBLE_LIFT × the scale): a low camera sees a fixed 2-unit lift as 450–620 px, the coin then
+## hung over the hex behind and read as that hex's income (B4 review: the capital's «+4276» over the mine).
 const BUBBLE_DEPTH := 22.0
+const BUBBLE_LIFT := 2.0
+const BUBBLE_R := 0.3  # world units at scale 1: the coin's radius (128 px × 0.0046 / 2) …
+const BUBBLE_TEXT := 0.62  # … and how far the «+N» under it reaches down (its centre 0.42 + half its line)
+const BUBBLE_POP := 0.18  # s: a bubble grows in, shrinks out, or hides as the camera takes it under the HUD
+var _bubbles_out: Array = []  # dropped bubbles shrinking out
 
 
 static func bubble_scale(depth: float) -> float:
 	return clampf(pow(maxf(depth, 0.1) / BUBBLE_DEPTH, 0.75), 0.4, 1.0)
+
+
+## A hex's bubble scale for this camera (by the depth of its full-size point) — its lift is BUBBLE_LIFT × it.
+func _bubble_k(hex: int, cam: Camera3D) -> float:
+	return bubble_scale(cam.global_position.distance_to(cell_world(hex) + Vector3(0, BUBBLE_LIFT, 0)))
+
+
+## A hex's bubble box on the canvas (the coin and its «+N»), or an empty rect when it is behind the camera.
+func _bubble_box(hex: int, cam: Camera3D) -> Rect2:
+	var k := _bubble_k(hex, cam)
+	var p := cell_world(hex) + Vector3(0, BUBBLE_LIFT * k, 0)
+	if cam.is_position_behind(p):
+		return Rect2()
+	var c := cam.unproject_position(p)
+	var top := cam.unproject_position(p + cam.global_basis.y * BUBBLE_R * k)
+	var bot := cam.unproject_position(p - cam.global_basis.y * BUBBLE_TEXT * k)
+	var side := cam.unproject_position(p + cam.global_basis.x * BUBBLE_R * 1.15 * k)
+	var hw := absf(side.x - c.x)
+	return Rect2(c.x - hw, top.y, 2.0 * hw, maxf(bot.y - top.y, 1.0))
+
+
+## Each frame: a bubble's scale and lift for the camera's depth, its bob, and its pop — grown in when new, hidden
+## (shrunk) while the camera has it under the HUD, shrunk out when dropped.
+func _step_bubbles(delta: float, bt: float) -> void:
+	var cam := get_viewport().get_camera_3d()
+	var step := clampf(delta / BUBBLE_POP, 0.0, 1.0)
+	var furn: Array[Rect2] = _furniture(false)
+	var area := get_viewport().get_visible_rect().grow(-SCREEN_EDGE)
+	for h in _bubbles:
+		var bn: Node3D = _bubbles[h]
+		var k := _bubble_k(h, cam) if cam != null else 1.0
+		var want := 1.0
+		if cam != null:
+			var box := _bubble_box(h, cam)
+			want = 1.0 if box.has_area() and _free(box, furn, area) else 0.0
+		var was := float(bn.get_meta("show", 1.0))
+		var show := move_toward(was, want, step)
+		bn.set_meta("show", show)
+		bn.set_meta("k", k)
+		bn.position.y = (BUBBLE_LIFT + 0.07 * sin(bt * 3.0 + h)) * k
+		bn.scale = Vector3.ONE * maxf(0.001, k * (_pop_curve(show) if want > was else show))
+		bn.visible = show > 0.0
+	for i in range(_bubbles_out.size() - 1, -1, -1):
+		var on: Node3D = _bubbles_out[i]
+		if not is_instance_valid(on):
+			_bubbles_out.remove_at(i)
+			continue
+		var show := move_toward(float(on.get_meta("show", 1.0)), 0.0, step)
+		on.set_meta("show", show)
+		if show <= 0.0:
+			_bubbles_out.remove_at(i)
+			on.queue_free()
+			continue
+		on.scale = Vector3.ONE * maxf(0.001, float(on.get_meta("k", 1.0)) * show)
+
+
+## The pop's ease: a little overshoot on the way in (back-out), so the coin lands like a dropped token.
+static func _pop_curve(t: float) -> float:
+	if t <= 0.0:
+		return 0.0
+	if t >= 1.0:
+		return 1.0
+	var u := t - 1.0
+	return 1.0 + u * u * (2.70158 * u + 1.70158)
 
 
 ## Text floating over a hex (colonization timers); "" removes it.
@@ -5392,12 +5467,8 @@ func _process(delta: float) -> void:
 		for m in _fill_mats:
 			(m as ShaderMaterial).set_shader_parameter("now", now)
 	var bt := Time.get_ticks_msec() / 1000.0
-	var cam := get_viewport().get_camera_3d() if not _bubbles.is_empty() else null
-	for h in _bubbles:
-		var bn: Node3D = _bubbles[h]
-		bn.position.y = 2.0 + 0.07 * sin(bt * 3.0 + h)
-		if cam != null:
-			bn.scale = Vector3.ONE * bubble_scale(cam.global_position.distance_to(bn.global_position))
+	if not _bubbles.is_empty() or not _bubbles_out.is_empty():
+		_step_bubbles(delta, bt)
 	_step_volleys(delta)
 	_step_planes(delta)
 	_step_flames(bt)

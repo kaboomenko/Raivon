@@ -1182,16 +1182,34 @@ func _run() -> void:
 		if String(g.sim.states[st]["archetype"]) == "fox" and g._swap_reason(st) == "":
 			fox = st
 	_check(not g.SWAP_OFFER_SEC.has("wolf") and int(g.SWAP_OFFER_SEC["fox"]) == 48 * 3600, "the Fox offers every 48 h, the Wolf never")
+	_check(fox >= 0, "a Fox neighbour to offer swaps")
 	if fox >= 0:
 		var pk: Dictionary = g._ai_swap_package(fox)
+		var bent := {}  # hex -> [owner, controller] before the border was bent
+		if pk.is_empty():
+			# a straight border leaves nothing to straighten: bend it into a salient the swap_ai demo's way (the owners
+			# go back after the offer, the tests below see the same world)
+			for c in g.sim.cells:
+				bent[c["id"]] = [c["owner"], c["controller"]]
+			g._demo_salient(fox)
+			pk = g._ai_swap_package(fox)
+		_check(not pk.is_empty(), "the Fox finds a package that asks no top-up%s" % (" (border bent)" if not bent.is_empty() else ""))
 		if not pk.is_empty():
+			var t_ai: Dictionary = g._swap_terms(fox, pk["give"], pk["get"])
 			var cut: int = g._border_len(fox) - g._border_len(fox, g._swap_over(fox, pk["give"], pk["get"]))
-			_check(cut >= 2 and (pk["give"] as Array).size() <= 2 and float(g._swap_terms(fox, pk["give"], pk["get"])["pay"]) <= 0.0,
-				"the AI package shortens the border by %d edges and asks no top-up (B4)" % cut)
+			_check(cut >= 0 and (pk["give"] as Array).size() <= 2 and (pk["get"] as Array).size() <= 2 and float(t_ai["pay"]) <= 0.0 and int(t_ai["gold"]) == 0,
+				"the AI package (%d for %d) shortens the border by %d edges and asks no top-up (B4)" % [(pk["give"] as Array).size(), (pk["get"] as Array).size(), cut])
 			g.swap_offer = {"state": fox, "give": pk["give"], "get": pk["get"], "until": g.now_s() + 86400, "auto": false}
 			g._show_swap_offer()
-			_check(g.ui.has_modal(), "the AI offer opens")
+			_check(g.ui.has_modal() and not g.swap_offer.is_empty(), "the AI offer opens")
 			g.ui.close_modal()
+			for h in pk["give"] + pk["get"]:
+				g.map_view.hex_label(h, "")
+		for id in bent:
+			if int(g.sim.cells[id]["owner"]) != int(bent[id][0]) or int(g.sim.cells[id]["controller"]) != int(bent[id][1]):
+				g.sim.cells[id]["owner"] = bent[id][0]
+				g.sim.cells[id]["controller"] = bent[id][1]
+				g.map_view.refresh_hex(id)
 		g.swap_offer_at[fox] = 0
 		g.swap_offer = {}
 		g._ai_swap_tick(g.now_s())

@@ -2832,7 +2832,7 @@ class KitButton extends Panel:
 	var fill := -1.0  ## 0..1: a disabled button «charging» toward enabled — its face fills with go from the left; < 0: none
 	var hit_pad := 0.0
 	var round_btn := false
-	var icon_scale := 0.0  ## icon-only buttons: icon side as a share of the height
+	var icon_scale := 0.0  ## the icon side as a share of the height: icon-only buttons, a card CTA's smaller icon
 	var content_left := 0.0  ## the content row starts right of this x (0: centred in the face)
 	var cap_max := 0  ## the caption's largest size (0: the class's own); set by `unify` for sibling offers
 	var price_max := 0  ## the price number's largest size (0: the class's own)
@@ -4289,7 +4289,7 @@ static func card(art_tex: Texture2D, title: String, opts := {}) -> KitCard:
 		var cb: Callable = ct.get("cb", Callable())
 		var btn := button(b, Rect2(6, 114, 168, 46), String(ct.get("role", "go")), String(ct.get("caption", "")),
 			{"icon": String(ct.get("icon", "")), "price": ct.get("price", []), "enabled": en, "size": "XS",
-			"filter": Control.MOUSE_FILTER_PASS})
+			"filter": Control.MOUSE_FILTER_PASS, "icon_scale": float(ct.get("icon_scale", 0.0))})
 		btn.cb = cb if cb.is_valid() else func(): SELF.tooltip(btn, title, c.details)
 		var short_why := String(ct.get("short_reason", ""))
 		if short_why != "":  # «Не хватает»: the role stays, the tap shakes and says what is missing (§4.1)

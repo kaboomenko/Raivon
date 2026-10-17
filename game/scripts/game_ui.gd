@@ -4582,20 +4582,24 @@ func show_cmd_picker(title: String, rows: Array, on_pick: Callable, on_remove: C
 		var sub := row.get_node_or_null("sub")
 		if sub:
 			sub.queue_free()
+		var left_of := row.right.position.x if row.right else rw - 16.0  # where the skill chip must end (16 before)
+		if busy != "" and b != null:  # the army they lead now, in a chip under the button — inside this row: centred
+			# under it, or flush with its right edge when wider («Сейчас: 1-я армия» is 260 to the button's 196)
+			b.position.y = 10.0
+			var bc := Kit.chip(row, Vector2.ZERO, "", busy, "status")
+			bc.name = "busy"
+			var bx := minf(b.position.x + (b.size.x - bc.size.x) * 0.5, b.position.x + b.size.x - bc.size.x)
+			bc.position = Vector2(roundf(bx), b.position.y + b.size.y + 6.0)
+			left_of = minf(left_of, bc.position.x)
 		var skills: Array = r.get("skills", [])
 		if not skills.is_empty():
 			var sk: Dictionary = skills[0]
-			var room := (row.right.position.x if row.right else rw - 16.0) - row.title_label.position.x - 16.0
+			var room := left_of - row.title_label.position.x - 16.0
 			var chip := _paper_chip(row, Vector2.ZERO, _skill_icon(sk), _skill_text(sk), room)
 			chip.position = Vector2(row.title_label.position.x, roundf((PICK_ROW - 5.0) * 0.5 + 2.0))
 		if not here:
 			row.cb = func(): on_pick.call(id)
-		if busy != "" and b != null:  # the army they lead now, in a chip under the button — inside this row
-			b.position.y = 10.0
-			var bc := Kit.chip(row, Vector2.ZERO, "", busy, "status")
-			bc.name = "busy"
-			bc.position = Vector2(roundf(b.position.x + (b.size.x - bc.size.x) * 0.5), b.position.y + b.size.y + 6.0)
-		elif bool(r.get("best", false)) and not here:
+		if busy == "" and bool(r.get("best", false)) and not here:
 			var rb := Kit.ribbon(row, Vector2.ZERO, tr("cmdr.recommend"), "gold")
 			rb.position = Vector2(rw - 24.0 - rb.size.x, -17)
 		y += PICK_ROW + 12.0
@@ -5878,7 +5882,9 @@ func _building_card(it: Dictionary) -> Control:
 				building_speedup.emit(id)
 		var sp := int(it.get("speed", 0))
 		if sp == 0:
-			opts["cta"] = {"role": "go", "caption": tr("ui.finish"), "icon": "lightning", "cb": speed_cb}
+			# a free finish: the lightning says «at once». «Завершить» left no room for it in the XS button (168, the
+			# kit dropped the icon in RU): the card says «Ускорить» — the paid speed-up's word — with a 24 lightning
+			opts["cta"] = {"role": "go", "caption": tr("ui.finish_card"), "icon": "lightning", "icon_scale": 0.52, "cb": speed_cb}
 		elif int(it.get("stock", 0)) > 0:
 			# the speed-up stock from cases pays first: the tap is free, the time left on the info face (§4.4)
 			opts["cta"] = {"role": "info", "caption": fmt_time(int(it["left"])), "icon": "hourglass", "cb": speed_cb}
