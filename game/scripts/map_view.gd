@@ -488,7 +488,7 @@ func _decor_parts(name: String) -> Array:
 ## Turns the batched scenery into map-wide MultiMeshes: one per model part for the map and one for the horizon
 ## (a hex rebuild replaces its own entries and the sets are rebuilt — a few thousand transforms, well under a ms).
 var _decor_store := {}  # parent Node3D -> {model name: [Transform3D local to the parent]}
-var _decor_nodes: Array = []
+var _decor_nodes := {}  # "<set key>#<part>" -> its MultiMeshInstance3D (refilled by each flush)
 var _decor_at := {}  # parent Node3D -> {set key: index of its first instance in that set's MultiMeshes}
 var _decor_mmis := {}  # set key -> [[MultiMeshInstance3D, Transform3D of the part inside the model]]
 
@@ -497,10 +497,6 @@ func _flush_decor() -> void:
 	for parent in _pending_decor:
 		_decor_store[parent] = _pending_decor[parent]
 	_pending_decor.clear()
-	for n in _decor_nodes:
-		if is_instance_valid(n):
-			(n as Node).queue_free()
-	_decor_nodes.clear()
 	_decor_at.clear()
 	_decor_mmis.clear()
 	var sets := {}  # [name, horizon] key -> [world Transform3D]
@@ -520,27 +516,43 @@ func _flush_decor() -> void:
 			at[key] = list.size()
 			for xf in per[name]:
 				list.append(base * (xf as Transform3D))
+	# the MultiMeshes are kept and refilled (R1): new nodes each flush meant a frame that drew the old set — queued
+	# for deletion, still in the tree — and the new one, twice the scenery's draws at every hex rebuild
+	var used := {}
 	for key in sets:
 		var name: String = String(key).split("|")[0]
 		var horizon: bool = String(key).ends_with("|1")
 		var list: Array = sets[key]
-		for part in _decor_parts(name):
-			var mm := MultiMesh.new()
-			mm.transform_format = MultiMesh.TRANSFORM_3D
-			mm.mesh = part[0]
+		var parts: Array = _decor_parts(name)
+		for pi in parts.size():
+			var part: Array = parts[pi]
+			var id := "%s#%d" % [key, pi]
+			var got: Variant = _decor_nodes.get(id)
+			var mmi: MultiMeshInstance3D = got if got != null and is_instance_valid(got) else null
+			if mmi == null:
+				var nm := MultiMesh.new()
+				nm.transform_format = MultiMesh.TRANSFORM_3D
+				nm.mesh = part[0]
+				mmi = MultiMeshInstance3D.new()
+				mmi.name = "decor_" + name
+				mmi.multimesh = nm
+				if name in ["flowers", "bush", "rock"] or horizon:  # too small (or too far) to shade
+					mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				add_child(mmi)
+				_decor_nodes[id] = mmi
+			used[id] = true
+			var mm := mmi.multimesh
 			mm.instance_count = list.size()
 			for i in list.size():
 				mm.set_instance_transform(i, (list[i] as Transform3D) * (part[1] as Transform3D))
-			var mmi := MultiMeshInstance3D.new()
-			mmi.name = "decor_" + name
-			mmi.multimesh = mm
-			if name in ["flowers", "bush", "rock"] or horizon:  # too small (or too far) to shade
-				mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-			add_child(mmi)
-			_decor_nodes.append(mmi)
 			var parts_of: Array = _decor_mmis.get(key, [])
 			_decor_mmis[key] = parts_of
 			parts_of.append([mmi, part[1]])
+	for id in _decor_nodes.keys():
+		if not used.has(id):
+			if is_instance_valid(_decor_nodes[id]):
+				(_decor_nodes[id] as Node).queue_free()
+			_decor_nodes.erase(id)
 
 
 ## A hex's batched instances (BATCH; all its decor when `all`) placed again from its holder's transform now: during a
@@ -629,7 +641,7 @@ func _sync_chimneys() -> void:
 	var k := 0.0
 	var inv := global_transform.affine_inverse()
 	for m in _chimneys:
-		if not _on_map(m as Node):
+		if not is_instance_valid(m) or not _on_map(m as Node):  # (a freed marker can't even be cast)
 			continue
 		keep.append(m)
 		var g: Transform3D = inv * (m as Node3D).global_transform
@@ -676,10 +688,12 @@ func _sync_chimneys() -> void:
 
 ## The player's flag (10 §4.23) on both faces of a banner's cloth (tools/blender/export_assets.py: the cloth is
 ## 0.26 × 0.416 from x 0, its top at y 0.98, 0.012 thick): one viewport texture shared by every banner, so a new
-## flag repaints them all at once. The faces of all of a state's banners are two MultiMeshes (_sync_banner_cloth: the
-## front faces, side +1, and the back ones, side −1 — flag_wave.gdshader's instance uniform is per draw), not two
-## quads a banner (R1: two draws each).
+## flag repaints them all at once. The faces of all of a state's banners — on its hexes and with its armies — are two
+## MultiMeshes (_sync_banner_cloth: the front faces, side +1, and the back ones, side −1 — flag_wave.gdshader's
+## instance uniform is per draw), not two quads a banner (R1: two draws each); with an army's banner on the map they
+## follow it every frame.
 var _banner_cloth := {}  # owner -> [banner Node3D]
+var _cloth_moves := false  # an army's banner among them: _sync_banner_cloth every frame
 var _cloth_mmis := {}  # owner -> [front MultiMeshInstance3D, back MultiMeshInstance3D]
 const CLOTH_AT := Vector3(0.13, 0.775, 0.0095)  # the front face's centre in the banner model (the back: z mirrored)
 
@@ -687,7 +701,8 @@ const CLOTH_AT := Vector3(0.13, 0.775, 0.0095)  # the front face's centre in the
 func _paint_flag(banner: Node3D, owner: int) -> void:
 	if owner < 0 and owner != Types.PLAYER:
 		return
-	if _flag_material(owner) == null:
+	var mat := _flag_material(owner)
+	if mat == null:
 		return
 	var list: Array = _banner_cloth.get(owner, [])
 	_banner_cloth[owner] = list
@@ -695,19 +710,26 @@ func _paint_flag(banner: Node3D, owner: int) -> void:
 	_live_dirty = true
 
 
-func _sync_banner_cloth() -> void:
+func _cloth_quad() -> void:
 	if _wave_quad == null:
 		_wave_quad = QuadMesh.new()
 		_wave_quad.size = Vector2(0.25, 0.4)
 		_wave_quad.subdivide_width = 8  # the cloth needs vertices along its length to ripple
+
+
+func _sync_banner_cloth() -> void:
+	_cloth_quad()
+	_cloth_moves = false
 	var inv := global_transform.affine_inverse()
 	var front := Transform3D(Basis.IDENTITY, CLOTH_AT)
 	var back := Transform3D(Basis(Vector3.UP, PI), Vector3(CLOTH_AT.x, CLOTH_AT.y, -CLOTH_AT.z))
 	for owner in _banner_cloth.keys():
 		var keep: Array = []
 		for b in _banner_cloth[owner]:
-			if _on_map(b as Node):
+			if is_instance_valid(b) and _on_map(b as Node):
 				keep.append(b)
+				# an army's banner marches with it (the hexes' stand still): then the faces follow it every frame
+				_cloth_moves = _cloth_moves or (b as Node).get_parent().get_parent() != _props_root
 		_banner_cloth[owner] = keep
 		if not _cloth_mmis.has(owner):
 			var pair: Array = []
@@ -1745,9 +1767,20 @@ func _place_vein(holder: Node3D) -> void:
 ## Dark Lake: a still violet-black pool with an oily sheen — dormant oil (canon §5.1). The baked pond (art pass 5,
 ## tools/blender/env_assets.py dark_lake: a soft shore, reeds, rocks, the oil at L* ~18 instead of a black hole);
 ## the code pool below only if the model is missing.
-func _place_dark_lake(holder: Node3D) -> void:
+func _place_dark_lake(holder: Node3D, tower := false) -> void:
 	if has_model("dark_lake"):
-		spawn("dark_lake", holder, Vector3.ZERO, rng.randf() * TAU, 1.0)
+		var rot := rng.randf() * TAU
+		var at := Vector3.ZERO
+		var k := 1.0
+		if tower:
+			# R1: the tower stands on the bank, not in the oil (its plinth is 0.25 × 1.2 wide; the oil fills 0.48–0.62 of
+			# the hex, the bank ends at 0.73, the hex at 0.87, so turning the pond alone leaves no room): the pond turns its
+			# narrowest lobe toward the tower, shrinks to 0.82 and steps 0.18 away from it
+			var d := Vector3(TOWER_AT.x, 0.0, TOWER_AT.z).normalized()
+			rot = atan2(d.x, d.z) - atan2(cos(LAKE_NARROW), -sin(LAKE_NARROW))
+			at = -d * 0.18
+			k = 0.82
+		spawn("dark_lake", holder, at, rot, k)
 		return
 	var m := StandardMaterial3D.new()
 	m.albedo_color = Color(0.07, 0.06, 0.12)
@@ -1890,6 +1923,14 @@ func _tint(n: Node, col: Color) -> void:
 		_tint(ch, col)
 
 
+## Where a hex's tower stands (the back right of the hex, clear of its building); on the Dark Lake the pond makes room
+## for it (_place_dark_lake), and the tower is a little smaller there (1.2 instead of 1.35).
+const TOWER_AT := Vector3(0.42, 0, -0.36)
+## The Dark Lake model's narrowest oil lobe (tools/blender/env_assets.py dark_lake: the oil's outline
+## 0.55 × (1 + 0.08 sin(3θ + 1.1) + 0.05 sin(5θ + 2.1)) is smallest, 0.48, at θ ≈ 5.49 rad in Blender's XY).
+const LAKE_NARROW := 5.49
+
+
 ## Defensive tower (canon §7): stands at the back of the hex, grows a little with its level.
 func _place_tower(c: Dictionary, holder: Node3D) -> void:
 	var lvl: int = int(c.get("tower", 0))
@@ -1898,7 +1939,7 @@ func _place_tower(c: Dictionary, holder: Node3D) -> void:
 	# its own look per level (canon §6.1): slinger lookout → archer tower → ballista … → laser turret
 	for n in range(mini(lvl, 8), 0, -1):
 		if has_model("tower_l%d" % n):
-			spawn("tower_l%d" % n, holder, Vector3(0.42, 0, -0.36), 0.0, 1.35)
+			spawn("tower_l%d" % n, holder, TOWER_AT, 0.0, 1.2 if c["kind"] == "dark_lake" else 1.35)
 			return
 	if has_model("watchtower"):
 		spawn("watchtower", holder, Vector3(0.38, 0, -0.32), 0.6, 1.0 + 0.06 * (lvl - 1))
@@ -1935,7 +1976,7 @@ func _mirror_sails() -> void:
 	var xfs: Array = []
 	var inv := global_transform.affine_inverse()
 	for obj in _sails:
-		if (obj as Node).has_meta("mirror") and _on_map(obj as Node):
+		if is_instance_valid(obj) and (obj as Node).has_meta("mirror") and _on_map(obj as Node):
 			xfs.append(inv * (obj as Node3D).global_transform)
 	if _sail_mmi == null:
 		var mm := MultiMesh.new()
@@ -2034,7 +2075,7 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 			_place_fort(c, holder)
 			return
 		"dark_lake":
-			_place_dark_lake(holder)
+			_place_dark_lake(holder, int(c.get("tower", 0)) > 0)
 			_place_fort(c, holder)
 			return
 		"oil":
@@ -3432,6 +3473,7 @@ var _scars := {}  # occupied hex -> Node3D (smoke and embers)
 ## Occupied land smoulders (reference frame 3: the enemy side of the front is on fire): a dark smoke column, a small
 ## fire and a scorched patch on every hex held by another state's troops; gone once the hex is freed or annexed.
 func _sync_war_scars() -> void:
+	_sync_scar_patches.call_deferred()  # after the loop below has placed this round's roots
 	var want := {}
 	for c in sim.cells:
 		if Types.is_passable(c) and c["controller"] != c["owner"] and c["controller"] != Types.NOBODY and c["owner"] != Types.NOBODY:
@@ -3449,19 +3491,6 @@ func _sync_war_scars() -> void:
 		root.position = cell_world(int(h)) + Vector3(g.randf_range(-0.35, 0.35), 0.0, g.randf_range(-0.35, 0.35))
 		add_child(root)
 		_scars[h] = root
-		var patch := MeshInstance3D.new()
-		var pm := CylinderMesh.new()
-		pm.top_radius = 0.22
-		pm.bottom_radius = 0.22
-		pm.height = 0.004
-		pm.radial_segments = 10
-		var dm := StandardMaterial3D.new()
-		dm.albedo_color = Color(0.1, 0.08, 0.07)
-		dm.roughness = 1.0
-		pm.material = dm
-		patch.mesh = pm
-		patch.position.y = 0.036
-		root.add_child(patch)
 		if _smoke_mat == null:
 			_smoke_mat = _fx_mat(_puff_tex(), false)
 		var sm := CPUParticles3D.new()
@@ -3508,6 +3537,41 @@ func _sync_war_scars() -> void:
 		fl.preprocess = 0.6
 		fl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		root.add_child(fl)
+
+
+var _scar_mmi: MultiMeshInstance3D  # every scar's scorched patch, one draw (R1: a mesh each)
+
+
+## The scars' dark patches (r 0.22, #1A1412, just over the fills) as one MultiMesh over the live scar roots.
+func _sync_scar_patches() -> void:
+	if _scar_mmi == null:
+		var pm := CylinderMesh.new()
+		pm.top_radius = 0.22
+		pm.bottom_radius = 0.22
+		pm.height = 0.004
+		pm.radial_segments = 10
+		var dm := StandardMaterial3D.new()
+		dm.albedo_color = Color(0.1, 0.08, 0.07)
+		dm.roughness = 1.0
+		pm.material = dm
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = pm
+		_scar_mmi = MultiMeshInstance3D.new()
+		_scar_mmi.name = "scar_patches"
+		_scar_mmi.multimesh = mm
+		_scar_mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF  # 4 mm thin: no shadow to see
+		add_child(_scar_mmi)
+	var pos: Array = []
+	for h in _scars:
+		var r: Node3D = _scars[h]
+		if is_instance_valid(r) and not r.is_queued_for_deletion():
+			pos.append(r.position + Vector3(0, 0.036, 0))
+	var m := _scar_mmi.multimesh
+	m.instance_count = pos.size()
+	for i in pos.size():
+		m.set_instance_transform(i, Transform3D(Basis.IDENTITY, pos[i]))
+	_scar_mmi.visible = not pos.is_empty()
 
 
 const ROAD_W := 0.12  # §6.7: a broad, friendly dirt road
@@ -5338,30 +5402,36 @@ func _add_blaze(root: Node3D, hex: int) -> void:
 	fm.render_priority = 1  # over the smoke
 	# on the roof and the camera-facing walls, so the building itself doesn't hide them
 	var spots: Array[Vector3] = [Vector3(0, 0.42, 0.12), Vector3(-0.2, 0.18, 0.2), Vector3(0.18, 0.24, 0.18)]
+	# one emitter for the three tongues (R1: three draws before): emission points round each spot (the main one on the
+	# roof drawn twice as often, as its 12 particles to the others' 8), sizes and lifetimes spanning the three
+	var pts := PackedVector3Array()
+	var jit: Array[Vector3] = [Vector3.ZERO, Vector3(0.05, 0.0, 0.02), Vector3(-0.04, 0.03, -0.03), Vector3(0.01, -0.03, 0.05)]
 	for i in spots.size():
-		var fl := CPUParticles3D.new()
-		fl.amount = 12 if i == 0 else 8
-		fl.lifetime = 0.45 if i == 0 else 0.36
-		fl.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
-		fl.emission_sphere_radius = 0.07
-		fl.direction = Vector3.UP
-		fl.spread = 8.0
-		fl.initial_velocity_min = 0.22
-		fl.initial_velocity_max = 0.38
-		fl.gravity = Vector3(0, 0.7, 0)
-		fl.scale_amount_min = 0.75
-		fl.scale_amount_max = 1.15
-		fl.scale_amount_curve = _curve(1.0, 0.25)
-		fl.color_ramp = _ramp([0.0, 0.18, 0.6, 1.0], [Color(1.0, 0.8, 0.35, 0.0), Color(1.0, 0.62, 0.14, 1.0),
-			Color(0.95, 0.3, 0.04, 0.9), Color(0.6, 0.08, 0.02, 0.0)])
-		var fq := QuadMesh.new()
-		fq.size = Vector2(0.36, 0.56) * (1.0 if i == 0 else 0.8)  # a building on fire, not a pillar over the hex
-		fq.material = fm
-		fl.mesh = fq
-		fl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		fl.position = spots[i]
-		fl.preprocess = 0.6
-		root.add_child(fl)
+		for j in (2 if i == 0 else 1):
+			for o in jit:
+				pts.append(spots[i] + o)
+	var fl := CPUParticles3D.new()
+	fl.amount = 28
+	fl.lifetime = 0.42
+	fl.emission_shape = CPUParticles3D.EMISSION_SHAPE_POINTS
+	fl.emission_points = pts
+	fl.direction = Vector3.UP
+	fl.spread = 8.0
+	fl.initial_velocity_min = 0.22
+	fl.initial_velocity_max = 0.38
+	fl.gravity = Vector3(0, 0.7, 0)
+	fl.scale_amount_min = 0.6  # 0.8 × 0.75 for the small tongues …
+	fl.scale_amount_max = 1.15  # … to the main one's 1.15
+	fl.scale_amount_curve = _curve(1.0, 0.25)
+	fl.color_ramp = _ramp([0.0, 0.18, 0.6, 1.0], [Color(1.0, 0.8, 0.35, 0.0), Color(1.0, 0.62, 0.14, 1.0),
+		Color(0.95, 0.3, 0.04, 0.9), Color(0.6, 0.08, 0.02, 0.0)])
+	var fq := QuadMesh.new()
+	fq.size = Vector2(0.36, 0.56)  # a building on fire, not a pillar over the hex
+	fq.material = fm
+	fl.mesh = fq
+	fl.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	fl.preprocess = 0.6
+	root.add_child(fl)
 	var sp := CPUParticles3D.new()
 	sp.amount = 12
 	sp.lifetime = 1.5
@@ -5384,43 +5454,18 @@ func _add_blaze(root: Node3D, hex: int) -> void:
 	sp.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	sp.position.y = 0.2
 	root.add_child(sp)
-	# scorched ground and the warm glow of the fire on it
-	var scorch := MeshInstance3D.new()
-	scorch.name = "scorch"
-	var sq := PlaneMesh.new()
-	sq.size = Vector2(1.1, 1.1)
-	scorch.mesh = sq
-	var scm := StandardMaterial3D.new()
-	scm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	scm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	scm.albedo_texture = _soft_tex()
-	scm.albedo_color = Color(0.08, 0.06, 0.05, 0.5)
-	scm.render_priority = -1
-	scorch.material_override = scm
-	scorch.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	scorch.position.y = 0.025
-	root.add_child(scorch)
-	var glow := MeshInstance3D.new()
-	var gq := PlaneMesh.new()
-	gq.size = Vector2(1.3, 1.3)
-	glow.mesh = gq
-	var gm := StandardMaterial3D.new()
-	gm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	gm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	gm.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
-	gm.albedo_texture = _soft_tex()
-	gm.albedo_color = Color(1.0, 0.45, 0.12, 0.45)
-	glow.material_override = gm
-	glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	glow.position.y = 0.04
-	root.add_child(glow)
+	# the scorched ground and the warm glow of the fire on it: one MultiMesh each for every blaze on the map
+	# (_sync_blaze_marks; R1: two draws a blaze), the glow flickering with the light (_step_flames)
+	_blaze_roots.append(root)
+	root.tree_exited.connect(func(): _blaze_dirty = true)
+	_blaze_dirty = true
 	var light := OmniLight3D.new()
 	light.light_color = Color(1.0, 0.55, 0.2)
 	light.omni_range = 1.8
 	light.light_energy = 1.4
 	light.position.y = 0.45
 	root.add_child(light)
-	_flames.append({"light": light, "glow": gm, "base": 1.4, "phase": float(hex) * 1.7})
+	_flames.append({"light": light, "root": root, "base": 1.4, "phase": float(hex) * 1.7})
 
 
 ## Stops a fire: flames, sparks and smoke stop emitting, the glow dies down, the scorch stays until freed.
@@ -5434,7 +5479,64 @@ func _douse(root: Node3D) -> void:
 			f["base"] = 0.0
 
 
+var _blaze_roots: Array = []  # the blazes' roots (smoke(…, fire)), for their scorch and glow MultiMeshes
+var _blaze_index := {}  # blaze root -> its instance in them
+var _blaze_mm: Array = []  # [scorch MultiMeshInstance3D, glow MultiMeshInstance3D]
+var _blaze_dirty := false
+
+
+## The scorched patch (1.1 × 1.1, #140F0D at α 0.5, under the fills) and the additive warm glow (1.3 × 1.3, #FF731F
+## at α 0.45, its α × the light's flicker) of every live blaze, as two MultiMeshes.
+func _sync_blaze_marks() -> void:
+	_blaze_dirty = false
+	if _blaze_mm.is_empty():
+		for k in 2:
+			var pm := PlaneMesh.new()
+			pm.size = Vector2(1.1, 1.1) if k == 0 else Vector2(1.3, 1.3)
+			var m := StandardMaterial3D.new()
+			m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			m.albedo_texture = _soft_tex()
+			m.vertex_color_use_as_albedo = true  # the instance colour: the glow's flicker
+			if k == 0:
+				m.albedo_color = Color(0.08, 0.06, 0.05, 0.5)
+				m.render_priority = -1
+			else:
+				m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+				m.albedo_color = Color(1.0, 0.45, 0.12, 0.45)
+			pm.material = m
+			var mm := MultiMesh.new()
+			mm.transform_format = MultiMesh.TRANSFORM_3D
+			mm.use_colors = true
+			mm.mesh = pm
+			var mmi := MultiMeshInstance3D.new()
+			mmi.name = "blaze_scorch" if k == 0 else "blaze_glow"
+			mmi.multimesh = mm
+			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			add_child(mmi)
+			_blaze_mm.append(mmi)
+	var keep: Array = []
+	for r in _blaze_roots:
+		if is_instance_valid(r) and _on_map(r as Node):
+			keep.append(r)
+	_blaze_roots = keep
+	_blaze_index.clear()
+	var inv := global_transform.affine_inverse()
+	for k in 2:
+		var mm: MultiMesh = (_blaze_mm[k] as MultiMeshInstance3D).multimesh
+		mm.instance_count = keep.size()
+		for i in keep.size():
+			var g: Transform3D = inv * (keep[i] as Node3D).global_transform
+			mm.set_instance_transform(i, Transform3D(Basis.IDENTITY, g.origin + Vector3(0, 0.025 if k == 0 else 0.04, 0)))
+			mm.set_instance_color(i, Color.WHITE)
+		(_blaze_mm[k] as MultiMeshInstance3D).visible = not keep.is_empty()
+	for i in keep.size():
+		_blaze_index[keep[i]] = i
+
+
 func _step_flames(t: float) -> void:
+	if _blaze_dirty:
+		_sync_blaze_marks()
 	for i in range(_flames.size() - 1, -1, -1):
 		var f: Dictionary = _flames[i]
 		var obj: Variant = f["light"]
@@ -5446,7 +5548,9 @@ func _step_flames(t: float) -> void:
 		var k := 0.82 + 0.1 * sin(t * 11.0 + ph) + 0.08 * sin(t * 23.0 + ph * 2.3)
 		var target: float = float(f["base"]) * k
 		l.light_energy = lerpf(l.light_energy, target, 0.35)
-		(f["glow"] as StandardMaterial3D).albedo_color.a = 0.45 * l.light_energy / 1.4
+		var gi: int = _blaze_index.get(f["root"], -1)
+		if gi >= 0 and _blaze_mm.size() == 2 and gi < (_blaze_mm[1] as MultiMeshInstance3D).multimesh.instance_count:
+			(_blaze_mm[1] as MultiMeshInstance3D).multimesh.set_instance_color(gi, Color(1, 1, 1, l.light_energy / 1.4))
 
 
 func clear_smoke(hex: int) -> void:
@@ -5854,9 +5958,11 @@ func _process(delta: float) -> void:
 		_sync_batched(h as Node3D, done)
 		if done:
 			_popping.erase(h)
-	if _live_dirty or not _popping.is_empty():  # the markers follow a rebuilt hex (and a pop's squash)
+	if _live_dirty or not _popping.is_empty() or _cloth_moves:  # the markers follow a rebuilt hex, a pop's squash and
+		# the armies' banners
+		if _live_dirty:
+			_sync_chimneys()
 		_live_dirty = false
-		_sync_chimneys()
 		_sync_banner_cloth()
 	var snap := _territory_snapshot()
 	if _dirty or snap != _snapshot:  # the snapshot changes at every ceremony flip and at its start and end
