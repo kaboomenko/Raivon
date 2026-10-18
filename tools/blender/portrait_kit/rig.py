@@ -303,10 +303,11 @@ def solve_frame(ctx, size, frame="bust", log=print, h_px=None):
             def need(v):
                 return "n/a" if v is None else "%.0f" % (v / k)
             raise RuntimeError("%s: the portrait does not fit the %s frame even at H_px %.0f (skyline %.1f px, sides "
-                               "%.1f / %.1f px, chin %.1f px; need skyline >= %s, sides >= %s and chin <= %s, in px of "
-                               "the 512x588 master)" % (ctx.cid, frame, t["h_min"] / k, sky / k, side_l / k,
-                                                        side_r / k, chin_y / k, need(t.get("sky")),
-                                                        need(t.get("side_band")), need(t.get("chin_max"))))
+                               "%.1f / %.1f px, chin %.1f px; need skyline >= %s, sides >= %s and chin <= %s; px of a "
+                               "588 px tall master, as the log above)" % (ctx.cid, frame, t["h_min"] / k, sky / k,
+                                                                          side_l / k, side_r / k, chin_y / k,
+                                                                          need(t.get("sky")), need(t.get("side_band")),
+                                                                          need(t.get("chin_max"))))
         # the last step lands on the floor itself (a 258 face tries 256 before the error, not 254)
         target_h = max(t["h_min"], target_h - t["step"])
 

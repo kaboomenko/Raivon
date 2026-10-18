@@ -7,9 +7,12 @@ extends Control
 ## locked commander is a flat INK silhouette (α 0.3) cut from the render's alpha, no detail inside, on a muted plate
 ## (the screen adds the lock). The renders are filtered with mipmaps (the commanders' 512×588 imports have them), so
 ## the small slots — the army chip, the fan, the calendar, baked through Kit.KitStill or not — do not shimmer. A bust
-## drawn at FACE_MAX px or less (the picker 72, the mail 72, the calendar 64, the «Армия» fan 58×70, the army chip
-## 48×50) shows the square face crop of the same file instead (`face_<name>.png`, 256×256, mipmapped: the head
-## +26–45 % over the bust's; tools/blender/portrait_assets.py --frame=face) when there is one.
+## drawn at FACE_MAX px or less (the picker 72, the mail 72, the calendar 64, the army chip 48×50) shows the square
+## face crop of the same file instead (`face_<name>.png`, 256×256, mipmapped: the head +26–31 % over the bust's;
+## tools/blender/portrait_assets.py --frame=face) when there is one, laid by FIT: in a square slot moved down until its
+## headgear clears the rarity frame by FACE_CLEAR, in the chip's circle (`circle`) sized and placed so the hat stays
+## inside it. A picture whose bottom another layer covers (`hidden_bottom`: the «Армия» tab's «Командиры» fan 58×70
+## under the card's name) shows the bust instead, zoomed so the head and its headgear fit the rows left above it.
 
 const Kit := preload("res://scripts/ui_kit.gd")
 ## The rarity colours are the kit's (§3.2: the gem and the tinted backdrop; purple is only EPIC).
@@ -51,6 +54,73 @@ static var _sil_mat: ShaderMaterial
 const FACE_MAX := 72.0
 const FACE_EYE := 0.5
 const BUST_EYE := 0.42
+## The bust's eye line in its own file (512×588: 0.425 h, §7.14 P-A6) — where the halo goes in a fitted slot.
+const BUST_EYE_FILE := 0.425
+## The gap between the headgear's tip and the inside of the rarity frame in a fitted small slot, in frame widths
+## (docs/art_direction.md §7.12: 2 px under the 2 px frame of the 58–72 px slots; it scales with a baked bust).
+const FACE_CLEAR := 1.0
+## The small slots' fit per commander render (tools/qa_portraits/face_fit.py --gd writes it, --check compares it with
+## the shipped files): [face top, chip side, chip top, bust skyline, bust chin] —
+## face top: the face crop's highest figure row (of 256; Rai's banner, which leaves the top by design, left out): a
+##   square slot moves the crop down until that row is FACE_CLEAR under its frame;
+## chip side, chip top: the face crop's side and top over the chip circle's diameter (T2 drew every crop 50 px tall at
+##   −6 over the Ø38 circle, 1.3158 / −0.1579): smaller and lower for tall headgear (a colpack, a bicorne, a bun) so it
+##   stays whole inside the circle, the head never under 28 px;
+## bust skyline, bust chin: the 512×588 bust's highest figure row and its chin row (the fan's zoom, _bust_fit).
+const FIT := {
+	"cmd_bram": [25, 1.3158, -0.1247, 81, 377.9],
+	"cmd_bram_e2": [5, 1.1316, 0.0176, 43, 377.9],
+	"cmd_bram_e3": [10, 1.2961, -0.0425, 54, 377.9],
+	"cmd_bram_e4": [14, 1.3092, -0.0491, 65, 377.9],
+	"cmd_lira": [24, 1.3158, -0.1200, 85, 371.1],
+	"cmd_lira_e2": [15, 1.3158, -0.0739, 71, 371.1],
+	"cmd_lira_e3": [28, 1.3158, -0.1397, 93, 371.1],
+	"cmd_lira_e4": [16, 1.3158, -0.0739, 76, 371.1],
+	"cmd_olm": [30, 1.3158, -0.1579, 98, 380.4],
+	"cmd_olm_e2": [30, 1.3158, -0.1579, 98, 380.4],
+	"cmd_olm_e3": [30, 1.3158, -0.1579, 98, 380.4],
+	"cmd_olm_e4": [30, 1.3158, -0.1579, 98, 380.4],
+	"cmd_vik": [13, 1.1382, 0.0386, 70, 370.9],
+	"cmd_vik_e2": [13, 1.1382, 0.0386, 70, 370.9],
+	"cmd_vik_e3": [13, 1.1382, 0.0386, 70, 370.9],
+	"cmd_vik_e4": [13, 1.1382, 0.0386, 70, 370.9],
+	"cmd_vega": [25, 1.3158, -0.1255, 86, 377.4],
+	"cmd_vega_e2": [5, 1.1711, -0.0182, 46, 377.4],
+	"cmd_vega_e3": [25, 1.2961, -0.0433, 90, 377.4],
+	"cmd_vega_e4": [25, 1.3158, -0.1255, 83, 377.4],
+	"cmd_kort": [37, 1.3158, -0.1579, 104, 379.5],
+	"cmd_kort_e2": [6, 1.1250, 0.0428, 56, 379.5],
+	"cmd_kort_e3": [15, 1.2961, -0.0428, 73, 377.5],
+	"cmd_kort_e4": [32, 1.3158, -0.1447, 96, 379.5],
+	"cmd_seir": [29, 1.2829, -0.0413, 99, 381.0],
+	"cmd_seir_e2": [29, 1.2829, -0.0347, 99, 381.0],
+	"cmd_seir_e3": [22, 1.2237, -0.0051, 87, 381.0],
+	"cmd_seir_e4": [22, 1.2237, -0.0051, 87, 381.0],
+	"cmd_frey": [25, 1.3158, -0.0987, 85, 380.5],
+	"cmd_frey_e2": [25, 1.3158, -0.0987, 85, 380.5],
+	"cmd_frey_e3": [25, 1.3158, -0.0987, 85, 380.5],
+	"cmd_frey_e4": [25, 1.3158, -0.0987, 85, 380.5],
+	"cmd_irma": [28, 1.3158, -0.1414, 87, 379.4],
+	"cmd_irma_e2": [28, 1.3158, -0.1414, 87, 379.4],
+	"cmd_irma_e3": [16, 1.3158, -0.0822, 73, 379.4],
+	"cmd_irma_e4": [23, 1.3092, -0.0460, 82, 379.4],
+	"cmd_hawk": [29, 1.3158, -0.0947, 95, 380.9],
+	"cmd_hawk_e2": [29, 1.3158, -0.0947, 95, 380.9],
+	"cmd_hawk_e3": [29, 1.3158, -0.0947, 95, 380.9],
+	"cmd_hawk_e4": [27, 1.3158, -0.1144, 90, 380.9],
+	"cmd_vance": [5, 1.1447, -0.0270, 33, 378.6],
+	"cmd_vance_e2": [5, 1.1447, -0.0270, 33, 378.6],
+	"cmd_vance_e3": [5, 1.1447, -0.0270, 33, 378.6],
+	"cmd_vance_e4": [5, 1.1447, -0.0270, 33, 378.6],
+	"cmd_rai": [11, 1.3158, -0.1247, 51, 377.1],
+	"cmd_rai_e2": [23, 1.3158, -0.1492, 51, 377.1],
+	"cmd_rai_e3": [11, 1.3158, -0.1247, 51, 377.1],
+	"cmd_rai_e4": [11, 1.3158, -0.1247, 51, 377.1],
+	"cmd_bram_smile": [25, 1.3158, -0.1240, 80, 377.6],
+	"cmd_bram_e2_smile": [5, 1.1250, 0.0225, 44, 377.6],
+	"cmd_bram_e3_smile": [9, 1.2829, -0.0352, 53, 377.6],
+	"cmd_bram_e4_smile": [14, 1.3158, -0.0516, 65, 377.6],
+}
 
 static var _renders := {}  # "cmd_eN_mood" (and "face|…") -> Texture2D or null — the current era's only (_render drops the rest)
 static var _mipped := {}  # a commander's file path -> its texture with mipmaps (one per file, see _load_mipmapped)
@@ -72,6 +142,15 @@ var locked := false:
 var mood := ""  # "" calm, "angry", "smile", "cunning", "tired" — a render of that mood if there is one, else calm
 var plate := Color(0, 0, 0, 0)  # a plate colour instead of the rarity's (AI leaders: their state's colour)
 var frame := true  # the rarity-coloured frame round the picture (off where the slot draws its own rim)
+## The round window the picture is seen through, in its own coordinates (the army chip: Kit._card_ring clips it to a
+## circle of 38): the face crop is laid by FIT's chip columns, its headgear inside the circle. Empty: none.
+var circle := Rect2()
+## px at the picture's bottom that another layer covers (the «Командиры» card's name over its fan): the bust is drawn,
+## zoomed so the head (crown to chin) and its headgear fit the rows above, the headgear FACE_CLEAR under the frame.
+var hidden_bottom := 0.0:
+	set(v):
+		hidden_bottom = v
+		queue_redraw()
 ## The render this bust last drew. Its canvas item keeps only the texture's RID, so this reference keeps the texture
 ## alive until the bust redraws: when the era changes, _render lets the old era's renders go, and a bust not redrawn
 ## yet (one outside the "kit_era" group) still shows its old face, not a white box.
@@ -136,6 +215,36 @@ func _box() -> PackedVector2Array:
 	return Kit.round_poly(PackedVector2Array([Vector2(0, 0), Vector2(w, 0), Vector2(w, h), Vector2(0, h)]), frame_r(), 6)
 
 
+## The face crop in the chip's circle (`circle`), by FIT's chip columns [_, side, top]: its side and its top over the
+## circle's diameter, centred on the circle.
+func _chip_fit(fit: Array) -> Rect2:
+	var d := circle.size.x
+	var side := float(fit[1]) * d
+	return Rect2(circle.position.x + (d - side) * 0.5, circle.position.y + float(fit[2]) * d, side, side)
+
+
+## The face crop in a square slot (`dst`: the crop covering it): moved down until FIT's face top row is FACE_CLEAR under
+## the frame — the head keeps its size, the chest gives those px at the bottom (the tall headgear of Vance, Bram E2 and
+## Vega E2 touched the 2 px frame of the picker 72 and the calendar 64).
+func _square_fit(fit: Array, dst: Rect2, ts: Vector2) -> Rect2:
+	dst.position.y = maxf(0.0, frame_w() * (1.0 + FACE_CLEAR) - float(fit[0]) * dst.size.y / ts.y)
+	return dst
+
+
+## The bust zoomed for a picture whose bottom `hidden_bottom` px are covered (the «Командиры» fan): skyline to chin
+## (FIT [3], [4], rows of the file) fills the rows above that, the headgear FACE_CLEAR under the frame — never under
+## the cover scale (a head that does not fit then shows as it did: its chin may reach a px into the covered rows) and
+## always to the picture's bottom (no edge of the render shows).
+func _bust_fit(fit: Array, ts: Vector2) -> Rect2:
+	var w := size.x
+	var h := size.y
+	var sky := float(fit[3])
+	var top := frame_w() * (1.0 + FACE_CLEAR)
+	var k := maxf(maxf(w / ts.x, h / ts.y), (h - hidden_bottom - top) / maxf(1.0, float(fit[4]) - sky))
+	var off := clampf(sky - top / k, 0.0, ts.y - h / k)  # the file's row at the picture's top
+	return Rect2((w - ts.x * k) * 0.5, -off * k, ts.x * k, ts.y * k)
+
+
 func _draw() -> void:
 	var w := size.x
 	var h := size.y
@@ -143,12 +252,32 @@ func _draw() -> void:
 	if w < 2.0 or h < 2.0:
 		return
 	var rc: Color = RARITY.get(rarity, RARITY["common"]) if plate.a == 0.0 else plate
-	# a small slot shows the face crop of the file the bust would draw (if there is one), else the bust
-	var tex: Texture2D = _render_face(cmd, mood) if maxf(w, h) <= FACE_MAX else null
+	# a small slot shows the face crop of the file the bust would draw (if there is one), else the bust — but a
+	# picture whose bottom is covered shows the bust, zoomed (_bust_fit)
+	var tex: Texture2D = _render_face(cmd, mood) if maxf(w, h) <= FACE_MAX and hidden_bottom <= 0.0 else null
 	var face := tex != null
 	if not face:
 		tex = _render(cmd, mood)
 	var box := _box()
+	# where the render goes (the box's coordinates) and its eye line (halo_y): cover the box, keep the head, crop the torso —
+	# or the small slots' fits (FIT)
+	var dst := Rect2()
+	var halo_y := h * (FACE_EYE if face else BUST_EYE)  # the eye line: the halo's centre
+	if tex != null:
+		var ts := tex.get_size()
+		var sc := maxf(w / ts.x, h / ts.y)
+		dst = Rect2((w - ts.x * sc) / 2.0, 0.0, ts.x * sc, ts.y * sc)
+		var fit: Array = FIT.get(_chain(cmd, mood), [])
+		if not fit.is_empty():
+			if face and circle.has_area():
+				dst = _chip_fit(fit)
+				halo_y = dst.position.y + dst.size.y * FACE_EYE
+			elif face:
+				dst = _square_fit(fit, dst, ts)
+				halo_y = dst.position.y + dst.size.y * FACE_EYE
+			elif hidden_bottom > 0.0 and int(fit[3]) >= 0:
+				dst = _bust_fit(fit, ts)
+				halo_y = dst.position.y + dst.size.y * BUST_EYE_FILE
 	# plate B (§7.4): a vertical gradient of the rarity colour, lightened(0.18) at the top to the colour itself at the
 	# bottom — the dark costumes of §7.6 stand off it (a locked one: the colour washed into a muted grey)
 	var top := rc.lightened(0.18) if not locked else rc.lerp(Kit.CREAM_DEEP, 0.72)
@@ -158,19 +287,23 @@ func _draw() -> void:
 		cols.append(top.lerp(bot, clampf(v.y / h, 0.0, 1.0)))
 	draw_polygon(box, cols)
 	# a soft halo behind the head: concentric white discs, no dark outline (the «fishbowl» ring is gone)
-	_halo(Vector2(w * 0.5, h * (FACE_EYE if face else BUST_EYE)), u)
+	_halo(Vector2(w * 0.5, halo_y), u)
 	_drawn = tex
 	if tex != null:
-		# the bpy render: cover the box, keep the head, crop the torso — drawn through the rounded box (UVs), so its
-		# corners never poke out of the frame; a locked commander is its flat silhouette at α 0.3 (SILHOUETTE). The
-		# square face crop covers the slot the same way (the 58×70 fan loses a strip at each side, not the hat)
-		var ts := tex.get_size()
-		var sc := maxf(w / ts.x, h / ts.y)
-		var src := Rect2((ts.x - w / sc) / 2.0, 0, w / sc, h / sc)
-		var uvs := PackedVector2Array()
-		for v in box:
-			uvs.append((src.position + Vector2(v.x / w, v.y / h) * src.size) / ts)
-		draw_colored_polygon(box, Kit.alpha(Kit.INK, 0.3) if locked else Color.WHITE, uvs, tex)
+		# the bpy render at `dst`, drawn through the rounded box (UVs), so its corners never poke out of the frame; a
+		# render that does not cover the whole box (a fitted face crop: the plate shows over its top or round it in the
+		# chip's circle) through the part of the box it covers. A locked commander is its flat silhouette at α 0.3
+		# (SILHOUETTE)
+		var poly := box
+		if not dst.encloses(Rect2(Vector2.ZERO, size)):
+			var cut := Geometry2D.intersect_polygons(box, PackedVector2Array([dst.position, Vector2(dst.end.x,
+				dst.position.y), dst.end, Vector2(dst.position.x, dst.end.y)]))
+			poly = cut[0] if not cut.is_empty() else PackedVector2Array()
+		if poly.size() >= 3:
+			var uvs := PackedVector2Array()
+			for v in poly:
+				uvs.append((v - dst.position) / dst.size)
+			draw_colored_polygon(poly, Kit.alpha(Kit.INK, 0.3) if locked else Color.WHITE, uvs, tex)
 		_frame(rc)
 		return
 	var look: Array = LOOK.get(cmd, LOOK["cmd_bram"])

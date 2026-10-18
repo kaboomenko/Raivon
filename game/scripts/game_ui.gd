@@ -1100,13 +1100,19 @@ func _button(parent: Control, rect: Rect2, text: String, color: Color, cb: Calla
 
 
 ## A window's rect by width class (§4.3: L 893 at x 24, M 781 at x 80, S 661 at x 140), `h` tall (at most the band),
-## centred in the band y 150 … VB − 24.
+## centred in the band y 150 … VB − 24 (_band_top: 150 under the safe top inset — the HUD's top group moves down by
+## it, so a tall window's title plate stays under the resource plates on a phone with a status bar or notch).
 func _win_rect(cls: String, h: float) -> Rect2:
 	var w: float = {"L": 893.0, "M": 781.0, "S": 661.0}.get(cls, 781.0)
-	var top := 150.0
+	var top := _band_top()
 	var bot := Kit.vb(self) - 24.0
 	h = minf(h, bot - top)
 	return Rect2((VW - w) * 0.5, top + (bot - top - h) * 0.5, w, h)
+
+
+## The top of the window band (§4.3): y 150 under the HUD's top group, which the safe top inset moves down.
+func _band_top() -> float:
+	return 150.0 + Kit.top_inset(self)
 
 
 const PAPER_CHIP_H := 44.0
@@ -1300,7 +1306,7 @@ func show_peace(enemy: String, budget: float, control: int, demands: Array, chos
 	var row_h := 212.0
 	var head := 258.0  # leader, bubble, budget
 	var tail := 24.0 + 48.0 + 12.0 + 80.0 + (52.0 if hint else 0.0) + (52.0 if warn != "" else 0.0) + 24.0 + 116.0 + 32.0  # plunder, notes, footer
-	var max_h := Kit.vb(self) - 24.0 - 150.0
+	var max_h := Kit.vb(self) - 24.0 - _band_top()
 	var room := max_h - head - 60.0 - tail  # the most the well may take
 	var well_h := 32.0 + rows * row_h - 12.0
 	var scroll := well_h > room
@@ -2905,6 +2911,7 @@ func _mini_face_vec(tex: Texture2D, plate: Color, side: float, raw: bool) -> Con
 	var t := _icon_rect("crown", side * 0.6) if tex == null else TextureRect.new()
 	if tex != null:
 		t.texture = tex
+		t.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS  # (a 256×294 render in an 80 px row face)
 		t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 		t.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -4074,7 +4081,13 @@ func _hand_card(it: Dictionary) -> Control:
 ## The Army tab's «Командиры» card: a fan of three faces, «7/12», a green dot when a level can be bought. Only as
 ## many faces are lit as the player owns commanders, the rest are silhouettes. «faces» ([[id, rarity]], the owned
 ## ones), when the item carries it, picks the faces; else the order most players meet them in: Bram (the tutorial),
-## Lira (calendar day 1), Rai (day 4).
+## Lira (calendar day 1), Rai (day 4). The card's name lies over the fan's lower part, so each face is told how many
+## px of its picture the name covers (CmdPortrait.hidden_bottom): it shows the bust zoomed so the head, chin and
+## headgear stay above the name (the face crop's mouths and chins were under it).
+const FAN_NAME_TOP := 73.0  ## the art window's row the fan's faces end above: the name (CARD 26, bottom at 101) has its cap tops at 78, their outline at 75
+const FAN_DY := 12.0  ## the «Командиры» fan sits this much lower (under its «7/12» tag)
+
+
 func _commanders_card(it: Dictionary) -> Control:
 	var n: Array = it["commanders"]
 	var faces: Array = (it.get("faces", []) as Array).slice(0, 3)
@@ -4086,8 +4099,10 @@ func _commanders_card(it: Dictionary) -> Control:
 	for r in 3:
 		pics[slot[r]] = CmdPortrait.new(String(faces[r][0]), String(faces[r][1]), r >= int(n[0]))
 		(pics[slot[r]] as Control).add_to_group("kit_era")  # (set_portrait_era redraws it in the new era at once)
+	for i in 3:  # the rows of each picture under the name: 20 in the middle place, 26 in the lower side places
+		(pics[i] as Control).set("hidden_bottom", FAN_PIC.y - (FAN_NAME_TOP - _fan_top(i - 1.0, FAN_DY) - FAN_INSET))
 	var up := bool(it.get("dot", false))
-	var opts := {"art_node": _fan(pics, 12.0), "tag": "%d/%d" % [int(n[0]), int(n[1])],
+	var opts := {"art_node": _fan(pics, FAN_DY), "tag": "%d/%d" % [int(n[0]), int(n[1])],
 		"details": tr("cmdr.collection") % [int(n[0]), int(n[1])] + ("\n" + tr("cmdr.tip_up") if up else ""),
 		"cta": {"role": "info", "caption": tr("cmdr.open"), "cb": func(): army_action.emit(-3, "commanders")}}
 	if up:
@@ -4097,6 +4112,10 @@ func _commanders_card(it: Dictionary) -> Control:
 
 ## Three small framed pictures (the hand's cards, the collection's faces) fanned out at −8 / 0 / +8° in a card's
 ## art window (172×104); the middle one on top. `dy` lowers the fan (below a counter pill in the corner).
+const FAN_PIC := Vector2(58, 70)  ## a fan picture, FAN_INSET px inside its INK frame
+const FAN_INSET := 3.0
+
+
 func _fan(pics: Array, dy := 0.0) -> Control:
 	var fan := Control.new()
 	fan.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -4108,18 +4127,24 @@ func _fan(pics: Array, dy := 0.0) -> Control:
 		var fr := Panel.new()  # an INK frame with a hard shadow
 		Kit.set_panel(fr, Kit.style(Kit.INK, 8, 0, Kit.INK, 3, 0))
 		fr.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		fr.size = Vector2(64, 76)
-		fr.position = Vector2(86.0 + k * 42.0 - 32.0, 8.0 + dy + absf(k) * 6.0)
-		fr.pivot_offset = Vector2(32, 76)
+		fr.size = FAN_PIC + Vector2(2.0, 2.0) * FAN_INSET
+		fr.position = Vector2(86.0 + k * 42.0 - fr.size.x * 0.5, _fan_top(k, dy))
+		fr.pivot_offset = Vector2(fr.size.x * 0.5, fr.size.y)
 		fr.rotation_degrees = k * 8.0
-		# the picture 3 px inside the frame (not clipped round: the art window already clips its children, and
-		# Godot does not nest clip_children)
+		# the picture inside the frame (not clipped round: the art window already clips its children, and Godot does
+		# not nest clip_children)
 		var p: Control = pics[i]
-		p.position = Vector2(3, 3)
-		p.size = Vector2(58, 70)
+		p.position = Vector2(FAN_INSET, FAN_INSET)
+		p.size = FAN_PIC
 		fr.add_child(p)
 		fan.add_child(fr)
 	return fan
+
+
+## The top of a fan frame in the art window: `k` places from the middle (−1 left, 0 middle, +1 right), the side ones
+## 6 px lower (the ±8° tilt about the frame's bottom centre moves a picture's middle by < 0.5 px more).
+static func _fan_top(k: float, dy: float) -> float:
+	return 8.0 + dy + absf(k) * 6.0
 
 
 ## The realm's profile (10 §4.23, docs/ui_style.md §6 «Профиль»): a window L with the info plate «Держава». The header:
@@ -5399,6 +5424,8 @@ func _leader_bust(it: Dictionary, r: Rect2) -> Control:
 	t.texture = tex if tex != null else Kit.icon_atlas("crown")
 	t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	if tex != null:  # the 256×294 render at 92×106: its mipmaps (the ldr_*.png imports make them), no stair-steps
+		t.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	t.position = r.position
 	t.size = r.size
@@ -6836,7 +6863,8 @@ func _coach_clear(ring: Rect2, side: String, a: Rect2) -> float:
 const TOAST_CX := 425.0  ## centred on the free column between the left column (to x 104) and the minimap (from 733)
 const TOAST_Y := 108.0  ## under the resource plates …
 const TOAST_Y_BAR := 196.0  ## … or under the war bar (its score chip ends at y 182)
-const TOAST_TITLE_GAP := 12.0  ## … or this far over an open window's title plate that would lie under it (_toast_spot)
+const TOAST_TITLE_GAP := 12.0  ## … or this far over an open window's title plate that would lie under it (_toast_spot) …
+const TOAST_BOTTOM := 36.0  ## … or, a two-line toast with no room there, its bottom this far over the visible bottom (VB)
 const TOAST_W_MIN := 360.0
 const TOAST_W_MAX := 590.0
 const TOAST_PAD_L := 64.0  ## the icon (60, overhanging the left end by 8) and a 12 px gap before the text
@@ -7081,12 +7109,14 @@ func toast_rect() -> Rect2:
 ## The toast's place: [its top y, lifted]. Under the resource plates, or under the war bar while it shows (+ the safe
 ## top inset). While a window's title plate (Kit.title_plate, group "kit_title"; its icon's overhang counts) would lie
 ## under a toast `h` tall there (a window high in the band: the album, the pass), the toast goes up instead: onto the
-## HUD band, TOAST_TITLE_GAP over the plate (and at least 8 px under the safe top: a two-line toast may then rest on
-## the plate's icon frame, never on its text), lifted onto the layer over the currency plates (_toast_host). It covers
-## neither the title nor the window's first row (under the plate it hid the album's section heading and «1/12», the
-## pass's XP bar) — for its ~2 s it covers resource plates, which the window does not need. While the coach shows the
-## toast stays under it (§3.1): it goes under the plate(s) then. The plates are read at their resting place (a plate
-## still dropping in does not move the toast).
+## HUD band, TOAST_TITLE_GAP over the plate and at least 8 px under the safe top, lifted onto the layer over the
+## currency plates (_toast_host). The windows' band moves down with the safe top inset (_band_top), so a one-line toast
+## always has that room (14 px under the inset, the plate at 98). A two-line toast does not (it would lie on the
+## plate's icon frame): it goes to the bottom safe area instead, its bottom TOAST_BOTTOM over VB, over the window's last
+## row (layer 2, z 60). It never covers the title nor the window's first row (under the plate it hid the album's
+## section heading and «1/12», the pass's XP bar) — lifted, for its ~2 s it covers resource plates, which the window
+## does not need. While the coach shows the toast stays under it (§3.1): it goes under the plate(s) then. The plates
+## are read at their resting place (a plate still dropping in does not move the toast).
 func _toast_spot(h := 72.0) -> Array:
 	var top_in := _top.position.y
 	var y := (TOAST_Y_BAR if _control_bar.visible else TOAST_Y) + top_in
@@ -7115,7 +7145,10 @@ func _toast_spot(h := 72.0) -> Array:
 	if hit < 0:
 		return [y, false]
 	if _coach == null or not _coach.visible:
-		return [maxf(top_in + 8.0, float(spans[hit][0]) - TOAST_TITLE_GAP - h), true]
+		var up := float(spans[hit][0]) - TOAST_TITLE_GAP - h
+		if up >= top_in + 8.0:
+			return [up, true]
+		return [Kit.vb(self) - TOAST_BOTTOM - h, false]  # no room over the plate: the bottom safe area
 	for s in spans:  # under the coach: under the plate, top down (a plate pushed past may bring the next one under it)
 		if s[0] < y + h + TOAST_TITLE_GAP and s[1] > y - TOAST_TITLE_GAP:
 			y = s[1] + TOAST_TITLE_GAP

@@ -1,6 +1,9 @@
 # The commanders' 512×588 renders are drawn at 38–312 px and need mipmaps (docs/art_direction.md §7.12): their import
 # settings (mipmaps/generate=true, uid and dest paths kept) are tracked, so a fresh checkout, CI and the APK/iOS exports
-# import them the same way. So are the face crops' (face_cmd_*.png, 256×256, drawn at 48–72 px: mipmaps too). The root
-# .gitignore ignores *.import; the leaders' and the ruler's (256×294, default settings) stay ignored.
+# import them the same way. So are the face crops' (face_cmd_*.png, 256×256, drawn at 48–72 px: mipmaps too) and the
+# leaders' (ldr_*.png, 256×294, drawn at 80–156 px: the diplomacy card's 92×106, the dialog rows' 80, the seals). The
+# root .gitignore ignores *.import; the ruler's (256×294, default settings: the crest and the profile stay crisp
+# without, T1) stays ignored.
 !cmd_*.png.import
 !face_*.png.import
+!ldr_*.png.import

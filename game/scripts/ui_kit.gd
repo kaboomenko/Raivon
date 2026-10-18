@@ -4445,10 +4445,14 @@ static func _card_ring(b: Control, r: Rect2, chd: Dictionary) -> Panel:
 	ring.add_child(inner)
 	if chd.has("node"):
 		var pn: Control = chd["node"]
-		# a little larger than the circle: the portrait's own frame stays outside; the face crop's eye line (half its
-		# height, cmd_portrait FACE_EYE) on the circle's centre, the whole head inside it (the bust's 2 px above)
+		# a little larger than the circle: the portrait's own frame stays outside. A commander's portrait is told the
+		# circle (its `circle`, in its own coordinates): it lays its face crop by its FIT table — the eye line on the
+		# circle's centre and the crop 50 px tall where the headgear stays inside, smaller and a little lower where a
+		# tall hat (a colpack, a bicorne, a bun) would be cut (docs/art_direction.md §7.12)
 		pn.position = Vector2(-5, -6)
 		pn.size = Vector2(48, 50)
+		if "circle" in pn:
+			pn.set("circle", Rect2(5, 6, 38, 38))
 		inner.add_child(pn)
 	elif chd.has("icon"):
 		var ic := _card_rect(icon_atlas(String(chd["icon"])), Rect2(3, 3, 32, 32))

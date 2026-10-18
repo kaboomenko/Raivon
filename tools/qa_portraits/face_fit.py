@@ -1,23 +1,34 @@
-"""The face crops' fit in the game's small slots (docs/art_direction.md §7.12): the FACE_FIT table of cmd_portrait.gd.
+"""The commanders' fit in the game's small slots (docs/art_direction.md §7.12): the FIT table of cmd_portrait.gd.
 numpy + Pillow.
 
-Usage: python3 -I tools/qa_portraits/face_fit.py DIR [--gd] [--check=game/scripts/cmd_portrait.gd] [--sheet=OUT.png]
+Usage: python3 -I tools/qa_portraits/face_fit.py FACE_DIR [--busts=BUST_DIR] [--gd] [--check=game/scripts/cmd_portrait.gd]
+       [--sheet=OUT.png]
 
-DIR holds the 52 face_<name>.png (256x256) with the kit's sidecars meta/ and ids/ (tools/blender/portrait_assets.py
---frame=face --sidecars). Per file:
-- top: the highest row (of 256) the figure reaches (alpha >= 0.25 in two or more pixels: what a 2 px frame touches),
-  the meta's top_exempt group (Rai's banner leaves the top by design) left out. cmd_portrait.gd shrinks the crop from
-  its bottom edge in a square slot (the picker 72, the mail 72, the calendar 64, the «Армия» fan 58) until this row
-  clears the slot's rarity frame by FACE_CLEAR px.
-- chip: the crop in the army chip's circle (Kit._card_ring, Ø38) as [side, top] over the diameter. The chip of T2
-  drew every crop 50 px tall with its top 6 px over the circle (eye line on the centre at 0.50): that stays wherever it
-  keeps the headgear and hair above the eye line inside the circle less CHIP_MARGIN px (top_exempt, Lira's kerchief
-  tails and Irma's ponytail left out: they fall to the side, past any circle). Elsewhere the side steps down (0.25 px)
-  and the eye line may sit up to CHIP_EYE_DROP px under the centre, until no more than CHIP_TOL px² of that silhouette
-  is outside; the head (chin-crown, upright) never under CHIP_HEAD_MIN px. Printed: the head size, the eye's place,
-  the area cut before and after.
---gd prints the table as GDScript; --check=FILE compares it with FILE's FACE_FIT (exit 1 on a difference, or when a
-chip still cuts more than CHIP_TOL px²); --sheet=OUT.png draws every chip as T2 drew it and as the table draws it.
+FACE_DIR holds the 52 face_<name>.png (256x256) with the kit's sidecars meta/ and ids/ (tools/blender/portrait_assets.py
+--frame=face --sidecars); BUST_DIR the 512x588 busts <name>.png with theirs (--frame=bust --sidecars). One row per face
+crop, keyed by its bust's name (face_cmd_bram_e2 -> "cmd_bram_e2"): [face top, chip side, chip top, bust skyline,
+bust chin].
+- face top: the highest row (of 256) the figure reaches (alpha >= 0.25 in two or more pixels: what a 2 px frame
+  touches), the meta's top_exempt group left out (Rai's banner leaves the top by design). In a square slot (the picker
+  72, the mail 72, the calendar 64) cmd_portrait.gd moves the crop down until this row clears the slot's rarity frame
+  by FACE_CLEAR px (the head keeps its size; the chest loses those px at the bottom).
+- chip side, chip top: the crop in the army chip's circle (Kit._card_ring, Ø38) as its side and its top over the
+  diameter. The chip of T2 drew every crop 50 px tall with its top 6 px over the circle (eye line on the centre at
+  0.50): that stays wherever it keeps the headgear and hair above the eye line inside the circle less CHIP_MARGIN px
+  (top_exempt, Lira's kerchief tails and Irma's ponytail left out: they fall to the side, past any circle). Elsewhere
+  the side steps down (0.25 px) and the eye line may sit up to CHIP_EYE_DROP px under the centre, until the crown cone
+  (CHIP_CROWN° each side of straight up) loses no more than CHIP_CROWN_TOL px² and the whole silhouette above the eye
+  line no more than CHIP_TOL px²; the head (chin-crown, upright) never under CHIP_HEAD_MIN px.
+- bust skyline, bust chin: the bust's highest row (of 588, the same rule as the face top) and its chin (meta chin_y).
+  The «Армия» tab's «Командиры» card covers the bottom of its three 58x70 pictures with its name: cmd_portrait.gd
+  draws the bust there (CmdPortrait.hidden_bottom), zoomed so that skyline-to-chin fits the rows left above the name
+  (the headgear FACE_CLEAR px under the frame, the chin on the line), never under the cover scale. The bust and not
+  the face crop: zoomed, it still runs to the picture's bottom and sides (a smaller face crop would end in a hard
+  edge behind the name), and it is the sharper source (its head ~270 px against the crop's ~167).
+Printed per file: the face top, the chip's fit (head size, eye under the centre, px² cut before and after), the fan's
+head size and chin row in the middle and side places.
+--gd prints the table as GDScript; --check=FILE compares it with FILE's FIT (exit 1 on a difference, or when a chip
+still cuts more than the tolerances); --sheet=OUT.png draws every chip as T2 drew it and as the table draws it.
 """
 import os
 import re
@@ -41,10 +52,16 @@ CHIP_TOL = 35.0  # px² of the whole silhouette above the eye line past the circ
 CHIP_HEAD_MIN = 28.0  # px: the head never smaller in the chip
 CHIP_SKIP = ("detail:kerchief_tails", "detail:ponytail")  # hang to the side: cut by any circle, as in the bust chip
 TOP_ALPHA = 0.25
+# the fan of the «Командиры» card (game_ui._commanders_card / _fan): 58 x 70 pictures under a 2 px rarity frame, the
+# rows above the name: 50 in the middle place, 44 in the side places (6 px lower) — cmd_portrait FACE_CLEAR 2
+FAN_W, FAN_H = 58.0, 70.0
+FAN_VIS = {"middle": 50.0, "side": 44.0}
+FAN_CLEAR = 2.0 + 2.0
+BUST = (512.0, 588.0)
 
 
 def silhouette(d, n):
-    """(alpha 256x256, meta, part masks or None, top_exempt mask or None)."""
+    """(alpha, meta, part masks or None, top_exempt mask or None) of DIR/n.png."""
     im = Q.load(os.path.join(d, n + ".png"))
     m = Q.meta(d, n) or {}
     masks, _ = Q.ids(d, n)
@@ -116,7 +133,16 @@ def fit_chip(u, v, ey, h_px):
     return side, top, before, c, h_px * side / 256.0, top + ey * side / 256.0 - r
 
 
-def table(d):
+def fan_fit(sky, chin, h_px, vis):
+    """The bust in a 58 x 70 fan picture with `vis` rows above the name, as cmd_portrait._draw lays it: (scale, src
+    top row, head px, chin row, skyline row)."""
+    k0 = max(FAN_W / BUST[0], FAN_H / BUST[1])
+    k = max(k0, (vis - FAN_CLEAR) / max(1.0, chin - sky))
+    off = min(max(0.0, sky - FAN_CLEAR / k), BUST[1] - FAN_H / k)
+    return k, off, h_px * k, (chin - off) * k, (sky - off) * k
+
+
+def table(d, bd=None):
     rows = []
     for n in Q.face_names():
         if not os.path.exists(os.path.join(d, n + ".png")):
@@ -126,15 +152,30 @@ def table(d):
         u, v, ey = chip_points(a, m, masks, ex)
         h_px = float(m.get("h_px", 0.66 * 256))
         side, top, before, after, head, eye = fit_chip(u, v, ey, h_px)
-        rows.append(dict(name=n, top=t, side=round(side / CHIP_D, 4), ctop=round(top / CHIP_D, 4), before=before,
-                         after=after, head=head, eye=eye, ids=masks is not None))
+        b = Q.base(n)
+        row = dict(name=b, top=t, side=round(side / CHIP_D, 4), ctop=round(top / CHIP_D, 4), before=before,
+                   after=after, head=head, eye=eye, ids=masks is not None, sky=None, chin=None)
+        if bd is not None and os.path.exists(os.path.join(bd, b + ".png")):
+            ba, bm, _bmasks, bex = silhouette(bd, b)
+            row["sky"] = top_row(ba, bex)
+            row["chin"] = round(float(bm.get("chin_y", 0.643 * BUST[1])), 1)
+            bh = float(bm.get("h_px", 0.459 * BUST[1]))
+            row["fan"] = {p: fan_fit(row["sky"], row["chin"], bh, vis) for p, vis in FAN_VIS.items()}
+            row["bust_head"] = bh * max(FAN_W / BUST[0], FAN_H / BUST[1])
+        rows.append(row)
     return rows
 
 
+def entry(r):
+    return (r["top"], r["side"], r["ctop"], r["sky"] if r["sky"] is not None else -1,
+            r["chin"] if r["chin"] is not None else -1.0)
+
+
 def gd(rows):
-    out = ["const FACE_FIT := {"]
+    out = ["const FIT := {"]
     for r in rows:
-        out.append('\t"%s": [%d, %.4f, %.4f],' % (r["name"], r["top"], r["side"], r["ctop"]))
+        e = entry(r)
+        out.append('\t"%s": [%d, %.4f, %.4f, %d, %.1f],' % ((r["name"],) + e))
     out.append("}")
     return "\n".join(out)
 
@@ -142,8 +183,9 @@ def gd(rows):
 def read_gd(path):
     src = open(path, encoding="utf-8").read()
     got = {}
-    for name, t, s, c in re.findall(r'"(face_[a-z0-9_]+)": \[(\d+), ([0-9.\-]+), ([0-9.\-]+)\]', src):
-        got[name] = (int(t), float(s), float(c))
+    pat = r'"(cmd_[a-z0-9_]+)": \[(\d+), ([0-9.\-]+), ([0-9.\-]+), (-?\d+), ([0-9.\-]+)\]'
+    for name, t, s, c, sky, chin in re.findall(pat, src):
+        got[name] = (int(t), float(s), float(c), int(sky), float(chin))
     return got
 
 
@@ -156,7 +198,7 @@ def sheet(d, rows, out):
     lines = (len(names) + cols - 1) // cols
     img = Image.new("RGB", (cols * cell, lines * 2 * cell + 8), (23, 32, 58))
     for i, r in enumerate(rows):
-        im = Image.open(os.path.join(d, r["name"] + ".png")).convert("RGBA")
+        im = Image.open(os.path.join(d, Q.FACE + r["name"] + ".png")).convert("RGBA")
         plate = Q.hex_rgb(Q.plate_of(r["name"]))
         for j, (side, top) in enumerate([(CHIP_SIDE0, CHIP_TOP0), (r["side"] * CHIP_D, r["ctop"] * CHIP_D)]):
             s = int(CHIP_D * z)
@@ -180,21 +222,33 @@ def main(argv):
         print(__doc__)
         return 2
     d = pos[0]
-    rows = table(d)
+    rows = table(d, opts.get("busts"))
     if not rows:
         print("no face_*.png in %s" % d)
         return 1
     bad = 0
+    t2 = (round(CHIP_SIDE0 / CHIP_D, 4), round(CHIP_TOP0 / CHIP_D, 4))
     for r in rows:
-        moved = (r["side"], r["ctop"]) != (round(CHIP_SIDE0 / CHIP_D, 4), round(CHIP_TOP0 / CHIP_D, 4))
+        moved = (r["side"], r["ctop"]) != t2
         flag = "" if passes(r["after"]) else "  CUT"
         bad += 1 if flag else 0
-        print("%-24s top %3d  chip %s side %.1f px top %+.1f  head %.1f px  eye %+.1f px  cut %.0f (crown %.0f) -> %.0f "
-              "(crown %.0f) px²%s%s" % (r["name"], r["top"], "fit " if moved else "T2  ", r["side"] * CHIP_D,
+        fan = ""
+        if r.get("fan"):
+            fm, fs = r["fan"]["middle"], r["fan"]["side"]
+            fan = "  | fan bust sky %3d chin %5.1f: head %.1f / %.1f px (bust %.1f), chin row %.1f / %.1f" % (
+                r["sky"], r["chin"], fm[2], fs[2], r["bust_head"], fm[3], fs[3])
+        print("%-20s top %3d  chip %s side %.1f top %+.1f head %.1f eye %+.1f cut %.0f (crown %.0f) -> %.0f "
+              "(crown %.0f) px²%s%s%s" % (r["name"], r["top"], "fit" if moved else "T2 ", r["side"] * CHIP_D,
               r["ctop"] * CHIP_D, r["head"], r["eye"], r["before"][0], r["before"][1], r["after"][0], r["after"][1], flag,
-              "" if r["ids"] else "  (no ids: whole silhouette)"))
-    print("chips refit: %d of %d; still cut: %d" % (sum(1 for r in rows if (r["side"], r["ctop"]) != (
-        round(CHIP_SIDE0 / CHIP_D, 4), round(CHIP_TOP0 / CHIP_D, 4))), len(rows), bad))
+              "" if r["ids"] else "  (no ids: whole silhouette)", fan))
+    print("chips refit: %d of %d; still cut: %d" % (sum(1 for r in rows if (r["side"], r["ctop"]) != t2), len(rows), bad))
+    fans = [r["fan"] for r in rows if r.get("fan")]
+    if fans:
+        for p in FAN_VIS:
+            hs = [f[p][2] for f in fans]
+            cs = [f[p][3] for f in fans]
+            print("fan %-6s: head %.1f-%.1f px (median %.1f), chin row %.1f-%.1f (line %.0f)" % (
+                p, min(hs), max(hs), float(np.median(hs)), min(cs), max(cs), FAN_VIS[p]))
     if "gd" in opts:
         print(gd(rows))
     if "sheet" in opts:
@@ -202,7 +256,7 @@ def main(argv):
         print("sheet: %s" % opts["sheet"])
     if "check" in opts:
         got = read_gd(opts["check"])
-        diff = [r["name"] for r in rows if got.get(r["name"]) != (r["top"], r["side"], r["ctop"])]
+        diff = [r["name"] for r in rows if got.get(r["name"]) != entry(r)]
         extra = sorted(set(got) - {r["name"] for r in rows})
         print("check %s: %d of %d entries match%s%s" % (opts["check"], len(rows) - len(diff), len(rows),
               ("; differ: " + ", ".join(diff[:8]) + (" ..." if len(diff) > 8 else "")) if diff else "",

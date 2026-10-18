@@ -104,9 +104,9 @@ func _process(_d: float) -> void:
 	_timer_lbl.text = GameUI.fmt_time(left)
 
 
-## The window band (§4.3): y 150 … VB − 24.
+## The window band (§4.3): y 150 (under the safe top inset, like game_ui._band_top) … VB − 24.
 func _band() -> Vector2:
-	return Vector2(150.0, Kit.vb(self) - 24.0)
+	return Vector2(150.0 + Kit.top_inset(self), Kit.vb(self) - 24.0)
 
 
 func _render() -> void:
