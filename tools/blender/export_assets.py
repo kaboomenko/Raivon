@@ -1453,12 +1453,15 @@ def war_banner(color):
     return build
 
 
-def gunship():
+def gunship(soft=False):
     """DL8 hover gunship circling over the army (nose +X), after reference frame 2's aircraft and frame 5's
     machines: a faceted hull in plated gunmetal with dark seams, a dark faceted canopy edged by cyan light strips
     along the spine, a bronze trim line, stub wings carrying twin rotary cannon (the two forward rods of frame 2) and
     missile pods with glowing tubes, wingtip ducted fans glowing cyan through dark vanes inside banded nacelles, canted
-    twin fins tipped with light, rear thrusters glowing cyan."""
+    twin fins tipped with light, rear thrusters glowing cyan.
+    soft (art pass 6, the flying gunship.glb): the hull and canopy shade smooth over rounder sections (chamfers ×1.8),
+    so the craft reads as one soft toy body up close instead of cut armour (A1 review: «angular up close»); the
+    parked gunship of the sci-fi base keeps the faceted build."""
     comp = _plated("#68707b", 8.0, row=0.45, offset=0.0)
     dk = mat("comptrim", "#2c3139", 0.55)
     cyan = mat("cyan", "#14d2ff", 0.4, 0.0, "#14d2ff", 3.0)
@@ -1466,13 +1469,17 @@ def gunship():
     steel = mat("barrel", "#aab2bc", 0.35)
     bronze = mat("bronze_trim", "#a8743e", 0.4)
     pale = mat("pale_band", "#d9dde2", 0.45)
-    hull = [(0.282, _chamf(0.012, 0.004, -0.014, 0.004)), (0.22, _chamf(0.032, 0.02, -0.028, 0.01)),
-            (0.13, _chamf(0.048, 0.032, -0.04, 0.016)), (0.0, _chamf(0.06, 0.038, -0.044, 0.02)),
-            (-0.12, _chamf(0.054, 0.034, -0.036, 0.018)), (-0.2, _chamf(0.036, 0.026, -0.022, 0.012))]
-    _loft("hull", hull, comp, smooth=False)
-    _loft("canopy", [(0.205, _chamf(0.006, 0.022, 0.012, 0.002)), (0.165, _chamf(0.026, 0.048, 0.015, 0.008)),
-                     (0.1, _chamf(0.032, 0.06, 0.02, 0.012)), (0.04, _chamf(0.026, 0.056, 0.025, 0.01)),
-                     (0.0, _chamf(0.012, 0.045, 0.03, 0.005))], glass, smooth=False)
+    ck = 1.8 if soft else 1.0  # the chamfer: ×1.8 rounds the soft hull's sections toward an octagon
+
+    def ch(ry, zt, zb, c):
+        return _chamf(ry, zt, zb, min(c * ck, 0.45 * min(ry, (zt - zb) / 2) * 2))
+    hull = [(0.282, ch(0.012, 0.004, -0.014, 0.004)), (0.22, ch(0.032, 0.02, -0.028, 0.01)),
+            (0.13, ch(0.048, 0.032, -0.04, 0.016)), (0.0, ch(0.06, 0.038, -0.044, 0.02)),
+            (-0.12, ch(0.054, 0.034, -0.036, 0.018)), (-0.2, ch(0.036, 0.026, -0.022, 0.012))]
+    _loft("hull", hull, comp, smooth=soft)
+    _loft("canopy", [(0.205, ch(0.006, 0.022, 0.012, 0.002)), (0.165, ch(0.026, 0.048, 0.015, 0.008)),
+                     (0.1, ch(0.032, 0.06, 0.02, 0.012)), (0.04, ch(0.026, 0.056, 0.025, 0.01)),
+                     (0.0, ch(0.012, 0.045, 0.03, 0.005))], glass, smooth=soft)
     _loft("canopy_frame", [(0.128, _chamf(0.033, 0.0605, 0.02, 0.012)), (0.12, _chamf(0.033, 0.0605, 0.02, 0.012))],
           dk, smooth=False)
     # cyan light strips along the spine's edges (the light lines of frame 2's aircraft), a bronze trim line between
@@ -1541,14 +1548,15 @@ def gunship():
         _bx("thruster_glow", (0.004, 0.02, 0.016), (-0.211, sy * 0.02, 0.0), cyan)
 
 
-def fighter():
+def fighter(camo=("#66703d", "#86704a", "#46522f"), belly_c="#b4bcb6"):
     """DL6–7 piston fighter circling over the army (nose +X): a lofted fuselage in olive-and-earth camouflage over a
     pale belly with panel lines (the trench-era paint of the howitzer), a cream identification band and spinner, a
     dark cowling with exhaust stubs, a three-blade propeller with yellow tips, tapered wings with pale roundels, wing
-    guns and drop tanks, a framed bubble canopy, a tail fin with a cream tip."""
+    guns and drop tanks, a framed bubble canopy, a tail fin with a cream tip. camo / belly_c: the paint (the flying
+    fighter.glb takes FIGHTER_SKY since art pass 6; the parked fighter of the industrial base keeps the olive)."""
     before = {o.name for o in bpy.context.scene.objects}
-    paint = _warpaint(("#66703d", "#86704a", "#46522f"), 14.0)
-    belly = _belly_paint("#b4bcb6")
+    paint = _warpaint(camo, 14.0)
+    belly = _belly_paint(belly_c)
     cream = mat("cream", "#efe6cf", 0.55)
     dark = mat("cowl", "#2b2f25", 0.6)
     slate = mat("roundel", "#3b4250", 0.6)
@@ -1671,6 +1679,28 @@ def tent(color):
     return build
 
 
+# art pass 6 (AP6): the aircraft circling over the DL6+ armies (map_view.gd: scale 1.6 on an orbit 0.45 wide, 0.95
+# up). A1 review: «too small at the strategic zoom» — the olive-and-earth fighter melted into the green and brown land
+# under it, and both craft span only ≈ 0.7 of a 2-wide hex. The flying models are built ×AIR_K (the
+# fighter's wingspan 0.68 → 0.88, the gunship's 0.82 → 0.98) and the fighter flies in a pale sky camouflage over a
+# light belly (FIGHTER_SKY), so it stands off the land as the army's air cover; the gunship's soft build (gunship
+# soft=True). The parked craft of the military bases keep their own builds and size.
+AIR_K = {"fighter": 1.3, "gunship": 1.2}
+FIGHTER_SKY = (("#8E9CAD", "#AAB6C3", "#76869A"), "#DCE2E8")
+
+
+def _flying(build, k, **kw):
+    """Build an aircraft and scale it ×k about the origin (the orbit's attach point)."""
+    def run():
+        from mathutils import Matrix
+        before = {o.name for o in bpy.context.scene.objects}
+        build(**kw)
+        for o in bpy.context.scene.objects:
+            if o.name not in before and o.parent is None:
+                o.matrix_world = Matrix.Scale(k, 4) @ o.matrix_world
+    return run
+
+
 ASSETS = {
     "castle": castle,
     "castle_red": lambda: castle(ROOF_RED, "#b3272b"),
@@ -1694,8 +1724,8 @@ ASSETS = {
     "howitzer": howitzer,
     "rocket_launcher": rocket_launcher,
     "bridge": bridge,
-    "gunship": gunship,
-    "fighter": fighter,
+    "gunship": _flying(gunship, AIR_K["gunship"], soft=True),
+    "fighter": _flying(fighter, AIR_K["fighter"], camo=FIGHTER_SKY[0], belly_c=FIGHTER_SKY[1]),
     "knight_blue": mounted_knight(ROOF_BLUE),
     "knight_red": mounted_knight("#b3272b"),
     "squad_blue": infantry_squad(ROOF_BLUE),

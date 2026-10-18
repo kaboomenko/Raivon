@@ -673,8 +673,38 @@ def _ico(sub):
 # ------------------------------------------------------------------ assets
 
 
+# art pass 6 (AP6): the forest spruce of reference frame 1 — the dark conifer masses of the strategic view. Four
+# scalloped tiers instead of three, a little narrower at the foot and taller (0.64 instead of 0.565: 2.8× the bottom
+# radius instead of 2.3×), so a wood reads as a stand of spruces whose crowns overlap in depth rather than a field of
+# round cartoon pines; the body leans to the deep and shade greens of §6.3 (SPRUCE_C: the mid-green mottles and band
+# a step deeper, the sunlit tips as before), so the masses read dark between the lit rims. Same triangle count as the
+# three-tier pine (284: four 63-triangle tiers of 18 / 9 segments, the ball, the trunk). The tiers:
+# (radius, rim z0, apex z1, droop, lip); the apex of each sits inside the tier above
+SPRUCE_TIERS = ((0.23, 0.2, 0.34, 0.01, 0.014), (0.19, 0.285, 0.425, 0.013, 0.014), (0.15, 0.375, 0.51, 0.011, 0.012),
+                (0.105, 0.465, 0.585, 0.009, 0.01))
+SPRUCE_C = dict(dark="#2A6340", mid="#38814A", light="#8CC152", deep="#22533A")
+
+
+def spruce(x=0.0, y=0.0, s=1.0, seed=0, mt=None, bark=None, n=18, na=9, z=0.0, tiers=SPRUCE_TIERS):
+    """The forest spruce (art pass 6, see SPRUCE_TIERS): tall_pine's soft scalloped tiers with rolled rims, four of
+    them, the ball on top and a stub of trunk under the skirt (the bottom rim at 0.2: (0.23 − 0.05)·tan 40° ≈ 0.15
+    of trunk clears at the close pitch)."""
+    rnd = random.Random(seed)
+    mt = mt or pine_paint(**SPRUCE_C)
+    bark = bark or tex("wood", BARK_SOFT)
+    soft_trunk(x, y, [(z - 0.02 * s, 0.05 * s), (z + 0.3 * s, 0.033 * s)], bark)
+    for i, (r, z0, z1, droop, lip) in enumerate(tiers):
+        ox, oy = rnd.uniform(-0.007, 0.007) * s, rnd.uniform(-0.007, 0.007) * s
+        top = i == len(tiers) - 1
+        soft_tier(x + ox, y + oy, z + z0 * s, z + z1 * s, r * s, mt, seed * 10 + i, droop=droop * s, lip=lip * s,
+                  apex=0.15 if top else 0.2, n=n, na=na)
+    c = Vector((x + ox, y + oy, z + (tiers[-1][2] + 0.01) * s))
+    ball = soft_ball(0.026 * s, c, mt, sub=1)
+    tip_attrs(ball, [0.9] * len(ball.data.vertices), 0.9, 0.0)
+
+
 def tree_pine():
-    tall_pine(seed=3)
+    spruce(seed=3)
 
 
 def crown_paint(dark, mid, light, deep, centre, radius):
@@ -972,22 +1002,26 @@ def _mound(x, y):
     return h - 0.03 * min(1.0, max(0.0, (r - 0.7) / 0.1))
 
 
-# the rock masses of the massif: (x, y, w, d, h, z0, taper, seed, rz, lean, snow) — three peaks (the broad main one
-# at the back, two lower ones in front and to the sides: the three masses of §6.8), each with a snow cap over the top
-# `snow` share of its height (0 = bare rock), two shoulders behind and a low ledge in front, all leaning together.
+# the rock masses of the massif: (x, y, w, d, h, z0, taper, seed, rz, lean, snow) — snow caps over the top `snow`
+# share of a block's height (0 = bare rock), all leaning together.
 # A1 review in game: the first teeth (taper 0.55–0.62, 5–7 cuts, a steep top cut) read on the map as a cluster of grey
-# crystals; now broader (×1.08), a little lower (×0.95) and blunter (taper ×0.72), the peaks and shoulders cut 7–9
-# times under a flatter top (rounded crests, wider 14 % bevels): soft massifs that keep the reference's grey alpine
-# peaks. A1 review: caps over the top 39 / 37 / 33 % frosted the peaks two thirds down (white-hot on every mountain
-# frame); now the top 27 / 25 / 20 %, with snow only on the up-facing facets (SNOW_NZ)
+# crystals; A1 made them broader, blunter and cut 7–9 times under a flatter top. Art pass 6 (A1 review 2: «the front
+# low block and the right slab read as rounded standing stones, not a ridge of peaks as in ref1/ref3»): a long ridge
+# body (the first block: 1.42 wide, a crest at 0.6) now joins the three peaks, so they rise out of one mass with
+# saddles between them; the peaks are pointier (taper 0.66–0.7) and stand on the ridge's back half, so the ridge's
+# front slope covers their feet; one broad back shoulder; two low spurs in front that lean back (their front faces
+# slope instead of standing upright). MASSIF_SNOW_NZ: the peaks' snow takes facets tilted up past 0.4 (the pointier
+# faces are steeper: at 0.5 the caps shrank to the tips)
 MASSIF = [
-    (0.0, 0.1, 1.026, 0.918, 0.931, 0.06, 0.446, 301, 0.3, (0.02, -0.03), 0.27),
-    (0.37, -0.12, 0.605, 0.54, 0.703, 0.05, 0.418, 302, -0.5, (-0.05, 0.04), 0.25),
-    (-0.37, -0.17, 0.54, 0.497, 0.551, 0.05, 0.396, 303, 0.9, (0.05, 0.04), 0.2),
-    (0.4, 0.3, 0.497, 0.432, 0.475, 0.04, 0.324, 304, 0.2, (-0.04, -0.03), 0.0),
-    (-0.4, 0.24, 0.475, 0.432, 0.437, 0.04, 0.324, 305, -0.3, (0.04, -0.03), 0.0),
-    (0.02, -0.36, 0.52, 0.3, 0.3, 0.04, 0.25, 306, 0.1, (0.0, 0.03), 0.0),
+    (0.0, 0.1, 1.42, 0.76, 0.6, 0.05, 0.64, 310, 0.15, (0.0, 0.02), 0.1),  # the ridge body
+    (0.0, 0.18, 0.8, 0.68, 1.0, 0.06, 0.66, 301, 0.3, (0.02, -0.02), 0.32),  # the main peak
+    (0.44, 0.14, 0.6, 0.55, 0.74, 0.05, 0.7, 302, -0.5, (-0.05, 0.0), 0.28),
+    (-0.46, 0.1, 0.58, 0.52, 0.66, 0.05, 0.7, 303, 0.9, (0.05, 0.0), 0.26),
+    (0.0, 0.44, 1.1, 0.4, 0.5, 0.04, 0.55, 304, 0.1, (0.0, -0.03), 0.0),  # the back shoulder
+    (0.14, -0.26, 0.55, 0.32, 0.24, 0.04, 0.5, 306, 0.1, (0.0, 0.07), 0.0),  # two spurs in front
+    (-0.32, -0.2, 0.36, 0.28, 0.2, 0.04, 0.45, 309, 0.5, (0.03, 0.05), 0.0),
 ]
+MASSIF_SNOW_NZ = 0.4
 
 
 def mountain():
@@ -997,8 +1031,9 @@ def mountain():
     a grassy hill: tall soft blocks (soft_block with taper: an icosahedron cut by planes into broad facets with
     round 14 % bevels, narrowing to a rounded crest) in cool grey with pale tops, lilac shade and faint strata, snow caps on
     the up-facing facets of the three peaks, shoulder blocks and a front ledge round them (the faces buried in a
-    neighbour dropped), a few pebbles and the soft pines of the forests on the foot. Footprint radius 0.8 (the old
-    one); the map scales it ×1.5–1.75 on a mountain hex and ×1.5–2.8 on the horizon."""
+    neighbour dropped), a few pebbles and the soft pines of the forests on the foot. Art pass 6: a ridge body joins
+    the peaks (see MASSIF) and the slopes carry the forest spruces. Footprint radius 0.8 (the old one); the map scales
+    it ×1.5–1.75 on a mountain hex and ×1.5–2.8 on the horizon."""
     grass = mountain_paint(grass_line=0.6)  # the old massif paint: below its grass line it is the meadow foot
     rings, segs, R = 8, 24, 0.82
     verts = [(0.0, 0.0, _mound(0.0, 0.0))]
@@ -1036,7 +1071,7 @@ def mountain():
 
     blocks = []
     for (x, y, w, d, h, z0, taper, seed, rz, lean, cap) in MASSIF:
-        mt = massif_paint(snow_z=round(z0 + (1.0 - cap) * h, 3) if cap else 9.0)
+        mt = massif_paint(snow_z=round(z0 + (1.0 - cap) * h, 3) if cap else 9.0, snow_nz=MASSIF_SNOW_NZ)
         if taper > 0.3:  # peaks and shoulders: many cuts under a flat top → a rounded crest
             kw = dict(cuts=(7, 9), top_el=(1.15, 1.4), bevel=0.14)
         else:  # the low front ledge: a plain rounded rock
@@ -1050,11 +1085,11 @@ def mountain():
         x, y = r * math.cos(a), r * math.sin(a)
         z0 = height(x, y) - 0.02
         soft_block(x, y, s_ * 2.2, s_ * 1.8, s_ * 1.3, rk, 70 + k, z0=z0, rz=a, sub=1, cuts=(2, 3), bevel=0)
-    pine_mt, bark = pine_paint(), tex("wood", BARK_SOFT)
+    pine_mt, bark = pine_paint(**SPRUCE_C), tex("wood", BARK_SOFT)  # the forest spruces (art pass 6) on the slopes
     for k, (a, r, s_) in enumerate([(4.95, 0.64, 0.5), (3.35, 0.66, 0.46), (1.25, 0.68, 0.44), (0.25, 0.7, 0.42),
                                     (4.0, 0.7, 0.4), (5.6, 0.7, 0.44)]):
         x, y = r * math.cos(a), r * math.sin(a)
-        tall_pine(x, y, s_, 30 + k, pine_mt, bark, n=18, na=9, z=height(x, y) - 0.012)
+        spruce(x, y, s_, 30 + k, pine_mt, bark, z=height(x, y) - 0.012)
 
 
 def ripe_paint():
@@ -1376,40 +1411,79 @@ def windmill():
     return (0.0, hub_y, hub_z)
 
 
-# the quarry tiers' blocks: width range and plane cuts. A1 review in game: narrow blocks with 5–6 cuts (0.15–0.22)
-# stood like a crate of grey eggs; broader ones cut 7–9 times read as slabs of one cliff face (§6.1 rule 5)
-MINE_W, MINE_CUTS = (0.22, 0.3), (7, 9)
-# the three tiers, front to back: (y0, y1, top height, half width); MINE_LEVEL: a block's height varies over
-# (MINE_LEVEL, 1) of its tier's and drops by MINE_FALL × (x / half width)² towards the ends; MINE_TOP: the offset of
-# its flat top cut (lower = a broader flat top)
-MINE_TIERS = ((0.0, 0.2, 0.3, 0.56), (0.17, 0.36, 0.48, 0.5), (0.33, 0.5, 0.66, 0.38))
-MINE_LEVEL, MINE_FALL, MINE_TOP = 0.84, 0.35, 0.4
+# art pass 6 (AP6): the quarry face of reference frame 4 as stepped terraces of straight cut blocks. A1's rounded
+# boulders (soft_block) read as a rock pile, the pre-A1 sharp grey cubes as a crate of dice: now each tier is a row of
+# dressed blocks (cut_block: a box with straight flanks and a round 2-segment bevel, so it stays soft at map size)
+# standing on the ledge of the tier below, set back 0.16 so every flat ledge shows as a light band over the dark
+# riser below it — at the map pitch (≈ 50°) a riser of 0.18 and a ledge of 0.16 project to about the same height, the
+# value rhythm of cut steps. The blocks part by MINE_GAP (the AO bake draws the joints), heights jitter by MINE_JIT
+# and one block of the middle tier is half cut away (the work face). Rough rock shoulders close both ends.
+# MINE_TIERS: (front y, back y, top height, half width), front to back
+MINE_TIERS = ((0.0, 0.18, 0.24, 0.5), (0.16, 0.34, 0.42, 0.44), (0.32, 0.5, 0.6, 0.34))
+MINE_W, MINE_GAP, MINE_JIT = (0.2, 0.27), 0.008, 0.025
+
+
+def cut_block(cx, cy_, w, d, h, mt, z0=-0.01, rz=0.0, bev=0.016):
+    """A dressed stone block (art pass 6, the quarry tiers): a box w × d × h standing on z0, turned rz, with a round
+    2-segment bevel of `bev` on every edge (§6.2: bevels on masses ≥ 0.08) and weighted normals, so its faces stay calm
+    planes and its edges catch a soft highlight. 108 triangles."""
+    bm = bmesh.new()
+    bmesh.ops.create_cube(bm, size=1.0)
+    for v in bm.verts:
+        v.co = Vector((v.co.x * w, v.co.y * d, (v.co.z + 0.5) * h))
+    bmesh.ops.bevel(bm, geom=bm.edges[:], offset=min(bev, 0.3 * min(w, d, h)), segments=2, profile=0.5,
+                    affect="EDGES", clamp_overlap=True)
+    c, s_ = math.cos(rz), math.sin(rz)
+    for v in bm.verts:
+        x, y = v.co.x, v.co.y
+        v.co = Vector((cx + x * c - y * s_, cy_ + x * s_ + y * c, z0 + v.co.z))
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    me = bpy.data.meshes.new("cut_block")
+    bm.to_mesh(me)
+    bm.free()
+    o = bpy.data.objects.new("cut_block", me)
+    bpy.context.collection.objects.link(o)
+    o.data.materials.append(mt)
+    for p in o.data.polygons:
+        p.use_smooth = True
+    wn = o.modifiers.new("soft", "WEIGHTED_NORMAL")
+    wn.mode = "FACE_AREA"
+    wn.weight = 50
+    wn.keep_sharp = False
+    o["flat"] = True
+    o["block"] = True
+    return o
 
 
 def mine():
     dirt = ev.pad(0.6, ev.stone("#9a8f7f", 1.4), 0.012, 14, 0.12, 4, 1.0, 0.85)  # a flagged yard (reference frame 4)
     dirt.location.y = -0.12
-    # the quarried cliff of reference frames 3–4: three rows of grey stone rising to the back (MINE_TIERS). Art pass 5
-    # (A1): big rounded blocks (soft_block: flat cut tops, soft weighted normals, warm grey granite with pale tops and
-    # lilac shade, as the crag and the rocks) instead of sharp boxes in the old speckled paint, which read as a pile of
-    # grey cubes on the map. The broad slabs read as one rounded rock face behind the adit, not as cut-stone steps
-    # with ledges: levelling the tops (MINE_LEVEL 0.94, MINE_FALL 0.2), a lower front row and a broader top cut
-    # (MINE_TOP 0.25) did not bring the steps back in a preview (the derrick and the adit frame hide the front row)
+    # the quarried cliff of reference frames 3–4: three terraces of cut blocks rising to the back (MINE_TIERS, see
+    # there), a lighter and a deeper stone so neighbouring blocks part by tone as well as by the joint
     rnd = random.Random(9)
     cut = granite_paint(moss=None, cracks=0.0, scale=5.0)
     cut_d = granite_paint(base="#998E7D", top="#9C8E79", moss=None, warm="#9E9383", cracks=0.0, scale=5.0)
     blocks = []
     for t, (y0, y1, zmax, xr) in enumerate(MINE_TIERS):
         x = -xr
+        k = 0
         while x < xr - 0.05:
             w = min(rnd.uniform(MINE_W[0], MINE_W[1]), xr - x)
-            h = zmax * rnd.uniform(MINE_LEVEL, 1.0) * (1.0 - MINE_FALL * (abs(x + w / 2) / xr) ** 2)
-            d = (y1 - y0) * rnd.uniform(1.0, 1.15)
-            blocks.append(soft_block(x + w / 2, (y0 + y1) / 2 + rnd.uniform(-0.015, 0.015), w * 1.06, d, h,
-                                     cut if (t + int(x * 10)) % 3 else cut_d, 90 + len(blocks), z0=-0.01,
-                                     rz=rnd.uniform(-0.1, 0.1), sub=1, cuts=MINE_CUTS, bevel=0, top=MINE_TOP,
-                                     top_el=(1.48, 1.57), ground=0.0))
+            if xr - x - w < 0.1:  # no sliver at the end of a row
+                w = xr - x
+            h = zmax - rnd.uniform(0.0, MINE_JIT)
+            d = y1 - y0
+            if t == 1 and k == 2:  # the work face: a block half cut away, a step down in the middle tier
+                h = zmax - 0.1
+            blocks.append(cut_block(x + w / 2, (y0 + y1) / 2 + rnd.uniform(-0.008, 0.008), w - MINE_GAP, d, h,
+                                    cut if (t + k) % 2 else cut_d, rz=rnd.uniform(-0.03, 0.03)))
             x += w
+            k += 1
+    # rough rock shoulders at both ends of the face: the uncut hill the terraces are cut into
+    rough = granite_paint(moss_at=0.75, moss_z=0.1, cover=0.4)
+    for (x, y, w, d, h, sd, rz) in ((-0.5, 0.36, 0.3, 0.32, 0.5, 41, 0.3), (0.46, 0.36, 0.28, 0.3, 0.46, 42, -0.4),
+                                    (0.0, 0.56, 0.62, 0.2, 0.62, 43, 0.05)):
+        blocks.append(soft_block(x, y, w, d, h, rough, sd, rz=rz, cuts=(4, 6), sharp=60.0, ground=0.05))
     cull_hidden(blocks)
     rk = granite_paint(moss_at=0.7, scale=6.0, moss_z=0.0, cover=0.4)
     soft_block(-0.48, 0.0, 0.2, 0.18, 0.13, rk, 31, sub=1, cuts=(2, 3), bevel=0)

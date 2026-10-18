@@ -2284,69 +2284,72 @@ def city_dl8(team):
 # ------------------------------------------------------------------ RESIDENCES (capital, scale 1.0)
 
 
-def residence_dl1(team):
-    """The chieftain's camp, «Raivon Soft» (plan step B2): the big reed shalash and the small hut end in round
-    thatch tufts (not needle points), their door holes a warm dark brown (no near-black), the poles, spit and rack
-    sticks at least 0.02 thick (the roasting spit is gone), a fat pot, a round fir, the banner ×1.3."""
-    pad(0.78, tex("plaster", DIRT, 1.2), 0.008, 14, 0.1, 11)
-    hole = flat("hole", "#3b2a1f", 0.95)  # a warm dark door hole (§6.1: no albedo near black; was #1e140c)
+# art pass 6 (AP6): the DL1 shalash after canon (docs/gdd/05_economy_buildings.md, the DL1 row: «шалаш старосты:
+# жерди, шкуры, костёр, шест с флажком державы»): sewn hides over a cone of poles that cross at the top and splay out above it. The B2 shalash was a
+# cone of four thatch tiers under a round tuft, and at map zoom it read as a haystack (A1 review), right next to the
+# camp's real haystack. Hide gores alternate three warm leathers (light enough to stay the brightest mass of the camp,
+# §6.3: roofs lightest), the poles stand 0.11 over the smoke hole in light timber (no dark stick crown, §6.1), the
+# team band and the door flap keep the state's colour.
+HIDES = ("#D9B98C", "#C69C6E", "#E3CBA2")
 
-    def tiers(r, top, n, z_top=None):
-        """A cone of thatch laid in n tiers, each lower rim kicked out over the tier below (bundles of reed), tied
-        off at the top in a round tuft of 0.14 r."""
-        k = r / top
-        zs = [top * i / n * 0.92 for i in range(n)] + [top]
-        for i in range(n):
-            z0, z1 = zs[i], min(top, zs[i + 1] + 0.03)
-            r0, r1 = r - k * z0 + (0.025 if i else 0.0), max(0.012, r - k * z1)
-            cy(r0, z1 - z0, (0, 0, (z0 + z1) / 2), tex("wood", shade(THATCH, 1.0 if i % 2 == 0 else 0.88), 2.5), 10, r2=r1)
-        ico(0.14 * r, (0, 0, top - 0.11 * r), tex("wood", shade(THATCH, 0.94), 2.5), (1, 1, 0.85))
-        return k
+
+def hide_tent(r, top, team, n=10, poles=7, stick=0.11, seed=0, door=True, band=True):
+    """A tipi of sewn hides (art pass 6): n flat gores from the ground ring (radius r) to a smoke hole (0.13 r) at
+    `top`, in alternating HIDES, with the state's colour as a band of the same gores over the foot (band=True); a
+    crown of `poles` light timber poles that cross in the smoke hole and splay `stick` over it (only their tops show:
+    poles laid along the cone poked in and out of the hide as a dashed line); a dark door opening at −Y with its hide
+    flap folded back. Built at the origin (use build_at)."""
+    rnd = random.Random(seed)
+    rot = rnd.uniform(0.0, math.tau / n)
+    hole = 0.13 * r
+    from mathutils import Vector
+    zs = [0.0, 0.11 * top, 0.19 * top, top] if band else [0.0, top]
+
+    def P(k, z):
+        a = rot + k / n * math.tau
+        rr = r + (hole - r) * z / top
+        return Vector((rr * math.cos(a), rr * math.sin(a), z))
+    mats = [tex("plaster", c, 1.6) for c in HIDES]
+    team_mt = flat("band" + team, shade(team, 0.85), 0.7)
+    groups = {}
+    for k in range(n):
+        for i in range(len(zs) - 1):
+            mt = team_mt if band and i == 1 else mats[(k + k // 3) % len(mats)]
+            q = [P(k, zs[i]), P(k + 1, zs[i]), P(k + 1, zs[i + 1]), P(k, zs[i + 1])]
+            c = (q[0] + q[1] + q[2] + q[3]) / 4
+            groups.setdefault(mt.name, (mt, _MB()))[1].face(q, Vector((c.x, c.y, 0.35 * r)))
+    for mt, mb in groups.values():
+        mb.obj(mt, "hide")
+    wd = tex("wood", WOOD, 2.0)
+    apex = Vector((0.0, 0.0, top))
+    for k in range(poles):
+        a = rot + (k + 0.5) / poles * math.tau
+        g = Vector((r * math.cos(a), r * math.sin(a), 0.0))
+        d = (apex - g).normalized()
+        beam(tuple(apex - d * 0.12 * top / d.z), tuple(apex + d * stick / d.z), 0.024, wd)
+    if door:  # a dark door opening at −Y with its hide flap folded back to the right
+        hole_mt = flat("hole", "#3b2a1f", 0.95)
+        zd = 0.36 * top
+        y0 = -r + 0.006
+        yt = -(r + (hole - r) * zd / top) + 0.006
+        mesh_obj([(-0.075 * r / 0.37, y0, 0.0), (0.075 * r / 0.37, y0, 0.0), (0.0, yt, zd)], [(0, 1, 2)], hole_mt)
+        mesh_obj([(0.075 * r / 0.37, y0 - 0.004, 0.0), (0.0, yt - 0.004, zd), (0.12 * r / 0.37, y0 - 0.02, 0.03)],
+                 [(0, 1, 2)], tex("plaster", HIDES[1], 1.6))
+
+
+def residence_dl1(team):
+    """The chieftain's camp, «Raivon Soft» (plan step B2, art pass 6): the big hide shalash on crossed poles and the
+    small hide tent (hide_tent; was a thatch cone that read as a haystack), their door holes a warm dark brown (no
+    near-black), the poles, spit and rack sticks at least 0.02 thick (the roasting spit is gone), a fat pot, a round
+    fir, the banner ×1.3."""
+    pad(0.78, tex("plaster", DIRT, 1.2), 0.008, 14, 0.1, 11)
 
     def shalash():
-        k = tiers(0.36, 0.72, 4)
-        cy(0.36 - k * 0.11 + 0.007, 0.05, (0, 0, 0.135), flat("band" + team, shade(team, 0.85), 0.7), 10,
-           r2=0.36 - k * 0.16 + 0.007)  # a team-painted band hugging the lowest tier
-        wd = tex("wood", WOOD_D)
-        for kk in range(6):
-            a = kk * math.tau / 6 + 0.3
-            # (the poles end inside the round tuft: no crown of dark sticks over the thatch)
-            beam((math.cos(a) * 0.36, math.sin(a) * 0.36, 0.0), (math.cos(a) * 0.003, math.sin(a) * 0.003, 0.696), 0.022, wd)
-        mesh_obj([(-0.085, -0.352, 0.0), (0.085, -0.352, 0.0), (0.0, -0.262, 0.2), (-0.085, -0.362, 0.0), (0.085, -0.362, 0.0), (0.0, -0.272, 0.2)],
-                 [(0, 1, 2), (5, 4, 3), (0, 3, 4, 1), (1, 4, 5, 2), (2, 5, 3, 0)], hole)
-        # a team cloth hung over the door, with a white stripe: two panels laid on the two thatch facets that meet
-        # above the door (the tier is a ten-sided frustum with an edge at −Y), so the cloth hugs the thatch
-        from mathutils import Vector
-
-        def rr(z):  # radius of the second tier's corners at height z
-            return 0.3022 + (0.1794 - 0.3022) * (z - 0.1656) / (0.3612 - 0.1656)
-
-        def cloth(za, zb, f, lift, mt):
-            mb = _MB()
-            for a0, a1, fa, fb in ((234, 270, 1 - f, 1.0), (270, 306, 0.0, f)):
-                ca, cb = (Vector((math.cos(math.radians(a)), math.sin(math.radians(a)), 0)) for a in (a0, a1))
-
-                def P(z, t):
-                    p = (ca * rr(z)).lerp(cb * rr(z), t)
-                    p.z = z
-                    return p
-                q = [P(za, fa), P(za, fb), P(zb, fb), P(zb, fa)]
-                nrm = (q[1] - q[0]).cross(q[3] - q[0]).normalized()
-                if nrm.dot(ca + cb) < 0:
-                    nrm = -nrm
-                mb.face([p + nrm * lift for p in q], nrm)
-            mb.obj(mt, "cloth")
-        cloth(0.25, 0.322, 0.45, 0.004, flat("flag" + team, team, 0.7))
-        cloth(0.262, 0.274, 0.45, 0.0065, flat("emblem", WHITE, 0.6))  # a white stripe woven across the hem
+        hide_tent(0.37, 0.66, team, n=10, poles=7, stick=0.11, seed=5)
     build_at(shalash, 0.0, 0.2)
 
     def small_hut():
-        tiers(0.15, 0.32, 2)
-        wd = tex("wood", WOOD_D)
-        for kk in range(3):
-            a = kk * math.tau / 3 + 0.5
-            beam((math.cos(a) * 0.15, math.sin(a) * 0.15, 0.0), (math.cos(a) * 0.0096, math.sin(a) * 0.0096, 0.312), 0.02, wd)
-        bx((0.066, 0.012, 0.1), (0, -0.142, 0.048), hole, bev=0, rot=(0.42, 0, 0))
+        hide_tent(0.16, 0.32, team, n=8, poles=4, stick=0.06, seed=9, band=False)
     build_at(small_hut, 0.52, 0.47, 0.3)
 
     def hide_rack():  # a hide stretched to dry on a pole frame (stout 0.024 poles, a 0.012 hide)

@@ -1720,6 +1720,34 @@ def destroyer(team):
     bx((0.022, 0.006, 0.015), (-0.32, 0, zq + 0.078), flat("emblem", "#f3efe6", 0.6), bev=0)
 
 
+# art pass 6 (AP6): the destroyer read as a thin grey strip on the strategic view (A1 review): 0.7 long over a beam of
+# 0.16 (4.4 : 1), seen from 56° above in the bay. The game's destroyer is built beamier and a little taller
+# (DESTROYER_K: y ×1.3, z ×1.1 about the origin — the waterline stays at z 0), 3.4 : 1, a stout toy ship whose
+# superstructure and funnels show from above; its turrets and funnels go a little oval in plan (1.3 : 1), which
+# reads as perspective at that size.
+DESTROYER_K = (1.0, 1.3, 1.1)
+
+
+def destroyer_wide(team):
+    """destroyer(team) scaled by DESTROYER_K (see there). The scale goes into the mesh data (modifiers applied, each
+    part's own transform baked in first): a non-uniform scale on a turned object's transform would shear it."""
+    before = {o.name for o in bpy.context.scene.objects}
+    destroyer(team)
+    new = [o for o in bpy.context.scene.objects if o.name not in before and o.type == "MESH"]
+    bpy.ops.object.select_all(action="DESELECT")
+    for o in new:
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = new[0]
+    bpy.ops.object.convert(target="MESH")
+    M = Matrix.Diagonal((*DESTROYER_K, 1.0))
+    for o in new:
+        if o.data.users > 1:
+            o.data = o.data.copy()
+        o.data.transform(o.matrix_world)
+        o.matrix_world = Matrix.Identity(4)
+        o.data.transform(M)
+
+
 def cruiser_scifi(team):
     """A hover cruiser of the late era (DL8+) along X (bow at +X), in the grey steel of the late citadel: a faceted
     hull of pale plates over a dark keel riding on a cold glowing cushion, the state's light strips and inset team
@@ -2596,7 +2624,7 @@ PROPS = [raider_camp, port, military_base]
 ASSETS = {f.__name__: f for f in PROPS}
 for _t, _c in ev.TEAMS.items():
     ASSETS["warship_" + _t] = (lambda c: (lambda: warship(c)))(_c)
-    ASSETS["destroyer_" + _t] = (lambda c: (lambda: destroyer(c)))(_c)
+    ASSETS["destroyer_" + _t] = (lambda c: (lambda: destroyer_wide(c)))(_c)
     ASSETS["cruiser_scifi_" + _t] = (lambda c: (lambda: cruiser_scifi(c)))(_c)
     ASSETS["port_modern_" + _t] = (lambda c: (lambda: port_modern(c)))(_c)
     ASSETS["port_scifi_" + _t] = (lambda c: (lambda: port_scifi(c)))(_c)

@@ -56,8 +56,10 @@ SLATE_N = "#56657a"  # neutral blue-grey slate (the forts' and towers' roofs: no
 COAL = "#26252a"
 # the crude (A1 review): was #0b0a0e, far under the §6.1 rule-3 floor (#2A2A30) — SoftLook caps the oil's metallic at
 # 0.25, so the glossy pond showed at L* ≈ 7, a black hole on every oil hex; now the Dark Lake's violet-black
-# (env_assets.dark_lake), on screen L* ≈ 15–20: still the darkest liquid on the map, but a colour, not a hole
-OIL = "#3E3A5C"
+# (env_assets.dark_lake), on screen L* ≈ 15–20: still the darkest liquid on the map, but a colour, not a hole. Art
+# pass 6: synced with the Dark Lake's later value #45406A (A1 review 2: the #3E3A5C pond's shaded far corner still
+# dropped under L* 15 over 10.8 % of the pond box, against 0.1 % on the lake)
+OIL = "#45406A"
 SAFETY = "#f2b31d"  # crane yellow
 BAND_N = "#4b5a70"  # the neutral slate band on tanks and columns (no team blue on team-neutral models)
 ORANGE = "#e2782a"
