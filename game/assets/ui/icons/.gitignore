@@ -1,0 +1,5 @@
+# The chests' 256 px hero renders (chest_*_hero.png, docs/art_direction.md §7.13) are drawn at 141–180 px from the kit's
+# atlas (Kit.hero_rect / hero_still bake them at their size, sampling the mipmaps): their import settings
+# (mipmaps/generate=true) are tracked, like the face crops' in ../portraits. The root .gitignore ignores *.import; the
+# 128 px icons (default settings) stay ignored.
+!chest_*_hero.png.import

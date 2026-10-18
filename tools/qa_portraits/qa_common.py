@@ -68,6 +68,16 @@ SIDE_ROWS = 0.70               # above 0.70 h ...
 SIDE_FREE = 0.055              # ... nothing within 0.055 w of either side
 SIG_X = (0.06, 0.94)           # the signature box inside x 0.06-0.94 w
 CHIP = (0.50, 0.40, 0.39)      # the army chip circle: centre (0.50 w, 0.40 h), radius 0.39 w; the head stays inside
+# the face crops of the slots <= 72 px (§7.12, `--face`): face_<name>.png, 256x256 (portrait_kit.style RENDER face_*)
+FACE = "face_"
+FACE_SIZE = (256, 256)
+FACE_EYE_Y = (0.50, 0.56, 0.01)  # eye line from 0.50 h (tall headgear lowers it to 0.56 h), +- 0.01
+FACE_H = (0.56, 0.66, 0.01)      # head (chin-crown, upright) from 0.56 to 0.66 of the side, +- 0.01
+FACE_TOP_MIN = 0.015             # headgear >= 0.02 of the side under the top (the solver's margin, less AA)
+# where the game shows the crop (cover-cropped, top-aligned, cmd_portrait._draw): the 58x70 fan keeps x 0.086-0.914;
+# the army chip (a 48x50 bust at (-5, -6) under a circle of 38: Kit._card_ring) its circle, centre (0.50, 0.50), r 0.38
+FACE_FAN_X = (0.086, 0.914)
+FACE_CHIP = (0.50, 0.50, 0.38)
 
 # Part-ID colours of ids/<name>.png (the kit writes the real table to ids/<name>.json; this is the default)
 ID_COLORS = {"skin": (255, 0, 0), "hair": (0, 255, 0), "brow": (0, 0, 255), "sclera": (255, 255, 0),
@@ -89,21 +99,33 @@ def all_names():
     return out
 
 
+def face_names():
+    """The 52 face crops the game's slots <= 72 px read (§7.12): every commander in every era, calm, and the advisor's
+    smile in the mail (cmd_bram*_smile)."""
+    return [FACE + "cmd_%s%s" % (c, e) for c in COMMANDERS for e in ERAS] + [FACE + "cmd_bram%s_smile" % e for e in ERAS]
+
+
+def base(name):
+    """A face crop's file name without the prefix (face_cmd_bram_e2 -> cmd_bram_e2): its commander, era and mood."""
+    return name[len(FACE):] if name.startswith(FACE) else name
+
+
 def kind(name):
+    name = base(name)
     return "cmd" if name.startswith("cmd_") else ("ldr" if name.startswith("ldr_") else "ruler")
 
 
-def present(d):
-    """(names found in DIR, names missing) over the 150 names."""
+def present(d, face=False):
+    """(names found in DIR, names missing) over the 150 names (face: the 52 face crops)."""
     have, miss = [], []
-    for n in all_names():
+    for n in (face_names() if face else all_names()):
         (have if os.path.exists(os.path.join(d, n + ".png")) else miss).append(n)
     return have, miss
 
 
-def report_missing(d, tag=""):
-    have, miss = present(d)
-    print("%sfiles: %d of 150 present, %d missing%s" % (tag, len(have), len(miss),
+def report_missing(d, tag="", face=False):
+    have, miss = present(d, face)
+    print("%sfiles: %d of %d present, %d missing%s" % (tag, len(have), len(have) + len(miss), len(miss),
           (" (e.g. " + ", ".join(miss[:6]) + (" ..." if len(miss) > 6 else "") + ")") if miss else ""))
     return have, miss
 
@@ -123,6 +145,7 @@ def parse(argv):
 def plate_of(name, palette="ui"):
     """The base plate colour the game draws behind `name` (rarity colour, the state's colour or SKY — the ruler's
     plates in full: RULER_PLATES)."""
+    name = base(name)
     if name.startswith("cmd_"):
         return PALETTES[palette][RARITY[name.split("_")[1]]]
     if name.startswith("ldr_"):

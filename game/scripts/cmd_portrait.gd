@@ -6,7 +6,10 @@ extends Control
 ## rarity-coloured frame (docs/ui_style.md §6 «Командиры»: R 20, OUT 4 at full size, scaled down in small slots); a
 ## locked commander is a flat INK silhouette (α 0.3) cut from the render's alpha, no detail inside, on a muted plate
 ## (the screen adds the lock). The renders are filtered with mipmaps (the commanders' 512×588 imports have them), so
-## the small slots — the army chip, the fan, the calendar, baked through Kit.KitStill or not — do not shimmer.
+## the small slots — the army chip, the fan, the calendar, baked through Kit.KitStill or not — do not shimmer. A bust
+## drawn at FACE_MAX px or less (the picker 72, the mail 72, the calendar 64, the «Армия» fan 58×70, the army chip
+## 48×50) shows the square face crop of the same file instead (`face_<name>.png`, 256×256, mipmapped: the head
+## +26–45 % over the bust's; tools/blender/portrait_assets.py --frame=face) when there is one.
 
 const Kit := preload("res://scripts/ui_kit.gd")
 ## The rarity colours are the kit's (§3.2: the gem and the tinted backdrop; purple is only EPIC).
@@ -43,8 +46,13 @@ const HALO_LOCKED := 0.02
 const SILHOUETTE := "shader_type canvas_item;\nvarying vec4 v_col;\nvoid vertex() {\n\tv_col = COLOR;\n}\n" \
 	+ "void fragment() {\n\tCOLOR = vec4(v_col.rgb, v_col.a * texture(TEXTURE, UV).a);\n}\n"
 static var _sil_mat: ShaderMaterial
+## The largest side (px) drawn with the face crop (docs/art_direction.md §7.12: the slots ≤ 72 px showed the whole
+## bust, a 27–40 px head); its eye line is at half its height (the bust's at 0.425: the halo follows it).
+const FACE_MAX := 72.0
+const FACE_EYE := 0.5
+const BUST_EYE := 0.42
 
-static var _renders := {}  # "cmd_eN_mood" -> Texture2D or null — the current era's only (_render drops the rest)
+static var _renders := {}  # "cmd_eN_mood" (and "face|…") -> Texture2D or null — the current era's only (_render drops the rest)
 static var _mipped := {}  # a commander's file path -> its texture with mipmaps (one per file, see _load_mipmapped)
 static var _cache_era := 0  # the era _renders and _mipped hold
 ## The uniform era of the portraits (04 §15.4): 1 DL1–3, 2 DL4–5, 3 DL6–7, 4 DL8–10 — set from the player's DL.
@@ -135,6 +143,11 @@ func _draw() -> void:
 	if w < 2.0 or h < 2.0:
 		return
 	var rc: Color = RARITY.get(rarity, RARITY["common"]) if plate.a == 0.0 else plate
+	# a small slot shows the face crop of the file the bust would draw (if there is one), else the bust
+	var tex: Texture2D = _render_face(cmd, mood) if maxf(w, h) <= FACE_MAX else null
+	var face := tex != null
+	if not face:
+		tex = _render(cmd, mood)
 	var box := _box()
 	# plate B (§7.4): a vertical gradient of the rarity colour, lightened(0.18) at the top to the colour itself at the
 	# bottom — the dark costumes of §7.6 stand off it (a locked one: the colour washed into a muted grey)
@@ -145,12 +158,12 @@ func _draw() -> void:
 		cols.append(top.lerp(bot, clampf(v.y / h, 0.0, 1.0)))
 	draw_polygon(box, cols)
 	# a soft halo behind the head: concentric white discs, no dark outline (the «fishbowl» ring is gone)
-	_halo(Vector2(w * 0.5, h * 0.42), u)
-	var tex := _render(cmd, mood)
+	_halo(Vector2(w * 0.5, h * (FACE_EYE if face else BUST_EYE)), u)
 	_drawn = tex
 	if tex != null:
 		# the bpy render: cover the box, keep the head, crop the torso — drawn through the rounded box (UVs), so its
-		# corners never poke out of the frame; a locked commander is its flat silhouette at α 0.3 (SILHOUETTE)
+		# corners never poke out of the frame; a locked commander is its flat silhouette at α 0.3 (SILHOUETTE). The
+		# square face crop covers the slot the same way (the 58×70 fan loses a strip at each side, not the hat)
 		var ts := tex.get_size()
 		var sc := maxf(w / ts.x, h / ts.y)
 		var src := Rect2((ts.x - w / sc) / 2.0, 0, w / sc, h / sc)
@@ -311,25 +324,45 @@ func _frame(rc: Color) -> void:
 
 
 static func _render(id: String, m := "") -> Texture2D:
+	_sync_era()
+	var key := "%s_e%d_%s" % [id, era, m]
+	if not _renders.has(key):
+		var file := _chain(id, m)
+		var path := "res://assets/ui/portraits/%s.png" % file
+		_renders[key] = null if file == "" else (_load_mipmapped(path) if id.begins_with("cmd_") else load(path))
+	return _renders[key]
+
+
+## The face crop (`face_<name>.png`, §7.12) of the very file _render(id, m) draws — the same era and mood, found by
+## the same chain — or null when that file has none (the bust is drawn then). Cached with the era's renders.
+static func _render_face(id: String, m := "") -> Texture2D:
+	_sync_era()
+	var key := "face|%s_e%d_%s" % [id, era, m]
+	if not _renders.has(key):
+		var file := _chain(id, m)
+		var path := "res://assets/ui/portraits/face_%s.png" % file
+		_renders[key] = _load_mipmapped(path) if file != "" and ResourceLoader.exists(path) else null
+	return _renders[key]
+
+
+## A new era: set_portrait_era redraws the busts on show with its renders (the KitStill bakes are keyed by era), and
+## the old era's are never read again — let their textures (a 512×588 bust ≈ 1.5 MB with mipmaps, a 256 face crop
+## ≈ 0.35 MB) go; a bust not redrawn yet keeps the one it draws (_drawn) until it is.
+static func _sync_era() -> void:
 	if _cache_era != era:
-		# a new era: set_portrait_era redraws the busts on show with its renders (the KitStill bakes are keyed by era),
-		# and the old era's are never read again — let their 512×588 textures (≈ 1.5 MB each with mipmaps) go; a bust
-		# not redrawn yet keeps the one it draws (_drawn) until it is
 		_renders.clear()
 		_mipped.clear()
 		_cache_era = era
-	var key := "%s_e%d_%s" % [id, era, m]
-	if not _renders.has(key):
-		var base := id if era == 1 else "%s_e%d" % [id, era]
-		var tex: Texture2D = null
-		# the era's render in this mood, the era's calm one, then the first era's (mood, calm)
-		for name in [base + ("_" + m if m != "" else ""), base, id + ("_" + m if m != "" else ""), id]:
-			var path := "res://assets/ui/portraits/%s.png" % name
-			if ResourceLoader.exists(path):
-				tex = _load_mipmapped(path) if id.begins_with("cmd_") else load(path)
-				break
-		_renders[key] = tex
-	return _renders[key]
+
+
+## The file a portrait of `id` in mood `m` is drawn from in the current era (no extension), "" when none exists: the
+## era's render in this mood, the era's calm one, then the first era's (mood, calm).
+static func _chain(id: String, m: String) -> String:
+	var base := id if era == 1 else "%s_e%d" % [id, era]
+	for file in [base + ("_" + m if m != "" else ""), base, id + ("_" + m if m != "" else ""), id]:
+		if ResourceLoader.exists("res://assets/ui/portraits/%s.png" % file):
+			return file
+	return ""
 
 
 ## A commander's render with mipmaps, one texture per file however many keys fall back to it (a mood without its own

@@ -13,6 +13,11 @@ Per file (every number is a fraction of the file's own size, so 512 and 256 mast
 Size and framing problems are counted separately (the current 256 px set fails "size" for all 96 commanders by
 design: §7.12 moves them to 512). A folder that holds only some of the 150 names is fine: the missing ones are listed.
 Exit 1 with --strict when any present file has a problem.
+
+--face: the 52 face crops instead (face_<name>.png, §7.12: the slots <= 72 px; qa_common FACE_*): 256x256 RGBA,
+transparent top corners, no dark fringe; the highest opaque row >= 0.015 of the side (top_exempt as above); with the
+meta: eye line 0.50-0.56 h, head centre x 0.50 w +- 0.025, the upright head height 0.56-0.66 w, the head box inside
+the 58x70 fan's crop (x 0.086-0.914 w) and inside the army chip's circle (centre 0.50 w, 0.50 h, r 0.38 w).
 """
 import os
 import sys
@@ -91,14 +96,77 @@ def check(d, n):
     return size, prob, top, info
 
 
+def _top_row(d, n, a, h):
+    """The highest opaque row, a designed overflow (meta top_exempt: Rai's banner) left out — and its note."""
+    rows = np.where((a > 0.5).sum(axis=1) >= 2)[0]
+    m0 = Q.meta(d, n) or {}
+    if m0.get("top_exempt") and len(rows):
+        masks, _ = Q.ids(d, n)
+        if masks is not None and m0["top_exempt"] in masks:
+            rest = (a > 0.5) & ~masks[m0["top_exempt"]]
+            rows_r = np.where(rest.sum(axis=1) >= 2)[0]
+            if len(rows_r):
+                return rows_r, "  %s by design from %.3f h" % (m0["top_exempt"], rows[0] / h)
+    return rows, ""
+
+
+def check_face(d, n):
+    """A face crop (--face): its file, its top and, with the meta, where the head sits in the game's slots."""
+    im = Q.load(os.path.join(d, n + ".png"))
+    h, w = im.shape[:2]
+    a = im[..., 3]
+    size, prob = [], []
+    if (w, h) != Q.FACE_SIZE:
+        size.append("size %dx%d (want %dx%d)" % (w, h, Q.FACE_SIZE[0], Q.FACE_SIZE[1]))
+    if max(a[0, 0], a[0, -1]) > 0.02:
+        prob.append("top corner alpha")
+    rows, overflow = _top_row(d, n, a, h)
+    top = rows[0] / h if len(rows) else 1.0
+    if top < Q.FACE_TOP_MIN:
+        prob.append("top %.3f h (%d px; min %.3f)" % (top, rows[0], Q.FACE_TOP_MIN))
+    edge = (a > 0.02) & (a < 0.6)
+    if edge.sum():
+        L = Q.srgb_to_lab(im[..., :3])[..., 0]
+        dark = (edge & (L < 6)).sum() / edge.sum()
+        if dark > 0.01:
+            prob.append("dark fringe %.1f%%" % (dark * 100))
+    m = Q.meta(d, n)
+    info = ""
+    if m:
+        ey = m["eye_y"] / h
+        hb = m["head_box"]
+        hx = (hb[0] + hb[2]) / 2 / w
+        # the solver's upright head height: the kit logs it in px of a 588 px tall master, so / 588 is the share of
+        # a square's side
+        hh = float((m.get("frame") or {}).get("h_px", 0.0)) / 588.0
+        info = "eye %.3f h  head x %.3f w  head %.3f w  chin %.3f h  top %.3f h" % (ey, hx, hh, m["chin_y"] / h, top)
+        if not Q.FACE_EYE_Y[0] - Q.FACE_EYE_Y[2] <= ey <= Q.FACE_EYE_Y[1] + Q.FACE_EYE_Y[2]:
+            prob.append("eye y %.3f h" % ey)
+        if abs(hx - Q.HEAD_X[0]) > Q.HEAD_X[1]:
+            prob.append("head x %.3f w" % hx)
+        if hh and not Q.FACE_H[0] - Q.FACE_H[2] <= hh <= Q.FACE_H[1] + Q.FACE_H[2]:
+            prob.append("head %.3f w" % hh)
+        if hb[0] < Q.FACE_FAN_X[0] * w or hb[2] > Q.FACE_FAN_X[1] * w:
+            prob.append("head x %d..%d past the fan's crop" % (hb[0], hb[2]))
+        cx, cy, r = Q.FACE_CHIP[0] * w, Q.FACE_CHIP[1] * h, Q.FACE_CHIP[2] * w
+        mids = [((hb[0] + hb[2]) / 2, hb[1]), ((hb[0] + hb[2]) / 2, hb[3]), (hb[0], (hb[1] + hb[3]) / 2),
+                (hb[2], (hb[1] + hb[3]) / 2)]
+        out = max(((x - cx) ** 2 + (y - cy) ** 2) ** 0.5 for x, y in mids)
+        if out > r:
+            prob.append("head outside the chip circle (%.0f > %.0f px)" % (out, r))
+        info += "  chip %.0f/%.0f px" % (out, r)
+    return size, prob, top, info + overflow
+
+
 def main():
     pos, opts = Q.parse(sys.argv[1:])
     d = pos[0]
-    have, miss = Q.report_missing(d)
+    face = "face" in opts
+    have, miss = Q.report_missing(d, face=face)
     n_size = n_frame = 0
     worst_top = (1.0, "")
     for n in have:
-        size, prob, top, info = check(d, n)
+        size, prob, top, info = check_face(d, n) if face else check(d, n)
         worst_top = min(worst_top, (top, n))
         n_size += bool(size)
         n_frame += bool(prob)

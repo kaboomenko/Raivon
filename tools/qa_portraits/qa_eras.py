@@ -17,6 +17,10 @@ meta/<name>.json. Checks, on the calm files of each era present (a folder with o
 - E4 glow budget: emissive strips (detail:glow*) <= 3 % of the opaque pixels (§7.4);
 - leader lint (meta "modules"): no leader, nor the ruler, uses a module locked to a commander (§7.8 rule 1).
 Exit 1 with --strict when a gate fails.
+--face: the face crops (face_<name>.png, §7.12) of the commanders: the face mask (the crop's eye line moves down for
+tall headgear, so a mask shift there is the frame, printed apart), the headgear table and the glow budget are gated;
+the main colour (a crop shows the collar, not the coat) and the P-A8 era details (the aiguillette and the raven sit
+below a crop) are printed as INFO; the ruler and the leader lint are the busts' only.
 """
 import itertools
 import os
@@ -81,16 +85,19 @@ def face_mask(masks, meta):
 def main():
     pos, opts = Q.parse(sys.argv[1:])
     d = pos[0]
-    Q.report_missing(d)
+    face = "face" in opts
+    pre = Q.FACE if face else ""  # a face crop's files are face_<name>; the rules read the plain names
+    Q.report_missing(d, face=face)
     fails = []
-    ids = ["cmd_" + c for c in Q.COMMANDERS] + ["ruler"]
+    info = []  # what --face prints instead of gating
+    ids = ["cmd_" + c for c in Q.COMMANDERS] + ([] if face else ["ruler"])
     data = {}
     for base in ids:
         for e in Q.ERAS:
             n = base + e
-            p = Q.path_of(d, n)
-            masks, _ = Q.ids(d, n)
-            meta = Q.meta(d, n)
+            p = Q.path_of(d, pre + n)
+            masks, _ = Q.ids(d, pre + n)
+            meta = Q.meta(d, pre + n)
             if p is None or masks is None or meta is None:
                 continue
             rgba = Q.load(p)
@@ -108,9 +115,9 @@ def main():
                 de = float(Q.de76(data[base]["lab"], data[n]["lab"]))
                 row.append("%s %.1f (%s)" % (e[1:], de, data[n]["grp"]))
                 if de > 22:
-                    fails.append(("main colour", n, de))
+                    (info if face else fails).append(("main colour", n, de))
         print("%-10s E1 %s  %s%s" % (base, data[base]["grp"], "  ".join(row),
-                                    "  FAIL" if any(f[1].startswith(base + "_") for f in fails if f[0] == "main colour") else ""))
+                                    "  FAIL" if any(f[1].startswith(base + "_") for f in fails + info if f[0] == "main colour") else ""))
     for e in ("_e3", "_e4"):
         labs = {c: data["cmd_" + c + e]["lab"] for c in Q.COMMANDERS if "cmd_" + c + e in data and
                 data["cmd_" + c + e]["lab"] is not None}
@@ -121,7 +128,7 @@ def main():
                 e[1:], len(pairs), pairs[0][0], pairs[0][1], pairs[0][2], len(bad), "  FAIL" if bad else ""))
             for p in bad[:8]:
                 print("   %s - %s dE76 %.1f" % (p[1], p[2], p[0]))
-        fails += [("era dE", e + ":" + p[1] + "/" + p[2], p[0]) for p in bad]
+        (info if face else fails).extend([("era dE", e + ":" + p[1] + "/" + p[2], p[0]) for p in bad])
     print("\n== face mask E1 vs EN (head box, chin up; under hats / glass / details left out): <= 2 % ==")
     for base in ids:
         if base not in data:
@@ -135,15 +142,18 @@ def main():
             a, b = data[base]["face"] & keep, data[n]["face"] & keep
             u = (a | b).sum()
             ch = float((a ^ b).sum()) / u if u else 0.0
-            row.append("%s %.2f%%" % (e[1:], ch * 100))
+            # a face crop whose eye line moved (tall headgear: style.RENDER face_eye_max) shifts the whole mask
+            moved = face and abs(data[n]["meta"]["eye_y"] - data[base]["meta"]["eye_y"]) > 1.0
+            row.append("%s %.2f%%%s" % (e[1:], ch * 100, " (eye line moved %.1f px: INFO)" % (
+                data[n]["meta"]["eye_y"] - data[base]["meta"]["eye_y"]) if moved else ""))
             if ch > 0.02:
-                fails.append(("face mask", n, ch))
+                (info if moved else fails).append(("face mask", n, ch))
         print("%-10s %s" % (base, "  ".join(row)))
     print("\n== headgear per era (§7.6: none twice in one era) ==")
     for e in Q.ERAS:
         worn = {}
         for c in Q.COMMANDERS:
-            m = Q.meta(d, "cmd_" + c + e)
+            m = Q.meta(d, pre + "cmd_" + c + e)
             if m and m.get("headgear"):
                 worn.setdefault(m["headgear"], []).append(c)
         dup = {k: v for k, v in worn.items() if len(v) > 1}
@@ -153,8 +163,8 @@ def main():
     print("\n== P-A8 era details ==")
 
     def det(n, name):
-        m = Q.meta(d, n)
-        masks, _ = Q.ids(d, n)
+        m = Q.meta(d, pre + n)
+        masks, _ = Q.ids(d, pre + n)
         if not m or masks is None:
             return None, None
         return int(masks.get("detail:" + name, np.zeros(1, bool)).sum()), (m.get("details") or {}).get(name)
@@ -167,16 +177,16 @@ def main():
             ok = need is not None and got >= need
             row.append("%s %d/%s%s" % (e[1:] or "e1", got, need, "" if ok else " FAIL"))
             if not ok:
-                fails.append(("era detail", "cmd_" + c + e + ":" + name, got))
+                (info if face else fails).append(("era detail", "cmd_" + c + e + ":" + name, got))
         print("%-6s %-12s %s" % (c, name, "  ".join(row)))
     row = []
     for e in Q.ERAS[:2]:
-        m = Q.meta(d, "cmd_seir" + e)
+        m = Q.meta(d, pre + "cmd_seir" + e)
         if m:
             hg = m.get("headgear")
             if hg is None and "headgear" not in m:
                 # the P2 era-1 files predate the meta "headgear" key: §7.6's E1 tricorn, if the ID pass has the hat
-                masks, _ = Q.ids(d, "cmd_seir" + e)
+                masks, _ = Q.ids(d, pre + "cmd_seir" + e)
                 hat = int(masks["hat"].sum()) if masks is not None and "hat" in masks else 0
                 hg = "tricorn (P2 meta; hat %d px)" % hat if hat >= 1000 else None
             ok = str(hg or "").startswith("tricorn")
@@ -196,7 +206,7 @@ def main():
         if share > 0.03:
             fails.append(("glow", n, share))
     print("\n== leader / ruler module lint (§7.8 rule 1) ==")
-    for n in ["ldr_" + x for x in Q.LEADERS] + ["ruler"]:
+    for n in ([] if face else ["ldr_" + x for x in Q.LEADERS] + ["ruler"]):
         m = Q.meta(d, n)
         if not m or not m.get("modules"):
             continue
@@ -214,6 +224,8 @@ def main():
                                                                       md.get("headgear"), ",".join(md.get("props", [])),
                                                                       ("  FAIL " + "; ".join(bad)) if bad else ""))
         fails += [("lint", n, b) for b in bad]
+    if info:
+        print("\nINFO (--face, not gated): %d — %s" % (len(info), ", ".join("%s %s" % (f[0], f[1]) for f in info[:12])))
     print("RESULT", "FAIL" if fails else "PASS", len(fails))
     sys.exit(1 if fails and "strict" in opts else 0)
 

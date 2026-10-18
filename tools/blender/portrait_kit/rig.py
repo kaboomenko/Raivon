@@ -209,11 +209,14 @@ def camera(ctx):
 
 def frame_targets(ctx, size, frame="bust"):
     """The framing numbers for a frame mode, in PNG px of `size`. bust = §7.11 on the 512×588 master (scaled for other
-    sizes); face = a square face crop (not shipped: §7.12 — +31 % head for slots <= 72 px), hair may leave the top."""
+    sizes); face = the square face crop of the slots <= 72 px (§7.12, style.RENDER face_*): its headgear keeps a
+    margin under the top (the eye line moves down first, then the head steps smaller); a skyline-exempt part (Rai's
+    banner) may leave it."""
     if frame == "face":
         w = size[0]
-        return dict(eye_y=0.50 * w, head_x=0.5 * w, h_px=0.62 * w, sky=None, side_band=None, side_rows=None,
-                    step=R["h_step"] * w / 512, h_min=0.5 * w, chin_max=None)
+        return dict(eye_y=R["face_eye_y"] * w, eye_max=R["face_eye_max"] * w, head_x=0.5 * w, h_px=R["face_h"] * w,
+                    sky=R["face_sky"] * w, side_band=None, side_rows=None, step=R["face_step"] * w,
+                    h_min=R["face_h_min"] * w, chin_max=None)
     k = size[1] / 588.0
     sky = R["skyline_headgear"] if ctx.ch.get("tall_headgear") else R["skyline"]
     return dict(eye_y=R["eye_y"] * k, head_x=R["head_x"] * k, h_px=float(ctx.ch["head"]["h_px"]) * k, sky=sky * k,
@@ -277,6 +280,12 @@ def solve_frame(ctx, size, frame="bust", log=print, h_px=None):
             side_l = float(upper[:, 0].min()) if len(upper) else float(size[0])
             side_r = float(size[0] - upper[:, 0].max()) if len(upper) else float(size[0])
             ok = sky >= t["sky"] and side_l >= t["side_band"] and side_r >= t["side_band"]
+        elif t.get("sky") is not None and sky < t["sky"] and t["eye_y"] < t.get("eye_max", t["eye_y"]) - 0.25:
+            # the face crop: tall headgear lowers the eye line first (the head keeps its size), up to eye_max
+            t["eye_y"] = min(t["eye_max"], t["eye_y"] + (t["sky"] - sky) + 0.5)
+            continue
+        elif t.get("sky") is not None:
+            ok = sky >= t["sky"]
         chin_y = float(ph[0, 1])
         if t.get("chin_max") is not None and chin_y > t["chin_max"]:
             ok = False

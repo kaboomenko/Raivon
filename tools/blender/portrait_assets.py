@@ -9,6 +9,11 @@ three commands write (add --force to overwrite the files already in OUTDIR):
   python3 tools/blender/portrait_assets.py game/assets/ui/portraits ldr_barons ldr_hamlets ldr_league ldr_order
   ldr_alvaria ldr_saren ldr_pack ldr_conclave ldr_veilmark ldr_lakes --moods=calm,angry,cunning,smile,tired
 - the 4 rulers (256×294): python3 tools/blender/portrait_assets.py game/assets/ui/portraits ruler --eras=1,2,3,4
+- the 52 face crops of the slots <= 72 px (256×256, `face_<name>.png`: §7.12 — the picker, the mail, the calendar, the
+  «Армия» fan, the army chip; the advisor in the mail smiles):
+  python3 tools/blender/portrait_assets.py game/assets/ui/portraits cmd_bram cmd_lira cmd_olm cmd_vik cmd_vega
+  cmd_kort cmd_seir cmd_frey cmd_irma cmd_hawk cmd_vance cmd_rai --eras=1,2,3,4 --frame=face
+  python3 tools/blender/portrait_assets.py game/assets/ui/portraits cmd_bram --eras=1,2,3,4 --moods=smile --frame=face
 Without ids every kit id is rendered (each in era 1, calm, unless --eras / --moods say otherwise). Without --force every
 file that already exists is skipped, so an interrupted batch resumes and the three commands do nothing on a full folder.
 Every id goes through the portrait kit v2 (tools/blender/portrait_kit/, §7.5; portrait_kit/chars.py KIT_IDS, KIT_ERAS:
@@ -19,8 +24,9 @@ their sidecars stay in SIDECARS/master/, the shipped-size sidecars are scaled in
 does not list (a leader with --eras=2..4, an unknown id) is reported as FAILED and the run exits 1 (the old primitive
 builder is gone since P4). The hand poses of §7.5 (Vance, Seir, Irma, Vega) follow chars.py ("hands"); the
 environment's KIT_HANDS=0/1 forces the hand-free fallbacks / the hands for the side-by-side review (§7.15 q3).
-Flags: --size=N (render width; height = int(N × 1.15), the 0.8707 aspect; no downscale), --samples=N, --frame=bust|face
-(face = a square face crop, not shipped), --sidecars=DIR (DIR/ids/NAME.png part-ID pass + NAME.json colours +
+Flags: --size=N (render width; height = int(N × 1.15), the 0.8707 aspect — a square with --frame=face; no downscale),
+--samples=N, --frame=bust|face (face = the square face crop, `face_<name>.png`: a 512×512 master shipped at 256×256 by
+the same premultiplied Lanczos downscale; framing in portrait_kit.style.RENDER face_*), --sidecars=DIR (DIR/ids/NAME.png part-ID pass + NAME.json colours +
 NAME_sig.png signature mask, DIR/meta/NAME.json projected landmarks and the contact report; read by
 tools/qa_portraits), --contacts (print the P-A7 contact report), --stats (triangles, build and render seconds),
 --force (re-render files that exist). `python3 tools/blender/portrait_assets.py --selftest` (no OUTDIR) builds every
@@ -63,6 +69,8 @@ def main():
                 name = cid if era == 1 else "%s_e%d" % (cid, era)  # era 1 keeps the plain name
                 if mood:
                     name += "_" + mood
+                if frame == "face":  # the face crop of the same file (cmd_portrait.gd reads it in slots <= 72 px)
+                    name = "face_" + name
                 path = os.path.join(out, name + ".png")
                 if os.path.exists(path) and "force" not in opts:
                     print("skipped", name, "(exists; --force re-renders)")
@@ -72,9 +80,10 @@ def main():
                     failed.append(name)
                     continue
                 # commanders render at 512x588; the leaders and the ruler at the same 512 master, shipped as
-                # 256x294 by the premultiplied Lanczos downscale (§7.12); --size renders straight at that width
-                ship = portrait_kit.ship_size(cid)
-                downscale = size_opt is None and frame == "bust" and ship[0] < 512
+                # 256x294 by the premultiplied Lanczos downscale (§7.12), the face crops as 512x512 -> 256x256;
+                # --size renders straight at that width
+                ship = portrait_kit.ship_size(cid) if frame == "bust" else (256, 256)
+                downscale = size_opt is None and ship[0] < 512
                 w = size_opt or 512
                 rpath, rside = path, sidecars
                 tmp = None

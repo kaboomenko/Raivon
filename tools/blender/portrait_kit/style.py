@@ -133,6 +133,13 @@ RENDER = {
     "skyline_headgear": 50.0, "side_band": 28.0, "side_rows": 412.0, "h_step": 4.0, "h_min": 256.0,
     # P-A6 "подбородок <= 0.65 h" (382 px of 588): a frame whose chin lands lower steps H_px down like the skyline does
     "chin_max": 381.0,
+    # the face crop for the slots <= 72 px (--frame=face, §7.12): square, shares of its side. The head (chin-crown) at
+    # 0.66 of the side, eye line at 0.50, centred; headgear keeps >= 0.02 of the side above it: the eye line moves down
+    # (to 0.56) before the head steps smaller (0.02 a step, down to 0.56). Drawn cover-cropped in the game's slots, the
+    # head (median of the 52 crops) grows +26 % in the 64 / 72 squares, +45 % in the 58x70 fan, +31 % in the army chip
+    # over the bust's (T2, 2026-10-18); 8 of the 52 lowered the eye line (Vance's bun in every era, the E2 headgear of
+    # Bram, Vega and Rai: at most 0.551), none needed the smaller head
+    "face_h": 0.66, "face_eye_y": 0.50, "face_eye_max": 0.56, "face_sky": 0.02, "face_step": 0.02, "face_h_min": 0.56,
 }
 
 # Part-ID colours (flat emission pass for tools/qa_portraits): groups -> 8-bit sRGB. detail:<name> colours are

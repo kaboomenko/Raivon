@@ -31,6 +31,10 @@ ID rules (only with the kit's sidecars ids/<name>.png + meta/<name>.json):
   min(70, L* of the skin albedo - 8) to 82 (the albedo from the kit's meta "skin_albedo"; 70 without it) and median
   HSV S >= 0.35, >= 0.27 for peach-pink skin (the lit cheek's hue <= 16 deg) — §7.4 as decided after P1.
 A folder that holds only some of the 150 names is fine. Exit 1 with --strict when a gated rule fails.
+--face: the 52 face crops (face_<name>.png, §7.12) on their commander's plates: rows 0.80-0.95 h of a crop are the
+neck and the collar, not the shoulders, so the band is printed as INFO, and so is the dark share (its pupils, lash
+lines, mouth and dark hair are a larger part of a crop than of the bust, whose coat dilutes them: the same render
+measures 1–3 points higher); the rim and the ID rules are gated as for the busts.
 """
 import os
 import sys
@@ -91,6 +95,7 @@ def dark_share(im):
 
 
 def plates_for(name):
+    name = Q.base(name)
     if name.startswith("cmd_"):
         r = Q.RARITY[name.split("_")[1]]
         return [("ui/" + r, Q.PLATES_UI[r]), ("gdd/" + r, Q.PLATES_GDD[r])]
@@ -101,6 +106,7 @@ def plates_for(name):
 
 def id_rules(im, masks, m, name):
     """The ID-pass colour rules of §7.4 -> list of (rule, value, ok, text)."""
+    name = Q.base(name)
     lab = Q.srgb_to_lab(im[..., :3])
     h, w = im.shape[:2]
     out = []
@@ -304,7 +310,8 @@ def main():
     pos, opts = Q.parse(sys.argv[1:])
     d = pos[0]
     quiet = "quiet" in opts
-    have, _ = Q.report_missing(d)
+    face = "face" in opts  # (the band of a face crop is its neck: INFO)
+    have, _ = Q.report_missing(d, face=face)
     fails = 0
     tally = {}
     moods = ("_smile", "_angry", "_cunning", "_tired")
@@ -317,7 +324,7 @@ def main():
             b = band_stats(im, pc, "B")
             c = band_stats(im, pc, "current")
             r = rim_share(im, pc, "B")
-            okb = b is None or (b[0] >= 15 and b[1] <= 0.25)
+            okb = b is None or face or (b[0] >= 15 and b[1] <= 0.25)
             okr = r is None or r <= 0.35
             tally.setdefault("band B", [0, 0])
             tally["band B"][0] += okb
@@ -344,7 +351,7 @@ def main():
                     tag, "%3.0f%%" % (hd * 100) if hd is not None else " - ",
                     "%3.0f%%" % (bd * 100) if bd is not None else " - "))
         ds = dark_share(im)
-        okd = ds <= 0.03
+        okd = ds <= 0.03 or face
         bad |= not okd
         tally.setdefault("dark <= 3%", [0, 0])
         tally["dark <= 3%"][0] += okd
@@ -391,7 +398,8 @@ def main():
                                    % (tag, rc * 100))
         fails += bad
         if not quiet or bad:
-            print("%-22s dark %.1f%%%s%s" % (n, ds * 100, "" if okd else " FAIL", "   FAIL" if bad else ""))
+            print("%-22s dark %.1f%%%s%s" % (n, ds * 100, "" if okd else " FAIL", "   FAIL" if bad else "") + (
+                " (INFO)" if face and ds > 0.03 else ""))
             for ln in lines:
                 print("    " + ln)
             if idl:

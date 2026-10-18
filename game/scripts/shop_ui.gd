@@ -217,8 +217,9 @@ func _card(y: float, h: float, case_id: String, note: String) -> Panel:
 	glow.size = Vector2(200, 200)
 	glow.position = Vector2(10, (art.size.y - 6.0) * 0.5 - 100.0)
 	art.add_child(glow)
-	var chest := Kit._card_rect(Kit.icon_atlas(String(look[0])), Rect2(20, (art.size.y - 6.0) * 0.5 - 90.0, 180, 180))
-	chest.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	# the chest's 256 px hero render (Kit.hero_rect, §7.13), baked into the kit's atlas at 180
+	var chest := Kit.hero_rect(String(look[0]), Rect2(20, (art.size.y - 6.0) * 0.5 - 90.0, 180, 180))
+	chest.name = "chest"
 	art.add_child(chest)
 	var tw := w - COL_X - 16.0 - 52.0 - 12.0
 	var name := String(cases.case_name(case_id))
@@ -714,13 +715,17 @@ func _raivite_pile(tier: int) -> Control:
 	var crystal := Kit.icon_atlas("raivite")  # the kit's shared icon sheet (one batch with the tiles round it)
 	for prt in parts:
 		var p: Array = prt
-		var tr_ := TextureRect.new()
-		tr_.texture = Kit.icon_atlas(String(p[1])) if p[0] == "c" else crystal
-		tr_.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		tr_.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		tr_.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		tr_.set_meta("unit", [0.5 if p[0] == "c" else float(p[1]), float(p[2]), float(p[3])])
-		pile.add_child(tr_)
+		# the chest (0.84–0.88 of a 168–180 px box: 141–158 px) from its hero render, baked into the same atlas
+		var c: Control = Kit.hero_still(String(p[1])) if p[0] == "c" else null
+		if c == null:
+			var tr_ := TextureRect.new()
+			tr_.texture = Kit.icon_atlas(String(p[1])) if p[0] == "c" else crystal
+			tr_.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			tr_.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			tr_.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			c = tr_
+		c.set_meta("unit", [0.5 if p[0] == "c" else float(p[1]), float(p[2]), float(p[3])])
+		pile.add_child(c)
 	var lay := func():  # laid out in the box the tile gives it
 		var s := minf(pile.size.x, pile.size.y)
 		for c in pile.get_children():

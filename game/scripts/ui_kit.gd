@@ -1958,6 +1958,11 @@ class KitStill extends Control:
 			add_child(v)
 		resized.connect(func(): if vec != null: vec.size = size)
 
+	func _notification(what: int) -> void:
+		# a size set while out of the tree sends no `resized`: the vectors (drawn until the bake lands) take it here
+		if what == NOTIFICATION_ENTER_TREE and vec != null and vec.size != size:
+			vec.size = size
+
 	func _draw() -> void:
 		var k := key
 		var mk := make
@@ -4369,6 +4374,51 @@ static func _card_rect(tex: Texture2D, r: Rect2) -> TextureRect:
 	return t
 
 
+## The icons with a 256 px hero render (`<name>_hero.png`, docs/art_direction.md §7.13 «Выход»: the chests) are drawn
+## from it where they stand larger than this (px): the 128 px sheet icon would be enlarged 1.3–2× there and go soft.
+const HERO_MIN := 110.0
+
+
+## An icon over `r` (keep-aspect, centred, ignores the mouse): larger than HERO_MIN with a hero render — hero_still;
+## else the shared sheet icon (icon_atlas), as before.
+static func hero_rect(name: String, r: Rect2) -> Control:
+	var st: Control = hero_still(name, r) if minf(r.size.x, r.size.y) > HERO_MIN else null
+	if st == null:
+		var t := _card_rect(icon_atlas(name), r)
+		t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		return t
+	return st
+
+
+## The hero render of the icon `name` over `r` (null without one): a TextureRect sampling its mipmaps (keep-aspect,
+## centred), baked into the kit's atlas at the size it is given (KitStill) — one textured rect that batches with the
+## sheet icons and panels round it, as the 128 px icon did, instead of a draw call of its own. Its size may be set
+## later (a raivite pile lays its chest after building it): the bake reads it when it draws.
+static func hero_still(name: String, r := Rect2()) -> Control:
+	var path := "res://assets/ui/icons/%s_hero.png" % name
+	if not ResourceLoader.exists(path):
+		return null
+	var tex: Texture2D = load(path)
+	var mk := func(z: Vector2) -> Control:
+		var t := _hero_tr(tex)
+		t.size = z
+		return t
+	var v := _hero_tr(tex)
+	v.position = r.position
+	v.size = r.size
+	return KitStill.new(v, "hero|" + name, mk)
+
+
+static func _hero_tr(tex: Texture2D) -> TextureRect:
+	var t := TextureRect.new()
+	t.texture = tex
+	t.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	t.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	t.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return t
+
+
 ## A round chip Ø44 on a card's corner (§4.4): an INK 3 ring on SLATE_WELL, inside it — clipped round — a portrait
 ## ({node}) or an icon 32 ({icon}) on SKY_LOW or on `fill` (a status colour). PASS: a drag still scrolls the row.
 static func _card_ring(b: Control, r: Rect2, chd: Dictionary) -> Panel:
@@ -4395,7 +4445,9 @@ static func _card_ring(b: Control, r: Rect2, chd: Dictionary) -> Panel:
 	ring.add_child(inner)
 	if chd.has("node"):
 		var pn: Control = chd["node"]
-		pn.position = Vector2(-5, -3)  # a little larger than the circle: the portrait's own frame stays outside
+		# a little larger than the circle: the portrait's own frame stays outside; the face crop's eye line (half its
+		# height, cmd_portrait FACE_EYE) on the circle's centre, the whole head inside it (the bust's 2 px above)
+		pn.position = Vector2(-5, -6)
 		pn.size = Vector2(48, 50)
 		inner.add_child(pn)
 	elif chd.has("icon"):
