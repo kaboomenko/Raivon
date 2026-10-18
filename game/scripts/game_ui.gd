@@ -4168,11 +4168,10 @@ func show_profile(info: Dictionary, cb: Dictionary) -> void:
 	sky.position = Vector2(8, 8)
 	sky.size = Vector2(104, 104)
 	rf.add_child(sky)
-	var rtex := HudScript.ruler_tex(CmdPortrait.era)  # the era's render, with mipmaps (shown at 104 px)
+	var rtex := HudScript.ruler_tex(CmdPortrait.era)  # the era's render (plain linear at 104 px, as on the crest)
 	if rtex != null:
 		var face := TextureRect.new()
 		face.texture = rtex
-		face.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		face.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		# a cover anchored at the top (the well clips the chest), as on the HUD crest: the crown ~12 px under the
 		# well's top instead of a centred cover's 5 px
@@ -6837,7 +6836,7 @@ func _coach_clear(ring: Rect2, side: String, a: Rect2) -> float:
 const TOAST_CX := 425.0  ## centred on the free column between the left column (to x 104) and the minimap (from 733)
 const TOAST_Y := 108.0  ## under the resource plates …
 const TOAST_Y_BAR := 196.0  ## … or under the war bar (its score chip ends at y 182)
-const TOAST_TITLE_GAP := 12.0  ## … or this far under an open window's title plate that would lie under it (_toast_y)
+const TOAST_TITLE_GAP := 12.0  ## … or this far over an open window's title plate that would lie under it (_toast_spot)
 const TOAST_W_MIN := 360.0
 const TOAST_W_MAX := 590.0
 const TOAST_PAD_L := 64.0  ## the icon (60, overhanging the left end by 8) and a 12 px gap before the text
@@ -6850,6 +6849,7 @@ const TOAST_HOLD_LINE := 0.6
 const TOAST_HOLD_BUSY := 1.2  ## while others wait, the one showing stays this long at most (a burst drains quickly)
 const TOAST_QUEUE_MAX := 3  ## waiting beyond this: the oldest waiting one is dropped (stale news)
 var _toast_nodes: Array = []  # the toast on screen: [its root Control], empty when none shows
+var _toast_top: CanvasLayer  # layer 4: a toast lifted over a window's title onto the HUD band, over the currency plates
 var _toast_queue: Array = []  # waiting toasts: {text, icon, kind, n}
 var _toast_cur := {}  # the one on screen: {text, icon, kind, n, lines}; {} when none
 var _toast_shown := 0.0  # seconds it has held (since it came in, or since the same text came again)
@@ -7020,8 +7020,9 @@ func _toast_build(d: Dictionary) -> Control:
 	node.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	node.z_index = 60  # over a window, under the coach (§3.1)
 	node.size = Vector2(w, h)
-	node.position = Vector2(TOAST_CX - w * 0.5, _toast_y(h))
-	root.add_child(node)
+	var spot := _toast_spot(h)
+	node.position = Vector2(TOAST_CX - w * 0.5, spot[0])
+	_toast_host(spot[1]).add_child(node)
 	var body := Control.new()
 	body.name = "body"
 	body.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -7077,14 +7078,20 @@ func toast_rect() -> Rect2:
 	return Rect2(r.position.x - 8.0, r.position.y, r.size.x + 8.0, r.size.y)
 
 
-## The toast's top: under the resource plates, or under the war bar while it shows (+ the safe top inset) — and,
-## while a window's title plate (Kit.title_plate, group "kit_title") would lie under a toast `h` tall there (a window
-## high in the band: the album, the shop, the pass, the calendar), TOAST_TITLE_GAP under that plate: the toast never
-## covers a title. The plates are read at their resting place (a plate still dropping in does not move the toast).
-func _toast_y(h := 72.0) -> float:
-	var y := (TOAST_Y_BAR if _control_bar.visible else TOAST_Y) + _top.position.y
+## The toast's place: [its top y, lifted]. Under the resource plates, or under the war bar while it shows (+ the safe
+## top inset). While a window's title plate (Kit.title_plate, group "kit_title"; its icon's overhang counts) would lie
+## under a toast `h` tall there (a window high in the band: the album, the pass), the toast goes up instead: onto the
+## HUD band, TOAST_TITLE_GAP over the plate (and at least 8 px under the safe top: a two-line toast may then rest on
+## the plate's icon frame, never on its text), lifted onto the layer over the currency plates (_toast_host). It covers
+## neither the title nor the window's first row (under the plate it hid the album's section heading and «1/12», the
+## pass's XP bar) — for its ~2 s it covers resource plates, which the window does not need. While the coach shows the
+## toast stays under it (§3.1): it goes under the plate(s) then. The plates are read at their resting place (a plate
+## still dropping in does not move the toast).
+func _toast_spot(h := 72.0) -> Array:
+	var top_in := _top.position.y
+	var y := (TOAST_Y_BAR if _control_bar.visible else TOAST_Y) + top_in
 	if not is_inside_tree():
-		return y
+		return [y, false]
 	var spans: Array = []  # [top, bottom] of each title plate on show, in root's coordinates
 	var oy := root.get_global_rect().position.y
 	for n in get_tree().get_nodes_in_group("kit_title"):
@@ -7095,12 +7102,38 @@ func _toast_y(h := 72.0) -> float:
 		if host == null:
 			continue
 		var top := host.get_global_rect().position.y + float(p.get_meta("rest_y", p.position.y)) - oy
-		spans.append([top, top + p.size.y])
+		var over := 0.0  # a child hanging over the plate's top edge (the title's icon frame: 10 px)
+		for c in p.get_children():
+			if c is Control:
+				over = maxf(over, -(c as Control).position.y)
+		spans.append([top - over, top + p.size.y])
 	spans.sort_custom(func(a, b): return a[0] < b[0])
-	for s in spans:  # top down: a plate pushed past may bring the next one under the toast
+	var hit := -1
+	for i in spans.size():
+		if hit < 0 and spans[i][0] < y + h + TOAST_TITLE_GAP and spans[i][1] > y - TOAST_TITLE_GAP:
+			hit = i
+	if hit < 0:
+		return [y, false]
+	if _coach == null or not _coach.visible:
+		return [maxf(top_in + 8.0, float(spans[hit][0]) - TOAST_TITLE_GAP - h), true]
+	for s in spans:  # under the coach: under the plate, top down (a plate pushed past may bring the next one under it)
 		if s[0] < y + h + TOAST_TITLE_GAP and s[1] > y - TOAST_TITLE_GAP:
 			y = s[1] + TOAST_TITLE_GAP
-	return y
+	return [y, false]
+
+
+## Where the toast lives: game_ui's root (layer 2, z 60: over a window, under the coach), or — lifted over a window's
+## title onto the HUD band (_toast_spot) — a layer of its own over the currency plates (layer 3), made on first use.
+## Both share the canvas's coordinates.
+func _toast_host(lifted: bool) -> Node:
+	if not lifted:
+		return root
+	if _toast_top == null:
+		_toast_top = CanvasLayer.new()
+		_toast_top.name = "toast_top"
+		_toast_top.layer = 4
+		add_child(_toast_top)
+	return _toast_top
 
 
 ## The «×N» hex badge on the toast's right end once the same text came N times (`pop`: it just came again).
@@ -7121,7 +7154,7 @@ func _toast_count(pop: bool) -> void:
 
 
 ## Holds the toast on screen (TOAST_HOLD, + a line; less while others wait), keeps it under the war bar when the bar
-## comes or goes and clear of an open window's title (_toast_y), then lets it out (fades and rises 12 px over 300 ms)
+## comes or goes and clear of an open window's title (_toast_spot), then lets it out (fades and rises 12 px over 300 ms)
 ## and brings the next one.
 func _process_toast(delta: float) -> void:
 	while not quiet and not _toast_held.is_empty() and _toast_queue.size() < TOAST_QUEUE_MAX:
@@ -7141,8 +7174,13 @@ func _process_toast(delta: float) -> void:
 		_toast_done()
 		return
 	var node := _toast_nodes[0] as Control
-	# its place follows the war bar and the open window's title (_toast_y): it glides there (~0.15 s), not jumps
-	var ty := _toast_y(node.size.y)
+	# its place follows the war bar and the open window's title (_toast_spot): it glides there (~0.15 s), not jumps,
+	# changing layers when a window's title lifts it onto the HUD band (or lets it back down)
+	var spot := _toast_spot(node.size.y)
+	var host := _toast_host(spot[1])
+	if node.get_parent() != host:
+		node.reparent(host, false)
+	var ty: float = spot[0]
 	node.position.y = ty if absf(ty - node.position.y) < 1.0 or Kit._dur(1.0) <= 0.0 \
 		else lerpf(node.position.y, ty, minf(1.0, delta * 18.0))
 	_toast_shown += delta

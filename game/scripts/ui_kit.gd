@@ -3621,7 +3621,7 @@ static func title_plate(panel: Control, text: String, role := "info", icon := ""
 	s.size = Vector2(w, h)
 	var y0 := -h * 0.5
 	s.position = Vector2((panel.size.x - w) * 0.5, y0)
-	# a window's title: the toasts keep clear of it (game_ui._toast_y) — at its resting place, not mid drop-in
+	# a window's title: the toasts keep clear of it (game_ui._toast_spot) — at its resting place, not mid drop-in
 	s.add_to_group("kit_title")
 	s.set_meta("rest_y", y0)
 	panel.add_child(s)

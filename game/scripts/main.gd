@@ -8819,7 +8819,8 @@ func _demo(spec: String) -> void:
 	if what == "toast":  # toasts (§4.10): one with an icon, then a second waiting behind it; toast:merge — the same text
 		# twice («×2»); toast:error — a refusal (war face); toast:long — two lines; toast:modal — over a window;
 		# toast:war — the declaration's own toast under the war bar; toast:sheet — the event toasts stacked at once
-		# toast:album|shop|pass|calendar — a Chronicle toast while that window is open (the album at DL8)
+		# toast:album|shop|pass|calendar[:long] — a Chronicle toast (:long — a two-line one) while that window is open
+		# (the album at DL8)
 		var v := parts[1] if parts.size() > 1 else ""
 		if v == "modal":
 			_on_hud_button("gear")
@@ -8836,7 +8837,9 @@ func _demo(spec: String) -> void:
 		for i in 10:  # the shot waits 10 frames before its --shot-delay: the toast comes in with it
 			await get_tree().process_frame
 		var rs := tr(String(Research.LINES["taxes"]["name"]))
-		if v in ["album", "shop", "pass", "calendar"]:
+		if v in ["album", "shop", "pass", "calendar"] and parts.size() > 2 and parts[2] == "long":
+			ui.toast(tr("toast.research_done") % [rs, 2, tr(String(Research.LINES["taxes"]["desc"]))], "flask")
+		elif v in ["album", "shop", "pass", "calendar"]:
 			ui.toast(tr("chr.toast") % tr("chr.ach_cmd_4"))
 		elif v == "war":
 			_declare(MapGen.BARONS, War.recommend_goals(sim, MapGen.BARONS, 1)[0])

@@ -53,6 +53,7 @@ var _builders := 0
 var level_label: Label  # the numeral of the level hex on the ruler's portrait
 var ruler_face: TextureRect  # the rendered ruler portrait (assets/ui/portraits/ruler*.png), by the player's era
 var _ruler_era := 1
+const RULER_INSET := 4.0  ## the crest render's side margin in its 74 px well: 66 px wide, 76 tall from the top (_build_crest)
 var _ruler_frame: Panel
 var _trim := ""  # brass (DL1–4) / steel (DL5–8): the only era switch in the UI (§3.2)
 var mail_badge: Array = []  # [dot, number Label]
@@ -110,18 +111,16 @@ func set_ruler_era(dl: int) -> void:
 		ruler_face.texture = tex
 
 
-## The ruler's render for portrait era `era` (ruler, ruler_e2…e4; the first era's when one is missing) with mipmaps:
-## the 256×294 file is shown at 74 px on the crest and 104 px in the profile (game_ui.show_profile), and sampled
-## without them its hair and beard outline stair-step. The ruler imports have no mipmaps (only the commanders' 96 do),
-## so CmdPortrait._with_mipmaps makes them (a 256×294 copy: only when the crest's era changes or the profile opens; the
-## holder keeps it — no static cache to outlive the scene). Null when there is no render.
+## The ruler's render for portrait era `era` (ruler, ruler_e2…e4; the first era's when one is missing), for the crest
+## and the profile (game_ui.show_profile); null when there is no render. Sampled plain linear, without mipmaps: the
+## 256×294 file shows at 66 px on the crest and 104 px in the profile, where trilinear mips read the 64/128 px level and
+## smeared the eyes, the beard and the crown's merlons (T1 review) — the plain sampling stays crisp with no visible
+## stair-steps at those sizes.
 static func ruler_tex(era: int) -> Texture2D:
 	var path := "res://assets/ui/portraits/ruler%s.png" % ("" if era <= 1 else "_e%d" % era)
 	if not ResourceLoader.exists(path):
 		path = "res://assets/ui/portraits/ruler.png"
-	if not ResourceLoader.exists(path):
-		return null
-	return CmdPortrait._with_mipmaps(load(path), path)
+	return load(path) as Texture2D if ResourceLoader.exists(path) else null
 
 
 func _label(text: String, size: int, color := TEXT, bold := true) -> Label:
@@ -322,17 +321,22 @@ func _build_crest() -> void:
 	sky.size = well.size
 	sky.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	well.add_child(sky)
-	if ResourceLoader.exists("res://assets/ui/portraits/ruler.png"):  # the rendered king of reference frame 1
+	var rtex := ruler_tex(CmdPortrait.era)  # the rendered king in the portraits' era (set_ruler_era follows the DL)
+	if rtex != null:
 		var face := TextureRect.new()
 		ruler_face = face
-		face.texture = ruler_tex(1)
-		face.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS  # (256 px shown at 74: ruler_tex)
+		_ruler_era = CmdPortrait.era
+		face.texture = rtex
 		face.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		# a cover anchored at the top (the well clips the chest): the full width, the render's own aspect, y 0 — the
-		# crown keeps the file's margin over it (9 px) instead of a centred cover's 2–3 px
+		# the render a little narrower than the well (the sky is the backdrop, the render's own aspect) and anchored at
+		# its top: the crown keeps 8 px over it (a centred full-width cover left 2–3 px) and the well still shows the
+		# era's costume under the beard — the chain, the sash, the medal, the armour trim (a full-width top-anchored
+		# cover cut it to a 4 px sliver and the four eras looked alike)
 		face.stretch_mode = TextureRect.STRETCH_SCALE
 		var ts := face.texture.get_size()
-		face.size = Vector2(well.size.x, roundf(well.size.x * ts.y / maxf(1.0, ts.x)))
+		var fw := well.size.x - 2.0 * RULER_INSET
+		face.size = Vector2(fw, roundf(fw * ts.y / maxf(1.0, ts.x)))
+		face.position = Vector2(RULER_INSET, 0.0)
 		face.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		well.add_child(face)
 	var rim := Panel.new()  # an INK line between the art and the trim
