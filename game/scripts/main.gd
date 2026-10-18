@@ -5493,10 +5493,11 @@ func _grant_legacy(ch: int) -> String:
 	# the rewards as tiles on their rarity's tinted face (as an opening shows them): the commander's portrait, …
 	var tint := func(r: String) -> Color:  # common stays paper: a grey face would read as «unavailable» (§1 rule 7)
 		return Kit.CREAM_ROW if not Kit.RARITY.has(r) or r == "common" else (Kit.RARITY[r] as Color).lerp(Kit.CREAM_ROW, 0.55)
-	var face := "res://assets/ui/portraits/%s.png" % cmd
+	# the face on its rarity's plate, in the player's era (the window makes it: GameUI._reward_face), else the frame
 	var ct := {"title": Cases.commander_name(cmd), "wrap_title": true, "face": tint.call(rarity)}
-	if ResourceLoader.exists(face):
-		ct["tex"] = load(face)
+	if GameUI.CmdPortrait._render(cmd) != null:
+		ct["cmd"] = cmd
+		ct["cmd_rarity"] = rarity
 		ct["icon_side"] = 100.0
 	else:
 		ct["icon"] = "frame"
@@ -8430,6 +8431,13 @@ func _demo(spec: String) -> void:
 		if parts.size() > 1 and parts[1] == "tab":
 			_open_tab("army")
 			return
+		if parts.size() > 1 and parts[1] == "tab_era":  # commanders:tab_era[:<DL>:<DL2>] — the Army tab, then the DL (and
+			# the portraits' era) changes while a finger holds the card row (the row is not rebuilt): the fan's faces follow
+			_open_tab("army")
+			await get_tree().create_timer(1.0).timeout
+			ui._finger_down = true
+			_set_dl(int(parts[3]) if parts.size() > 3 else 8)
+			return
 		if parts.size() > 1 and parts[1] == "assign" and pa.size() > 1:
 			_open_tab("army")
 			_open_cmd_picker(int(pa[1]["id"]))
@@ -8510,6 +8518,29 @@ func _demo(spec: String) -> void:
 		opinion[4] = 46.0
 		allies = [3]
 		_open_tab("diplomacy")
+		return
+	if what == "dip_all":  # dip_all[:<px>] — chapter IV: all ten neighbours on the Diplomacy tab, the row scrolled by px
+		for i in 3:
+			await _world_expansion()
+			ui.close_modal()
+		_set_dl(8)
+		_open_tab("diplomacy")
+		await get_tree().process_frame
+		if parts.size() > 1 and parts[1] == "grid":  # dip_all:grid — every neighbour's card at once, 4 to a row, on a dim
+			var sheet := ColorRect.new()
+			sheet.color = Kit.alpha(Kit.INK, 0.85)
+			sheet.size = Vector2(GameUI.VW, GameUI.VH)
+			ui.root.add_child(sheet)
+			var k := 0
+			for it in _diplomacy_items(now_s()):
+				if String((it as Dictionary).get("kind", "")) == "alarm":
+					continue
+				var card: Control = ui._diplomacy_card(it)
+				card.position = Vector2(30.0 + (k % 4) * 224.0, 140.0 + (k / 4) * 330.0)
+				sheet.add_child(card)
+				k += 1
+			return
+		ui._bscroll.scroll_horizontal = int(parts[1]) if parts.size() > 1 else 0
 		return
 	if what == "oil":
 		await _world_expansion()
@@ -8786,13 +8817,26 @@ func _demo(spec: String) -> void:
 	if what == "toast":  # toasts (§4.10): one with an icon, then a second waiting behind it; toast:merge — the same text
 		# twice («×2»); toast:error — a refusal (war face); toast:long — two lines; toast:modal — over a window;
 		# toast:war — the declaration's own toast under the war bar; toast:sheet — the event toasts stacked at once
+		# toast:album|shop|pass|calendar — a Chronicle toast while that window is open (the album at DL8)
 		var v := parts[1] if parts.size() > 1 else ""
 		if v == "modal":
 			_on_hud_button("gear")
+		elif v == "album":
+			_set_dl(8)
+			_open_commanders()
+		elif v == "shop":
+			_open_shop()
+		elif v == "pass":
+			_open_pass()
+		elif v == "calendar":
+			calendar.visit(now_s())
+			_open_calendar()
 		for i in 10:  # the shot waits 10 frames before its --shot-delay: the toast comes in with it
 			await get_tree().process_frame
 		var rs := tr(String(Research.LINES["taxes"]["name"]))
-		if v == "war":
+		if v in ["album", "shop", "pass", "calendar"]:
+			ui.toast(tr("chr.toast") % tr("chr.ach_cmd_4"))
+		elif v == "war":
 			_declare(MapGen.BARONS, War.recommend_goals(sim, MapGen.BARONS, 1)[0])
 		elif v == "error":
 			ui.toast(tr("toast.no_gold"), "coin", "error")

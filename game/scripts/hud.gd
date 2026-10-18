@@ -299,8 +299,10 @@ func _build_crest() -> void:
 	well.clip_children = CanvasItem.CLIP_CHILDREN_AND_DRAW  # the art takes the well's rounded corners
 	well.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	fr.add_child(well)
+	# the sky behind the ruler: SKY_TOP lightened 18 % at the top to SKY_TOP at the bottom (docs/art_direction.md
+	# §7.10 «Плита») — on the paler SKY_TOP → SKY_LOW the fur collar and the rim-lit head melted into it (rim 36–51 %)
 	var sky := TextureRect.new()
-	sky.texture = Kit.vgradient(Kit.SKY_TOP, Kit.SKY_LOW)
+	sky.texture = Kit.vgradient(Kit.SKY_TOP.lightened(0.18), Kit.SKY_TOP)
 	sky.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	sky.stretch_mode = TextureRect.STRETCH_SCALE
 	sky.size = well.size
@@ -311,8 +313,11 @@ func _build_crest() -> void:
 		ruler_face = face
 		face.texture = load("res://assets/ui/portraits/ruler.png")
 		face.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		face.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-		face.size = well.size
+		# a cover anchored at the top (the well clips the chest): the full width, the render's own aspect, y 0 — the
+		# crown keeps the file's margin over it (9 px) instead of a centred cover's 2–3 px
+		face.stretch_mode = TextureRect.STRETCH_SCALE
+		var ts := face.texture.get_size()
+		face.size = Vector2(well.size.x, roundf(well.size.x * ts.y / maxf(1.0, ts.x)))
 		face.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		well.add_child(face)
 	var rim := Panel.new()  # an INK line between the art and the trim

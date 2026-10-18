@@ -3621,6 +3621,9 @@ static func title_plate(panel: Control, text: String, role := "info", icon := ""
 	s.size = Vector2(w, h)
 	var y0 := -h * 0.5
 	s.position = Vector2((panel.size.x - w) * 0.5, y0)
+	# a window's title: the toasts keep clear of it (game_ui._toast_y) — at its resting place, not mid drop-in
+	s.add_to_group("kit_title")
+	s.set_meta("rest_y", y0)
 	panel.add_child(s)
 	var tx := 54.0 + (64.0 if has_icon else 0.0)
 	var l := label(text, size, TEXT, true)
@@ -4351,10 +4354,13 @@ static func card(art_tex: Texture2D, title: String, opts := {}) -> KitCard:
 	return c
 
 
-## A TextureRect stretched over `r` (backdrops, scrims, pictures) that ignores the mouse.
+## A TextureRect stretched over `r` (backdrops, scrims, pictures) that ignores the mouse. A portrait render (the
+## 256–512 px busts shrunk to a tile) samples its mipmaps, so its hair and outline do not stair-step.
 static func _card_rect(tex: Texture2D, r: Rect2) -> TextureRect:
 	var t := TextureRect.new()
 	t.texture = tex
+	if tex != null and tex.resource_path.begins_with("res://assets/ui/portraits/"):
+		t.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 	t.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	t.stretch_mode = TextureRect.STRETCH_SCALE
 	t.mouse_filter = Control.MOUSE_FILTER_IGNORE

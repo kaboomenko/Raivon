@@ -595,11 +595,11 @@ func _reward_look(rw: Dictionary, rarity: String, count := 1) -> Dictionary:
 			o["icon"] = "lightning"
 			o["pill"] = [["", tr("time.h") % (m / 60) if m >= 60 and m % 60 == 0 else tr("time.m") % m]]
 			o["title"] = tr("shop.speedup")
-		"shards":
+		"shards":  # the commander on its rarity's plate in the player's era (GameUI._reward_face), else the shard
 			var cmd := String(rw.get("commander", ""))
-			var p := "res://assets/ui/portraits/%s.png" % cmd
-			if ResourceLoader.exists(p):
-				o["tex"] = load(p)
+			var face: Control = ui._reward_face(cmd, r) if ui != null else null
+			if face != null:
+				o["pic_node"] = face
 			else:
 				o["icon"] = "shard"
 			o["pill"] = [["shard", "×%d" % int(rw.get("n", 1))]]

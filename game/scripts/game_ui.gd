@@ -1877,8 +1877,7 @@ func _inbox_row(host: Control, r: Rect2, it: Dictionary, now: int, idx: int, ite
 	var kind := title_key.trim_prefix("inbox.").trim_suffix(".title")
 	var pic: Control
 	if kind == "advisor" and ResourceLoader.exists("res://assets/ui/portraits/cmd_bram_smile.png"):
-		pic = _cmd_face("cmd_bram", "common", 72.0)
-		(pic.get_child(0) as Control).set("mood", "smile")
+		pic = _cmd_face("cmd_bram", "common", 72.0, 0, false, "smile")  # the advisor smiles, as in the tutorial
 	else:
 		pic = _icon_rect(String(INBOX_ICON.get(kind, "mail")), 72)
 	pic.name = "pic"
@@ -2089,7 +2088,12 @@ func show_pass(info: Dictionary, on_claim: Callable, on_buy: Callable) -> void:
 			# only the first reward to take breathes (§3.6: one per screen); the others keep the gold outline
 			var o := {"icon_side": 88.0, "claimable": state == "claim", "taken": state == "claimed",
 				"still": state == "claim" and first_claim >= 0}
-			if look.has("tex"):
+			var fid := String(look.get("face", ""))
+			var face: Control = _reward_face(fid, String(CasesSim.commander(fid).get("rarity", "common"))) if fid != "" else null
+			if face != null:  # a commander's shards: the bust on its rarity's plate, in the player's era
+				o["pic_node"] = face
+				o["icon_side"] = 100.0
+			elif look.has("tex"):
 				o["tex"] = look["tex"]
 				o["icon_side"] = 108.0
 			else:
@@ -2157,11 +2161,10 @@ func _pass_look_rw(rw: Array) -> Dictionary:
 			return {"icon": "chest_wood", "pill": "×%d" % int(rw[1]) if int(rw[1]) > 1 else ""}
 		"raivite":
 			return {"icon": "raivite", "pill": fmt_num(int(rw[1]))}
-		"shards":
-			var p := "res://assets/ui/portraits/%s.png" % String(rw[1])
+		"shards":  # the commander's face (show_pass: on its rarity plate, in the player's era), else the shard
 			var o := {"pill": "×%d" % int(rw[2])}
-			if ResourceLoader.exists(p):
-				o["tex"] = load(p)
+			if CmdPortrait._render(String(rw[1])) != null:
+				o["face"] = String(rw[1])
 			else:
 				o["icon"] = "shard"
 			return o
@@ -3038,6 +3041,12 @@ func _dlg_body(box: Control, w: float, y: float, p: Dictionary, lines: Array) ->
 						o["icon_side"] = 72.0
 					if o.has("swatch"):  # a border ink shows the ink itself (as in the Atelier)
 						o["pic_node"] = Kit.ink_swatch(String(o["swatch"]), float(o["icon_side"]))
+					elif o.has("cmd"):  # a commander (a chapter's legacy): the bust on its rarity's plate, in the era
+						var rf := _reward_face(String(o["cmd"]), String(o.get("cmd_rarity", "common")), float(o["icon_side"]))
+						if rf != null:
+							o["pic_node"] = rf
+						else:
+							o["icon"] = "frame"
 					var dt := Kit.tile(well, Rect2(x0 + i * (tw + 12.0), ty, tw, th), o)
 					if o.has("fly"):  # a reward that flies into its plate when the window is left (fly_marked)
 						dt.set_meta("fly", String(o["fly"]))
@@ -4076,6 +4085,7 @@ func _commanders_card(it: Dictionary) -> Control:
 	var slot := [1, 0, 2]  # the middle face is drawn on top (_fan): it is lit first, then the left, then the right
 	for r in 3:
 		pics[slot[r]] = CmdPortrait.new(String(faces[r][0]), String(faces[r][1]), r >= int(n[0]))
+		(pics[slot[r]] as Control).add_to_group("kit_era")  # (set_portrait_era redraws it in the new era at once)
 	var up := bool(it.get("dot", false))
 	var opts := {"art_node": _fan(pics, 12.0), "tag": "%d/%d" % [int(n[0]), int(n[1])],
 		"details": tr("cmdr.collection") % [int(n[0]), int(n[1])] + ("\n" + tr("cmdr.tip_up") if up else ""),
@@ -4166,9 +4176,12 @@ func show_profile(info: Dictionary, cb: Dictionary) -> void:
 		var face := TextureRect.new()
 		face.texture = load(rp)
 		face.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		face.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+		# a cover anchored at the top (the well clips the chest), as on the HUD crest: the crown ~12 px under the
+		# well's top instead of a centred cover's 5 px
+		face.stretch_mode = TextureRect.STRETCH_SCALE
+		var ts := face.texture.get_size()
+		face.size = Vector2(sky.size.x, roundf(sky.size.x * ts.y / maxf(1.0, ts.x)))
 		face.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		face.size = sky.size
 		sky.add_child(face)
 	else:
 		var cr := _icon_rect("crown", 72)
@@ -4609,15 +4622,17 @@ func show_cmd_picker(title: String, rows: Array, on_pick: Callable, on_remove: C
 		rm.name = "remove"
 
 
-## A commander's face in a small slot (a picker row, a choice card): the portrait with its rarity frame and, when
-## open, the level in an info hex on the bottom-right corner.
-func _cmd_face(id: String, rarity: String, side: float, level := 0, locked := false) -> Control:
+## A commander's face in a small slot (a picker row, a choice card, the advisor's report in the mail): the portrait
+## with its rarity frame and, when open, the level in an info hex on the bottom-right corner. `mood`: a render of that
+## mood if there is one ("smile" — the advisor), else the calm one.
+func _cmd_face(id: String, rarity: String, side: float, level := 0, locked := false, mood := "") -> Control:
 	var holder := Control.new()
 	holder.name = "face"
 	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	holder.size = Vector2(side, side)
 	var p := CmdPortrait.new(id, rarity, locked)
 	p.size = holder.size
+	p.mood = mood  # (before the bake wrapper: _still_portrait keys the bake by the bust's look)
 	holder.add_child(_still_portrait(p))
 	if level > 0:
 		var hb := Kit.hex_badge(holder, Vector2(side - 6.0, side - 6.0), 18, "info", str(level))
@@ -4642,6 +4657,49 @@ func _still_portrait(p: Control) -> Control:
 	st.add_to_group("kit_era")  # (set_portrait_era redraws it: a bust shown when the era changes)
 	p.add_to_group("kit_era")
 	return st
+
+
+## A commander as a reward tile's picture — a case opening, the War Pass, a chapter's legacy (docs/art_direction.md
+## §7.12): the bust on its rarity's plate B (CmdPortrait: the gradient, the halo behind the head, the rarity frame) in
+## the player's era, drawn from the kit's bake atlas (_still_portrait). Laid in the tile's square picture box
+## (Kit.tile pic_node, any side): as tall as the box and RewardFace.W of it wide, centred — the cover crop then shows
+## the head at about half the box (48–52 px in the 100 px box of the reveal grid, the pass and the legacy).
+## Null when the commander has no render (the caller shows the shard icon).
+func _reward_face(id: String, rarity: String, side := 100.0) -> Control:
+	if CmdPortrait._render(id) == null:
+		return null
+	var p := CmdPortrait.new(id, rarity)
+	var f := RewardFace.new()
+	f.name = "face"
+	f.bust = _still_portrait(p)
+	f.add_child(f.bust)
+	f.size = Vector2(side, side)
+	f.fit()
+	return f
+
+
+## The picture box of _reward_face: keeps the bust W × its height wide and centred whatever size the tile gives it
+## (a size set before the box is in the tree sends no `resized`: it is fitted again on entering).
+class RewardFace extends Control:
+	const W := 0.94  ## 94 × 100: the 512×588 render covers it at 0.184 — a 264–284 px head is 48–52 px
+	var bust: Control  ## the KitStill holding the CmdPortrait
+
+	func _init() -> void:
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _notification(what: int) -> void:
+		if what == NOTIFICATION_RESIZED or what == NOTIFICATION_ENTER_TREE:
+			fit()
+
+	func fit() -> void:
+		if bust == null:
+			return
+		var bw := roundf(size.y * W)
+		bust.position = Vector2(roundf((size.x - bw) * 0.5), 0.0)
+		bust.size = Vector2(bw, size.y)
+		var v: Control = bust.get("vec")  # (the KitStill sizes its bust on `resized`, which is not sent out of the tree)
+		if v != null:
+			v.size = bust.size
 
 
 ## A commander skill's icon by its passive key (sim/commanders.gd PASSIVES).
@@ -5311,7 +5369,10 @@ func _diplomacy_card(it: Dictionary) -> Control:
 	var v := roundi(float(it.get("opinion", 0.0)))
 	var look: Array = RELATION_LOOK[rel]
 	var opts := {"backdrop": "team", "team": it.get("color", Kit.face_of("war")),
-		"art_node": _leader_bust(it, Rect2(22, -14, 128, 147)),
+		# the bust 92×106, its top 8 px over the window (the art window clips it): the head (≈ 49 px, eyes at y 37) ends
+		# above the name strip — the state's name no longer covers the mouth — and the widest hair (Mirosya's curls)
+		# keeps inside the window's sides
+		"art_node": _leader_bust(it, Rect2(40, -8, 92, 106)),
 		"corner": {"icon": look[0], "fill": Kit.face_of(String(look[1]))},
 		"tag_r": {"text": _signed(v), "role": "go" if v > 0 else ("war" if v < 0 else "")},
 		"tap_cb": func(): _leader_dialog(it),
@@ -6189,6 +6250,7 @@ func _coach_bust_frame() -> Panel:
 		var pic := TextureRect.new()
 		pic.name = "portrait"
 		pic.texture = tex
+		pic.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS  # the 512×588 render at 160×184: its mipmaps
 		pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		pic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 		pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -6777,6 +6839,7 @@ func _coach_clear(ring: Rect2, side: String, a: Rect2) -> float:
 const TOAST_CX := 425.0  ## centred on the free column between the left column (to x 104) and the minimap (from 733)
 const TOAST_Y := 108.0  ## under the resource plates …
 const TOAST_Y_BAR := 196.0  ## … or under the war bar (its score chip ends at y 182)
+const TOAST_TITLE_GAP := 12.0  ## … or this far under an open window's title plate that would lie under it (_toast_y)
 const TOAST_W_MIN := 360.0
 const TOAST_W_MAX := 590.0
 const TOAST_PAD_L := 64.0  ## the icon (60, overhanging the left end by 8) and a 12 px gap before the text
@@ -6959,7 +7022,7 @@ func _toast_build(d: Dictionary) -> Control:
 	node.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	node.z_index = 60  # over a window, under the coach (§3.1)
 	node.size = Vector2(w, h)
-	node.position = Vector2(TOAST_CX - w * 0.5, _toast_y())
+	node.position = Vector2(TOAST_CX - w * 0.5, _toast_y(h))
 	root.add_child(node)
 	var body := Control.new()
 	body.name = "body"
@@ -7016,9 +7079,30 @@ func toast_rect() -> Rect2:
 	return Rect2(r.position.x - 8.0, r.position.y, r.size.x + 8.0, r.size.y)
 
 
-## The toast's top: under the resource plates, or under the war bar while it shows (+ the safe top inset).
-func _toast_y() -> float:
-	return (TOAST_Y_BAR if _control_bar.visible else TOAST_Y) + _top.position.y
+## The toast's top: under the resource plates, or under the war bar while it shows (+ the safe top inset) — and,
+## while a window's title plate (Kit.title_plate, group "kit_title") would lie under a toast `h` tall there (a window
+## high in the band: the album, the shop, the pass, the calendar), TOAST_TITLE_GAP under that plate: the toast never
+## covers a title. The plates are read at their resting place (a plate still dropping in does not move the toast).
+func _toast_y(h := 72.0) -> float:
+	var y := (TOAST_Y_BAR if _control_bar.visible else TOAST_Y) + _top.position.y
+	if not is_inside_tree():
+		return y
+	var spans: Array = []  # [top, bottom] of each title plate on show, in root's coordinates
+	var oy := root.get_global_rect().position.y
+	for n in get_tree().get_nodes_in_group("kit_title"):
+		var p := n as Control
+		if p == null or not p.is_visible_in_tree():
+			continue
+		var host := p.get_parent() as Control
+		if host == null:
+			continue
+		var top := host.get_global_rect().position.y + float(p.get_meta("rest_y", p.position.y)) - oy
+		spans.append([top, top + p.size.y])
+	spans.sort_custom(func(a, b): return a[0] < b[0])
+	for s in spans:  # top down: a plate pushed past may bring the next one under the toast
+		if s[0] < y + h + TOAST_TITLE_GAP and s[1] > y - TOAST_TITLE_GAP:
+			y = s[1] + TOAST_TITLE_GAP
+	return y
 
 
 ## The «×N» hex badge on the toast's right end once the same text came N times (`pop`: it just came again).
@@ -7039,7 +7123,8 @@ func _toast_count(pop: bool) -> void:
 
 
 ## Holds the toast on screen (TOAST_HOLD, + a line; less while others wait), keeps it under the war bar when the bar
-## comes or goes, then lets it out (fades and rises 12 px over 300 ms) and brings the next one.
+## comes or goes and clear of an open window's title (_toast_y), then lets it out (fades and rises 12 px over 300 ms)
+## and brings the next one.
 func _process_toast(delta: float) -> void:
 	while not quiet and not _toast_held.is_empty() and _toast_queue.size() < TOAST_QUEUE_MAX:
 		var hq: Dictionary = _toast_held.pop_front()
@@ -7058,7 +7143,10 @@ func _process_toast(delta: float) -> void:
 		_toast_done()
 		return
 	var node := _toast_nodes[0] as Control
-	node.position.y = _toast_y()
+	# its place follows the war bar and the open window's title (_toast_y): it glides there (~0.15 s), not jumps
+	var ty := _toast_y(node.size.y)
+	node.position.y = ty if absf(ty - node.position.y) < 1.0 or Kit._dur(1.0) <= 0.0 \
+		else lerpf(node.position.y, ty, minf(1.0, delta * 18.0))
 	_toast_shown += delta
 	var hold := TOAST_HOLD + TOAST_HOLD_LINE * (int(_toast_cur.get("lines", 1)) - 1)
 	if not _toast_queue.is_empty():
