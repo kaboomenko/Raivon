@@ -9124,6 +9124,25 @@ func _demo(spec: String) -> void:
 	_step_ceremony(t)
 
 
+## Waits until the HUD's bake has settled (ui_kit.gd KitBake, as game/tools/perf_probe.gd _settle): no bake queued
+## or in flight, no moved owner waiting to hold still, and the canvas draw count the same on two looks a few frames
+## apart (the owners draw again from the atlas the frame after a round lands). At most ~20 s; at once when headless.
+func _bake_settled() -> void:
+	var vp := get_viewport()
+	var last := -1
+	var give_up := Time.get_ticks_msec() + 20000
+	while Time.get_ticks_msec() < give_up:
+		for i in 2:
+			await RenderingServer.frame_post_draw
+		var kb = Kit.KitBake.inst
+		var idle: bool = kb == null or not is_instance_valid(kb) \
+				or (kb.jobs.is_empty() and int(kb._state) == 0 and kb._moving.is_empty())
+		var d := vp.get_render_info(Viewport.RENDER_INFO_TYPE_CANVAS, Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME)
+		if idle and d == last:
+			return
+		last = d
+
+
 func _bot_move() -> void:
 	var best_id := -1
 	var best_f := 0.0
