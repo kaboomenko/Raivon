@@ -4168,13 +4168,11 @@ func show_profile(info: Dictionary, cb: Dictionary) -> void:
 	sky.position = Vector2(8, 8)
 	sky.size = Vector2(104, 104)
 	rf.add_child(sky)
-	var era := CmdPortrait.era
-	var rp := "res://assets/ui/portraits/ruler%s.png" % ("" if era <= 1 else "_e%d" % era)
-	if not ResourceLoader.exists(rp):
-		rp = "res://assets/ui/portraits/ruler.png"
-	if ResourceLoader.exists(rp):
+	var rtex := HudScript.ruler_tex(CmdPortrait.era)  # the era's render, with mipmaps (shown at 104 px)
+	if rtex != null:
 		var face := TextureRect.new()
-		face.texture = load(rp)
+		face.texture = rtex
+		face.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
 		face.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		# a cover anchored at the top (the well clips the chest), as on the HUD crest: the crown ~12 px under the
 		# well's top instead of a centred cover's 5 px

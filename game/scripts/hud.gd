@@ -105,9 +105,23 @@ func set_ruler_era(dl: int) -> void:
 	if ruler_face == null or era == _ruler_era:
 		return
 	_ruler_era = era
-	var path := "res://assets/ui/portraits/ruler%s.png" % ("" if era == 1 else "_e%d" % era)
-	if ResourceLoader.exists(path):
-		ruler_face.texture = load(path)
+	var tex := ruler_tex(era)
+	if tex != null:
+		ruler_face.texture = tex
+
+
+## The ruler's render for portrait era `era` (ruler, ruler_e2…e4; the first era's when one is missing) with mipmaps:
+## the 256×294 file is shown at 74 px on the crest and 104 px in the profile (game_ui.show_profile), and sampled
+## without them its hair and beard outline stair-step. The ruler imports have no mipmaps (only the commanders' 96 do),
+## so CmdPortrait._with_mipmaps makes them (a 256×294 copy: only when the crest's era changes or the profile opens; the
+## holder keeps it — no static cache to outlive the scene). Null when there is no render.
+static func ruler_tex(era: int) -> Texture2D:
+	var path := "res://assets/ui/portraits/ruler%s.png" % ("" if era <= 1 else "_e%d" % era)
+	if not ResourceLoader.exists(path):
+		path = "res://assets/ui/portraits/ruler.png"
+	if not ResourceLoader.exists(path):
+		return null
+	return CmdPortrait._with_mipmaps(load(path), path)
 
 
 func _label(text: String, size: int, color := TEXT, bold := true) -> Label:
@@ -311,7 +325,8 @@ func _build_crest() -> void:
 	if ResourceLoader.exists("res://assets/ui/portraits/ruler.png"):  # the rendered king of reference frame 1
 		var face := TextureRect.new()
 		ruler_face = face
-		face.texture = load("res://assets/ui/portraits/ruler.png")
+		face.texture = ruler_tex(1)
+		face.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS  # (256 px shown at 74: ruler_tex)
 		face.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		# a cover anchored at the top (the well clips the chest): the full width, the render's own aspect, y 0 — the
 		# crown keeps the file's margin over it (9 px) instead of a centred cover's 2–3 px

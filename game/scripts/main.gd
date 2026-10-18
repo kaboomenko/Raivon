@@ -8434,6 +8434,8 @@ func _demo(spec: String) -> void:
 		if parts.size() > 1 and parts[1] == "tab_era":  # commanders:tab_era[:<DL>:<DL2>] — the Army tab, then the DL (and
 			# the portraits' era) changes while a finger holds the card row (the row is not rebuilt): the fan's faces follow
 			_open_tab("army")
+			await get_tree().process_frame
+			ui._bscroll.scroll_horizontal = 100000  # the row's end: «Рука» and «Командиры» in view
 			await get_tree().create_timer(1.0).timeout
 			ui._finger_down = true
 			_set_dl(int(parts[3]) if parts.size() > 3 else 8)
@@ -8536,7 +8538,7 @@ func _demo(spec: String) -> void:
 				if String((it as Dictionary).get("kind", "")) == "alarm":
 					continue
 				var card: Control = ui._diplomacy_card(it)
-				card.position = Vector2(30.0 + (k % 4) * 224.0, 140.0 + (k / 4) * 330.0)
+				card.position = Vector2(30.0 + (k % 4) * 224.0, 300.0 + (k / 4) * 300.0)
 				sheet.add_child(card)
 				k += 1
 			return
