@@ -515,6 +515,7 @@ func _make_drag_marker() -> void:
 	m.no_depth_test = true
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	_drag_line.material_override = m
+	_drag_line.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF  # a marker over the map, no object
 	add_child(_drag_line)
 	_drag_lbl = MapView.soft_label(72)  # the map's one 3D-text look: Rubik 900, INK outline 0.22 × size (F1)
 	_drag_lbl.pixel_size = 0.006
@@ -8823,7 +8824,8 @@ func _demo(spec: String) -> void:
 			rig.focus(map_view.cell_world(sim.states[mem]["capital_id"]), 0.6)
 			_separate_offer_tick(now_s())
 		return
-	if what == "ch4":  # chapter IV «Индустриальный пояс»: the ceremony; ch4:<biome> — that biome up close
+	if what == "ch4":  # chapter IV «Индустриальный пояс»: the ceremony; ch4:<biome> — that biome up close; ch4:view —
+		# the grown world from above (the strategic frame's draw budget, docs/dev/how_to_run.md 5b)
 		await _world_expansion()
 		ui.close_modal()
 		await _world_expansion()
@@ -8831,6 +8833,9 @@ func _demo(spec: String) -> void:
 		if parts.size() > 1:
 			await _world_expansion()
 			ui.close_modal()
+			if parts[1] == "view":
+				rig.focus(map_view.cell_world(sim.states[Types.PLAYER]["capital_id"]), 0.95)
+				return
 			var best := -1
 			for c in sim.cells:
 				if String(c.get("biome", "")) == parts[1] and c["terrain"] != "water" and c["owner"] == Types.NOBODY:
@@ -8841,7 +8846,8 @@ func _demo(spec: String) -> void:
 			return
 		_world_expansion()
 		return
-	if what == "ch3":  # chapter III «Континент»: ch3 — the ceremony, ch3:<kind> — a ring III feature up close
+	if what == "ch3":  # chapter III «Континент»: ch3 — the ceremony, ch3:<kind> — a ring III feature up close, ch3:view —
+		# the grown world from above
 		await _world_expansion()
 		ui.close_modal()
 		_set_dl(5)
@@ -8849,6 +8855,10 @@ func _demo(spec: String) -> void:
 			await _world_expansion()
 		else:
 			_world_expansion()
+		if parts.size() > 1 and parts[1] == "view":
+			ui.close_modal()
+			rig.focus(map_view.cell_world(sim.states[Types.PLAYER]["capital_id"]), 0.95)
+			return
 		if parts.size() > 1:
 			ui.close_modal()
 			for i in range(sim.cells.size() - 1, -1, -1):
@@ -8856,6 +8866,20 @@ func _demo(spec: String) -> void:
 					_select(i)
 					rig.focus(map_view.cell_world(i), 0.4)
 					break
+		return
+	if what == "lake_tower":  # lake_tower[:N] — the ring II dark lake as the player's, with a tower (level N) on its rim
+		await _world_expansion()
+		ui.close_modal()
+		for c in sim.cells:
+			if c["kind"] == "dark_lake":
+				c["owner"] = Types.PLAYER
+				c["controller"] = Types.PLAYER
+				c["tower"] = clampi(int(parts[1]), 1, 8) if parts.size() > 1 else 1
+				map_view.mark_dirty()
+				map_view.refresh_hex(c["id"])
+				_select(c["id"])
+				rig.focus(map_view.cell_world(c["id"]), 0.1)
+				break
 		return
 	if what == "ch2":
 		if parts.size() > 1:
@@ -9128,11 +9152,15 @@ func _shot(path: String) -> void:
 			delay = float(a.substr(13))
 			await get_tree().create_timer(delay).timeout
 	if _demo_busy:  # a demo still playing (the chapter demos' world expansions): its end, then the delay again from
-		# there (at least 1.5 s: the camera's glide in, the hex panel's bake), as for a demo that sets its state at once
+		# there (at least 1.5 s: the camera's glide in), as for a demo that sets its state at once, and then the HUD's
+		# bake: the hex panel the demo selected is drawn as vectors until the kit's atlas holds it (R1: without a
+		# --shot-delay the 1.5 s were three or four software-rendered frames, and the shot caught the panel unbaked —
+		# canvas 176 draws against 71)
 		var give_up := Time.get_ticks_msec() + 120000
 		while _demo_busy and Time.get_ticks_msec() < give_up:
 			await get_tree().process_frame
 		await get_tree().create_timer(maxf(delay, 1.5)).timeout
+		await _bake_settled()
 	if OS.get_cmdline_user_args().has("--hud-only"):  # the canvas alone (no 3D world): HUD parity checks
 		get_viewport().disable_3d = true
 		await RenderingServer.frame_post_draw

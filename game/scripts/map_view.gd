@@ -50,6 +50,8 @@ var _bay_root: Node3D  # warships off the near shore: rebuilt with the props, so
 var _bay_spots: Array = []  # [q, r, world position] of the sea hexes that hold a ship
 var _hex_props := {}  # hex id -> Node3D holder of that hex's props
 var _sails: Array = []  # windmill sail nodes, spun in _process (meta "still" = a burning mill)
+var _sail_mesh: Mesh  # the mills' sails, drawn for every mill by one MultiMesh (_mirror_sails)
+var _sail_mmi: MultiMeshInstance3D
 var _blazing := {}  # hex id -> true while a long fire burns there
 var _army_nodes := {}  # army id -> Node3D
 var _fx: Array = []
@@ -373,28 +375,35 @@ func has_model(name: String) -> bool:
 	return models.has(name) or ResourceLoader.exists("res://assets/models/%s.glb" % name)
 
 
-func spawn(name: String, parent: Node, pos: Vector3, rot := 0.0, s := 1.0, owner := -99) -> Node3D:
+## sy stretches the model in height on top of s (art pass 6: slender and stout forest spruces from the one tree_pine,
+## the variety of a third conifer without a MultiMesh — a draw call — of its own).
+func spawn(name: String, parent: Node, pos: Vector3, rot := 0.0, s := 1.0, owner := -99, sy := 1.0) -> Node3D:
 	if not models.has(name):
 		if not ResourceLoader.exists("res://assets/models/%s.glb" % name):
 			return null
 		models[name] = load("res://assets/models/%s.glb" % name)
 		SoftLook.soften(models[name])  # the soft toon material (§6.5), on the shared meshes: DECOR batches get it too
 	if DECOR.has(name):  # batched: one MultiMesh per model and parent (see _flush_decor), no node of its own
-		var per: Dictionary = _pending_decor.get(parent, {})
-		_pending_decor[parent] = per
-		var list: Array = per.get(name, [])
-		per[name] = list
-		list.append(Transform3D(Basis(Vector3.UP, rot).scaled(Vector3.ONE * s), pos))
+		_decor_add(parent, name, Transform3D(Basis(Vector3.UP, rot).scaled(Vector3(s, s * sy, s)), pos))
 		return null
 	var n: Node3D = models[name].instantiate()
 	n.position = pos
 	n.rotation.y = rot
-	n.scale = Vector3.ONE * s
+	n.scale = Vector3(s, s * sy, s)
 	parent.add_child(n)
+	if _batched(name, parent):  # its meshes join the map-wide MultiMeshes; the node keeps its live parts (BATCH)
+		_decor_add(parent, name, n.transform)
+		for mi in n.find_children("*", "MeshInstance3D", true, false):
+			if not _live_part(mi as Node, n):
+				(mi as MeshInstance3D).mesh = null
 	if name == "windmill":
 		var sails := n.get_node_or_null("sails")
 		if sails:
 			_sails.append(sails)
+			if sails is MeshInstance3D and (sails as MeshInstance3D).mesh != null:  # drawn by _mirror_sails (R1)
+				_sail_mesh = (sails as MeshInstance3D).mesh
+				(sails as MeshInstance3D).mesh = null
+				sails.set_meta("mirror", true)
 	if name.begins_with("banner_"):
 		_paint_flag(n, Types.PLAYER if name == "banner_blue" else owner)
 	for m in n.find_children("smoke*", "", true, false):
@@ -415,8 +424,47 @@ var MUL_K := 2.0 if RenderingServer.get_current_rendering_method() == "mobile" e
 ## instead of a node each — the map went from ~900 draw calls to a fraction of that.
 const DECOR := {"tree_pine": true, "tree_round": true, "bush": true, "flowers": true, "rock": true, "wheat_field": true,
 		"crop_field": true, "mountain": true, "crag": true}
+## The buildings repeated over the map (R1: the strategic chapter II view drew 407 3D + shadow draws, ~330 is the
+## budget): farmsteads, fort walls and posts, banners, sentries, mills, mines, farms, towns, districts, towers, camps.
+## Their meshes are drawn like DECOR — one MultiMesh per model part for the whole map, in the visible and the shadow
+## pass, where each instance was a draw in each. Unlike DECOR an instance keeps its node (spawn returns it) for its
+## live parts: the mill's turning sails (BATCH_LIVE), the chimney smoke and flag markers, the banner's cloth; its
+## batched meshes are emptied (mesh = null: no draw). Only on the hexes (children of _props_root): the armies' and the
+## capital guards' models animate. A capture's pop squashes the batched instances with their hex (_sync_batched).
+const BATCH := ["homestead_", "fort_l", "banner_", "sentry_", "windmill", "mine", "farm_", "city_", "house_",
+		"district_", "tower_l", "watchtower", "raider_camp", "port", "military_base", "oil_", "factory_", "dark_lake"]
+const BATCH_LIVE := ["sails"]  # mesh nodes of a batched model that stay its own (animated in _process)
+var _batch_names := {}  # model name -> bool (BATCH prefix match, cached)
 var _pending_decor := {}  # parent Node3D -> {model name: [Transform3D relative to the parent]}
 var _decor_meshes := {}  # model name -> [[Mesh, Transform3D of the mesh inside the model]]
+
+
+func _decor_add(parent: Node, name: String, xf: Transform3D) -> void:
+	var per: Dictionary = _pending_decor.get(parent, {})
+	_pending_decor[parent] = per
+	var list: Array = per.get(name, [])
+	per[name] = list
+	list.append(xf)
+
+
+func _batched(name: String, parent: Node) -> bool:
+	if parent == null or parent.get_parent() != _props_root:
+		return false
+	if not _batch_names.has(name):
+		var hit := false
+		for pre in BATCH:
+			hit = hit or name.begins_with(pre)
+		_batch_names[name] = hit
+	return _batch_names[name]
+
+
+## True for a mesh node that is (or sits under) one of BATCH_LIVE inside the model root `root`.
+static func _live_part(n: Node, root: Node) -> bool:
+	while n != null and n != root:
+		if BATCH_LIVE.has(String(n.name)):
+			return true
+		n = n.get_parent()
+	return false
 
 
 func _decor_parts(name: String) -> Array:
@@ -424,6 +472,8 @@ func _decor_parts(name: String) -> Array:
 		var parts: Array = []
 		var root: Node3D = models[name].instantiate()
 		for mi in root.find_children("*", "MeshInstance3D", true, false):
+			if _live_part(mi, root) or (mi as MeshInstance3D).mesh == null:
+				continue
 			var xf := Transform3D.IDENTITY
 			var n: Node = mi
 			while n != root and n is Node3D:
@@ -439,6 +489,8 @@ func _decor_parts(name: String) -> Array:
 ## (a hex rebuild replaces its own entries and the sets are rebuilt — a few thousand transforms, well under a ms).
 var _decor_store := {}  # parent Node3D -> {model name: [Transform3D local to the parent]}
 var _decor_nodes: Array = []
+var _decor_at := {}  # parent Node3D -> {set key: index of its first instance in that set's MultiMeshes}
+var _decor_mmis := {}  # set key -> [[MultiMeshInstance3D, Transform3D of the part inside the model]]
 
 
 func _flush_decor() -> void:
@@ -449,6 +501,8 @@ func _flush_decor() -> void:
 		if is_instance_valid(n):
 			(n as Node).queue_free()
 	_decor_nodes.clear()
+	_decor_at.clear()
+	_decor_mmis.clear()
 	var sets := {}  # [name, horizon] key -> [world Transform3D]
 	for parent in _decor_store.keys():
 		if not is_instance_valid(parent) or (parent as Node).is_queued_for_deletion() or not (parent as Node).is_inside_tree():
@@ -457,10 +511,13 @@ func _flush_decor() -> void:
 		var base: Transform3D = global_transform.affine_inverse() * (parent as Node3D).global_transform
 		var horizon: bool = parent == _horizon_root
 		var per: Dictionary = _decor_store[parent]
+		var at := {}
+		_decor_at[parent] = at
 		for name in per:
 			var key := "%s|%d" % [name, int(horizon)]
 			var list: Array = sets.get(key, [])
 			sets[key] = list
+			at[key] = list.size()
 			for xf in per[name]:
 				list.append(base * (xf as Transform3D))
 	for key in sets:
@@ -481,6 +538,33 @@ func _flush_decor() -> void:
 				mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(mmi)
 			_decor_nodes.append(mmi)
+			var parts_of: Array = _decor_mmis.get(key, [])
+			_decor_mmis[key] = parts_of
+			parts_of.append([mmi, part[1]])
+
+
+## A hex's batched instances (BATCH; all its decor when `all`) placed again from its holder's transform now: during a
+## capture's pop (pop_hex squashes the holder) every frame, and once more when it ends.
+var _popping := {}  # holder Node3D -> its pop Tween
+
+
+func _sync_batched(holder: Node3D, all := false) -> void:
+	var at: Dictionary = _decor_at.get(holder, {})
+	var per: Dictionary = _decor_store.get(holder, {})
+	if at.is_empty() or per.is_empty():
+		return
+	var base: Transform3D = global_transform.affine_inverse() * holder.global_transform
+	for key in at:
+		var name := String(key).get_slice("|", 0)
+		if not all and DECOR.has(name):
+			continue
+		var xfs: Array = per.get(name, [])
+		var first: int = at[key]
+		for pm in _decor_mmis.get(key, []):
+			var mm: MultiMesh = (pm[0] as MultiMeshInstance3D).multimesh
+			for j in xfs.size():
+				if first + j < mm.instance_count:
+					mm.set_instance_transform(first + j, base * (xfs[j] as Transform3D) * (pm[1] as Transform3D))
 
 
 ## The state's own flag over a cloth marker baked into a building model (evolution_assets.flag_at): the node's
@@ -492,66 +576,163 @@ func _flag_cloth(at: Node3D, owner: int) -> void:
 	var mat := _flag_material(owner, String(at.name).begins_with("flagw"))
 	if mat == null:
 		return
-	var quad := QuadMesh.new()
-	for face in [1.0, -1.0]:
-		var mi := MeshInstance3D.new()
-		mi.mesh = quad
-		mi.material_override = mat
-		mi.position = Vector3(0, 0, 0.5 * face)
-		mi.rotation.y = 0.0 if face > 0 else PI
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		at.add_child(mi)
+	if _flag_faces == null:  # both faces in one mesh: one draw a flag (R1; a quad each was two)
+		var quad := QuadMesh.new()
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		st.append_from(quad, 0, Transform3D(Basis.IDENTITY, Vector3(0, 0, 0.5)))
+		st.append_from(quad, 0, Transform3D(Basis(Vector3.UP, PI), Vector3(0, 0, -0.5)))
+		_flag_faces = st.commit()
+	var mi := MeshInstance3D.new()
+	mi.mesh = _flag_faces
+	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	at.add_child(mi)
+
+
+var _flag_faces: ArrayMesh  # a unit quad on each face of a flag marker (_flag_cloth)
 
 
 ## A thin lazy plume over a chimney marker baked into a village model (tools/blender/evolution_assets.py
-## smoke_at): the lived-in look of the close reference frames.
+## smoke_at): the lived-in look of the close reference frames. One emitter for every chimney on the map (R1: a
+## plume of its own was a draw per building — 18 on the chapter II view): the markers are collected here and
+## _sync_chimneys hands their places to it as emission points, five puffs a chimney as before.
+var _chimneys: Array = []  # the chimney markers (Node3D) of the buildings on the map
+var _live_dirty := false  # the chimney and banner-cloth markers changed: _sync_chimneys, _sync_banner_cloth
+var _chimney_fx: CPUParticles3D
+const CHIMNEY_PUFFS := 5
+
+
 func _chimney_smoke(at: Node3D) -> void:
 	if at == null:
 		return
-	var sm := CPUParticles3D.new()
-	sm.amount = 5
-	sm.lifetime = 3.2
-	sm.direction = Vector3(0.25, 1, 0.1)
-	sm.spread = 6.0
-	sm.initial_velocity_min = 0.07
-	sm.initial_velocity_max = 0.11
-	sm.gravity = Vector3(0.05, 0.015, 0.02)
-	sm.scale_amount_curve = _curve(0.25, 1.15)
-	sm.color_ramp = _ramp([0.0, 0.18, 1.0], [Color(0.8, 0.79, 0.77, 0.0), Color(0.82, 0.81, 0.8, 0.42), Color(0.92, 0.92, 0.94, 0.0)])
-	var q := QuadMesh.new()
-	q.size = Vector2(0.2, 0.2)
-	if _smoke_mat == null:
-		_smoke_mat = _fx_mat(_puff_tex(), false)
-	q.material = _smoke_mat
-	sm.mesh = q
-	sm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	sm.preprocess = 3.2
-	at.add_child(sm)
+	_chimneys.append(at)
+	_live_dirty = true
+
+
+## True while n stands on the map: in the tree and no ancestor of it waits to be freed (a rebuilt hex's old holder).
+func _on_map(n: Node) -> bool:
+	if not is_instance_valid(n) or not n.is_inside_tree():
+		return false
+	while n != null and n != self:
+		if n.is_queued_for_deletion():
+			return false
+		n = n.get_parent()
+	return n == self
+
+
+## The chimney plumes' emitter, from the live markers (lazily, from _process: a hex rebuild frees its old markers at
+## the end of the frame). The puffs grow with their building as before: the emitter takes the markers' mean scale.
+func _sync_chimneys() -> void:
+	var keep: Array = []
+	var pts := PackedVector3Array()
+	var k := 0.0
+	var inv := global_transform.affine_inverse()
+	for m in _chimneys:
+		if not _on_map(m as Node):
+			continue
+		keep.append(m)
+		var g: Transform3D = inv * (m as Node3D).global_transform
+		pts.append(g.origin)
+		k += g.basis.get_scale().y
+	_chimneys = keep
+	if pts.is_empty():
+		if _chimney_fx != null:
+			_chimney_fx.emitting = false
+			_chimney_fx.visible = false
+		return
+	k /= pts.size()
+	if _chimney_fx == null:
+		var sm := CPUParticles3D.new()
+		sm.name = "chimney_smoke"
+		sm.lifetime = 3.2
+		sm.emission_shape = CPUParticles3D.EMISSION_SHAPE_POINTS
+		sm.direction = Vector3(0.25, 1, 0.1)
+		sm.spread = 6.0
+		sm.initial_velocity_min = 0.07
+		sm.initial_velocity_max = 0.11
+		sm.gravity = Vector3(0.05, 0.015, 0.02)
+		sm.scale_amount_curve = _curve(0.25, 1.15)
+		sm.color_ramp = _ramp([0.0, 0.18, 1.0], [Color(0.8, 0.79, 0.77, 0.0), Color(0.82, 0.81, 0.8, 0.42), Color(0.92, 0.92, 0.94, 0.0)])
+		var q := QuadMesh.new()
+		q.size = Vector2(0.2, 0.2)
+		if _smoke_mat == null:
+			_smoke_mat = _fx_mat(_puff_tex(), false)
+		q.material = _smoke_mat
+		sm.mesh = q
+		sm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		sm.preprocess = 3.2
+		add_child(sm)
+		_chimney_fx = sm
+	_chimney_fx.scale = Vector3.ONE * k  # the emission points are in its own (scaled) space
+	for i in pts.size():
+		pts[i] /= k
+	_chimney_fx.emission_points = pts
+	if _chimney_fx.amount != CHIMNEY_PUFFS * pts.size():
+		_chimney_fx.amount = CHIMNEY_PUFFS * pts.size()  # restarts it; preprocess fills the plumes at once
+	_chimney_fx.visible = true
+	_chimney_fx.emitting = true
 
 
 ## The player's flag (10 §4.23) on both faces of a banner's cloth (tools/blender/export_assets.py: the cloth is
 ## 0.26 × 0.416 from x 0, its top at y 0.98, 0.012 thick): one viewport texture shared by every banner, so a new
-## flag repaints them all at once.
+## flag repaints them all at once. The faces of all of a state's banners are two MultiMeshes (_sync_banner_cloth: the
+## front faces, side +1, and the back ones, side −1 — flag_wave.gdshader's instance uniform is per draw), not two
+## quads a banner (R1: two draws each).
+var _banner_cloth := {}  # owner -> [banner Node3D]
+var _cloth_mmis := {}  # owner -> [front MultiMeshInstance3D, back MultiMeshInstance3D]
+const CLOTH_AT := Vector3(0.13, 0.775, 0.0095)  # the front face's centre in the banner model (the back: z mirrored)
+
+
 func _paint_flag(banner: Node3D, owner: int) -> void:
 	if owner < 0 and owner != Types.PLAYER:
 		return
-	var mat := _flag_material(owner)
-	if mat == null:
+	if _flag_material(owner) == null:
 		return
-	var wave := _wave_material(owner, mat)
+	var list: Array = _banner_cloth.get(owner, [])
+	_banner_cloth[owner] = list
+	list.append(banner)
+	_live_dirty = true
+
+
+func _sync_banner_cloth() -> void:
 	if _wave_quad == null:
 		_wave_quad = QuadMesh.new()
 		_wave_quad.size = Vector2(0.25, 0.4)
 		_wave_quad.subdivide_width = 8  # the cloth needs vertices along its length to ripple
-	for face in [1.0, -1.0]:
-		var mi := MeshInstance3D.new()
-		mi.mesh = _wave_quad
-		mi.material_override = wave
-		mi.set_instance_shader_parameter("side", face)
-		mi.position = Vector3(0.13, 0.775, 0.0095 * face)
-		mi.rotation.y = 0.0 if face > 0 else PI
-		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		banner.add_child(mi)
+	var inv := global_transform.affine_inverse()
+	var front := Transform3D(Basis.IDENTITY, CLOTH_AT)
+	var back := Transform3D(Basis(Vector3.UP, PI), Vector3(CLOTH_AT.x, CLOTH_AT.y, -CLOTH_AT.z))
+	for owner in _banner_cloth.keys():
+		var keep: Array = []
+		for b in _banner_cloth[owner]:
+			if _on_map(b as Node):
+				keep.append(b)
+		_banner_cloth[owner] = keep
+		if not _cloth_mmis.has(owner):
+			var pair: Array = []
+			var wave := _wave_material(owner, _flag_material(owner))
+			for face in [1.0, -1.0]:
+				var mm := MultiMesh.new()
+				mm.transform_format = MultiMesh.TRANSFORM_3D
+				mm.mesh = _wave_quad
+				var mmi := MultiMeshInstance3D.new()
+				mmi.name = "banner_cloth"
+				mmi.multimesh = mm
+				mmi.material_override = wave
+				mmi.set_instance_shader_parameter("side", face)
+				mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+				add_child(mmi)
+				pair.append(mmi)
+			_cloth_mmis[owner] = pair
+		for i in 2:
+			var mmi: MultiMeshInstance3D = _cloth_mmis[owner][i]
+			var mm := mmi.multimesh
+			if mm.instance_count != keep.size():
+				mm.instance_count = keep.size()
+			for j in keep.size():
+				mm.set_instance_transform(j, inv * (keep[j] as Node3D).global_transform * (front if i == 0 else back))
+			mmi.visible = not keep.is_empty()
 
 
 var _wave_quad: QuadMesh
@@ -806,6 +987,7 @@ func _build_terrain() -> void:
 	wm.set_shader_parameter("noise_tex", _noise_tex(2.0, 3, 303))
 	wm.set_shader_parameter("open_sea", true)  # no land mask on the plane: all deep water
 	water.material_override = wm
+	water.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF  # the lowest surface: its shadow falls on nothing
 	add_child(water)
 
 
@@ -1281,6 +1463,7 @@ func faction_suffix(s: int) -> String:
 func refresh_props() -> void:
 	for c in _props_root.get_children():
 		c.queue_free()
+	_live_dirty = true  # the old buildings' chimneys go with them
 	if _grass_mi != null:
 		_build_grass()  # tufts follow what stands on the hexes (a DL8 district's plate leaves only its rim)
 	_place_props()
@@ -1299,13 +1482,24 @@ func refresh_hex(id: int, neighbours := true) -> void:
 	var old: Node3D = _hex_props.get(id)
 	if old:
 		old.queue_free()
+		_live_dirty = true
 	_place_hex_props(sim.cells[id])
 	if neighbours:
 		# forts next door draw walls only towards foreign land: their outer edges may have changed
 		for n in sim.neighbors[id]:
 			if n >= 0 and int(sim.cells[n]["fort"]) > 0:
 				refresh_hex(n, false)
+		_refresh_front_massifs(id)
 		_flush_decor()  # once for the hex and its neighbours
+
+
+## The massifs just in front of hex id (nearer the camera, +Z) stand lower or full size as a camp, a capital or a city
+## comes to the hex or leaves it (_busy_behind): re-place them. The caller flushes the decor.
+func _refresh_front_massifs(id: int) -> void:
+	var z := cell_world(id).z
+	for n in sim.neighbors[id]:
+		if n >= 0 and sim.cells[n]["terrain"] == "mountain" and cell_world(n).z > z:
+			refresh_hex(n, false)
 
 
 ## Capture and build «pop» (§6.10, soft_style_plan P8): the hex's buildings squash and stretch — (1.2, 0.6, 1.2) →
@@ -1323,6 +1517,7 @@ func pop_hex(id: int) -> void:
 	tw.tween_property(holder, "scale", Vector3(0.95, 1.15, 0.95), 0.14).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	tw.tween_property(holder, "scale", Vector3.ONE, 0.21).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	holder.set_meta("pop", tw)
+	_popping[holder] = tw  # its batched buildings squash with it (_sync_batched)
 	burst_at(cell_world(id), Color("#D6C6AC"), false, 0.55)
 
 
@@ -1495,42 +1690,50 @@ func _place_camp(hex: int, holder: Node3D) -> void:
 	_camp_icon(hex, holder)
 
 
-## Raivite vein: a cluster of glowing blue crystals on a rocky outcrop (until a baked model exists).
+## Raivite vein: a cluster of glowing blue crystals on a rocky outcrop (until a baked model exists). Built once as one
+## mesh of two surfaces (the rock, the crystals): one draw instead of eight (R1).
+var _vein_mesh: ArrayMesh
+
+
 func _place_vein(holder: Node3D) -> void:
-	var rock := StandardMaterial3D.new()
-	rock.albedo_color = Color(0.45, 0.43, 0.4)
-	SoftLook.matte(rock)
-	var glow := StandardMaterial3D.new()
-	glow.albedo_color = Color(0.12, 0.42, 1.0)
-	glow.metallic = 0.3
-	glow.roughness = 0.15
-	glow.emission_enabled = true
-	glow.emission = Color(0.05, 0.3, 0.95)
-	glow.emission_energy_multiplier = 0.7
-	var base := MeshInstance3D.new()
-	var bm := CylinderMesh.new()
-	bm.top_radius = 0.42
-	bm.bottom_radius = 0.55
-	bm.height = 0.14
-	bm.radial_segments = 7
-	bm.material = rock
-	base.mesh = bm
-	base.position.y = 0.07
-	holder.add_child(base)
-	for i in 7:
-		var cr := MeshInstance3D.new()
-		var cm := CylinderMesh.new()
-		cm.top_radius = 0.0
-		cm.bottom_radius = 0.07 + 0.03 * float(i % 3)
-		cm.height = 0.35 + 0.12 * float((i * 5) % 4)
-		cm.radial_segments = 6
-		cm.material = glow
-		cr.mesh = cm
-		var a := TAU * i / 7.0
-		var r := 0.0 if i == 0 else 0.22
-		cr.position = Vector3(cos(a) * r, 0.14 + cm.height / 2.0, sin(a) * r)
-		cr.rotation = Vector3(sin(a) * 0.35 * (1 if i else 0), 0, cos(a) * 0.35 * (1 if i else 0))
-		holder.add_child(cr)
+	if _vein_mesh == null:
+		var rock := StandardMaterial3D.new()
+		rock.albedo_color = Color(0.45, 0.43, 0.4)
+		SoftLook.matte(rock)
+		var glow := StandardMaterial3D.new()
+		glow.albedo_color = Color(0.12, 0.42, 1.0)
+		glow.metallic = 0.3
+		glow.roughness = 0.15
+		glow.emission_enabled = true
+		glow.emission = Color(0.05, 0.3, 0.95)
+		glow.emission_energy_multiplier = 0.7
+		var bm := CylinderMesh.new()
+		bm.top_radius = 0.42
+		bm.bottom_radius = 0.55
+		bm.height = 0.14
+		bm.radial_segments = 7
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		st.append_from(bm, 0, Transform3D(Basis.IDENTITY, Vector3(0, 0.07, 0)))
+		st.set_material(rock)
+		_vein_mesh = st.commit()
+		st = SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		for i in 7:
+			var cm := CylinderMesh.new()
+			cm.top_radius = 0.0
+			cm.bottom_radius = 0.07 + 0.03 * float(i % 3)
+			cm.height = 0.35 + 0.12 * float((i * 5) % 4)
+			cm.radial_segments = 6
+			var a := TAU * i / 7.0
+			var r := 0.0 if i == 0 else 0.22
+			var tilt := Vector3(sin(a) * 0.35 * (1 if i else 0), 0, cos(a) * 0.35 * (1 if i else 0))
+			st.append_from(cm, 0, Transform3D(Basis.from_euler(tilt), Vector3(cos(a) * r, 0.14 + cm.height / 2.0, sin(a) * r)))
+		st.set_material(glow)
+		st.commit(_vein_mesh)
+	var vein := MeshInstance3D.new()
+	vein.mesh = _vein_mesh
+	holder.add_child(vein)
 	var light := OmniLight3D.new()
 	light.light_color = Color(0.4, 0.75, 1.0)
 	light.omni_range = 1.4
@@ -1671,6 +1874,7 @@ func _camp_icon(hex: int, holder: Node3D) -> void:
 	icon.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	icon.no_depth_test = true
 	icon.render_priority = MARK_PRIO + 1  # a marker: over the ribbons and the clouds
+	icon.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF  # a marker, no object: no shadow (R1: a draw each)
 	icon.position = Vector3(0, 1.05, 0)
 	holder.add_child(icon)
 
@@ -1710,6 +1914,45 @@ func _place_hex_props(c: Dictionary) -> void:
 		_still_sails(c["id"], true)
 
 
+## True when one of the three hexes behind c (away from the camera, which looks from +Z) holds a marauder camp, a
+## capital or a city: a full-size massif in front would hide it (art pass 6). Farms, ports, mines and the other
+## built hexes keep the big massif in front of them (with them all counted, half the massifs of settled land shrank).
+## refresh_hex and set_camps re-place the massifs in front of a changed hex (_refresh_front_massifs): the first prop
+## build runs before the first camps tick, and camps come and go during play.
+func _busy_behind(c: Dictionary) -> bool:
+	var p := cell_world(c["id"])
+	for k in [7.0, 9.0, 11.0]:
+		var a: float = k * PI / 6.0
+		var nb := id_at_world(p + Vector3(cos(a), 0, sin(a)) * SQ3)
+		if nb >= 0 and (camp_hexes.has(nb) or sim.cells[nb]["kind"] == "capital" or sim.cells[nb]["kind"] == "city"):
+			return true
+	return false
+
+
+## Every mill's sails in one MultiMesh (R1: a draw and a shadow draw a mill): the sail nodes keep turning (_process),
+## meshless, and each frame their transforms are copied into it.
+func _mirror_sails() -> void:
+	var xfs: Array = []
+	var inv := global_transform.affine_inverse()
+	for obj in _sails:
+		if (obj as Node).has_meta("mirror") and _on_map(obj as Node):
+			xfs.append(inv * (obj as Node3D).global_transform)
+	if _sail_mmi == null:
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = _sail_mesh
+		_sail_mmi = MultiMeshInstance3D.new()
+		_sail_mmi.name = "mill_sails"
+		_sail_mmi.multimesh = mm
+		add_child(_sail_mmi)
+	var m := _sail_mmi.multimesh
+	if m.instance_count != xfs.size():
+		m.instance_count = xfs.size()
+	for j in xfs.size():
+		m.set_instance_transform(j, xfs[j])
+	_sail_mmi.visible = not xfs.is_empty()
+
+
 ## A burning windmill stops turning.
 func _still_sails(hex: int, still: bool) -> void:
 	var holder: Node3D = _hex_props.get(hex)
@@ -1727,7 +1970,15 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 		return
 	if not Types.is_passable(c):
 		if c["terrain"] == "mountain":
-			spawn("mountain", holder, Vector3.ZERO, rng.randf() * TAU, rng.randf_range(1.5, 1.75))  # massifs that rise over the map, as in the reference
+			var rot := rng.randf() * TAU
+			var ms := rng.randf_range(1.5, 1.75)  # massifs that rise over the map, as in the reference
+			# art pass 6: a full-size massif hid most of a camp, a capital or a city behind it from the map camera
+			# (ch2:camp at zoom 0.12: the marauder camp under the peak); there it stays lower and steps toward the camera
+			var off := Vector3.ZERO
+			if _busy_behind(c):
+				ms = 1.2
+				off = Vector3(0, 0, 0.22)
+			spawn("mountain", holder, off, rot, ms)
 		elif c["terrain"] == "water":
 			_place_ship(c, holder)
 		return
@@ -1824,11 +2075,29 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 		return
 	match c["terrain"]:
 		"forest":
-			# a thick wood as in the reference frames: more, closer trees, a few tall ones above the canopy
+			# a thick wood as in the reference frames: more, closer trees, a few tall ones above the canopy. Art pass 6
+			# (reference frame 1: dark conifer masses): nine spruces in ten, slender spruces at the back of the hex
+			# (_spruce_sy) and five more trees there — more instances in the same MultiMeshes, no draw call. The back
+			# only: an army stands on the whole hex and the camera looks from +Z, so the wood in front of the troops
+			# keeps its pre-AP6 height and count. The stretch and the extra trees draw from their own generator `wood`,
+			# so `rng` runs exactly as before and the hex's later draws (its fort, its banner) stay put: with a shifted
+			# `rng` other wooded hexes got a banner (+3–5 draws on the strategic views, AP6 inventory).
+			var wood := RandomNumberGenerator.new()
+			wood.seed = rng.seed + 1
 			for i in rng.randi_range(12, 16):
 				var off := Vector3(rng.randf_range(-0.66, 0.66), 0, rng.randf_range(-0.66, 0.66))
 				var tall := rng.randf() < 0.2
-				spawn("tree_pine" if rng.randf() < 0.8 else "tree_round", holder, p + off, rng.randf() * TAU, rng.randf_range(1.2, 1.45) if tall else rng.randf_range(0.8, 1.15))
+				var pine := rng.randf() < 0.9
+				var rot := rng.randf() * TAU
+				var ts := rng.randf_range(1.2, 1.45) if tall else rng.randf_range(0.8, 1.15)
+				spawn("tree_pine" if pine else "tree_round", holder, p + off, rot, ts, -99, _spruce_sy(off.z, ts, wood.randf_range(1.0, 1.3)) if pine else 1.0)
+			for i in 5:  # behind the troops (z < −0.3): a dark mass over the army, not in front of it
+				var off := Vector3(wood.randf_range(-0.66, 0.66), 0, wood.randf_range(-0.66, -0.3))
+				var ts := wood.randf_range(0.8, 1.15)
+				if wood.randf() < 0.9:
+					spawn("tree_pine", holder, p + off, wood.randf() * TAU, ts, -99, _spruce_sy(off.z, ts, wood.randf_range(1.0, 1.3)))
+				else:
+					spawn("tree_round", holder, p + off, wood.randf() * TAU, ts)
 			for i in rng.randi_range(1, 2):
 				spawn("bush", holder, p + Vector3(rng.randf_range(-0.6, 0.6), 0, rng.randf_range(-0.6, 0.6)), rng.randf() * TAU, rng.randf_range(1.0, 1.25))
 		"hills":
@@ -1965,6 +2234,21 @@ func _place_ship(c: Dictionary, holder: Node3D) -> void:
 		return
 
 
+const SPRUCE_FRONT_SY := 0.91  # the tree_pine model grew 0.565 → 0.621 in art pass 6: ×0.91 is its old height
+
+
+## Art pass 6: the height stretch of a wood's spruce at depth z on its hex (the camera looks from +Z) and scale ts; r is
+## the stretch drawn for it (×1–1.3). An army stands on the whole hex (_make_army: x ±0.5, z −0.35…+0.42): the spruces
+## among and in front of the troops (z > −0.1) keep the pre-AP6 height (SPRUCE_FRONT_SY), so the troops show through
+## the wood as before; only those behind grow slender and dark over the wood, and the tall meadow ones (ts > 1.2) never
+## stretch (a stretched tall spruce rose over the mine's derrick, 1.05). ts × sy is at most 1.15 × 1.3 = 1.5 in the
+## meadow wood and 1.2 × 1.3 = 1.56 (0.97 high) in the taiga.
+func _spruce_sy(z: float, ts: float, r: float) -> float:
+	if z > -0.1:
+		return SPRUCE_FRONT_SY
+	return 1.0 if ts > 1.2 else r
+
+
 ## Plain / forest / hills props of a non-meadow biome: dense dark pines in the taiga; grass, shrubs and a few
 ## broad-leaved trees in the steppe; rocks and dry scrub in the badlands.
 func _place_biome_props(c: Dictionary, holder: Node3D, p: Vector3, biome: String) -> void:
@@ -1973,9 +2257,22 @@ func _place_biome_props(c: Dictionary, holder: Node3D, p: Vector3, biome: String
 		return p + Vector3(rng.randf_range(-r, r), 0, rng.randf_range(-r, r))
 	match biome:
 		"taiga":
+			# art pass 6: the taiga wood as dense as the meadow forest (four more trees, at the back of the hex) and its
+			# spruces slender at the back (_spruce_sy), both from their own generator `wood`: `rng` draws as before (see
+			# the forest hex in _place_hex_props_into), so the hex's rocks, fort and banner stay put
+			var wood := RandomNumberGenerator.new()
+			wood.seed = rng.seed + 1
 			var n := rng.randi_range(10, 14) if t == "forest" else (rng.randi_range(3, 5) if t == "plain" else 2)
 			for i in n:
-				spawn("tree_pine", holder, rnd.call(0.64), rng.randf() * TAU, rng.randf_range(0.9, 1.45))
+				var q: Vector3 = rnd.call(0.64)
+				var rot := rng.randf() * TAU  # rng in the old order: place, turn, scale
+				var ts := rng.randf_range(0.9, 1.45)
+				spawn("tree_pine", holder, q, rot, ts, -99, _spruce_sy(q.z - p.z, ts, wood.randf_range(1.0, 1.3)))
+			if t == "forest":
+				for i in 4:  # behind the troops, as in the meadow forest
+					var q := p + Vector3(wood.randf_range(-0.64, 0.64), 0, wood.randf_range(-0.64, -0.3))
+					var ts := wood.randf_range(0.9, 1.2)
+					spawn("tree_pine", holder, q, wood.randf() * TAU, ts, -99, _spruce_sy(q.z - p.z, ts, wood.randf_range(1.0, 1.3)))
 			if t == "hills" or rng.randf() < 0.4:
 				for i in (3 if t == "hills" else 1):
 					spawn("rock", holder, rnd.call(0.5), rng.randf() * TAU, rng.randf_range(1.0, 1.8))
@@ -2311,6 +2608,7 @@ static func soft_label(size: int, prio := MARK_PRIO + 1) -> Label3D:
 	l.no_depth_test = true
 	l.render_priority = prio
 	l.outline_render_priority = prio - 1
+	l.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF  # map texts cast no shadow (a shadow draw each, R1)
 	return l
 
 
@@ -2357,6 +2655,7 @@ class SoftLabel3D extends Label3D:
 			_icon.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 			_icon.no_depth_test = true
 			_icon.shaded = false
+			_icon.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(_icon)
 		_icon.visible = true
 		_icon.render_priority = render_priority
@@ -2607,6 +2906,7 @@ func _plate_text(px: int, kind := "d900") -> Label3D:
 	l.no_depth_test = true
 	l.render_priority = PLATE_PRIO + 2
 	l.outline_render_priority = PLATE_PRIO + 1
+	l.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return l
 
 
@@ -2625,6 +2925,7 @@ func _plate_icon(tex: Texture2D, px: float, at: Vector2, sp: Sprite3D = null) ->
 		sp.no_depth_test = true
 		sp.shaded = false
 		sp.render_priority = PLATE_PRIO + 1
+		sp.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		sp.add_to_group(PX_GROUP)
 	sp.texture = tex
 	sp.visible = tex != null
@@ -4250,6 +4551,7 @@ func set_bubbles(data: Dictionary) -> void:
 				sp.no_depth_test = true
 				sp.render_priority = MARK_PRIO + 2 + part[3]
 				sp.shaded = false
+				sp.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF  # a coin over the map: no shadow (R1)
 				node.add_child(sp)
 			var lbl := soft_label(44, MARK_PRIO + 4)  # over the bubble and its icon
 			lbl.set_process(false)  # "+N": map_view writes it, no pictograph to watch for
@@ -4467,8 +4769,11 @@ func set_camps(active: Array) -> void:
 	camp_hexes = now
 	for h in changed:
 		refresh_hex(int(h), false)
+		_refresh_front_massifs(int(h))  # a massif in front of a new or cleared camp (art pass 6)
 		if camp_hexes.has(h):
 			smoke(int(h), 1.0e9)
+	if not changed.is_empty():
+		_flush_decor()  # once for the camps and the massifs in front of them
 
 
 ## Dotted routes of marching armies (canon §8.1: a march is visible on the map). `paths`: army id -> Array of
@@ -4651,6 +4956,7 @@ func _make_deposit(hex: int, res: String) -> Node3D:
 	sp.pixel_size = 0.0034
 	sp.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	sp.shaded = false
+	sp.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	sp.position = center + Vector3(0, 0.75, 0)
 	node.add_child(sp)
 	return node
@@ -5539,6 +5845,19 @@ func _process(delta: float) -> void:
 		return
 	if not _pending_decor.is_empty():  # scenery spawned outside a hex rebuild (a safety net)
 		_flush_decor()
+	for h in _popping.keys():
+		if not is_instance_valid(h):
+			_popping.erase(h)
+			continue
+		var tw: Tween = _popping[h]
+		var done := not tw.is_valid() or not tw.is_running()
+		_sync_batched(h as Node3D, done)
+		if done:
+			_popping.erase(h)
+	if _live_dirty or not _popping.is_empty():  # the markers follow a rebuilt hex (and a pop's squash)
+		_live_dirty = false
+		_sync_chimneys()
+		_sync_banner_cloth()
 	var snap := _territory_snapshot()
 	if _dirty or snap != _snapshot:  # the snapshot changes at every ceremony flip and at its start and end
 		_snapshot = snap
@@ -5564,6 +5883,8 @@ func _process(delta: float) -> void:
 			continue
 		if not (obj as Node3D).get_meta("still", false):
 			(obj as Node3D).rotate_object_local(Vector3.FORWARD, -1.1 * delta)
+	if _sail_mesh != null:
+		_mirror_sails()
 	for h in _dep_nodes:
 		var ic: Node3D = _dep_nodes[h].get_node("icon")
 		ic.position.y = cell_world(h).y + 0.8 + 0.06 * sin(bt * 2.5 + h * 0.7)
