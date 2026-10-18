@@ -299,10 +299,14 @@ def solve_frame(ctx, size, frame="bust", log=print, h_px=None):
         log("frame: H_px %.0f does not fit (skyline %.1f, sides %.1f / %.1f, chin %.1f) -> H_px %.0f" % (
             target_h / k, sky / k, side_l / k, side_r / k, chin_y / k, max(t["h_min"], target_h - t["step"]) / k))
         if target_h <= t["h_min"] + 1e-6:
-            raise RuntimeError("%s: the portrait does not fit the frame even at H_px %.0f (skyline %.1f px, sides "
-                               "%.1f / %.1f px, chin %.1f px; need >= %.0f, >= %.0f and chin <= %.0f on the 512x588 "
-                               "master)" % (ctx.cid, t["h_min"] / k, sky / k, side_l / k, side_r / k, chin_y / k,
-                                            t["sky"] / k, t["side_band"] / k, (t.get("chin_max") or 0) / k))
+            # the face crop has no side band or chin limit (None): "n/a", not a TypeError hiding the real error
+            def need(v):
+                return "n/a" if v is None else "%.0f" % (v / k)
+            raise RuntimeError("%s: the portrait does not fit the %s frame even at H_px %.0f (skyline %.1f px, sides "
+                               "%.1f / %.1f px, chin %.1f px; need skyline >= %s, sides >= %s and chin <= %s, in px of "
+                               "the 512x588 master)" % (ctx.cid, frame, t["h_min"] / k, sky / k, side_l / k,
+                                                        side_r / k, chin_y / k, need(t.get("sky")),
+                                                        need(t.get("side_band")), need(t.get("chin_max"))))
         # the last step lands on the floor itself (a 258 face tries 256 before the error, not 254)
         target_h = max(t["h_min"], target_h - t["step"])
 

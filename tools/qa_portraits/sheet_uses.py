@@ -41,6 +41,7 @@ def hexc(h, a=1.0):
 
 
 INK, SKY_TOP, SKY_LOW = hexc("1b2140"), hexc("8fcdf2"), hexc("e3f4fd")
+SKY_HI = hexc("a3d6f4")  # SKY_TOP.lightened(0.18): the top of the HUD crest's sky (hud.gd _build_crest since T1)
 CREAM_ROW, CREAM_DEEP, PREMIUM_WELL = hexc("fffbf0"), hexc("d9c7a0"), hexc("ffe7a6")
 BRASS, STEEL = hexc("e6b13e"), hexc("b9c7d6")
 
@@ -375,7 +376,7 @@ def use_hud_ruler(era=1, trim=BRASS):
     over(out, s, mask=m)
     well = canvas(74, 72)
     wm = rrect_mask(74, 72, 14)
-    over(well, vgrad(74, 72, SKY_TOP, SKY_LOW), mask=wm)
+    over(well, vgrad(74, 72, SKY_HI, SKY_TOP), mask=wm)
     over(well, p, mask=wm)
     over(out, well, 8, 8)
     s, m = ring(74, 72, 14, 3, INK)

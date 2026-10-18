@@ -5986,8 +5986,15 @@ static func vb(node: Node) -> float:
 	return bottom
 
 
+## A forced top inset in canvas units (main.gd `--top-inset=N`: a phone's status bar or notch probed on the desktop,
+## or a headless test); −1 reads the system's.
+static var debug_top_inset := -1.0
+
+
 ## The system's top inset in canvas units (status bar, notch).
 static func top_inset(node: Node) -> float:
+	if debug_top_inset >= 0.0:
+		return debug_top_inset
 	if DisplayServer.get_name() == "headless":
 		return 0.0
 	var safe := DisplayServer.get_display_safe_area()

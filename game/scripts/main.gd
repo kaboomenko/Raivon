@@ -4,6 +4,7 @@ extends Node3D
 ## Modes: MAP → (declare) WAR → BATTLE (90 s offensive) → RESULT → WAR … → PEACE → CEREMONY → MAP.
 ##
 ## Debug / CI args (after `--`): --lang=ru|en (read first, before the UI is built)  --zoom=0.6  --select=q,r  --shot=PATH
+##   --top-inset=N — a forced safe-area top inset (canvas px; read with --lang, before the UI is built)
 ##   --demo=battle:SECONDS | result | peace | ceremony:SECONDS  — scripted states for headless screenshots.
 
 const Types := preload("res://scripts/sim/types.gd")
@@ -299,6 +300,8 @@ func _init_language() -> void:
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--lang="):
 			forced = a.substr(7)
+		elif a.begins_with("--top-inset="):  # a phone's status bar / notch (canvas px) on the desktop: the safe-top probes
+			Kit.debug_top_inset = maxf(0.0, float(a.substr(12)))
 	L.apply(forced if L.LANGS.has(forced) else lang)
 
 
@@ -8281,6 +8284,123 @@ func _shot_demo(spec: String) -> void:
 			rig.zoom_target = float(a.substr(7))
 
 
+## A demo's extra frame (--shot=OUT.png → OUT_<tag>.png) and its canvas draws: a demo that walks several states in
+## one run (portraits:sheet, toastins).
+func _demo_frame(tag: String) -> void:
+	var out := ""
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--shot="):
+			out = a.substr(7)
+	if out == "":
+		return
+	await RenderingServer.frame_post_draw
+	out = out.get_basename() + "_" + tag + ".png"
+	get_viewport().get_texture().get_image().save_png(out)
+	print("perf draws_canvas=%d (%s)" % [get_viewport().get_render_info(Viewport.RENDER_INFO_TYPE_CANVAS,
+		Viewport.RENDER_INFO_DRAW_CALLS_IN_FRAME), tag])
+	print("shot saved ", out)
+
+
+## portraits:sheet (see _demo): on a slate sheet over the game, the 12 commanders in rarity colours — 4 «Командиры»
+## cards (their fans), 12 army cards (the chip), 12 picker faces 72 (level 3) and 12 calendar faces 64 — then a frame
+## in each era.
+func _demo_portrait_sheet() -> void:
+	var ids: Array = ["cmd_bram", "cmd_lira", "cmd_olm", "cmd_vik", "cmd_vega", "cmd_kort", "cmd_seir", "cmd_frey",
+		"cmd_irma", "cmd_hawk", "cmd_vance", "cmd_rai"]
+	var layer := CanvasLayer.new()
+	layer.layer = 20
+	add_child(layer)
+	var bg := ColorRect.new()
+	bg.color = Kit.SLATE_WELL
+	bg.size = get_viewport().get_visible_rect().size
+	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	layer.add_child(bg)
+	for i in 4:
+		var faces: Array = []
+		for j in 3:
+			faces.append([ids[i * 3 + j], _cmd_rarity(String(ids[i * 3 + j]))])
+		var c: Control = ui._commanders_card({"name": tr("cmdr.title"), "commanders": [12, 12], "faces": faces})
+		c.position = Vector2(92 + i * 192, 24)
+		layer.add_child(c)
+	for i in 12:
+		var id := String(ids[i])
+		var cp: Control = GameUI.CmdPortrait.new(id, _cmd_rarity(id))
+		cp.add_to_group("kit_era")
+		var c: Control = Kit.card(Kit.icon_tex("helmet"), tr("army.name") % (i + 1), {"badge": str(i + 1), "art_side": 72.0,
+			"chip": {"node": cp}})
+		c.position = Vector2(92 + (i % 4) * 192, 222 + (i / 4) * 196)
+		layer.add_child(c)
+	for i in 12:
+		var id := String(ids[i])
+		var p: Control = ui._cmd_face(id, _cmd_rarity(id), 72.0, 3)
+		p.position = Vector2(14 + i * 77, 820)
+		layer.add_child(p)
+		var q: Control = ui._cmd_face(id, _cmd_rarity(id), 64.0)
+		q.position = Vector2(18 + i * 77, 912)
+		layer.add_child(q)
+	for dl in [2, 4, 6, 8]:
+		_set_dl(dl)  # (the economy's tick sets the portraits' era from the DL)
+		for k in 6:
+			await get_tree().process_frame
+		await get_tree().create_timer(0.8).timeout
+		await _demo_frame("e%d" % GameUI.CmdPortrait.era)
+
+
+## toastins:<album|pass>[:long] (see _demo): for each forced top inset the HUD groups move down, the window opens
+## again (its rect follows the inset), the toast comes and the frame is taken with a probe line.
+func _demo_toast_insets(win: String, long: bool) -> void:
+	if win == "album":
+		_set_dl(8)
+	var rs := tr(String(Research.LINES["taxes"]["name"]))
+	var text: String = tr("toast.research_done") % [rs, 2, tr(String(Research.LINES["taxes"]["desc"]))] if long \
+		else tr("chr.toast") % tr("chr.ach_cmd_4")
+	var icon := "flask" if long else ""
+	var insets := [0, 48, 72, 96]
+	for t in insets:
+		Kit.debug_top_inset = float(t)
+		hud._anchor_groups()
+		ui._anchor_bottom()
+		ui.close_modal()
+		await get_tree().create_timer(0.3).timeout
+		if win == "album":
+			_open_commanders()
+		else:
+			_open_pass()
+		await get_tree().create_timer(0.8).timeout  # the window's pop-in and its title plate's drop-in
+		ui.toast(text, icon)
+		await get_tree().create_timer(0.5).timeout
+		_toast_probe(t)
+		await _demo_frame("T%d" % t)
+		if t != insets[-1]:
+			ui.drop_toast(text)
+			await get_tree().create_timer(0.5).timeout
+
+
+## The «perf toastprobe» line of toastins: the toast on screen (y range, lifted onto layer 4 or not), the open window's
+## title plate span (its icon's overhang included) and frame, how far the toast overlaps the plate (px, ≤ 0: clear).
+func _toast_probe(t: int) -> void:
+	var vis := get_viewport().get_visible_rect()
+	var r: Rect2 = ui.toast_rect()
+	var lifted: bool = ui._toast_top != null and ui._toast_top.get_child_count() > 0
+	var span := Vector2(INF, -INF)
+	for n in get_tree().get_nodes_in_group("kit_title"):
+		var p := n as Control
+		if p == null or not p.is_visible_in_tree():
+			continue
+		var g := p.get_global_rect()
+		var over := 0.0
+		for c in p.get_children():
+			if c is Control:
+				over = maxf(over, -(c as Control).position.y)
+		span = Vector2(minf(span.x, g.position.y - over), maxf(span.y, g.end.y))
+	var frame := Rect2()
+	if ui._modal != null and ui._modal.get_child_count() > 1:
+		frame = (ui._modal.get_child(1) as Control).get_global_rect()
+	var ov := minf(r.end.y, span.y) - maxf(r.position.y, span.x)
+	print("perf toastprobe T=%d res=%dx%d vb=%d toast=%d..%d h=%d lifted=%s plate=%d..%d frame=%d..%d overlap=%d" % [t,
+		int(vis.size.x), int(vis.size.y), int(Kit.vb(ui)), int(r.position.y), int(r.end.y), int(r.size.y), str(lifted),
+		int(span.x), int(span.y), int(frame.position.y), int(frame.end.y), int(ov)])
+
 
 func _hex_dist(a: int, b: int) -> int:
 	return HexGrid.distance(Vector2i(int(sim.cells[a]["q"]), int(sim.cells[a]["r"])), Vector2i(int(sim.cells[b]["q"]), int(sim.cells[b]["r"])))
@@ -8840,6 +8960,16 @@ func _demo(spec: String) -> void:
 		_econ_sync(now_s())
 		econ.res.merge({"gold": 3200, "food": 4700, "metal": 900}, true)
 		_open_market()
+		return
+	if what == "portraits" and parts.size() > 1 and parts[1] == "sheet":  # portraits:sheet — every commander in every
+		# small slot (the Army tab's fan 58×70, the army chip Ø38, the picker 72, the calendar 64) through the game's own
+		# builders, one frame per era (OUT_e1…e4.png; docs/art_direction.md §7.12)
+		await _demo_portrait_sheet()
+		return
+	if what == "toastins":  # toastins:album|pass[:long] — the Chronicle toast (:long — a two-line one) over that window
+		# at the safe-top insets 0/48/72/96 (Kit.debug_top_inset), one frame each (OUT_T<n>.png) with a «perf toastprobe»
+		# line: the toast's rect and layer, the title plate's span, their overlap (docs/ui_style.md §3.1)
+		await _demo_toast_insets(parts[1] if parts.size() > 1 else "album", parts.size() > 2 and parts[2] == "long")
 		return
 	if what == "toast":  # toasts (§4.10): one with an icon, then a second waiting behind it; toast:merge — the same text
 		# twice («×2»); toast:error — a refusal (war face); toast:long — two lines; toast:modal — over a window;

@@ -4,7 +4,7 @@ Usage: python3 -I tools/qa_portraits/qa_contrast.py PORTRAIT_DIR [--strict] [--q
 
 The game draws the plate, so the render must separate from it. Plates: a commander on its rarity colour in BOTH
 palettes (ui = Kit.RARITY, gdd = the 04 §15.4 set of §7.4), a leader on its state's colour exactly as the game
-passes it to CmdPortrait.plate, the ruler on the two sky wells it is shown in (hud.gd crest SKY_TOP -> SKY_LOW,
+passes it to CmdPortrait.plate, the ruler on the two sky wells it is shown in (hud.gd crest SKY_TOP.lightened(0.18) -> SKY_TOP,
 game_ui.gd profile flat SKY_TOP: no CmdPortrait, so no plate B and no halo; qa_common.RULER_PLATES). Plate gradient
 "B" (§7.4: rc.lightened(0.18) -> rc, with the halo) is GATED; the gradient before P4 (lightened(0.08) ->
 darkened(0.42)) is printed as INFO.
