@@ -8301,9 +8301,10 @@ func _demo_frame(tag: String) -> void:
 	print("shot saved ", out)
 
 
-## portraits:sheet (see _demo): on a slate sheet over the game, the 12 commanders in rarity colours — 4 «Командиры»
-## cards (their fans), 12 army cards (the chip), 12 picker faces 72 (level 3) and 12 calendar faces 64 — then a frame
-## in each era.
+## portraits:sheet (see _demo): on a slate sheet over the game, the 12 commanders in rarity colours — 12 «Командиры»
+## cards (their fans: each commander once in the middle, once on the left and once on the right), 12 army cards (the
+## chip), 12 picker faces 72 (level 3), 12 calendar faces 64 and Bram's smile (the mail's advisor) at 72 and 64 — then
+## a frame in each era.
 func _demo_portrait_sheet() -> void:
 	var ids: Array = ["cmd_bram", "cmd_lira", "cmd_olm", "cmd_vik", "cmd_vega", "cmd_kort", "cmd_seir", "cmd_frey",
 		"cmd_irma", "cmd_hawk", "cmd_vance", "cmd_rai"]
@@ -8315,12 +8316,13 @@ func _demo_portrait_sheet() -> void:
 	bg.size = get_viewport().get_visible_rect().size
 	bg.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	layer.add_child(bg)
-	for i in 4:
+	for i in 12:
 		var faces: Array = []
-		for j in 3:
-			faces.append([ids[i * 3 + j], _cmd_rarity(String(ids[i * 3 + j]))])
+		for j in 3:  # the middle (on top), the left, the right (_commanders_card)
+			var id := String(ids[(i + j * 4) % 12])
+			faces.append([id, _cmd_rarity(id)])
 		var c: Control = ui._commanders_card({"name": tr("cmdr.title"), "commanders": [12, 12], "faces": faces})
-		c.position = Vector2(92 + i * 192, 24)
+		c.position = Vector2(92 + (i % 4) * 192, 24 + (i / 4) * 192)
 		layer.add_child(c)
 	for i in 12:
 		var id := String(ids[i])
@@ -8328,16 +8330,22 @@ func _demo_portrait_sheet() -> void:
 		cp.add_to_group("kit_era")
 		var c: Control = Kit.card(Kit.icon_tex("helmet"), tr("army.name") % (i + 1), {"badge": str(i + 1), "art_side": 72.0,
 			"chip": {"node": cp}})
-		c.position = Vector2(92 + (i % 4) * 192, 222 + (i / 4) * 196)
+		c.position = Vector2(92 + (i % 4) * 192, 616 + (i / 4) * 192)
 		layer.add_child(c)
 	for i in 12:
 		var id := String(ids[i])
 		var p: Control = ui._cmd_face(id, _cmd_rarity(id), 72.0, 3)
-		p.position = Vector2(14 + i * 77, 820)
+		p.position = Vector2(14 + i * 77, 1196)
 		layer.add_child(p)
 		var q: Control = ui._cmd_face(id, _cmd_rarity(id), 64.0)
-		q.position = Vector2(18 + i * 77, 912)
+		q.position = Vector2(18 + i * 77, 1288)
 		layer.add_child(q)
+	var sm: Control = ui._cmd_face("cmd_bram", "common", 72.0, 0, false, "smile")
+	sm.position = Vector2(14, 1372)
+	layer.add_child(sm)
+	var sm2: Control = ui._cmd_face("cmd_bram", "common", 64.0, 0, false, "smile")
+	sm2.position = Vector2(95, 1376)
+	layer.add_child(sm2)
 	for dl in [2, 4, 6, 8]:
 		_set_dl(dl)  # (the economy's tick sets the portraits' era from the DL)
 		for k in 6:
