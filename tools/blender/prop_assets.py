@@ -1729,11 +1729,14 @@ DESTROYER_K = (1.0, 1.3, 1.1)
 
 
 def destroyer_wide(team):
-    """destroyer(team) scaled by DESTROYER_K (see there). The scale goes into the mesh data (modifiers applied, each
-    part's own transform baked in first): a non-uniform scale on a turned object's transform would shear it."""
+    """destroyer(team) scaled by DESTROYER_K (see there). The scale goes into the mesh data (lowpoly's bevel budget and
+    the modifiers applied, each part's own transform baked in first): a non-uniform scale on a turned object's
+    transform would shear it."""
     before = {o.name for o in bpy.context.scene.objects}
     destroyer(team)
     new = [o for o in bpy.context.scene.objects if o.name not in before and o.type == "MESH"]
+    bpy.context.view_layer.update()
+    ev.lowpoly([o for o in new if not o.get("flat")])  # the export's bevel budget first (it finds no modifiers later)
     bpy.ops.object.select_all(action="DESELECT")
     for o in new:
         o.select_set(True)

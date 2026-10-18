@@ -676,13 +676,15 @@ def _ico(sub):
 # art pass 6 (AP6): the forest spruce of reference frame 1 — the dark conifer masses of the strategic view. Four
 # scalloped tiers instead of three, a little narrower at the foot and taller (0.64 instead of 0.565: 2.8× the bottom
 # radius instead of 2.3×), so a wood reads as a stand of spruces whose crowns overlap in depth rather than a field of
-# round cartoon pines; the body leans to the deep and shade greens of §6.3 (SPRUCE_C: the mid-green mottles and band
-# a step deeper, the sunlit tips as before), so the masses read dark between the lit rims. Same triangle count as the
+# round cartoon pines; the body leans to the deep and shade greens of §6.3 (SPRUCE_C: the dark body at §6.3's deep
+# #24563A, the mid-green mottles and band at its shade #2E6B3E, the sunlit tips a step softer; deep #1F4F37 stays
+# over the §6.1 floor at L* 30) — in game the first, lighter set (#2A6340 / #38814A / #8CC152) still read as bright
+# cartoon pines under the soft shader's lift, not as the dark masses of the reference. Same triangle count as the
 # three-tier pine (284: four 63-triangle tiers of 18 / 9 segments, the ball, the trunk). The tiers:
 # (radius, rim z0, apex z1, droop, lip); the apex of each sits inside the tier above
 SPRUCE_TIERS = ((0.23, 0.2, 0.34, 0.01, 0.014), (0.19, 0.285, 0.425, 0.013, 0.014), (0.15, 0.375, 0.51, 0.011, 0.012),
                 (0.105, 0.465, 0.585, 0.009, 0.01))
-SPRUCE_C = dict(dark="#2A6340", mid="#38814A", light="#8CC152", deep="#22533A")
+SPRUCE_C = dict(dark="#255C3C", mid="#2F6E42", light="#7FB84E", deep="#1F4F37")
 
 
 def spruce(x=0.0, y=0.0, s=1.0, seed=0, mt=None, bark=None, n=18, na=9, z=0.0, tiers=SPRUCE_TIERS):
@@ -1085,11 +1087,12 @@ def mountain():
         x, y = r * math.cos(a), r * math.sin(a)
         z0 = height(x, y) - 0.02
         soft_block(x, y, s_ * 2.2, s_ * 1.8, s_ * 1.3, rk, 70 + k, z0=z0, rz=a, sub=1, cuts=(2, 3), bevel=0)
-    pine_mt, bark = pine_paint(**SPRUCE_C), tex("wood", BARK_SOFT)  # the forest spruces (art pass 6) on the slopes
+    # the slope pines in the forest spruces' darker greens (art pass 6), three tiers each to keep the triangle count
+    pine_mt, bark = pine_paint(**SPRUCE_C), tex("wood", BARK_SOFT)
     for k, (a, r, s_) in enumerate([(4.95, 0.64, 0.5), (3.35, 0.66, 0.46), (1.25, 0.68, 0.44), (0.25, 0.7, 0.42),
                                     (4.0, 0.7, 0.4), (5.6, 0.7, 0.44)]):
         x, y = r * math.cos(a), r * math.sin(a)
-        spruce(x, y, s_, 30 + k, pine_mt, bark, z=height(x, y) - 0.012)
+        tall_pine(x, y, s_, 30 + k, pine_mt, bark, n=18, na=9, z=height(x, y) - 0.012)
 
 
 def ripe_paint():
@@ -1413,7 +1416,7 @@ def windmill():
 
 # art pass 6 (AP6): the quarry face of reference frame 4 as stepped terraces of straight cut blocks. A1's rounded
 # boulders (soft_block) read as a rock pile, the pre-A1 sharp grey cubes as a crate of dice: now each tier is a row of
-# dressed blocks (cut_block: a box with straight flanks and a round 2-segment bevel, so it stays soft at map size)
+# dressed blocks (cut_block: a box with straight flanks and a bevelled rim, so it stays soft at map size)
 # standing on the ledge of the tier below, set back 0.16 so every flat ledge shows as a light band over the dark
 # riser below it — at the map pitch (≈ 50°) a riser of 0.18 and a ledge of 0.16 project to about the same height, the
 # value rhythm of cut steps. The blocks part by MINE_GAP (the AO bake draws the joints), heights jitter by MINE_JIT
@@ -1423,15 +1426,16 @@ MINE_TIERS = ((0.0, 0.18, 0.24, 0.5), (0.16, 0.34, 0.42, 0.44), (0.32, 0.5, 0.6,
 MINE_W, MINE_GAP, MINE_JIT = (0.2, 0.27), 0.008, 0.025
 
 
-def cut_block(cx, cy_, w, d, h, mt, z0=-0.01, rz=0.0, bev=0.016):
-    """A dressed stone block (art pass 6, the quarry tiers): a box w × d × h standing on z0, turned rz, with a round
-    2-segment bevel of `bev` on every edge (§6.2: bevels on masses ≥ 0.08) and weighted normals, so its faces stay calm
-    planes and its edges catch a soft highlight. 108 triangles."""
+def cut_block(cx, cy_, w, d, h, mt, z0=-0.01, rz=0.0, bev=0.018, segs=1):
+    """A dressed stone block (art pass 6, the quarry tiers): a box w × d × h standing on z0, turned rz, with a bevel
+    of `bev` on every edge (§6.2: bevels on masses ≥ 0.08) and weighted normals, so its faces stay calm planes and
+    its edges catch a soft highlight. One segment: 44 triangles (two: 108 — the 13 blocks of the quarry would add
+    ≈ 800 for an edge that reads the same at map size)."""
     bm = bmesh.new()
     bmesh.ops.create_cube(bm, size=1.0)
     for v in bm.verts:
         v.co = Vector((v.co.x * w, v.co.y * d, (v.co.z + 0.5) * h))
-    bmesh.ops.bevel(bm, geom=bm.edges[:], offset=min(bev, 0.3 * min(w, d, h)), segments=2, profile=0.5,
+    bmesh.ops.bevel(bm, geom=bm.edges[:], offset=min(bev, 0.3 * min(w, d, h)), segments=segs, profile=0.5,
                     affect="EDGES", clamp_overlap=True)
     c, s_ = math.cos(rz), math.sin(rz)
     for v in bm.verts:

@@ -1690,14 +1690,22 @@ FIGHTER_SKY = (("#8E9CAD", "#AAB6C3", "#76869A"), "#DCE2E8")
 
 
 def _flying(build, k, **kw):
-    """Build an aircraft and scale it ×k about the origin (the orbit's attach point)."""
+    """Build an aircraft and scale it ×k about the origin (the orbit's attach point), into the mesh data (the glTF
+    node keeps scale 1: the game sees the true size in the mesh)."""
     def run():
         from mathutils import Matrix
         before = {o.name for o in bpy.context.scene.objects}
         build(**kw)
+        done = set()
         for o in bpy.context.scene.objects:
-            if o.name not in before and o.parent is None:
-                o.matrix_world = Matrix.Scale(k, 4) @ o.matrix_world
+            if o.name in before or o.type != "MESH":
+                continue
+            if o.data.name in done or o.data.users > 1:
+                o.data = o.data.copy()
+            o.data.transform(Matrix.Scale(k, 4))
+            done.add(o.data.name)
+            if o.parent is None:
+                o.location = o.location * k
     return run
 
 

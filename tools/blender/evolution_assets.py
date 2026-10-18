@@ -2287,10 +2287,10 @@ def city_dl8(team):
 # art pass 6 (AP6): the DL1 shalash after canon (docs/gdd/05_economy_buildings.md, the DL1 row: «шалаш старосты:
 # жерди, шкуры, костёр, шест с флажком державы»): sewn hides over a cone of poles that cross at the top and splay out above it. The B2 shalash was a
 # cone of four thatch tiers under a round tuft, and at map zoom it read as a haystack (A1 review), right next to the
-# camp's real haystack. Hide gores alternate three warm leathers (light enough to stay the brightest mass of the camp,
-# §6.3: roofs lightest), the poles stand 0.11 over the smoke hole in light timber (no dark stick crown, §6.1), the
-# team band and the door flap keep the state's colour.
-HIDES = ("#D9B98C", "#C69C6E", "#E3CBA2")
+# camp's real haystack. Hide gores alternate three warm tan leathers (light enough to stay the brightest mass of the
+# camp, §6.3: roofs lightest; a first, paler set #D9B98C… read as white canvas in game), the poles stand 0.11 over
+# the smoke hole in light timber (no dark stick crown, §6.1), the team band keeps the state's colour.
+HIDES = ("#CDA877", "#B48A5C", "#DABC8C")
 
 
 def hide_tent(r, top, team, n=10, poles=7, stick=0.11, seed=0, door=True, band=True):
