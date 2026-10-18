@@ -295,7 +295,7 @@ func _draw() -> void:
 		# chip's circle) through the part of the box it covers. A locked commander is its flat silhouette at α 0.3
 		# (SILHOUETTE)
 		var poly := box
-		if not dst.encloses(Rect2(Vector2.ZERO, size)):
+		if not dst.grow(0.01).encloses(Rect2(Vector2.ZERO, size)):  # (the cover rect, up to float error: the whole box)
 			var cut := Geometry2D.intersect_polygons(box, PackedVector2Array([dst.position, Vector2(dst.end.x,
 				dst.position.y), dst.end, Vector2(dst.position.x, dst.end.y)]))
 			poly = cut[0] if not cut.is_empty() else PackedVector2Array()
