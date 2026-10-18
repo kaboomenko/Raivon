@@ -2,7 +2,7 @@ extends Node3D
 ## Strategy camera: one-finger pan with inertia, pinch / wheel zoom between the strategic and close-up views,
 ## tap to pick a hex. The view is a continuous blend: zoom 1 = strategic (high, wide), 0 = close-up.
 
-signal hex_tapped(cell: Vector2i)
+signal hex_tapped(cell: Vector2i, screen: Vector2)  # the hex under a tap (ground pick) and the tap's screen point
 signal order_drag(phase: int, screen: Vector2)  # 0 = start, 1 = move, 2 = end
 
 ## When set and it returns true for the press position, a one-finger drag issues orders instead of panning.
@@ -110,7 +110,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				order_drag.emit(2, t.position)
 				return
 			if was_single and _drag_moved < 12.0:
-				hex_tapped.emit(world_to_axial(ground_at(t.position)))
+				hex_tapped.emit(world_to_axial(ground_at(t.position)), t.position)
 	elif event is InputEventScreenDrag:
 		var d := event as InputEventScreenDrag
 		_touches[d.index] = d.position

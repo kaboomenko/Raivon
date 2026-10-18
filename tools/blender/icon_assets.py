@@ -1541,11 +1541,48 @@ def hex_tile():
     _tilt(rx=52, rz=0)
 
 
+def _crack(name, pts, widths, m, z=0.004, h=0.014):
+    """A crack in the ground: a flat ribbon along the polyline `pts` ((x, y) on the hex top) whose width narrows
+    through `widths` (one per point, the last ≈ 0, a sharp tip), `h` thick, centred at height `z`."""
+    import mathutils
+    n = len(pts)
+    left, right = [], []
+    for i in range(n):
+        a = mathutils.Vector(pts[max(i - 1, 0)])
+        b = mathutils.Vector(pts[min(i + 1, n - 1)])
+        d = (b - a).normalized()
+        nx, ny = -d.y * widths[i] / 2, d.x * widths[i] / 2
+        left.append((pts[i][0] + nx, pts[i][1] + ny))
+        right.append((pts[i][0] - nx, pts[i][1] - ny))
+    verts = []
+    for (x, y) in left + right:
+        verts += [(x, y, z + h / 2), (x, y, z - h / 2)]
+    L = lambda i, top: 2 * i + (0 if top else 1)  # noqa: E731
+    R = lambda i, top: 2 * (n + i) + (0 if top else 1)  # noqa: E731
+    faces = []
+    for i in range(n - 1):
+        faces.append((L(i, True), R(i, True), R(i + 1, True), L(i + 1, True)))
+        faces.append((L(i + 1, False), R(i + 1, False), R(i, False), L(i, False)))
+        faces.append((L(i, False), L(i, True), L(i + 1, True), L(i + 1, False)))
+        faces.append((R(i + 1, False), R(i + 1, True), R(i, True), R(i, False)))
+    faces.append((L(0, False), R(0, False), R(0, True), L(0, True)))
+    faces.append((L(n - 1, True), R(n - 1, True), R(n - 1, False), L(n - 1, False)))
+    me = bpy.data.meshes.new(name)
+    me.from_pydata(verts, [], faces)
+    me.update()
+    o = bpy.data.objects.new(name, me)
+    bpy.context.scene.collection.objects.link(o)
+    return kit._finish(o, m, 0.0, 1, smooth=False)
+
+
 def hex_scorched():
     """A lost hex (the result window's «Потеряно», the defeat toast; B4): the land hex of hex_tile burnt out —
     charcoal ground (#4A423C … #5C524A) on darker sides, orange-red embers glowing in cracks, a charred stump and a
     fallen log, and a thin grey smoke trail drifting off to one side. The first take (light tan ash, yellow embers on
     dark discs, a white puff on the stump) read as a sandy tile with fried eggs and a little tree at 60 px (B4 review).
+    The cracks run in 3 uneven segments that narrow to a sharp tip, with a branch off each and a hotter core in their
+    wide part; the embers lie beside them, never on their ends (B4 fix review: equal-width straight bars ending in
+    round blobs read as a dots-and-lines diagram at 128 px).
     No albedo under ≈ #2A2A30 (docs/art_direction.md §6.1 rule 3): the char is a warm dark grey, not black."""
     ash = kit.noisy_mat("ash_c", "#4a423c", "#5c524a", 5.0, 0.9)
     side = kit.noisy_mat("dirt_c", "#5a4434", "#43352c", 6.0)
@@ -1556,11 +1593,22 @@ def hex_scorched():
         sphere("ash_drift", 0.08, (x, y, 0.0), ashl, (sx, sy, 0.14), 2)
     glow = mat("ember_glow", "#ff5a1e", 0.6, emission="#ff4612", emit_strength=1.4)
     hot = mat("ember_hot", "#ff7426", 0.5, emission="#ff5212", emit_strength=5.0)
-    for (x, y, rz, ln) in ((-0.17, -0.1, 0.5, 0.28), (0.13, -0.19, -0.7, 0.24), (0.0, 0.1, 1.35, 0.2), (0.27, 0.12, 0.2, 0.16)):
-        crack = box("crack", (ln, 0.024, 0.014), (x, y, 0.004), glow, 0.005)
-        crack.rotation_euler.z = rz
-    for (x, y, r) in ((-0.27, -0.15, 0.042), (-0.07, -0.04, 0.034), (0.21, -0.27, 0.04), (0.05, -0.15, 0.03),
-                      (0.31, 0.15, 0.034), (-0.12, 0.2, 0.03)):
+    # (main crack, its branch from the main's 2nd point): points on the hex top and the width at each, to a sharp tip
+    cracks = (
+        (((-0.38, -0.05), (-0.25, -0.12), (-0.13, -0.07), (-0.04, -0.16)), (0.046, 0.034, 0.018, 0.004),
+         ((-0.25, -0.12), (-0.21, -0.21), (-0.13, -0.27)), (0.026, 0.014, 0.003)),
+        (((0.05, -0.06), (0.15, -0.15), (0.19, -0.26), (0.28, -0.32)), (0.044, 0.032, 0.016, 0.004),
+         ((0.15, -0.15), (0.25, -0.13), (0.33, -0.17)), (0.024, 0.012, 0.003)),
+        (((0.19, 0.04), (0.28, 0.1), (0.35, 0.07), (0.43, 0.13)), (0.036, 0.026, 0.012, 0.003),
+         ((0.28, 0.1), (0.3, 0.19)), (0.016, 0.003)),
+    )
+    for k, (pts, ws, bpts, bws) in enumerate(cracks):
+        _crack("crack%d" % k, pts, ws, glow)
+        _crack("crack%d_b" % k, bpts, bws, glow)
+        # the hot core along the wide part only: it fades out where the crack narrows
+        _crack("crack%d_core" % k, pts[:3], (ws[0] * 0.42, ws[1] * 0.36, 0.0), hot, z=0.01, h=0.006)
+    for (x, y, r) in ((-0.31, 0.03, 0.036), (0.03, -0.3, 0.034), (0.11, -0.01, 0.028), (0.41, -0.04, 0.03),
+                      (-0.12, 0.22, 0.028)):
         sphere("ember_halo", r * 1.7, (x, y, 0.0), glow, (1, 1, 0.06), 2)  # the glow on the ground round an ember
         sphere("ember", r, (x, y, 0.02), hot, (1.15, 1, 0.75), 2)
     char = mat("char_c", "#3a322e", 0.85)

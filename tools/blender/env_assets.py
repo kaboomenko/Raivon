@@ -4,6 +4,7 @@ Overwrites the simple placeholder props that export_assets.py makes (same file n
 so the map picks them up without code changes:
   tree_pine.glb  tree_round.glb  rock.glb  mountain.glb  wheat_field.glb  windmill.glb  mine.glb
   bush.glb  flowers.glb  crop_field.glb (DL6–7 plots)  crag.glb (hills hexes)
+  dark_lake.glb (the Dark Lake hex; map_view spawns it once followup_map_view_dark_lake.patch lands — art pass 5)
 
 Run:   python3 tools/blender/env_assets.py game/assets/models [name ...]
 Sheet: python3 tools/blender/env_assets.py game/assets/models --sheet OUT.png
@@ -925,14 +926,22 @@ def crag():
 MASSIF_C = {"base": "#7D7873", "warm": "#87817A", "top": "#A29B8F", "shade": "#7C7892", "deep": "#6E6A6C"}
 
 
-def massif_paint(snow_z=0.6, snow_nz=0.3):
+# the massif's snow (A1 review): a blue-white albedo, lit / shade. The light lifts it ≈ ×1.14 on screen and washes
+# out its saturation: #B4C0DA (S 0.17) came out as (206, 217, 239) — V 0.94 S 0.14, inside the §6.12 «white-hot» band
+# (V > 0.92 and S < 0.18) — and with caps over the top 33–39 % of each peak and on every facet tilted up past 0.3 it
+# frosted the main peak two thirds of the way down. The reviewer's #A3AFCB / #97A3C2 on the crest facets only
+# (SNOW_NZ 0.58, caps 22 / 20 / 15 %) left a pale lilac tip that vanished at the strategic zoom (no brighter than the
+# rock's pale top #A29B8F); now a bluer snow (S ≈ 0.24: on screen S ≥ 0.18, out of the white-hot band however bright)
+# on the up-facing facets past 0.5 — a soft cap that reads at the map zoom
+SNOW_LIT, SNOW_SHADE, SNOW_NZ = "#A8B6DC", "#98A6CC", 0.5
+
+
+def massif_paint(snow_z=0.6, snow_nz=SNOW_NZ):
     """The rock teeth of the massif (art pass 5): MASSIF_C grey in big soft patches and faint horizontal strata (the
     layered cliffs of reference frame 3), a pale top on the up-facing facets, lilac on the steep and turned-away
-    ones, a deeper grey low down; soft snow caps on the up-facing facets of the high blocks (above snow_z, broken by
-    a broad noise; a steep facet stays bare rock), so a peak reads as snow over grey crags. Snow is a pale
-    blue-grey albedo, #B4C0DA lit and #A9B4CF in the shade: the old caps' #C6CEDF came out in game as (209, 219, 243),
-    S 0.14 V 0.95 — «white-hot» (§6.12: V > 0.92 and S < 0.18), 5 % of a close mountain frame once the rounder peaks
-    carried more snow; a step bluer and darker, the lit snow stays blue-white with S ≈ 0.2."""
+    ones, a deeper grey low down; soft snow caps (SNOW_LIT / SNOW_SHADE) on the up-facing crest facets of the high
+    blocks (above snow_z, normal z over snow_nz, both edges broken by a broad noise; the flanks stay bare rock), so a
+    peak reads as a soft snow cap over grey crags (§6.8), not as a frosted slab."""
     def build():
         p = Paint("massif")
         col = p.mix(p.math("MULTIPLY", p.step(p.noise(3.0, 2.0), 0.35, 0.65), 0.7), MASSIF_C["base"], MASSIF_C["warm"])
@@ -944,7 +953,7 @@ def massif_paint(snow_z=0.6, snow_nz=0.3):
         jit = p.math("MULTIPLY", p.math("SUBTRACT", p.noise(3.5, 2.0), 0.5), 0.45)  # a ragged snow line
         sf = p.math("MULTIPLY", p.step(p.math("ADD", p.z, jit), snow_z - 0.03, snow_z + 0.05),
                     p.step(p.math("ADD", p.nz, p.math("MULTIPLY", jit, 0.6)), snow_nz - 0.08, snow_nz + 0.08))
-        snow = p.mix(p.step(p.nz, 0.3, 0.85), "#A9B4CF", "#B4C0DA")
+        snow = p.mix(p.step(p.nz, 0.6, 0.95), SNOW_SHADE, SNOW_LIT)
         col = p.mix(sf, col, snow)
         return p.done(col, 0.9)
     return cached(("massif", snow_z, snow_nz), build)
@@ -969,11 +978,12 @@ def _mound(x, y):
 # A1 review in game: the first teeth (taper 0.55–0.62, 5–7 cuts, a steep top cut) read on the map as a cluster of grey
 # crystals; now broader (×1.08), a little lower (×0.95) and blunter (taper ×0.72), the peaks and shoulders cut 7–9
 # times under a flatter top (rounded crests, wider 14 % bevels): soft massifs that keep the reference's grey alpine
-# peaks, with the snow line where it was (snow share recomputed for the lower blocks)
+# peaks. A1 review: caps over the top 39 / 37 / 33 % frosted the peaks two thirds down (white-hot on every mountain
+# frame); now the top 27 / 25 / 20 %, with snow only on the up-facing facets (SNOW_NZ)
 MASSIF = [
-    (0.0, 0.1, 1.026, 0.918, 0.931, 0.06, 0.446, 301, 0.3, (0.02, -0.03), 0.39),
-    (0.37, -0.12, 0.605, 0.54, 0.703, 0.05, 0.418, 302, -0.5, (-0.05, 0.04), 0.37),
-    (-0.37, -0.17, 0.54, 0.497, 0.551, 0.05, 0.396, 303, 0.9, (0.05, 0.04), 0.33),
+    (0.0, 0.1, 1.026, 0.918, 0.931, 0.06, 0.446, 301, 0.3, (0.02, -0.03), 0.27),
+    (0.37, -0.12, 0.605, 0.54, 0.703, 0.05, 0.418, 302, -0.5, (-0.05, 0.04), 0.25),
+    (-0.37, -0.17, 0.54, 0.497, 0.551, 0.05, 0.396, 303, 0.9, (0.05, 0.04), 0.2),
     (0.4, 0.3, 0.497, 0.432, 0.475, 0.04, 0.324, 304, 0.2, (-0.04, -0.03), 0.0),
     (-0.4, 0.24, 0.475, 0.432, 0.437, 0.04, 0.324, 305, -0.3, (0.04, -0.03), 0.0),
     (0.02, -0.36, 0.52, 0.3, 0.3, 0.04, 0.25, 306, 0.1, (0.0, 0.03), 0.0),
@@ -1369,28 +1379,35 @@ def windmill():
 # the quarry tiers' blocks: width range and plane cuts. A1 review in game: narrow blocks with 5–6 cuts (0.15–0.22)
 # stood like a crate of grey eggs; broader ones cut 7–9 times read as slabs of one cliff face (§6.1 rule 5)
 MINE_W, MINE_CUTS = (0.22, 0.3), (7, 9)
+# the three tiers, front to back: (y0, y1, top height, half width); MINE_LEVEL: a block's height varies over
+# (MINE_LEVEL, 1) of its tier's and drops by MINE_FALL × (x / half width)² towards the ends; MINE_TOP: the offset of
+# its flat top cut (lower = a broader flat top)
+MINE_TIERS = ((0.0, 0.2, 0.3, 0.56), (0.17, 0.36, 0.48, 0.5), (0.33, 0.5, 0.66, 0.38))
+MINE_LEVEL, MINE_FALL, MINE_TOP = 0.84, 0.35, 0.4
 
 
 def mine():
     dirt = ev.pad(0.6, ev.stone("#9a8f7f", 1.4), 0.012, 14, 0.12, 4, 1.0, 0.85)  # a flagged yard (reference frame 4)
     dirt.location.y = -0.12
-    # the quarried cliff of reference frames 3–4: three stepped tiers of cut grey stone, highest at the back, with
-    # ledges a man could stand on. Art pass 5 (A1): the tiers are big rounded blocks (soft_block: flat cut tops, soft
-    # weighted normals, warm grey granite with pale tops and lilac shade, as the crag and the rocks) instead of sharp
-    # boxes in the old speckled paint, which read as a pile of grey cubes on the map
+    # the quarried cliff of reference frames 3–4: three rows of grey stone rising to the back (MINE_TIERS). Art pass 5
+    # (A1): big rounded blocks (soft_block: flat cut tops, soft weighted normals, warm grey granite with pale tops and
+    # lilac shade, as the crag and the rocks) instead of sharp boxes in the old speckled paint, which read as a pile of
+    # grey cubes on the map. The broad slabs read as one rounded rock face behind the adit, not as cut-stone steps
+    # with ledges: levelling the tops (MINE_LEVEL 0.94, MINE_FALL 0.2), a lower front row and a broader top cut
+    # (MINE_TOP 0.25) did not bring the steps back in a preview (the derrick and the adit frame hide the front row)
     rnd = random.Random(9)
     cut = granite_paint(moss=None, cracks=0.0, scale=5.0)
     cut_d = granite_paint(base="#998E7D", top="#9C8E79", moss=None, warm="#9E9383", cracks=0.0, scale=5.0)
     blocks = []
-    for t, (y0, y1, zmax, xr) in enumerate(((0.0, 0.2, 0.3, 0.56), (0.17, 0.36, 0.48, 0.5), (0.33, 0.5, 0.66, 0.38))):
+    for t, (y0, y1, zmax, xr) in enumerate(MINE_TIERS):
         x = -xr
         while x < xr - 0.05:
             w = min(rnd.uniform(MINE_W[0], MINE_W[1]), xr - x)
-            h = zmax * rnd.uniform(0.84, 1.0) * (1.0 - 0.35 * (abs(x + w / 2) / xr) ** 2)
+            h = zmax * rnd.uniform(MINE_LEVEL, 1.0) * (1.0 - MINE_FALL * (abs(x + w / 2) / xr) ** 2)
             d = (y1 - y0) * rnd.uniform(1.0, 1.15)
             blocks.append(soft_block(x + w / 2, (y0 + y1) / 2 + rnd.uniform(-0.015, 0.015), w * 1.06, d, h,
                                      cut if (t + int(x * 10)) % 3 else cut_d, 90 + len(blocks), z0=-0.01,
-                                     rz=rnd.uniform(-0.1, 0.1), sub=1, cuts=MINE_CUTS, bevel=0, top=0.4,
+                                     rz=rnd.uniform(-0.1, 0.1), sub=1, cuts=MINE_CUTS, bevel=0, top=MINE_TOP,
                                      top_el=(1.48, 1.57), ground=0.0))
             x += w
     cull_hidden(blocks)
@@ -1521,18 +1538,19 @@ def dark_lake():
     """The Dark Lake (canon §5.1: dormant oil; art pass 5, A1) — replaces map_view's placeholder, a near-black 9-sided
     disc (0.07, 0.06, 0.12) with sharp corners and three loose rocks, the darkest and crudest shape on the map. A
     rounded pond (soft lobed outline, no corners) of still violet-black oil with an oily sheen (its own glossy
-    material, kept out of the bake like the oil fields' crude, albedo #3E3A5C: SoftLook clamps its metallic to 0.25, so
+    material, kept out of the bake like the oil fields' crude, albedo #45406A: SoftLook clamps its metallic to 0.25, so
     the pond shows at about half its albedo's luminance — #2E2B42 measured L* ≈ 11 on screen in game, a black hole;
-    now ≈ 15–16, still the darkest water on the map), pale
+    #3E3A5C gave a median ≈ 15–18 but still 3.7 % of a close frame under L* 15 (A1 review); now a step lighter, still
+    the darkest water on the map), pale
     lilac sheen streaks and a few oil bubbles on it; a ring of wet dark mud and a sandy shore that fades into the
     hex's grass; clumps of chunky reeds with brown heads, rounded mossy rocks and a dead stump on the shore."""
     shore = tex("plaster", "#B9A27E", 2.0)
     wet = tex("plaster", "#857360", 2.5)
-    oil = kit.mat("dark_lake", "#3E3A5C", 0.08, 0.55)
+    oil = kit.mat("dark_lake", "#45406A", 0.08, 0.55)
     ev.extrude(_blob(0.66, lobes=((3, 0.07, 1.0), (5, 0.04, 2.0))), -0.01, 0.008, shore)
     ev.extrude(_blob(0.6, lobes=((3, 0.08, 1.1), (5, 0.05, 2.1))), -0.01, 0.013, wet)
     ev.extrude(_blob(0.55, lobes=((3, 0.08, 1.1), (5, 0.05, 2.1))), -0.004, 0.017, oil)
-    sheen = flat("lake_sheen", "#57557E", 0.3)
+    sheen = flat("lake_sheen", "#605D8A", 0.3)  # a step over the pond (was #57557E over #3E3A5C)
     for (x, y, a, b, rz) in ((-0.12, 0.1, 0.16, 0.035, 0.4), (0.15, -0.12, 0.12, 0.03, -0.3), (0.05, 0.28, 0.09, 0.025,
                                                                                                0.9)):
         o = ev.extrude(_blob(1.0, n=16, lobes=((2, 0.05, 0.3),), sx=a, sy=b), 0.017, 0.0185, sheen)

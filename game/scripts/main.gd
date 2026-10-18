@@ -249,6 +249,7 @@ func _ready() -> void:
 	hud.button_pressed.connect(_on_hud_button)
 	ui = GameUI.new()
 	add_child(ui)
+	map_view.toast_rect = ui.toast_rect  # a coin hides while a toast covers it
 	ui.pill_of = func(r: String) -> Control: return hud.res_pills.get(r)  # the ceremony's rewards fly into these plates
 	ui.on_dock = func(on: bool): hud._bottom.visible = not on  # a docked window (a swap) hides the tabs and the tray
 	ui.action_pressed.connect(_on_action)
@@ -1905,6 +1906,30 @@ func _border_len(s: int, over: Dictionary = {}) -> int:
 	return n
 
 
+## How much shorter the player's border with `s` gets once `over` is applied (_border_len before minus after): only
+## the edges at the hexes of `over` can change, so the AI's search reads those alone, not the whole map.
+func _border_cut(s: int, over: Dictionary) -> int:
+	var d := 0
+	var seen := {}
+	for id in over:
+		for nb in sim.neighbors[id]:
+			if nb < 0:
+				continue
+			var e := Vector2i(mini(id, nb), maxi(id, nb))
+			if seen.has(e):
+				continue
+			seen[e] = true
+			var a0 := int(sim.cells[id]["owner"])
+			var b0 := int(sim.cells[nb]["owner"])
+			d += _border_edge(s, a0, b0) - _border_edge(s, int(over.get(id, a0)), int(over.get(nb, b0)))
+	return d
+
+
+## 1 when the owners `a` and `b` of two neighbouring hexes make an edge of the player's border with `s`.
+static func _border_edge(s: int, a: int, b: int) -> int:
+	return 1 if (a == Types.PLAYER and b == s) or (b == Types.PLAYER and a == s) else 0
+
+
 func _swap_over(s: int, give: Array, get_l: Array) -> Dictionary:
 	var over := {}
 	for h in give:
@@ -1915,8 +1940,9 @@ func _swap_over(s: int, give: Array, get_l: Array) -> Dictionary:
 
 
 ## The AI's verdict on a package (06 §15.2): its valuation both ways, the top-up in value units and gold, and the
-## overpay it returns as opinion.
-func _swap_terms(s: int, give: Array, get_l: Array) -> Dictionary:
+## overpay it returns as opinion. `priced` false leaves the gold at 0: a search that reads `pay` alone (the AI's own
+## offers) skips the realm's income scan the gold price takes.
+func _swap_terms(s: int, give: Array, get_l: Array, priced := true) -> Dictionary:
 	var v_out := 0.0   # what the AI gives up
 	var v_in := 0.0    # what the AI receives
 	for h in get_l:
@@ -1925,7 +1951,7 @@ func _swap_terms(s: int, give: Array, get_l: Array) -> Dictionary:
 		v_in += _swap_value(s, h, true, give)
 	var k := 0.8 if allies.has(s) else 0.9      # «≤10% not in its favour», an ally 20%
 	var pay_units := maxf(0.0, ceilf((k * v_out - v_in) * 10.0) / 10.0)
-	var gold := int(ceil(pay_units * 2.0 * maxf(60.0, float(econ.gross_per_hour(sim).get("gold", 0)))))
+	var gold := int(ceil(pay_units * 2.0 * maxf(60.0, float(econ.gross_per_hour(sim).get("gold", 0))))) if priced and pay_units > 0.0 else 0
 	return {"v_in": v_in, "v_out": v_out, "pay": pay_units, "gold": gold, "overpay": v_in + pay_units - k * v_out}
 
 
@@ -2233,10 +2259,9 @@ func _ai_swap_tick(now: int) -> void:
 		return
 
 
-## The player's border shape with `s` once `over` (hex -> new owner) is applied, for the AI's swap offers (06 §9.1 S4):
-## x — salients among the hexes of `near`: the player's hexes bordering ≥4 of `s`'s (canon «Уязвимый выступ»);
-## y — exclaves: the player's hexes with no path over the player's land to the capital (`own` hexes in all).
-func _swap_shape(s: int, over: Dictionary, near: Dictionary, own: int) -> Vector2i:
+## The player's salients towards `s` among the hexes of `near` once `over` (hex -> new owner) is applied, for the AI's
+## swap offers (06 §9.1 S4): the player's hexes bordering ≥4 of `s`'s (canon «Уязвимый выступ»).
+func _swap_salients(s: int, over: Dictionary, near: Dictionary) -> int:
 	var sal := 0
 	for id in near:
 		if int(over.get(id, sim.cells[id]["owner"])) != Types.PLAYER:
@@ -2247,9 +2272,15 @@ func _swap_shape(s: int, over: Dictionary, near: Dictionary, own: int) -> Vector
 				k += 1
 		if k >= 4:
 			sal += 1
+	return sal
+
+
+## The player's exclaves once `over` is applied: of the player's `own` cells (every cell the player owns, as the walk
+## counts them), those with no path over the player's land to the capital.
+func _swap_exclaves(over: Dictionary, own: int) -> int:
 	var cap: int = sim.states[Types.PLAYER]["capital_id"]
 	if cap < 0:
-		return Vector2i(sal, 0)
+		return 0
 	var seen := {cap: true}
 	var stack: Array = [cap]
 	while not stack.is_empty():
@@ -2258,7 +2289,7 @@ func _swap_shape(s: int, over: Dictionary, near: Dictionary, own: int) -> Vector
 			if nb >= 0 and not seen.has(nb) and int(over.get(nb, sim.cells[nb]["owner"])) == Types.PLAYER:
 				seen[nb] = true
 				stack.append(nb)
-	return Vector2i(sal, maxi(0, own - seen.size()))
+	return maxi(0, own - seen.size())
 
 
 ## The package the AI proposes, or {}: `give` is what the player gives.
@@ -2271,7 +2302,6 @@ func _ai_swap_package(s: int) -> Dictionary:
 			mine.append(id)
 		elif _swappable(id, s) and _touches_owner(id, Types.PLAYER):
 			theirs.append(id)
-	var base := _border_len(s)
 	var best := {}
 	var best_score := -INF
 	var packs: Array = []
@@ -2294,28 +2324,38 @@ func _ai_swap_package(s: int) -> Dictionary:
 				for l in range(k + 1, theirs.size()):
 					if (sim.neighbors[theirs[k]] as Array).has(theirs[l]):
 						packs.append([[mine[i], mine[j]], [theirs[k], theirs[l]]])
-	var own := _player_hexes()
+	# the exclaves as they are (one walk over the player's land, whatever the package); `own` counts every cell the
+	# player owns, as the walk does
+	var own := 0
+	for c in sim.cells:
+		if int(c["owner"]) == Types.PLAYER:
+			own += 1
+	var ex0 := _swap_exclaves({}, own)
 	for p in packs:
-		var t := _swap_terms(s, p[0], p[1])
-		if float(t["pay"]) > 0.0:
-			continue  # the AI's own proposal never asks the player to pay on top (playtest B: «Вы доплачиваете 311»)
 		var over := _swap_over(s, p[0], p[1])
-		var cut := base - _border_len(s, over)
+		var cut := _border_cut(s, over)
 		if cut < 0:
 			continue
 		# salients and exclaves (S4: «исчезает выступ либо эксклав»): only the package's hexes and their neighbours
-		# can change; a package that makes a new one is never offered
+		# can gain or lose a salient; a package that makes a new salient or exclave is never offered
 		var near := {}
 		for h in p[0] + p[1]:
 			near[h] = true
 			for nb in sim.neighbors[h]:
 				if nb >= 0:
 					near[nb] = true
-		var sh0 := _swap_shape(s, {}, near, own)
-		var sh1 := _swap_shape(s, over, near, own - (p[0] as Array).size() + (p[1] as Array).size())
-		if sh1.x > sh0.x or sh1.y > sh0.y:
+		var sal0 := _swap_salients(s, {}, near)
+		var sal1 := _swap_salients(s, over, near)
+		if sal1 > sal0:
 			continue
-		var shape := (sh0.x - sh1.x) + (sh0.y - sh1.y)
+		if cut < 2 and sal0 - sal1 + ex0 == 0:
+			continue  # nothing it could straighten: no walk needed
+		if float(_swap_terms(s, p[0], p[1], false)["pay"]) > 0.0:
+			continue  # the AI's own proposal never asks the player to pay on top (playtest B: «Вы доплачиваете 311»)
+		var ex1 := _swap_exclaves(over, own - (p[0] as Array).size() + (p[1] as Array).size())
+		if ex1 > ex0:
+			continue
+		var shape := (sal0 - sal1) + (ex0 - ex1)
 		if cut < 2 and shape == 0:
 			continue
 		var gain := 0
@@ -2602,7 +2642,11 @@ func _new_game() -> void:
 
 # ====================================================================== map mode
 
-func _on_hex_tapped(c: Vector2i) -> void:
+## A tap on the map: the hex `c` under it (the ground pick) and, from the camera, the screen point (`screen`; none from a
+## scripted tap). A tap on a coin collects whatever ground lies under the coin (map_view.bubble_at), as does a tap on
+## the ground of a hex that shows one: a coin floats over its hex's upper half, the ground pick alone took the hex
+## behind it (B4 fix review: 0 of 9 coin taps collected).
+func _on_hex_tapped(c: Vector2i, screen := Vector2(-1.0, -1.0)) -> void:
 	var id: int = sim.id_at(c.x, c.y)
 	if mode == Mode.BATTLE:
 		_battle_tap(id)
@@ -2615,7 +2659,7 @@ func _on_hex_tapped(c: Vector2i) -> void:
 	if not _swap.is_empty() and id >= 0:
 		_swap_pick(id)
 		return
-	if id >= 0 and map_view.has_bubble(id):
+	if (screen.x >= 0.0 and map_view.bubble_at(screen) >= 0) or (id >= 0 and map_view.has_bubble(id)):
 		_collect_all()
 		return
 	_select(id)

@@ -4261,17 +4261,58 @@ func has_bubble(hex: int) -> bool:
 	return _bubbles.has(hex)
 
 
+## The hex whose coin shows under a screen point (its box: the coin and the «+N», BUBBLE_TAP_SLOP px round it), or −1.
+## A tap on a coin collects (main._on_hex_tapped) whatever ground lies under it: the camera's ground pick alone took
+## the hex behind a coin (B4 review: 0 of 9 coin taps collected, each selected the hex north of the coin's own).
+func bubble_at(screen: Vector2) -> int:
+	var vp := get_viewport() if is_inside_tree() else null
+	var cam := vp.get_camera_3d() if vp != null else null
+	if cam == null:
+		return -1
+	var best := -1
+	var best_d := INF
+	for h in _bubbles:
+		var bn: Node3D = _bubbles[h]
+		if not bn.visible or float(bn.get_meta("show", 0.0)) < 0.5:
+			continue  # hidden under the HUD or a toast, or still growing in
+		var box := _bubble_box(int(h), cam).grow(BUBBLE_TAP_SLOP)
+		if box.has_point(screen):
+			var d := box.get_center().distance_squared_to(screen)
+			if d < best_d:
+				best_d = d
+				best = int(h)
+	return best
+
+
 ## Whether a hex's bubble is on the open map: in front of the camera, its whole box (the coin and the «+N» under it)
-## SCREEN_EDGE inside the view and clear of the HUD's furniture over the map (_furniture: the resource band, the left
-## column, the minimap, the map tools with their captions, the bottom tabs and tray), so no coin shows half under a
-## button or the minimap (B4 review: the centre alone against fixed screen fractions let a coin's half under them).
+## SCREEN_EDGE inside the view and clear of what a coin keeps clear of (_bubble_furniture), so no coin shows half under
+## a button or the minimap (B4 review: the centre alone against fixed screen fractions let a coin's half under them).
 func on_screen(hex: int) -> bool:
 	var vp := get_viewport() if is_inside_tree() else null
 	var cam := vp.get_camera_3d() if vp != null else null
 	if cam == null:
 		return true
 	var box := _bubble_box(hex, cam)
-	return box.has_area() and _free(box, _furniture(false), vp.get_visible_rect().grow(-SCREEN_EDGE))
+	return box.has_area() and _free(box, _bubble_furniture(false), vp.get_visible_rect().grow(-SCREEN_EDGE))
+
+
+## The toast's pill on the canvas while one shows, else an empty rect (main sets it to game_ui.toast_rect).
+var toast_rect := Callable()
+
+
+## What a coin keeps clear of: the floaters' furniture (_furniture(true): the HUD's, with the top scrim band instead of
+## the resource band alone, and the war bar at war; a coin is read in a glance, like a floater) and, `live`, the toast
+## on screen (toast_rect), so a coin never sits cut in half under a toast's pill (B4 fix review: 21 of 141 coins did;
+## mid-game toasts come every few seconds). The toast only hides a coin while it covers it (_step_bubbles, `live`):
+## the choice of coins (on_screen) ignores it, so a passing toast does not swap the coins round.
+func _bubble_furniture(live: bool) -> Array[Rect2]:
+	var furn: Array[Rect2] = _furniture(true)
+	if live and toast_rect.is_valid():
+		var r: Rect2 = toast_rect.call()
+		if r.has_area():
+			furn = furn.duplicate()
+			furn.append(r)
+	return furn
 
 
 ## The income bubbles keep about their size on screen as the camera comes close: a world-sized coin grew three times
@@ -4281,16 +4322,20 @@ func on_screen(hex: int) -> bool:
 ## hex shrinks with it (_bubble_lift: BUBBLE_LIFT × the scale, and down to BUBBLE_LIFT_CLOSE of that as the camera
 ## comes close): a low camera sees a fixed 2-unit lift as 450–620 px, the coin then hung over the hex behind and read
 ## as that hex's income (B4 review: the capital's «+4276» over the mine). A flat-top hex's north neighbour is √3 away,
-## which a camera pitched θ sees as √3·tan θ units of height (≈ 1.5 at the closest zooms, less towards the top of the
-## screen, where the view ray is flatter): close up the lift is also capped so the coin's centre stays within
-## BUBBLE_ROW_SHARE of the way to that neighbour on screen, the «+N» under it still on its own hex.
+## which a camera pitched θ sees as √3·tan θ units of height (≈ 1.9 at the default zoom 0.45, ≈ 1.5 at the closest
+## zooms, less towards the top of the screen, where the view ray is flatter): at every zoom the lift is capped so the
+## coin's centre stays within BUBBLE_ROW_SHARE (BUBBLE_ROW_SHARE_CLOSE from zoom 0.15 in) of the way to that neighbour
+## on screen — the hexes' border lies half way — and the «+N» under it on its own hex. The full lift (1.75–1.9 units at
+## the default zoom) put the coin right over the north neighbour, and a tap on it picked that hex (B4 fix review).
 const BUBBLE_DEPTH := 22.0
 const BUBBLE_LIFT := 2.0
 const BUBBLE_LIFT_CLOSE := 0.5  # the share of the lift left from zoom 0.15 in (full from 0.45, the default view, out)
-const BUBBLE_ROW_SHARE := 0.33  # close up: the coin's centre at most this far towards the hex's north neighbour
+const BUBBLE_ROW_SHARE := 0.4  # the coin's centre at most this far towards the hex's north neighbour (0.5: the border)
+const BUBBLE_ROW_SHARE_CLOSE := 0.33  # … and this far from zoom 0.15 in, where the coin is small on a big hex
 const BUBBLE_R := 0.3  # world units at scale 1: the coin's radius (128 px × 0.0046 / 2) …
 const BUBBLE_TEXT := 0.62  # … and how far the «+N» under it reaches down (its centre 0.42 + half its line)
 const BUBBLE_POP := 0.18  # s: a bubble grows in, shrinks out, or hides as the camera takes it under the HUD
+const BUBBLE_TAP_SLOP := 10.0  # px round a coin's box that still count as a tap on it (bubble_at)
 var _bubbles_out: Array = []  # dropped bubbles shrinking out
 
 
@@ -4303,11 +4348,11 @@ func _bubble_k(hex: int, cam: Camera3D) -> float:
 	return bubble_scale(cam.global_position.distance_to(cell_world(hex) + Vector3(0, BUBBLE_LIFT, 0)))
 
 
-## A hex's bubble lift for its scale `k`, the camera's zoom and (close up) the hex's size on screen.
+## A hex's bubble lift for its scale `k`, the camera's zoom and the hex's row on screen (the cap above, at every zoom).
 func _bubble_lift(hex: int, k: float, cam: Camera3D) -> float:
 	var t := smoothstep(0.15, 0.45, _zoom)
 	var lift := BUBBLE_LIFT * k * lerpf(BUBBLE_LIFT_CLOSE, 1.0, t)
-	if cam == null or t >= 1.0:
+	if cam == null:
 		return lift
 	var c := cell_world(hex)
 	if cam.is_position_behind(c):
@@ -4315,7 +4360,7 @@ func _bubble_lift(hex: int, k: float, cam: Camera3D) -> float:
 	var p0 := cam.unproject_position(c)
 	var row := p0.distance_to(cam.unproject_position(c + Vector3(0, 0, -SQ3)))
 	var up := p0.distance_to(cam.unproject_position(c + Vector3.UP))
-	return lerpf(minf(lift, BUBBLE_ROW_SHARE * row / maxf(up, 1.0)), lift, t)
+	return minf(lift, lerpf(BUBBLE_ROW_SHARE_CLOSE, BUBBLE_ROW_SHARE, t) * row / maxf(up, 1.0))
 
 
 ## A hex's bubble box on the canvas (the coin and its «+N»), or an empty rect when it is behind the camera.
@@ -4333,11 +4378,11 @@ func _bubble_box(hex: int, cam: Camera3D) -> Rect2:
 
 
 ## Each frame: a bubble's scale and lift for the camera's depth, its bob, and its pop — grown in when new, hidden
-## (shrunk) while the camera has it under the HUD, shrunk out when dropped.
+## (shrunk) while the camera has it under the HUD or a toast covers it, shrunk out when dropped.
 func _step_bubbles(delta: float, bt: float) -> void:
 	var cam := get_viewport().get_camera_3d()
 	var step := clampf(delta / BUBBLE_POP, 0.0, 1.0)
-	var furn: Array[Rect2] = _furniture(false)
+	var furn: Array[Rect2] = _bubble_furniture(true)
 	var area := get_viewport().get_visible_rect().grow(-SCREEN_EDGE)
 	for h in _bubbles:
 		var bn: Node3D = _bubbles[h]

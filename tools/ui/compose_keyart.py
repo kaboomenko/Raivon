@@ -47,20 +47,30 @@ def report_black(path, img):
 if "-h" in sys.argv or "--help" in sys.argv:
     print(__doc__)
     sys.exit(0)
-if "--check" in sys.argv:
-    i = sys.argv.index("--check")
-    if i + 1 >= len(sys.argv):
+
+
+def value_of(flag):
+    """The value after `flag`, or None when the flag is absent; a flag with no value (the last word, or followed by
+    another --flag) prints the docstring and exits 2."""
+    if flag not in sys.argv:
+        return None
+    i = sys.argv.index(flag)
+    if i + 1 >= len(sys.argv) or sys.argv[i + 1].startswith("--"):
         print(__doc__)
         sys.exit(2)
-    path = sys.argv[i + 1]
+    return sys.argv[i + 1]
+
+
+if "--check" in sys.argv:
+    path = value_of("--check")
     sys.exit(0 if report_black(path, Image.open(path)) else 1)
 
+subtitle = value_of("--subtitle") or "TERRITORY WARS"
 pos = [a for i, a in enumerate(sys.argv[1:], 1) if not a.startswith("--") and sys.argv[i - 1] != "--subtitle"]
 if len(pos) < 2:
     print(__doc__)
     sys.exit(2)
 src, out = pos[0], pos[1]
-subtitle = sys.argv[sys.argv.index("--subtitle") + 1] if "--subtitle" in sys.argv else "TERRITORY WARS"
 im = Image.open(src).convert("RGBA")
 if not report_black(src, im) and "--allow-black" not in sys.argv:
     sys.exit(1)

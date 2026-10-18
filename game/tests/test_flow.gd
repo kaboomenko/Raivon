@@ -7,6 +7,7 @@ const Types := preload("res://scripts/sim/types.gd")
 const MapGen := preload("res://scripts/sim/map_gen.gd")
 const War := preload("res://scripts/sim/war.gd")
 const Kit := preload("res://scripts/ui_kit.gd")
+const CameraRig := preload("res://scripts/camera_rig.gd")
 
 var fails := 0
 
@@ -145,6 +146,31 @@ func _run() -> void:
 	var cap_gold: int = econ.storage_cap()["gold"]
 	_check(econ.stock_total("gold") < stock_before and (econ.res["gold"] > gold_before or gold_before >= cap_gold),
 		"collect all moves stock into storage (gold %d → %d, cap %d, stock %d → %d)" % [gold_before, econ.res["gold"], cap_gold, stock_before, econ.stock_total("gold")])
+	# a tap on a coin collects whatever ground lies under it (B4 fix2): the coin floats over its hex's upper half, and
+	# the camera's ground pick alone took the hex behind it. A coin of the capital's (stock put there, the clock left
+	# alone), the camera on it at the default zoom; the gold is put back after, so what follows sees the same realm
+	var cap_h: int = g.sim.states[Types.PLAYER]["capital_id"]
+	var gold_keep: int = econ.res["gold"]
+	econ.res["gold"] = 0
+	econ.stock[cap_h] = {"gold": 400}
+	g.rig.focus(g.map_view.cell_world(cap_h), 0.45)
+	g.rig.zoom = g.rig.zoom_target
+	await process_frame
+	g._update_bubbles()
+	await create_timer(0.4).timeout  # the coin grows in
+	var cam3: Camera3D = g.get_viewport().get_camera_3d()
+	var bub_on: bool = g.map_view.has_bubble(cap_h) and g.map_view.on_screen(cap_h)
+	var bbox: Rect2 = g.map_view._bubble_box(cap_h, cam3)
+	var bub_p := Vector2(bbox.get_center().x, bbox.position.y + 6.0)  # the coin's top edge: over the hex behind
+	var bub_ground: Vector2i = CameraRig.world_to_axial(g.rig.ground_at(bub_p))
+	var bub_hit: int = g.map_view.bubble_at(bub_p)
+	var stock1: int = econ.stock_total("gold")
+	g._select(-1)
+	g._on_hex_tapped(bub_ground, bub_p)
+	var bub_gid: int = g.sim.id_at(bub_ground.x, bub_ground.y)
+	_check(bub_on and bub_hit == cap_h and bub_gid != cap_h and econ.stock_total("gold") < stock1 and econ.res["gold"] > 0 and g.selected == -1,
+		"a tap on a coin's top collects, though the ground under it is the hex behind (capital %d: coin shown %s, hit %d, ground hex %d, gold stock %d → %d, selected %d)" % [cap_h, str(bub_on), bub_hit, bub_gid, stock1, econ.stock_total("gold"), g.selected])
+	econ.res["gold"] = gold_keep
 	g._open_tab("buildings")
 	var items: Array = g._building_items(g.now_s())
 	_check(items.size() >= 5, "buildings tab lists buildings (%d)" % items.size())

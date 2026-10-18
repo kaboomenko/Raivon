@@ -29,7 +29,7 @@ Run:   python3 tools/blender/industry_assets.py game/assets/models [name ...]
 Conventions (same as evolution_assets.py / tower_assets.py): Z up, base on Z=0, origin = hex centre, front faces −Y
 (Godot +Z, towards the camera); everything within radius 0.8 of the hex centre. Procedural colours are baked into
 one texture through evolution_assets' tight atlas; emissive materials (lit windows, fire, light strips) and the
-glossy black oil stay separate so they keep glowing / shining in Godot. Chimney mouths carry "smoke" empties
+glossy violet-black oil stay separate so they keep glowing / shining in Godot. Chimney mouths carry "smoke" empties
 (evolution_assets.smoke_at) that are exported with the model: the game hangs a smoke plume on each.
 """
 import math
@@ -54,7 +54,10 @@ SOOT = "#2b2726"
 CREAM = "#d8cfc0"  # dressed stone trim (cornices, sills, the band on the stacks)
 SLATE_N = "#56657a"  # neutral blue-grey slate (the forts' and towers' roofs: no team colour)
 COAL = "#26252a"
-OIL = "#0b0a0e"
+# the crude (A1 review): was #0b0a0e, far under the §6.1 rule-3 floor (#2A2A30) — SoftLook caps the oil's metallic at
+# 0.25, so the glossy pond showed at L* ≈ 7, a black hole on every oil hex; now the Dark Lake's violet-black
+# (env_assets.dark_lake), on screen L* ≈ 15–20: still the darkest liquid on the map, but a colour, not a hole
+OIL = "#3E3A5C"
 SAFETY = "#f2b31d"  # crane yellow
 BAND_N = "#4b5a70"  # the neutral slate band on tanks and columns (no team blue on team-neutral models)
 ORANGE = "#e2782a"
@@ -64,7 +67,8 @@ ORANGE = "#e2782a"
 
 
 def oil_mat():
-    """Black crude: glossy and a little metallic, so it keeps its own shader (never baked) and shines in the game."""
+    """Violet-black crude (OIL): glossy and a little metallic, so it keeps its own shader (never baked) and shines in
+    the game."""
     return kit.mat("oil", OIL, 0.06, 0.55)
 
 
@@ -808,7 +812,7 @@ def factory_l3():
 
 
 def oil_pool(pts, z=0.014):
-    """A pool of black crude (glossy, its own material) lying just above the ground pad."""
+    """A pool of violet-black crude (OIL: glossy, its own material) lying just above the ground pad."""
     return extrude(pts, -0.004, z, oil_mat())
 
 

@@ -512,7 +512,7 @@ def raider_camp():
     of lighter trampled earth with the hex's grass round it; a broken palisade of fewer, fatter stakes (34, r 0.036,
     leaning out, two gaps besides the gate) on lashed rails; three big hide tents in cream with bold red and brown
     bands (the chief's ridge tent under a red awning with a skull); a big camp fire in a stone ring with a tripod and
-    cauldron (smoke marker for the game); the red wolf banner, taller; the raised lookout; a loot pile (an open chest
+    cauldron (smoke marker for the game); the red wolf banner; the raised lookout; a loot pile (an open chest
     of gold, crates, a barrel, sacks) and a weapon rack — few props, each big enough to read."""
     ev.pad(0.62, tex("plaster", CAMP_EARTH, 1.4), 0.006, 14, 0.14, 7)
     ev.pad(0.3, tex("plaster", "#A28462", 1.6), 0.011, 10, 0.16, 8)  # the beaten ground round the fire
@@ -609,8 +609,10 @@ def raider_camp():
     for a, ln in ((math.radians(205), 0.2), (math.radians(-25), 0.18)):
         x, y = fx + math.cos(a) * 0.23, fy + math.sin(a) * 0.23
         cy(0.034, ln, (x, y, 0.034), seat, 7, rot=(math.pi / 2, 0, a))
-    # ---- the red war banner with the white wolf, tall at the back of the camp
-    build_at(lambda: war_banner(0.0, 0.0, 0.86, cloth_c=CAMP_RED), 0.04, 0.5, s=1.2)
+    # ---- the red war banner with the white wolf at the back of the camp. A1 review: scaled 1.2 its skull rose to
+    # y 1.12 and poked out above the camp's map marker (map_view._camp_icon, a coin / food sprite at y 1.05) like a
+    # hat; at 1.0 (top ≈ 0.93) it stays tucked behind the marker as before
+    build_at(lambda: war_banner(0.0, 0.0, 0.86, cloth_c=CAMP_RED), 0.04, 0.5)
     # ---- the raised lookout over the palisade on the right
     build_at(lambda: lookout_l1(wd, tex("wood", "#9a7248", 3.0), tex("plaster", "#9c8462", 2.0), wd2), 0.47, -0.12,
              -0.25, s=1.15)

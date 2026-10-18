@@ -5882,9 +5882,11 @@ func _building_card(it: Dictionary) -> Control:
 				building_speedup.emit(id)
 		var sp := int(it.get("speed", 0))
 		if sp == 0:
-			# a free finish: the lightning says «at once». «Завершить» left no room for it in the XS button (168, the
-			# kit dropped the icon in RU): the card says «Ускорить» — the paid speed-up's word — with a 24 lightning
-			opts["cta"] = {"role": "go", "caption": tr("ui.finish_card"), "icon": "lightning", "icon_scale": 0.52, "cb": speed_cb}
+			# a free finish: «Бесплатно» / «Free» (the genre's word for it) and the lightning for «at once». «Завершить»
+			# left no room for the lightning in the XS button (168, the kit dropped the icon in RU), and «Ускорить», the
+			# paid speed-up's word, told the two apart by the missing price alone (B4 fix review): «Бесплатно» fits at
+			# 20 beside a 22 px lightning (119 + 6 + 22 of 148)
+			opts["cta"] = {"role": "go", "caption": tr("ui.finish_card"), "icon": "lightning", "icon_scale": 0.48, "cb": speed_cb}
 		elif int(it.get("stock", 0)) > 0:
 			# the speed-up stock from cases pays first: the tap is free, the time left on the info face (§4.4)
 			opts["cta"] = {"role": "info", "caption": fmt_time(int(it["left"])), "icon": "hourglass", "cb": speed_cb}
@@ -7003,6 +7005,15 @@ func _toast_lines(text: String, size: int, w: float) -> int:
 	var h := f.get_multiline_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, w, size, -1,
 		TextServer.BREAK_MANDATORY | TextServer.BREAK_WORD_BOUND | TextServer.BREAK_ADAPTIVE).y
 	return maxi(1, roundi(h / f.get_height(size)))
+
+
+## The toast's pill on the canvas while one shows (the icon's overhang on its left end included), else an empty rect:
+## the map's coins hide while it covers them (map_view.toast_rect).
+func toast_rect() -> Rect2:
+	if _toast_cur.is_empty() or _toast_nodes.is_empty() or not is_instance_valid(_toast_nodes[0]):
+		return Rect2()
+	var r := (_toast_nodes[0] as Control).get_global_rect()
+	return Rect2(r.position.x - 8.0, r.position.y, r.size.x + 8.0, r.size.y)
 
 
 ## The toast's top: under the resource plates, or under the war bar while it shows (+ the safe top inset).

@@ -305,7 +305,7 @@ ui.expand_world,Расширить мир,Expand world
 ui.convoy_status,Обоз вернётся через %s,The convoy is back in %s
 ui.send_convoy,Обоз,Convoy
 ui.finish,Завершить,Finish
-ui.finish_card,Ускорить,Finish
+ui.finish_card,Бесплатно,Free
 ui.speedup,Ускорить,Speed up
 ui.colonize,Занять,Settle
 ui.truce_timer,Перемирие: войну можно объявить через %s,Truce: you can declare war in %s
