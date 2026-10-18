@@ -44,11 +44,22 @@ def report_black(path, img):
     return False
 
 
+if "-h" in sys.argv or "--help" in sys.argv:
+    print(__doc__)
+    sys.exit(0)
 if "--check" in sys.argv:
-    path = sys.argv[sys.argv.index("--check") + 1]
+    i = sys.argv.index("--check")
+    if i + 1 >= len(sys.argv):
+        print(__doc__)
+        sys.exit(2)
+    path = sys.argv[i + 1]
     sys.exit(0 if report_black(path, Image.open(path)) else 1)
 
-src, out = sys.argv[1], sys.argv[2]
+pos = [a for i, a in enumerate(sys.argv[1:], 1) if not a.startswith("--") and sys.argv[i - 1] != "--subtitle"]
+if len(pos) < 2:
+    print(__doc__)
+    sys.exit(2)
+src, out = pos[0], pos[1]
 subtitle = sys.argv[sys.argv.index("--subtitle") + 1] if "--subtitle" in sys.argv else "TERRITORY WARS"
 im = Image.open(src).convert("RGBA")
 if not report_black(src, im) and "--allow-black" not in sys.argv:

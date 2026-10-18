@@ -1542,26 +1542,43 @@ def hex_tile():
 
 
 def hex_scorched():
-    """A lost hex (the result window's «Потеряно», B4): the land hex of hex_tile burnt — ash-brown top with a sooty
-    mottle, a charred stump instead of the tree, a few embers and a puff of smoke. No albedo under ≈ #2A2A30
-    (docs/art_direction.md §6.1 rule 3): the soot is a warm grey-brown, not black."""
-    ash = kit.noisy_mat("ash_t", "#7d6a5c", "#9a8676", 4.0)
-    dirt = kit.noisy_mat("dirt_s", "#a07a56", "#6e5040", 6.0)
-    kit.hex_prism("tile", (0, 0, 0), 0.62, 0.22, ash, dirt, 0.04)
-    soot = mat("soot", "#4a3f3a", 0.9)
-    for (x, y, sx, sy) in ((-0.2, -0.12, 1.3, 0.9), (0.24, -0.18, 1.0, 0.8), (0.0, 0.2, 1.1, 1.0)):
-        sphere("scorch", 0.13, (x, y, 0.0), soot, (sx, sy, 0.08), 2)  # flat sooty patches on the ground
-    char = mat("char", "#3e3430", 0.85)
-    stump = cyl("stump", 0.075, 0.2, (0.12, 0.3, 0.1), char, 8, 0.01, r2=0.055)
-    stump.rotation_euler.y = 0.08
-    snag = cyl("snag", 0.03, 0.16, (0.15, 0.31, 0.25), char, 6, 0.0)  # a broken branch stub
-    snag.rotation_euler = (0.0, 0.7, 0.3)
-    ember = mat("ember", "#ff8a2a", 0.5, emission="#ff7a1a", emit_strength=3.0)
-    for (x, y) in ((-0.22, -0.1), (0.26, -0.16), (-0.04, 0.18), (0.08, -0.32), (0.18, 0.36)):
-        sphere("ember", 0.04, (x, y, 0.02), ember, (1, 1, 0.7), 2)
-    smoke = mat("smoke", "#aaa3ae", 0.95)
-    for (x, y, z, r) in ((0.12, 0.3, 0.33, 0.1), (0.04, 0.28, 0.47, 0.13), (0.14, 0.26, 0.63, 0.1), (0.05, 0.25, 0.75, 0.07)):
-        sphere("smoke", r, (x, y, z), smoke, (1, 1, 0.9), 2)
+    """A lost hex (the result window's «Потеряно», the defeat toast; B4): the land hex of hex_tile burnt out —
+    charcoal ground (#4A423C … #5C524A) on darker sides, orange-red embers glowing in cracks, a charred stump and a
+    fallen log, and a thin grey smoke trail drifting off to one side. The first take (light tan ash, yellow embers on
+    dark discs, a white puff on the stump) read as a sandy tile with fried eggs and a little tree at 60 px (B4 review).
+    No albedo under ≈ #2A2A30 (docs/art_direction.md §6.1 rule 3): the char is a warm dark grey, not black."""
+    ash = kit.noisy_mat("ash_c", "#4a423c", "#5c524a", 5.0, 0.9)
+    side = kit.noisy_mat("dirt_c", "#5a4434", "#43352c", 6.0)
+    kit.hex_prism("tile", (0, 0, 0), 0.62, 0.22, ash, side, 0.04)
+    ashl = mat("ash_l", "#635b55", 0.95)  # low drifts of paler ash: the charcoal still reads as ground
+    for (x, y, sx, sy) in ((-0.32, 0.12, 1.1, 0.7), (-0.25, 0.2, 0.8, 0.6), (0.36, -0.06, 0.9, 0.6), (-0.02, -0.36, 1.0, 0.6),
+                           (0.07, -0.33, 0.7, 0.5)):
+        sphere("ash_drift", 0.08, (x, y, 0.0), ashl, (sx, sy, 0.14), 2)
+    glow = mat("ember_glow", "#ff5a1e", 0.6, emission="#ff4612", emit_strength=1.4)
+    hot = mat("ember_hot", "#ff7426", 0.5, emission="#ff5212", emit_strength=5.0)
+    for (x, y, rz, ln) in ((-0.17, -0.1, 0.5, 0.28), (0.13, -0.19, -0.7, 0.24), (0.0, 0.1, 1.35, 0.2), (0.27, 0.12, 0.2, 0.16)):
+        crack = box("crack", (ln, 0.024, 0.014), (x, y, 0.004), glow, 0.005)
+        crack.rotation_euler.z = rz
+    for (x, y, r) in ((-0.27, -0.15, 0.042), (-0.07, -0.04, 0.034), (0.21, -0.27, 0.04), (0.05, -0.15, 0.03),
+                      (0.31, 0.15, 0.034), (-0.12, 0.2, 0.03)):
+        sphere("ember_halo", r * 1.7, (x, y, 0.0), glow, (1, 1, 0.06), 2)  # the glow on the ground round an ember
+        sphere("ember", r, (x, y, 0.02), hot, (1.15, 1, 0.75), 2)
+    char = mat("char_c", "#3a322e", 0.85)
+    char_l = mat("char_l", "#4c423c", 0.85)
+    stump = cyl("stump", 0.08, 0.14, (0.1, 0.28, 0.07), char, 8, 0.01, r2=0.065)
+    stump.rotation_euler.y = 0.06
+    for k in range(4):  # a jagged, broken top
+        a = k * math.tau / 4 + 0.4
+        tip = cone("splinter", 0.03, 0.07 + 0.03 * (k % 2), (0.1 + math.cos(a) * 0.04, 0.28 + math.sin(a) * 0.04, 0.165), char, 5, 0.0)
+        tip.rotation_euler = (math.sin(a) * 0.3, -math.cos(a) * 0.3, 0.0)
+    log = cyl("log", 0.05, 0.36, (-0.16, 0.06, 0.05), char_l, 8, 0.01)
+    log.rotation_euler = (0.0, math.radians(90), math.radians(28))
+    sphere("log_end", 0.04, (-0.0, 0.145, 0.05), hot, (0.4, 1, 1), 2)  # the burnt-through end still glows
+    smoke = mat("smoke_d", "#8f8c94", 0.95)
+    smoke_l = mat("smoke_l", "#a7a4ab", 0.95)
+    for (x, y, z, r, m) in ((0.11, 0.29, 0.25, 0.04, smoke), (0.13, 0.31, 0.35, 0.052, smoke), (0.17, 0.33, 0.46, 0.064, smoke),
+                            (0.24, 0.35, 0.57, 0.066, smoke_l), (0.32, 0.37, 0.66, 0.05, smoke_l)):
+        sphere("smoke", r, (x, y, z), m, (1.1, 1, 1.0), 2)  # a thin column that bends away with the wind, never a crown
     _tilt(rx=52, rz=0)
 
 

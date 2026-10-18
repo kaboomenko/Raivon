@@ -4278,10 +4278,16 @@ func on_screen(hex: int) -> bool:
 ## from the default view to the close-up one and hid the buildings, the army plates and the march chip (playtest B).
 ## Full size from BUBBLE_DEPTH (the default zoom's camera distance) out; closer, the coin shrinks with the depth to the
 ## power 0.75, so it still grows a little on screen (×1.3 at the closest zoom) and stays easy to tap. Its lift over the
-## hex shrinks with it (BUBBLE_LIFT × the scale): a low camera sees a fixed 2-unit lift as 450–620 px, the coin then
-## hung over the hex behind and read as that hex's income (B4 review: the capital's «+4276» over the mine).
+## hex shrinks with it (_bubble_lift: BUBBLE_LIFT × the scale, and down to BUBBLE_LIFT_CLOSE of that as the camera
+## comes close): a low camera sees a fixed 2-unit lift as 450–620 px, the coin then hung over the hex behind and read
+## as that hex's income (B4 review: the capital's «+4276» over the mine). A flat-top hex's north neighbour is √3 away,
+## which a camera pitched θ sees as √3·tan θ units of height (≈ 1.5 at the closest zooms, less towards the top of the
+## screen, where the view ray is flatter): close up the lift is also capped so the coin's centre stays within
+## BUBBLE_ROW_SHARE of the way to that neighbour on screen, the «+N» under it still on its own hex.
 const BUBBLE_DEPTH := 22.0
 const BUBBLE_LIFT := 2.0
+const BUBBLE_LIFT_CLOSE := 0.5  # the share of the lift left from zoom 0.15 in (full from 0.45, the default view, out)
+const BUBBLE_ROW_SHARE := 0.33  # close up: the coin's centre at most this far towards the hex's north neighbour
 const BUBBLE_R := 0.3  # world units at scale 1: the coin's radius (128 px × 0.0046 / 2) …
 const BUBBLE_TEXT := 0.62  # … and how far the «+N» under it reaches down (its centre 0.42 + half its line)
 const BUBBLE_POP := 0.18  # s: a bubble grows in, shrinks out, or hides as the camera takes it under the HUD
@@ -4292,15 +4298,30 @@ static func bubble_scale(depth: float) -> float:
 	return clampf(pow(maxf(depth, 0.1) / BUBBLE_DEPTH, 0.75), 0.4, 1.0)
 
 
-## A hex's bubble scale for this camera (by the depth of its full-size point) — its lift is BUBBLE_LIFT × it.
+## A hex's bubble scale for this camera (by the depth of its full-size point; _bubble_lift reads it).
 func _bubble_k(hex: int, cam: Camera3D) -> float:
 	return bubble_scale(cam.global_position.distance_to(cell_world(hex) + Vector3(0, BUBBLE_LIFT, 0)))
+
+
+## A hex's bubble lift for its scale `k`, the camera's zoom and (close up) the hex's size on screen.
+func _bubble_lift(hex: int, k: float, cam: Camera3D) -> float:
+	var t := smoothstep(0.15, 0.45, _zoom)
+	var lift := BUBBLE_LIFT * k * lerpf(BUBBLE_LIFT_CLOSE, 1.0, t)
+	if cam == null or t >= 1.0:
+		return lift
+	var c := cell_world(hex)
+	if cam.is_position_behind(c):
+		return lift
+	var p0 := cam.unproject_position(c)
+	var row := p0.distance_to(cam.unproject_position(c + Vector3(0, 0, -SQ3)))
+	var up := p0.distance_to(cam.unproject_position(c + Vector3.UP))
+	return lerpf(minf(lift, BUBBLE_ROW_SHARE * row / maxf(up, 1.0)), lift, t)
 
 
 ## A hex's bubble box on the canvas (the coin and its «+N»), or an empty rect when it is behind the camera.
 func _bubble_box(hex: int, cam: Camera3D) -> Rect2:
 	var k := _bubble_k(hex, cam)
-	var p := cell_world(hex) + Vector3(0, BUBBLE_LIFT * k, 0)
+	var p := cell_world(hex) + Vector3(0, _bubble_lift(hex, k, cam), 0)
 	if cam.is_position_behind(p):
 		return Rect2()
 	var c := cam.unproject_position(p)
@@ -4329,7 +4350,7 @@ func _step_bubbles(delta: float, bt: float) -> void:
 		var show := move_toward(was, want, step)
 		bn.set_meta("show", show)
 		bn.set_meta("k", k)
-		bn.position.y = (BUBBLE_LIFT + 0.07 * sin(bt * 3.0 + h)) * k
+		bn.position.y = _bubble_lift(h, k, cam) + 0.07 * k * sin(bt * 3.0 + h)
 		bn.scale = Vector3.ONE * maxf(0.001, k * (_pop_curve(show) if want > was else show))
 		bn.visible = show > 0.0
 	for i in range(_bubbles_out.size() - 1, -1, -1):
