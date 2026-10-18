@@ -1483,10 +1483,13 @@ def mine():
                                     cut if (t + k) % 2 else cut_d, rz=rnd.uniform(-0.03, 0.03)))
             x += w
             k += 1
-    # rough rock shoulders at both ends of the face: the uncut hill the terraces are cut into
+    # rough rock shoulders at both ends of the face and a rough crest over the top tier: the uncut hill the terraces
+    # are cut into. They stay inside the pre-AP6 mine's footprint box (x −0.575..0.586, y ≤ 0.51): with the first
+    # shoulders (x −0.66..0.61, y to 0.67) the model's AABB grew and pulled one more mine into the frame's frustum
+    # at the edge of the close view (+1 draw, AP6 inventory)
     rough = granite_paint(moss_at=0.75, moss_z=0.1, cover=0.4)
-    for (x, y, w, d, h, sd, rz) in ((-0.5, 0.36, 0.3, 0.32, 0.5, 41, 0.3), (0.46, 0.36, 0.28, 0.3, 0.46, 42, -0.4),
-                                    (0.0, 0.56, 0.62, 0.2, 0.62, 43, 0.05)):
+    for (x, y, w, d, h, sd, rz) in ((-0.44, 0.33, 0.24, 0.28, 0.5, 41, 0.3), (0.45, 0.33, 0.23, 0.27, 0.46, 42, -0.4),
+                                    (0.0, 0.43, 0.6, 0.14, 0.7, 43, 0.05)):
         blocks.append(soft_block(x, y, w, d, h, rough, sd, rz=rz, cuts=(4, 6), sharp=60.0, ground=0.05))
     cull_hidden(blocks)
     rk = granite_paint(moss_at=0.7, scale=6.0, moss_z=0.0, cover=0.4)

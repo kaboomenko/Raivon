@@ -2643,9 +2643,13 @@ func _new_game() -> void:
 # ====================================================================== map mode
 
 ## A tap on the map: the hex `c` under it (the ground pick) and, from the camera, the screen point (`screen`; none from a
-## scripted tap). A tap on a coin collects whatever ground lies under the coin (map_view.bubble_at), as does a tap on
-## the ground of a hex that shows one: a coin floats over its hex's upper half, the ground pick alone took the hex
-## behind it (B4 fix review: 0 of 9 coin taps collected).
+## scripted tap). A tap on a coin (map_view.bubble_at: the coin and its «+N») collects, whatever ground lies under it:
+## a coin floats over its hex's upper half, and the ground pick alone took the hex behind it (B4 fix review: 0 of 9 coin
+## taps collected). The rest of a coin hex's ground selects the hex like any other: a fallback that collected on any
+## tap on the ground of a hex showing a coin took 73–80 % of that hex's ground outside the coin, so the hex could not be
+## selected while its stock outgrew the storage (each collect left the coin up; B4r3 review). A scripted tap has no
+## point and still collects on a hex that shows a coin. A collect that moves nothing (the storage full: its toast says
+## so) selects the hex under the finger instead, so a coin never makes a hex unselectable (tutorial steps 8 and 9).
 func _on_hex_tapped(c: Vector2i, screen := Vector2(-1.0, -1.0)) -> void:
 	var id: int = sim.id_at(c.x, c.y)
 	if mode == Mode.BATTLE:
@@ -2659,8 +2663,8 @@ func _on_hex_tapped(c: Vector2i, screen := Vector2(-1.0, -1.0)) -> void:
 	if not _swap.is_empty() and id >= 0:
 		_swap_pick(id)
 		return
-	if (screen.x >= 0.0 and map_view.bubble_at(screen) >= 0) or (id >= 0 and map_view.has_bubble(id)):
-		_collect_all()
+	var on_coin: bool = map_view.bubble_at(screen) >= 0 if screen.x >= 0.0 else (id >= 0 and map_view.has_bubble(id))
+	if on_coin and _collect_all():
 		return
 	_select(id)
 
@@ -4950,8 +4954,9 @@ func _update_bubbles() -> void:
 	map_view.set_bubbles(data)
 
 
-## «Собрать всё» (canon §4): any coin collects every hex.
-func _collect_all() -> void:
+## «Собрать всё» (canon §4): any coin collects every hex. Returns whether anything moved (false: the storage is full,
+## and the toast says so).
+func _collect_all() -> bool:
 	_econ_sync(now_s())
 	var shown := {}
 	for h in econ.stock:
@@ -4973,7 +4978,7 @@ func _collect_all() -> void:
 		total += int(gained[r])
 	if total == 0:
 		ui.toast(tr("toast.storage_full"))
-		return
+		return false
 	for h in shown:
 		if map_view.has_bubble(int(h)):
 			var st: Dictionary = shown[h]
@@ -4993,6 +4998,7 @@ func _collect_all() -> void:
 	ui.toast(tr("toast.collected") % [GameUI.fmt_num(int(got[top])), tr("res.gen." + top)], String(Hud.RES_ICON.get(top, "coin")))
 	_econ_tick()
 	_autosave()
+	return true
 
 
 func _open_tab(t: String) -> void:

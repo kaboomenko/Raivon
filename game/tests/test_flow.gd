@@ -170,6 +170,103 @@ func _run() -> void:
 	var bub_gid: int = g.sim.id_at(bub_ground.x, bub_ground.y)
 	_check(bub_on and bub_hit == cap_h and bub_gid != cap_h and econ.stock_total("gold") < stock1 and econ.res["gold"] > 0 and g.selected == -1,
 		"a tap on a coin's top collects, though the ground under it is the hex behind (capital %d: coin shown %s, hit %d, ground hex %d, gold stock %d → %d, selected %d)" % [cap_h, str(bub_on), bub_hit, bub_gid, stock1, econ.stock_total("gold"), g.selected])
+	# … and the rest of a coin hex's ground selects the hex (B4r3 review: a ground fallback collected on every tap there,
+	# 73–80 % of the hex outside the coin, so with the storage full the hex was never selected); a tap on the coin with
+	# the storage full moves nothing and selects the hex under the finger (tutorial steps 8 and 9)
+	var cap_ax := Vector2i(int(g.sim.cells[cap_h]["q"]), int(g.sim.cells[cap_h]["r"]))
+	econ.stock[cap_h] = {"gold": 400}
+	g._update_bubbles()
+	await create_timer(0.4).timeout
+	bbox = g.map_view._bubble_box(cap_h, cam3)
+	var below := Vector2(-1.0, -1.0)
+	var by: float = bbox.end.y + g.map_view.BUBBLE_TAP_SLOP + 2.0
+	while below.x < 0.0 and by < bbox.end.y + 160.0:
+		var bp := Vector2(bbox.get_center().x, by)
+		if g.map_view.bubble_at(bp) < 0 and CameraRig.world_to_axial(g.rig.ground_at(bp)) == cap_ax:
+			below = bp
+		by += 4.0
+	var stock2: int = econ.stock_total("gold")
+	g._select(-1)
+	if below.x >= 0.0:
+		g._on_hex_tapped(cap_ax, below)
+	_check(below.x >= 0.0 and g.selected == cap_h and econ.stock_total("gold") >= stock2 and g.map_view.has_bubble(cap_h),
+		"a tap on a coin hex's ground below the coin selects the hex and collects nothing (capital %d, tap %s, gold stock %d → %d, selected %d)" % [cap_h, str(below.round()), stock2, econ.stock_total("gold"), g.selected])
+	var res_keep: Dictionary = econ.res.duplicate()
+	var veins_keep: Dictionary = econ.vein_secs.duplicate()
+	var cap_all: Dictionary = econ.storage_cap()
+	for r in cap_all:
+		if r != "raivite":
+			econ.res[r] = int(cap_all[r])
+	for vh in econ.vein_secs:
+		econ.vein_secs[vh] = 0
+	var mid_p: Vector2 = bbox.get_center()
+	var mid_ax: Vector2i = CameraRig.world_to_axial(g.rig.ground_at(mid_p))
+	var mid_id: int = g.sim.id_at(mid_ax.x, mid_ax.y)
+	var mid_hit: int = g.map_view.bubble_at(mid_p)
+	g._select(-1)
+	g._on_hex_tapped(mid_ax, mid_p)
+	_check(mid_hit == cap_h and mid_id >= 0 and g.selected == mid_id and econ.stock_total("gold") >= stock2 and g.map_view.has_bubble(cap_h),
+		"storage full: a tap on the coin moves nothing and selects the hex under the finger (hit %d, ground hex %d, selected %d, gold stock %d → %d)" % [mid_hit, mid_id, g.selected, stock2, econ.stock_total("gold")])
+	for r in res_keep:
+		econ.res[r] = res_keep[r]
+	for vh in veins_keep:
+		econ.vein_secs[vh] = veins_keep[vh]
+	# the camera's touches (camera_rig): a tap is one finger on a still camera. A pinch ends with one finger lifting a
+	# few px after the other and that lift was a tap (B4r3 review: it collected, or selected a hex); a finger put down on
+	# a gliding camera only stops it
+	var taps := [0]
+	var count_tap := func(_c: Vector2i, _s: Vector2) -> void: taps[0] += 1
+	g.rig.hex_tapped.connect(count_tap)
+	var touch := func(i: int, p: Vector2, down: bool) -> void:
+		var ev := InputEventScreenTouch.new()
+		ev.index = i
+		ev.position = p
+		ev.pressed = down
+		g.rig._unhandled_input(ev)
+	var drag := func(i: int, p: Vector2, rel: Vector2) -> void:
+		var ev := InputEventScreenDrag.new()
+		ev.index = i
+		ev.position = p
+		ev.relative = rel
+		g.rig._unhandled_input(ev)
+	g.rig._velocity = Vector3.ZERO
+	g._select(-1)
+	var stock3: int = econ.stock_total("gold")
+	touch.call(0, mid_p, true)
+	touch.call(0, mid_p, false)
+	_check(taps[0] == 1 and econ.stock_total("gold") < stock3 and g.selected == -1,
+		"camera: a one-finger tap on the coin is a tap and collects (taps %d, gold stock %d → %d)" % [taps[0], stock3, econ.stock_total("gold")])
+	econ.stock[cap_h] = {"gold": 400}
+	g._update_bubbles()
+	await create_timer(0.4).timeout
+	var stock4: int = econ.stock_total("gold")
+	var pin_a := mid_p + Vector2(-20.0, 120.0)
+	var pin_b := mid_p + Vector2(20.0, -260.0)
+	taps[0] = 0
+	g._select(-1)
+	touch.call(0, pin_a, true)
+	touch.call(1, pin_b, true)
+	for i in 8:
+		pin_a += Vector2(-3.0, 6.0)
+		pin_b += Vector2(3.0, -9.0)
+		drag.call(0, pin_a, Vector2(-3.0, 6.0))
+		drag.call(1, pin_b, Vector2(3.0, -9.0))
+	touch.call(1, pin_b, false)
+	drag.call(0, mid_p, Vector2(2.0, 2.0))  # the last finger ends on the coin after 3 px
+	touch.call(0, mid_p, false)
+	_check(taps[0] == 0 and econ.stock_total("gold") >= stock4 and g.selected == -1 and g.rig._touches.is_empty(),
+		"camera: a pinch never ends in a tap, though its last finger lifts on a coin (taps %d, gold stock %d → %d, selected %d)" % [taps[0], stock4, econ.stock_total("gold"), g.selected])
+	g.rig.focus(g.map_view.cell_world(cap_h), 0.45)
+	g.rig.zoom = g.rig.zoom_target
+	g.rig._velocity = Vector3(8.0, 0.0, 0.0)  # a fling's inertia
+	var glide: float = g.rig._glide_px()
+	touch.call(0, mid_p, true)
+	touch.call(0, mid_p, false)
+	_check(glide > g.rig.GLIDE_STOP_PX and taps[0] == 0 and g.rig._velocity == Vector3.ZERO and econ.stock_total("gold") >= stock4 and g.selected == -1,
+		"camera: a tap on a gliding camera only stops it (glide %d px/s, taps %d, gold stock %d → %d)" % [roundi(glide), taps[0], stock4, econ.stock_total("gold")])
+	g.rig.hex_tapped.disconnect(count_tap)
+	g.rig.focus(g.map_view.cell_world(cap_h), 0.45)
+	g.rig.zoom = g.rig.zoom_target
 	econ.res["gold"] = gold_keep
 	g._open_tab("buildings")
 	var items: Array = g._building_items(g.now_s())

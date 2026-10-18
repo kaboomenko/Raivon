@@ -4259,16 +4259,28 @@ func set_bubbles(data: Dictionary) -> void:
 			node.add_child(lbl)
 			_bubbles[h] = node
 		(node.get_node("icon") as Sprite3D).texture = _tex(icon_name)
-		(node.get_node("amount") as Label3D).text = "+%d" % int(data[h]["amount"])
+		var amt := node.get_node("amount") as Label3D
+		var txt := "+%d" % int(data[h]["amount"])
+		if amt.text != txt or not node.has_meta("label_hw"):
+			amt.text = txt
+			node.set_meta("label_hw", _label_half_w(amt))  # bubble_at's box spans the «+N» (5 digits: wider than the coin)
+
+
+## A Label3D's half width in world units at scale 1 (its text and the outline round it), measured once per text.
+static func _label_half_w(l: Label3D) -> float:
+	if l.font == null:
+		return 0.0
+	return (l.font.get_string_size(l.text, HORIZONTAL_ALIGNMENT_LEFT, -1, l.font_size).x * 0.5 + l.outline_size) * l.pixel_size
 
 
 func has_bubble(hex: int) -> bool:
 	return _bubbles.has(hex)
 
 
-## The hex whose coin shows under a screen point (its box: the coin and the «+N», BUBBLE_TAP_SLOP px round it), or −1.
-## A tap on a coin collects (main._on_hex_tapped) whatever ground lies under it: the camera's ground pick alone took
-## the hex behind a coin (B4 review: 0 of 9 coin taps collected, each selected the hex north of the coin's own).
+## The hex whose coin shows under a screen point (its box: the coin and the «+N», at least as wide as the «+N»'s text,
+## BUBBLE_TAP_SLOP px round it), or −1. A tap on a coin collects (main._on_hex_tapped) whatever ground lies under it:
+## the camera's ground pick alone took the hex behind a coin (B4 review: 0 of 9 coin taps collected, each selected the
+## hex north of the coin's own). A 5-digit «+N» is 104–119 px wide, the coin's box 90–102: its ends missed (B4r3).
 func bubble_at(screen: Vector2) -> int:
 	var vp := get_viewport() if is_inside_tree() else null
 	var cam := vp.get_camera_3d() if vp != null else null
@@ -4280,7 +4292,7 @@ func bubble_at(screen: Vector2) -> int:
 		var bn: Node3D = _bubbles[h]
 		if not bn.visible or float(bn.get_meta("show", 0.0)) < 0.5:
 			continue  # hidden under the HUD or a toast, or still growing in
-		var box := _bubble_box(int(h), cam).grow(BUBBLE_TAP_SLOP)
+		var box := _bubble_box(int(h), cam, float(bn.get_meta("label_hw", 0.0))).grow(BUBBLE_TAP_SLOP)
 		if box.has_point(screen):
 			var d := box.get_center().distance_squared_to(screen)
 			if d < best_d:
@@ -4368,8 +4380,10 @@ func _bubble_lift(hex: int, k: float, cam: Camera3D) -> float:
 	return minf(lift, lerpf(BUBBLE_ROW_SHARE_CLOSE, BUBBLE_ROW_SHARE, t) * row / maxf(up, 1.0))
 
 
-## A hex's bubble box on the canvas (the coin and its «+N»), or an empty rect when it is behind the camera.
-func _bubble_box(hex: int, cam: Camera3D) -> Rect2:
+## A hex's bubble box on the canvas (the coin and its «+N»), or an empty rect when it is behind the camera. `half_w`
+## (world units at scale 1, bubble_at: the «+N»'s) widens it past the coin's width when the text is wider; the box that
+## places the coins (on_screen, _step_bubbles) keeps the coin's width, as a coin not yet shown has no text to measure.
+func _bubble_box(hex: int, cam: Camera3D, half_w := 0.0) -> Rect2:
 	var k := _bubble_k(hex, cam)
 	var p := cell_world(hex) + Vector3(0, _bubble_lift(hex, k, cam), 0)
 	if cam.is_position_behind(p):
@@ -4377,7 +4391,7 @@ func _bubble_box(hex: int, cam: Camera3D) -> Rect2:
 	var c := cam.unproject_position(p)
 	var top := cam.unproject_position(p + cam.global_basis.y * BUBBLE_R * k)
 	var bot := cam.unproject_position(p - cam.global_basis.y * BUBBLE_TEXT * k)
-	var side := cam.unproject_position(p + cam.global_basis.x * BUBBLE_R * 1.15 * k)
+	var side := cam.unproject_position(p + cam.global_basis.x * maxf(BUBBLE_R * 1.15, half_w) * k)
 	var hw := absf(side.x - c.x)
 	return Rect2(c.x - hw, top.y, 2.0 * hw, maxf(bot.y - top.y, 1.0))
 

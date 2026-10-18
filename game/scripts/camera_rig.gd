@@ -23,6 +23,15 @@ var _pinch_start_zoom := 0.0
 var _drag_moved := 0.0
 var _velocity := Vector3.ZERO
 var _press_pos := Vector2.ZERO
+## A touch is a tap (hex_tapped on release) only when it is the gesture's one finger, moved less than TAP_SLOP px and
+## came down on a still camera. A second finger makes the gesture a pinch to its end (_multi): most pinches end with one
+## finger lifting a few px after the other, and that lift was a tap that collected a coin or selected a hex (B4r3
+## review). A finger that comes down while the camera still glides faster than GLIDE_STOP_PX only stops the glide
+## (_stop_tap), as a scroll view does: it was a tap on whatever slid under it.
+const TAP_SLOP := 12.0
+const GLIDE_STOP_PX := 120.0  # px/s on screen
+var _multi := false
+var _stop_tap := false
 
 
 func _ready() -> void:
@@ -95,11 +104,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			if _touches.size() == 1:
 				_press_pos = t.position
 				_drag_moved = 0.0
+				_multi = false
+				_stop_tap = _glide_px() > GLIDE_STOP_PX
 				_velocity = Vector3.ZERO
 				_ordering = order_filter.is_valid() and order_filter.call(t.position)
 				if _ordering:
 					order_drag.emit(0, t.position)
 			elif _touches.size() == 2:
+				_multi = true
 				_pinch_start_dist = _touch_dist()
 				_pinch_start_zoom = zoom_target
 		else:
@@ -109,7 +121,7 @@ func _unhandled_input(event: InputEvent) -> void:
 				_ordering = false
 				order_drag.emit(2, t.position)
 				return
-			if was_single and _drag_moved < 12.0:
+			if was_single and not _multi and not _stop_tap and _drag_moved < TAP_SLOP:
 				hex_tapped.emit(world_to_axial(ground_at(t.position)), t.position)
 	elif event is InputEventScreenDrag:
 		var d := event as InputEventScreenDrag
@@ -134,6 +146,13 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventPanGesture:
 		var p := event as InputEventPanGesture
 		target += Vector3(p.delta.x, 0, p.delta.y) * 0.05
+
+
+## How fast the look-at point still glides across the screen (px/s): the inertia's speed seen through the camera.
+func _glide_px() -> float:
+	if _velocity.length() <= 0.01 or cam == null or not cam.is_inside_tree() or cam.is_position_behind(target):
+		return 0.0
+	return cam.unproject_position(target).distance_to(cam.unproject_position(target + _velocity * 0.1)) * 10.0
 
 
 func _touch_dist() -> float:
