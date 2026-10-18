@@ -1539,8 +1539,13 @@ func _place_vein(holder: Node3D) -> void:
 	holder.add_child(light)
 
 
-## Dark Lake: a still black-violet pool with an oily sheen — dormant oil (canon §5.1).
+## Dark Lake: a still violet-black pool with an oily sheen — dormant oil (canon §5.1). The baked pond (art pass 5,
+## tools/blender/env_assets.py dark_lake: a soft shore, reeds, rocks, the oil at L* ~18 instead of a black hole);
+## the code pool below only if the model is missing.
 func _place_dark_lake(holder: Node3D) -> void:
+	if has_model("dark_lake"):
+		spawn("dark_lake", holder, Vector3.ZERO, rng.randf() * TAU, 1.0)
+		return
 	var m := StandardMaterial3D.new()
 	m.albedo_color = Color(0.07, 0.06, 0.12)
 	m.metallic = 0.6

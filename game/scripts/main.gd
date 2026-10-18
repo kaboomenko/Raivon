@@ -8253,7 +8253,26 @@ func _handle_args() -> void:
 		elif a.begins_with("--tab="):
 			_open_tab(a.substr(6))
 		elif a.begins_with("--demo="):
-			_demo(a.substr(7))
+			_shot_demo(a.substr(7))
+
+
+## A demo started from the command line. Most demos set their state at once; the chapter demos (ch2:<kind>,
+## ch3:<kind>, ch4:<biome>, oil, swap, dip2…) first play one to three world expansions (~7 s each) and only then
+## focus the hex. _shot waits for such a demo to end (it used to shoot the expansion's world overview), and a
+## --zoom= given with it applies after the demo's own focus (--demo=ch2:dark_lake --zoom=0.12 — the lake up close).
+var _demo_busy := false
+
+
+func _shot_demo(spec: String) -> void:
+	_demo_busy = true
+	var frame := Engine.get_process_frames()
+	await _demo(spec)
+	_demo_busy = false
+	if Engine.get_process_frames() == frame:  # it set its state at once: the arguments' own order stands
+		return
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--zoom="):
+			rig.zoom_target = float(a.substr(7))
 
 
 
@@ -8959,9 +8978,17 @@ func _bot_move() -> void:
 func _shot(path: String) -> void:
 	for i in 10:
 		await get_tree().process_frame
+	var delay := 0.0
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--shot-delay="):  # capture an animation part-way (seconds)
-			await get_tree().create_timer(float(a.substr(13))).timeout
+			delay = float(a.substr(13))
+			await get_tree().create_timer(delay).timeout
+	if _demo_busy:  # a demo still playing (the chapter demos' world expansions): its end, then the delay again from
+		# there (at least 1.5 s: the camera's glide in, the hex panel's bake), as for a demo that sets its state at once
+		var give_up := Time.get_ticks_msec() + 120000
+		while _demo_busy and Time.get_ticks_msec() < give_up:
+			await get_tree().process_frame
+		await get_tree().create_timer(maxf(delay, 1.5)).timeout
 	if OS.get_cmdline_user_args().has("--hud-only"):  # the canvas alone (no 3D world): HUD parity checks
 		get_viewport().disable_3d = true
 		await RenderingServer.frame_post_draw
