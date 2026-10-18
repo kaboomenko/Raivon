@@ -555,11 +555,8 @@ func _flush_decor() -> void:
 			_decor_nodes.erase(id)
 
 
-## A hex's batched instances (BATCH; all its decor when `all`) placed again from its holder's transform now: during a
-## capture's pop (pop_hex squashes the holder) every frame, and once more when it ends.
-var _popping := {}  # holder Node3D -> its pop Tween
-
-
+## A hex's batched instances (BATCH; all its decor when `all`) placed again from its holder's transform now: at each
+## step of a capture's pop (_pop_scale), and once more when it ends.
 func _sync_batched(holder: Node3D, all := false) -> void:
 	var at: Dictionary = _decor_at.get(holder, {})
 	var per: Dictionary = _decor_store.get(holder, {})
@@ -708,6 +705,8 @@ func _paint_flag(banner: Node3D, owner: int) -> void:
 	_banner_cloth[owner] = list
 	list.append(banner)
 	_live_dirty = true
+	if banner.get_parent() != null:
+		banner.get_parent().set_meta("banner", true)  # a hex holder: its pop moves the cloth too (_pop_scale)
 
 
 func _cloth_quad() -> void:
@@ -1534,13 +1533,28 @@ func pop_hex(id: int) -> void:
 		return
 	if holder.has_meta("pop") and (holder.get_meta("pop") as Tween).is_valid():
 		(holder.get_meta("pop") as Tween).kill()  # a second pop restarts the squash instead of fighting the first
-	holder.scale = Vector3(1.2, 0.6, 1.2)
+	_pop_scale(Vector3(1.2, 0.6, 1.2), holder)
+	# tween_method, not tween_property: the batched buildings (BATCH) take each step of the squash in the same step,
+	# not a frame later from _process (tweens run after it — at the cer shot's 6 fps a frame is half the pop)
 	var tw := create_tween()
-	tw.tween_property(holder, "scale", Vector3(0.95, 1.15, 0.95), 0.14).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
-	tw.tween_property(holder, "scale", Vector3.ONE, 0.21).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_method(_pop_scale.bind(holder), Vector3(1.2, 0.6, 1.2), Vector3(0.95, 1.15, 0.95), 0.14) \
+			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.tween_method(_pop_scale.bind(holder), Vector3(0.95, 1.15, 0.95), Vector3.ONE, 0.21) \
+			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
 	holder.set_meta("pop", tw)
-	_popping[holder] = tw  # its batched buildings squash with it (_sync_batched)
 	burst_at(cell_world(id), Color("#D6C6AC"), false, 0.55)
+
+
+## One step of a capture's pop: the hex holder's scale, its batched instances (all its scenery once it is back at
+## 1, which also undoes a squash a decor flush caught mid-pop) and its banners' cloth with it. `holder` untyped: a
+## rebuilt hex frees its old holder while the tween still runs.
+func _pop_scale(sc: Vector3, holder) -> void:
+	if not is_instance_valid(holder):
+		return
+	(holder as Node3D).scale = sc
+	_sync_batched(holder as Node3D, sc == Vector3.ONE)
+	if (holder as Node).has_meta("banner"):
+		_sync_banner_cloth()
 
 
 ## A pillar of light from the sci-fi capital's spire into the sky (reference frame 2), in the state's colour,
@@ -5949,17 +5963,7 @@ func _process(delta: float) -> void:
 		return
 	if not _pending_decor.is_empty():  # scenery spawned outside a hex rebuild (a safety net)
 		_flush_decor()
-	for h in _popping.keys():
-		if not is_instance_valid(h):
-			_popping.erase(h)
-			continue
-		var tw: Tween = _popping[h]
-		var done := not tw.is_valid() or not tw.is_running()
-		_sync_batched(h as Node3D, done)
-		if done:
-			_popping.erase(h)
-	if _live_dirty or not _popping.is_empty() or _cloth_moves:  # the markers follow a rebuilt hex, a pop's squash and
-		# the armies' banners
+	if _live_dirty or _cloth_moves:  # the markers follow a rebuilt hex and the armies' banners
 		if _live_dirty:
 			_sync_chimneys()
 		_live_dirty = false
