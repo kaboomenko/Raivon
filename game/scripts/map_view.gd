@@ -494,6 +494,7 @@ var _decor_mmis := {}  # set key -> [[MultiMeshInstance3D, Transform3D of the pa
 
 
 func _flush_decor() -> void:
+	_flush_queued = false
 	for parent in _pending_decor:
 		_decor_store[parent] = _pending_decor[parent]
 	_pending_decor.clear()
@@ -603,13 +604,63 @@ var _flag_faces: ArrayMesh  # a unit quad on each face of a flag marker (_flag_c
 
 
 ## A thin lazy plume over a chimney marker baked into a village model (tools/blender/evolution_assets.py
-## smoke_at): the lived-in look of the close reference frames. One emitter for every chimney on the map (R1: a
-## plume of its own was a draw per building — 18 on the chapter II view): the markers are collected here and
-## _sync_chimneys hands their places to it as emission points, five puffs a chimney as before.
+## smoke_at): the lived-in look of the close reference frames. One draw for every chimney on the map (R1: a plume of
+## its own was a draw per building — 18 on the chapter II view): CHIMNEY_PUFFS camera-facing puffs a chimney in one
+## MultiMesh (_sync_chimneys), each puff's flight worked out by PUFF_SHADER from the clock and its phase, so every
+## chimney keeps the old emitter's steady column — five puffs evenly spaced over its 3.2 s, rising at 0.07–0.11 along
+## (0.25, 1, 0.1) ± 6° in the marker's frame (turn and scale), drifting with (0.05, 0.015, 0.02), growing 0.25 → 1.15
+## and fading in over the first 18 % of their life and out by its end. (A merged CPU emitter over all the chimneys
+## picked a random chimney for each puff: gaps at the mouth and lone puffs high up — R1 review.)
 var _chimneys: Array = []  # the chimney markers (Node3D) of the buildings on the map
 var _live_dirty := false  # the chimney and banner-cloth markers changed: _sync_chimneys, _sync_banner_cloth
-var _chimney_fx: CPUParticles3D
+var _chimney_mmi: MultiMeshInstance3D
 const CHIMNEY_PUFFS := 5
+## The puffs of _sync_chimneys: an instance a puff at its chimney's mouth (the instance transform is the marker's
+## place, turn and scale, which speed the puff as the old world-space emitter's did; the size is the world's, as
+## there), INSTANCE_CUSTOM.r its phase in the cycle, .g its chimney's seed for the per-cycle jitter. The billboard
+## and the look are the CPU particles' (_fx_mat: unshaded, alpha-blended, the puff texture times the colour ramp).
+const PUFF_SHADER := """shader_type spatial;
+render_mode unshaded, blend_mix, depth_draw_opaque, cull_back, skip_vertex_transform;
+uniform sampler2D tex : source_color, filter_linear_mipmap, repeat_enable;
+const float LIFE = 3.2;
+const vec3 DIR = vec3(0.25, 1.0, 0.1);
+const vec3 GRAV = vec3(0.05, 0.015, 0.02);
+
+float rnd(uint n) {
+	n = (n ^ 61u) ^ (n >> 16u);
+	n *= 9u;
+	n = n ^ (n >> 4u);
+	n *= 668265261u;
+	n = n ^ (n >> 15u);
+	return float(n & 65535u) / 65535.0;
+}
+
+void vertex() {
+	float cyc = TIME / LIFE + INSTANCE_CUSTOM.r;
+	float age = fract(cyc);
+	uint s = uint(floor(cyc)) * 2654435761u + uint(INSTANCE_CUSTOM.g * 65535.0) * 40503u;
+	vec3 d = normalize(DIR);
+	vec3 b = normalize(cross(vec3(0.0, 1.0, 0.0), d));
+	vec3 n = cross(b, d);
+	float a1 = radians((rnd(s) * 2.0 - 1.0) * 6.0);
+	float a2 = radians((rnd(s + 1u) * 2.0 - 1.0) * 6.0);
+	vec3 v = (b * sin(a1) * cos(a2) + n * sin(a2) + d * cos(a1) * cos(a2)) * mix(0.07, 0.11, rnd(s + 2u));
+	float t = age * LIFE;
+	vec3 p = MODEL_MATRIX[3].xyz + mat3(MODEL_MATRIX) * v * t + 0.5 * GRAV * t * t;
+	float k = 0.25 + 0.9 * age * age * (3.0 - 2.0 * age);
+	VERTEX = (VIEW_MATRIX * vec4(p, 1.0)).xyz + vec3(VERTEX.xy * k, 0.0);
+	vec4 c0 = vec4(0.8, 0.79, 0.77, 0.0);
+	vec4 c1 = vec4(0.82, 0.81, 0.8, 0.42);
+	vec4 c2 = vec4(0.92, 0.92, 0.94, 0.0);
+	COLOR = age < 0.18 ? mix(c0, c1, age / 0.18) : mix(c1, c2, (age - 0.18) / 0.82);
+}
+
+void fragment() {
+	vec4 c = texture(tex, UV) * COLOR;
+	ALBEDO = c.rgb;
+	ALPHA = c.a;
+}
+"""
 
 
 func _chimney_smoke(at: Node3D) -> void:
@@ -630,57 +681,49 @@ func _on_map(n: Node) -> bool:
 	return n == self
 
 
-## The chimney plumes' emitter, from the live markers (lazily, from _process: a hex rebuild frees its old markers at
-## the end of the frame). The puffs grow with their building as before: the emitter takes the markers' mean scale.
+## The chimney puffs' MultiMesh, from the live markers (lazily, from _process: a hex rebuild frees its old markers at
+## the end of the frame; and once more when a capture's pop ends, the markers back at rest).
 func _sync_chimneys() -> void:
 	var keep: Array = []
-	var pts := PackedVector3Array()
-	var k := 0.0
+	var xfs: Array = []
 	var inv := global_transform.affine_inverse()
 	for m in _chimneys:
 		if not is_instance_valid(m) or not _on_map(m as Node):  # (a freed marker can't even be cast)
 			continue
 		keep.append(m)
-		var g: Transform3D = inv * (m as Node3D).global_transform
-		pts.append(g.origin)
-		k += g.basis.get_scale().y
+		xfs.append(inv * (m as Node3D).global_transform)
 	_chimneys = keep
-	if pts.is_empty():
-		if _chimney_fx != null:
-			_chimney_fx.emitting = false
-			_chimney_fx.visible = false
+	if xfs.is_empty():
+		if _chimney_mmi != null:
+			_chimney_mmi.visible = false
 		return
-	k /= pts.size()
-	if _chimney_fx == null:
-		var sm := CPUParticles3D.new()
-		sm.name = "chimney_smoke"
-		sm.lifetime = 3.2
-		sm.emission_shape = CPUParticles3D.EMISSION_SHAPE_POINTS
-		sm.direction = Vector3(0.25, 1, 0.1)
-		sm.spread = 6.0
-		sm.initial_velocity_min = 0.07
-		sm.initial_velocity_max = 0.11
-		sm.gravity = Vector3(0.05, 0.015, 0.02)
-		sm.scale_amount_curve = _curve(0.25, 1.15)
-		sm.color_ramp = _ramp([0.0, 0.18, 1.0], [Color(0.8, 0.79, 0.77, 0.0), Color(0.82, 0.81, 0.8, 0.42), Color(0.92, 0.92, 0.94, 0.0)])
+	if _chimney_mmi == null:
 		var q := QuadMesh.new()
 		q.size = Vector2(0.2, 0.2)
-		if _smoke_mat == null:
-			_smoke_mat = _fx_mat(_puff_tex(), false)
-		q.material = _smoke_mat
-		sm.mesh = q
-		sm.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		sm.preprocess = 3.2
-		add_child(sm)
-		_chimney_fx = sm
-	_chimney_fx.scale = Vector3.ONE * k  # the emission points are in its own (scaled) space
-	for i in pts.size():
-		pts[i] /= k
-	_chimney_fx.emission_points = pts
-	if _chimney_fx.amount != CHIMNEY_PUFFS * pts.size():
-		_chimney_fx.amount = CHIMNEY_PUFFS * pts.size()  # restarts it; preprocess fills the plumes at once
-	_chimney_fx.visible = true
-	_chimney_fx.emitting = true
+		var mat := ShaderMaterial.new()
+		mat.shader = Shader.new()
+		mat.shader.code = PUFF_SHADER
+		mat.set_shader_parameter("tex", _puff_tex())
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_custom_data = true
+		mm.mesh = q
+		_chimney_mmi = MultiMeshInstance3D.new()
+		_chimney_mmi.name = "chimney_smoke"
+		_chimney_mmi.multimesh = mm
+		_chimney_mmi.material_override = mat
+		_chimney_mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_chimney_mmi.extra_cull_margin = 1.5  # the puffs fly up to ~0.8 above the mouths the AABB is built from
+		add_child(_chimney_mmi)
+	var mm := _chimney_mmi.multimesh
+	mm.instance_count = xfs.size() * CHIMNEY_PUFFS
+	for i in xfs.size():
+		var g: Transform3D = xfs[i]
+		var sd := fposmod(sin(g.origin.x * 12.9898 + g.origin.z * 78.233) * 43758.5453, 1.0)  # stable per chimney
+		for j in CHIMNEY_PUFFS:
+			mm.set_instance_transform(i * CHIMNEY_PUFFS + j, g)
+			mm.set_instance_custom_data(i * CHIMNEY_PUFFS + j, Color((j + sd) / CHIMNEY_PUFFS, sd, 0.0, 0.0))
+	_chimney_mmi.visible = true
 
 
 ## The player's flag (10 §4.23) on both faces of a banner's cloth (tools/blender/export_assets.py: the cloth is
@@ -690,9 +733,12 @@ func _sync_chimneys() -> void:
 ## instance uniform is per draw), not two quads a banner (R1: two draws each); with an army's banner on the map they
 ## follow it every frame.
 var _banner_cloth := {}  # owner -> [banner Node3D]
-var _cloth_moves := false  # an army's banner among them: _sync_banner_cloth every frame
+var _cloth_moves := false  # an army's banner among them: _sync_army_cloth every frame
 var _cloth_mmis := {}  # owner -> [front MultiMeshInstance3D, back MultiMeshInstance3D]
+var _cloth_army := {}  # owner -> [index of its first army banner in the set, [army banner Node3D]] (_sync_army_cloth)
 const CLOTH_AT := Vector3(0.13, 0.775, 0.0095)  # the front face's centre in the banner model (the back: z mirrored)
+const CLOTH_FRONT := Transform3D(Basis.IDENTITY, CLOTH_AT)
+const CLOTH_BACK := Transform3D(Basis(Vector3.UP, PI), Vector3(CLOTH_AT.x, CLOTH_AT.y, -CLOTH_AT.z))
 
 
 func _paint_flag(banner: Node3D, owner: int) -> void:
@@ -719,17 +765,23 @@ func _cloth_quad() -> void:
 func _sync_banner_cloth() -> void:
 	_cloth_quad()
 	_cloth_moves = false
+	_cloth_army.clear()
 	var inv := global_transform.affine_inverse()
-	var front := Transform3D(Basis.IDENTITY, CLOTH_AT)
-	var back := Transform3D(Basis(Vector3.UP, PI), Vector3(CLOTH_AT.x, CLOTH_AT.y, -CLOTH_AT.z))
 	for owner in _banner_cloth.keys():
-		var keep: Array = []
+		var hexes: Array = []
+		var armies: Array = []
 		for b in _banner_cloth[owner]:
 			if is_instance_valid(b) and _on_map(b as Node):
-				keep.append(b)
-				# an army's banner marches with it (the hexes' stand still): then the faces follow it every frame
-				_cloth_moves = _cloth_moves or (b as Node).get_parent().get_parent() != _props_root
+				# an army's banner marches with it (the hexes' stand still): its faces follow it every frame
+				if (b as Node).get_parent().get_parent() != _props_root:
+					armies.append(b)
+				else:
+					hexes.append(b)
+		var keep: Array = hexes + armies  # the armies' last: _sync_army_cloth rewrites only their tail of the set
 		_banner_cloth[owner] = keep
+		if not armies.is_empty():
+			_cloth_moves = true
+			_cloth_army[owner] = [hexes.size(), armies]
 		if not _cloth_mmis.has(owner):
 			var pair: Array = []
 			var wave := _wave_material(owner, _flag_material(owner))
@@ -752,8 +804,29 @@ func _sync_banner_cloth() -> void:
 			if mm.instance_count != keep.size():
 				mm.instance_count = keep.size()
 			for j in keep.size():
-				mm.set_instance_transform(j, inv * (keep[j] as Node3D).global_transform * (front if i == 0 else back))
+				mm.set_instance_transform(j, inv * (keep[j] as Node3D).global_transform * (CLOTH_FRONT if i == 0 else CLOTH_BACK))
 			mmi.visible = not keep.is_empty()
+
+
+## The marching armies' banner faces, every frame (_process): only their tail of each state's set is rewritten, the
+## hexes' banners stay as _sync_banner_cloth wrote them (R1 review: all of them were rewritten every frame while any
+## army flew a banner — in play nearly always). A banner gone from the map folds to nothing and asks for a full sync.
+func _sync_army_cloth() -> void:
+	var inv := global_transform.affine_inverse()
+	for owner in _cloth_army:
+		var first: int = _cloth_army[owner][0]
+		var list: Array = _cloth_army[owner][1]
+		for i in 2:
+			var mm := (_cloth_mmis[owner][i] as MultiMeshInstance3D).multimesh
+			for j in list.size():
+				if first + j >= mm.instance_count:
+					break
+				var b: Variant = list[j]
+				if is_instance_valid(b) and _on_map(b as Node):
+					mm.set_instance_transform(first + j, inv * (b as Node3D).global_transform * (CLOTH_FRONT if i == 0 else CLOTH_BACK))
+				else:
+					mm.set_instance_transform(first + j, Transform3D(Basis().scaled(Vector3.ZERO), Vector3.ZERO))
+					_live_dirty = true
 
 
 var _wave_quad: QuadMesh
@@ -1511,16 +1584,37 @@ func refresh_hex(id: int, neighbours := true) -> void:
 			if n >= 0 and int(sim.cells[n]["fort"]) > 0:
 				refresh_hex(n, false)
 		_refresh_front_massifs(id)
-		_flush_decor()  # once for the hex and its neighbours
+		_queue_flush()  # once for the hex and its neighbours — and for a whole loop of refresh_hex calls
 
 
 ## The massifs just in front of hex id (nearer the camera, +Z) stand lower or full size as a camp, a capital or a city
-## comes to the hex or leaves it (_busy_behind): re-place them. The caller flushes the decor.
+## comes to the hex or leaves it (_busy_behind): re-place those whose state changed (the holder's "busy" meta; most
+## rebuilds change nothing there). The caller flushes the decor.
 func _refresh_front_massifs(id: int) -> void:
 	var z := cell_world(id).z
 	for n in sim.neighbors[id]:
 		if n >= 0 and sim.cells[n]["terrain"] == "mountain" and cell_world(n).z > z:
-			refresh_hex(n, false)
+			var h: Node3D = _hex_props.get(n)
+			if h == null or h.get_meta("busy", null) != _busy_behind(sim.cells[n]):
+				refresh_hex(n, false)
+
+
+var _flush_queued := false  # a decor flush is due (_queue_flush)
+
+
+## The decor flush of a hex rebuild, coalesced (R1 review: every refresh_hex rebuilt all the map-wide MultiMeshes,
+## 20 of them for a treaty annex): the first call queues one deferred flush, which runs before the frame is drawn —
+## the engine flushes deferred calls after the process step, timers and tweens included — so no frame shows a hex
+## without its scenery. _process flushes too if anything is still due.
+func _queue_flush() -> void:
+	if not _flush_queued:
+		_flush_queued = true
+		_flush_if_queued.call_deferred()
+
+
+func _flush_if_queued() -> void:
+	if _flush_queued:
+		_flush_decor()
 
 
 ## Capture and build «pop» (§6.10, soft_style_plan P8): the hex's buildings squash and stretch — (1.2, 0.6, 1.2) →
@@ -1553,6 +1647,8 @@ func _pop_scale(sc: Vector3, holder) -> void:
 		return
 	(holder as Node3D).scale = sc
 	_sync_batched(holder as Node3D, sc == Vector3.ONE)
+	if sc == Vector3.ONE:
+		_live_dirty = true  # the chimneys back at rest: _sync_chimneys places their puffs again
 	if (holder as Node).has_meta("banner"):
 		_sync_banner_cloth()
 
@@ -2030,7 +2126,9 @@ func _place_hex_props_into(c: Dictionary, holder: Node3D) -> void:
 			# art pass 6: a full-size massif hid most of a camp, a capital or a city behind it from the map camera
 			# (ch2:camp at zoom 0.12: the marauder camp under the peak); there it stays lower and steps toward the camera
 			var off := Vector3.ZERO
-			if _busy_behind(c):
+			var busy := _busy_behind(c)
+			holder.set_meta("busy", busy)  # _refresh_front_massifs re-places it only when this changes
+			if busy:
 				ms = 1.2
 				off = Vector3(0, 0, 0.22)
 			spawn("mountain", holder, off, rot, ms)
@@ -4851,7 +4949,7 @@ func set_camps(active: Array) -> void:
 		if camp_hexes.has(h):
 			smoke(int(h), 1.0e9)
 	if not changed.is_empty():
-		_flush_decor()  # once for the camps and the massifs in front of them
+		_queue_flush()  # once for the camps and the massifs in front of them
 
 
 ## Dotted routes of marching armies (canon §8.1: a march is visible on the map). `paths`: army id -> Array of
@@ -5961,13 +6059,14 @@ func _float_fx(f: Dictionary, k: float) -> void:
 func _process(delta: float) -> void:
 	if sim == null:
 		return
-	if not _pending_decor.is_empty():  # scenery spawned outside a hex rebuild (a safety net)
+	if _flush_queued or not _pending_decor.is_empty():  # scenery spawned outside a hex rebuild (a safety net)
 		_flush_decor()
-	if _live_dirty or _cloth_moves:  # the markers follow a rebuilt hex and the armies' banners
-		if _live_dirty:
-			_sync_chimneys()
+	if _live_dirty:  # the markers follow a rebuilt hex
 		_live_dirty = false
+		_sync_chimneys()
 		_sync_banner_cloth()
+	elif _cloth_moves:  # and the armies' banners
+		_sync_army_cloth()
 	var snap := _territory_snapshot()
 	if _dirty or snap != _snapshot:  # the snapshot changes at every ceremony flip and at its start and end
 		_snapshot = snap
