@@ -8,6 +8,7 @@ extends Control
 
 signal open_case(case_id: String, times: int, pay: String)  # pay: "free" | "raivite" | "ad" | "key"
 signal buy_sku(sku: String)
+signal pick_target  # «Цель: …» on the Royal case: the album of the commanders that can be the target (09 §9.10.6)
 signal closed
 
 const GameUI := preload("res://scripts/game_ui.gd")
@@ -33,6 +34,9 @@ const PACK_SKUS := [
 ]
 const PACK_ICON := {"iap_starter": "helmet", "iap_builder": "mason", "iap_no_ads": "ad", "iap_ration": "food",
 	"iap_pass": "medal", "patent_screen": "charter"}
+## The packs sold once (09 §9.8.1 «Лимит 1»): bought, their row says «Куплено» instead of a price and takes no tap.
+## main._on_buy_sku refuses them by the same list.
+const ONE_TIME := ["iap_starter", "iap_builder", "iap_no_ads"]
 ## Each case's chest and the rarity that tints its plate (the Royal case's point is its epic guarantee).
 const CASE_LOOK := {"case_war_crate": ["chest_wood", "common"], "case_royal": ["chest_royal", "epic"],
 	"case_collection": ["chest_cards", "legendary"]}
@@ -46,6 +50,12 @@ const CARD_GAP := 16.0
 
 var ui: GameUI  # toast, the shared modal (the odds window)
 var cases  # scripts/sim/cases.gd
+## The purchases so far (main.purchases, sku -> count; the same dictionary, so a purchase shows at the next render):
+## the first-purchase ×2 ribbon of a Raivite pack and the one-time packs' «Куплено» come from it — the grant reads it too.
+var purchases: Dictionary = {}
+## sku -> a line for a row that cannot be bought now (main._shop_status: the season's pass open «Куплено», the
+## ration running «День 3/30»), asked at each render.
+var status_fn := Callable()
 var raivite := 0
 var payments := true  # false in Russia: real-money items are hidden (canon §15.11)
 var now := 0
@@ -59,9 +69,10 @@ var _timer_lbl: Label  # the free crate's countdown (ticks while the store is op
 var _t0_ms := 0
 
 
-func setup(p_ui: GameUI, p_cases, p_raivite: int, p_payments: bool, p_now: int) -> void:
+func setup(p_ui: GameUI, p_cases, p_raivite: int, p_payments: bool, p_now: int, p_purchases: Dictionary = {}) -> void:
 	ui = p_ui
 	cases = p_cases
+	purchases = p_purchases
 	raivite = p_raivite
 	payments = p_payments
 	now = p_now
@@ -188,7 +199,7 @@ func _cases_h() -> float:
 const COL_X := 260.0
 
 
-func _card(y: float, h: float, case_id: String, note: String) -> Panel:
+func _card(y: float, h: float, case_id: String, note: String, note_cb := Callable()) -> Panel:
 	var w := _body.size.x
 	var c := Panel.new()
 	c.name = case_id
@@ -233,7 +244,24 @@ func _card(y: float, h: float, case_id: String, note: String) -> Panel:
 	tl.position = Vector2(COL_X, 14)
 	tl.size = Vector2(tw, 48)
 	c.add_child(tl)
-	if note != "":
+	if note != "" and note_cb.is_valid():
+		# a tappable note (the Royal case's «Цель: …»): a link, LINK blue and underlined, as wide as its text
+		var cw0 := w - COL_X - 16.0
+		var ls := Kit.fit_size(note, 24, cw0, "d800", 22, false)
+		var lk := Kit.KitLink.new()
+		lk.name = "target"
+		lk.text = note
+		lk.cb = note_cb
+		Kit.style_label(lk, ls, Kit.LINK, true)
+		lk.add_theme_font_override("font", Kit.font("d800"))
+		lk.add_theme_font_size_override("font_size", ls)
+		lk.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		lk.clip_text = Kit.text_w(note, ls, "d800", false) > cw0
+		lk.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		lk.position = Vector2(COL_X, 60)
+		lk.size = Vector2(minf(cw0, Kit.text_w(note, ls, "d800", false) + 4.0), 34)
+		c.add_child(lk)
+	elif note != "":
 		var cw := w - COL_X - 16.0
 		var ns := Kit.fit_size(note, 24, cw, "d800", 22, false)
 		var nl := Kit.label(note, ns, Kit.MUTED_CREAM, true)
@@ -292,7 +320,7 @@ func _cases_tab() -> void:
 	var y2 := CRATE_H + CARD_GAP
 	var tgt: String = cases.target_commander
 	var tname: String = cases.commander_name(tgt) if tgt != "" else tr("shop.target_none")
-	var c2 := _card(y2, ROYAL_H, "case_royal", tr("shop.target_short") % tname)
+	var c2 := _card(y2, ROYAL_H, "case_royal", tr("shop.target_short") % tname, func(): pick_target.emit())
 	var pity := _royal_pity()
 	var every: int = pity[1]
 	var e_left: int = pity[0]
@@ -712,21 +740,26 @@ func _raivite_tab() -> void:
 		var b := Kit.button(t, Rect2(12, th - 5.0 - 12.0 - 60.0, tw - 24.0, 60), "gold", _price(sku[1]), {"size": "S",
 			"filter": Control.MOUSE_FILTER_PASS, "cb": func(): buy_sku.emit(id)})
 		b.name = "buy"
-		Kit.ribbon(t, Vector2(tw * 0.5, 0.0), tr("shop.first_x2"), "gold").name = "first_x2"
+		if not purchases.has(id):  # the first purchase of each pack is doubled (main._on_buy_sku, the same `purchases`)
+			Kit.ribbon(t, Vector2(tw * 0.5, 0.0), tr("shop.first_x2"), "gold").name = "first_x2"
 
 
-## A pack's picture grows with its value: one crystal, a cluster, a heap, then chests (wood, silver, royal) brimming
-## with crystals — the ladder from 80 to 14 000 reads at a glance. [x, bottom, side] in the pile's unit box, back first;
-## "c" marks the chest.
+## A pack's picture grows with its value: one crystal, a cluster, a heap, then ever bigger heaps of crystals — the ladder
+## from 80 to 14 000 reads at a glance (playtest 2: the big packs sat on the loot cases' chests, which sell something
+## else). [x, bottom, side] in the pile's unit box, back first; all the kit's one crystal icon (one batch).
 const PILES := [
 	[["r", 0.5, 0.96, 0.82]],
 	[["r", 0.5, 0.8, 0.62], ["r", 0.29, 0.98, 0.56], ["r", 0.71, 0.98, 0.6]],
 	[["r", 0.36, 0.74, 0.5], ["r", 0.64, 0.72, 0.52], ["r", 0.5, 0.86, 0.6], ["r", 0.2, 0.99, 0.48], ["r", 0.8, 0.99, 0.5]],
-	[["r", 0.38, 0.52, 0.44], ["r", 0.62, 0.5, 0.48], ["c", "chest_wood", 0.98, 0.84], ["r", 0.13, 1.0, 0.36], ["r", 0.87, 1.0, 0.34]],
-	[["r", 0.3, 0.52, 0.42], ["r", 0.7, 0.52, 0.42], ["r", 0.5, 0.48, 0.5], ["c", "chest_silver", 0.98, 0.86],
-		["r", 0.12, 1.0, 0.38], ["r", 0.88, 1.0, 0.36]],
-	[["r", 0.28, 0.52, 0.46], ["r", 0.72, 0.52, 0.46], ["r", 0.5, 0.47, 0.56], ["c", "chest_royal", 0.98, 0.88],
-		["r", 0.11, 1.0, 0.4], ["r", 0.89, 1.0, 0.4], ["r", 0.5, 1.03, 0.3]],
+	[["r", 0.5, 0.58, 0.46], ["r", 0.3, 0.74, 0.44], ["r", 0.7, 0.73, 0.46], ["r", 0.5, 0.82, 0.5], ["r", 0.15, 0.97, 0.4],
+		["r", 0.85, 0.97, 0.42], ["r", 0.36, 1.0, 0.46], ["r", 0.64, 1.0, 0.46]],
+	[["r", 0.5, 0.48, 0.42], ["r", 0.34, 0.62, 0.4], ["r", 0.66, 0.61, 0.42], ["r", 0.2, 0.78, 0.4], ["r", 0.8, 0.77, 0.42],
+		["r", 0.5, 0.76, 0.5], ["r", 0.1, 0.99, 0.36], ["r", 0.9, 0.99, 0.38], ["r", 0.32, 1.0, 0.44], ["r", 0.68, 1.0, 0.44],
+		["r", 0.5, 1.02, 0.4]],
+	[["r", 0.5, 0.38, 0.4], ["r", 0.37, 0.52, 0.38], ["r", 0.63, 0.51, 0.4], ["r", 0.24, 0.68, 0.38], ["r", 0.76, 0.67, 0.4],
+		["r", 0.5, 0.64, 0.46], ["r", 0.12, 0.85, 0.36], ["r", 0.88, 0.85, 0.36], ["r", 0.36, 0.84, 0.42],
+		["r", 0.64, 0.84, 0.42], ["r", 0.06, 1.0, 0.32], ["r", 0.94, 1.0, 0.32], ["r", 0.24, 1.02, 0.4], ["r", 0.76, 1.02, 0.4],
+		["r", 0.5, 1.03, 0.44]],
 ]
 
 
@@ -738,16 +771,12 @@ func _raivite_pile(tier: int) -> Control:
 	var crystal := Kit.icon_atlas("raivite")  # the kit's shared icon sheet (one batch with the tiles round it)
 	for prt in parts:
 		var p: Array = prt
-		# the chest (0.84–0.88 of a 168–180 px box: 141–158 px) from its hero render, baked into the same atlas
-		var c: Control = Kit.hero_still(String(p[1])) if p[0] == "c" else null
-		if c == null:
-			var tr_ := TextureRect.new()
-			tr_.texture = Kit.icon_atlas(String(p[1])) if p[0] == "c" else crystal
-			tr_.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-			tr_.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-			tr_.mouse_filter = Control.MOUSE_FILTER_IGNORE
-			c = tr_
-		c.set_meta("unit", [0.5 if p[0] == "c" else float(p[1]), float(p[2]), float(p[3])])
+		var c := TextureRect.new()
+		c.texture = crystal
+		c.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		c.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		c.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		c.set_meta("unit", [float(p[1]), float(p[2]), float(p[3])])
 		pile.add_child(c)
 	var lay := func():  # laid out in the box the tile gives it
 		var s := minf(pile.size.x, pile.size.y)
@@ -781,21 +810,43 @@ func _packs_tab() -> void:
 		bw = maxf(bw, Kit.text_w(_price(p[2]) + (tr(p[4]) if p[4] != "" else ""), 26, "d900") + 44.0)
 	bw = minf(bw, 230.0)
 	var buys: Array = []
+	var status: Dictionary = status_fn.call() if status_fn.is_valid() else {}
 	for i in PACK_SKUS.size():
 		var p: Array = PACK_SKUS[i]
 		var id: String = p[0]
-		var price := _price(p[2]) + (tr(p[4]) if p[4] != "" else "")
-		var b := Kit.button(null, Rect2(0, 0, bw, 60), "gold", price, {"size": "S", "filter": Control.MOUSE_FILTER_PASS,
-			"cb": func(): buy_sku.emit(id)})
-		b.name = "buy"
-		buys.append(b)
+		var right: Control
+		if ONE_TIME.has(id) and purchases.has(id):
+			right = _owned_chip(tr("shop.bought"), bw)
+		elif status.has(id):
+			right = _owned_chip(String(status[id]), bw)
+		else:
+			var price := _price(p[2]) + (tr(p[4]) if p[4] != "" else "")
+			var b := Kit.button(null, Rect2(0, 0, bw, 60), "gold", price, {"size": "S", "filter": Control.MOUSE_FILTER_PASS,
+				"cb": func(): buy_sku.emit(id)})
+			b.name = "buy"
+			buys.append(b)
+			right = b
 		var name := tr(p[1])
 		var desc := tr(p[3])
 		var rw := Kit.row(host, Rect2(16, 16 + i * (row_h + gap), rw_w, row_h), {"icon": String(PACK_ICON.get(id, "gift")),
-			"title": name, "sub": tr(p[1] + ".short"), "right": b})
+			"title": name, "sub": tr(p[1] + ".short"), "right": right})
 		rw.name = id
 		rw.cb = func(): Kit.tooltip(rw.title_label, name, desc)
 	Kit.unify(buys)
+
+
+## The place of a price for a pack that cannot be bought now: a status chip with the go check (bought, or the ration's
+## day), as wide as the prices beside it; no tap of its own (the row's tap still gives the description).
+func _owned_chip(text: String, w: float) -> Control:
+	var holder := Control.new()
+	holder.name = "owned"
+	holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var chip := Kit.chip(holder, Vector2.ZERO, "", text, "status")
+	var hw := maxf(w, chip.size.x + 48.0)
+	holder.size = Vector2(hw, 60)
+	chip.position = Vector2(hw - chip.size.x, (60.0 - chip.size.y) * 0.5)
+	Kit.check_badge(holder, Vector2(chip.position.x - 24.0, 30.0), 40.0)  # (as the finished collection case's)
+	return holder
 
 
 func _atelier_tab() -> void:

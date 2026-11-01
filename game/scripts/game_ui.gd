@@ -1572,8 +1572,10 @@ func _tile_tex(key: String) -> Texture2D:
 ## chip), the chapter bar L and the reward tiles — 3 a row, popping in one after another, at most 6 (then «+N»).
 ## `items`: [{kind: hero | bar | tile, icon, text, from, to, max, frac, pill}] (main builds them with the lines);
 ## without items the lines are listed. «Забрать» (go L) and «×2» with the ad icon (info M) accept taps only after
-## `active_after` s (no ad may start before the ceremony ends, §14.10): grey until then.
-func show_ceremony_counters(lines: Array, on_done: Callable, on_double := Callable(), active_after := 3.0, items: Array = []) -> void:
+## `active_after` s (no ad may start before the ceremony ends, §14.10): grey until then. `double_price`: what the
+## «×2» brings, its plates [[icon, «+1 200»], …] (at most two) — the second helping as far as the store holds it.
+func show_ceremony_counters(lines: Array, on_done: Callable, on_double := Callable(), active_after := 3.0, items: Array = [],
+		double_price: Array = []) -> void:
 	var hero: Dictionary = {}
 	var bar: Dictionary = {}
 	var tiles: Array = []
@@ -1729,8 +1731,10 @@ func show_ceremony_counters(lines: Array, on_done: Callable, on_double := Callab
 	var dbl: Kit.KitButton = null
 	if on_double.is_valid():
 		# «×2» beside «Забрать» as in the calendar: both L, one caption size, both with an icon (the ad / a check)
-		dbl = Kit.button(box, Rect2(32, fy, 280, 116), "info", tr("ceremony.double"), {"icon": "ad", "size": "L", "enabled": false,
-			"cb": func(): _claim(gate, flyers, on_double)})
+		var dopts := {"icon": "ad", "size": "L", "enabled": false, "cb": func(): _claim(gate, flyers, on_double)}
+		if not double_price.is_empty():
+			dopts["price"] = double_price
+		dbl = Kit.button(box, Rect2(32, fy, 280, 116), "info", tr("ceremony.double"), dopts)
 		dbl.name = "double"
 		buttons.append(dbl)
 	var main_r := Rect2(328, fy, w - 360.0, 116) if dbl != null else Rect2((w - 480.0) * 0.5, fy, 480, 116)
@@ -4955,11 +4959,12 @@ func show_commanders(info: Dictionary, on_pick: Callable) -> void:
 	content_h += 18.0  # the ribbon of a tile in the first row pokes up; the last row's shadow
 	var keep := _modal != null and (_modal.has_meta("commanders") or _modal.has_meta("commander"))
 	var at := _cmd_scroll if keep else 0
-	var box := _modal_box(_win_rect("L", 88.0 + content_h + 32.0), false, tr("cmdr.title"), "frame", "info", true, false)
+	# (`plate` / `hint`: the Royal case's target picker — its own title, a line on what it shows instead of the count)
+	var box := _modal_box(_win_rect("L", 88.0 + content_h + 32.0), false, String(info.get("plate", tr("cmdr.title"))), "frame", "info", true, false)
 	_modal.set_meta("commanders", true)
 	box.set_meta("kit_native", true)
 	var w := box.size.x
-	var cc := Kit.chip(box, Vector2.ZERO, "", "%d/%d" % [owned, total], "status")
+	var cc := Kit.chip(box, Vector2.ZERO, "", String(info.get("hint", "%d/%d" % [owned, total])), "status")
 	cc.name = "count"
 	cc.position = Vector2((w - cc.size.x) * 0.5, 34)
 	var well := Kit.well(box, Rect2(32, 88, w - 64.0, box.size.y - 88.0 - 32.0))

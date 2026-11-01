@@ -5201,9 +5201,16 @@ func _step_ceremony(delta: float) -> void:
 		for i in volleys:
 			get_tree().create_timer(0.45 * i + 0.3).timeout.connect(sfx.play.bind("firework", 0, -8.0))
 		var active_after := maxf(0.5, 7.0 - t)
-		var spoils: bool = int(_ceremony["gold_packs"]) > 0 or not _ceremony.get("loot", {}).is_empty()
-		ui.show_ceremony_counters(_ceremony["lines"], _end_ceremony, _double_trophies if spoils and _ads_allowed() else Callable(), active_after,
-			_ceremony.get("items", []))
+		# «×2 трофеи» (canon §15.2): 4 a day, and only when the second helping has room — trophies stay within the cap
+		# (canon §4), so at a full store the video would pay nothing; the button says what it brings
+		var gain := _double_gain()
+		var dbl := _ads_allowed() and _ad_left("ad_double_trophies", 4) > 0 and not gain.is_empty()
+		var price: Array = []
+		for r in ["gold", "food", "metal", "oil"]:
+			if int(gain.get(r, 0)) > 0 and price.size() < 2:
+				price.append([String(Hud.RES_ICON.get(r, "coin")), "+" + Kit.fmt_num(int(gain[r]))])
+		ui.show_ceremony_counters(_ceremony["lines"], _end_ceremony, _double_trophies if dbl else Callable(), active_after,
+			_ceremony.get("items", []), price)
 
 
 ## A case reward as the ceremony tile's pill: [[icon, text], …] (at most two items).
@@ -5237,11 +5244,32 @@ func _ads_allowed() -> bool:
 	return ftue <= 0 and _ftue_next <= 0 and not _tutorial_end and stats.has("ftue_done") and now_s() - installed_at >= AD_AFTER_SEC
 
 
-## Rewarded ad «×2 трофеи» — SDK stub until monetization lands (canon §14.10).
+## What «×2 трофеи» would credit now: the treaty's plunder and indemnity once more (canon §15.2: «×2 контрибуции и
+## добычи грабежа»), each resource only as far as the store has room (trophies stay within the cap, canon §4). {} when
+## nothing would fit.
+func _double_gain() -> Dictionary:
+	var twice := {}
+	for r in _ceremony.get("loot", {}):
+		twice[String(r)] = int(twice.get(String(r), 0)) + int(_ceremony["loot"][r])
+	if int(_ceremony.get("gold_packs", 0)) > 0:
+		twice["gold"] = int(twice.get("gold", 0)) + int(_ceremony.get("contrib", 0))  # (the indemnity as the treaty priced it)
+	var cap: Dictionary = econ.storage_cap()
+	var out := {}
+	for r in twice:
+		var n := mini(int(twice[r]), maxi(0, int(cap.get(r, 0)) - int(econ.res.get(r, 0))))
+		if n > 0:
+			out[r] = n
+	return out
+
+
+## Rewarded ad «×2 трофеи» (canon §15.2: 4 a day, counted with the other videos) — SDK stub until monetization lands
+## (canon §14.10): the second helping, up to the cap.
 func _double_trophies() -> void:
-	ui.toast(tr("toast.test_ad_double"), "", "info", true)
-	econ.add_resources(_ceremony.get("loot", {}))
-	econ.add_resources({"gold": int(_ceremony.get("contrib", 0))})  # (the indemnity as the treaty priced it)
+	if not _rewarded("ad_double_trophies", 4, true):
+		return
+	var gain := _double_gain()
+	econ.add_resources(gain)
+	ui.toast(tr("toast.test_ad_double") % _amounts_text(gain), "ad", "info", true)
 	_ceremony["gold_packs"] = 0
 	_end_ceremony()
 
@@ -5960,9 +5988,11 @@ func _open_shop() -> void:
 		shop.queue_free()
 	shop = ShopUI.new()
 	ui.root.add_child(shop)
-	shop.setup(ui, cases, int(econ.res["raivite"]), _payments_enabled(), now_s())
+	shop.status_fn = _shop_status
+	shop.setup(ui, cases, int(econ.res["raivite"]), _payments_enabled(), now_s(), purchases)
 	shop.open_case.connect(_on_open_case)
 	shop.buy_sku.connect(_on_buy_sku)
+	shop.pick_target.connect(_open_target_picker)
 	shop.closed.connect(func():
 		shop.queue_free()
 		shop = null)
@@ -7910,7 +7940,7 @@ func _cmd_track(id: String) -> Array:
 
 
 ## The collection (04 §15.7): albums of a 3 × N grid — portrait, level «ур. 9/16», shards to the next level.
-func _open_commanders() -> void:
+func _open_commanders(only: Array = []) -> void:
 	var dl: int = econ.dev_level()
 	ui.set_portrait_era(dl)
 	var albums: Array = []
@@ -7918,6 +7948,8 @@ func _open_commanders() -> void:
 		var cards: Array = []
 		var full := true
 		for id in a[1]:
+			if not only.is_empty() and not only.has(id):
+				continue  # (the Royal case's target picker: the commanders it can target only)
 			var r := _cmd_rarity(id)
 			var total := int(cases.shards.get(id, 0))
 			var lvl := _cmd_level(id)
@@ -7931,10 +7963,14 @@ func _open_commanders() -> void:
 			elif not c.is_empty():
 				card["shards"] = [commanders.free_shards(id, r, total), int(c[0])]
 			cards.append(card)
-		albums.append({"name": tr("cmdr.album." + String(a[0])), "full": full, "cards": cards})
-	ui.show_commanders({"title": tr("cmdr.collection") % [_cmd_owned_count(), Commanders.PASSIVES.size()], "albums": albums,
-		"owned": _cmd_owned_count(), "total": Commanders.PASSIVES.size()},
-		func(id: String): _open_commander(id))
+		if not cards.is_empty():
+			albums.append({"name": tr("cmdr.album." + String(a[0])), "full": full and cards.size() == (a[1] as Array).size(), "cards": cards})
+	var info := {"title": tr("cmdr.collection") % [_cmd_owned_count(), Commanders.PASSIVES.size()], "albums": albums,
+		"owned": _cmd_owned_count(), "total": Commanders.PASSIVES.size()}
+	if not only.is_empty():
+		info["plate"] = tr("shop.target_pick")
+		info["hint"] = tr("shop.target_hint")
+	ui.show_commanders(info, func(id: String): _open_commander(id))
 
 
 ## The commander card (04 §15.7): portrait, biography, the passive by level, «Повысить», sources, «Цель».
@@ -8158,12 +8194,21 @@ func _unassign_commander(army_id: int) -> void:
 	_open_tab("army")
 
 
-## «Поставить Целью» (09): the Royal case's target — the toast says so and the card refreshes.
+## «Поставить Целью» (09): the Royal case's target — the toast says so and the card refreshes (the store's Royal card
+## under it too).
 func _set_cmd_target(id: String) -> void:
 	if cases.set_target(id):
 		ui.toast(tr("cmdr.target_set") % Cases.commander_name(id))
 		_autosave()
+		if shop:
+			shop.refresh(int(econ.res["raivite"]), now_s())
 	_open_commander(id)
+
+
+## The store's «Цель: …» (09 §9.10.6): the commanders album with only those the Royal case can target (epic and
+## legendary, not maxed); a card's «Поставить Целью» sets it.
+func _open_target_picker() -> void:
+	_open_commanders(Cases.target_options(_case_ctx()))
 
 
 # ---------------------------------------------------------------------- the profile (10 §4.23)
@@ -8382,24 +8427,45 @@ func _claim_patent_daily() -> void:
 ## How many rewarded videos of `key` are still open today (the day rule of _rewarded): an ad button whose cap is
 ## spent is not offered, rather than shown only to answer «limit».
 func _ad_left(key: String, cap: int) -> int:
+	if _ads_today() >= AD_SOFT_CAP:
+		return 0
 	var rec: Array = ad_counts.get(key, [])
 	if rec.size() < 2 or not Calendar.seen(Calendar.local_day(now_s()), int(rec[0])):
 		return cap
 	return maxi(0, cap - int(rec[1]))
 
 
-func _rewarded(key: String, cap: int) -> bool:
+## The soft cap of all rewarded videos of a game day (canon §15.2: «мягкий общий кап 20 в день, после него плейсменты
+## скрываются»).
+const AD_SOFT_CAP := 20
+
+
+## The rewarded videos watched this game day, all placements.
+func _ads_today() -> int:
+	var day := Calendar.local_day(now_s())
+	var total := 0
+	for k in ad_counts:
+		var rec: Array = ad_counts[k]
+		if rec.size() >= 2 and Calendar.seen(day, int(rec[0])):
+			total += int(rec[1])
+	return total
+
+
+## A rewarded video of `key` (cap a day) is watched: counted (the cap, the soft cap, the intro offer's 3rd video) and
+## true — or the toast says the day's limit is reached. `quiet`: the caller says what it gave in its own toast.
+func _rewarded(key: String, cap: int, quiet := false) -> bool:
 	var day := Calendar.local_day(now_s())  # the caps turn at 04:00 local with the game day (09 §9.3: «до 04:00»)
 	var rec: Array = ad_counts.get(key, [day, 0])
 	if not Calendar.seen(day, int(rec[0])):
 		rec = [day, 0]
-	if int(rec[1]) >= cap:
+	if int(rec[1]) >= cap or _ads_today() >= AD_SOFT_CAP:
 		ui.toast(tr("toast.ad_limit"))
 		return false
 	rec[1] = int(rec[1]) + 1
 	ad_counts[key] = rec
 	# the subscriber gets the reward at once, in the same caps (09 §9.13.1)
-	ui.toast(tr("toast.patent_reward") if patent.active(now_s()) else tr("toast.test_ad_reward"))
+	if not quiet:
+		ui.toast(tr("toast.patent_reward") if patent.active(now_s()) else tr("toast.test_ad_reward"))
 	_intro_offer_check(day)
 	return true
 

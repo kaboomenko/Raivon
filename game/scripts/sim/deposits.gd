@@ -88,8 +88,11 @@ func free_convoys(dev_level: int) -> int:
 
 
 ## A deposit can be gathered when it is free, on passable land the player controls or on wild land,
-## and the player has a free convoy (canon §5.2: AI deposits only through occupied hexes in war).
-func can_send(world: World, hex: int, dev_level: int) -> String:
+## and the player has a free convoy (canon §5.2: AI deposits only through occupied hexes in war). `room`: the free
+## storage of the deposit's resource (−1: not checked) — a deposit's cargo is credited up to the cap and the rest burns
+## (canon §4), so with no room at all the convoy would bring back nothing: «Склад полон». Room for part of the cargo
+## is no lock — the send warns of what will burn (04 §12.1, 05 §15.2).
+func can_send(world: World, hex: int, dev_level: int, room := -1) -> String:
 	var d := at(hex)
 	if d.is_empty():
 		return "err.no_deposit"
@@ -98,13 +101,15 @@ func can_send(world: World, hex: int, dev_level: int) -> String:
 	var c: Dictionary = world.cells[hex]
 	if c["controller"] != Types.PLAYER and c["controller"] != Types.NOBODY:
 		return "err.foreign_land"
+	if room == 0:
+		return "err.storage_full"
 	if free_convoys(dev_level) <= 0:
 		return "err.convoys_busy"
 	return ""
 
 
-func send(world: World, hex: int, dev_level: int, now: int, fast := false) -> bool:
-	if can_send(world, hex, dev_level) != "":
+func send(world: World, hex: int, dev_level: int, now: int, fast := false, room := -1) -> bool:
+	if can_send(world, hex, dev_level, room) != "":
 		return false
 	var d := at(hex)
 	var travel := travel_seconds(world, hex)
