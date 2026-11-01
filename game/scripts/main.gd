@@ -8397,9 +8397,8 @@ func _ftue_tick(delta: float) -> void:
 			if battle != null and flag_hex >= 0 and int(sim.cells[flag_hex]["controller"]) == Types.PLAYER:
 				# step 4b: the flag fell with time left and the treaty's land short (FTUE_PEACE1_HEXES) — one more hex, a
 				# winnable one beside our armies (playtest 2: a player who waited took 2, and the Residence lesson was lost)
-				if _ftue_haul().size() < FTUE_PEACE1_HEXES:
+				if not bg.is_empty():  # (none winnable: no line without a move to show — 0:55's F08 takes it)
 					line = "ftue.4b"
-				if not bg.is_empty():
 					point = cam.unproject_position(map_view.cell_world(int(bg["to"])) + Vector3(0, 0.3, 0))
 			elif not bg.is_empty():
 				target = ui.card_rect("attack")
