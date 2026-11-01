@@ -5260,27 +5260,37 @@ class KitToggle extends Control:
 		if cb.is_valid():
 			cb.call(on)
 
+	## At rest (off or on) the switch comes from the bake atlas — one textured rect among its kit neighbours instead of
+	## ~8 vector draw calls (Q3: a second switch in Settings cost the window +8); while the knob slides, the vectors.
 	func _draw() -> void:
 		var w := size.x
 		var h := size.y
+		if _k == 0.0 or _k == 1.0:
+			var kk := _k
+			var make := func(z: Vector2) -> Control: return KitPainter.new(func(c: CanvasItem): KitToggle.paint(c, z.x, z.y, kk), z)
+			if SELF.draw_baked(self, "toggle|%d|%.2f,%.2f" % [int(kk), w, h], Rect2(Vector2.ZERO, size), size, make):
+				return
+		paint(self, w, h, _k)
+
+	static func paint(ci: CanvasItem, w: float, h: float, k: float) -> void:
 		var sb := StyleBoxFlat.new()
 		sb.anti_aliasing = true
 		sb.corner_detail = 10
 		sb.bg_color = INK
 		sb.set_corner_radius_all(int(h * 0.5))
-		draw_style_box(sb, Rect2(0, 0, w, h))
-		var face: Color = (ROLE["lock"][0] as Color).lerp(ROLE["go"][0], _k)
-		var lipc: Color = (ROLE["lock"][1] as Color).lerp(ROLE["go"][1], _k)
+		ci.draw_style_box(sb, Rect2(0, 0, w, h))
+		var face: Color = (ROLE["lock"][0] as Color).lerp(ROLE["go"][0], k)
+		var lipc: Color = (ROLE["lock"][1] as Color).lerp(ROLE["go"][1], k)
 		sb.bg_color = face
 		sb.set_corner_radius_all(int(h * 0.5 - 4.0))
 		sb.border_width_bottom = 4  # the face's own lip: a toy's thickness, like the buttons
 		sb.border_color = lipc
-		draw_style_box(sb, Rect2(4, 4, w - 8.0, h - 8.0))
+		ci.draw_style_box(sb, Rect2(4, 4, w - 8.0, h - 8.0))
 		var r := 20.0
-		var c := Vector2(lerpf(h * 0.5, w - h * 0.5, _k), h * 0.5)
-		draw_circle(c + Vector2(0, 3), r, Color(INK, SHADOW_A), true, -1.0, true)
-		draw_circle(c, r, INK, true, -1.0, true)
-		draw_circle(c, r - 3.0, Color.WHITE, true, -1.0, true)
+		var c := Vector2(lerpf(h * 0.5, w - h * 0.5, k), h * 0.5)
+		ci.draw_circle(c + Vector2(0, 3), r, Color(INK, SHADOW_A), true, -1.0, true)
+		ci.draw_circle(c, r, INK, true, -1.0, true)
+		ci.draw_circle(c, r - 3.0, Color.WHITE, true, -1.0, true)
 
 
 ## A switch (§4.13): an INK 4 track 96×52, R 26; on — the go face, the white knob Ø40 at the right; off — the lock face,
@@ -5750,7 +5760,9 @@ static func press_in(b: Control) -> void:
 		b.set("press", 1.0)
 		b.scale = Vector2(0.96, 0.96)
 		return
-	var tw := b.create_tween().set_parallel().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	# TWEEN_PAUSE_PROCESS: a tween bound to the node asks it can_process() each frame — an error once the node has left
+	# the tree (the tray a CTA rebuilds removes its card in the same frame); this mode never asks
+	var tw := b.create_tween().set_parallel().set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT).set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
 	tw.tween_property(b, "press", 1.0, d)
 	tw.tween_property(b, "scale", Vector2(0.96, 0.96), d)
 
@@ -5761,7 +5773,7 @@ static func press_out(b: Control) -> void:
 		b.set("press", 0.0)
 		b.scale = Vector2.ONE
 		return
-	var tw := b.create_tween().set_parallel().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	var tw := b.create_tween().set_parallel().set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT).set_pause_mode(Tween.TWEEN_PAUSE_PROCESS)
 	tw.tween_property(b, "press", 0.0, d)
 	tw.tween_property(b, "scale", Vector2.ONE, d)
 

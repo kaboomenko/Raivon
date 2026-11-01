@@ -3397,19 +3397,19 @@ func show_choice(title: String, lines: Array, buttons: Array, role := "info", ic
 ## `opts`: {haptic: bool, on_haptic, privacy, terms, support, licenses: Callable} — a row shows when its callable does.
 func show_settings(sound_on: bool, on_sound: Callable, on_new_game: Callable, on_lang: Callable, on_manage := Callable(), on_restore := Callable(), opts := {}) -> void:
 	var store_rows := int(on_manage.is_valid()) + int(on_restore.is_valid())
-	var docs: Array = []  # [name, title key, callable]
-	for d in [["privacy", "settings.privacy"], ["terms", "settings.terms"], ["support", "settings.support"],
-			["licenses", "settings.licenses"]]:
+	var docs: Array = []  # [name, icon, title key, callable]
+	for d in [["privacy", "eye_off", "settings.privacy"], ["terms", "treaty", "settings.terms"],
+			["support", "mail", "settings.support"], ["licenses", "book", "settings.licenses"]]:
 		var cb: Callable = opts.get(String(d[0]), Callable())
 		if cb.is_valid():
-			docs.append([d[0], d[1], cb])
+			docs.append([d[0], d[1], d[2], cb])
 	var on_haptic: Callable = opts.get("on_haptic", Callable())
+	var gen_rows := 2 + int(on_haptic.is_valid())
 	var row_h := 96.0
-	var w1 := 16.0 + 2.0 * row_h + 12.0 + 16.0
+	var w1 := 16.0 + gen_rows * row_h + (gen_rows - 1) * 12.0 + 16.0
 	var w2 := (16.0 + store_rows * row_h + (store_rows - 1) * 12.0 + 16.0) if store_rows > 0 else 0.0
-	# the documents as links, two to a line (a row each would cost the window ~9 canvas draws: KitBake budget +2)
-	var doc_lines := ceili(docs.size() / 2.0)
-	var wd := (8.0 + doc_lines * 52.0 + 8.0) if not docs.is_empty() else 0.0
+	var doc_h := 80.0  # the documents' rows are lower: up to four of them, all of one kind
+	var wd := (16.0 + docs.size() * doc_h + (docs.size() - 1) * 12.0 + 16.0) if not docs.is_empty() else 0.0
 	var w3 := 16.0 + 64.0 + 8.0 + 30.0 + 12.0  # the button, then the hint «hold it» (LEGAL)
 	var h := 72.0 + w1 + 16.0 + (w2 + 16.0 if w2 > 0.0 else 0.0) + (wd + 16.0 if wd > 0.0 else 0.0) + w3 + 16.0 + 32.0 + 32.0
 	var box := _modal_box(_win_rect("M", h), false, tr("settings.title"), "gear", "info", true, false)
@@ -3420,46 +3420,8 @@ func show_settings(sound_on: bool, on_sound: Callable, on_new_game: Callable, on
 	var well1 := Kit.well(box, Rect2(32, 72, w - 64.0, w1))
 	well1.name = "general"
 	var sw := Kit.toggle(null, Vector2.ZERO, sound_on)
-	var right: Control = sw
-	var hw: Kit.KitToggle = null
-	if on_haptic.is_valid():  # «Вибрация» shares the sound's row: [🔊 Звук ◯] [⚡ Вибрация ◯]
-		hw = Kit.toggle(null, Vector2.ZERO, bool(opts.get("haptic", true)))
-		hw.name = "vibration"
-		hw.cb = func(_on: bool): on_haptic.call()
-		var vt := tr("settings.vibration")
-		var vs := Kit.fit_size(vt, 30, 190.0, "d900", 24, false)
-		var vw := minf(190.0, Kit.text_w(vt, vs, "d900", false) + 4.0)
-		var holder := Control.new()
-		holder.name = "switches"
-		holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		holder.size = Vector2(sw.size.x + 28.0 + 48.0 + 8.0 + vw + 12.0 + hw.size.x, maxf(sw.size.y, 48.0))
-		sw.position = Vector2(0, (holder.size.y - sw.size.y) * 0.5)
-		holder.add_child(sw)
-		var vi := _icon_rect("lightning", 48)
-		vi.position = Vector2(sw.size.x + 28.0, (holder.size.y - 48.0) * 0.5)
-		holder.add_child(vi)
-		var vl := Kit.label(vt, vs, Kit.INK_TEXT, true)
-		vl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		vl.position = Vector2(vi.position.x + 56.0, 0)
-		vl.size = Vector2(vw, holder.size.y)
-		vl.clip_text = true
-		vl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		holder.add_child(vl)
-		hw.position = Vector2(vl.position.x + vw + 12.0, (holder.size.y - hw.size.y) * 0.5)
-		holder.add_child(hw)
-		var vtap := Control.new()  # a tap on «⚡ Вибрация» flips its own switch, not the row's (the sound)
-		vtap.name = "vibration_tap"
-		vtap.mouse_filter = Control.MOUSE_FILTER_STOP
-		vtap.position = Vector2(vi.position.x - 8.0, 0)
-		vtap.size = Vector2(hw.position.x - vi.position.x + 8.0, holder.size.y)
-		vtap.gui_input.connect(func(e: InputEvent):
-			if _is_tap(e):
-				hw.set_on(not hw.on)
-				hw.cb.call(hw.on))
-		holder.add_child(vtap)
-		right = holder
 	var srow := Kit.row(well1, Rect2(16, 16, rw, row_h), {"icon": "sound_on" if sound_on else "sound_off",
-		"title": tr("settings.sound"), "right": right})
+		"title": tr("settings.sound"), "right": sw})
 	srow.name = "sound"
 	sw.cb = func(on: bool):
 		on_sound.call()
@@ -3468,6 +3430,15 @@ func show_settings(sound_on: bool, on_sound: Callable, on_new_game: Callable, on
 		sw.set_on(not sw.on)
 		sw.cb.call(sw.on)
 	var ly := 16.0 + row_h + 12.0
+	if on_haptic.is_valid():  # «Вибрация» (sfx.haptic on openings and ceremonies), kept with the language
+		var hw := Kit.toggle(null, Vector2.ZERO, bool(opts.get("haptic", true)))
+		var hrow := Kit.row(well1, Rect2(16, ly, rw, row_h), {"icon": "lightning", "title": tr("settings.vibration"), "right": hw})
+		hrow.name = "vibration"
+		hw.cb = func(_on: bool): on_haptic.call()
+		hrow.cb = func():
+			hw.set_on(not hw.on)
+			hw.cb.call(hw.on)
+		ly += row_h + 12.0
 	var names: Array = []
 	for code in L.LANGS:
 		names.append(String(L.LANG_NAMES[code]))
@@ -3496,18 +3467,15 @@ func show_settings(sound_on: bool, on_sound: Callable, on_new_game: Callable, on
 			Kit.row(well2, Rect2(16, ry, rw, row_h), {"icon": "key", "title": tr("patent.restore"), "right": "chevron",
 				"cb": on_restore}).name = "restore"
 		y += w2 + 16.0
-	# ---- the documents: privacy, terms, support, licences — links, two to a line
+	# ---- the documents: privacy, terms, support, licences
 	if not docs.is_empty():
 		var welld := Kit.well(box, Rect2(32, y, w - 64.0, wd))
 		welld.name = "legal"
-		for li in doc_lines:
-			var pair: Array = docs.slice(li * 2, li * 2 + 2)
-			var items: Array = []
-			for d in pair:
-				items.append([tr(String(d[1])), d[2]])
-			var ls := Kit.links(welld, Rect2(16, 8.0 + li * 52.0, welld.size.x - 32.0, 52), items, 28)
-			for k in ls.size():
-				(ls[k] as Control).name = String(pair[k][0])
+		var dy := 16.0
+		for d in docs:
+			Kit.row(welld, Rect2(16, dy, rw, doc_h), {"icon": String(d[1]), "title": tr(String(d[2])), "right": "chevron",
+				"cb": d[3]}).name = String(d[0])
+			dy += doc_h + 12.0
 		y += wd + 16.0
 	# ---- the danger zone: a new game, held
 	var well3 := Kit.well(box, Rect2(32, y, w - 64.0, w3))
@@ -4137,7 +4105,7 @@ func _cull_row() -> void:
 	var view := _bscroll.get_global_rect()
 	for c in _brow.get_children():
 		var card := c as Control
-		if card == null:
+		if card == null or card.is_queued_for_deletion():
 			continue
 		var r := card.get_global_rect()
 		var on := card.visible and r.end.x > view.position.x and r.position.x < view.end.x
@@ -4162,7 +4130,10 @@ func _fill_panel(kind: String, items: Array, builder: Callable) -> void:
 	_bfam = fam
 	var keep := 0 if switched else _bscroll.scroll_horizontal
 	for c in _brow.get_children():
-		_brow.remove_child(c)
+		# hidden and freed at the frame's end, not taken out of the tree now: a tween bound to the card or its CTA (the
+		# press, the coach's pulse on a tray CTA whose tap rebuilds the tray) would still be stepped this frame, and a
+		# tween asks its node can_process() — «Condition "!is_inside_tree()" is true», once a run (playtest 2, Q3.10)
+		(c as CanvasItem).visible = false
 		c.queue_free()
 	var ns := 26  # the names of a row share one size: the smallest any card needed
 	var ctas: Array = []  # and so do their buttons' captions and prices (§4.1 sibling offers: one tray, one set)
@@ -4174,7 +4145,7 @@ func _fill_panel(kind: String, items: Array, builder: Callable) -> void:
 			if (card as Kit.KitCard).cta != null:
 				ctas.append((card as Kit.KitCard).cta)
 	for card in _brow.get_children():
-		if card is Kit.KitCard:
+		if card is Kit.KitCard and not card.is_queued_for_deletion():
 			(card as Kit.KitCard).name_label.add_theme_font_size_override("font_size", ns)
 	Kit.unify(ctas)
 	_bscroll.set_deferred("scroll_horizontal", keep)
