@@ -1459,9 +1459,9 @@ away.title,Пока вас не было,While you were away
 away.gone,Вас не было %s,You were away %s
 away.income,Доход ждёт на гексах,Income waiting on your hexes
 away.collected,Патент собрал доход сам,The Patent collected the income
-away.strike_held,Удар по «%s» отбит: +%d золота,Strike on “%s” repelled: +%d gold
-away.strike_lost,Удар по «%s»: занято гексов — %d,Strike on “%s”: %d hexes occupied
-away.war_cap,Война с «%s» закончилась по сроку,The war with “%s” ran out of time
+away.strike_held,Удар по «%s» отбит,Strike on “%s” repelled
+away.strike_lost,Оборона прорвана: «%s»,Defence broken: “%s”
+away.war_cap,Срок войны истёк: «%s»,War time ran out: “%s”
 away.patent_end,Державный патент закончился,The Sovereign Patent has ended
 away.trial_end,Пробный патент закончился,The Patent trial has ended
 away.pass_end,Сезон Военного пропуска закончился,The War Pass season has ended
@@ -1473,3 +1473,5 @@ toast.strike_held,Удар по «%s» отбит: +%d золота,Strike on �
 toast.strike_lost,Оборона прорвана: занято гексов — %d,Defence broken: %d hexes occupied
 toast.raid_banner,Пока вас не было — удар по «%s»: письмо в почте,"While you were away, a strike on “%s”: see the mail"
 toast.offline_double,Доход за время отсутствия удвоен,Income from your absence doubled
+away.strike_gold,+%d золота · +2 к военному счёту,+%d gold · +2 war score
+away.strike_hexes,Занято гексов: %d — верните их наступлением,%d hexes occupied: win them back with an offensive

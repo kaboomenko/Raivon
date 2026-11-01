@@ -2387,7 +2387,7 @@ func _q3() -> void:
 	for l in t.ui._modal.find_children("*", "Label", true, false) if t.ui._modal != null else []:
 		sum_texts.append((l as Label).text)
 	var joined: String = " | ".join(sum_texts)
-	_check(t.ui.has_modal() and joined.contains(t.tr("away.title")) and joined.contains(t.tr("away.strike_held") % [t._cell_name(cap_hex), 272]),
+	_check(t.ui.has_modal() and joined.contains(t.tr("away.title")) and joined.contains(t.tr("away.strike_held") % t._cell_name(cap_hex)) and joined.contains(t.tr("away.strike_gold") % 272),
 		"26 h away: the summary lists the strike and its result (%s)" % joined.substr(0, 160))
 	t._away_collect(false)
 	_check(not t.ui.has_modal() and not t._away_due, "«Собрать всё» closes the summary")

@@ -842,7 +842,8 @@ func _away_capturing() -> bool:
 func _strike_news(hex: int, held: bool, n: int) -> void:
 	if _away_capturing():
 		_away_events.append({"icon": "shield" if held else "hex_scorched",
-			"title": (tr("away.strike_held") if held else tr("away.strike_lost")) % [_cell_name(hex), n]})
+			"title": (tr("away.strike_held") if held else tr("away.strike_lost")) % _cell_name(hex),
+			"sub": (tr("away.strike_gold") if held else tr("away.strike_hexes")) % n})
 		if not _away_due:
 			ui.toast(tr("toast.raid_banner") % _cell_name(hex), "swords", "info" if held else "error", true)
 		return
@@ -886,7 +887,10 @@ func _show_away() -> void:
 			"tile_h": 168.0})
 	var rows: Array = []
 	for e in _away_events:
-		rows.append({"icon": String(e["icon"]), "title": String(e["title"])})
+		var row := {"icon": String(e["icon"]), "title": String(e["title"])}
+		if e.has("sub"):
+			row["sub"] = String(e["sub"])
+		rows.append(row)
 	var t0 := int(_away[0])
 	if patent.until > t0 and patent.until <= int(_away[1]):
 		rows.append({"icon": "charter", "title": tr("away.trial_end") if not purchases.has("iap_sub_patent") else tr("away.patent_end")})
