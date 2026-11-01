@@ -28,6 +28,7 @@ import sys
 import tempfile
 
 import bpy
+from mathutils import Vector
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import kit  # noqa: E402
@@ -146,6 +147,7 @@ RIBBON_Z = 0.03     # over the tile tops (z 0) and the models' lifted bases (z �
                     # under the walls and the troops that stand on it
 SOFT_ROUNDS = 3     # Chaikin rounds: a corner cut to ≈ SOFT_R = 0.3 of the hex radius (§6.1 rule 2)
 LIFT = 0.0015       # each era model this much over the previous one (no coplanar bases)
+SEAM_Z = -0.06      # the soil floor of the seams between tiles (seam_floor)
 
 # tiles: a diagonal path of 8 era hexes from the front (bottom of frame) to the back, wild hexes around
 PATH = [(-2, 3), (-1, 2), (-1, 1), (0, 0), (0, -1), (1, -2), (1, -3), (2, -4)]
@@ -156,6 +158,30 @@ FRAMES = {
     "portrait": ((4.5, 12.5, 8.0), (0.5, 0.4, 0.9), 38),
     "feature": ((-6.64, 8.94, 4.0), (0.86, 0.84, 1.7), 27),
 }
+# the sky's strength per frame, and a cool fill sun from behind the camera (its share of the key's energy): the low
+# feature camera looks under the conifers' tiers and into the gaps at their feet, which the B4.6 light (sky 0.9, no
+# fill) left near-black (compose_keyart's check: runs of 17 px under rgb 24 by the DL3/DL4 hexes). A fill of 0.25
+# clears it; sky 1.1 with fill 0.4 cleared it too but flattened the frame
+SKY = {"portrait": 0.9, "feature": 0.9}
+FILL = {"portrait": 0.0, "feature": 0.25}
+FILL_COLOR = (0.66, 0.76, 0.91)  # the map's sky fill #A9C1E8, linear
+
+
+def seam_floor(centres, material):
+    """A soil floor SEAM_Z under the tiles' tops, one full hexagon (radius 1, the exact tiling, so they meet edge to
+    edge without overlapping) under each tile: the 0.03 seams between the 0.985 tiles end on lit soil instead of
+    the 0.95-deep slot, which a low camera (the feature frame) saw as near-black runs (compose_keyart's check)."""
+    verts, faces = [], []
+    for (x, y) in centres:
+        base = len(verts)
+        verts += [(x + math.cos(math.pi / 3 * k), y + math.sin(math.pi / 3 * k), SEAM_Z) for k in range(6)]
+        faces.append(tuple(range(base, base + 6)))
+    me = bpy.data.meshes.new("seam_floor")
+    me.from_pydata(verts, [], faces)
+    o = bpy.data.objects.new("seam_floor", me)
+    bpy.context.collection.objects.link(o)
+    o.data.materials.append(material)
+    return o
 
 
 def outline(cells):
@@ -254,6 +280,7 @@ def main(argv):
     dirt = noisy_mat("dirt", "#8a5a34", "#a8743f", 6.0)
 
     era = {c: len(PATH) - i for i, c in enumerate(PATH)}  # huts nearest the camera, citadel at the back
+    floor = []
     for q in range(-5, 6):
         for r in range(-7, 7):
             x, y = hex_xy(q, r)
@@ -261,6 +288,8 @@ def main(argv):
                 continue
             enemy = q >= 2 and (q, r) not in era
             hex_prism(f"h{q}_{r}", (x, y, 0), 0.985, 0.95, grass_red if enemy else grass, dirt, bevel=0.035)
+            floor.append((x, y))
+    seam_floor(floor, dirt)
 
     border_ribbon(list(era))
 
@@ -285,7 +314,7 @@ def main(argv):
     world.use_nodes = True
     bg = world.node_tree.nodes["Background"]
     bg.inputs["Color"].default_value = (0.55, 0.75, 1.0, 1)
-    bg.inputs["Strength"].default_value = 0.9
+    bg.inputs["Strength"].default_value = SKY[frame]
 
     sun = bpy.data.lights.new("sun", "SUN")
     sun.energy = 4.0
@@ -295,6 +324,15 @@ def main(argv):
     scene.collection.objects.link(so)
 
     loc, aim, lens = FRAMES[frame]
+    if FILL[frame] > 0:  # along the view, from behind the camera: it lights what the camera sees of the undersides
+        fill = bpy.data.lights.new("fill", "SUN")
+        fill.energy = sun.energy * FILL[frame]
+        fill.angle = math.radians(30)
+        fill.color = FILL_COLOR
+        fo = bpy.data.objects.new("fill", fill)
+        view = Vector(aim) - Vector(loc)
+        fo.rotation_euler = view.to_track_quat("-Z", "Y").to_euler()
+        scene.collection.objects.link(fo)
     cam = bpy.data.cameras.new("cam")
     cam.lens = lens
     co = bpy.data.objects.new("cam", cam)

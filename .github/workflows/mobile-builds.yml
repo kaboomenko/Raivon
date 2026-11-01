@@ -1,15 +1,24 @@
 # Builds the test versions and uploads them as downloadable artifacts (Actions → run → Artifacts):
 #  - Raivon-android-apk: debug APK for the Samsung (install directly);
 #  - Raivon-ios-xcode: Xcode project for iPhone — open on the MacBook, pick a Team, press Run.
+#  - Raivon-android-aab (job android-release): the Google Play build — a signed AAB from the «Android Release»
+#    preset; on a v* tag, or a manual run with «Android release (AAB)» ticked.
 # See docs/testing_on_devices.md. An .ipa needs macOS + signing and is done in Xcode.
 name: Mobile builds
 
 on:
   workflow_dispatch:
+    inputs:
+      android_release:
+        description: "Android release (AAB for Google Play, needs the upload key in the repository secrets)"
+        type: boolean
+        default: false
   push:
     branches: [claude/funny-maxwell-5e3vez, main]
     # only on version bumps (export_presets.cfg changes) — artifacts are large
     paths: ["game/export_presets.cfg", ".github/workflows/mobile-builds.yml"]
+    # a release tag (path filters do not apply to tags) also builds the AAB
+    tags: ["v*"]
 
 jobs:
   export:
@@ -66,4 +75,134 @@ jobs:
         with:
           name: Raivon-android-apk
           path: builds/raivon-debug.apk
+          retention-days: 30
+
+  # The Google Play build: «Android Release» (gradle build, AAB, target SDK 36 — Play's requirement for new apps and
+  # updates since 2026-08-31 — min SDK 24), signed with the upload key; Play App Signing re-signs it for the store.
+  # Repository secrets (Settings → Secrets and variables → Actions):
+  #   ANDROID_UPLOAD_KEYSTORE_BASE64    the upload keystore (.jks / .keystore / .p12), base64 -w0
+  #   ANDROID_UPLOAD_KEY_ALIAS          the key's alias
+  #   ANDROID_UPLOAD_KEYSTORE_PASSWORD  the keystore's password
+  #   ANDROID_UPLOAD_KEY_PASSWORD       the key's own password, only if it differs from the keystore's (Godot signs
+  #                                     with one password, so such a key is copied into a PKCS12 store first)
+  # Without them the job says so and ends green without building: there is nothing to sign the AAB with.
+  android-release:
+    if: >-
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
+      (github.event_name == 'workflow_dispatch' && inputs.android_release)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GODOT_VERSION: 4.5.1
+    steps:
+      - name: Upload key in the secrets?
+        id: key
+        env:
+          KS: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          PASS: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+        run: |
+          if [ -n "$KS" ] && [ -n "$ALIAS" ] && [ -n "$PASS" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Android release skipped::No upload key in the repository secrets (ANDROID_UPLOAD_KEYSTORE_BASE64, ANDROID_UPLOAD_KEY_ALIAS, ANDROID_UPLOAD_KEYSTORE_PASSWORD): nothing to sign the AAB with."
+          fi
+      - uses: actions/checkout@v4
+        if: steps.key.outputs.ok == 'true'
+      - name: Android SDK platform 35 and build tools (the 4.5.1 template compiles against API 35)
+        if: steps.key.outputs.ok == 'true'
+        run: |
+          set -e
+          sdk="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$sdk" --licenses > /dev/null || true
+          "$sdk" --install "platforms;android-35" "build-tools;35.0.0" "platform-tools" > /dev/null
+      - name: Download Godot and the export templates
+        if: steps.key.outputs.ok == 'true'
+        run: |
+          set -e
+          base=https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable
+          curl -sSL -o godot.zip "$base/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          unzip -q godot.zip
+          curl -sSL -o templates.tpz "$base/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
+          dest="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+          mkdir -p "$dest"
+          unzip -q -j templates.tpz "templates/android_source.zip" "templates/android_debug.apk" \
+            "templates/android_release.apk" "templates/version.txt" -d "$dest"
+      - name: Upload keystore
+        if: steps.key.outputs.ok == 'true'
+        env:
+          KS: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          ALIAS: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          PASS: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+          KEYPASS: ${{ secrets.ANDROID_UPLOAD_KEY_PASSWORD }}
+        run: |
+          set -e
+          ks="$RUNNER_TEMP/upload.keystore"
+          echo "$KS" | base64 -d > "$ks"
+          if [ -n "$KEYPASS" ] && [ "$KEYPASS" != "$PASS" ]; then
+            keytool -importkeystore -noprompt -srckeystore "$ks" -srcstorepass "$PASS" -srcalias "$ALIAS" \
+              -srckeypass "$KEYPASS" -destkeystore "$RUNNER_TEMP/upload.p12" -deststoretype PKCS12 \
+              -deststorepass "$PASS" -destkeypass "$PASS" -destalias "$ALIAS"
+            ks="$RUNNER_TEMP/upload.p12"
+          fi
+          keytool -list -keystore "$ks" -storepass "$PASS" -alias "$ALIAS" > /dev/null  # a wrong alias or password fails here
+          echo "UPLOAD_KEYSTORE=$ks" >> "$GITHUB_ENV"
+      - name: Editor settings (SDK, JDK 17, a debug keystore the export checks for)
+        if: steps.key.outputs.ok == 'true'
+        run: |
+          keytool -genkeypair -v -keystore "$HOME/debug.keystore" -storepass android -alias androiddebugkey \
+            -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          mkdir -p "$HOME/.config/godot"
+          cat > "$HOME/.config/godot/editor_settings-4.5.tres" <<EOT
+          [gd_resource type="EditorSettings" format=3]
+          [resource]
+          export/android/android_sdk_path = "$ANDROID_HOME"
+          export/android/java_sdk_path = "$JAVA_HOME_17_X64"
+          export/android/debug_keystore = "$HOME/debug.keystore"
+          export/android/debug_keystore_user = "androiddebugkey"
+          export/android/debug_keystore_pass = "android"
+          EOT
+          sed -i 's/^          //' "$HOME/.config/godot/editor_settings-4.5.tres"
+      - name: Import, install the Android build template, keep the Back key at target SDK 36
+        if: steps.key.outputs.ok == 'true'
+        run: |
+          set -e
+          G=./Godot_v${GODOT_VERSION}-stable_linux.x86_64
+          $G --headless --path game --import || true
+          # Godot installs the gradle template only as part of an export (--install-android-build-template alone
+          # does nothing). This export is meant to stop at its configuration check (no release keystore), after the
+          # template is in game/android/build, so the manifest can be patched before the real export below.
+          GODOT_ANDROID_KEYSTORE_RELEASE_PATH="$RUNNER_TEMP/none.keystore" \
+            $G --headless --path game --install-android-build-template --export-release "Android Release" \
+            "$RUNNER_TEMP/unused.aab" || true
+          test -f game/android/.build_version
+          echo "template $(cat game/android/.build_version)"
+          # Android 16 at target SDK 36 no longer sends KEYCODE_BACK / onBackPressed (predictive back), and the
+          # 4.5.1 template's activity listens for those; the documented opt-out keeps the Back key (and the back
+          # gesture) reaching the game's own handling until Godot handles OnBackInvokedCallback itself.
+          m=game/android/build/AndroidManifest.xml
+          sed -i 's|<application|<application android:enableOnBackInvokedCallback="false"|' "$m"
+          grep -q 'android:enableOnBackInvokedCallback="false"' "$m"
+      - name: Export the signed AAB
+        if: steps.key.outputs.ok == 'true'
+        env:
+          GODOT_ANDROID_KEYSTORE_RELEASE_USER: ${{ secrets.ANDROID_UPLOAD_KEY_ALIAS }}
+          GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_PASSWORD }}
+        run: |
+          set -e
+          mkdir -p builds
+          GODOT_ANDROID_KEYSTORE_RELEASE_PATH="$UPLOAD_KEYSTORE" \
+            ./Godot_v${GODOT_VERSION}-stable_linux.x86_64 --headless --path game --export-release "Android Release" \
+            ../builds/raivon-release.aab
+          test -f builds/raivon-release.aab
+          # signed with the upload key («jar verified»; an unsigned bundle says «jar is unsigned»)
+          jarsigner -verify builds/raivon-release.aab | tee "$RUNNER_TEMP/verify.txt" | tail -2
+          grep -q 'jar verified' "$RUNNER_TEMP/verify.txt"
+          rm -f "$UPLOAD_KEYSTORE" "$RUNNER_TEMP/upload.keystore"
+      - uses: actions/upload-artifact@v4
+        if: steps.key.outputs.ok == 'true'
+        with:
+          name: Raivon-android-aab
+          path: builds/raivon-release.aab
           retention-days: 30

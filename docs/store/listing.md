@@ -30,7 +30,7 @@ Collect income from every hex, send convoys to golden deposits outlined in yello
 🛡 YOU NEVER LOSE EVERYTHING
 Defeat costs land and loot, never your capital or your progress. Every rival has a leader, a temper and a memory.
 
-The game requires an internet connection. Contains optional in-app purchases, including random items (loot boxes) with published odds and guarantees.
+Plays offline: no internet connection is needed to play. Contains optional in-app purchases, including random items (loot boxes) with published odds and guarantees.
 
 ## Русский
 
@@ -60,7 +60,7 @@ The game requires an internet connection. Contains optional in-app purchases, in
 🛡 ВСЁ НЕ ПОТЕРЯТЬ
 Поражение стоит земли и добычи, но не столицы и не прогресса. У каждого соседа свой лидер, характер и память.
 
-Нужен интернет. Есть необязательные покупки, в том числе случайные предметы (кейсы) с опубликованными шансами и гарантом.
+Играть можно без интернета. Есть необязательные покупки, в том числе случайные предметы (кейсы) с опубликованными шансами и гарантом.
 
 ## Анкеты рейтинга (подсказки)
 - Насилие: мультяшное, без крови, без реалистичного насилия над людьми.
@@ -70,6 +70,20 @@ The game requires an internet connection. Contains optional in-app purchases, in
 - Сбор данных: см. `privacy_policy.md`.
 
 ## Графика
-- Ключевой арт (портрет): `docs/store/keyart_portrait.png` (рендер Blender из моделей игры + заголовок; пересборка: `tools/blender/render_keyart.py` → `tools/ui/compose_keyart.py`).
-- Скриншоты: `docs/screens/` (свежие кадры — `tools/godot_shot.sh` с `--demo=…`). Для сторов нужны 1080×1920 (Google) и 1290×2796 (iPhone 6.7").
-- Иконка: `game/assets/icon/icon_512.png` (Google требует 512×512; Apple — 1024×1024, пересобрать `tools/blender/render_icon.py` с большим размером).
+
+Всё собирается скриптами из моделей игры; после правок моделей или экранов — пересобрать и просмотреть в реальном размере.
+
+| Файл | Размер | Куда | Как собрать |
+|---|---|---|---|
+| `game/assets/icon/icon_1024.png` | 1024×1024, без альфы | App Store (иконка приложения, `export_presets.cfg` iOS `icons/icon_1024x1024`) | `python3 tools/blender/render_icon.py game/assets/icon` |
+| `game/assets/icon/icon_512.png` | 512×512, без альфы | Google Play (иконка карточки), иконка проекта, старая иконка лаунчера Android | там же |
+| `game/assets/icon/icon_fg_432.png`, `icon_bg_432.png`, `icon_mono_432.png` | 432×432 | адаптивная иконка Android: передний план (замок в безопасном круге 66 dp), фон (тёплое небо), монохромная для тематических иконок Android 13+ | там же |
+| `docs/store/keyart_portrait.png` | 941×1672 | ключевой арт (портрет) | `python3 tools/blender/render_keyart.py R.png` → `python3 tools/ui/compose_keyart.py R.png OUT.png` |
+| `game/assets/splash/splash.png` | 941×1672 | заставка запуска: тот же кадр, верх и низ растворяются в цвете фона заставки #080F29 (на телефонах 19.5:9–20:9 полосы над и под ней — часть картинки) | тот же рендер → `compose_keyart.py R.png OUT.png --edge-fade=080F29` |
+| `docs/store/feature_graphic.png` | 1024×500, без альфы | Google Play: «Значок для рекомендаций» (feature graphic) | `render_keyart.py R.png 2048 1000 48 --frame=feature` → `compose_keyart.py R.png OUT.png --layout=feature` |
+| `docs/store/screens/<набор>_<размер>/<язык>/NN_<сцена>.png` (наборы `play`, `iphone`) | Google Play 1080×1920; iPhone 6.9″/6.7″ 1290×2796 | скриншоты ru и en: карта, бой с картами, мирный договор, церемония, город УР8, альбом командиров | `tools/store_shots.sh` (`--dry-run` покажет вызовы; полный набор ≈ час) |
+
+- Play принимает скриншоты, у которых длинная сторона не больше двух коротких: поэтому 1080×1920 (9:16), а не 1080×2400 современного телефона. App Store Connect требует только 6.9″ (1290×2796 принимается).
+- iPad: приложение только для iPhone (`export_presets.cfg` iOS `targeted_device_family=0`; было «iPhone и iPad»). На 3:4 интерфейс, сверстанный под холст 9:16, разъезжается: правая колонка (миникарта, «Фронт/Столица/Форт/Башня») и нижние карточки обрываются посреди экрана (проверка 2026-11-01, кадр 2064×2752). На iPad игра откроется в режиме совместимости с iPhone; скриншотов 13″ не нужно. Набор `ipad` в `tools/store_shots.sh` оставлен для будущей вёрстки под планшет.
+- Скриншоты снимать заново после каждого изменения экранов (в частности, после шагов Q1–Q4 второго плейтеста).
+- Старые кадры для документации — `docs/screens/` (`tools/godot_shot.sh` с `--demo=…`).

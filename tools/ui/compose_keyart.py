@@ -1,11 +1,14 @@
 """Adds the title to the rendered key art → splash / loading screen and store art.
 Run: python3 tools/ui/compose_keyart.py RENDER.png OUT.png [--subtitle "Territory Wars"] [--allow-black]
-                                        [--layout=portrait|feature]
+                                        [--layout=portrait|feature] [--edge-fade=RRGGBB]
      python3 tools/ui/compose_keyart.py --check IMAGE.png   (the black-hole check alone; exit 1 on a hole)
 --layout=portrait (default): the title over the top of a portrait render, at its size (the splash and
 docs/store/keyart_portrait.png, 941×1672). --layout=feature: the Play feature graphic — the render (render_keyart.py
 --frame=feature, 2048×1000) scaled to FEATURE_SIZE 1024×500, the title centred over the sky band, nothing within
 FEATURE_EDGE of the left and right edges (Play crops and overlays the graphic's edges in some placements).
+--edge-fade=RRGGBB (the splash): the top and bottom EDGE_FADE of the image melt into that colour — the boot splash's
+background (project.godot boot_splash/bg_color #080F29), which fills the bars above and below the 16:9 splash on a
+19.5:9 / 20:9 phone (boot_splash/fullsize keeps the aspect), so the bars read as part of the picture.
 
 Before composing it checks the render for black holes in the land (black_runs): Cycles renders the overlap of two
 coplanar faces black, and nothing in the soft style is darker than ≈ #2A2A30 (docs/art_direction.md §6.1 rule 3), so a
@@ -143,5 +146,17 @@ for y in range(H):
 im = Image.alpha_composite(im, title)
 sub = text_layer(subtitle.upper(), S_SIZE, (235, 242, 255, 255), (20, 40, 90, 255), S_Y, spacing=S_SPACE)
 im = Image.alpha_composite(im, sub)
+EDGE_FADE = (0.035, 0.07)  # the share of the height that melts into --edge-fade at the top and at the bottom
+fade = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--edge-fade=")), None)
+if fade:
+    col = tuple(int(fade.lstrip("#")[i:i + 2], 16) for i in (0, 2, 4))
+    edge = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ed = ImageDraw.Draw(edge)
+    top, bottom = int(H * EDGE_FADE[0]), int(H * EDGE_FADE[1])
+    for y in range(top):
+        ed.line([(0, y), (W, y)], fill=col + (int(255 * (1 - y / top) ** 1.5),))
+    for k in range(bottom):
+        ed.line([(0, H - 1 - k), (W, H - 1 - k)], fill=col + (int(255 * (1 - k / bottom) ** 1.5),))
+    im = Image.alpha_composite(im, edge)
 im.convert("RGB").save(out)
 print(out)
