@@ -8,6 +8,7 @@ const MapGen := preload("res://scripts/sim/map_gen.gd")
 const War := preload("res://scripts/sim/war.gd")
 const Kit := preload("res://scripts/ui_kit.gd")
 const CameraRig := preload("res://scripts/camera_rig.gd")
+const L := preload("res://scripts/l10n.gd")
 
 var fails := 0
 
@@ -399,7 +400,7 @@ func _run() -> void:
 		g._select(dhex)
 		var wild_next: bool = g.sim.cells[dhex]["owner"] == Types.NOBODY and g._touches_player(dhex)
 		_check(g.ui._action2_kind == "convoy" or (wild_next and g.ui._action_kind == "convoy" and String(g.ui._primary_args[0]) == "colonize"),
-			"deposit hex offers a convoy")
+			"deposit hex offers a convoy (%s / %s, mode %d, war %s, ultimatum %s)" % [str(g.ui._primary_args.slice(0, 4)), g.ui._action_kind, g.mode, str(g.war.get("enemy", -1)), str(g.ultimatum.get("state", -1))])
 		g._on_action("convoy")
 		g.time_offset += 61
 		g._econ_tick()
@@ -499,7 +500,7 @@ func _run() -> void:
 	g = await _after_first_peace()
 	g.ultimatum_at = g.now_s() - 1
 	g._ai_tick(g.now_s())
-	_check(not g.ultimatum.is_empty() and g._unread() == 1, "ultimatum issued and posted to the inbox")
+	_check(not g.ultimatum.is_empty() and g._unread_letters() == 1 and g._unread() == 2, "ultimatum issued and posted to the inbox (the mail stays lit while it waits)")
 	var uhex: int = g.ultimatum["hex"]
 	g._answer_ultimatum("refuse")
 	_check(not g.war.is_empty() and g.war["ai_goal"] == uhex and g.war.has("strike_at"), "refusal starts an AI war with an announced strike")
@@ -821,15 +822,22 @@ func _run() -> void:
 		var sc5: float = War.war_score(g.sim, g.war)["score"]
 		var bud: Node = g.ui._modal.find_child("budget", true, false)
 		var cap5 := String((bud.get_node("label") as Label).text) if bud != null else ""
-		var rest5 := Kit.fmt_dec(sc5 - spent, 1).trim_suffix(",0").trim_suffix(".0")
-		_check(all_in and pk.size() == mini(c5.size(), g.FTUE_PEACE1_HEXES) and cap5 == g.tr("peace.budget_rest") % [Kit.fmt_dec(spent, 1), Kit.fmt_dec(sc5, 1), rest5],
-			"the first treaty takes the haul (3 hexes at most), the rest of the points go to opinion (%s of %s; «%s»)" % [str(pk), str(c5), cap5])
+		# the bar says the treaty's whole opinion change (A-low): the land −2 a value, the leftover +1 a point, mercy +20
+		var net5: float = maxf(-2.0 * land_v, -40.0) + Types.round1(sc5 - spent) + float(g.PLUNDER_OPINION[0])
+		_check(all_in and pk.size() == mini(c5.size(), g.FTUE_PEACE1_HEXES) and cap5 == g.tr("peace.budget_rest") % [Kit.fmt_dec(spent, 1), Kit.fmt_dec(sc5, 1), g._signed_dec(net5)],
+			"the first treaty takes the haul (3 hexes at most), its bar says the opinion it brings (%s of %s; «%s»)" % [str(pk), str(c5), cap5])
 		var op5: float = g._opinion_of(MapGen.BARONS)
 		var pl5: int = g.plunder_level
 		g._sign_peace()
-		var want5: float = -2.0 * land_v + Types.round1(sc5 - spent) + float(g.PLUNDER_OPINION[pl5])
+		var want5: float = maxf(-2.0 * land_v, -40.0) + Types.round1(sc5 - spent) + float(g.PLUNDER_OPINION[pl5])
 		_check(absf(g._opinion_of(MapGen.BARONS) - op5 - want5) < 0.2,
-			"the points left over become the Barons' opinion, +1 a point (%.1f → %.1f, want %+.1f)" % [op5, g._opinion_of(MapGen.BARONS), want5])
+			"the treaty changes the Barons' opinion as its bar said (%.1f → %.1f, want %+.1f)" % [op5, g._opinion_of(MapGen.BARONS), want5])
+		var dove5 := ""
+		for it in g._ceremony.get("items", []):
+			if String((it as Dictionary).get("icon", "")) == "dove":
+				dove5 = String(it.get("text", ""))
+		_check(dove5 == g._signed_dec(want5) and absf(want5 - net5) < 0.05,
+			"the ceremony's dove says the same change as the bar («%s», bar %s)" % [dove5, g._signed_dec(net5)])
 		_check(g.ftue == 0, "FTUE coach hidden during the ceremony")
 		for i in 80:
 			g._step_ceremony(0.1)
@@ -1320,7 +1328,9 @@ func _run() -> void:
 		g.econ._find_type("residence")["level"] = 3
 	g.opinion[4] = 10.0
 	_check(g._ally_reason(4) != "", "no alliance at low opinion")
-	g.opinion[4] = 45.0
+	g._opinion_set(4, 45.0)
+	_check(g._ally_reason(4) != "", "no alliance at opinion 45: the canon's 50 for every archetype (06 §13.1; %.1f)" % g._opinion_of(4))
+	g._opinion_set(4, 50.0)
 	g._on_diplomacy_action(4, "ally")
 	_check(g.allies.has(4) and int(g.stats.get("alliances", 0)) >= 1, "alliance with the River League signed")
 	_check(g.sim.player_allies.has(4), "the ally's land opens to our marches")
@@ -1336,7 +1346,7 @@ func _run() -> void:
 	# «Призыв»: an ally with opinion 60+ joins our offensive war for −5 opinion
 	var wg: Array = War.recommend_goals(g.sim, 2, 1)
 	g.war = War.declare_war(g.sim, 2, wg[0] if wg.size() > 0 else 0)
-	g.opinion[4] = 70.0
+	g._opinion_set(4, 70.0)
 	_check(g._can_call(4), "the ally can be called into our war")
 	g._on_diplomacy_action(4, "call")
 	_check(g.war.has("called_4") and absf(g._opinion_of(4) - 65.0) < 0.6, "ally called in (opinion %.0f)" % g._opinion_of(4))
@@ -1629,7 +1639,7 @@ func _run() -> void:
 	# Non-aggression pact (06 §11): 8 h of gold, 48 h, archetype threshold, one at a time, no war in the pair
 	var pst: int = g._ai_states()[0]
 	g.ultimatum = {}  # an open ultimatum blocks a pact with its sender; the daily rolls depend on the clock
-	g.opinion[pst] = 10.0
+	g._opinion_set(pst, 10.0)
 	g.econ.res["gold"] = 100000
 	_check(g._pact_reason(pst) == "", "a pact can be signed at opinion 10 (%s, %.1f)" % [g._pact_reason(pst), g._opinion_of(pst)])
 	g._on_diplomacy_action(pst, "pact")
@@ -1800,6 +1810,197 @@ func _run() -> void:
 	g5.save_enabled = false
 	_check(Save.apply(g5, Save.read()) and g5.sim.cells.size() == g.sim.cells.size() and g5.chapter == 4, "chapter IV save restores ring IV (%d cells)" % g5.sim.cells.size())
 	g5.free()
+	g.queue_free()
+	await process_frame
+
+	# Q2 (playtest 2, wars and diplomacy in chapters II–IV) ----------------------------------------------------------
+	# (1) an ultimatum never replaces a war (B-H1): «Война!» waits for its answer, an AI war holds it, a refusal comes after
+	g = await _after_first_peace()
+	g.ultimatum_at = -1
+	g._issue_ultimatum(g.now_s(), MapGen.BARONS)
+	g.ui.close_modal()
+	_check(g._ult_buyout() == 0, "the Wolf's ultimatum has no buyout (canon §9.1)")
+	g._select(-1)
+	g._refresh_ui()
+	_check(g.ui._status_args.size() > 0 and String(g.ui._status_args[0]) == "ultimatum" and g._unread() >= 1,
+		"an ultimatum closed with ✕ keeps its deadline on the map and the mail lit (%s)" % str(g.ui._status_args.slice(0, 3)))
+	var q2h: Array = War.recommend_goals(g.sim, MapGen.HAMLETS, 1)
+	if q2h.size() > 0:
+		g._select(q2h[0])
+		g._refresh_ui()
+		_check(g.ui._action2_kind == "ult_wait" and String(g.ui._primary_args[2]) == "lock", "«Война!» on the Hamlets is locked while the Barons' ultimatum waits (%s)" % g.ui._action2_kind)
+		g._on_action("ult_wait")
+		_check(g.ui.has_modal(), "the locked «Война!» opens the ultimatum again")
+		g.ui.close_modal()
+		g._declare(MapGen.HAMLETS, q2h[0])
+		_check(g.war.is_empty(), "no war is declared while an ultimatum waits")
+	g._answer_ultimatum("refuse")
+	g._set_mode(g.Mode.WAR)
+	var q2w0: Dictionary = g.war.duplicate()
+	var q2ph := -1
+	for c in g.sim.cells:
+		if q2ph < 0 and int(c["owner"]) == Types.PLAYER and Types.is_passable(c) and g._touches_owner(c["id"], MapGen.HAMLETS) and not MapGen.core_of(g.sim, Types.PLAYER).has(c["id"]):
+			q2ph = c["id"]
+	g.ultimatum = {"state": MapGen.HAMLETS, "hex": maxi(0, q2ph), "tribute": 100000, "deadline": g.now_s() + 60}
+	_check(g._ult_buyout() == mini(50000, int(g.econ.storage_cap()["gold"]) * 9 / 10), "a Fox's buyout is half the tribute, at most 90%% of the gold cap (%d)" % g._ult_buyout())
+	g.war.erase("strike_at")
+	g.war.erase("strike_hex")
+	g.time_offset += 1800
+	g._econ_tick()
+	_check(int(g.war.get("enemy", -1)) == MapGen.BARONS and int(g.war.get("started", 0)) == int(q2w0["started"]) and int(g.ultimatum.get("held", 0)) == 1 and g._ult_left() > 0,
+		"an ultimatum due during the Barons' war is held: the running war is never replaced (enemy %s)" % str(g.war.get("enemy", -1)))
+	g._answer_ultimatum("refuse")
+	_check(int(g.war.get("enemy", -1)) == MapGen.BARONS and int(g.ultimatum.get("refused", 0)) == 1, "a refusal during a war waits for that war's end")
+	War.white_peace(g.sim)
+	g._finish_war(MapGen.BARONS, "test", "", true)
+	g.time_offset += 60
+	g._econ_tick()
+	_check(int(g.war.get("enemy", -1)) == MapGen.HAMLETS and g.war.has("ult_refused") and g.ultimatum.is_empty(),
+		"the refused ultimatum's war comes once the running war ended by its own treaty (enemy %s)" % str(g.war.get("enemy", -1)))
+	g.war = {}
+	g._set_mode(g.Mode.MAP)
+	# (2) the war table by the war's chapter (canon §9.1, §9.15; 03 §2.4)
+	g.truce = {}
+	g.ultimatum = {}
+	g.chapter = 2
+	var q2g: Array = War.recommend_goals(g.sim, MapGen.BARONS, 1)
+	g._declare(MapGen.BARONS, q2g[0])
+	_check(int(g.war.get("chapter", 0)) == 2 and g._ai_energy(MapGen.BARONS) == 800 and int(g._war_rule("cap")) == 24 * 3600 and int(g._war_rule("truce")) == 8 * 3600,
+		"a chapter II war: cap 24 h, truce 8 h, AI energy ×0.8 (%d)" % g._ai_energy(MapGen.BARONS))
+	g.sim.states[MapGen.BARONS]["hegemon"] = true
+	g.war["chapter"] = 3
+	_check(int(g._war_rule("cap")) == 72 * 3600 and int(g._war_rule("truce")) == 24 * 3600 and g._ai_energy(MapGen.BARONS) == 1100,
+		"chapter III+: cap 72 h, truce 24 h, the hegemon's energy ×1.1 (%d)" % g._ai_energy(MapGen.BARONS))
+	g.sim.states[MapGen.BARONS].erase("hegemon")
+	g.war["chapter"] = 2
+	g.war.erase("strike_at")
+	g._schedule_counter(-1, true)
+	var q2left: int = int(g.war.get("strike_at", 0)) - g.now_s()
+	_check(q2left >= 4 * 3600 and q2left <= 6 * 3600 and not g.war.has("strike_hex"), "chapter II: the counter-strike lands 4–6 h after an offensive (%.2f h), not yet announced" % (q2left / 3600.0))
+	var q2n: int = g.inbox.size()
+	g.time_offset += q2left - 19 * 60
+	g._econ_tick()
+	_check(g.war.has("strike_hex") and g.inbox.size() > q2n, "the strike is announced 20 min ahead: the arrow and the letter")
+	g.war["chapter"] = 3
+	g.war.erase("strike_at")
+	g.war.erase("strike_hex")
+	g._schedule_counter(-1, true)
+	q2left = int(g.war.get("strike_at", 0)) - g.now_s()
+	_check(q2left >= 3 * 3600 and q2left <= 4 * 3600, "chapter III: the Wolf strikes 3–4 h after an offensive (%.2f h)" % (q2left / 3600.0))
+	g.war["chapter"] = 1
+	g.war.erase("strike_at")
+	g.war.erase("strike_hex")
+	g.war["strikes"] = 1
+	g._schedule_counter(-1, true)
+	_check(not g.war.has("strike_at"), "chapter I: no counter-strike after the war's one scripted strike")
+	g.war["chapter"] = 2
+	g.war["started"] = g.now_s()
+	g.war.erase("strike_at")
+	g.time_offset += 2 * 3600 + 60
+	g._set_mode(g.Mode.WAR)
+	g._econ_tick()
+	_check(not g.war.is_empty(), "a chapter II war goes on past chapter I's 2 h cap")
+	g.war.erase("strike_at")
+	g.war.erase("strike_hex")
+	g.time_offset += 22 * 3600
+	g._econ_tick()
+	if g.mode == g.Mode.CEREMONY:
+		for i in 80:
+			g._step_ceremony(0.1)
+		g._end_ceremony()
+	var q2cap := ""
+	for it in g.inbox:
+		if String(it["title"]) == "inbox.war_cap.title":
+			q2cap = L.t(it["text"])
+	_check(g.war.is_empty() and absf(g._truce_left(MapGen.BARONS) - 8 * 3600) < 120 and q2cap.contains("24"),
+		"the chapter II war closes at 24 h, an 8 h truce, the letter says 24 h («%s», truce %d s)" % [q2cap, g._truce_left(MapGen.BARONS)])
+	# a cap that ran out while the player was away 24 h+ is a white peace (canon §9.11)
+	g.truce = {}
+	g._set_mode(g.Mode.MAP)
+	g._declare(MapGen.BARONS, War.recommend_goals(g.sim, MapGen.BARONS, 1)[0])
+	g.war.erase("strike_at")
+	g.war["battles"] = 10
+	g._away = [g.now_s() + 3600, g.now_s() + 3600 + 30 * 3600]
+	g.time_offset += 30 * 3600 + 3600
+	g._econ_tick()
+	var q2away := false
+	for it in g.inbox:
+		q2away = q2away or String(L.t(it["text"])).begins_with(String(g.tr("inbox.war_cap.away")).get_slice("%", 0))
+	_check(g.war.is_empty() and q2away, "a war cap that ran out in a 24 h absence closes with a white peace")
+	g._away = [0, 0]
+	g.chapter = 1
+	g.truce = {}
+	g._set_mode(g.Mode.MAP)
+	# (3) the opinion model (06 §11): base, decay by archetype, memories saved
+	g.opinion = {}
+	var q2b: float = g._opinion_of(MapGen.HAMLETS)
+	var q2parts: Array = g._opinion_parts(MapGen.HAMLETS)
+	_check(q2parts.any(func(p): return p[0] == "op_base" and absf(float(p[1]) - 5.0) < 0.01), "a Fox's character: op_base +5 (%s)" % str(q2parts))
+	g._opinion_add(MapGen.HAMLETS, 10.0, "op_gift")
+	g.time_offset += 10 * 3600
+	_check(absf(g._opinion_of(MapGen.HAMLETS) - q2b - (10.0 - 10.0 * 0.25 * 1.25)) < 0.11, "a gift fades 0.25 × the Fox's 1.25 an hour (%.2f)" % (g._opinion_of(MapGen.HAMLETS) - q2b))
+	g._opinion_add(MapGen.BARONS, 10.0, "op_gift")
+	var q2w: float = g._opinion_of(MapGen.BARONS)
+	g.time_offset += 10 * 3600
+	_check(absf(q2w - g._opinion_of(MapGen.BARONS) - 3.75) < 0.11, "the Wolf forgets 1.5× as fast: −3.75 in 10 h (%.2f)" % (q2w - g._opinion_of(MapGen.BARONS)))
+	for i in 3:
+		g._opinion_add(MapGen.BARONS, -30.0, "op_annexed")
+	var q2an := 0.0
+	for p in g._opinion_parts(MapGen.BARONS):
+		if p[0] == "op_annexed":
+			q2an = float(p[1])
+	_check(q2an >= -40.05 and q2an <= -39.0, "annexations together never cost more than −40 (%.1f)" % q2an)
+	var q2d: Dictionary = JSON.parse_string(JSON.stringify(Save.to_dict(g)))
+	var q2g2: Node = load("res://scenes/main.tscn").instantiate()
+	q2g2.save_enabled = false
+	Save.apply(q2g2, q2d)
+	q2g2.time_offset = g.time_offset
+	_check(absf(q2g2._opinion_of(MapGen.BARONS) - g._opinion_of(MapGen.BARONS)) < 0.05 and q2g2._op_mems(MapGen.BARONS).size() == g._op_mems(MapGen.BARONS).size(),
+		"opinion memories survive a save (%.1f, %d memories)" % [q2g2._opinion_of(MapGen.BARONS), q2g2._op_mems(MapGen.BARONS).size()])
+	q2d["opinion"] = {str(MapGen.HAMLETS): 30.0}
+	Save.apply(q2g2, q2d)
+	var q2m: Array = q2g2.opinion.get(MapGen.HAMLETS, [])
+	_check(q2m.size() == 1 and String(q2m[0]["c"]) == "op_legacy" and absf(float(q2m[0]["v"]) - 30.0) < 0.01, "an older save's opinion number becomes one legacy memory")
+	q2g2.free()
+	# (4) readiness (canon §2.2 #3): below 50% an army sits the offensive out; none ready — the button waits
+	g._declare(MapGen.BARONS, War.recommend_goals(g.sim, MapGen.BARONS, 1)[0])
+	g.war.erase("strike_at")
+	g._set_mode(g.Mode.WAR)
+	var q2pa: Array = g._player_armies()
+	for a in q2pa:
+		a["str"] = int(a["max_str"]) / 5
+	g._refresh_ui()
+	_check(String(g.ui._primary_args[0]) == "recovering" and not bool(g.ui._primary_args[3]), "no army at 50%%: «В атаку!» waits for the refill (%s)" % str(g.ui._primary_args.slice(0, 2)))
+	g._start_offensive()
+	_check(g.battle == null, "no offensive with every army below 50%")
+	q2pa[0]["str"] = q2pa[0]["max_str"]
+	g._refresh_ui()
+	g._start_offensive()
+	_check(g.battle != null and (q2pa.size() < 2 or (bool(q2pa[1].get("rest", false)) and bool(q2pa[1]["routed"]) and not bool(q2pa[0].get("rest", false)))),
+		"an army below 50% sits the offensive out")
+	while g.battle != null and not g.battle.over:
+		g._battle_step()
+	g._end_offensive()
+	_check(q2pa.all(func(a): return not a.has("rest") and not bool(a["routed"])), "after the offensive every army is back with the rest")
+	g.ui.close_modal()
+	g.war = {}
+	g._set_mode(g.Mode.MAP)
+	# (5) coalitions never join two states at war with each other; the pact's price; the AI settlers' neutral chip
+	g.ai_wars = [{"a": MapGen.BARONS, "b": MapGen.HAMLETS, "until": g.now_s() + 86400, "next": g.now_s() + 7200}]
+	var q2nf: Array = g._no_feuds([MapGen.BARONS, MapGen.HAMLETS])
+	_check(q2nf.size() == 1, "of two states at war with each other only the stronger joins a coalition (%s)" % str(q2nf))
+	g.ai_wars = []
+	var q2it: Dictionary = {}
+	for it in g._diplomacy_items(g.now_s()):
+		if int((it as Dictionary).get("id", -1)) == MapGen.HAMLETS:
+			q2it = it
+	_check(int(q2it.get("pact_cost", 0)) == g._pact_cost() and q2it.has("opinion_parts") and bool(q2it.get("pact_over_cap", true)) == (g._pact_cost() > int(g.econ.storage_cap()["gold"])),
+		"the leader card carries the pact's price and the opinion's parts")
+	g.econ.res["gold"] = 0
+	g.pacts = {}
+	g._opinion_set(MapGen.HAMLETS, 10.0)
+	g._on_diplomacy_action(MapGen.HAMLETS, "pact")
+	_check(g._pact_left(MapGen.HAMLETS) == 0 and int(g.econ.res["gold"]) == 0, "a pact short of gold is not signed")
 	g.queue_free()
 	await process_frame
 

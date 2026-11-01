@@ -163,7 +163,7 @@ peace.demands,Требования,Demands
 peace.hold_hint,"Удерживайте, чтобы подписать",Hold to sign
 peace.pick_hint,Выберите: пощадить или разграбить,Choose: spare or plunder
 peace.over,Требования дороже ваших очков мира,The demands cost more than your peace points
-peace.budget_rest,%s / %s · остаток: +%s к мнению,%s / %s · left over: +%s opinion
+peace.budget_rest,%s / %s · мнение %s,%s / %s · opinion %s
 ceremony.double,×2,×2
 ceremony.title,Победа!,Victory!
 ceremony.claim,Забрать,Claim
@@ -383,7 +383,7 @@ ceremony.chapter,Глава %s: с %d до %d из %d,Chapter %s: %d to %d of %d
 ceremony.plunder,"Разграблено: %d золота, %d еды, %d металла","Plundered: %d gold, %d food, %d metal"
 ceremony.indemnity,Контрибуция: +%d золота,Indemnity: +%d gold
 ceremony.reparations,Репарации: 10% производства на 24ч,Reparations: 10% of output for 24h
-ceremony.opinion_line,Остаток очков: +%s к мнению,Points left over: +%s opinion
+ceremony.opinion_line,Мнение о нас: %s,Their opinion of us: %s
 toast.test_ad_double,Тестовая сборка: реклама не подключена — трофеи удвоены,Test build: ads aren't connected. Spoils doubled
 toast.chapter_goal,Цель главы %s выполнена — откройте «Мир»,Chapter %s goal reached: open the World tab
 toast.chapter_goal_war,"Цель главы %s выполнена — завершите войну, чтобы расширить мир",Chapter %s goal reached: end the war to expand the world
@@ -482,8 +482,8 @@ floater.repelled_short,Отбито!,Repelled!
 inbox.defense.title,Оборона,Defense
 inbox.defense.text,"%s атаковали «%s» — атака отбита! +2 к военному счёту, +%d золота.","The %s attacked “%s”: attack repelled! +2 war score, +%d gold."
 inbox.war_cap.title,Кап войны,War cap
-inbox.war_cap.peace,Война длилась 2 ч — подписан рекомендованный мир.,The war lasted 2 h: the recommended peace was signed.
-inbox.war_cap.white,Война длилась 2 ч — белый мир.,The war lasted 2 h: white peace.
+inbox.war_cap.peace,Война длилась %d ч — подписан рекомендованный мир.,The war lasted %d h: the recommended peace was signed.
+inbox.war_cap.white,Война длилась %d ч — белый мир.,The war lasted %d h: white peace.
 toast.war_cap_white,Кап войны: белый мир,War cap: white peace
 ftue.1,Бароны сожгли нашу мельницу! Удерживайте «Война!».,The Barons burned our mill! Hold “War!”.
 ftue.2,Начните наступление!,Launch an offensive!
@@ -509,7 +509,7 @@ ftue.13,Отлично! Окружённые гексы сдаются быст�
 ftue.13_any,Отлично! Окружённые гексы сдаются быстрее. Захватите цель войны!,Great! Encircled hexes fall faster. Capture the war goal!
 ftue.13_neck,Цель наша! Теперь перешеек — и котёл захлопнется.,The goal is ours! Now take the neck to close the pocket.
 ftue.14,Подпишите мир с Хуторами.,Sign a peace with the Hamlets.
-ftue.15,Пощадить (+20 к мнению) или грабить?,Spare them (+20 opinion) or plunder?
+ftue.15,Пощадить (мнение %s) или грабить (%s)?,Spare them (opinion %s) or plunder (%s)?
 ftue.raid,Мародёры идут с диких земель! Плетень их встретит.,Marauders are coming from the wildlands! The palisade will meet them.
 ftue.raid_done,Видите? Плетень выстоял — набег отбит.,See? The palisade held: the raid is repelled.
 tut.title,Обучение пройдено!,Tutorial complete!
@@ -1388,3 +1388,40 @@ ceremony.lost_tip,Сгорело %s. Улучшите Склад,%s burned. Upgr
 peace.storage_warn,Склад не вместит %s,Storage can't hold %s
 story.ch3_pack,Стая не трогает сильных. Пока вы сильны — спите спокойно.,"The Pack leaves the strong alone. While you stay strong, sleep easy."
 story.ch4_veilmark,"Вейлмарк умеет ждать. Мы ударим, когда вы отвернётесь.",Veilmark knows how to wait. We strike when you look away.
+inbox.war_cap.away,"Война длилась %d ч, пока вас не было, — белый мир.",The war lasted %d h while you were away: white peace.
+inbox.war_cap.defeat,Война длилась %d ч — мир с потерями.,The war lasted %d h: a peace with losses.
+ult.answer_first,Сначала ответьте на ультиматум,Answer the ultimatum first
+ult.deferred,Отказ отправлен: война с %s начнётся после текущей,Refusal sent: the war with %s starts once the current one ends
+ui.recovering,Пополнение,Refilling
+ui.recovering_tip,Армии восстанавливаются: в атаку через %s (нужно 50%% силы),The armies are refilling: attack in %s (50%% strength needed)
+camp.need_army_near,Нужна армия рядом с лагерем (50% силы) — «Марш» приведёт ближайшую,An army must stand next to the camp (50% strength): March brings the nearest one
+pact.over_cap,Склад не вместит %s золота — улучшите Склад,The warehouse can't hold %s gold: upgrade the Warehouse
+defeat.t_white,Всё вернётся,All returns
+defeat.t_plunder,Грабёж,Plunder
+defeat.note_lost,"Эти гексы отойдут им, склад разграбят. Можно продолжить войну.",These hexes go to them and the warehouse is plundered. You can fight on.
+defeat.note_nohex,"Гексы останутся вашими, но склад разграбят. Можно продолжить войну.","Your hexes stay yours, but the warehouse is plundered. You can fight on."
+defeat.say,Отдайте нам своё — и разойдёмся.,"Give us what we hold, and we part ways."
+defeat.say_white,Довольно. Каждый остаётся при своём.,Enough. Each keeps their own.
+opinion.melts,(тает %s),(fades in %s)
+opinion.part.op_base,характер,character
+opinion.part.op_border,общая граница,shared border
+opinion.part.op_alarm,Тревога соседей,neighbours' alarm
+opinion.part.op_war,война,war
+opinion.part.op_common_enemy,общий враг,common enemy
+opinion.part.op_alliance,союз,alliance
+opinion.part.op_war_memory,память о войне,war memory
+opinion.part.op_gift,подарок,gift
+opinion.part.op_peace_leftover,остаток мира,peace points left
+opinion.part.op_spared,пощада,mercy
+opinion.part.op_plundered,грабёж,plunder
+opinion.part.op_annexed,аннексия,annexation
+opinion.part.op_ultimatum_accepted,уступка,concession
+opinion.part.op_war_support,поддержка,support
+opinion.part.op_supported_enemy,помощь его врагу,aid to its enemy
+opinion.part.op_land_gift,дар земли,land given
+opinion.part.op_land_returned,возврат земли,land returned
+opinion.part.op_swap,обмен,swap
+opinion.part.op_alliance_broken,разрыв союза,broken alliance
+opinion.part.op_call_refused,отказ в помощи,help refused
+opinion.part.op_call_fatigue,призыв,call to arms
+opinion.part.op_legacy,прошлое,the past

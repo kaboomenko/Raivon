@@ -820,6 +820,9 @@ const PRIMARY_LOOK := {
 	"upgrade_locked": ["lock", "lock"], "upgrading": ["lock", "hourglass"],
 	"tower": ["go", "tower"], "fort": ["go", "fort"], "tower_up": ["go", "tower"], "fort_up": ["go", "fort"],
 	"pick_wait": ["lock", "hourglass"], "ai_claimed": ["lock", "hourglass"], "expand": ["go", "globe"],
+	# «Война!» while an ultimatum waits: grey, the time left on its plate, its tap opens the ultimatum (it stays enabled
+	# for that); «В атаку!» while no army is at 50%: the refill's time; «Разбить лагерь» with no army beside the camp
+	"ult_wait": ["lock", "mail"], "recovering": ["lock", "hourglass"], "camp_army": ["lock", "helmet"],
 }
 ## The irreversible big-button actions are held, not tapped (10 §2.1 rule 8): «Война!» 0.8 s (canon §10.3, 03 §3.4),
 ## «Отступить» 0.5 s (03 §5.5). A tap that lets go early does nothing and the tooltip says to hold; the first 3 times
@@ -836,7 +839,10 @@ const PRIMARY_GUARD_MS := 400
 ## «Обоз» is the secondary action of a wild deposit next to the realm («Занять» is the big button): its plate the
 ## cargo (the resource's icon comes with the call), and «convoy_status» the time until the cart is back.
 const STATUS_LOOK := {"peace": ["go", "dove", ""], "repair_ad": ["info", "ad", ""], "ruin_halve": ["info", "ad", "hourglass"],
-	"convoy": ["info", "cart", ""], "convoy_status": ["lock", "cart", "hourglass"]}
+	"convoy": ["info", "cart", ""], "convoy_status": ["lock", "cart", "hourglass"],
+	# a pending ultimatum on the map (nothing selected): its deadline, a tap opens it (B-H1: ✕ was a dead end);
+	# «Марш» beside a locked «Разбить лагерь»: the nearest army goes to the camp
+	"ultimatum": ["war", "mail", "hourglass"], "camp_march": ["info", "orders", ""]}
 const BIG_RECT := Rect2(652, 1536, 277, 124)  # the big button: L, the one loud thing on the map (§1.1)
 const RETREAT_RECT := Rect2(652, 1564, 277, 96)  # «Отступить» in battle: M, a secondary action
 const STATUS_RECT := Rect2(652, 1438, 277, 88)  # the status button: M, in the hex panel's slot
@@ -1267,7 +1273,7 @@ var _sealed := false  # seal_done fires once per treaty
 ## one tile «×N»), «Грабёж» in segments, «К войне» (info S) and «Подписать мир» (go L, hold 0.8 s → seal_done; lock
 ## while the demands cost more than the budget). Rows that do not fit the screen scroll inside the well. `warn`: what
 ## the warehouse cannot take («Склад не вместит: 2 133 золота»), a NEG line with the crate under the plunder.
-func show_peace(enemy: String, budget: float, control: int, demands: Array, chosen: Dictionary, plunder := 1, portrait := "", plate := Kit.CLEAR, warn := "") -> void:
+func show_peace(enemy: String, budget: float, control: int, demands: Array, chosen: Dictionary, plunder := 1, portrait := "", plate := Kit.CLEAR, warn := "", opinion := NAN) -> void:
 	var fresh := not (_modal != null and _modal.has_meta("peace"))
 	if fresh:
 		_hold_hints += 1
@@ -1338,13 +1344,13 @@ func show_peace(enemy: String, budget: float, control: int, demands: Array, chos
 	ti.position = Vector2(bx, 180)
 	box.add_child(ti)
 	var frac := used / budget if budget > 0.0 else 0.0
-	# the points left over become the loser's opinion of us, +1 a point (canon §10.1; 06 §2.2 «остаток → мнение +4»):
-	# the bar says so, so an unfilled parchment reads as a choice, not as points thrown away
-	var rest := budget - used
+	# what signing does to the loser's opinion of us (06 §11.2): the land −2 a value, the points left over +1 each (canon
+	# §10.1), mercy +20 or the plunder — the whole change, the same number the ceremony's dove and the coach say (A-low:
+	# the bar said the leftover alone, «+4» for a real +14); main works it out (`opinion`, NAN: none given)
 	var cap := "%s / %s" % [Kit.fmt_dec(used, 1), Kit.fmt_dec(budget, 1)]
-	if not over and rest >= 0.05:
-		var rs := Kit.fmt_dec(rest, 1)
-		cap = tr("peace.budget_rest") % [Kit.fmt_dec(used, 1), Kit.fmt_dec(budget, 1), rs.trim_suffix(",0").trim_suffix(".0")]
+	if not over and not is_nan(opinion) and absf(opinion) >= 0.05:
+		var os := Kit.fmt_dec(absf(opinion), 1).trim_suffix(",0").trim_suffix(".0")
+		cap = tr("peace.budget_rest") % [Kit.fmt_dec(used, 1), Kit.fmt_dec(budget, 1), ("+" if opinion > 0.0 else Kit.MINUS) + os]
 	var bud := Kit.bar(box, Rect2(bx + 60.0, 186, w - 32.0 - bx - 60.0, 40), minf(frac, 1.0), "war" if over else "go", cap, true)
 	bud.name = "budget"
 	# the coach docked over the window's first row (941×1672: no room around it) ends above this bar — it teaches
@@ -2690,7 +2696,7 @@ static func _chr_medal(code: String) -> String:
 ## one sentence, a red timer chip counts the time left; three equal choices as option cards in a well — give the hex
 ## (24 h of peace), pay the tribute (grey when the gold is short: the amount turns red, a tap says how much is
 ## missing — `short`, in gold), or refuse (war). `hex_tile`: the hex's render key (the card shows the hex itself).
-func show_ultimatum(enemy: String, hex_name: String, tribute: int, can_pay: bool, left_sec: int, on_accept: Callable, on_pay: Callable, on_refuse: Callable, portrait := "", plate := Kit.CLEAR, hex_tile := "", short := 0) -> void:
+func show_ultimatum(enemy: String, hex_name: String, tribute: int, can_pay: bool, left_sec: int, on_accept: Callable, on_pay: Callable, on_refuse: Callable, portrait := "", plate := Kit.CLEAR, hex_tile := "", short := 0, buyout := true) -> void:
 	var h := 64.0 + 170.0 + 40.0 + 332.0 + 32.0
 	var box := _modal_box(_win_rect("L", h), false, tr("ult.title"), "", "war", true, false)
 	box.set_meta("kit_native", true)
@@ -2712,10 +2718,14 @@ func show_ultimatum(enemy: String, hex_name: String, tribute: int, can_pay: bool
 			"reason": tr("ult.no_gold") % Kit.fmt_num(short) if short > 0 else tr("toast.no_gold"), "title_color": Kit.NEG_CREAM},
 		{"icon": "swords", "title": tr("ult.refuse_title"), "role": "war", "cap": tr("ult.refuse"), "cb": on_refuse, "enabled": true},
 	]
+	if not buyout:  # the Wolf takes no buyout (canon §9.1): two choices, centred
+		opts.remove_at(1)
+		gap = 48.0
+	var x0 := (well.size.x - opts.size() * cw - (opts.size() - 1) * gap) * 0.5
 	var choices: Array = []
-	for i in 3:
+	for i in opts.size():
 		var o: Dictionary = opts[i]
-		var card := Kit.tile(well, Rect2(16.0 + i * (cw + gap), 16, cw, 300), {})
+		var card := Kit.tile(well, Rect2(x0 + i * (cw + gap), 16, cw, 300), {})
 		card.name = "option_%d" % i
 		var tex: Texture2D = o.get("tex") if o.get("tex") != null else Kit.icon_tex(String(o["icon"]))
 		var pic := TextureRect.new()
@@ -5399,6 +5409,24 @@ static func _signed(v: int) -> String:
 	return ("+" if v > 0 else "") + Kit.fmt_num(v)
 
 
+## The opinion's parts as one line (06 §11.4): «+10 характер · −10 общая граница · +6,5 подарок (тает 26ч)» — `parts`
+## [[code, value, seconds until it fades (0: standing)], …] from main._opinion_parts; the biggest first.
+func opinion_breakdown(parts: Array) -> String:
+	var ps := parts.duplicate()
+	ps.sort_custom(func(a, b): return absf(float(a[1])) > absf(float(b[1])))
+	var out: Array = []
+	for p in ps:
+		var v := float(p[1])
+		if absf(v) < 0.05:
+			continue
+		var num := Kit.fmt_dec(absf(v), 1).trim_suffix(",0").trim_suffix(".0")
+		var s := ("+" if v > 0.0 else Kit.MINUS) + num + Kit.NBSP + tr("opinion.part." + String(p[0]))
+		if int(p[2]) > 0:
+			s += " " + tr("opinion.melts") % fmt_time(int(p[2]))
+		out.append(s)
+	return " · ".join(out)
+
+
 ## A neighbour's card (§6 Соседи): the leader in their mood on the state's colour, the state's short name; the relation on
 ## the left chip, the opinion on the right one (green / red); exactly one button for the moment — «Мир» at war,
 ## «Призыв» for an ally we may call into our war, a gift while they dislike us (or to an ally), else «Пакт» (grey
@@ -5506,8 +5534,18 @@ func _leader_dialog(it: Dictionary) -> void:
 	var hostile := rel in ["war", "coalition"] or v < -10.0
 	var acts: Array = []  # {kind, cap, icon, on, why, price, short}
 	if rel != "war" and it.has("pact_reason"):
+		# the pact's price on it as on the gift (B-M: 8 h of gold charged unseen): short — the number red, the tap says how
+		# much is missing; over the warehouse's cap — it says the store cannot hold it; signed by a hold, not a tap
 		var why_p := String(it["pact_reason"])
-		acts.append({"kind": "pact", "cap": tr("dipl.pact_btn"), "icon": "treaty", "on": why_p == "", "why": why_p})
+		var pc := int(it.get("pact_cost", 0))
+		var gst := _stock("gold")
+		var p_short := ""
+		if bool(it.get("pact_over_cap", false)):
+			p_short = tr("pact.over_cap") % fmt_num(pc)
+		elif int(gst[1]) >= 0 and pc > int(gst[1]):
+			p_short = tr("ult.no_gold") % fmt_num(pc - int(gst[1]))
+		acts.append({"kind": "pact", "cap": tr("dipl.pact_btn"), "icon": "treaty", "on": why_p == "", "why": why_p,
+			"price": [["coin", fmt_num(pc), p_short != ""]] if pc > 0 else [], "short": p_short if why_p == "" else "", "hold": true})
 	if rel == "ally":
 		if bool(it.get("can_call", false)):
 			acts.append({"kind": "call", "cap": tr("dipl.call"), "icon": "horn", "on": true, "why": ""})
@@ -5570,6 +5608,13 @@ func _leader_dialog(it: Dictionary) -> void:
 		Kit.face_of("go") if vi > 0 else (Kit.face_of("war") if vi < 0 else Kit.SLATE_FILL), {"max_w": cw - sc.size.x - 12.0})
 	oc.name = "opinion"
 	oc.position = Vector2(sc.position.x + sc.size.x + 12.0, sc.position.y + (sc.size.y - oc.size.y) * 0.5)
+	# a tap on the opinion says what it is made of (06 §11.4: «−10 общая граница · +10 характер · +6,5 подарок (тает 26 ч)»)
+	var parts: Array = it.get("opinion_parts", [])
+	if not parts.is_empty():
+		oc.mouse_filter = Control.MOUSE_FILTER_STOP
+		oc.gui_input.connect(func(e: InputEvent):
+			if e is InputEventMouseButton and (e as InputEventMouseButton).pressed and (e as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
+				Kit.tooltip(oc, tr("dipl.opinion") % _signed(vi), opinion_breakdown(parts)))
 	# the actions: two per row, the last one alone in the middle
 	var bw := (w - 64.0 - 16.0) * 0.5
 	var grid: Array = []
@@ -5582,9 +5627,12 @@ func _leader_dialog(it: Dictionary) -> void:
 			x = (w - bw) * 0.5
 		var kind := String(a["kind"])
 		# the gift is go here as on the card (one role per action); the treaties are secondary info
+		var held := bool(a.get("hold", false)) and bool(a["on"]) and String(a.get("short", "")) == ""
 		var b := Kit.button(box, Rect2(x, grid_y + row * 104.0, bw, 88), "go" if kind == "gift" else "info", String(a["cap"]),
-			{"icon": String(a["icon"]), "price": a.get("price", []), "enabled": bool(a["on"]), "size": "M"})
+			{"icon": String(a["icon"]), "price": a.get("price", []), "enabled": bool(a["on"]), "size": "M", "hold": held, "hold_sec": 0.8})
 		b.name = "act_" + kind
+		if held:
+			b.released_early.connect(func(): Kit.tooltip(b, String(a["cap"]), tr("peace.hold_hint")))
 		grid.append(b)
 		var why := String(a["why"])
 		if why != "":
@@ -5611,14 +5659,15 @@ func _leader_dialog(it: Dictionary) -> void:
 			pcb.call()
 	else:
 		var can_war := bool(it.get("can_war", false))
+		var ult := can_war and bool(it.get("war_ult", false))  # an ultimatum waits: grey, the tap opens it (B-H1)
 		var why_w := ""
 		if not can_war:
 			why_w = String(it.get("status", "")) if rel in ["pact", "truce"] else tr("dipl.war_busy")
-		var wb := Kit.button(box, fr, "war", tr("dipl.declare"), {"icon": "swords", "size": "L", "enabled": can_war})
+		var wb := Kit.button(box, fr, "lock" if ult else "war", tr("dipl.declare"), {"icon": "mail" if ult else "swords", "size": "L", "enabled": can_war})
 		wb.name = "declare"
 		wb.cb = func():
 			close_modal()
-			diplomacy_action.emit(id, "war")
+			diplomacy_action.emit(id, "ultimatum" if ult else "war")
 		if why_w != "":
 			wb.denied.connect(func(): Kit.tooltip(wb, tr("dipl.declare"), why_w))
 

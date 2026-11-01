@@ -200,11 +200,23 @@ static func apply(g: Node, d: Dictionary) -> bool:
 	g.ad_counts = d.get("ad_counts", {})
 	g.installed_at = int(d.get("installed_at", g.installed_at))
 	g.intro_offer_day = int(d.get("intro_offer_day", -1))
+	# opinion (06 §11): each state's memories [{c, v, at}]; a save from before them stored one number a state — it
+	# becomes one legacy memory that goes on fading 0.5 an hour from the save's time, as it did then
 	var op := {}
 	var so: Dictionary = d.get("opinion", {})
+	var saved_at := int(d.get("saved_at", 0))
 	for k in so:
-		op[int(k)] = float(so[k])
+		var mems: Array = []
+		if typeof(so[k]) == TYPE_ARRAY:
+			for m in so[k]:
+				if typeof(m) == TYPE_DICTIONARY:
+					mems.append({"c": String(m.get("c", "op_legacy")), "v": float(m.get("v", 0.0)), "at": int(m.get("at", saved_at))})
+		elif absf(float(so[k])) >= 0.05:
+			mems.append({"c": "op_legacy", "v": float(so[k]), "at": saved_at})
+		op[int(k)] = mems
 	g.opinion = op
+	if g.get("_away") != null:  # the absence this load ends: a war cap that ran out in it (main._war_cap, canon §9.11)
+		g._away = [saved_at, int(g.now_s()) if g.has_method("now_s") else int(Time.get_unix_time_from_system())]
 	var ga := {}
 	var sg: Dictionary = d.get("gift_at", {})
 	for k in sg:
