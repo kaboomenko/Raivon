@@ -3362,6 +3362,10 @@ class KitButton extends Panel:
 			_sb.set_corner_radius_all(int(minf(maxf(0.0, r - out), inner.size.x * k * 0.5)))
 			draw_style_box(_sb, Rect2(inner.position, Vector2(inner.size.x * k, face_h)))
 
+	## A hold under way (the finger is on a hold button and its ring fills): Android Back waits it out (main._on_back).
+	func holding() -> bool:
+		return _hold_t >= 0.0
+
 	func _process(delta: float) -> void:
 		if _hold_t < 0.0:
 			set_process(false)
@@ -5740,7 +5744,9 @@ static func _dur(t: float) -> float:
 static func press_in(b: Control) -> void:
 	b.pivot_offset = b.size * 0.5
 	var d := _dur(0.07)
-	if d <= 0.0:
+	# a node a tap is rebuilding (a tray card's CTA rebuilds the tray) is out of the tree: no tween there (Godot:
+	# «Condition "!is_inside_tree()" is true» once a run, playtest 2) — it takes the pressed look at once
+	if d <= 0.0 or not b.is_inside_tree():
 		b.set("press", 1.0)
 		b.scale = Vector2(0.96, 0.96)
 		return
@@ -5751,7 +5757,7 @@ static func press_in(b: Control) -> void:
 
 static func press_out(b: Control) -> void:
 	var d := _dur(0.14)
-	if d <= 0.0:
+	if d <= 0.0 or not b.is_inside_tree():  # (out of the tree: the rest look at once, as press_in)
 		b.set("press", 0.0)
 		b.scale = Vector2.ONE
 		return
@@ -6039,6 +6045,11 @@ static func mark_answer() -> void:
 ## True while the code running now answers the player's own tap or hold (`answer_frame` is this frame).
 static func answering() -> bool:
 	return answer_frame == Engine.get_process_frames()
+
+
+## A tooltip is on the screen (Android Back closes it first, main._on_back).
+static func tip_open() -> bool:
+	return is_instance_valid(_tip)
 
 
 ## Frees the tooltip on the screen, if any: a window that opens (or closes) and a change of screen take it away — on

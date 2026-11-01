@@ -2288,5 +2288,142 @@ func _run() -> void:
 	g.queue_free()
 	await process_frame
 
+	await _q3()
+
 	print("\n%s" % ("ALL FLOW CHECKS PASSED" if fails == 0 else "%d FLOW CHECK(S) FAILED" % fails))
 	quit(1 if fails > 0 else 0)
+
+
+## Playtest 2 Q3: Android Back, the local game day, «Пока вас не было», the documents, the Residence lock text.
+func _q3() -> void:
+	const Calendar := preload("res://scripts/sim/calendar.gd")
+	const Save := preload("res://scripts/save.gd")
+	_check(ProjectSettings.get_setting("application/config/quit_on_go_back", true) == false,
+		"Android Back no longer quits by itself (application/config/quit_on_go_back off)")
+	var g := await _new_game()
+	var quit_called := [false]
+	g.quit_hook = func(): quit_called[0] = true
+	g._select(-1)
+	_check(g._on_back() == "quit_ask" and g.ui.has_modal(), "Back on the bare map asks «Выйти из игры?»")
+	_check(g._on_back() == "window" and not g.ui.has_modal() and not quit_called[0], "Back again closes the question (the game stays)")
+	g._ask_quit()
+	g._quit_game()
+	_check(quit_called[0] and not g.ui.has_modal(), "«Выйти» saves and quits")
+	var own: int = int(g.sim.states[Types.PLAYER]["capital_id"])
+	g._select(own)
+	_check(g._on_back() == "deselect" and g.selected == -1, "Back with a hex selected deselects it")
+	g._show_settings()
+	_check(g._on_back() == "window" and not g.ui.has_modal(), "Back closes Settings (its ✕)")
+	g._open_shop()
+	_check(g._on_back() == "shop" and g.shop == null, "Back closes the store")
+	g._open_legal("privacy", g._show_settings)
+	_check(g.ui._modal != null and g.ui._modal.has_meta("legal"), "the privacy policy opens bundled while raivon/privacy_url is empty")
+	_check(g._on_back() == "window" and g.ui.has_modal() and not g.ui._modal.has_meta("legal"), "Back on a document goes back to Settings")
+	g.ui.close_modal()
+	g._open_legal("licenses", Callable())
+	var lic_labels: int = g.ui._modal.find_children("*", "Label", true, false).size()
+	_check(lic_labels > 40, "the licences window lists Godot, its components and the fonts (%d labels)" % lic_labels)
+	g.ui.close_modal()
+	var esc := InputEventAction.new()
+	esc.action = "ui_cancel"
+	esc.pressed = true
+	g._unhandled_input(esc)
+	_check(g.ui.has_modal(), "Esc does what Back does (the quit question on the map)")
+	g.ui.close_modal()
+	g._open_flag_wizard(1, {"div": "solid", "c1": 0, "c2": 13, "em": "eagle", "ec": 13, "frame": ""}, func(): pass)
+	_check(g._on_back() == "window" and g.ui.has_modal() and g._on_back() == "ignore", "Back in the flag wizard steps back; its first step ignores it")
+	g.ui.close_modal()
+	# an ultimatum closed with Back stays pending
+	g.ultimatum = {"state": MapGen.HAMLETS, "hex": own, "tribute": 500, "deadline": g.now_s() + 3600, "buyout": 250}
+	g._show_ultimatum()
+	_check(g._on_back() == "window" and not g.ui.has_modal() and not g.ultimatum.is_empty(), "Back closes the ultimatum; it stays pending")
+	g.ultimatum = {}
+	# a battle and a ceremony ignore Back
+	var goal: Array = War.recommend_goals(g.sim, MapGen.BARONS, 1)
+	g._declare(MapGen.BARONS, goal[0])
+	g._start_offensive()
+	_check(g.mode == g.Mode.BATTLE and g._on_back() == "ignore" and g.mode == g.Mode.BATTLE, "Back in a battle is ignored")
+	while g.battle != null and not g.battle.over:
+		g._battle_step()
+	g._end_offensive()
+	_check(g.mode != g.Mode.RESULT or g._on_back() == "ignore", "Back on the result (a decision) is ignored")
+	g.ui.close_modal()
+	g._open_peace()
+	if g.mode == g.Mode.PEACE:
+		_check(g._on_back() == "window" and g.mode == g.Mode.WAR, "Back on the treaty is «К войне»")
+	g.queue_free()
+	await process_frame
+	var gc := await _new_game()
+	gc._demo("ceremony:0.1")
+	_check(gc.mode == gc.Mode.CEREMONY and gc._on_back() == "ignore", "Back in the peace ceremony is ignored")
+	gc.queue_free()
+	await process_frame
+	# ---- the local game day (canon §13: 04:00 local), the offset held 7 days
+	var t := await _new_game()
+	var now: int = t.now_s()
+	t.tz_bias = 180
+	t.tz_since = now - 86400
+	t._tz_sync(now, true)
+	_check(t.tz_bias == 180 and Calendar.bias_min == 180, "a new device zone within 7 days waits (the saved +180 stays)")
+	t.tz_since = now - 8 * 86400
+	t._tz_sync(now, true)
+	_check(t.tz_bias == t._device_bias() and t.tz_since == now and Calendar.bias_min == t.tz_bias, "after 7 days the device's zone is taken")
+	var sd: Dictionary = Save.to_dict(t)
+	_check(sd.get("tz", []) == [t.tz_bias, t.tz_since], "the zone and since when are saved")
+	t.ad_counts = {"ad_probe": [Calendar.local_day(now) + 1, 1]}
+	_check(t._ad_left("ad_probe", 1) == 0, "a rewarded cap counts the local day (a zone step west does not reopen it)")
+	# ---- «Пока вас не было»: from 4 h the summary, before the calendar; under 4 h a raid banner
+	t.ui.close_modal()
+	t._away = [now - 26 * 3600, now]
+	t._away_begin()
+	var cap_hex: int = int(t.sim.states[Types.PLAYER]["capital_id"])
+	t._strike_news(cap_hex, true, 272)
+	t._cal_auto = true
+	t._calendar_tick(now)
+	_check(t._away_due and not t.ui.has_modal(), "the calendar waits for «Пока вас не было»")
+	t._away_from_ms = Time.get_ticks_msec() - 1000
+	t._away_tick(now)
+	var sum_texts := PackedStringArray()
+	for l in t.ui._modal.find_children("*", "Label", true, false) if t.ui._modal != null else []:
+		sum_texts.append((l as Label).text)
+	var joined: String = " | ".join(sum_texts)
+	_check(t.ui.has_modal() and joined.contains(t.tr("away.title")) and joined.contains(t.tr("away.strike_held") % [t._cell_name(cap_hex), 272]),
+		"26 h away: the summary lists the strike and its result (%s)" % joined.substr(0, 160))
+	t._away_collect(false)
+	_check(not t.ui.has_modal() and not t._away_due, "«Собрать всё» closes the summary")
+	t._away = [now - 3600, now]
+	t._away_begin()
+	t._strike_news(cap_hex, false, 2)
+	_check(not t._away_due and String(t.ui._toast_cur.get("text", "")).contains(t._cell_name(cap_hex)), "1 h away: no summary, a raid banner for the strike")
+	t._away_from_ms = 0
+	t._strike_news(cap_hex, true, 272)
+	var st_text: String = String(t.ui._toast_cur.get("text", ""))
+	_check(st_text == t.tr("toast.strike_held") % [t._cell_name(cap_hex), 272] or t.ui._toast_queue.size() > 0, "a strike's toast is the short key (%s)" % st_text)
+	# ---- Settings: vibration, kept; the patent's terms; the Residence lock text
+	t._set_haptics(false)
+	_check(not t.sfx.haptics, "Settings → «Вибрация» switches haptics off")
+	t._set_haptics(true)
+	t._open_patent()
+	var ll: Label = t.ui._modal.find_child("legal", true, false) as Label
+	_check(ll != null and ll.text.contains(t.tr("patent.period")) and ll.text.contains(t.tr("patent.renewal")), "the patent shows its whole terms under the purchase")
+	t.ui.close_modal()
+	_check(t._why_text("err.chapter_locked|3").contains("III"), "the Residence's lock names the chapter in Roman numerals")
+	t.econ.chapter = 4
+	var res: Dictionary = t.econ.buildings[0]
+	res["level"] = t.econ.max_level(res)
+	_check(t.econ.can_upgrade(res, now) == "err.chapter_last", "in the last chapter the lock promises no chapter V")
+	var dead := Control.new()
+	Kit.press_in(dead)
+	Kit.press_out(dead)
+	_check(dead.scale == Vector2.ONE, "a press on a node out of the tree takes its look at once (no tween)")
+	dead.free()
+	# ---- state names: noun-first templates read right for a singular state (ru)
+	var was := TranslationServer.get_locale()
+	TranslationServer.set_locale("ru")
+	var war_txt: String = L.t("inbox.war.text|state.league|kind.capital")
+	var sep_txt: String = L.t("toast.separate|state.alvaria")
+	TranslationServer.set_locale(was)
+	_check(not war_txt.contains("объявили") and war_txt.contains("Речная Лига") and not sep_txt.contains("вышли"),
+		"state-name templates have no plural verb after a singular state (%s / %s)" % [war_txt, sep_txt])
+	t.queue_free()
+	await process_frame

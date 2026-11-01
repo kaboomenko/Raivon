@@ -2,6 +2,7 @@ extends SceneTree
 ## «Приказы дня» (canon §14.5, 08 §8.6). Run: godot --headless --path game --script res://tests/test_orders.gd
 
 const Orders := preload("res://scripts/sim/orders.gd")
+const Calendar := preload("res://scripts/sim/calendar.gd")
 
 var fails := 0
 
@@ -62,5 +63,21 @@ func _initialize() -> void:
 	var q := Orders.new()
 	q.load_dict(o.to_dict())
 	_check(q.day == o.day and q.list.size() == 3 and q.swapped, "save and load")
+	# a new set at 04:00 local (canon §13, 08 §8.6): biases −300, 0, +180, +540
+	for b in [-300, 0, 180, 540]:
+		Calendar.bias_min = b
+		var four: int = 1791172800 + 20 * 86400 - b * 60  # 04:00 local
+		var ob := Orders.new()
+		ob.refresh(four - 3600, ctx)
+		_check(not ob.refresh(four - 60, ctx) and ob.refresh(four + 60, ctx), "bias %+d: a new set at 04:00 local" % b)
+	# a step west keeps the day's set (its progress and claims)
+	Calendar.bias_min = 0
+	var ow := Orders.new()
+	var t1 := 1791172800 + 30 * 86400 + 2 * 3600  # 06:00 UTC
+	ow.refresh(t1, ctx)
+	var keep: String = ow.list[0]["code"]
+	Calendar.bias_min = -300
+	_check(not ow.refresh(t1 + 3600, ctx) and String(ow.list[0]["code"]) == keep, "a step west keeps the day's orders")
+	Calendar.bias_min = 0
 	print("ALL ORDERS CHECKS PASSED" if fails == 0 else "%d FAILED" % fails)
 	quit(1 if fails > 0 else 0)

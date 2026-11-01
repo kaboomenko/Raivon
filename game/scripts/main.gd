@@ -56,7 +56,7 @@ const CARD_DL := {"encircle": 2, "breakthrough": 3, "airstrike": 6, "landing": 7
 const AIR_ARCHETYPES := ["wolf", "raven"]  # AI hands with «Авиаудар» (03 §19.4)
 const CHAPTER_GOALS: Array[int] = [0, 20, 36, 56, 88]  # official hexes per chapter (canon §12.1)
 const COLONIZE_SEC: Array[int] = [0, 60, 300, 900, 1800]  # 1 min in chapter I, 5 / 15 / 30 min later (canon §12.1)
-const LAST_CHAPTER := 4  # the launch's content wall: chapter V comes with v1.2
+const LAST_CHAPTER := Economy.LAST_CHAPTER  # the launch's content wall: chapter V comes with v1.2
 const TRUCE_SEC := 30 * 60  # chapter I's truce; a war's own comes from WAR_RULES by the chapter it began in
 ## Translation keys of unnamed hexes: by kind, else by terrain.
 const KIND_NAMES := {"capital": "kind.capital", "city": "kind.city", "farm": "kind.farm", "mine": "kind.mine", "port": "kind.port", "military_base": "kind.military_base",
@@ -204,7 +204,12 @@ var ai_dl_at := {}  # AI state -> unix time of its last DL step (canon §9.16: +
 var opinion := {}  # AI state -> opinion of the player, decays toward 0 (canon §10.5)
 var gift_at := {}  # AI state -> unix time of the last gift
 var _last_opinion := 0
-var ad_counts := {}  # rewarded placement -> [day, views] (daily caps, canon §15.2)
+var ad_counts := {}  # rewarded placement -> [local game day, views] (daily caps, canon §15.2: reset at 04:00 local)
+## The device's UTC offset the game days count by (Calendar.bias_min, canon §13: 04:00 local) and when it was adopted:
+## a new zone is taken at most once per 7 days (08 §8.8.4). Saved; a save from before it adopts the device's at once.
+var tz_bias := 0
+var tz_since := 0
+var _tz_checked := 0  # Time.get_ticks_msec() of the last look at the device's zone (_tz_sync)
 var lang := ""  # UI language chosen in Settings ("" = follow the device), kept in user://settings.json
 
 var map_view: Node3D
@@ -311,13 +316,17 @@ func _ready() -> void:
 		ftue = 1
 	elif not save_enabled and ftue == 0:
 		_finish_tutorial()
+	_tz_sync(now_s(), true)  # (the day the calendar and the orders count is local: before the first tick)
+	if loaded:
+		_away_begin()  # (before the first tick: the strikes and the war cap it plays out go into the summary)
 	_econ_tick()
 	if stats.has("ftue_done"):
 		_grant_bram()  # a save from before he came with the first peace gets him too
 	hud.set_flag(flag)
 	map_view.set_flag(flag)
 	if loaded:
-		ui.toast(tr("toast.welcome_back"))
+		if not _away_due and _away_events.is_empty():
+			ui.toast(tr("toast.welcome_back"))
 		if ftue == 0 and _ftue_next > 0 and not stats.has("ftue_done"):
 			# saved in a gap of the tour (the first peace's ceremony, the raid): it goes on from the next step
 			var resume := _ftue_next
@@ -334,7 +343,10 @@ func _ready() -> void:
 ## device language (Russian for ru/uk/be/kk devices, English elsewhere).
 func _init_language() -> void:
 	if save_enabled:
-		lang = String(Save.read_settings().get("lang", ""))
+		var st := Save.read_settings()
+		lang = String(st.get("lang", ""))
+		sfx.enabled = bool(st.get("sound", true))  # (Settings: kept with the language)
+		sfx.haptics = bool(st.get("vibration", true))
 	var forced := ""
 	for a in OS.get_cmdline_user_args():
 		if a.begins_with("--lang="):
@@ -379,8 +391,83 @@ func _show_settings() -> void:
 	var manage := Callable()
 	if _payments_enabled():
 		manage = func(): ui.toast(tr("settings.manage_soon"))  # showManageSubscriptions / the Play deep link with the SDK
-	ui.show_settings(sfx.enabled, func(): sfx.enabled = not sfx.enabled, _new_game, _set_language, manage,
-		func(): ui.toast(tr("patent.restored")))
+	var support := Callable()
+	if _support_email() != "":  # «Поддержка» only with an address to write to (a release blocker until the owner sets it)
+		support = func(): _open_support()
+	ui.show_settings(sfx.enabled, func(): _set_sound(not sfx.enabled), _new_game, _set_language, manage,
+		func(): ui.toast(tr("patent.restored")), {"haptic": sfx.haptics, "on_haptic": func(): _set_haptics(not sfx.haptics),
+			"privacy": func(): _open_legal("privacy", _show_settings), "terms": func(): _open_legal("terms", _show_settings),
+			"support": support, "licenses": func(): _open_legal("licenses", _show_settings)})
+
+
+## Settings → «Звук» / «Вибрация»: at once, and kept with the language in user://settings.json.
+func _set_sound(on: bool) -> void:
+	sfx.enabled = on
+	if save_enabled:
+		Save.write_settings({"sound": on})
+
+
+func _set_haptics(on: bool) -> void:
+	sfx.haptics = on
+	if on:
+		sfx.haptic(30)  # (what it feels like)
+	if save_enabled:
+		Save.write_settings({"vibration": on})
+
+
+# ---------------------------------------------------------------------- documents (App Store 5.1.1 / 3.1.2, Google Play)
+
+var _legal := {}  # res://data/legal.json, read once
+
+
+## The privacy policy, the terms of use and the licences: privacy / terms open their published page (project settings
+## raivon/privacy_url, raivon/terms_url) once it exists, else the text bundled with the game (data/legal.json, the same
+## as docs/store/privacy_policy.md) in a window whose ‹ (and Android Back) goes to `back`; the licences are always the
+## bundled ones — Godot's licence, its third-party components (Engine.get_copyright_info) and the fonts' SIL OFL.
+func _open_legal(kind: String, back := Callable()) -> void:
+	var url := String(ProjectSettings.get_setting("raivon/%s_url" % kind, "")) if kind in ["privacy", "terms"] else ""
+	if url != "":
+		OS.shell_open(url)
+		return
+	if _legal.is_empty():
+		var f := FileAccess.open("res://data/legal.json", FileAccess.READ)
+		var parsed: Variant = JSON.parse_string(f.get_as_text()) if f != null else null
+		_legal = parsed if typeof(parsed) == TYPE_DICTIONARY else {}
+	var lang := L.lang()
+	var blocks: Array = []
+	var title := ""
+	match kind:
+		"privacy", "terms":
+			title = tr("settings.privacy") if kind == "privacy" else tr("settings.terms")
+			blocks = (_legal.get(kind, {}) as Dictionary).get(lang, [])
+		"licenses":
+			title = tr("settings.licenses")
+			var lic: Dictionary = _legal.get("licenses", {})
+			blocks = ((lic.get("intro", {}) as Dictionary).get(lang, []) as Array).duplicate()
+			blocks.append(["h", tr("legal.engine")])
+			blocks.append(["mono", Engine.get_license_text()])
+			blocks.append(["h", tr("legal.components")])
+			for c in Engine.get_copyright_info():
+				var parts := PackedStringArray()
+				for part in c.get("parts", []):
+					var who := ", ".join(PackedStringArray(part.get("copyright", [])))
+					parts.append("%s (%s)" % [who, String(part.get("license", ""))] if who != "" else String(part.get("license", "")))
+				blocks.append(["li", "%s — %s" % [String(c.get("name", "")), "; ".join(parts)]])
+			blocks.append(["h", tr("legal.fonts")])
+			for fnt in lic.get("fonts", []):
+				blocks.append(["h", String(fnt.get("name", ""))])
+				blocks.append(["mono", String(fnt.get("text", ""))])
+	ui.show_legal(title, blocks, back)
+
+
+func _support_email() -> String:
+	return String(ProjectSettings.get_setting("raivon/support_email", "")).strip_edges()
+
+
+## «Поддержка»: a letter to the support address with the build in the subject.
+func _open_support() -> void:
+	var subject := tr("settings.mail_subject") % String(ProjectSettings.get_setting("application/config/version", ""))
+	OS.shell_open("mailto:%s?subject=%s" % [_support_email(), subject.uri_encode()])
 
 
 # ====================================================================== scene setup
@@ -639,6 +726,75 @@ func _notification(what: int) -> void:
 			_autosave()
 	elif what == NOTIFICATION_APPLICATION_RESUMED:
 		_resumed()
+	elif what == NOTIFICATION_WM_GO_BACK_REQUEST:  # Android Back (project.godot: quit_on_go_back off)
+		_on_back()
+
+
+## Esc on the desktop does what Android Back does (tests, desktop play).
+func _unhandled_input(e: InputEvent) -> void:
+	if e.is_action_pressed("ui_cancel") and not e.is_echo():
+		get_viewport().set_input_as_handled()
+		_on_back()
+
+
+## Android Back (10 §5.4 line 581): the top thing on the screen goes back by one — the tooltip, then the store or the
+## window on top (its ✕ or ‹: GameUI.back_action), then the march pick and the selected hex — and on the bare map it
+## asks «Выйти из игры?» (an autosave, then the quit). A battle, a ceremony (the peace, a DL wave, «Мир расширяется»),
+## a hold under way and a window that is a decision (the result, the tutorial card, the shard pick) ignore it, as does
+## the treaty in the tutorial. Playtest 2 (B-H3): Back quit the game from anywhere, a stray edge swipe mid-battle on
+## gesture navigation included. Returns what it did (the back probe and test_flow read it).
+func _on_back() -> String:
+	if mode in [Mode.BATTLE, Mode.CEREMONY] or _expanding or ui.docked_moment() or Time.get_ticks_msec() < _dl_wave_end:
+		return "ignore"
+	if Kit.tip_open():
+		Kit.close_tip()
+		return "tip"
+	if shop != null and is_instance_valid(shop) and (not ui.has_modal() or shop.get_index() > ui.modal_index()):
+		var rv: Node = shop.get_node_or_null("reveal")
+		if rv != null:  # an opening's reveal: Back takes it as its «Забрать» (the rewards are already in)
+			var cb: Node = rv.find_child("claim", true, false)
+			if cb != null and cb.get("cb") is Callable and (cb.get("cb") as Callable).is_valid():
+				(cb.get("cb") as Callable).call()
+				return "shop_reveal"
+			return "ignore"
+		shop.call("_close")
+		return "shop"
+	if ui.has_modal():
+		if mode == Mode.PEACE and ftue > 0:
+			return "ignore"  # (the tour's treaty is signed, not left)
+		var back: Callable = ui.back_action()
+		if not back.is_valid():
+			return "ignore"
+		back.call()
+		return "window"
+	if _march_pick >= 0:
+		_on_action("march_cancel")
+		return "march"
+	if selected >= 0:
+		_select(-1)
+		return "deselect"
+	if mode in [Mode.MAP, Mode.WAR]:
+		_ask_quit()
+		return "quit_ask"
+	return "ignore"
+
+
+## «Выйти из игры?» on the bare map (10 §5.4): «Остаться» (or Back again, or ✕) closes it; «Выйти» saves and quits.
+func _ask_quit() -> void:
+	ui.show_choice(tr("quit.title"), [tr("quit.text")], [[tr("quit.no"), "info", func(): ui.close_modal()],
+		[tr("quit.yes"), "war", func(): _quit_game()]], "info", "", "", false)
+
+
+func _quit_game() -> void:
+	ui.close_modal()
+	_autosave()
+	if not quit_hook.is_valid():
+		get_tree().quit()
+	else:
+		quit_hook.call()
+
+
+var quit_hook := Callable()  # tests and the back probe stand in for the quit itself
 
 
 ## Back from the background without a reload (a phone resumes the app): the pause counts as an absence, as a reload
@@ -646,9 +802,130 @@ func _notification(what: int) -> void:
 ## review r2: a resumed app never counted as away). The econ tick calls it too, in case its first tick after the pause
 ## comes before the resume notice.
 func _resumed() -> void:
+	_tz_sync(now_s(), true)  # (a phone that travelled while the game slept)
 	if _paused_at > 0:
 		_away = [_paused_at, now_s()]
 		_paused_at = 0
+		_away_begin()
+
+
+# ---------------------------------------------------------------------- «Пока вас не было» (08 §8.14.1, canon §14.8)
+
+const AWAY_SUMMARY_SEC := 4 * 3600  # from this long away the summary window comes (under it: a toast, a raid banner)
+const AWAY_CAPTURE_MS := 4000  # what the first ticks after the return play out (strikes, the war cap) was the absence's
+const AWAY_SHOW_MS := 900  # the summary comes this long after the return (the map has drawn, the catch-up has run)
+var _away_due := false  # the summary waits for the map to be free
+var _away_from_ms := 0  # Time.get_ticks_msec() of the return (0: no return being caught up)
+var _away_events: Array = []  # rows for the summary: {icon, title} — strikes and their result, wars closed by the cap
+var _away_got := {}  # income the patent collected by itself in the catch-up
+
+
+## A return — a loaded save or a resume after a pause (`_away` = [left, back]): from 4 h the summary is due; either way
+## the next few seconds' strikes and war caps are the absence's.
+func _away_begin() -> void:
+	var gone := int(_away[1]) - int(_away[0])
+	if int(_away[0]) <= 0 or gone <= 0:
+		return
+	_away_from_ms = Time.get_ticks_msec()
+	_away_events = []
+	_away_got = {}
+	_away_due = gone >= AWAY_SUMMARY_SEC and ftue == 0 and stats.has("ftue_done")
+
+
+func _away_capturing() -> bool:
+	return _away_from_ms > 0 and Time.get_ticks_msec() - _away_from_ms < AWAY_CAPTURE_MS
+
+
+## A strike played out (on the map or while away): a short toast (the long text is the letter in the inbox — playtest
+## 2: «…+2 к военному счёту, +27…» was cut); while away it is a row of the summary, or under 4 h a raid banner (decision
+## 21: a strike always shows when the player comes back).
+func _strike_news(hex: int, held: bool, n: int) -> void:
+	if _away_capturing():
+		_away_events.append({"icon": "shield" if held else "hex_scorched",
+			"title": (tr("away.strike_held") if held else tr("away.strike_lost")) % [_cell_name(hex), n]})
+		if not _away_due:
+			ui.toast(tr("toast.raid_banner") % _cell_name(hex), "swords", "info" if held else "error", true)
+		return
+	if held:
+		ui.toast(tr("toast.strike_held") % [_cell_name(hex), n], "shield")
+	else:
+		ui.toast(tr("toast.strike_lost") % n, "hex_scorched", "error")
+
+
+## The summary once the map is free (before the calendar, 08 §8.8.1): how long, the income waiting on the hexes (or what
+## the patent collected), each strike and its result, wars the cap closed, a patent or a pass season that ran out, the
+## new letters; «Собрать всё» and, where ads are allowed and there is income, «×2 · ролик» (ad_offline_double, once a day,
+## canon §15.2). The 3–6 d / 7–29 d / 30 d+ gifts are the backlog.
+func _away_tick(_now: int) -> void:
+	if not _away_due or Time.get_ticks_msec() - _away_from_ms < AWAY_SHOW_MS:
+		return
+	if mode not in [Mode.MAP, Mode.WAR] or ui.has_modal() or shop != null or _quiet() or ftue > 0:
+		return
+	_away_due = false
+	_show_away()
+
+
+func _away_pool() -> Dictionary:
+	var pool := {}
+	for r in ["gold", "food", "metal", "oil"]:
+		var n: int = econ.stock_total(r) + int(_away_got.get(r, 0))
+		if n > 0:
+			pool[r] = n
+	return pool
+
+
+func _show_away() -> void:
+	var lines: Array = [{"chips": [{"icon": "hourglass", "text": tr("away.gone") % GameUI.fmt_time(int(_away[1]) - int(_away[0]))}]}]
+	var pool := _away_pool()
+	if not pool.is_empty():
+		var tiles: Array = []
+		for r in pool:
+			tiles.append({"icon": String(GameUI.RES_ICON.get(r, "coin")), "value": "+" + GameUI.fmt_num(int(pool[r])),
+				"caption": tr("res.name." + r)})
+		lines.append({"tiles": tiles, "head": tr("away.collected") if not _away_got.is_empty() and econ.stock.is_empty() else tr("away.income"),
+			"tile_h": 168.0})
+	var rows: Array = []
+	for e in _away_events:
+		rows.append({"icon": String(e["icon"]), "title": String(e["title"])})
+	var t0 := int(_away[0])
+	if patent.until > t0 and patent.until <= int(_away[1]):
+		rows.append({"icon": "charter", "title": tr("away.trial_end") if not purchases.has("iap_sub_patent") else tr("away.patent_end")})
+	if BattlePass.season_of(t0) != BattlePass.season_of(int(_away[1])):
+		rows.append({"icon": "medal", "title": tr("away.pass_end")})
+	var letters := 0
+	for m in inbox:
+		if int(m.get("t", 0)) >= t0 and not bool(m.get("read", false)):
+			letters += 1
+	if letters > 0:
+		rows.append({"icon": "mail", "title": tr("away.letters") % letters})
+	if rows.size() > 5:  # the rest is in the mail
+		rows = rows.slice(0, 4) + [rows[-1]]
+	if not rows.is_empty():
+		lines.append({"rows": rows})
+	if pool.is_empty() and rows.is_empty():
+		lines.append(tr("away.nothing"))
+	var buttons: Array = []
+	if not pool.is_empty() and _ads_allowed() and _ad_left("ad_offline_double", 1) > 0:
+		buttons.append([tr("away.double"), "gold", func(): _away_collect(true), {"icon": "ad"}])
+	buttons.append([tr("away.collect"), "go", func(): _away_collect(false), {"icon": "coin"}])
+	ui.show_choice(tr("away.title"), lines, buttons, "info", "hourglass", "", false)
+
+
+## «Собрать всё» of the summary (×2: the same once more through the ad, as far as the warehouse takes it, canon §4 and
+## 05 §5.4); then the calendar comes (_calendar_tick).
+func _away_collect(double: bool) -> void:
+	var pool := _away_pool()
+	ui.close_modal()
+	if double and not _rewarded("ad_offline_double", 1):
+		double = false
+	if not econ.stock.is_empty():
+		_collect_all()
+	if double:
+		econ.add_resources(pool)
+		ui.toast(tr("toast.offline_double"), "ad", "info", true)
+	_away_got = {}
+	_econ_tick()
+	_autosave()
 
 
 func _scripted_run() -> bool:
@@ -768,7 +1045,16 @@ func _defense_primary(hex: int) -> void:
 		ui.set_primary(type, caption, "go", why == "", "", _price_items(econ.build_cost(type)), L.t(why) if why != "" else "")
 	else:  # the hex cannot take it (occupied in a war), or the warehouse is too small: locked, the reason in the tooltip
 		var plate: Array = [["crate", tr("bld.lvl_short") % int(why.get_slice("|", 1))]] if why.begins_with("err.storage_small") else []
-		ui.set_primary("upgrade_locked", caption, "lock", false, "", plate, L.t(why))
+		ui.set_primary("upgrade_locked", caption, "lock", false, "", plate, _why_text(why))
+
+
+## A refusal's text (L.t): the chapter it opens in is written in Roman numerals («Откроется в главе III», as everywhere
+## the chapters are named; the sim packs the number).
+static func _why_text(why: String) -> String:
+	if why.begins_with("err.chapter_locked|"):
+		var n := int(why.get_slice("|", 1))
+		return TranslationServer.translate("err.chapter_locked") % GameUI.ROMAN[clampi(n, 0, GameUI.ROMAN.size() - 1)]
+	return L.t(why)
 
 
 ## A building's next level on the big button as `kind`: the price on the plate (short: the number red, the tap says
@@ -793,9 +1079,11 @@ func _level_primary(b: Dictionary, kind: String, caption: String) -> void:
 			plate = [["", tr("dl.short") % n]]
 		"err.chapter_locked":
 			plate = [["", tr("world.chapter") % GameUI.ROMAN[clampi(n, 0, GameUI.ROMAN.size() - 1)]]]
+		"err.chapter_last":
+			plate = [["", tr("bld.soon")]]
 		"err.storage_small":  # the price is over the warehouse's cap: the Warehouse level it takes
 			plate = [["crate", tr("bld.lvl_short") % n]]
-	ui.set_primary("upgrade_locked", caption, "lock", false, "", plate, L.t(why))
+	ui.set_primary("upgrade_locked", caption, "lock", false, "", plate, _why_text(why))
 
 
 ## The big button for the selected hex on the map (docs/ui_style.md §6 HUD: short captions, the cost or the time in
@@ -885,8 +1173,8 @@ func _primary_for_selection() -> void:
 		elif not ultimatum.is_empty():
 			# an ultimatum waits for its answer (B-H1): no war on anyone meanwhile — the lock says so with the time
 			# left, and its tap opens the ultimatum again
-			# (its plate says it is the time to answer, not a countdown to a war — Q2 review; no icon: «answer 3h 59m» with
-			# one pushed the caption off the en button)
+			# (its plate says it is the time to answer, not a countdown to a war — Q2 review; the L button's fit drops the
+			# envelope for that plate, the status button above keeps it)
 			ui.set_primary("ult_wait", tr("ui.declare_war"), "lock", true, "", [["", tr("ult.left") % GameUI.fmt_time(_ult_left())]],
 				tr("ult.answer_first"))
 		else:
@@ -5194,6 +5482,27 @@ func _finish_war(enemy: int, msg: String, icon := "", white := false) -> void:
 
 # ====================================================================== economy (canon §4, §7)
 
+## The device's UTC offset in minutes (+ east); `--tz-bias=N` stands in for it (the local-day probes).
+func _device_bias() -> int:
+	for a in OS.get_cmdline_user_args():
+		if a.begins_with("--tz-bias="):
+			return int(a.substr(10))
+	return int(Time.get_time_zone_from_system().get("bias", 0))
+
+
+## Keeps Calendar.bias_min — the offset the game days count by (04:00 local, canon §13) — on the device's zone, a new
+## one at most once per 7 days (Calendar.adopt_bias, 08 §8.8.4); looks at the device at most once a minute.
+func _tz_sync(now: int, force := false) -> void:
+	if not force and Time.get_ticks_msec() - _tz_checked < 60000 and _tz_checked > 0:
+		Calendar.bias_min = tz_bias
+		return
+	_tz_checked = Time.get_ticks_msec()
+	var r: Array = Calendar.adopt_bias(tz_bias, tz_since, _device_bias(), now)
+	tz_bias = int(r[0])
+	tz_since = int(r[1])
+	Calendar.bias_min = tz_bias
+
+
 ## Server-aligned time when online (device clock changes don't skip timers), plus the debug offset.
 func now_s() -> int:
 	return int(Time.get_unix_time_from_system()) + time_offset + (int(net.server_offset) if net != null else 0)
@@ -5208,6 +5517,7 @@ func _econ_tick() -> void:
 	var now := now_s()
 	if _paused_at > 0 and now - _paused_at >= 60:
 		_resumed()  # (the first tick after a pause came before the resume notice)
+	_tz_sync(now)
 	var done_line: String = research.tick(now)
 	if done_line != "":
 		_on_research_done(done_line)
@@ -5263,6 +5573,7 @@ func _econ_tick() -> void:
 	_chronicle_tick()
 	_orders_chip()
 	_ai_tick(now)
+	_away_tick(now)
 	_update_bubbles()
 	if tab == "buildings" and mode in [Mode.MAP, Mode.WAR]:
 		ui.show_buildings(_building_items(now))
@@ -6355,7 +6666,7 @@ func _calendar_tick(now: int) -> void:
 	var after := int(stats.get("ftue_done", 0)) + CAL_AFTER_TUT_SEC
 	if _cal_soon > 0:
 		after = mini(after, _cal_soon)
-	if _cal_auto and mode == Mode.MAP and not ui.has_modal() and shop == null and not _quiet() and now >= after:
+	if _cal_auto and not _away_due and mode == Mode.MAP and not ui.has_modal() and shop == null and not _quiet() and now >= after:
 		_cal_auto = false
 		_open_calendar()
 
@@ -7670,7 +7981,7 @@ func _open_profile() -> void:
 			_show_settings(),
 		"soon": func(): ui.toast(tr("profile.soon")),
 		"flag": func(): _open_flag_editor(),
-		"name": func(): _open_name_editor(func(): _open_profile()),
+		"name": func(): _open_name_editor(func(): _open_profile(), 0, func(): _open_profile()),
 	})
 
 
@@ -7722,6 +8033,8 @@ func _open_flag_wizard(step: int, draft: Dictionary, on_done: Callable) -> void:
 		func(i: int): _open_flag_wizard(step + 1, opts[i], on_done),
 		func(): _open_flag_wizard(3, FlagView.random_flag(randi()), on_done),
 		func(): _finish_flag_wizard(draft))
+	if step > 0:  # Android Back: the step before, the choices so far kept (the first step has none: the tour needs a flag)
+		ui.set_back(func(): _open_flag_wizard(mini(step, 3) - 1, draft, on_done))
 
 
 ## «Готово» of the wizard: the flag goes on the HUD and the banners, then the FTUE tour goes on.
@@ -7762,11 +8075,12 @@ func _realm_name_ideas(shift: int) -> Array:
 
 ## «Название державы» (canon §14.3, 2:30–3:30): a field and 6 ideas; the name shows on the profile, the
 ## diplomacy and the war bar.
-func _open_name_editor(on_done: Callable, shift := 0) -> void:
+func _open_name_editor(on_done: Callable, shift := 0, back := Callable()) -> void:
 	_name_done = on_done
 	ui.show_name_editor(realm_name if realm_name != "" else "", _realm_name_ideas(shift), REALM_NAME_MAX,
 		func(n: String): _finish_name_editor(n),
-		func(): _open_name_editor(on_done, shift + 1))
+		func(): _open_name_editor(on_done, shift + 1, back))
+	ui.set_back(back)  # Android Back: from the profile, back to it with the name unchanged; the tour's naming has none
 
 
 ## A name of 2–20 characters (spaces trimmed, line breaks dropped); an empty one keeps «Ваша держава».
@@ -7825,6 +8139,9 @@ func _patent_tick(now: int) -> void:
 	if not econ.stock.is_empty():
 		var got: Dictionary = econ.collect_all()
 		stats["gold_collected"] = int(stats.get("gold_collected", 0)) + int(got.get("gold", 0))
+		if _away_capturing():
+			for r in got:
+				_away_got[r] = int(_away_got.get(r, 0)) + int(got[r])
 		econ.collect_veins()
 		if not got.is_empty() and now - _collect_counted >= 1800:  # counts for «Приказы дня» like a tap
 			_collect_counted = now
@@ -7834,7 +8151,8 @@ func _patent_tick(now: int) -> void:
 func _open_patent() -> void:
 	var now := now_s()
 	ui.show_patent({"active": patent.active(now), "days_left": patent.days_left(now), "trial": patent.trial_eligible(),
-		"can_buy": _payments_enabled(), "price": PATENT_PRICE, "trial_price": PATENT_TRIAL_PRICE},
+		"can_buy": _payments_enabled(), "price": PATENT_PRICE, "trial_price": PATENT_TRIAL_PRICE,
+		"on_terms": func(): _open_legal("terms", _open_patent), "on_privacy": func(): _open_legal("privacy", _open_patent)},
 		func(sku: String): _on_buy_sku(sku),
 		func(): ui.toast(tr("patent.restored")))
 
@@ -7853,15 +8171,15 @@ func _claim_patent_daily() -> void:
 ## spent is not offered, rather than shown only to answer «limit».
 func _ad_left(key: String, cap: int) -> int:
 	var rec: Array = ad_counts.get(key, [])
-	if rec.size() < 2 or int(rec[0]) != now_s() / 86400:
+	if rec.size() < 2 or not Calendar.seen(Calendar.local_day(now_s()), int(rec[0])):
 		return cap
 	return maxi(0, cap - int(rec[1]))
 
 
 func _rewarded(key: String, cap: int) -> bool:
-	var day := now_s() / 86400
+	var day := Calendar.local_day(now_s())  # the caps turn at 04:00 local with the game day (09 §9.3: «до 04:00»)
 	var rec: Array = ad_counts.get(key, [day, 0])
-	if int(rec[0]) != day:
+	if not Calendar.seen(day, int(rec[0])):
 		rec = [day, 0]
 	if int(rec[1]) >= cap:
 		ui.toast(tr("toast.ad_limit"))
@@ -7879,12 +8197,12 @@ func _rewarded(key: String, cap: int) -> bool:
 func _intro_offer_check(day: int) -> void:
 	if not _payments_enabled() or patent.active(now_s()) or not patent.trial_eligible() or intro_offer_day == day:
 		return
-	if day < installed_at / 86400 + 1:
+	if day < Calendar.local_day(installed_at) + 1:
 		return
 	var total := 0
 	for k in ad_counts:
 		var rec: Array = ad_counts[k]
-		if int(rec[0]) == day:
+		if Calendar.seen(day, int(rec[0])):
 			total += int(rec[1])
 	if total != 3:
 		return
@@ -7983,7 +8301,7 @@ func _building_items(now: int) -> Array:
 		var busy: bool = int(b["upgrade_end"]) > now
 		var it := {"id": b["id"], "name": tr(String(info["name"])), "type": String(b["type"]), "level": b["level"], "max": econ.max_level(b),
 			"busy": busy, "left": int(b["upgrade_end"]) - now, "speed": econ.speedup_cost(b, now),
-			"cost": cost, "seconds": secs, "reason": L.t(reason), "stock": speed_minutes}
+			"cost": cost, "seconds": secs, "reason": _why_text(reason), "stock": speed_minutes}
 		if String(b["type"]) == "warehouse" and not wh_for.is_empty():
 			var res_for := String(wh_for["type"]) == "residence"
 			it["need_for"] = {"type": wh_for["type"], "level": wh_for["level"], "need": wh_for["need"],
@@ -8077,7 +8395,7 @@ func _on_building_upgrade(id: int) -> void:
 	var b: Dictionary = econ.building(id)
 	var reason: String = econ.can_upgrade(b, now)
 	if reason != "" or not econ.start_upgrade(id, now):
-		ui.toast(L.t(reason) if reason != "" else tr("toast.cant_upgrade"))
+		ui.toast(_why_text(reason) if reason != "" else tr("toast.cant_upgrade"))
 		return
 	_stat("upgrades")
 	sfx.play("coin")
@@ -8436,7 +8754,7 @@ func _resolve_strike() -> void:
 	sfx.play("repelled")
 	var msg := L.pack("inbox.defense.text", [_state_key(by), _cell_key(hex), gold])
 	_post("inbox.defense.title", msg)
-	ui.toast(L.t(msg))
+	_strike_news(hex, true, gold)
 	_refresh_ui()
 	_autosave()
 
@@ -8505,7 +8823,7 @@ func _auto_defense(hex: int, by := -1) -> void:
 		sfx.play("repelled")
 		var msg := L.pack("inbox.defense.text", [_state_key(enemy), _cell_key(hex), gold])
 		_post("inbox.defense.title", msg)
-		ui.toast(L.t(msg))
+		_strike_news(hex, true, gold)
 	else:
 		war["battles"] = clampi(int(war["battles"]) - 2, -10, 10)
 		for h in taken:
@@ -8513,7 +8831,7 @@ func _auto_defense(hex: int, by := -1) -> void:
 		sfx.play("lost")
 		var msg2 := L.pack("inbox.defense_lost.text", [_state_key(enemy), taken.size()])
 		_post("inbox.defense_lost.title", msg2)
-		ui.toast(L.t(msg2))
+		_strike_news(hex, false, taken.size())
 	_refresh_ui()
 	_autosave()
 
@@ -8619,6 +8937,8 @@ func _war_cap() -> void:
 	ui.close_modal()
 	# the cap ran out while the player was away 24 h or more: a white peace, whatever the score (canon §9.11)
 	var cap_at := int(war.get("started", 0)) + cap
+	if _away_capturing():
+		_away_events.append({"icon": "dove", "title": tr("away.war_cap") % _state_short(enemy)})
 	if cap_at - _away[0] >= 86400 and cap_at <= _away[1]:  # (gone 24 h before the cap ran out, not just after it)
 		War.white_peace(sim)
 		_post("inbox.war_cap.title", L.pack("inbox.war_cap.away", [hours]))
@@ -9866,6 +10186,35 @@ func _demo(spec: String) -> void:
 		return
 	if what == "settings":
 		_on_hud_button("gear")
+		return
+	if what == "legal":  # legal:privacy|terms|licenses — a document as Settings opens it (‹ back to Settings)
+		_open_legal(String(parts[1]) if parts.size() > 1 else "privacy", _show_settings)
+		return
+	if what == "quit":  # the bare map's Android Back: «Выйти из игры?»
+		_select(-1)
+		_on_back()
+		return
+	if what == "away":  # away[:hours] — «Пока вас не было» after that long (26 h by default): a strike held, a war closed
+		# by its cap, the patent ended, letters, the income waiting; the ×2 offer as the ads allow it
+		var hrs := float(parts[1]) if parts.size() > 1 else 26.0
+		var t := now_s()
+		econ.stock[int(sim.states[Types.PLAYER]["capital_id"])] = {"gold": 1840, "food": 960, "metal": 420}  # what waited
+		_away = [t - int(hrs * 3600.0), t]
+		_away_begin()
+		_strike_news(int(sim.states[Types.PLAYER]["capital_id"]), true, 272)
+		_away_events.append({"icon": "dove", "title": tr("away.war_cap") % _state_short(MapGen.BARONS)})
+		patent.until = t - 3600
+		_post("inbox.defense.title", L.pack("inbox.defense.text", [_state_key(MapGen.BARONS), _cell_key(int(sim.states[Types.PLAYER]["capital_id"])), 272]))
+		_away_from_ms = Time.get_ticks_msec() - AWAY_SHOW_MS
+		_away_tick(t)
+		return
+	if what == "res_lock":  # res_lock[:N] — the Residence at chapter N's cap (4: the last chapter, «Скоро»): its lock tooltip
+		econ.chapter = int(parts[1]) if parts.size() > 1 else LAST_CHAPTER
+		var rb: Dictionary = econ.buildings[0]
+		rb["level"] = econ.max_level(rb)
+		_select(int(sim.states[Types.PLAYER]["capital_id"]))
+		_econ_tick()
+		ui._on_primary_denied()
 		return
 	if what == "expansion":  # the chapter II announcement (show_info): the advisor, the new neighbours, the goal
 		await _world_expansion()

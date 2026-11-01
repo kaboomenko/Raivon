@@ -2,6 +2,7 @@ extends SceneTree
 ## Weekly tasks (08 §8.7). Run: godot --headless --path game --script res://tests/test_weekly.gd
 
 const Weekly := preload("res://scripts/sim/weekly.gd")
+const Calendar := preload("res://scripts/sim/calendar.gd")
 
 var fails := 0
 
@@ -38,5 +39,23 @@ func _initialize() -> void:
 	var q := Weekly.new()
 	q.load_dict(w.to_dict())
 	_check(q.week == w.week and q.need.size() == 7, "save and load")
+	# the week turns on Monday 04:00 local (08 §8.7, canon §13): biases −300, 0, +180, +540
+	for b in [-300, 0, 180, 540]:
+		Calendar.bias_min = b
+		var mon: int = Weekly.MONDAY + 7 * 86400 - b * 60
+		_check(Weekly.week_of(mon - 60) + 1 == Weekly.week_of(mon + 60), "bias %+d: the week turns on Monday 04:00 local" % b)
+		_check(Weekly.week_end(mon - 60) == mon, "bias %+d: the week ends on Monday 04:00 local" % b)
+		var wb := Weekly.new()
+		wb.refresh(mon - 3600, 2, {})
+		_check(not wb.refresh(mon - 60, 2, {}) and wb.refresh(mon + 60, 2, {}), "bias %+d: a new set on Monday 04:00 local" % b)
+	# a step west across Monday 04:00 keeps the week (no fresh set, the claims stay)
+	Calendar.bias_min = 0
+	var ww := Weekly.new()
+	var mon0 := Weekly.MONDAY + 14 * 86400
+	ww.refresh(mon0 + 3600, 2, {"captures": 0})
+	ww.claimed[1] = true
+	Calendar.bias_min = -300
+	_check(not ww.refresh(mon0 + 2 * 3600, 2, {"captures": 0}) and ww.claimed.has(1), "a step west keeps the week")
+	Calendar.bias_min = 0
 	print("ALL WEEKLY CHECKS PASSED" if fails == 0 else "%d FAILED" % fails)
 	quit(1 if fails > 0 else 0)

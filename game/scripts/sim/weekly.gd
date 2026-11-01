@@ -1,10 +1,12 @@
 extends RefCounted
-## Weekly tasks (canon §14.5, 08 §8.7): a fixed set of 7, reset on Monday 04:00, targets by DL (1–3 / 4–6 / 7–8),
+## Weekly tasks (canon §14.5, 08 §8.7): a fixed set of 7, reset on Monday 04:00 local (Calendar.local_week), targets by DL (1–3 / 4–6 / 7–8),
 ## pass XP on completion (3 400 a week), and the week's chest in two steps — 4 of 7 tasks and 6 of 7 (the higher
 ## step forgives one task and needs no daily login). Progress is the growth of stat counters since the week began.
 
+const Calendar := preload("res://scripts/sim/calendar.gd")
+
 const WEEK := 7 * 86400
-const MONDAY := 1791172800  # 2026-10-05 04:00 UTC, a Monday
+const MONDAY := Calendar.MONDAY  # 2026-10-05 04:00 UTC, a Monday (the bias makes it 04:00 local)
 ## code, stat counters (summed), targets by DL tier, XP
 const TASKS := [
 	["weekly_peace", ["peace_wins"], [1, 2, 2], 500],
@@ -25,17 +27,17 @@ var chest := {}     # step (0 / 1) -> true
 
 
 static func week_of(now: int) -> int:
-	return int(floor(float(now - MONDAY) / WEEK))
+	return Calendar.local_week(now)
 
 
 static func week_end(now: int) -> int:
-	return MONDAY + (week_of(now) + 1) * WEEK
+	return Calendar.week_end(now)
 
 
 func refresh(now: int, dl: int, stats: Dictionary) -> bool:
 	var w := week_of(now)
-	if w == week and need.size() == TASKS.size():
-		return false
+	if Calendar.seen(w, week, 1) and need.size() == TASKS.size():
+		return false  # (a zone step west keeps the week)
 	week = w
 	base = {}
 	for t in TASKS:

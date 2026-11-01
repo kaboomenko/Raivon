@@ -3,14 +3,15 @@ extends RefCounted
 ## «7 days for $1.99» (`iap_sub_trial`, once per account). While active: rewarded rewards without the video (same
 ## caps), +1 temporary builder, +1 convoy, income collected automatically, timers ≤10 min finish for free, 40
 ## Raivites a day (claimed in the first session, an unclaimed day burns), a Royal case key every Monday 04:00 and
-## the animated frame of the month. Deterministic; the caller applies the perks. No store SDK yet: a purchase sets
+## the animated frame of the month. Days and weeks are local (Calendar.local_day / local_week: 04:00 local). Deterministic; the caller applies the perks. No store SDK yet: a purchase sets
 ## the paid-until time (debug builds grant it).
+
+const Calendar := preload("res://scripts/sim/calendar.gd")
 
 const DAY := 86400
 const MONTH_SEC := 30 * DAY
 const TRIAL_SEC := 7 * DAY
-const REFRESH_SEC := 4 * 3600
-const MONDAY := 1791172800  # 2026-10-05 04:00 UTC
+const MONDAY := Calendar.MONDAY  # 2026-10-05 04:00 UTC; the key comes on Monday 04:00 local
 const DAILY_RAIVITE := 40
 const FREE_FINISH_SEC := 600
 
@@ -22,11 +23,11 @@ var months := {}          # "YYYY-MM" -> true: the frames earned
 
 
 static func game_day(now: int) -> int:
-	return int(floor(float(now - REFRESH_SEC) / DAY))
+	return Calendar.local_day(now)
 
 
 static func week_of(now: int) -> int:
-	return int(floor(float(now - MONDAY) / (7.0 * DAY)))
+	return Calendar.local_week(now)
 
 
 func active(now: int) -> bool:
@@ -53,20 +54,20 @@ func days_left(now: int) -> int:
 ## The day's 40 Raivites: true once per game day while active.
 func claim_daily(now: int) -> bool:
 	var d := game_day(now)
-	if not active(now) or daily_day == d:
+	if not active(now) or Calendar.seen(d, daily_day):
 		return false
 	daily_day = d
 	return true
 
 
 func daily_ready(now: int) -> bool:
-	return active(now) and daily_day != game_day(now)
+	return active(now) and not Calendar.seen(game_day(now), daily_day)
 
 
-## A Royal case key on Monday 04:00 if active then: true once per week (the caller adds the key).
+## A Royal case key on Monday 04:00 local if active then: true once per week (the caller adds the key).
 func weekly_key(now: int) -> bool:
 	var w := week_of(now)
-	if not active(now) or key_week == w:
+	if not active(now) or Calendar.seen(w, key_week, 1):
 		return false
 	key_week = w
 	return true

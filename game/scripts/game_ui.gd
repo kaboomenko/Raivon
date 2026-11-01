@@ -1039,6 +1039,28 @@ func has_modal() -> bool:
 	return _modal != null
 
 
+## Android Back / Esc (10 §5.4, main._on_back): what the open window does with it — its ✕ (close_modal, or a dialog's
+## cancel entry: the ultimatum stays pending, the swap is dropped), a screen's ‹ (a commander's card goes back to the
+## album, a legal text to Settings), or what main set for it (set_back: the flag wizard's step back, the treaty's
+## «К войне»). Callable() when the window has none: a decision, the result, the tutorial card — Back is ignored then.
+var _modal_back := Callable()
+
+
+func back_action() -> Callable:
+	return _modal_back if _modal != null else Callable()
+
+
+func set_back(cb: Callable) -> void:
+	if _modal != null:
+		_modal_back = cb
+
+
+## The open window's place among ui.root's children (-1: none): the store (main's ShopUI, also a child of root) is on
+## top of a window opened before it, under one opened after it.
+func modal_index() -> int:
+	return _modal.get_index() if _modal != null and _modal.get_parent() != null else -1
+
+
 var _closing: Control  # the window fading out
 var _closed_frame := -1
 var _docked := false  # a docked window or a post-battle one is open: the bottom groups are hidden under it
@@ -1050,6 +1072,7 @@ var on_dock := Callable()  # (docked: bool) — main hides the HUD's bottom grou
 func close_modal() -> void:
 	var m := _modal
 	_modal = null
+	_modal_back = Callable()
 	if m != null:
 		Kit.close_tip()  # a tooltip from the window goes with it
 	if _docked and not _dock_base:  # (a window closed in a docked moment leaves the bottom hidden)
@@ -1071,6 +1094,7 @@ func _modal_box(rect: Rect2, parchment := false, title := "", icon := "", role :
 	if swap and is_instance_valid(_closing):
 		_closing.queue_free()
 	_modal = Control.new()
+	_modal_back = close_modal if closable and not blocking else Callable()
 	var vis := get_viewport().get_visible_rect() if is_inside_tree() else Rect2(0, 0, VW, VH)
 	_modal.position = vis.position
 	_modal.size = Vector2(maxf(VW, vis.size.x), maxf(VH, vis.size.y))
@@ -1458,6 +1482,9 @@ func show_peace(enemy: String, budget: float, control: int, demands: Array, chos
 	Kit.unify([back, sb])
 	_seal_btn = sb
 	_modal_buttons = [back, sb]
+	_modal_back = func():  # Android Back = «К войне», never while the seal is being held (10 §5.4)
+		if not sb.holding() and not _sealed:
+			action_pressed.emit("back_to_war")
 
 
 func _on_seal() -> void:
@@ -2016,9 +2043,20 @@ func show_pass(info: Dictionary, on_claim: Callable, on_buy: Callable) -> void:
 			{"size": "L", "icon": "medal", "price": [["", Kit.store_price(String(info.get("price_up", "")))]], "cb": func(): on_buy.call("iap_pass_elite_up")})
 		ub.name = "buy_elite"
 		Kit.ribbon(box, Vector2(ub.position.x + ub.size.x * 0.5, ub.position.y), tr("pass.plus15"), "war")
+	# the purchase's terms over it (Apple 3.1.2): one 28-day season, a one-time purchase that does not renew
+	if foot != "":
+		var pt := Kit.label(tr("pass.terms"), Kit.fit_size(tr("pass.terms"), 22, w - 64.0, "b800", 22, false), Kit.MUTED_CREAM, false)
+		pt.name = "terms"
+		pt.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		pt.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		pt.clip_text = true
+		pt.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		pt.position = Vector2(32, fy - 28.0 - 34.0)
+		pt.size = Vector2(w - 64.0, 34)
+		box.add_child(pt)
 	# ---- the track
 	var wy := 168.0
-	var wb := (fy - 28.0) if foot != "" else h - 32.0
+	var wb := (fy - 28.0 - 40.0) if foot != "" else h - 32.0
 	var well := Kit.well(box, Rect2(32, wy, w - 64.0, wb - wy))
 	var ww := well.size.x
 	var cx := roundf(ww * 0.5) - 6.0  # the spine (the scroll bar's lane takes the right 12 px)
@@ -2463,8 +2501,13 @@ func show_patent(info: Dictionary, on_buy: Callable, on_restore: Callable) -> vo
 	var hero := 232.0
 	var perk_h := 156.0
 	var well_h := 16.0 + 2.0 * perk_h + 12.0 + 16.0
-	var legal := tr("patent.renewal")
-	var legal_h := 96.0
+	# the whole terms under the purchase, always (Apple 3.1.2, Google Play subscriptions): the price and the period of
+	# each offer — the intro «7 дней за 1,99 $, затем 7,99 $ в месяц» while it is open — then the renewal and how to cancel
+	var mprice := Kit.store_price(String(info.get("price", "")))
+	var terms := (tr("patent.trial") % [Kit.store_price(String(info.get("trial_price", ""))), mprice]) + ". " if trial \
+		else tr("patent.month_terms") % mprice + " "
+	var legal := terms + tr("patent.period") + " " + tr("patent.renewal")
+	var legal_h := ceilf(_line_h(legal, 781.0 - 64.0, 22)) + 4.0
 	var foot_h := (34.0 + 116.0) if buy else (56.0 if active or not can_buy else 0.0)
 	var h := 56.0 + hero + 16.0 + well_h + 24.0 + foot_h + 20.0 + 48.0 + 12.0 + legal_h + 32.0
 	var box := _modal_box(_win_rect("M", h), false, tr("pack.patent"), "", "gold", true, false)
@@ -2523,18 +2566,20 @@ func show_patent(info: Dictionary, on_buy: Callable, on_restore: Callable) -> vo
 		ul.size = Vector2(w - 64.0, 56)
 		box.add_child(ul)
 		y += 56.0 + 20.0
-	var doc := func(): toast(tr("patent.doc_soon"))
-	Kit.links(box, Rect2(32, y, w - 64.0, 48), [[tr("patent.terms_link"), doc], [tr("patent.privacy_link"), doc],
-		[tr("patent.restore_short"), func(): on_restore.call()]], 26)
-	y += 48.0 + 12.0
 	var ll := Kit.label(legal, 22, Kit.MUTED_CREAM, false)
 	ll.name = "legal"
 	ll.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	ll.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	ll.max_lines_visible = 4
 	ll.position = Vector2(32, y)
 	ll.size = Vector2(w - 64.0, legal_h)
 	box.add_child(ll)
+	y += legal_h + 12.0
+	# the documents: the same as Settings opens (their URLs once published, else the text in the game)
+	var none := func(): toast(tr("patent.doc_soon"))
+	var on_terms: Callable = info.get("on_terms", none)
+	var on_privacy: Callable = info.get("on_privacy", none)
+	Kit.links(box, Rect2(32, y, w - 64.0, 48), [[tr("patent.terms_link"), on_terms], [tr("patent.privacy_link"), on_privacy],
+		[tr("patent.restore_short"), func(): on_restore.call()]], 26)
 
 
 ## A perk on paper: a tile with the icon 80 at the top and two lines of LABEL 24 INK_TEXT under it.
@@ -3262,6 +3307,7 @@ func _dlg_box(h: float, title: String, role: String, icon: String, cancel: Calla
 		_set_docked(true)
 	if cancel.is_valid():
 		Kit.close_button(box, cancel)
+		_modal_back = cancel
 		if not dock_bottom:  # a tap on the dim cancels too (§4.3); docked, the map above stays out of reach
 			var m := _modal
 			_modal.gui_input.connect(func(e): if _is_tap(e) and _modal == m: cancel.call())
@@ -3343,17 +3389,29 @@ func show_choice(title: String, lines: Array, buttons: Array, role := "info", ic
 
 
 ## Settings (docs/ui_style.md §6 «Настройки»): a window M with the info plate; changes apply at once and ✕ closes it.
-## Well 1: «Звук» with a switch, «Язык» with segments Русский | English (`on_lang` gets "ru" / "en" and re-renders the
-## game, then the caller shows this window again). Well 2: the store's subscription screen and «Restore purchases» as
-## rows with a chevron (when given). Well 3, the danger zone: «Новая игра» — war S held 1.2 s. The build line at the
-## bottom (LEGAL).
-func show_settings(sound_on: bool, on_sound: Callable, on_new_game: Callable, on_lang: Callable, on_manage := Callable(), on_restore := Callable()) -> void:
+## Well 1: «Звук» and «Вибрация» with switches, «Язык» with segments Русский | English (`on_lang` gets "ru" / "en" and
+## re-renders the game, then the caller shows this window again). Well 2: the store's subscription screen and «Restore
+## purchases» as rows with a chevron (when given). Well 3, the documents (App Store 5.1.1, 3.1.2; Google Play):
+## «Конфиденциальность», «Условия использования», «Поддержка» (only with a support address), «Лицензии» — rows with a
+## chevron. Well 4, the danger zone: «Новая игра» — war S held 1.2 s. The build line at the bottom (LEGAL).
+## `opts`: {haptic: bool, on_haptic, privacy, terms, support, licenses: Callable} — a row shows when its callable does.
+func show_settings(sound_on: bool, on_sound: Callable, on_new_game: Callable, on_lang: Callable, on_manage := Callable(), on_restore := Callable(), opts := {}) -> void:
 	var store_rows := int(on_manage.is_valid()) + int(on_restore.is_valid())
+	var docs: Array = []  # [name, title key, callable]
+	for d in [["privacy", "settings.privacy"], ["terms", "settings.terms"], ["support", "settings.support"],
+			["licenses", "settings.licenses"]]:
+		var cb: Callable = opts.get(String(d[0]), Callable())
+		if cb.is_valid():
+			docs.append([d[0], d[1], cb])
+	var on_haptic: Callable = opts.get("on_haptic", Callable())
 	var row_h := 96.0
 	var w1 := 16.0 + 2.0 * row_h + 12.0 + 16.0
 	var w2 := (16.0 + store_rows * row_h + (store_rows - 1) * 12.0 + 16.0) if store_rows > 0 else 0.0
+	# the documents as links, two to a line (a row each would cost the window ~9 canvas draws: KitBake budget +2)
+	var doc_lines := ceili(docs.size() / 2.0)
+	var wd := (8.0 + doc_lines * 52.0 + 8.0) if not docs.is_empty() else 0.0
 	var w3 := 16.0 + 64.0 + 8.0 + 30.0 + 12.0  # the button, then the hint «hold it» (LEGAL)
-	var h := 72.0 + w1 + 16.0 + (w2 + 16.0 if w2 > 0.0 else 0.0) + w3 + 16.0 + 32.0 + 32.0
+	var h := 72.0 + w1 + 16.0 + (w2 + 16.0 if w2 > 0.0 else 0.0) + (wd + 16.0 if wd > 0.0 else 0.0) + w3 + 16.0 + 32.0 + 32.0
 	var box := _modal_box(_win_rect("M", h), false, tr("settings.title"), "gear", "info", true, false)
 	box.set_meta("kit_native", true)
 	var w := box.size.x
@@ -3362,8 +3420,46 @@ func show_settings(sound_on: bool, on_sound: Callable, on_new_game: Callable, on
 	var well1 := Kit.well(box, Rect2(32, 72, w - 64.0, w1))
 	well1.name = "general"
 	var sw := Kit.toggle(null, Vector2.ZERO, sound_on)
+	var right: Control = sw
+	var hw: Kit.KitToggle = null
+	if on_haptic.is_valid():  # «Вибрация» shares the sound's row: [🔊 Звук ◯] [⚡ Вибрация ◯]
+		hw = Kit.toggle(null, Vector2.ZERO, bool(opts.get("haptic", true)))
+		hw.name = "vibration"
+		hw.cb = func(_on: bool): on_haptic.call()
+		var vt := tr("settings.vibration")
+		var vs := Kit.fit_size(vt, 30, 190.0, "d900", 24, false)
+		var vw := minf(190.0, Kit.text_w(vt, vs, "d900", false) + 4.0)
+		var holder := Control.new()
+		holder.name = "switches"
+		holder.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		holder.size = Vector2(sw.size.x + 28.0 + 48.0 + 8.0 + vw + 12.0 + hw.size.x, maxf(sw.size.y, 48.0))
+		sw.position = Vector2(0, (holder.size.y - sw.size.y) * 0.5)
+		holder.add_child(sw)
+		var vi := _icon_rect("lightning", 48)
+		vi.position = Vector2(sw.size.x + 28.0, (holder.size.y - 48.0) * 0.5)
+		holder.add_child(vi)
+		var vl := Kit.label(vt, vs, Kit.INK_TEXT, true)
+		vl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		vl.position = Vector2(vi.position.x + 56.0, 0)
+		vl.size = Vector2(vw, holder.size.y)
+		vl.clip_text = true
+		vl.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		holder.add_child(vl)
+		hw.position = Vector2(vl.position.x + vw + 12.0, (holder.size.y - hw.size.y) * 0.5)
+		holder.add_child(hw)
+		var vtap := Control.new()  # a tap on «⚡ Вибрация» flips its own switch, not the row's (the sound)
+		vtap.name = "vibration_tap"
+		vtap.mouse_filter = Control.MOUSE_FILTER_STOP
+		vtap.position = Vector2(vi.position.x - 8.0, 0)
+		vtap.size = Vector2(hw.position.x - vi.position.x + 8.0, holder.size.y)
+		vtap.gui_input.connect(func(e: InputEvent):
+			if _is_tap(e):
+				hw.set_on(not hw.on)
+				hw.cb.call(hw.on))
+		holder.add_child(vtap)
+		right = holder
 	var srow := Kit.row(well1, Rect2(16, 16, rw, row_h), {"icon": "sound_on" if sound_on else "sound_off",
-		"title": tr("settings.sound"), "right": sw})
+		"title": tr("settings.sound"), "right": right})
 	srow.name = "sound"
 	sw.cb = func(on: bool):
 		on_sound.call()
@@ -3371,6 +3467,7 @@ func show_settings(sound_on: bool, on_sound: Callable, on_new_game: Callable, on
 	srow.cb = func():
 		sw.set_on(not sw.on)
 		sw.cb.call(sw.on)
+	var ly := 16.0 + row_h + 12.0
 	var names: Array = []
 	for code in L.LANGS:
 		names.append(String(L.LANG_NAMES[code]))
@@ -3382,7 +3479,7 @@ func show_settings(sound_on: bool, on_sound: Callable, on_new_game: Callable, on
 		if code != L.lang():
 			on_lang.call(code))
 	seg.name = "lang"
-	var lrow := Kit.row(well1, Rect2(16, 16 + row_h + 12.0, rw, row_h), {"icon": "globe", "title": tr("settings.language"),
+	var lrow := Kit.row(well1, Rect2(16, ly, rw, row_h), {"icon": "globe", "title": tr("settings.language"),
 		"right": seg_holder})
 	lrow.name = "language"
 	var y := 72.0 + w1 + 16.0
@@ -3399,6 +3496,19 @@ func show_settings(sound_on: bool, on_sound: Callable, on_new_game: Callable, on
 			Kit.row(well2, Rect2(16, ry, rw, row_h), {"icon": "key", "title": tr("patent.restore"), "right": "chevron",
 				"cb": on_restore}).name = "restore"
 		y += w2 + 16.0
+	# ---- the documents: privacy, terms, support, licences — links, two to a line
+	if not docs.is_empty():
+		var welld := Kit.well(box, Rect2(32, y, w - 64.0, wd))
+		welld.name = "legal"
+		for li in doc_lines:
+			var pair: Array = docs.slice(li * 2, li * 2 + 2)
+			var items: Array = []
+			for d in pair:
+				items.append([tr(String(d[1])), d[2]])
+			var ls := Kit.links(welld, Rect2(16, 8.0 + li * 52.0, welld.size.x - 32.0, 52), items, 28)
+			for k in ls.size():
+				(ls[k] as Control).name = String(pair[k][0])
+		y += wd + 16.0
 	# ---- the danger zone: a new game, held
 	var well3 := Kit.well(box, Rect2(32, y, w - 64.0, w3))
 	well3.name = "danger"
@@ -3424,6 +3534,81 @@ func show_settings(sound_on: bool, on_sound: Callable, on_new_game: Callable, on
 	vl.position = Vector2(32, y)
 	vl.size = Vector2(w - 64.0, 32)
 	box.add_child(vl)
+
+## A document (Settings → «Конфиденциальность», «Условия использования», «Лицензии»; the patent's links): a window L the
+## height of the band with the info plate, the ‹ back to where it opened from (and Android Back so) and ✕, the text in a
+## scrolling well. `blocks`: [["h", heading] | ["p", paragraph] | ["li", a bullet's paragraph] | ["mono", a licence
+## text, smaller]]; a paragraph's single line breaks join (the licence files wrap at 70), blank lines split it.
+const LEGAL_W := 893.0
+const LEGAL_PAD := 24.0  # inside the well
+const LEGAL_GAP := 14.0  # between blocks
+
+
+func show_legal(title: String, blocks: Array, on_back := Callable()) -> void:
+	var w := LEGAL_W
+	var tw := w - 64.0 - 2.0 * LEGAL_PAD - 12.0  # the text's width (the scroll bar's lane at the right)
+	var items: Array = []  # [kind, text, x, w, size, h]
+	var y := LEGAL_PAD
+	for b in blocks:
+		var kind := String(b[0])
+		for para in String(b[1]).split("\n\n", false):
+			var t := para.strip_edges().replace("\n", " ")
+			if t == "":
+				continue
+			match kind:
+				"h":
+					var hs := Kit.fit_size(t, 30, tw, "d900", 24, false)
+					y += 6.0 if y > LEGAL_PAD else 0.0
+					items.append(["h", t, 0.0, tw, hs, 44.0, y])
+					y += 44.0 + LEGAL_GAP
+				"li":
+					var lh := _line_h(t, tw - 28.0, 24)
+					items.append(["li", t, 28.0, tw - 28.0, 24, lh, y])
+					y += lh + LEGAL_GAP
+				"mono":
+					var mh := _line_h(t, tw, 22)
+					items.append(["p", t, 0.0, tw, 22, mh, y])
+					y += mh + LEGAL_GAP
+				_:
+					var ph := _line_h(t, tw, 24)
+					items.append(["p", t, 0.0, tw, 24, ph, y])
+					y += ph + LEGAL_GAP
+	var content_h := y - LEGAL_GAP + LEGAL_PAD
+	var box := _modal_box(_win_rect("L", 4000.0), false, title, "", "info", true, false)
+	_modal.set_meta("legal", true)
+	box.set_meta("kit_native", true)
+	if on_back.is_valid():
+		Kit.back_button(box, on_back).name = "back"
+		_modal_back = on_back
+	var well := Kit.well(box, Rect2(32, 72, w - 64.0, box.size.y - 72.0 - 32.0))
+	well.name = "text"
+	var host: Control = well
+	if content_h > well.size.y + 1.0:
+		host = Kit.scroller(well, content_h)["inner"]
+	for it in items:
+		var x := LEGAL_PAD + float(it[2])
+		var l: Label
+		if it[0] == "h":
+			l = Kit.label(String(it[1]), int(it[4]), Kit.INK_TEXT, true)
+			l.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+			l.clip_text = true
+			l.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		else:
+			l = Kit.label(String(it[1]), int(it[4]), Kit.INK_TEXT, false)
+			l.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		l.position = Vector2(x, float(it[6]))
+		l.size = Vector2(float(it[3]), float(it[5]))
+		host.add_child(l)
+		if it[0] == "li":  # the bullet: a small INK dot (not a «•» glyph), on the first line's middle
+			var d := Panel.new()
+			var dsb := Kit.style(Kit.alpha(Kit.INK, 0.6), 8, 0, Kit.INK, 0, 0)  # (R 8 on an 8 px dot: a circle)
+			dsb.set_meta("kit_kind", "")
+			Kit.set_panel(d, dsb)
+			d.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			d.size = Vector2(8, 8)
+			d.position = Vector2(LEGAL_PAD + 7.0, float(it[6]) + _line_h("A", 400.0, 24) * 0.5 - 4.0)
+			host.add_child(d)
+
 
 # ------------------------------------------------------------------ market (05 §13)
 
@@ -5011,6 +5196,7 @@ func show_commander(info: Dictionary, on_upgrade: Callable, on_target: Callable,
 	var w := box.size.x
 	if on_back.is_valid():
 		Kit.back_button(box, on_back).name = "back"
+		_modal_back = on_back
 	# ---- the portrait
 	var pf := Panel.new()
 	pf.name = "portrait_frame"
@@ -5994,6 +6180,11 @@ func _reason_kind(reason: String) -> Array:
 			return ["short", r]
 	if reason == L.t("err.max_level") or reason == L.t("err.max"):
 		return ["max", ""]
+	if reason == tr("err.chapter_last"):
+		return ["chapter_last", ""]
+	for ch in range(2, ROMAN.size()):  # «Откроется в главе III»: the chapter comes in Roman numerals (Q3)
+		if reason == tr("err.chapter_locked") % ROMAN[ch]:
+			return ["chapter", str(ch)]
 	var m := _num_re.search(reason)
 	if m != null:
 		var n := m.get_string()
@@ -6106,6 +6297,8 @@ func _building_card(it: Dictionary) -> Control:
 			opts["chip_cb"] = func(): research_speedup.emit("bp:" + line)
 	elif rk[0] == "max" or cost.is_empty():
 		opts["stat"] = {"text": tr("err.max"), "check": true}
+	elif rk[0] == "chapter_last":  # the last chapter of this build: no «Глава V» promised (canon §14.10, B-L)
+		opts["cta"] = {"role": "lock", "icon": "lock", "caption": tr("bld.soon"), "enabled": false, "reason": reason}
 	elif rk[0] in ["level", "academy", "chapter"]:
 		var cap := tr("dl.short") % int(rk[1])
 		if rk[0] == "academy":

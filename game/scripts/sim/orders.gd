@@ -1,14 +1,13 @@
 extends RefCounted
 ## «Приказы дня» (canon §14.5, 08 §8.6): 3 daily tasks from a template pool — slot A economy (easy), slot B map
-## and war (medium), slot C any — reset at 04:00, rolled lazily on the first look after the reset. Progress is a
-## stat counter's growth since the roll (the caller keeps the counters). Each done order pays pass XP (150 / 200
-## / 250), all three a War crate + 10 Raivites. One free swap a day. A template doesn't repeat in its slot for 3
-## days. Deterministic: the roll is seeded by the day number.
+## and war (medium), slot C any — reset at 04:00 local (Calendar.local_day), rolled lazily on the first look after the
+## reset. Progress is a stat counter's growth since the roll (the caller keeps the counters). Each done order pays
+## pass XP (150 / 200 / 250), all three a War crate + 10 Raivites. One free swap a day. A template doesn't repeat in
+## its slot for 3 days. Deterministic: the roll is seeded by the day number.
 
 const Rng := preload("res://scripts/sim/rng.gd")
+const Calendar := preload("res://scripts/sim/calendar.gd")
 
-const DAY := 86400
-const REFRESH_SEC := 4 * 3600  # 04:00
 const XP := {"easy": 150, "mid": 200, "hard": 250}
 const ALL_RAIVITE := 10
 
@@ -42,7 +41,7 @@ var history := {}               # code -> last day used (no repeats within 3 day
 
 
 static func game_day(now: int) -> int:
-	return int(floor(float(now - REFRESH_SEC) / DAY))
+	return Calendar.local_day(now)
 
 
 static func _tier(dl: int) -> int:
@@ -52,8 +51,8 @@ static func _tier(dl: int) -> int:
 ## ctx: {dl, stats: Dictionary, tags: {camp, wild, market, ch2, war: bool}}. Rolls a new set when the day changed.
 func refresh(now: int, ctx: Dictionary) -> bool:
 	var d := game_day(now)
-	if d == day and list.size() == 3:
-		return false
+	if Calendar.seen(d, day) and list.size() == 3:
+		return false  # (a zone step west keeps the day's set)
 	day = d
 	list = []
 	all_claimed = false

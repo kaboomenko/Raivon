@@ -43,6 +43,8 @@ const FREE_FINISH_SEC := 300         # canon §13.1: ≤5 min left — finish fo
 ## Starting stock: 05 §20.1 (accepted in 11 §6). Raivites: canon is silent — DEFAULT 50 (invented).
 const START_RES := {"gold": 1000, "food": 600, "metal": 600, "raivite": 50}
 const START_BUILDERS := 2            # canon §7 «Строители: 2 на старте»
+## The last chapter of this build (the launch's content wall: chapter V comes with v1.2; main.LAST_CHAPTER).
+const LAST_CHAPTER := 4
 ## Chapter DL cap: DL ≤ 3/5/7/8/9/10 in chapters I–VI (canon §6.2).
 const CHAPTER_DL_CAP: Array[int] = [0, 3, 5, 7, 8, 9, 10]
 
@@ -380,7 +382,8 @@ func can_upgrade(b: Dictionary, now: int) -> String:
 		if lvl >= 10:
 			return "err.max_level"
 		if lvl >= max_level(b):
-			return "err.chapter_locked|%d" % (chapter + 1)
+			# the last chapter of the build promises no chapter that is not in it (B-L: «Откроется в главе 5» in IV)
+			return "err.chapter_last" if chapter >= LAST_CHAPTER else "err.chapter_locked|%d" % (chapter + 1)
 		if _synced and not waive_hexes and _own_kinds.size() < RESIDENCE_HEXES[lvl + 1]:
 			return "err.need_hexes|%d" % RESIDENCE_HEXES[lvl + 1]
 	else:

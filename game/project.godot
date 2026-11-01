@@ -8,6 +8,11 @@ boot_splash/bg_color=Color(0.03, 0.06, 0.16, 1)
 boot_splash/fullsize=true
 boot_splash/minimum_display_time=1200
 config/name="Raivon: Territory Wars"
+config/name_localized={
+"en": "Raivon",
+"ru": "Raivon"
+}
+config/quit_on_go_back=false
 config/version="0.9.1"
 run/main_scene="res://scenes/main.tscn"
 config/icon="res://assets/icon/icon_512.png"
@@ -38,3 +43,6 @@ locale/fallback="en"
 [raivon]
 
 server_url=""
+privacy_url=""
+terms_url=""
+support_email=""

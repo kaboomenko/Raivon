@@ -79,8 +79,11 @@ func _music_volume() -> void:
 		_music[_music_on].volume_db = _music_db()
 
 
+var haptics := true  # Settings → «Вибрация» (kept in user://settings.json)
+
+
 func haptic(ms: int) -> void:
-	if OS.has_feature("mobile"):
+	if haptics and OS.has_feature("mobile"):
 		Input.vibrate_handheld(ms)
 
 

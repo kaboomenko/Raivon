@@ -30,7 +30,7 @@ err.no_military_base,Нет ни одной военной базы,You have no 
 err.no_building,Нет такого здания,No such building
 err.upgrading,Уже улучшается,Already upgrading
 err.max_level,Максимальный уровень,Max level
-err.chapter_locked,Откроется в главе %d,Unlocks in Chapter %d
+err.chapter_locked,Откроется в главе %s,Unlocks in Chapter %s
 err.need_hexes,Нужно %d гексов,Need %d hexes
 err.need_residence,Нужна Резиденция ур. %d,Needs Residence Lv %d
 err.hex_occupied,Гекс оккупирован,Hex is occupied
@@ -324,7 +324,7 @@ ui.declare_war,Война!,War!
 ui.hold,Держите,Hold
 ui.hold_declare,"Удерживайте, чтобы объявить войну",Hold to declare war
 ui.hold_retreat,"Удерживайте, чтобы отступить",Hold to retreat
-ui.ai_settling,Осваивают %s · %s,%s are settling it · %s
+ui.ai_settling,Осваивается: %s · %s,Settling: %s · %s
 ui.pick_wait,Перемирие: новая цель через %s,Truce: a new target in %s
 ui.pick_none,Целей рядом нет,No targets nearby
 toast.chapter_progress,Глава %s «%s»: %d / %d гексов,Chapter %s “%s”: %d / %d hexes
@@ -346,7 +346,7 @@ toast.settlers,Поселенцы в пути: «%s» отойдёт вам че
 toast.no_raivite,Не хватает Райвитов,Not enough Raivites
 floater.plus_hex,+1 гекс,+1 hex
 toast.colonized,«%s» — ваша земля,“%s” is yours
-toast.war_declared,Война объявлена: %s! Цель — «%s» (+10 к счёту),War declared on the %s! Goal: “%s” (+10 score)
+toast.war_declared,Война объявлена: %s! Цель — «%s» (+10 к счёту),War declared on %s! Goal: “%s” (+10 score)
 toast.armies_deployed,Армии выдвинулись к границе,Armies moved up to the border
 toast.to_battle,В бой! Тяните от армии к врагу или бросьте карту на гекс,Charge! Drag from an army to the enemy or drop a card on a hex
 floater.occupied,Оккупирован!,Occupied!
@@ -478,10 +478,10 @@ inbox.ceded.text,«%s» отдан. Перемирие 24 ч.,“%s” ceded. 24
 inbox.tribute.title,Дань уплачена,Tribute paid
 inbox.tribute.text,%d золота. Перемирие 24 ч.,%d gold. 24 h truce.
 inbox.war.title,Война!,War!
-inbox.war.text,%s объявили войну. Удар по «%s» через 20 мин — укрепите гекс или наступайте первыми.,The %s declared war. They strike “%s” in 20 min: fortify the hex or attack first.
+inbox.war.text,Нам объявлена война: %s. Удар по «%s» через 20 мин — укрепите гекс или наступайте первыми.,War declared on us: %s. A strike on “%s” comes in 20 min: fortify the hex or attack first.
 floater.repelled_short,Отбито!,Repelled!
 inbox.defense.title,Оборона,Defense
-inbox.defense.text,"%s атаковали «%s» — атака отбита! +2 к военному счёту, +%d золота.","The %s attacked “%s”: attack repelled! +2 war score, +%d gold."
+inbox.defense.text,"Атака отбита! Враг: %s, цель — «%s». +2 к военному счёту, +%d золота.","Attack repelled! Enemy: %s, target: “%s”. +2 war score, +%d gold."
 inbox.war_cap.title,Кап войны,War cap
 inbox.war_cap.peace,Война длилась %d ч — подписан рекомендованный мир.,The war lasted %d h: the recommended peace was signed.
 inbox.war_cap.white,Война длилась %d ч — белый мир.,The war lasted %d h: white peace.
@@ -619,18 +619,18 @@ inbox.expansion.title,Мир расширяется,The world expands
 inbox.expansion.text,"Открыт «Речной край»: мир вырос с %d до %d гексов, у нас новые соседи — Речная Лига и Орден Камня. Цель главы II — %d гексов.","“The River Lands” are open: the world grew from %d to %d hexes, and we have new neighbours, the River League and the Order of Stone. Chapter II goal: %d hexes."
 dl.short,УР%d,DL%d
 inbox.ai_dl.title,Сосед окреп,A neighbour grows stronger
-inbox.ai_dl.text,"%s достигли УР%d: армии сильнее, облик меняется.",%s reached DL%d: stronger armies and a new look.
+inbox.ai_dl.text,"%s — теперь УР%d: армии сильнее, облик меняется.","%s: now DL%d, stronger armies and a new look."
 inbox.defense_lost.title,Оборона прорвана,Defence broken
-inbox.defense_lost.text,%s прорвали оборону: занято гексов — %d. Верните их наступлением.,%s broke through: %d hexes occupied. Win them back with an offensive.
+inbox.defense_lost.text,"Враг: %s, занято гексов — %d. Верните их наступлением.","Enemy: %s, %d hexes occupied. Win them back with an offensive."
 inbox.counter.title,Готовится контрудар,A counter-strike is coming
-inbox.counter.text,"%s готовят удар по «%s» через %d мин. Усильте оборону: армия, укрепление, башня.","%s will strike “%s” in %d min. Strengthen it: an army, a fort, a tower."
+inbox.counter.text,"Готовится удар — %s, цель «%s», через %d мин. Усильте оборону: армия, укрепление, башня.","A strike is coming — %s, target “%s”, in %d min. Strengthen the hex: an army, a fort, a tower."
 peace_offer.quote,Довольно крови. Назовите ваши условия.,Enough blood. Name your terms.
 peace_offer.go,К переговорам,To the talks
 peace_offer.title2,Предложение мира,Peace offer
 peace_offer.text2,Вы держите %d%% фронта — враг готов говорить о мире.,You hold %d%% of the front — the enemy is ready to talk peace.
-inbox.peace_offer.title,%s предлагают мир,%s offer peace
-inbox.peace_offer.text,%s предлагают мир: вы держите %d%% фронта.,%s offer peace: you hold %d%% of the front.
-toast.ai_claimed,Этот гекс уже осваивают %s,%s are already settling this hex
+inbox.peace_offer.title,Предложение мира: %s,Peace offer: %s
+inbox.peace_offer.text,%s: предложение мира — вы держите %d%% фронта.,%s: a peace offer — you hold %d%% of the front.
+toast.ai_claimed,Этот гекс уже осваивается: %s,This hex is already being settled by %s
 star.c2_port,Выход к морю: присоедините порт,To the sea: annex a port
 star.c2_defense,Стена держит: отбейте удар ИИ в главе II,The wall holds: repel an AI strike in chapter II
 star.c2_pocket4,Клещи: заберите котёл из 4+ гексов,Pincers: take a pocket of 4+ hexes
@@ -642,7 +642,7 @@ star.c2_camps.short,Разбейте 3 лагеря,Destroy 3 camps
 star.c2_dl5,Доведите державу до УР5,Bring the realm to DL5
 star.c2_dl5.short,Достигните УР5,Reach DL5
 inbox.ai_war.title,Война соседей,Neighbours at war
-inbox.ai_war.text,%s напали на %s. Их фронт виден по штриховке; гарнизоны воюющих слабее на других границах.,%s attacked %s. Their front shows as hatching; the warring states have weaker garrisons on their other borders.
+inbox.ai_war.text,"Нападающая сторона — %s, обороняющаяся — %s. Их фронт виден по штриховке; гарнизоны воюющих слабее на других границах.","Attacker: %s, defender: %s. Their front shows as hatching; the warring states have weaker garrisons on their other borders."
 inbox.ai_peace.title,Соседи помирились,Neighbours made peace
 inbox.ai_peace.text,%s и %s подписали мир: к победителю перешло гексов — %d.,%s and %s signed a peace: %d hexes went to the winner.
 cell.ch2_vein,Речной кристалл,River Crystal
@@ -664,14 +664,14 @@ ally.not_now,Сначала закончите войну и перемирие,
 ally.opinion,Нужно мнение %d+ (подарки помогают),You need opinion %d+ (gifts help)
 toast.alliance,Союз с «%s» заключён!,Alliance with “%s” signed!
 inbox.alliance.title,Союз: %s,Alliance: %s
-inbox.alliance.text,"%s — наш союзник: вступит в наши оборонительные войны, а при мнении 60+ — и в наступательные; занятые союзником гексы врага достанутся ему при мире.","%s is our ally: it joins our defensive wars, and offensive ones at opinion 60+; enemy hexes it takes stay with it at peace."
+inbox.alliance.text,"%s — наш союзник: вступит в наши оборонительные войны, а при мнении 60+ — и в наступательные; занятые союзником гексы врага достанутся ему при мире.","Our ally: %s. It joins our defensive wars, and offensive ones at opinion 60+; enemy hexes it takes stay with it at peace."
 inbox.alliance_broken.title,Союз разорван: %s,Alliance broken: %s
-inbox.alliance_broken.text,Мы объявили войну союзнику — %s больше не с нами.,We declared war on an ally: %s no longer stands with us.
-inbox.ally_joins.title,%s вступают в войну,%s join the war
-inbox.ally_joins.text,Союзник %s выступил против %s и будет брать их пограничные гексы.,Our ally %s marches on %s and will take its border hexes.
+inbox.alliance_broken.text,Мы объявили войну союзнику — %s больше не с нами.,We declared war on an ally: %s is no longer with us.
+inbox.ally_joins.title,Союзник в войне: %s,Ally at war: %s
+inbox.ally_joins.text,Союзник %s выступил против %s и будет брать пограничные гексы врага.,Our ally %s marches on %s and will take the enemy's border hexes.
 star.c2_alliance,Рукопожатие: заключите союз с ИИ,Handshake: ally with an AI state
-inbox.ally_asks.title,%s просят помощи,%s ask for help
-inbox.ally_asks.text,На нашего союзника %s напали %s.,Our ally %s was attacked by %s.
+inbox.ally_asks.title,Союзник просит помощи: %s,Ally asks for help: %s
+inbox.ally_asks.text,Наш союзник %s атакован — нападающий: %s.,Our ally %s was attacked by %s.
 ally_ask.title2,Союзник в беде,Ally in trouble
 ally_ask.say,На нас напали! Поддержите золотом — мы этого не забудем.,We have been attacked! Back us with gold and we won't forget it.
 ally_ask.t_power,Сила союзника,Ally's strength
@@ -683,7 +683,7 @@ toast.ally_supported,Поддержка для «%s» отправлена,Suppo
 dipl.call,Призыв,Call in
 dipl.ai_ally,Союз с «%s»,Allied with “%s”
 call.cant,Призвать можно союзника с мнением 60+ в нашу войну,You can call in an ally with opinion 60+ to our war
-toast.ally_called,«%s» выступают на нашей стороне,“%s” march on our side
+toast.ally_called,На нашей стороне — «%s»,On our side: “%s”
 toast.enemy_backed,Союзник врага помогает: «%s» сильнее на 10%% благодаря «%s»,The enemy has a backer: “%s” is 10%% stronger thanks to “%s”
 inbox.ai_alliance.title,Союз соседей,Neighbours ally
 inbox.ai_alliance.text,%s и %s заключили союз: в войне с одним из них другой поддержит союзника (+10%% Силы).,%s and %s signed an alliance: in a war with one of them the other backs its ally (+10%% strength).
@@ -821,11 +821,11 @@ toast.coalition,Против вас коалиция: %s и ещё %d,A coalitio
 toast.coalition_broken,Коалиция распалась,The coalition has fallen apart
 toast.coalition_war,Коалиция объявила войну: %s,The coalition declared war: %s
 inbox.coalition.title,Коалиция формируется,A coalition is forming
-inbox.coalition.text,"Против вас собирается коалиция. Её ведёт: %s, государств в ней: %d. Через 12 ч они ударят вместе, подарки участникам могут её развалить.",%s is gathering a coalition of %d states: they will strike together in 12 h. Gifts to the members can break it up.
+inbox.coalition.text,"Против вас собирается коалиция. Её ведёт: %s, государств в ней: %d. Через 12 ч они ударят вместе, подарки участникам могут её развалить.","A coalition is gathering against you. Leader: %s, states in it: %d. In 12 h they strike together; gifts to the members can break it up."
 inbox.coalition_broken.title,Коалиция распалась,The coalition has fallen apart
 inbox.coalition_broken.text,Участники передумали — коалиции больше нет.,The members changed their minds — there is no coalition any more.
 inbox.coalition_war.title,Война с коалицией,War with a coalition
-inbox.coalition_war.text,"Коалицию ведёт: %s, государств в ней: %d. Их армии сильнее, но победа принесёт Триумф.","%s leads a coalition of %d states. Their armies are stronger, but victory brings a Triumph."
+inbox.coalition_war.text,"Коалицию ведёт: %s, государств в ней: %d. Их армии сильнее, но победа принесёт Триумф.","Coalition leader: %s, states in it: %d. Their armies are stronger, but victory brings a Triumph."
 ceremony.triumph,Триумф! Трофейный сундук: %d золота и 30 Райвитов,Triumph! Trophy chest: %d gold and 30 Raivites
 star.c3_triumph,Триумф: выиграйте войну с коалицией,Triumph: win a war against a coalition
 legacy.line,Наследие главы %s: %s,Chapter %s legacy: %s
@@ -875,7 +875,7 @@ pact.again,Новый пакт с ним через %s,A new pact with them in %
 pact.opinion,Мнение %d/%d — на пакт не согласны,Opinion %d/%d — they won't sign a pact
 toast.pact,Пакт о ненападении с «%s» на 48 ч,A 48 h non-aggression pact with “%s”
 inbox.pact.title,Пакт с «%s»,Pact with “%s”
-inbox.pact.text,"«%s» подписали пакт о ненападении на 48 ч: ни войны, ни ультиматумов, в коалиции против нас они не вступают.","“%s” signed a 48 h non-aggression pact: no war, no ultimatums, and they stay out of coalitions against us."
+inbox.pact.text,"Пакт о ненападении подписан — «%s», 48 ч: ни войны, ни ультиматумов, ни коалиций против нас.","Non-aggression pact signed: “%s”, 48 h. No war, no ultimatums, no coalitions against us."
 dipl.separate,Сепаратный мир,Separate peace
 dipl.swap,Обмен,Swap
 dipl.declare,Объявить войну,Declare war
@@ -887,12 +887,12 @@ dipl.say.cunning,Любопытно… И что я с этого получу?,
 dipl.say.angry,Говорите быстрее — моё терпение на исходе.,Speak quickly — my patience is running out.
 dipl.say.war,Хотите мира — назовите условия.,Want peace? Name your terms.
 separate.cant,Сепаратный мир — только с участником коалиции и пока война не проиграна,A separate peace is only for a coalition member while the war isn't lost
-toast.separate,«%s» вышли из коалиции: сепаратный мир,“%s” left the coalition: a separate peace
+toast.separate,Сепаратный мир: «%s» вне коалиции,Separate peace: “%s” out of the coalition
 inbox.separate.title,Сепаратный мир с «%s»,Separate peace with “%s”
-inbox.separate.text,«%s» вышли из войны: перемирие 24 ч. Армии «%s» больше не несут их силу.,“%s” left the war: a 24 h truce. The armies of “%s” no longer carry their strength.
-toast.subsidy,«%s» спонсируют «%s»: их армии +10%% на 12 ч,“%s” fund “%s”: their armies +10%% for 12 h
+inbox.separate.text,"Сепаратный мир: «%s» вне войны, перемирие 24 ч. Армии «%s» больше не получают эту поддержку.","Separate peace: “%s” out of the war, a 24 h truce. The armies of “%s” no longer get that support."
+toast.subsidy,Субсидия от «%s» для «%s»: армии +10%% на 12 ч,Subsidy from “%s” to “%s”: armies +10%% for 12 h
 inbox.subsidy.title,Субсидия врагу,A subsidy to the enemy
-inbox.subsidy.text,«%s» тревожатся нашим ростом и спонсируют «%s»: армии врага +10%% на 12 ч.,“%s” are alarmed by our growth and fund “%s”: enemy armies +10%% for 12 h.
+inbox.subsidy.text,Наш рост тревожит «%s»: субсидия для «%s» — армии врага +10%% на 12 ч.,"Our growth alarms “%s”: a subsidy to “%s”, enemy armies +10%% for 12 h."
 card.landing,Десант,Landing
 card.missile,Ракета,Missile
 floater.landing,Десант!,Landing!
@@ -995,17 +995,17 @@ swap.border2,Граница,Border
 swap.you_pay,Вы доплачиваете,You pay extra
 swap.no_pay,Без доплаты,No top-up
 swap.edit,Изменить,Edit
-inbox.swap_offer.title,«%s» предлагает обмен,“%s” proposes a swap
-inbox.swap_offer.text,"«%s» предлагает обменять гексы, чтобы выпрямить общую границу. Ответить можно в течение суток.",“%s” offers to swap hexes to straighten the common border. You can answer within a day.
-toast.separate_gold,«%s» вышли из коалиции: сепаратный мир и %d золота контрибуции,“%s” left the coalition: a separate peace and %d gold of contribution
-inbox.separate_offer.title,«%s» просят сепаратного мира,“%s” ask for a separate peace
-inbox.separate_offer.text,«%s» устали от войны и готовы выйти из коалиции. Ответить можно на вкладке «Дипломатия».,“%s” are tired of the war and ready to leave the coalition. You can answer on the Diplomacy tab.
+inbox.swap_offer.title,Предложение обмена: «%s»,Swap offer: “%s”
+inbox.swap_offer.text,Обмен гексами — предложение «%s»: выпрямить общую границу. Ответить можно в течение суток.,Hex swap offer from “%s”: straighten the common border. You can answer within a day.
+toast.separate_gold,"Сепаратный мир: «%s» вне коалиции, контрибуция %d золота","Separate peace: “%s” out of the coalition, %d gold of contribution"
+inbox.separate_offer.title,Просьба о сепаратном мире: «%s»,Separate peace request: “%s”
+inbox.separate_offer.text,Сепаратный мир возможен: «%s» — на грани выхода из коалиции. Ответить можно на вкладке «Дипломатия».,A separate peace is possible: “%s” is ready to leave the coalition. You can answer on the Diplomacy tab.
 separate.accept,Принять мир,Accept the peace
 separate.decline,Воевать дальше,Fight on
 dipl.share,Доля: %s очка,Share: %s points
 toast.front,Следующее наступление — на «%s»,The next offensive goes against “%s”
-toast.separate_land,"«%s» вышли из коалиции: гексов отошло %d, контрибуция %d золота","“%s” left the coalition: %d hexes ceded, %d gold of contribution"
-toast.separate_lost,"«%s» вышли из коалиции: сепаратный мир-поражение, отдано гексов: %d","“%s” left the coalition: a losing separate peace, %d hexes ceded"
+toast.separate_land,"Сепаратный мир: «%s» вне коалиции, гексов отошло %d, контрибуция %d золота","Separate peace: “%s” out of the coalition, %d hexes ceded, %d gold of contribution"
+toast.separate_lost,"Сепаратный мир-поражение: «%s» вне коалиции, отдано гексов: %d","A losing separate peace: “%s” out of the coalition, %d hexes ceded"
 separate.sign,Заключить мир,Sign the peace
 separate.title,Сепаратный мир,Separate peace
 separate.say_ask,Хватит с нас этой войны. Мы выходим из неё.,We have had enough of this war. We are leaving it.
@@ -1437,3 +1437,39 @@ ui.recovering_food,"Армиям не хватает %s еды на пополн
 defeat.note_lost1,"Этот гекс отойдёт им, склад разграбят. Можно продолжить войну.","This hex goes to them and the warehouse is plundered. You can fight on."
 inbox.ult_void.title,Ультиматум снят,Ultimatum void
 inbox.ult_void.text,Война с «%s» уже идёт — ультиматум больше не в силе.,We are already at war with “%s”: the ultimatum no longer stands.
+err.chapter_last,Новые уровни — в следующих главах,New levels come in the next chapters
+bld.soon,Скоро,Soon
+quit.title,Выйти из игры?,Quit the game?
+quit.text,Прогресс сохранён: игра продолжится с того же места.,Your progress is saved: the game goes on from here.
+quit.yes,Выйти,Quit
+quit.no,Остаться,Stay
+settings.vibration,Вибрация,Vibration
+settings.privacy,Конфиденциальность,Privacy policy
+settings.terms,Условия использования,Terms of use
+settings.support,Поддержка,Support
+settings.licenses,Лицензии,Licences
+settings.mail_subject,Raivon: вопрос (сборка %s),Raivon: a question (build %s)
+legal.engine,Движок Godot,Godot Engine
+legal.components,Компоненты движка,Engine components
+legal.fonts,Шрифты,Fonts
+patent.period,Период подписки — 1 месяц.,Subscription period: 1 month.
+patent.month_terms,%s в месяц.,%s a month.
+pass.terms,На сезон 28 дней: разовая покупка без автопродления,"For one 28-day season: a one-time purchase, no renewal"
+away.title,Пока вас не было,While you were away
+away.gone,Вас не было %s,You were away %s
+away.income,Доход ждёт на гексах,Income waiting on your hexes
+away.collected,Патент собрал доход сам,The Patent collected the income
+away.strike_held,Удар по «%s» отбит: +%d золота,Strike on “%s” repelled: +%d gold
+away.strike_lost,Удар по «%s»: занято гексов — %d,Strike on “%s”: %d hexes occupied
+away.war_cap,Война с «%s» закончилась по сроку,The war with “%s” ran out of time
+away.patent_end,Державный патент закончился,The Sovereign Patent has ended
+away.trial_end,Пробный патент закончился,The Patent trial has ended
+away.pass_end,Сезон Военного пропуска закончился,The War Pass season has ended
+away.letters,Новых писем: %d,New letters: %d
+away.collect,Собрать всё,Collect all
+away.double,×2 · ролик,×2 · video
+away.nothing,Держава ждала вас — всё спокойно,Your realm waited for you: all quiet
+toast.strike_held,Удар по «%s» отбит: +%d золота,Strike on “%s” repelled: +%d gold
+toast.strike_lost,Оборона прорвана: занято гексов — %d,Defence broken: %d hexes occupied
+toast.raid_banner,Пока вас не было — удар по «%s»: письмо в почте,"While you were away, a strike on “%s”: see the mail"
+toast.offline_double,Доход за время отсутствия удвоен,Income from your absence doubled

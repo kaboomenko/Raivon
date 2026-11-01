@@ -109,6 +109,7 @@ static func to_dict(g: Node) -> Dictionary:
 		"flag": g.flag,
 		"realm_name": g.realm_name,
 		"camps": g.camps.to_dict() if g.camps != null else {},
+		"tz": [g.tz_bias, g.tz_since],  # the UTC offset the game days count by, and since when (04:00 local, canon §13)
 	}
 	if g.get("econ") != null:
 		d["econ"] = g.econ.to_dict()
@@ -356,6 +357,11 @@ static func apply(g: Node, d: Dictionary) -> bool:
 			g.chronicle = load("res://scripts/sim/chronicle.gd").new()
 		g.chronicle.load_dict(d["chronicle"])
 	g.realm_name = String(d.get("realm_name", ""))
+	# the local game day's offset (Q3): a save from before it has none — main adopts the device's at once (since 0)
+	var tz: Variant = d.get("tz", [])
+	if typeof(tz) == TYPE_ARRAY and (tz as Array).size() == 2:
+		g.tz_bias = int(tz[0])
+		g.tz_since = int(tz[1])
 	if typeof(d.get("flag")) == TYPE_DICTIONARY:
 		var fl: Dictionary = d["flag"]
 		g.flag = {"div": String(fl.get("div", "solid")), "c1": int(fl.get("c1", 0)), "c2": int(fl.get("c2", 13)),

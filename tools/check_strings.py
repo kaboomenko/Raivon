@@ -8,8 +8,12 @@ Fails (exit 1) when:
     "err.need_hexes|%d" or "bld.farm" (sim modules return keys), is missing from strings.csv;
   * strings.csv is malformed: header other than keys,ru,en, a non-ASCII or duplicate key, an empty ru or
     en cell, or ru / en with different printf placeholders (%d, %s, %+.1f, …);
-  * an English cell of strings.csv, or an English (`*_en`) string of game/data/*.json, uses Russian quotation
-    marks « » „ (English quotes are “ ” — or none);
+  * an English cell of strings.csv, or an English (`*_en` or `en`) string of game/data/*.json, uses Russian
+    quotation marks « » „ (English quotes are “ ” — or none);
+  * a Russian cell puts a plural verb right after a %s slot («%s напали», ««%s» вышли») — 8 of the 10 state names
+    are singular («Речная Лига», «Сарен»), so such a template reads wrong for them (playtest 2, Q3): write it
+    noun-first («Война: %s → %s», «Сепаратный мир: «%s» вне коалиции»); two subjects («%s и %s подписали») are
+    plural and pass; an English cell puts «The» / «the» before a %s (state names take no article: «The Alvaria»);
   * an entry of game/data/cases.json with a Russian name has no name_en (and categories /
     res_names have no _en twin).
 
@@ -33,6 +37,13 @@ ALLOW = {
 
 CYR = re.compile(r"[Ѐ-ӿ]")
 RU_QUOTES = re.compile(r"[«»„]")  # in English text: write “ ” instead
+# a %s slot (a state name, maybe in «») and the word after it: a Russian plural verb (past -ли/-лись, present
+# -ют/-ят/-ут/-ат and their reflexive -ся forms) or a plural short adjective (готовы, согласны, вынуждены)
+STATE_SLOT = re.compile(r"(?<!%s и )(?<!%s и «)«?%s»?\s+([А-Яа-яЁё]+)")
+RU_PLURAL_VERB = re.compile(r"(?:ли|лись|ют|ят|ут|ат|ются|ятся|утся|атся|ы|ны)$")
+# words after a %s slot that end like a plural verb and are not one (nouns, adverbs); extend when the rule misfires
+RU_NOT_VERB = {"или", "ли", "дни", "часы", "гексы", "минуты", "еды"}
+EN_ARTICLE_SLOT = re.compile(r"\b[Tt]he %s")
 KEY_RE = re.compile(r"^[a-z0-9_]+(\.[a-z0-9_]+)+$")
 CALL_RE = re.compile(r"(?:\btr|\bL\.t|TranslationServer\.translate)\(\s*$")
 # GDScript format specifiers (flags -, +, 0; conversions s c d o x X f v)
@@ -112,6 +123,13 @@ def main() -> int:
         if RU_QUOTES.search(en):
             errors.append("strings.csv:%d: %s (en) uses Russian quotes %s: write “ ” in English"
                           % (num, k, " ".join(sorted(set(RU_QUOTES.findall(en))))))
+        for m in STATE_SLOT.finditer(ru):
+            word = m.group(1)
+            if word.lower() not in RU_NOT_VERB and RU_PLURAL_VERB.search(word.lower()):
+                errors.append("strings.csv:%d: %s (ru) puts the plural %r after a %%s: most state names are singular,"
+                              " write it noun-first («Война: %%s → %%s»)" % (num, k, word))
+        if EN_ARTICLE_SLOT.search(en):
+            errors.append("strings.csv:%d: %s (en) puts “the” before a %%s: state names take no article" % (num, k))
         keys[k] = (ru, en)
     prefixes = {k.split(".")[0] for k in keys}
 
@@ -171,7 +189,7 @@ def main() -> int:
                 errors.append("%s %s: Russian quotes in English text %r: write “ ”" % (fname, where, node))
         elif isinstance(node, dict):
             for k, v in node.items():
-                walk_en(v, where + "." + k, fname, en or str(k).endswith("_en"))
+                walk_en(v, where + "." + k, fname, en or str(k).endswith("_en") or str(k) == "en")
         elif isinstance(node, list):
             for i, v in enumerate(node):
                 walk_en(v, "%s[%d]" % (where, i), fname, en)
