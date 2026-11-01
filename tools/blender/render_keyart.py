@@ -1,7 +1,10 @@
 """Key art for the splash/loading screen and store: the residence evolving DL1 → DL8 along a diagonal of
 hex tiles (huts in front, neon citadel at the back), troops of matching eras beside them.
 
-Run: python3 tools/blender/render_keyart.py OUT.png [width height samples]
+Run: python3 tools/blender/render_keyart.py OUT.png [width height samples] [--frame=portrait|feature]
+  portrait (default, 941×1672 at 64 samples — the B4.6 settings): the splash and docs/store/keyart_portrait.png;
+  feature: the same scene seen across the path for the Play feature graphic (render 2048×1000, compose_keyart.py
+  --layout=feature scales it to 1024×500 with the title on the left).
 Uses the exported models in game/assets/models (run evolution_assets.py / troops_assets.py first).
 Then tools/ui/compose_keyart.py adds the title and refuses a render with black holes in the land.
 
@@ -11,28 +14,129 @@ stripe, no emission. It lies on the ground, so the models stand on it (the old f
 roofs as light-blue hairlines). The era models are lifted by a few millimetres each: the big DL1–DL3 bases overlap
 their neighbours', and two coplanar bases rendered their overlap black in Cycles (the shadow rays of one hit the
 other).
+
+The banners carry the realm's flag, as on the map (Q6): a model's banner cloth is a team-blue box with a blank white
+emblem box, and an empty "flagt…"/"flagw…" marks it (evolution_assets.flag_at); the game paints the state's flag
+(flag_view.gd) on a quad over each face of the marker (map_view._flag_cloth). paint_flags() does the same here with
+the player's default flag (FlagView.DEFAULT: a solid #1F4FBF field, the white eagle, the gold edge), so no banner
+shows the blank grey square. place() parents a model's roots under one transform, so the markers move, turn and
+scale with the mesh. render_icon.py imports these helpers.
 """
 import math
 import os
 import sys
+import tempfile
 
 import bpy
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import kit  # noqa: E402
 from kit import hex_prism, mat, noisy_mat  # noqa: E402
 
-OUT = sys.argv[1] if len(sys.argv) > 1 else "/tmp/keyart.png"
-W = int(sys.argv[2]) if len(sys.argv) > 2 else 941
-H = int(sys.argv[3]) if len(sys.argv) > 3 else 1672
-SAMPLES = int(sys.argv[4]) if len(sys.argv) > 4 else 64
 MODELS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "game", "assets", "models")
 
-bpy.ops.wm.read_factory_settings(use_empty=True)
-scene = bpy.context.scene
+# FlagView.DEFAULT (game/scripts/flag_view.gd): the field FIELD[0], the emblem colour FIELD[13], the plain gold edge
+FLAG_FIELD, FLAG_EMBLEM, FLAG_EDGE = (0x1F, 0x4F, 0xBF), (0xF2, 0xF2, 0xF0), ((0xD9, 0xB4, 0x5A), (0x8A, 0x6A, 0x2A))
+FLAG_PX = {False: (130, 208), True: (208, 136)}  # map_view._flag_material: a tall banner / a wide flag on a pole
+FLAG_SS = 4  # the texture is drawn this many times larger (it is seen bigger than on the map)
+_FLAG_MATS = {}
 
-grass = noisy_mat("grass", "#58b82a", "#8ad83f", 4.0)
-grass_red = noisy_mat("grass_red", "#b5a43a", "#d4b24e", 4.0)
-dirt = noisy_mat("dirt", "#8a5a34", "#a8743f", 6.0)
+
+def flag_texture(wide, path):
+    """The default flag as flag_view.gd draws it (_shape, draw_emblem "eagle", the frame polylines), RGBA."""
+    from PIL import Image, ImageDraw
+    w, h = (v * FLAG_SS for v in FLAG_PX[wide])
+    im = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    shape = [(w * .08, 0), (w * .92, 0), (w * .92, h * .8), (w * .5, h * .98), (w * .08, h * .8)]
+    d.polygon(shape, fill=FLAG_FIELD + (255,))
+    cx, cy, s = w * .5, h * .42, min(w, h) * .3
+    eagle = [(0, -.5), (.15, -.1), (1.0, -.55), (.7, .05), (.25, .2), (.12, .8), (-.12, .8), (-.25, .2), (-.7, .05),
+             (-1.0, -.55), (-.15, -.1)]
+    d.polygon([(cx + x * s, cy + y * s) for x, y in eagle], fill=FLAG_EMBLEM + (255,))
+    ring = shape + [shape[0]]
+    d.line(ring, fill=FLAG_EDGE[0] + (255,), width=int(round(max(2.0, w * 0.05))), joint="curve")
+    d.line(ring, fill=FLAG_EDGE[1] + (255,), width=int(round(max(1.0, w * 0.015))), joint="curve")
+    im.save(path)
+    return path
+
+
+def flag_material(wide):
+    """A lit cloth with the flag texture and its alpha (cut out like the game's alpha scissor), roughness 0.75."""
+    if wide in _FLAG_MATS:
+        return _FLAG_MATS[wide]
+    path = flag_texture(wide, os.path.join(tempfile.mkdtemp(prefix="raivon_flag_"), "flag_%s.png" % ("w" if wide else "t")))
+    m = bpy.data.materials.new("flag_" + ("w" if wide else "t"))
+    m.use_nodes = True
+    nt = m.node_tree
+    bsdf = nt.nodes.get("Principled BSDF")
+    tex = nt.nodes.new("ShaderNodeTexImage")
+    tex.image = bpy.data.images.load(path)
+    tex.interpolation = "Cubic"
+    nt.links.new(tex.outputs["Color"], bsdf.inputs["Base Color"])
+    cut = nt.nodes.new("ShaderNodeMath")  # alpha scissor at 0.5, as the game's material
+    cut.operation = "GREATER_THAN"
+    cut.inputs[1].default_value = 0.5
+    nt.links.new(tex.outputs["Alpha"], cut.inputs[0])
+    nt.links.new(cut.outputs[0], bsdf.inputs["Alpha"])
+    bsdf.inputs["Roughness"].default_value = 0.75
+    _FLAG_MATS[wide] = m
+    return m
+
+
+def paint_flags(markers):
+    """A quad on each face of every flag marker (an empty scaled to the cloth: x width, y thickness, z height),
+    textured with the flag — map_view._flag_cloth: the front faces −Y, the back is the front turned 180° about the
+    up axis (it reads the right way round from behind too)."""
+    for at in markers:
+        me = bpy.data.meshes.new("flagcloth")
+        verts = [(-.5, -.5, -.5), (.5, -.5, -.5), (.5, -.5, .5), (-.5, -.5, .5),
+                 (.5, .5, -.5), (-.5, .5, -.5), (-.5, .5, .5), (.5, .5, .5)]
+        me.from_pydata(verts, [], [(0, 1, 2, 3), (4, 5, 6, 7)])
+        uv = me.uv_layers.new(name="UVMap")
+        for poly in me.polygons:
+            for li, (u, v) in zip(poly.loop_indices, ((0, 0), (1, 0), (1, 1), (0, 1))):
+                uv.data[li].uv = (u, v)
+        me.materials.append(flag_material(at.name.startswith("flagw")))
+        o = bpy.data.objects.new("flagcloth_" + at.name, me)
+        bpy.context.scene.collection.objects.link(o)
+        o.parent = at
+
+
+def place(name, x, y, rz=0.0, s=1.0, z=0.0, flags=True):
+    """Import game/assets/models/<name>.glb at (x, y, z), turned rz about the up axis and scaled s: its roots (the
+    mesh and the marker empties) under one parent, so the markers keep their places on the mesh; flag markers get
+    the flag (paint_flags). Returns the parent, or None when the model is missing."""
+    path = os.path.join(MODELS, name + ".glb")
+    if not os.path.exists(path):
+        return None
+    before = set(bpy.data.objects)
+    bpy.ops.import_scene.gltf(filepath=path)
+    new = set(bpy.data.objects) - before
+    root = bpy.data.objects.new(name + "_at", None)
+    bpy.context.scene.collection.objects.link(root)
+    root.location = (x, y, z)
+    root.rotation_euler = (0.0, 0.0, rz)
+    root.scale = (s, s, s)
+    for o in new:
+        if o.parent is None:
+            o.parent = root
+    if flags:
+        paint_flags(sorted((o for o in new if o.type == "EMPTY" and o.name.startswith("flag")), key=lambda o: o.name))
+    return root
+
+
+def reset_scene():
+    """An empty scene; the material caches (kit's and the flags') pointed into the old one."""
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    kit._MATS.clear()
+    _FLAG_MATS.clear()
+
+
+def hex_xy(q, r):
+    return 1.5 * q, -math.sqrt(3) * (r + q / 2)
+
+
 # the border ribbon's bands, outside → in (§6.6: dark edge 0–17 %, body, light stripe 30–52 %, body), the player's
 # colours of game/scripts/soft_palette.gd (rim, body, hi)
 RIBBON_BANDS = ((0.0, 0.17, "#1D4DB3"), (0.17, 0.30, "#4FA8FF"), (0.30, 0.52, "#B8E0FF"), (0.52, 1.0, "#4FA8FF"))
@@ -43,34 +147,15 @@ RIBBON_Z = 0.03     # over the tile tops (z 0) and the models' lifted bases (z �
 SOFT_ROUNDS = 3     # Chaikin rounds: a corner cut to ≈ SOFT_R = 0.3 of the hex radius (§6.1 rule 2)
 LIFT = 0.0015       # each era model this much over the previous one (no coplanar bases)
 
-
-def hex_xy(q, r):
-    return 1.5 * q, -math.sqrt(3) * (r + q / 2)
-
-
-def place(name, x, y, rz=0.0, s=1.0, z=0.0):
-    path = os.path.join(MODELS, name + ".glb")
-    if not os.path.exists(path):
-        return
-    before = set(bpy.data.objects)
-    bpy.ops.import_scene.gltf(filepath=path)
-    for o in set(bpy.data.objects) - before:
-        if o.parent is None:
-            o.location = (x + o.location.x, y + o.location.y, z + o.location.z)
-            o.rotation_euler = (o.rotation_euler.x, o.rotation_euler.y, o.rotation_euler.z + rz)
-            o.scale = (s, s, s)
-
-
 # tiles: a diagonal path of 8 era hexes from the front (bottom of frame) to the back, wild hexes around
-path = [(-2, 3), (-1, 2), (-1, 1), (0, 0), (0, -1), (1, -2), (1, -3), (2, -4)]
-era = {c: len(path) - i for i, c in enumerate(path)}  # huts nearest the camera, citadel at the back
-for q in range(-5, 6):
-    for r in range(-7, 7):
-        x, y = hex_xy(q, r)
-        if abs(x) > 6.5 or y < -5.5 or y > 9:
-            continue
-        enemy = q >= 2 and (q, r) not in era
-        hex_prism(f"h{q}_{r}", (x, y, 0), 0.985, 0.95, grass_red if enemy else grass, dirt, bevel=0.035)
+PATH = [(-2, 3), (-1, 2), (-1, 1), (0, 0), (0, -1), (1, -2), (1, -3), (2, -4)]
+# the cameras: (location, target, lens). portrait — the B4.6 frame (huts at the bottom, the citadel at the back);
+# feature — across the path, so the eras read left to right (huts on the left, the neon citadel on the right) under
+# a band of sky and sea for the title (compose_keyart.py --layout=feature)
+FRAMES = {
+    "portrait": ((4.5, 12.5, 8.0), (0.5, 0.4, 0.9), 38),
+    "feature": ((-6.64, 8.94, 4.0), (0.86, 0.84, 1.7), 27),
+}
 
 
 def outline(cells):
@@ -154,60 +239,90 @@ def border_ribbon(cells):
     return o
 
 
-border_ribbon(list(era))
+def main(argv):
+    pos = [a for a in argv if not a.startswith("--")]
+    out = os.path.abspath(pos[0] if pos else "/tmp/keyart.png")  # Blender reads a relative path from the .blend
+    frame = next((a.split("=", 1)[1] for a in argv if a.startswith("--frame=")), "portrait")
+    w = int(pos[1]) if len(pos) > 1 else (941 if frame == "portrait" else 2048)
+    h = int(pos[2]) if len(pos) > 2 else (1672 if frame == "portrait" else 1000)
+    samples = int(pos[3]) if len(pos) > 3 else 64
 
-for (q, r), dl in era.items():
-    x, y = hex_xy(q, r)
-    lift = LIFT * (len(path) + 1 - dl)  # the huts in front highest: their base lies over the next one's
-    place(f"residence_dl{dl}_blue", x, y + 0.08, rz=0.25, s=1.45 if dl <= 3 else 1.15, z=lift)
-    side = -1 if dl % 2 else 1
-    if dl >= 2:
-        place(f"assault_dl{dl}_blue", x + 0.95 * side, y - 0.55, rz=0.4 * side, s=1.3, z=lift)
-    place(f"squad_dl{dl}_blue", x - 0.9 * side, y - 0.75, rz=-0.2 * side, s=1.2, z=lift)
+    reset_scene()
+    scene = bpy.context.scene
+    grass = noisy_mat("grass", "#58b82a", "#8ad83f", 4.0)
+    grass_red = noisy_mat("grass_red", "#b5a43a", "#d4b24e", 4.0)
+    dirt = noisy_mat("dirt", "#8a5a34", "#a8743f", 6.0)
 
-# a red rival city at the back right for contrast
-place("city_dl5_red", 4.2, -3.2, rz=0.3, s=1.2)
-place("residence_dl6_red", 4.6, -5.0, rz=0.2)
+    era = {c: len(PATH) - i for i, c in enumerate(PATH)}  # huts nearest the camera, citadel at the back
+    for q in range(-5, 6):
+        for r in range(-7, 7):
+            x, y = hex_xy(q, r)
+            if abs(x) > 6.5 or y < -5.5 or y > 9:
+                continue
+            enemy = q >= 2 and (q, r) not in era
+            hex_prism(f"h{q}_{r}", (x, y, 0), 0.985, 0.95, grass_red if enemy else grass, dirt, bevel=0.035)
 
-# sea far below, sky
-bpy.ops.mesh.primitive_plane_add(size=80, location=(0, 0, -0.6))
-bpy.context.active_object.data.materials.append(mat("sea", "#1b7fb8", 0.2))
-world = bpy.data.worlds.new("w")
-scene.world = world
-world.use_nodes = True
-bg = world.node_tree.nodes["Background"]
-bg.inputs["Color"].default_value = (0.55, 0.75, 1.0, 1)
-bg.inputs["Strength"].default_value = 0.9
+    border_ribbon(list(era))
 
-sun = bpy.data.lights.new("sun", "SUN")
-sun.energy = 4.0
-sun.angle = math.radians(8)
-so = bpy.data.objects.new("sun", sun)
-so.rotation_euler = (math.radians(48), math.radians(-20), math.radians(35))
-scene.collection.objects.link(so)
+    for (q, r), dl in era.items():
+        x, y = hex_xy(q, r)
+        lift = LIFT * (len(PATH) + 1 - dl)  # the huts in front highest: their base lies over the next one's
+        place(f"residence_dl{dl}_blue", x, y + 0.08, rz=0.25, s=1.45 if dl <= 3 else 1.15, z=lift)
+        side = -1 if dl % 2 else 1
+        if dl >= 2:
+            place(f"assault_dl{dl}_blue", x + 0.95 * side, y - 0.55, rz=0.4 * side, s=1.3, z=lift)
+        place(f"squad_dl{dl}_blue", x - 0.9 * side, y - 0.75, rz=-0.2 * side, s=1.2, z=lift)
 
-cam = bpy.data.cameras.new("cam")
-cam.lens = 38
-co = bpy.data.objects.new("cam", cam)
-scene.collection.objects.link(co)
-scene.camera = co
-co.location = (4.5, 12.5, 8.0)
-target = bpy.data.objects.new("t", None)
-target.location = (0.5, 0.4, 0.9)
-scene.collection.objects.link(target)
-tc = co.constraints.new("TRACK_TO")
-tc.target = target
-tc.track_axis = "TRACK_NEGATIVE_Z"
-tc.up_axis = "UP_Y"
+    # a red rival city at the back right for contrast
+    place("city_dl5_red", 4.2, -3.2, rz=0.3, s=1.2)
+    place("residence_dl6_red", 4.6, -5.0, rz=0.2)
 
-scene.render.engine = "CYCLES"
-scene.cycles.samples = SAMPLES
-scene.cycles.use_denoising = True
-scene.render.resolution_x = W
-scene.render.resolution_y = H
-scene.render.film_transparent = False
-scene.view_settings.view_transform = "AgX" if "AgX" in [i.identifier for i in scene.view_settings.bl_rna.properties["view_transform"].enum_items] else "Filmic"
-scene.view_settings.look = "AgX - Punchy" if scene.view_settings.view_transform == "AgX" else "None"
-scene.render.filepath = OUT
-bpy.ops.render.render(write_still=True)
-print("keyart ->", OUT)
+    # sea far below, sky
+    bpy.ops.mesh.primitive_plane_add(size=80, location=(0, 0, -0.6))
+    bpy.context.active_object.data.materials.append(mat("sea", "#1b7fb8", 0.2))
+    world = bpy.data.worlds.new("w")
+    scene.world = world
+    world.use_nodes = True
+    bg = world.node_tree.nodes["Background"]
+    bg.inputs["Color"].default_value = (0.55, 0.75, 1.0, 1)
+    bg.inputs["Strength"].default_value = 0.9
+
+    sun = bpy.data.lights.new("sun", "SUN")
+    sun.energy = 4.0
+    sun.angle = math.radians(8)
+    so = bpy.data.objects.new("sun", sun)
+    so.rotation_euler = (math.radians(48), math.radians(-20), math.radians(35))
+    scene.collection.objects.link(so)
+
+    loc, aim, lens = FRAMES[frame]
+    cam = bpy.data.cameras.new("cam")
+    cam.lens = lens
+    co = bpy.data.objects.new("cam", cam)
+    scene.collection.objects.link(co)
+    scene.camera = co
+    co.location = loc
+    target = bpy.data.objects.new("t", None)
+    target.location = aim
+    scene.collection.objects.link(target)
+    tc = co.constraints.new("TRACK_TO")
+    tc.target = target
+    tc.track_axis = "TRACK_NEGATIVE_Z"
+    tc.up_axis = "UP_Y"
+
+    scene.render.engine = "CYCLES"
+    scene.cycles.samples = samples
+    scene.cycles.seed = 0
+    scene.cycles.use_denoising = True
+    scene.render.resolution_x = w
+    scene.render.resolution_y = h
+    scene.render.film_transparent = False
+    transforms = [i.identifier for i in scene.view_settings.bl_rna.properties["view_transform"].enum_items]
+    scene.view_settings.view_transform = "AgX" if "AgX" in transforms else "Filmic"
+    scene.view_settings.look = "AgX - Punchy" if scene.view_settings.view_transform == "AgX" else "None"
+    scene.render.filepath = out
+    bpy.ops.render.render(write_still=True)
+    print("keyart ->", out)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

@@ -1700,6 +1700,7 @@ func _place_guards(c: Dictionary, holder: Node3D, rot: float) -> void:
 		var g := spawn(sq, holder, fwd * 0.78 + side * 0.34 * k, rot, 0.5)
 		if g:
 			_animate_troops(g, false, anim)
+			_batch_troops(g, anim, holder)
 
 
 ## The farmstead of an owner's era: a stone cottage (DL1–5), a panel house with greenhouses (DL6–7), a neon habitat
@@ -2384,6 +2385,7 @@ func _place_ship(c: Dictionary, holder: Node3D) -> void:
 			var r0 := ship.rotation
 			tw.tween_property(ship, "rotation", r0 + Vector3(0.05, 0, 0.03), 1.8 + rng.randf()).set_trans(Tween.TRANS_SINE)
 			tw.tween_property(ship, "rotation", r0 - Vector3(0.05, 0, 0.03), 1.8 + rng.randf()).set_trans(Tween.TRANS_SINE)
+			_batch_troops(ship, [], holder)  # rocking: drawn with the troops, from its node every frame
 		return
 
 
@@ -2712,6 +2714,7 @@ func _horizon_ship(q: int, r: int, p: Vector3, lr: RandomNumberGenerator) -> voi
 			var r0 := ship.rotation
 			tw.tween_property(ship, "rotation", r0 + Vector3(0.05, 0, 0.03), 1.8 + lr.randf()).set_trans(Tween.TRANS_SINE)
 			tw.tween_property(ship, "rotation", r0 - Vector3(0.05, 0, 0.03), 1.8 + lr.randf()).set_trans(Tween.TRANS_SINE)
+			_batch_troops(ship, [], _bay_root)
 		return
 
 
@@ -4310,10 +4313,7 @@ func sync_armies(armies: Array, battle) -> void:
 		node.position = node.position.lerp(p, 0.3) if node.position.distance_to(p) < 3.0 else p
 		var marching := 1.0 if (a["move"] != null or not mv.is_empty() or (fighting.has(id) and int(fighting[id]) == -3)) else 0.0
 		var in_fight := 1.0 if fighting.has(id) and int(fighting[id]) != -3 else 0.0
-		for mi in node.get_meta("anim", []):
-			if is_instance_valid(mi):
-				(mi as GeometryInstance3D).set_instance_shader_parameter("march", marching)
-				(mi as GeometryInstance3D).set_instance_shader_parameter("fight", in_fight)
+		node.set_meta("troop_state", Vector2i(int(marching), int(in_fight)))  # the troop shader's march / fight (_sync_troops)
 		model.position.y = hop
 		model.rotation.z = sway
 		var ready := float(a["str"]) / maxf(1.0, float(a["max_str"]))
@@ -4596,6 +4596,7 @@ func _make_army(a: Dictionary) -> Node3D:
 	node.set_meta("anim", anim)
 	spawn("banner_" + side, model, Vector3(0.05, 0, -0.35), 0.0, 0.9, int(a["side"]))
 	node.set_meta("side", side)
+	_batch_troops(model, anim, node)
 	node.add_child(_army_plate(side))
 	return node
 
@@ -4652,6 +4653,112 @@ func _sync_plate(node: Node3D, a: Dictionary, ready: float, hidden: bool, in_bat
 	tag.paint(true)  # the face, the number and the icon at fade × the plate's on-screen fade (_declutter)
 
 
+# ------------------------------------------------------------------ troops in MultiMeshes
+
+## The armies' models, the capital guards and the rocking warships (on the sea hexes and in the bay): every part of
+## them was a mesh node, a draw in the visible pass and one in the shadow pass — a DL8 army 12 + 8, so a late front of
+## ten armies or the strategic view with five of ours, the guards of a dozen capitals and the fleets went well over the
+## budget (playtest 2 Q5: 350–380). They are drawn by MultiMeshes:
+## one per part mesh, its materials and shadow setting, and the troop shader's march / fight state, for the whole map,
+## filled every frame (_sync_troops) from the parts' own nodes, which stay in the tree, hidden, for their transforms —
+## the march, the hop, the sway, the turn, a routed army's shrink, the gunship's orbit, a capture's pop. Same meshes,
+## materials and transforms: the same frame for a few dozen draws.
+var _troop_parts: Array = []  # [MeshInstance3D, key (mesh|materials|shadow), animated?, owner Node3D]
+var _troop_meshes := {}  # key -> the mesh drawn: the part's mesh with its active materials on its surfaces
+var _troop_sets := {}  # key (+ "|<march><fight>" for animated parts) -> MultiMeshInstance3D
+
+
+## Takes the mesh parts under `root` into the troop MultiMeshes: `anim` lists the ones on the troop shader (their state
+## is read off `owner`'s meta "troop_state", a field army's; the guards' stays idle), `owner` is the node whose
+## visibility shows or hides them.
+func _batch_troops(root: Node, anim: Array, owner: Node3D) -> void:
+	var list: Array = root.find_children("*", "MeshInstance3D", true, false)
+	if root is MeshInstance3D:
+		list.append(root)
+	for n in list:
+		var mi := n as MeshInstance3D
+		if mi.mesh == null or not mi.visible or mi.skin != null or mi.material_overlay != null:
+			continue  # (a skinned or overlaid part keeps its own node)
+		var ids := PackedStringArray()
+		for i in mi.mesh.get_surface_count():
+			var m := mi.get_active_material(i)
+			ids.append(str(m.get_instance_id()) if m != null else "0")
+		var key := "%d|%s|%d" % [mi.mesh.get_instance_id(), ",".join(ids), int(mi.cast_shadow)]
+		if not _troop_meshes.has(key):
+			var mesh: Mesh = mi.mesh
+			var same := true
+			for i in mesh.get_surface_count():
+				same = same and mi.get_active_material(i) == mesh.surface_get_material(i)
+			if not same:
+				mesh = mesh.duplicate()
+				for i in mesh.get_surface_count():
+					mesh.surface_set_material(i, mi.get_active_material(i))
+			_troop_meshes[key] = mesh
+		_troop_parts.append([mi, key, anim.has(mi), owner])
+		mi.visible = false  # drawn by its set (a hidden node still has its transform)
+
+
+func _sync_troops() -> void:
+	if _troop_parts.is_empty() and _troop_sets.is_empty():
+		return
+	var inv := global_transform.affine_inverse()
+	var lists := {}
+	var keep: Array = []
+	for part in _troop_parts:
+		var mi: Variant = part[0]
+		if not is_instance_valid(mi) or not (mi as Node).is_inside_tree():
+			continue
+		keep.append(part)
+		var owner: Node3D = part[3]
+		if not is_instance_valid(owner) or not owner.is_visible_in_tree():
+			continue
+		var key: String = part[1]
+		if part[2]:
+			var st: Vector2i = owner.get_meta("troop_state", Vector2i.ZERO)
+			key += "|%d%d" % [st.x, st.y]
+		if not lists.has(key):
+			lists[key] = []
+		(lists[key] as Array).append(inv * (mi as Node3D).global_transform)
+	_troop_parts = keep
+	for key in _troop_sets:
+		if not lists.has(key):
+			var idle: MultiMeshInstance3D = _troop_sets[key]
+			idle.visible = false
+	for key in lists:
+		var mmi: MultiMeshInstance3D = _troop_sets.get(key)
+		if mmi == null:
+			var base := String(key)
+			var parts := base.split("|")
+			if parts.size() > 3:
+				base = "|".join(parts.slice(0, 3))
+			var mm := MultiMesh.new()
+			mm.transform_format = MultiMesh.TRANSFORM_3D
+			mm.mesh = _troop_meshes[base]
+			mmi = MultiMeshInstance3D.new()
+			mmi.name = "troops"
+			mmi.multimesh = mm
+			mmi.cast_shadow = int(parts[2]) as GeometryInstance3D.ShadowCastingSetting
+			if parts.size() > 3:  # the troop shader's state: per draw, as it was per part
+				mmi.set_instance_shader_parameter("march", float(parts[3].substr(0, 1)))
+				mmi.set_instance_shader_parameter("fight", float(parts[3].substr(1, 1)))
+			add_child(mmi)
+			_troop_sets[key] = mmi
+		var xfs: Array = lists[key]
+		var mm := mmi.multimesh
+		if mm.instance_count < xfs.size():
+			mm.instance_count = nexti_pow2(xfs.size())
+		var lo := Vector3(INF, INF, INF)
+		var hi := -lo
+		for i in xfs.size():
+			var xf: Transform3D = xfs[i]
+			mm.set_instance_transform(i, xf)
+			lo = lo.min(xf.origin)
+			hi = hi.max(xf.origin)
+		mm.visible_instance_count = xfs.size()
+		mmi.custom_aabb = AABB(lo - Vector3(1.5, 1.5, 1.5), hi - lo + Vector3(3.0, 3.0, 3.0))  # a part's reach round its origin
+		mmi.visible = true
+
+
 # ------------------------------------------------------------------ FX
 
 func burst(hex: int, color: Color, big := false) -> void:
@@ -4661,30 +4768,78 @@ func burst(hex: int, color: Color, big := false) -> void:
 ## An expanding ring that fades out (captures, builds, hits; §6.10): round, unshaded, in the soft body colour of the
 ## side (the player's and the war enemy's raw marker colours map to their §6.3 bodies), no emission — the Mobile
 ## renderer clipped the old ×6 glow at ≈ 2 anyway, a white-hot hoop. `alpha` < 1 for soft rings (the dust of a pop).
+## Every ring on the map is an instance of one MultiMesh (_step_bursts; playtest 2 Q5: a mesh and a material each
+## made a capture wave, the DL-up's ring of pops or an airstrike's seven bombs a draw a ring).
 func burst_at(pos: Vector3, color: Color, big := false, alpha := 1.0) -> void:
-	var p := pos + Vector3(0, 0.1, 0)
-	var mi := MeshInstance3D.new()
-	var tm := TorusMesh.new()
-	tm.inner_radius = 0.8
-	tm.outer_radius = 0.95
-	tm.rings = 24  # the slices round the ring (already round); ring_segments is the tube's cross-section
-	tm.ring_segments = 12  # a round tube (was 6, a hexagonal one)
-	mi.mesh = tm
 	var col := color
 	if color == C_PLAYER:
 		col = SoftPalette.scene(SoftPalette.PLAYER["body"])  # unshaded: reads as the §6.3 body on screen
 	elif color == C_WAR:
 		col = SoftPalette.scene(SoftPalette.ENEMY["body"])
-	var m := StandardMaterial3D.new()
-	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.albedo_color = Color(col.r, col.g, col.b, alpha)
-	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	m.render_priority = SEL_PRIO  # over the border ribbons it crosses, under the clouds
-	mi.material_override = m
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	mi.position = p
-	add_child(mi)
-	_fx.append({"node": mi, "t": 0.0, "dur": 0.9 if big else 0.6, "big": big, "a0": alpha})
+	_bursts.append({"p": pos + Vector3(0, 0.1, 0), "col": Color(col.r, col.g, col.b, alpha), "t": 0.0,
+		"dur": 0.9 if big else 0.6, "big": big})
+
+
+var _bursts: Array = []  # [{p, col (α the start), t, dur, big}] the rings growing out (burst_at)
+var _burst_mmi: MultiMeshInstance3D
+
+
+## The rings' frame: each grows from 0.6 to 2.2 (big) or 1.3 wide, flat (y 0.3), and fades out over its life.
+func _step_bursts(delta: float) -> void:
+	if _bursts.is_empty() and (_burst_mmi == null or _burst_mmi.multimesh.visible_instance_count == 0):
+		return
+	if _burst_mmi == null:
+		var tm := TorusMesh.new()
+		tm.inner_radius = 0.8
+		tm.outer_radius = 0.95
+		tm.rings = 24  # the slices round the ring (already round); ring_segments is the tube's cross-section
+		tm.ring_segments = 12  # a round tube (was 6, a hexagonal one)
+		var m := StandardMaterial3D.new()
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		m.vertex_color_use_as_albedo = true  # the instance colour (sRGB, as albedo_color was)
+		m.vertex_color_is_srgb = true
+		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		m.render_priority = SEL_PRIO  # over the border ribbons it crosses, under the clouds
+		tm.material = m
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_colors = true
+		mm.mesh = tm
+		_burst_mmi = MultiMeshInstance3D.new()
+		_burst_mmi.name = "bursts"
+		_burst_mmi.multimesh = mm
+		_burst_mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(_burst_mmi)
+	var mm := _burst_mmi.multimesh
+	for i in range(_bursts.size() - 1, -1, -1):
+		var b: Dictionary = _bursts[i]
+		b["t"] = float(b["t"]) + delta
+		if float(b["t"]) >= float(b["dur"]):
+			_bursts.remove_at(i)
+	if mm.instance_count < _bursts.size():
+		mm.instance_count = maxi(16, nexti_pow2(_bursts.size()))
+	var lo := Vector3(INF, INF, INF)
+	var hi := -lo
+	for i in _bursts.size():
+		var b: Dictionary = _bursts[i]
+		var k := float(b["t"]) / float(b["dur"])
+		var sc := 0.6 + k * (1.6 if b["big"] else 0.7)
+		var p: Vector3 = b["p"]
+		mm.set_instance_transform(i, Transform3D(Basis.from_scale(Vector3(sc, 0.3, sc)), p))
+		var c: Color = b["col"]
+		mm.set_instance_color(i, Color(c.r, c.g, c.b, c.a * (1.0 - k)))
+		lo = lo.min(p)
+		hi = hi.max(p)
+	mm.visible_instance_count = _bursts.size()
+	if not _bursts.is_empty():  # the rings' bounds (the mesh's own AABB knows only the origin): culling stays right
+		_burst_mmi.custom_aabb = AABB(lo - Vector3(2.5, 0.5, 2.5), hi - lo + Vector3(5.0, 1.0, 5.0))
+
+
+static func nexti_pow2(n: int) -> int:
+	var k := 1
+	while k < n:
+		k *= 2
+	return k
 
 
 # ------------------------------------------------------------------ resource bubbles & hex labels
@@ -5124,18 +5279,68 @@ var _dep_marks: Array = []  # [discs, rings]: one MultiMeshInstance3D each over 
 ## (_process). They replaced the hard yellow hex strip.
 func _make_deposit(hex: int, res: String) -> Node3D:
 	var node := Node3D.new()
+	node.set_meta("icon", {"gold": "coin", "food": "food", "metal": "metal"}.get(res, "coin"))
 	add_child(node)
-	var center := cell_world(hex) + Vector3(0, 0.05, 0)
-	var sp := Sprite3D.new()
-	sp.name = "icon"
-	sp.texture = _tex({"gold": "coin", "food": "food", "metal": "metal"}.get(res, "coin"))
-	sp.pixel_size = 0.0034
-	sp.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	sp.shaded = false
-	sp.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	sp.position = center + Vector3(0, 0.75, 0)
-	node.add_child(sp)
 	return node
+
+
+## The deposits' floating icons (the resource's icon 0.75 over the hex, bobbing 0.06): billboards like the Sprite3D
+## each deposit had (unshaded, alpha-blended, both faces, mipmapped), one MultiMesh per icon for every deposit on the
+## map (playtest 2 Q5: ~18 draws on a chapter IV view, now at most three).
+var _dep_icon_mmis := {}  # icon name -> MultiMeshInstance3D
+const DEP_ICON_PX := 0.0034  # world units per icon pixel (the old Sprite3D's pixel_size)
+
+
+func _step_dep_icons(bt: float) -> void:
+	var lists := {}
+	for h in _dep_nodes:
+		var n: Node3D = _dep_nodes[h]
+		if not is_instance_valid(n) or n.is_queued_for_deletion():
+			continue
+		var ic := String(n.get_meta("icon", "coin"))
+		if not lists.has(ic):
+			lists[ic] = []
+		var c := cell_world(h)
+		(lists[ic] as Array).append(Vector3(c.x, c.y + 0.8 + 0.06 * sin(bt * 2.5 + h * 0.7), c.z))
+	for ic in _dep_icon_mmis:
+		if not lists.has(ic):
+			(_dep_icon_mmis[ic] as MultiMeshInstance3D).visible = false
+	for ic in lists:
+		var mmi: MultiMeshInstance3D = _dep_icon_mmis.get(ic)
+		if mmi == null:
+			var tex := _tex(ic)
+			var q := QuadMesh.new()
+			q.size = Vector2(tex.get_width(), tex.get_height()) * DEP_ICON_PX
+			var m := StandardMaterial3D.new()
+			m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			m.cull_mode = BaseMaterial3D.CULL_DISABLED
+			m.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
+			m.albedo_texture = tex
+			m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+			q.material = m
+			var mm := MultiMesh.new()
+			mm.transform_format = MultiMesh.TRANSFORM_3D
+			mm.mesh = q
+			mmi = MultiMeshInstance3D.new()
+			mmi.name = "deposit_icons"
+			mmi.multimesh = mm
+			mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			add_child(mmi)
+			_dep_icon_mmis[ic] = mmi
+		var pts: Array = lists[ic]
+		var mm := mmi.multimesh
+		if mm.instance_count != pts.size():
+			mm.instance_count = pts.size()
+		var lo := Vector3(INF, INF, INF)
+		var hi := -lo
+		for i in pts.size():
+			var p: Vector3 = pts[i]
+			mm.set_instance_transform(i, Transform3D(Basis.IDENTITY, p))
+			lo = lo.min(p)
+			hi = hi.max(p)
+		mmi.custom_aabb = AABB(lo - Vector3(0.5, 0.5, 0.5), hi - lo + Vector3(1.0, 1.0, 1.0))
+		mmi.visible = true
 
 
 ## The deposit marks, built once (§6.7, P8):
@@ -5703,40 +5908,93 @@ func _box(parent: Node3D, size: Vector3, pos: Vector3, m: Material) -> MeshInsta
 
 
 ## A low-poly aircraft of the era (canon §10 table): biplane at DL6, propeller attack plane at DL7, jet from DL8.
-## Faces −Z; `tint` is the side's colour on the wings.
+## Faces −Z; `tint` is the side's colour on the wings. Its boxes are one vertex-coloured matte mesh (and the jet's
+## glowing exhaust a second one), built once per era and tint (_plane_mesh): a flight of three was 21–27 draws and as
+## many shadow draws a split (playtest 2 Q5), now 6. The spinning propeller stays its own node, "prop".
 func _aircraft(dl: int, tint: Color) -> Node3D:
+	var era := 6 if dl <= 6 else (7 if dl == 7 else 8)
+	var key := "%d|%s" % [era, tint.to_html()]
+	if not _plane_meshes.has(key):
+		_plane_meshes[key] = _plane_mesh(era, tint)
+	var parts: Array = _plane_meshes[key]
 	var root := Node3D.new()
-	var body := _flat_mat(Color(0.42, 0.45, 0.4) if dl <= 7 else Color(0.62, 0.65, 0.7))
-	var wing := _flat_mat(tint)
-	var dark := _flat_mat(Color(0.12, 0.12, 0.14))
-	if dl <= 6:
-		_box(root, Vector3(0.12, 0.12, 0.62), Vector3.ZERO, body)
-		_box(root, Vector3(0.9, 0.025, 0.16), Vector3(0, 0.1, -0.08), wing)
-		_box(root, Vector3(0.82, 0.025, 0.15), Vector3(0, -0.05, -0.06), wing)
-		for x in [-0.32, 0.32]:
-			_box(root, Vector3(0.015, 0.15, 0.015), Vector3(x, 0.025, -0.08), dark)
-		_box(root, Vector3(0.32, 0.02, 0.1), Vector3(0, 0.02, 0.27), wing)
-		_box(root, Vector3(0.02, 0.13, 0.1), Vector3(0, 0.08, 0.27), wing)
-		_box(root, Vector3(0.3, 0.03, 0.02), Vector3(0, 0, -0.32), dark).name = "prop"
-	elif dl == 7:
-		_box(root, Vector3(0.13, 0.13, 0.7), Vector3.ZERO, body)
-		_box(root, Vector3(1.0, 0.03, 0.18), Vector3(0, -0.02, -0.05), wing)
-		_box(root, Vector3(0.36, 0.02, 0.1), Vector3(0, 0.02, 0.3), wing)
-		_box(root, Vector3(0.02, 0.16, 0.12), Vector3(0, 0.09, 0.3), wing)
-		_box(root, Vector3(0.08, 0.06, 0.14), Vector3(0, 0.08, -0.08), _flat_mat(Color(0.5, 0.75, 0.9)))
-		_box(root, Vector3(0.34, 0.03, 0.02), Vector3(0, 0, -0.36), dark).name = "prop"
-	else:
-		_box(root, Vector3(0.11, 0.11, 0.8), Vector3.ZERO, body)
-		for sx in [-1.0, 1.0]:
-			var w := _box(root, Vector3(0.45, 0.025, 0.3), Vector3(sx * 0.24, -0.01, 0.08), wing)
-			w.rotation.y = sx * 0.45
-		_box(root, Vector3(0.02, 0.2, 0.16), Vector3(0, 0.1, 0.32), wing)
-		_box(root, Vector3(0.07, 0.05, 0.16), Vector3(0, 0.07, -0.2), _flat_mat(Color(0.5, 0.75, 0.9)))
-		var exhaust := _box(root, Vector3(0.07, 0.07, 0.05), Vector3(0, 0, 0.42), _flat_mat(Color(1.0, 0.6, 0.2)))
-		(exhaust.material_override as StandardMaterial3D).emission_enabled = true
-		(exhaust.material_override as StandardMaterial3D).emission = Color(1.0, 0.5, 0.15)
-		(exhaust.material_override as StandardMaterial3D).emission_energy_multiplier = 3.0
+	var mi := MeshInstance3D.new()
+	mi.mesh = parts[0]
+	root.add_child(mi)
+	if parts[1] != null:
+		var prop := MeshInstance3D.new()
+		prop.name = "prop"
+		prop.mesh = parts[1]
+		prop.position = parts[2]
+		root.add_child(prop)
 	return root
+
+
+var _plane_meshes := {}  # "era|tint" -> [ArrayMesh (body, and the exhaust's surface), prop ArrayMesh or null, prop position]
+var _plane_mat: StandardMaterial3D  # the vertex-coloured matte of every aircraft
+
+
+## The aircraft's boxes, as the old one-node-a-box planes placed them: [size, position, colour, y rotation]; the
+## glowing exhaust (DL8) goes into a second surface, the propeller (DL6–7) into a mesh of its own.
+func _plane_mesh(era: int, tint: Color) -> Array:
+	var body := Color(0.42, 0.45, 0.4) if era <= 7 else Color(0.62, 0.65, 0.7)
+	var dark := Color(0.12, 0.12, 0.14)
+	var glass := Color(0.5, 0.75, 0.9)
+	var boxes: Array = []
+	var prop: Array = []
+	if era == 6:
+		boxes = [[Vector3(0.12, 0.12, 0.62), Vector3.ZERO, body], [Vector3(0.9, 0.025, 0.16), Vector3(0, 0.1, -0.08), tint],
+			[Vector3(0.82, 0.025, 0.15), Vector3(0, -0.05, -0.06), tint],
+			[Vector3(0.015, 0.15, 0.015), Vector3(-0.32, 0.025, -0.08), dark], [Vector3(0.015, 0.15, 0.015), Vector3(0.32, 0.025, -0.08), dark],
+			[Vector3(0.32, 0.02, 0.1), Vector3(0, 0.02, 0.27), tint], [Vector3(0.02, 0.13, 0.1), Vector3(0, 0.08, 0.27), tint]]
+		prop = [Vector3(0.3, 0.03, 0.02), Vector3(0, 0, -0.32), dark]
+	elif era == 7:
+		boxes = [[Vector3(0.13, 0.13, 0.7), Vector3.ZERO, body], [Vector3(1.0, 0.03, 0.18), Vector3(0, -0.02, -0.05), tint],
+			[Vector3(0.36, 0.02, 0.1), Vector3(0, 0.02, 0.3), tint], [Vector3(0.02, 0.16, 0.12), Vector3(0, 0.09, 0.3), tint],
+			[Vector3(0.08, 0.06, 0.14), Vector3(0, 0.08, -0.08), glass]]
+		prop = [Vector3(0.34, 0.03, 0.02), Vector3(0, 0, -0.36), dark]
+	else:
+		boxes = [[Vector3(0.11, 0.11, 0.8), Vector3.ZERO, body],
+			[Vector3(0.45, 0.025, 0.3), Vector3(-0.24, -0.01, 0.08), tint, -0.45], [Vector3(0.45, 0.025, 0.3), Vector3(0.24, -0.01, 0.08), tint, 0.45],
+			[Vector3(0.02, 0.2, 0.16), Vector3(0, 0.1, 0.32), tint], [Vector3(0.07, 0.05, 0.16), Vector3(0, 0.07, -0.2), glass]]
+	if _plane_mat == null:
+		_plane_mat = _flat_mat(Color.WHITE)
+		_plane_mat.vertex_color_use_as_albedo = true
+		_plane_mat.vertex_color_is_srgb = true  # the colours are the old materials' albedo, sRGB as a Color is
+	var mesh := ArrayMesh.new()
+	_box_surface(mesh, boxes, _plane_mat)
+	if era >= 8:
+		var hot := _flat_mat(Color(1.0, 0.6, 0.2))
+		hot.emission_enabled = true
+		hot.emission = Color(1.0, 0.5, 0.15)
+		hot.emission_energy_multiplier = 3.0
+		_box_surface(mesh, [[Vector3(0.07, 0.07, 0.05), Vector3(0, 0, 0.42), Color.WHITE]], hot)
+	var pm: ArrayMesh = null
+	if not prop.is_empty():
+		pm = ArrayMesh.new()
+		_box_surface(pm, [[prop[0], Vector3.ZERO, prop[2]]], _plane_mat)
+	return [mesh, pm, prop[1] if not prop.is_empty() else Vector3.ZERO]
+
+
+## Adds one surface of boxes ([size, position, colour, y rotation?]) to `mesh`: BoxMesh's own faces, moved into place
+## and vertex-coloured, so the boxes look as the separate box nodes did.
+static func _box_surface(mesh: ArrayMesh, boxes: Array, mat: Material) -> void:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for b in boxes:
+		var bm := BoxMesh.new()
+		bm.size = b[0]
+		var xf := Transform3D(Basis(Vector3.UP, float(b[3]) if (b as Array).size() > 3 else 0.0), b[1])
+		var arr := bm.get_mesh_arrays()
+		var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+		var norms: PackedVector3Array = arr[Mesh.ARRAY_NORMAL]
+		var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX]
+		for i in idx:
+			st.set_color(b[2])
+			st.set_normal(xf.basis * norms[i])
+			st.add_vertex(xf * verts[i])
+	st.set_material(mat)
+	st.commit(mesh)
 
 
 ## «Авиаудар» (03 §12.2, 10 §airstrike): a flight of three crosses the map over the target, bombs burst over the
@@ -5994,37 +6252,132 @@ func fireworks(pos: Vector3, volleys: int) -> void:
 ## fading out. A floater is a MapTag (prio −1, pinned): _declutter keeps it SCREEN_EDGE px inside the screen and clear
 ## of the HUD (the top scrim and, at war, the war bar too), and stacks it over the plates and the floaters already
 ## there — or under them where that would take it under the HUD. A pictograph in the text becomes the icon; `icon`
-## names one outright. `color` picks the text's palette token (_float_ink).
+## names one outright. `color` picks the text's palette token (_float_ink); a NEG text («Потерян», an enemy's card)
+## sits on an INK pill (FLOAT_PLATE), as the pink alone read poorly over the sunny map (playtest 2).
+## A big offensive fires many at once (playtest 2: «Оккупирован!» ×4, «Потерян» ×3 over the plates): one the same as a
+## live floater (text, icon and colour) within FLOAT_JOIN s of its last join adds to it instead — «Оккупирован! ×4»,
+## held in full FLOAT_HOLD s more — except an amount («+86»: each is that hex's own). The pocket's chip («Котёл: N»,
+## the white flag) stays one per pocket: announced again for the same pocket (grown, or a second side's land in it)
+## it keeps one chip with the larger count instead of a second chip (_same_pocket).
 const FLOAT_DUR := 1.3
 const FLOAT_RISE := 40.0
+const FLOAT_FADE := 0.585  # s: the fade at the end of a floater's life (the last 45 % of FLOAT_DUR)
+const FLOAT_JOIN := 1.0
+const FLOAT_HOLD := 0.9
+const FLOAT_POCKET := "white_flag"
+## The NEG floater's pill: opaque INK (#FF7A6E on #1B2140 is 6.2 : 1; at the chips' α 0.85 the sunlit ground showing
+## through took it under 4.5 : 1), 14 px each side of the text.
+const FLOAT_PLATE := Color(0.106, 0.129, 0.251, 1.0)
+const FLOAT_PLATE_PAD := 14.0
 
 
 func floater(hex: int, text: String, color := Color.WHITE, icon := "") -> void:
 	var cut: Array = SoftLabel3D.split_picto(text)
-	var tex := SoftLabel3D.icon_tex(icon if icon != "" else String(cut[1]))
+	var body := String(cut[0])
+	var icon_name := icon if icon != "" else String(cut[1])
+	var ink := _float_ink(color)
+	var key := "%s|%s|%s" % [body, icon_name, ink.to_html()]
+	if _float_join(hex, key, body, icon_name):
+		return
+	var tex := SoftLabel3D.icon_tex(icon_name)
 	var tag := MapTag.new()
 	tag.prio = -1
 	tag.pin = true
 	tag.base = cell_world(hex) + Vector3(0, 1.4, 0)
 	tag.position = tag.base
 	add_child(tag)
+	var quad: MeshInstance3D = null
+	if ink == Kit.NEG:
+		quad = _plate_quad(Vector2(64, 46), Vector2.ZERO, "chip:%s:%s:0" % [FLOAT_PLATE.to_html(), Kit.INK.to_html()])
+		quad.set_instance_shader_parameter("fade", 0.0)
+		tag.add_child(quad)
 	var lbl := _plate_text(32)
-	lbl.text = String(cut[0])
-	lbl.modulate = Color(SoftPalette.scene(_float_ink(color)), 0.0)  # through the grade, as the outline; shown by _float_fx
+	lbl.modulate = Color(SoftPalette.scene(ink), 0.0)  # through the grade, as the outline; shown by _float_fx
 	lbl.outline_modulate.a = 0.0
 	tag.add_child(lbl)
-	var ic := 40.0 if tex != null else 0.0
-	var gap := 6.0 if tex != null and lbl.text != "" else 0.0
+	var sp := _plate_icon(tex, 40.0 if tex != null else 0.0, Vector2.ZERO)
+	sp.modulate.a = 0.0
+	tag.add_child(sp)
+	_tags.append(tag)
+	var f := {"node": tag, "t": 0.0, "dur": FLOAT_DUR, "float": true, "lbl": lbl, "icon": sp, "plate": quad,
+		"key": key, "body": body, "n": 1, "hex": hex, "joined": 0.0, "pocket": icon_name == FLOAT_POCKET, "a": -1.0}
+	_float_layout(f)
+	_fx.append(f)
+
+
+## Lays a floater out for its text and count: the label, the icon left of it, the pill and the box _declutter reads.
+func _float_layout(f: Dictionary) -> void:
+	var tag: MapTag = f["node"]
+	var lbl: Label3D = f["lbl"]
+	var sp: Sprite3D = f["icon"]
+	lbl.text = String(f["body"]) + (" ×%d" % int(f["n"]) if int(f["n"]) > 1 else "")
+	var ic := 40.0 if sp.texture != null else 0.0
+	var gap := 6.0 if sp.texture != null and lbl.text != "" else 0.0
 	var tw := _text_w(lbl, lbl.text)
 	var w := ic + gap + tw
 	lbl.offset.x = (w * 0.5 - tw * 0.5) * RASTER
-	var sp := _plate_icon(tex, ic, Vector2(-w * 0.5 + ic * 0.5, 0.0))
-	sp.modulate.a = 0.0
-	tag.add_child(sp)
+	_plate_icon(sp.texture, ic, Vector2(-w * 0.5 + ic * 0.5, 0.0), sp)
 	var ow := float(Kit.outline_for(32))  # the outline reaches past the glyphs on both sides
 	tag.box = Rect2(-w * 0.5 - ow, -22.0, w + 2.0 * ow, 44.0)
-	_tags.append(tag)
-	_fx.append({"node": tag, "t": 0.0, "dur": FLOAT_DUR, "float": true, "lbl": lbl, "icon": sp})
+	var quad: MeshInstance3D = f["plate"]
+	if quad != null:
+		var pw := w + 2.0 * FLOAT_PLATE_PAD
+		quad.set_instance_shader_parameter("box", Vector2(pw + 4.0, 48.0))
+		tag.box = Rect2(-pw * 0.5, -24.0, pw, 48.0)
+
+
+## A floater the same as a live one joins it (its count, or a pocket's new text); true when it did.
+func _float_join(hex: int, key: String, body: String, icon_name: String) -> bool:
+	var pocket := icon_name == FLOAT_POCKET
+	if body.begins_with("+") and not pocket:
+		return false
+	for f in _fx:
+		if not f.get("float", false) or not is_instance_valid(f["node"]):
+			continue
+		var t := float(f["t"])
+		if pocket:
+			if not bool(f["pocket"]) or not _same_pocket(int(f["hex"]), hex):
+				continue
+			if _tail_int(body) >= _tail_int(String(f["body"])):  # grown: the new size (a smaller count is a part of it)
+				f["body"] = body
+				f["key"] = key
+		elif String(f["key"]) != key or t - float(f["joined"]) > FLOAT_JOIN:
+			continue
+		else:
+			f["n"] = int(f["n"]) + 1
+		f["joined"] = t
+		f["dur"] = maxf(float(f["dur"]), t + FLOAT_HOLD + FLOAT_FADE)
+		_float_layout(f)
+		return true
+	return false
+
+
+## The last number in a text («Котёл: 7» → 7), −1 without one.
+static func _tail_int(t: String) -> int:
+	var m := RegEx.create_from_string("(\\d+)\\D*$").search(t)
+	return int(m.get_string(1)) if m != null else -1
+
+
+## True when hexes a and b lie in one pocket: joined through land the player does not control (at most 64 hexes
+## looked at, a pocket is small).
+func _same_pocket(a: int, b: int) -> bool:
+	if a == b:
+		return true
+	var seen := {a: true}
+	var todo: Array = [a]
+	while not todo.is_empty() and seen.size() < 64:
+		var h: int = todo.pop_back()
+		for n in sim.neighbors[h]:
+			if n < 0 or seen.has(n):
+				continue
+			var c: Dictionary = sim.cells[n]
+			if int(c["controller"]) == Types.PLAYER or not Types.is_passable(c):
+				continue
+			if n == b:
+				return true
+			seen[n] = true
+			todo.append(n)
+	return false
 
 
 ## A floater's text colour, a §3.2 text token for the colour a call site asks for: gold, wheat and orange → WARN
@@ -6044,21 +6397,184 @@ static func _float_ink(c: Color) -> Color:
 	return Kit.TEXT
 
 
-## A floater's frame: the rise (ease-out over 900 ms) as the tag's nudge, and the fade (the last 45 %).
-func _float_fx(f: Dictionary, k: float) -> void:
+## A floater's frame: the rise (ease-out over 900 ms) as the tag's nudge, and the fade (its last FLOAT_FADE s).
+func _float_fx(f: Dictionary, _k: float) -> void:
 	var tag: MapTag = f["node"]
-	var a := 1.0 - smoothstep(0.55, 1.0, k)
-	var lbl: Label3D = f["lbl"]
-	lbl.modulate.a = a
-	lbl.outline_modulate.a = a  # the outline is drawn apart: fade it too, no navy ghost is left
-	(f["icon"] as Sprite3D).modulate.a = a
-	var u := clampf(float(f["t"]) / 0.9, 0.0, 1.0)
+	var t := float(f["t"])
+	var dur := float(f["dur"])
+	var a := 1.0 - smoothstep(dur - FLOAT_FADE, dur, t)
+	if absf(a - float(f["a"])) > 0.001:
+		f["a"] = a
+		var lbl: Label3D = f["lbl"]
+		lbl.modulate.a = a
+		lbl.outline_modulate.a = a  # the outline is drawn apart: fade it too, no navy ghost is left
+		(f["icon"] as Sprite3D).modulate.a = a
+		if f["plate"] != null:
+			(f["plate"] as MeshInstance3D).set_instance_shader_parameter("fade", a)
+	var u := clampf(t / 0.9, 0.0, 1.0)
 	tag.nudge = Vector2(0.0, -FLOAT_RISE * (1.0 - pow(1.0 - u, 3.0)))
+
+
+# ------------------------------------------------------------------ the frozen backdrop
+
+## Behind a window that covers the map — the battle's result, the treaty, an ultimatum, «Мир расширяется», an info
+## window, the shop; never the ceremony, whose border wave and fireworks play on — the 3D view stops (main.gd calls
+## set_frozen each frame, playtest 2 Q5: the result window over a late front cost 521–580 3D + shadow draws a frame
+## for a dimmed, blurred backdrop). set_frozen(true) waits for the camera to hold still, renders that frame once more
+## into a SubViewport of the window's size (the same World3D, a copy of the camera, the root's MSAA), shows the
+## picture on a canvas layer under the tilt-shift (main.gd _add_tilt_shift, layer −1: it blurs and vignettes the
+## picture exactly as the live map) and the HUD, and turns the root viewport's 3D off (Viewport.disable_3d: no 3D and
+## no shadow draws at all). A camera that moves under the window (a focus) or a resized window takes a new picture.
+## set_frozen(false) brings the live view back at once. The map keeps ticking under the picture (a refreshed hex, an
+## army's last step), so the view is current again the frame the window closes.
+const FREEZE_LAYER := -2  # under the tilt-shift (−1) and the HUD
+const FREEZE_STILL := 2  # frames the camera must hold still before the picture is taken …
+const FREEZE_WAIT_MS := 1500  # … or this long after the window opened, for a camera that never settles
+const FREEZE_EPS := 0.002  # world units: a camera closer than this to the picture's is still (≈ ⅙ px at the strategic view)
+var _frozen := false  # asked for (set_frozen)
+var _freeze_shown := false  # the picture is up and the root viewport draws no 3D
+var _freeze_vp: SubViewport
+var _freeze_layer: CanvasLayer
+var _freeze_since := 0  # ms: when the freeze was asked for, or the camera last moved under it
+var _freeze_still := 0  # frames the camera has held still
+var _freeze_last := Transform3D()  # the camera last frame
+var _freeze_at := Transform3D()  # the camera of the picture
+var _freeze_frame := -1  # the process frame the picture was asked to render in (−1: none pending)
+
+
+## Freezes (true) or thaws (false) the 3D view behind a window (see above). Cheap to call every frame.
+func set_frozen(on: bool) -> void:
+	if on == _frozen:
+		return
+	_frozen = on
+	if on:
+		_freeze_since = Time.get_ticks_msec()
+		_freeze_still = 0
+		_freeze_frame = -1
+	else:
+		_thaw()
+
+
+## True while the picture stands in for the 3D view (the root viewport draws no 3D).
+func is_frozen() -> bool:
+	return _freeze_shown
+
+
+func _cam_moved(a: Transform3D, b: Transform3D) -> bool:
+	return a.origin.distance_to(b.origin) > FREEZE_EPS or (a.basis.z - b.basis.z).length() > FREEZE_EPS * 0.1 \
+		or (a.basis.x - b.basis.x).length() > FREEZE_EPS * 0.1
+
+
+func _step_freeze() -> void:
+	if not _frozen:
+		return
+	var cam := get_viewport().get_camera_3d()
+	if cam == null:
+		return
+	var xf := cam.global_transform
+	if _freeze_frame >= 0:  # the picture renders this frame: up it goes two frames on, when it surely has
+		if Engine.get_process_frames() >= _freeze_frame + 2:
+			_freeze_frame = -1
+			_show_freeze()
+		return
+	if _freeze_shown and not _cam_moved(xf, _freeze_at) and _freeze_vp != null \
+			and _freeze_vp.size == _freeze_size():
+		_freeze_last = xf
+		return
+	_freeze_still = _freeze_still + 1 if not _cam_moved(xf, _freeze_last) else 0
+	if _freeze_still == 0 and _freeze_shown:
+		_freeze_since = Time.get_ticks_msec()  # moving under the picture: a new one once it holds still
+	_freeze_last = xf
+	if _freeze_still >= FREEZE_STILL or Time.get_ticks_msec() - _freeze_since > FREEZE_WAIT_MS:
+		_take_freeze(cam)
+
+
+## The root viewport's 3D size: the window's pixels (stretch mode canvas_items draws the 3D at the window's size).
+func _freeze_size() -> Vector2i:
+	return get_tree().root.size
+
+
+func _take_freeze(cam: Camera3D) -> void:
+	var root := get_tree().root
+	if _freeze_vp == null:
+		_freeze_vp = SubViewport.new()
+		_freeze_vp.name = "freeze_view"
+		_freeze_vp.gui_disable_input = true
+		_freeze_vp.msaa_3d = root.msaa_3d
+		_freeze_vp.screen_space_aa = root.screen_space_aa
+		_freeze_vp.use_taa = root.use_taa
+		_freeze_vp.use_debanding = root.use_debanding
+		_freeze_vp.scaling_3d_mode = root.scaling_3d_mode
+		_freeze_vp.scaling_3d_scale = root.scaling_3d_scale
+		_freeze_vp.mesh_lod_threshold = root.mesh_lod_threshold
+		_freeze_vp.positional_shadow_atlas_size = root.positional_shadow_atlas_size
+		_freeze_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+		var c := Camera3D.new()
+		c.name = "cam"
+		_freeze_vp.add_child(c)
+		add_child(_freeze_vp)  # no world of its own: it draws the root's World3D (and its environment)
+	_freeze_vp.size = _freeze_size()
+	var fc: Camera3D = _freeze_vp.get_node("cam")
+	fc.projection = cam.projection
+	fc.fov = cam.fov
+	fc.size = cam.size
+	fc.near = cam.near
+	fc.far = cam.far
+	fc.keep_aspect = cam.keep_aspect
+	fc.h_offset = cam.h_offset
+	fc.v_offset = cam.v_offset
+	fc.cull_mask = cam.cull_mask
+	fc.environment = cam.environment
+	fc.attributes = cam.attributes
+	fc.global_transform = cam.global_transform
+	fc.current = true
+	_freeze_at = cam.global_transform
+	_freeze_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+	_freeze_frame = Engine.get_process_frames()
+
+
+func _show_freeze() -> void:
+	if _freeze_layer == null:
+		_freeze_layer = CanvasLayer.new()
+		_freeze_layer.name = "freeze_layer"
+		_freeze_layer.layer = FREEZE_LAYER
+		var pic := TextureRect.new()
+		pic.name = "picture"
+		pic.set_anchors_preset(Control.PRESET_FULL_RECT)
+		pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		pic.stretch_mode = TextureRect.STRETCH_SCALE
+		pic.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST  # the window's pixels one to one
+		pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		pic.texture = _freeze_vp.get_texture()
+		_freeze_layer.add_child(pic)
+		add_child(_freeze_layer)
+	get_viewport().disable_3d = true
+	_freeze_shown = true
+
+
+func _thaw() -> void:
+	if is_inside_tree():
+		get_viewport().disable_3d = false
+	_freeze_shown = false
+	_freeze_frame = -1
+	if _freeze_layer != null:  # the picture and its render target go (a window is open for seconds, not minutes)
+		_freeze_layer.queue_free()
+		_freeze_layer = null
+	if _freeze_vp != null:
+		_freeze_vp.queue_free()
+		_freeze_vp = null
+
+
+func _exit_tree() -> void:
+	if _freeze_shown:  # a new game reloads the scene under a window: the root's 3D must not stay off
+		get_viewport().disable_3d = false
+		_freeze_shown = false
 
 
 func _process(delta: float) -> void:
 	if sim == null:
 		return
+	_step_freeze()
 	if _flush_queued or not _pending_decor.is_empty():  # scenery spawned outside a hex rebuild (a safety net)
 		_flush_decor()
 	if _live_dirty:  # the markers follow a rebuilt hex
@@ -6084,6 +6600,8 @@ func _process(delta: float) -> void:
 		_step_bubbles(delta, bt)
 	_step_volleys(delta)
 	_step_planes(delta)
+	_step_bursts(delta)
+	_sync_troops()
 	_step_flames(bt)
 	for i in range(_sails.size() - 1, -1, -1):
 		var obj: Variant = _sails[i]
@@ -6094,9 +6612,8 @@ func _process(delta: float) -> void:
 			(obj as Node3D).rotate_object_local(Vector3.FORWARD, -1.1 * delta)
 	if _sail_mesh != null:
 		_mirror_sails()
-	for h in _dep_nodes:
-		var ic: Node3D = _dep_nodes[h].get_node("icon")
-		ic.position.y = cell_world(h).y + 0.8 + 0.06 * sin(bt * 2.5 + h * 0.7)
+	if not _dep_nodes.is_empty() or not _dep_icon_mmis.is_empty():
+		_step_dep_icons(bt)
 	for f in _fx.duplicate():
 		f["t"] += delta
 		var k: float = f["t"] / f["dur"]
@@ -6105,10 +6622,5 @@ func _process(delta: float) -> void:
 			n.queue_free()
 			_fx.erase(f)
 			continue
-		if f.get("float", false):
-			_float_fx(f, k)
-		else:
-			var s := 0.6 + k * (1.6 if f["big"] else 0.7)
-			n.scale = Vector3(s, 0.3, s)
-			((n as MeshInstance3D).material_override as StandardMaterial3D).albedo_color.a = float(f.get("a0", 1.0)) * (1.0 - k)
+		_float_fx(f, k)  # (the floaters: the rings have their own MultiMesh, _step_bursts)
 	_declutter(delta)

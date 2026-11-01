@@ -1169,7 +1169,8 @@ func _paper_chip(parent: Control, center: Vector2, icon: String, text: String, m
 
 ## A node pops in after `delay` s (0 → 1.15 → 1, BADGE_POP); at once when headless or with reduced motion.
 ## A tile's one-line title that fits its box is drawn without a clip (as the HUD plates' values, Kit): a clipped label
-## is a clip state of its own that splits the window's draw batch — each ceremony caption cost 2 draw calls (playtest 2).
+## is a clip state of its own that splits the window's draw batch — each ceremony caption or treaty demand's name cost
+## 2 draw calls (playtest 2).
 func _unclip_title(t: Control) -> void:
 	var tl := t.get_node_or_null("title") as Label
 	if tl != null and tl.clip_text and tl.autowrap_mode == TextServer.AUTOWRAP_OFF \
@@ -1393,6 +1394,7 @@ func show_peace(enemy: String, budget: float, control: int, demands: Array, chos
 					demand_toggled.emit(String(id))
 		var t := Kit.tile(grid, Rect2(16.0 + (i % 3) * (tw + 12.0), 16.0 + (i / 3) * row_h, tw, 200), o)
 		t.name = "demand_%d" % i
+		_unclip_title(t)
 		if bool(d.get("goal", false)):  # the war's goal: a pin on the corner
 			var pin := _icon_rect("pin", 48)
 			pin.position = Vector2(4, 2)
