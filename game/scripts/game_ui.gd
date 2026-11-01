@@ -1168,6 +1168,15 @@ func _paper_chip(parent: Control, center: Vector2, icon: String, text: String, m
 
 
 ## A node pops in after `delay` s (0 → 1.15 → 1, BADGE_POP); at once when headless or with reduced motion.
+## A tile's one-line title that fits its box is drawn without a clip (as the HUD plates' values, Kit): a clipped label
+## is a clip state of its own that splits the window's draw batch — each ceremony caption cost 2 draw calls (playtest 2).
+func _unclip_title(t: Control) -> void:
+	var tl := t.get_node_or_null("title") as Label
+	if tl != null and tl.clip_text and tl.autowrap_mode == TextServer.AUTOWRAP_OFF \
+			and Kit.text_w(tl.text, tl.get_theme_font_size("font_size"), "d900", false) <= tl.size.x:
+		tl.clip_text = false
+
+
 func _pop_later(node: Control, delay: float) -> void:
 	node.pivot_offset = node.size * 0.5
 	if Kit._dur(0.24) <= 0.0:
@@ -1662,6 +1671,7 @@ func show_ceremony_counters(lines: Array, on_done: Callable, on_double := Callab
 					var tip2 := String(it.get("lost_tip", ""))
 					(t as Kit.KitTile).cb = func(): Kit.tooltip(tt2, tr("ceremony.storage_full"), tip2)
 			t.name = "reward_%d" % i
+			_unclip_title(t)
 			_pop_later(t, 0.35 + 0.08 * i)
 	elif not listed.is_empty():
 		var well := Kit.well(box, Rect2(32, well_y, w - 64.0, well_h))
