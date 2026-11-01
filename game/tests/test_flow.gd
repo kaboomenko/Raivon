@@ -1979,10 +1979,12 @@ func _run() -> void:
 		for i in 80:
 			g._step_ceremony(0.1)
 		g._end_ceremony()
-	var q2away1 := false
+	var q2away1 := ""
 	for it in g.inbox:
-		q2away1 = q2away1 or String(L.t(it["text"])).begins_with(String(g.tr("inbox.war_cap.away")).get_slice("%", 0))
-	_check(g.war.is_empty() and not q2away1, "away from 1 h before the cap: the cap closes the war by its score, not a white peace")
+		if String(it["title"]) == "inbox.war_cap.title":
+			q2away1 = String(it["text"]).get_slice("|", 0)
+	_check(g.war.is_empty() and q2away1 != "" and q2away1 != "inbox.war_cap.away",
+		"away from 1 h before the cap: the cap closes the war by its score, not as an absence (%s)" % q2away1)
 	g.truce = {}
 	g.inbox = []
 	g._set_mode(g.Mode.MAP)
@@ -1994,7 +1996,7 @@ func _run() -> void:
 	g._econ_tick()
 	var q2away := false
 	for it in g.inbox:
-		q2away = q2away or String(L.t(it["text"])).begins_with(String(g.tr("inbox.war_cap.away")).get_slice("%", 0))
+		q2away = q2away or String(it["text"]).begins_with("inbox.war_cap.away|")
 	_check(g.war.is_empty() and q2away, "a war cap that ran out in a 24 h absence closes with a white peace")
 	g._away = [0, 0]
 	g.chapter = 1
@@ -2143,12 +2145,15 @@ func _run() -> void:
 	_check(String(qr_ct.get("caption", "")) == g.tr("dipl.support") and qr_ct.get("price", []).size() == 1, "the neighbour card offers «Поддержать» with its price")
 	g.econ.res["gold"] = g._support_cost() + 10
 	var qr_h0: float = g._opinion_of(MapGen.HAMLETS)
-	var qr_b0: float = g._opinion_of(MapGen.BARONS)
 	g._on_diplomacy_action(MapGen.HAMLETS, "support")
 	var qr_w: Dictionary = g.ai_wars[0]
-	_check(int(g.econ.res["gold"]) == 10 and absf(g._opinion_of(MapGen.HAMLETS) - qr_h0 - 15.0) < 0.05 and absf(g._opinion_of(MapGen.BARONS) - qr_b0 + 15.0) < 0.05
+	var qr_se := 0.0  # (the Barons' opinion sits at the −100 floor after war 1: their new memory is what counts)
+	for m in g._op_mems(MapGen.BARONS):
+		if String(m["c"]) == "op_supported_enemy":
+			qr_se += float(m["v"])
+	_check(int(g.econ.res["gold"]) == 10 and absf(g._opinion_of(MapGen.HAMLETS) - qr_h0 - 15.0) < 0.05 and absf(qr_se + 15.0) < 0.05
 		and int(qr_w.get("boost", -1)) == MapGen.HAMLETS and int(qr_w.get("boost_until", 0)) == g.now_s() + 12 * 3600,
-		"the subsidy: 4 h of gold, +15 to them, −15 to their enemy, their armies +10%% for 12 h (%.1f / %.1f)" % [g._opinion_of(MapGen.HAMLETS) - qr_h0, g._opinion_of(MapGen.BARONS) - qr_b0])
+		"the subsidy: 4 h of gold, +15 to them, −15 to their enemy, their armies +10%% for 12 h (%.1f / %.1f)" % [g._opinion_of(MapGen.HAMLETS) - qr_h0, qr_se])
 	g.econ.res["gold"] = g._support_cost() * 2
 	g._on_diplomacy_action(MapGen.HAMLETS, "support")
 	_check(int(g.econ.res["gold"]) == g._support_cost() * 2 and g._support_reason(MapGen.HAMLETS).begins_with(g.tr("support.wait").get_slice("%", 0)),
@@ -2177,7 +2182,11 @@ func _run() -> void:
 	g.opinion = {}
 	g.ai_wars = [{"a": MapGen.BARONS, "b": MapGen.HAMLETS, "until": g.now_s() + 48 * 3600, "next": g.now_s() + 7200}]
 	g.truce = {}
-	g._declare(MapGen.BARONS, War.recommend_goals(g.sim, MapGen.BARONS, 1)[0])
+	var qr_bg := int(g.sim.states[MapGen.BARONS]["capital_id"])
+	for c in g.sim.cells:
+		if int(c["owner"]) == MapGen.BARONS and Types.is_passable(c) and g._touches_player(c["id"]):
+			qr_bg = int(c["id"])
+	g._declare(MapGen.BARONS, qr_bg)
 	g.war.erase("strike_at")
 	g._set_mode(g.Mode.WAR)
 	g._common_enemy_tick()

@@ -840,9 +840,10 @@ const PRIMARY_GUARD_MS := 400
 ## cargo (the resource's icon comes with the call), and «convoy_status» the time until the cart is back.
 const STATUS_LOOK := {"peace": ["go", "dove", ""], "repair_ad": ["info", "ad", ""], "ruin_halve": ["info", "ad", "hourglass"],
 	"convoy": ["info", "cart", ""], "convoy_status": ["lock", "cart", "hourglass"],
-	# a pending ultimatum on the map (nothing selected): its deadline, a tap opens it (B-H1: ✕ was a dead end);
-	# «Марш» beside a locked «Разбить лагерь»: the nearest army goes to the camp
-	"ultimatum": ["war", "mail", "hourglass"], "camp_march": ["info", "orders", ""]}
+	# a pending ultimatum on the map (nothing selected): the time to answer it, a tap opens it (B-H1: ✕ was a dead end) —
+	# the info face: red stays the big button's (Q2 review: two loud buttons stacked); «Марш» beside a locked «Разбить
+	# лагерь»: the nearest army goes to the camp
+	"ultimatum": ["info", "mail", "hourglass"], "camp_march": ["info", "orders", ""]}
 const BIG_RECT := Rect2(652, 1536, 277, 124)  # the big button: L, the one loud thing on the map (§1.1)
 const RETREAT_RECT := Rect2(652, 1564, 277, 96)  # «Отступить» in battle: M, a secondary action
 const STATUS_RECT := Rect2(652, 1438, 277, 88)  # the status button: M, in the hex panel's slot

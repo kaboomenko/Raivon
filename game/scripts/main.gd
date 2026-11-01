@@ -870,7 +870,9 @@ func _primary_for_selection() -> void:
 		elif not ultimatum.is_empty():
 			# an ultimatum waits for its answer (B-H1): no war on anyone meanwhile — the lock says so with the time
 			# left, and its tap opens the ultimatum again
-			ui.set_primary("ult_wait", tr("ui.declare_war"), "lock", true, "", [["hourglass", tr("ult.left") % GameUI.fmt_time(_ult_left())]],
+			# (its plate says it is the time to answer, not a countdown to a war — Q2 review; no icon: «answer 3h 59m» with
+			# one pushed the caption off the en button)
+			ui.set_primary("ult_wait", tr("ui.declare_war"), "lock", true, "", [["", tr("ult.left") % GameUI.fmt_time(_ult_left())]],
 				tr("ult.answer_first"))
 		else:
 			ui.set_primary("declare", tr("ui.declare_war"), "war")
@@ -8224,7 +8226,7 @@ func _ult_letter() -> void:
 	var state := int(ultimatum["state"])
 	var hex := int(ultimatum["hex"])
 	_post(L.pack("inbox.ultimatum.title", [_state_key(state)]), L.pack("inbox.ultimatum.text", [_cell_key(hex), int(ultimatum["tribute"])])
-		if int(ultimatum.get("buyout", 0)) > 0 else L.pack("inbox.ultimatum.text_hex", [_cell_key(hex)]))
+		if _ult_buyout() > 0 else L.pack("inbox.ultimatum.text_hex", [_cell_key(hex)]))
 
 
 ## The hex an ultimatum from `state` demands: our most valuable one on its border outside the Core (-1: none).
@@ -8239,6 +8241,8 @@ func _ult_target(state: int) -> int:
 
 
 func _show_ultimatum() -> void:
+	if ultimatum.is_empty():  # (void meanwhile: its sender joined our war, the demand lapsed)
+		return
 	var price := _ult_buyout()
 	ui.show_ultimatum(_state_short(int(ultimatum["state"])), _cell_name(int(ultimatum["hex"])), price,
 		econ.res["gold"] >= price, _ult_left(),
@@ -9946,10 +9950,12 @@ func _demo(spec: String) -> void:
 		_set_mode(Mode.WAR)
 		_open_peace()
 		return
-	if what == "recovering":  # every army at 20%: «В атаку!» waits for the refill (canon §2.2 #3)
+	if what == "recovering":  # every army at 20%: «В атаку!» waits for the refill (canon §2.2 #3); :food — the store empty
 		_declare(MapGen.BARONS, War.recommend_goals(sim, MapGen.BARONS, 1)[0])
 		for a in _player_armies():
 			a["str"] = int(a["max_str"]) / 5
+		if parts.size() > 1 and parts[1] == "food":
+			econ.res["food"] = 0
 		_set_mode(Mode.WAR)
 		return
 	if what == "war_cap2":  # chapter II: a war on the Barons left 24 h — the cap closes it, the letter says how long it ran
