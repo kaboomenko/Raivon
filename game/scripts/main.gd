@@ -185,6 +185,7 @@ const WAR_RULES := {
 }
 const ULT_HOLD_SEC := 3600  # an ultimatum's deadline that falls in a running war waits: at least this long after it
 var _away := [0, 0]  # the last absence the save was loaded after: [saved at, loaded at] (canon §9.11, the war cap)
+var _paused_at := 0  # when the app went to the background (0: it did not): its absence starts there (_resumed)
 var _benched: Array = []  # ids of the player's armies below 50% that sit the running offensive out (canon §2.2 #3)
 var _econ_acc := 1.0
 var _last_refill := 0
@@ -632,8 +633,22 @@ func _apply_remote_if_any() -> void:
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_PAUSED or what == NOTIFICATION_WM_CLOSE_REQUEST:
+		if what == NOTIFICATION_APPLICATION_PAUSED:
+			_paused_at = now_s()
 		if mode != Mode.BATTLE and mode != Mode.CEREMONY:
 			_autosave()
+	elif what == NOTIFICATION_APPLICATION_RESUMED:
+		_resumed()
+
+
+## Back from the background without a reload (a phone resumes the app): the pause counts as an absence, as a reload
+## after it would (save.gd sets `_away` on load) — a war cap that ran out in it is a white peace (canon §9.11; Q2
+## review r2: a resumed app never counted as away). The econ tick calls it too, in case its first tick after the pause
+## comes before the resume notice.
+func _resumed() -> void:
+	if _paused_at > 0:
+		_away = [_paused_at, now_s()]
+		_paused_at = 0
 
 
 func _scripted_run() -> bool:
@@ -5191,6 +5206,8 @@ func _econ_tick() -> void:
 		hud.set_ruler_era(econ.dev_level())
 	_apply_era_light(econ.dev_level())
 	var now := now_s()
+	if _paused_at > 0 and now - _paused_at >= 60:
+		_resumed()  # (the first tick after a pause came before the resume notice)
 	var done_line: String = research.tick(now)
 	if done_line != "":
 		_on_research_done(done_line)
@@ -6906,6 +6923,11 @@ static func _opinion_word(v: float) -> String:
 
 func _diplomacy_items(now: int) -> Array:
 	var items: Array = []
+	var gold := int(econ.res["gold"])
+	var gift_c := _gift_cost()  # (the prices are the same for every neighbour: once per row)
+	var pact_c := _pact_cost()
+	var sup_c := _support_cost()
+	var gcap := int(econ.storage_cap().get("gold", 0))
 	if _coalition_threshold() > 0:
 		var a := alarm()
 		var line: String = tr("alarm.calm") if a < 0.5 else (tr("alarm.wary") if a < 1.0 else tr("alarm.high"))
@@ -6929,12 +6951,16 @@ func _diplomacy_items(now: int) -> Array:
 		var it_extra := {"ally": allies.has(s), "ally_reason": _ally_reason(s), "can_call": _can_call(s), "ai_ally": _state_name(int(ai_alliances[s])) if ai_alliances.has(s) else ""}
 		items.append(it_extra.merged({"id": s, "state": _state_name(s), "leader": tr(String(LEADERS[s][0])), "archetype": tr(String(LEADERS[s][1])),
 			"opinion": v, "word": tr(_opinion_word(v)), "status": status,
-			"can_war": war.is_empty() and _truce_left(s) == 0 and _pact_left(s) == 0, "gift_cost": _gift_cost(), "gift_left": gift_left,
+			"can_war": war.is_empty() and _truce_left(s) == 0 and _pact_left(s) == 0, "gift_cost": gift_c, "gift_left": gift_left,
 			"war_ult": war.is_empty() and not ultimatum.is_empty(),  # «Объявить войну» opens the pending ultimatum (B-H1)
 			"pact_reason": _pact_reason(s), "pact_left": _pact_left(s),
-			"pact_cost": _pact_cost(), "pact_over_cap": _pact_cost() > int(econ.storage_cap().get("gold", 0)),
+			"pact_cost": pact_c, "pact_over_cap": pact_c > gcap,
 			# «Поддержать» (06 §12.4) while it fights another AI state: the subsidy's price and the first failing check
-			"support_war": ai_war_of(s) >= 0, "support_reason": _support_reason(s), "support_cost": _support_cost(),
+			"support_war": ai_war_of(s) >= 0, "support_reason": _support_reason(s), "support_cost": sup_c,
+			"support_over_cap": sup_c > gcap,
+			# which prices the gold in store cannot pay now [gift, pact, subsidy]: exact, and part of the row's key, so the
+			# cards rebuild when the gold crosses a price (Q2 review r2: a CTA stayed red with the gold in store)
+			"gold_short": [gold < gift_c, gold < pact_c, gold < sup_c],
 			"opinion_parts": _opinion_parts(s),
 			"separate": _can_separate(s),
 			"swap_reason": _swap_reason(s),
@@ -6993,7 +7019,11 @@ func _on_diplomacy_action(s: int, kind: String) -> void:
 				return
 			var scost := _support_cost()
 			if econ.res["gold"] < scost:
-				ui.toast(tr("ult.no_gold") % GameUI.fmt_num(scost - int(econ.res["gold"])), "coin", "error")
+				# over what the warehouse holds it can never be saved up: it says so, as the pact does (Q2 review r2)
+				if scost > int(econ.storage_cap().get("gold", scost)):
+					ui.toast(tr("pact.over_cap") % GameUI.fmt_num(scost), "coin", "error")
+				else:
+					ui.toast(tr("ult.no_gold") % GameUI.fmt_num(scost - int(econ.res["gold"])), "coin", "error")
 				return
 			_support(s, scost)
 			ui.toast(tr("toast.war_supported") % _state_name(s), "coin")
@@ -8282,6 +8312,16 @@ func _ultimatum_tick(now: int) -> void:
 	if _truce_left(s) > 0 or _pact_left(s) > 0:
 		ultimatum = {}
 		return
+	if not war.is_empty() and War.sides(war).has(s):
+		# its sender is at war with us already (a coalition it joined): its war has come — the demand is void, and an
+		# answer now would cede a hex to a state at war with us or sign it a truce in the middle of the war (Q2 review).
+		# Checked first, so a moved demand is not posted in the same tick just before it goes void (review r2).
+		ultimatum = {}
+		_post("inbox.ult_void.title", L.pack("inbox.ult_void.text", [_state_key(s)]))
+		hud.set_mail(_unread())
+		if ui.has_modal() and ui._modal.find_child("option_0", true, false) != null:  # (its window, if open)
+			ui.close_modal()
+		return
 	var h := int(ultimatum["hex"])
 	if int(sim.cells[h]["owner"]) != Types.PLAYER:
 		# the demanded hex is no longer ours (lost in the running war, swapped): the demand moves to the next one, and with
@@ -8292,15 +8332,6 @@ func _ultimatum_tick(now: int) -> void:
 			return
 		ultimatum["hex"] = h
 		_ult_letter()  # the new demand in the inbox, as the first one (Q2 review: it moved without a word)
-	if not war.is_empty() and War.sides(war).has(s):
-		# its sender is at war with us already (a coalition it joined): its war has come — the demand is void, and an
-		# answer now would cede a hex to a state at war with us or sign it a truce in the middle of the war (Q2 review)
-		ultimatum = {}
-		_post("inbox.ult_void.title", L.pack("inbox.ult_void.text", [_state_key(s)]))
-		hud.set_mail(_unread())
-		if ui.has_modal() and ui._modal.find_child("option_0", true, false) != null:  # (its window, if open)
-			ui.close_modal()
-		return
 	if not war.is_empty():
 		if not ultimatum.has("refused") and int(ultimatum["deadline"]) - now < ULT_HOLD_SEC:
 			ultimatum["deadline"] = now + ULT_HOLD_SEC

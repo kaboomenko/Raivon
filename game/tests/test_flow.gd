@@ -556,7 +556,9 @@ func _run() -> void:
 	gf.ftue = 0
 	gf._finish_tutorial()
 	gf._econ_tick()
-	_check(gf.cases.free_started and gf.cases.free_crate_left(gf.now_s()) == 3600 and gf.calendar.credited == 1 and not gf.ui.has_modal()
+	# (a wall-clock second can tick between _finish_tutorial and the check on a busy machine: 3599 is the same hour)
+	var gf_left: int = gf.cases.free_crate_left(gf.now_s())
+	_check(gf.cases.free_started and gf_left >= 3599 and gf_left <= 3600 and gf.calendar.credited == 1 and not gf.ui.has_modal()
 		and gf._orders_open(), "after the tutorial: the first War Crate in 1 h, calendar day 1 credited, its screen not yet")
 	gf.time_offset += 6
 	gf._econ_tick()
@@ -1998,6 +2000,24 @@ func _run() -> void:
 	for it in g.inbox:
 		q2away = q2away or String(it["text"]).begins_with("inbox.war_cap.away|")
 	_check(g.war.is_empty() and q2away, "a war cap that ran out in a 24 h absence closes with a white peace")
+	# (review r2) a phone that resumes the app from the background (no reload) counts the pause as the absence too
+	g._away = [0, 0]
+	g.truce = {}
+	g.inbox = []
+	g._set_mode(g.Mode.MAP)
+	g._declare(MapGen.BARONS, q2bg.call())
+	g.war.erase("strike_at")
+	g.war["battles"] = 10
+	g._notification(Node.NOTIFICATION_APPLICATION_PAUSED)
+	g.time_offset += 30 * 3600
+	g._notification(Node.NOTIFICATION_APPLICATION_RESUMED)
+	var q2res: Array = g._away.duplicate()
+	g._econ_tick()
+	var q2away2 := false
+	for it in g.inbox:
+		q2away2 = q2away2 or String(it["text"]).begins_with("inbox.war_cap.away|")
+	_check(g.war.is_empty() and q2away2 and int(q2res[1]) - int(q2res[0]) == 30 * 3600 and g._paused_at == 0,
+		"the app paused for 30 h and resumed without a reload: the cap's white peace on absence (%s)" % str(q2res))
 	g._away = [0, 0]
 	g.chapter = 1
 	g.truce = {}
@@ -2143,6 +2163,25 @@ func _run() -> void:
 	g.ui.close_modal()
 	var qr_ct: Dictionary = g.ui._diplomacy_cta(qr_it, g.ui._relation(qr_it))
 	_check(String(qr_ct.get("caption", "")) == g.tr("dipl.support") and qr_ct.get("price", []).size() == 1, "the neighbour card offers «Поддержать» with its price")
+	# (review r2) the card's price follows the gold in store, not the HUD's plate as it read when the row was built: the
+	# row's key changes as the gold crosses the price, and a CTA built before the plate catches up is not red
+	g.econ.res["gold"] = 0
+	g._hud_resources(g.now_s())
+	var qr_k0 := JSON.stringify(g._diplomacy_items(g.now_s()))
+	g.econ.res["gold"] = g._support_cost() + 10  # (the plate still reads 0)
+	var qr_items: Array = g._diplomacy_items(g.now_s())
+	var qr_it2: Dictionary = {}
+	for it in qr_items:
+		if int((it as Dictionary).get("id", -1)) == MapGen.HAMLETS:
+			qr_it2 = it
+	var qr_ct2: Dictionary = g.ui._diplomacy_cta(qr_it2, g.ui._relation(qr_it2))
+	_check(qr_k0 != JSON.stringify(qr_items) and not bool(qr_ct2["price"][0][2]) and String(qr_ct2.get("short_reason", "")) == "",
+		"the card's «Поддержать» price is not red once the gold covers it, before the HUD's plate catches up")
+	qr_it2["gold_short"] = [true, true, true]
+	qr_it2["support_over_cap"] = true
+	var qr_ct3: Dictionary = g.ui._diplomacy_cta(qr_it2, g.ui._relation(qr_it2))
+	_check(bool(qr_ct3["price"][0][2]) and String(qr_ct3.get("short_reason", "")) == g.tr("pact.over_cap") % Kit.fmt_num(g._support_cost()),
+		"a subsidy over the warehouse's cap says the store cannot hold it (%s)" % String(qr_ct3.get("short_reason", "")))
 	g.econ.res["gold"] = g._support_cost() + 10
 	var qr_h0: float = g._opinion_of(MapGen.HAMLETS)
 	g._on_diplomacy_action(MapGen.HAMLETS, "support")
@@ -2168,6 +2207,10 @@ func _run() -> void:
 	qr_g2.save_enabled = false
 	Save.apply(qr_g2, qr_sd)
 	_check(int(qr_g2.support_at.get(MapGen.HAMLETS, 0)) == g.now_s(), "the day's subsidy mark survives a save")
+	# (review r2) the subsidy's 12 h window survives it too: without boost_until a reload backed the state the whole war
+	var qr_w2: Dictionary = qr_g2.ai_wars[0] if qr_g2.ai_wars.size() > 0 else {}
+	_check(int(qr_w2.get("boost", -1)) == MapGen.HAMLETS and int(qr_w2.get("boost_until", 0)) == int(qr_w.get("boost_until", -1)),
+		"the subsidy's 12 h window survives a save (%s)" % str(qr_w2))
 	# (low) an older save: a v0.9.1 war-cap letter reads its hours; a war's −50 in the old number is not counted twice
 	qr_sd["inbox"] = [{"t": 0, "title": "inbox.war_cap.title", "text": "inbox.war_cap.peace", "read": false}]
 	qr_sd["opinion"] = {str(MapGen.BARONS): -48.5}
@@ -2208,9 +2251,17 @@ func _run() -> void:
 			qr_uh = c["id"]
 	g.ultimatum = {"state": MapGen.HAMLETS, "hex": maxi(0, qr_uh), "tribute": 1000, "deadline": g.now_s() + 3600, "buyout": 500}
 	g.war["coalition"] = [MapGen.BARONS, MapGen.HAMLETS]
+	var qr_in0: Array = g.inbox
+	g.inbox = []
+	var qr_uo: int = int(g.sim.cells[maxi(0, qr_uh)]["owner"])
+	g.sim.cells[maxi(0, qr_uh)]["owner"] = MapGen.HAMLETS  # (review r2) the same tick it also takes the demanded hex
 	g._ultimatum_tick(g.now_s())
+	g.sim.cells[maxi(0, qr_uh)]["owner"] = qr_uo
+	var qr_in1: Array = g.inbox
+	g.inbox = qr_in0 + qr_in1
 	_check(g.ultimatum.is_empty() and String(g.inbox[-1]["title"]) == "inbox.ult_void.title" and g._truce_left(MapGen.HAMLETS) == 0,
 		"the ultimatum's sender joins our war: its ultimatum is void (%s)" % String(g.inbox[-1]["title"]))
+	_check(qr_in1.size() == 1, "a void ultimatum whose hex fell the same tick sends one letter, not a moved demand first (%d)" % qr_in1.size())
 	g.war.erase("coalition")
 	# (low) «Выбрать цель» with nothing to pick while an ultimatum waits names the ultimatum; readiness and food
 	g.ultimatum = {"state": MapGen.HAMLETS, "hex": maxi(0, qr_uh), "tribute": 1000, "deadline": g.now_s() + 3600, "buyout": 500}

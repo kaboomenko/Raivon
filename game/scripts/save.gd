@@ -267,7 +267,10 @@ static func apply(g: Node, d: Dictionary) -> bool:
 	g.ai_wars = []
 	for aw in d.get("ai_wars", []):
 		if typeof(aw) == TYPE_DICTIONARY:
-			g.ai_wars.append({"a": int(aw["a"]), "b": int(aw["b"]), "until": int(aw["until"]), "next": int(aw["next"]), "boost": int(aw.get("boost", -1))})
+			var entry := {"a": int(aw["a"]), "b": int(aw["b"]), "until": int(aw["until"]), "next": int(aw["next"]), "boost": int(aw.get("boost", -1))}
+			if aw.has("boost_until"):  # a subsidy's 12 h window (06 §12.4); none means an ally's plea for the whole war
+				entry["boost_until"] = int(aw["boost_until"])
+			g.ai_wars.append(entry)
 	g.ai_war_check = int(d.get("ai_war_check", 0))
 	var aic: Dictionary = d.get("ai_colonizing", {})
 	g.ai_colonizing = {}

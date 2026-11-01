@@ -841,9 +841,10 @@ const PRIMARY_GUARD_MS := 400
 const STATUS_LOOK := {"peace": ["go", "dove", ""], "repair_ad": ["info", "ad", ""], "ruin_halve": ["info", "ad", "hourglass"],
 	"convoy": ["info", "cart", ""], "convoy_status": ["lock", "cart", "hourglass"],
 	# a pending ultimatum on the map (nothing selected): the time to answer it, a tap opens it (B-H1: ✕ was a dead end) —
-	# the info face: red stays the big button's (Q2 review: two loud buttons stacked); «Марш» beside a locked «Разбить
-	# лагерь»: the nearest army goes to the camp
-	"ultimatum": ["info", "mail", "hourglass"], "camp_march": ["info", "orders", ""]}
+	# the info face: red stays the big button's (Q2 review: two loud buttons stacked); its plate «ответ 3ч 59м» has no
+	# hourglass, so the envelope that says a tap opens the letter keeps its room (Q2 review r2); «Марш» beside a locked
+	# «Разбить лагерь»: the nearest army goes to the camp
+	"ultimatum": ["info", "mail", ""], "camp_march": ["info", "orders", ""]}
 const BIG_RECT := Rect2(652, 1536, 277, 124)  # the big button: L, the one loud thing on the map (§1.1)
 const RETREAT_RECT := Rect2(652, 1564, 277, 96)  # «Отступить» in battle: M, a secondary action
 const STATUS_RECT := Rect2(652, 1438, 277, 88)  # the status button: M, in the hex panel's slot
@@ -5495,11 +5496,10 @@ func _diplomacy_cta(it: Dictionary, rel: String) -> Dictionary:
 		# a hold sends the subsidy
 		var sct := {"role": "info", "caption": tr("dipl.support"), "icon": "shield", "cb": func(): _leader_dialog(it)}
 		var sc := int(it.get("support_cost", 0))
-		var sst := _stock("gold")
-		var s_short := int(sst[1]) >= 0 and sc > int(sst[1])
-		sct["price"] = [["coin", fmt_num(sc), s_short]]
-		if s_short:
-			sct["short_reason"] = tr("ult.no_gold") % fmt_num(sc - int(sst[1]))
+		var s_miss := _gold_miss(it, 2, sc)
+		sct["price"] = [["coin", fmt_num(sc), s_miss > 0]]
+		if s_miss > 0:
+			sct["short_reason"] = _gold_short_why(sc, s_miss, bool(it.get("support_over_cap", false)))
 		return sct
 	# a gift while they dislike us — or for an ally below the goodwill (60) that lets us call them into a war
 	var op := float(it.get("opinion", 0.0))
@@ -5516,11 +5516,10 @@ func _diplomacy_cta(it: Dictionary, rel: String) -> Dictionary:
 		var ct := {"role": "info", "caption": tr("dipl.pact_btn"), "icon": "treaty", "cb": func(): _leader_dialog(it)}
 		var pc := int(it.get("pact_cost", 0))
 		if pc > 0:
-			var st := _stock("gold")
-			var short := int(st[1]) >= 0 and pc > int(st[1])
-			ct["price"] = [["coin", fmt_num(pc), short]]
-			if short:
-				ct["short_reason"] = tr("pact.over_cap") % fmt_num(pc) if bool(it.get("pact_over_cap", false)) else tr("ult.no_gold") % fmt_num(pc - int(st[1]))
+			var p_miss := _gold_miss(it, 1, pc)
+			ct["price"] = [["coin", fmt_num(pc), p_miss > 0]]
+			if p_miss > 0:
+				ct["short_reason"] = _gold_short_why(pc, p_miss, bool(it.get("pact_over_cap", false)))
 		return ct
 	if int(it.get("pact_left", 0)) > 0:  # the pact holds: its time left
 		return {"role": "lock", "caption": fmt_time(int(it["pact_left"])), "icon": "hourglass", "enabled": false, "reason": why}
@@ -5539,9 +5538,26 @@ func _peace_cb(it: Dictionary) -> Callable:
 ## The gift's price item [coin, N, short] and, when the gold is surely short, the reason («Не хватает золота»).
 func _gift_price(it: Dictionary) -> Array:
 	var cost := int(it.get("gift_cost", 0))
-	var st := _stock("gold")
-	var short := int(st[1]) >= 0 and cost > int(st[1])
+	var short := _gold_miss(it, 0, cost) > 0
 	return [["coin", fmt_num(cost), short], L.t("err.not_enough|res.gen.gold") if short else ""]
+
+
+## How much gold a neighbour's price `cost` lacks (0: none). Main's exact flag decides whether it is short (the item's
+## `gold_short` [gift, pact, subsidy], index `i`; it is in the row's key, so the cards rebuild when the gold crosses a
+## price — Q2 review r2: read from the HUD's plate alone, a CTA built before the plate caught up stayed red); the
+## plate says roughly how much. An item without the flag reads the plate alone.
+func _gold_miss(it: Dictionary, i: int, cost: int) -> int:
+	var st := _stock("gold")
+	var gs: Array = it.get("gold_short", [])
+	if gs.size() > i:
+		return maxi(1, cost - maxi(0, int(st[1]))) if bool(gs[i]) else 0
+	return maxi(0, cost - int(st[1])) if int(st[1]) >= 0 else 0
+
+
+## The reason a gold price is short: the store cannot hold it at all (over the warehouse's cap), else how much is
+## missing.
+func _gold_short_why(cost: int, miss: int, over_cap: bool) -> String:
+	return tr("pact.over_cap") % fmt_num(cost) if over_cap else tr("ult.no_gold") % fmt_num(miss)
 
 
 ## A neighbour's leader (§6 Соседи): a window M with the state's name. The face in its mood with the leader's name,
@@ -5560,10 +5576,8 @@ func _leader_dialog(it: Dictionary) -> void:
 		# much is missing; over the warehouse's cap — it says the store cannot hold it; signed by a hold, not a tap
 		var why_p := String(it["pact_reason"])
 		var pc := int(it.get("pact_cost", 0))
-		var gst := _stock("gold")
-		var p_short := ""
-		if int(gst[1]) >= 0 and pc > int(gst[1]):
-			p_short = tr("pact.over_cap") % fmt_num(pc) if bool(it.get("pact_over_cap", false)) else tr("ult.no_gold") % fmt_num(pc - int(gst[1]))
+		var p_miss := _gold_miss(it, 1, pc)
+		var p_short := _gold_short_why(pc, p_miss, bool(it.get("pact_over_cap", false))) if p_miss > 0 else ""
 		acts.append({"kind": "pact", "cap": tr("dipl.pact_btn"), "icon": "treaty", "on": why_p == "", "why": why_p,
 			"price": [["coin", fmt_num(pc), p_short != ""]] if pc > 0 else [], "short": p_short if why_p == "" else "", "hold": true})
 	if rel == "ally":
@@ -5584,8 +5598,8 @@ func _leader_dialog(it: Dictionary) -> void:
 		# its price on it and signed by a hold, as the pact; a day's wait or their war on our ally greys it with the reason
 		var why_u := String(it.get("support_reason", ""))
 		var sc := int(it.get("support_cost", 0))
-		var sst := _stock("gold")
-		var s_short := tr("ult.no_gold") % fmt_num(sc - int(sst[1])) if int(sst[1]) >= 0 and sc > int(sst[1]) else ""
+		var s_miss := _gold_miss(it, 2, sc)
+		var s_short := _gold_short_why(sc, s_miss, bool(it.get("support_over_cap", false))) if s_miss > 0 else ""
 		acts.append({"kind": "support", "cap": tr("dipl.support"), "icon": "shield", "on": why_u == "", "why": why_u,
 			"price": [["coin", fmt_num(sc), s_short != ""]], "short": s_short if why_u == "" else "", "hold": true})
 	var rows := ceili(acts.size() / 2.0)

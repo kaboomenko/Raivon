@@ -679,7 +679,7 @@ ally_ask.t_opinion,Мнение,Opinion
 ally_ask.refuse_note,Откажете — мнение упадёт на 15.,Refuse and their opinion drops by 15.
 ally_ask.support2,Поддержать,Support
 ally_ask.refuse2,Отказать,Refuse
-toast.ally_supported,«%s» получили нашу поддержку,“%s” received our support
+toast.ally_supported,Поддержка для «%s» отправлена,Support sent to “%s”
 dipl.call,Призыв,Call in
 dipl.ai_ally,Союз с «%s»,Allied with “%s”
 call.cant,Призвать можно союзника с мнением 60+ в нашу войну,You can call in an ally with opinion 60+ to our war
@@ -1431,9 +1431,9 @@ support.no_war,Не воюет,Not at war
 support.our_enemy,Это ваш враг,This is your enemy
 support.vs_ally,Воюет с вашим союзником,At war with your ally
 support.wait,Новая субсидия через %s,Next subsidy in %s
-toast.war_supported,«%s» получили субсидию: их армии +10%% на 12 ч,“%s” got our subsidy: their armies +10%% for 12 h
-ult.left,ответ %s,answer %s
+toast.war_supported,Субсидия для «%s»: армии +10%% на 12 ч,Subsidy for “%s”: armies +10%% for 12 h
+ult.left,ответ %s,reply %s
 ui.recovering_food,"Армиям не хватает %s еды на пополнение, соберите урожай","The armies need %s more food to refill: collect the harvest"
 defeat.note_lost1,"Этот гекс отойдёт им, склад разграбят. Можно продолжить войну.","This hex goes to them and the warehouse is plundered. You can fight on."
 inbox.ult_void.title,Ультиматум снят,Ultimatum void
-inbox.ult_void.text,%s уже воюют с нами — их ультиматум больше не в силе.,The %s are already at war with us: their ultimatum no longer stands.
+inbox.ult_void.text,Война с «%s» уже идёт — ультиматум больше не в силе.,We are already at war with “%s”: the ultimatum no longer stands.
