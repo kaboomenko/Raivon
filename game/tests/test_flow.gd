@@ -610,11 +610,11 @@ func _run() -> void:
 	for a in gl.armies:
 		arm0[int(a["id"])] = [int(a["hex"]), int(a["str"])]
 	gl._on_action("offensive")
-	var g3: Dictionary = gl._ftue_battle_goal()
-	gl._battle_tap(int(g3["to"]))
+	var gtap: Dictionary = gl._ftue_battle_goal()
+	gl._battle_tap(int(gtap["to"]))
 	_check(gl.ftue == 3, "a tap on the coached hex before the ladder's level 3 does nothing (step %d)" % gl.ftue)
 	gl._ftue_idle = 21.0
-	gl._battle_tap(int(g3["to"]))
+	gl._battle_tap(int(gtap["to"]))
 	_check(gl.ftue == 4, "the help ladder's level 3 (20 s idle): a tap on the coached hex counts as the drag (step %d)" % gl.ftue)
 	for i in 30:
 		gl._battle_step()
@@ -666,6 +666,36 @@ func _run() -> void:
 	_check(saw4b and f4b and (r4["captured"] as Array).size() >= 3 and r4["reason"] == "goals",
 		"FTUE war 1 followed then waited: step 4b points at a winnable third hex, +3 by 0:55 (%s)" % str(r4["captured"]))
 	gw4.queue_free()
+	await process_frame
+
+	# a later peace at a full gold store (playtest 2, B low: «Склад не вместит 4 430 золота» with 3× «Контрибуция»): the
+	# recommended package takes no indemnity the warehouse cannot hold — its points go to opinion; with room, it does
+	var gpk := await _new_game()
+	gpk._declare(MapGen.BARONS, War.recommend_goals(gpk.sim, MapGen.BARONS, 1)[0])
+	gpk._on_action("offensive")
+	while gpk.battle != null and not gpk.battle.over:
+		if gpk.battle.tick % 20 == 0:
+			gpk._bot_move()
+		gpk._battle_step()
+	gpk._end_offensive()
+	gpk.ui.close_modal()
+	var count_contrib := func(game) -> int:
+		var n := 0
+		for d in game._demands:
+			n += int(String(d["kind"]) == "contribution" and game._chosen.has(d["id"]))
+		return n
+	if War.war_score(gpk.sim, gpk.war)["score"] > 0.0:
+		gpk.econ.res["gold"] = int(gpk.econ.storage_cap()["gold"])
+		gpk._open_peace()
+		var full_n: int = count_contrib.call(gpk)
+		gpk.ui.close_modal()
+		gpk._set_mode(gpk.Mode.WAR)
+		gpk.econ.res["gold"] = 0
+		gpk._open_peace()
+		var empty_n: int = count_contrib.call(gpk)
+		_check(full_n == 0 and (empty_n > 0 or War.war_score(gpk.sim, gpk.war)["score"] < 20.0),
+			"a peace at a full gold store recommends no indemnity; an empty one does (%d / %d packages)" % [full_n, empty_n])
+	gpk.queue_free()
 	await process_frame
 
 	# 5a. FTUE war 1 as the coach leads it (08 §8.3 F04–F07): the ghost's drag brings a second army beside the flag,

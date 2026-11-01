@@ -8355,8 +8355,8 @@ func _ftue_tick(delta: float) -> void:
 			_ftue_shut = false
 			hud.set_currency_input(true)
 		return
-	if Time.get_ticks_msec() < _dl_wave_end and mode == Mode.MAP:
-		if _ftue_shown != -3:  # the DL ceremony's wave runs from the capital: the next step waits it out
+	if ftue == 8 and Time.get_ticks_msec() < _dl_wave_end and mode == Mode.MAP:
+		if _ftue_shown != -3:  # step 7c's DL2 wave runs from the capital: step 8 (its camera on the vein) waits it out
 			_ftue_shown = -3
 			ui.coach_hide()
 		return
@@ -8371,6 +8371,7 @@ func _ftue_tick(delta: float) -> void:
 	var line := String(FTUE_TEXT.get(ftue, ""))
 	var cm := "block"
 	var bg := _ftue_battle_goal()  # war 1's coached move (steps 3, 4, 4b): its ring, ghost and help ladder
+	var hush := false  # the step's line stays as it is and its advisor steps away (step 4 past its moves)
 	var cam: Camera3D = rig.cam
 	match ftue:
 		1:
@@ -8400,6 +8401,9 @@ func _ftue_tick(delta: float) -> void:
 				if not bg.is_empty():  # (none winnable: no line without a move to show — 0:55's F08 takes it)
 					line = "ftue.4b"
 					point = cam.unproject_position(map_view.cell_world(int(bg["to"])) + Vector3(0, 0.3, 0))
+				else:
+					hush = true  # the flag ours and nothing left to show (the land taken, or none winnable): the line on
+					# screen stays and its advisor steps away — never «Возьмите «Ржавый узел»» again over a taken flag
 			elif not bg.is_empty():
 				target = ui.card_rect("attack")
 				near = ui.hand_rects("attack")
@@ -8513,6 +8517,8 @@ func _ftue_tick(delta: float) -> void:
 			text = tr(line + "_any")
 	if line == "ftue.13" and _ftue_shown == 13 and battle != null and flag_hex >= 0 and int(sim.cells[flag_hex]["controller"]) == Types.PLAYER:
 		text = _ftue_line  # the goal is ours and the neck's line is over (or never came): the line on screen stays
+	if hush and _ftue_shown == ftue:
+		text = _ftue_line
 	if _ftue_shown != ftue or _ftue_line != text:
 		if _ftue_shown != ftue or ftue in [4, 7, 13]:  # a step's next line (4b, 7b/7c, 13's neck) counts its own time
 			_ftue_t = 0.0
@@ -8530,7 +8536,7 @@ func _ftue_tick(delta: float) -> void:
 	if shut != _ftue_shut:
 		_ftue_shut = shut
 		hud.set_currency_input(not shut)
-	if (ftue == 4 or ftue == 13) and _ftue_t > 6.0:
+	if ((ftue == 4 or ftue == 13) and _ftue_t > 6.0) or hush:
 		ui.coach_quiet(true)  # the line goes after 6 s (the battle in view); the ring and the ghost stay while it waits
 	if ftue == 3 or ftue == 4:
 		_ftue_ladder_tick(delta, bg)
