@@ -1647,6 +1647,8 @@ func _pop_scale(sc: Vector3, holder) -> void:
 		return
 	(holder as Node3D).scale = sc
 	_sync_batched(holder as Node3D, sc == Vector3.ONE)
+	for id in (holder as Node).get_meta("troop_ids", []):  # its guards squash with it (_sync_troops)
+		_troop_fresh(id)
 	if sc == Vector3.ONE:
 		_live_dirty = true  # the chimneys back at rest: _sync_chimneys places their puffs again
 	if (holder as Node).has_meta("banner"):
@@ -1700,7 +1702,7 @@ func _place_guards(c: Dictionary, holder: Node3D, rot: float) -> void:
 		var g := spawn(sq, holder, fwd * 0.78 + side * 0.34 * k, rot, 0.5)
 		if g:
 			_animate_troops(g, false, anim)
-			_batch_troops(g, anim, holder)
+			_batch_troops(g, anim, holder, true)
 
 
 ## The farmstead of an owner's era: a stone cottage (DL1–5), a panel house with greenhouses (DL6–7), a neon habitat
@@ -4587,6 +4589,7 @@ func _make_army(a: Dictionary) -> Node3D:
 	if dl >= 6:  # air cover circling over the army (reference frame 2): a fighter (DL6–7) or a hover gunship (DL8+)
 		var orbit := Node3D.new()
 		orbit.position = Vector3(0, 0.95, 0)
+		orbit.set_meta("troop_loose", true)  # it turns under the army: its parts are read off their nodes (_sync_troops)
 		model.add_child(orbit)
 		var plane := spawn("gunship" if dl >= 8 else "fighter", orbit, Vector3(0.45, 0, 0), PI / 2.0, 1.6)
 		if plane:
@@ -4659,22 +4662,62 @@ func _sync_plate(node: Node3D, a: Dictionary, ready: float, hidden: bool, in_bat
 ## them was a mesh node, a draw in the visible pass and one in the shadow pass — a DL8 army 12 + 8, so a late front of
 ## ten armies or the strategic view with five of ours, the guards of a dozen capitals and the fleets went well over the
 ## budget (playtest 2 Q5: 350–380). They are drawn by MultiMeshes:
-## one per part mesh, its materials and shadow setting, and the troop shader's march / fight state, for the whole map,
-## filled every frame (_sync_troops) from the parts' own nodes, which stay in the tree, hidden, for their transforms —
-## the march, the hop, the sway, the turn, a routed army's shrink, the gunship's orbit, a capture's pop. Same meshes,
-## materials and transforms: the same frame for a few dozen draws.
-var _troop_parts: Array = []  # [MeshInstance3D, key (mesh|materials|shadow), animated?, owner Node3D]
+## one per part mesh, its materials and shadow setting, and the troop shader's march / fight state, for the whole map.
+## The parts' own nodes stay in the tree, hidden, for their transforms — the march, the hop, the sway, the turn, a
+## routed army's shrink, the gunship's orbit, a capture's pop, a ship's rocking. Same meshes, materials and transforms:
+## the same frame for a few dozen draws.
+## Kept cheap per frame (_sync_troops; playtest 2 Q5 review: rebuilding every set from every part's node cost ~0.2 ms
+## a frame for 51 parts, growing with each army, guard and fleet): each part holds a slot in its set and is written only
+## when its group (one _batch_troops call: an army, a pair of guards, a ship) moved, was shown or hidden (its owner's
+## visibility_changed, which an ancestor's change reaches too), or changed its march / fight state. A part moves with
+## its group's root (its offset under it is fixed: one root transform read a group a frame), except below a node marked
+## "troop_loose" (the gunship's orbit), whose parts are read off their own nodes every frame. The capital guards stand
+## still: their groups are not looked at at all until a capture's pop squashes their hex (_pop_scale), their hex is
+## rebuilt (tree_exiting) or shown or hidden; a rocking ship or a circling gunship writes its own parts and nothing more
+## (a set's bounds move only when a part leaves its box, TROOP_SLACK). Under a frozen backdrop (_view_still) nothing is
+## synced at all. (One buffer write a set — MultiMesh.buffer — would take 12 floats a part filled in GDScript: dearer
+## than the one call a moved part costs.)
+var _troop_groups: Array = []  # [TG_*]: a group of parts that move, show and change state together
+const TG_ROOT := 0  # the node the parts hang under (their transforms are fixed under it, the loose ones aside)
+const TG_OWNER := 1  # the node whose visibility shows or hides them (the root or an ancestor of it)
+const TG_PARTS := 2
+const TG_ARMY := 3  # a field army on the troop shader: its march / fight state is read off the owner's "troop_state"
+const TG_LOOSE := 4  # some parts are loose (read off their nodes every frame)
+const TG_SIG := 5  # the root's transform last written
+const TG_VIS := 6
+const TG_ST := 7  # the state last written (march × 2 + fight)
+const TG_FRESH := 8  # new, or its owner's visibility changed: its parts are placed in their sets again
+const TG_ID := 9  # its id (_troop_ids; its owner's meta "troop_ids" lists its groups' for visibility_changed and pops)
+const TG_STILL := 10  # it never moves on its own (the capital guards): looked at only when TG_FRESH
 var _troop_meshes := {}  # key -> the mesh drawn: the part's mesh with its active materials on its surfaces
-var _troop_sets := {}  # key (+ "|<march><fight>" for animated parts) -> MultiMeshInstance3D
+var _troop_sets := {}  # set key (+ "|<march><fight>" for animated parts) -> {mmi, parts (in slot order), m: [mm, box]}
+var _troop_ids := {}  # group id -> group (the signals and the hexes' pops name a group by its id: no reference cycle)
+var _troop_next := 0
+var _troop_dirty := {}  # set keys whose count changed or a part left its box this frame
+const TROOP_SLACK := 0.5  # a set's box of its parts' origins, grown this much: a part rocking, circling or stepping
+# inside it moves no bounds (its AABB is set again only when a part leaves the box or the set's count changes)
+## A part: [MeshInstance3D, its set key by state (march × 2 + fight), its transform under the root (null: loose),
+## the set it is in ("" none), its slot there (−1 none), the transform last written, that set's [MultiMesh, box]]
+const TP_MI := 0
+const TP_KEYS := 1
+const TP_REL := 2
+const TP_SET := 3
+const TP_SLOT := 4
+const TP_XF := 5
+const TP_S := 6
 
 
 ## Takes the mesh parts under `root` into the troop MultiMeshes: `anim` lists the ones on the troop shader (their state
 ## is read off `owner`'s meta "troop_state", a field army's; the guards' stays idle), `owner` is the node whose
-## visibility shows or hides them.
-func _batch_troops(root: Node, anim: Array, owner: Node3D) -> void:
+## visibility shows or hides them (`root` or an ancestor of it); `still`: nothing under `owner` moves but a pop of it
+## (_pop_scale), so the group is looked at only when one of those, a rebuild or a show / hide flags it.
+func _batch_troops(root: Node3D, anim: Array, owner: Node3D, still := false) -> void:
 	var list: Array = root.find_children("*", "MeshInstance3D", true, false)
 	if root is MeshInstance3D:
 		list.append(root)
+	var parts: Array = []
+	var any_anim := false
+	var loose := false
 	for n in list:
 		var mi := n as MeshInstance3D
 		if mi.mesh == null or not mi.visible or mi.skin != null or mi.material_overlay != null:
@@ -4694,69 +4737,233 @@ func _batch_troops(root: Node, anim: Array, owner: Node3D) -> void:
 				for i in mesh.get_surface_count():
 					mesh.surface_set_material(i, mi.get_active_material(i))
 			_troop_meshes[key] = mesh
-		_troop_parts.append([mi, key, anim.has(mi), owner])
+		var keys: Array = [key, key, key, key]
+		if anim.has(mi):
+			keys = [key + "|00", key + "|01", key + "|10", key + "|11"]
+			any_anim = true
+		var rel: Variant = _troop_rel(mi, root)
+		loose = loose or rel == null
+		parts.append([mi, keys, rel, "", -1, Transform3D(), null])
 		mi.visible = false  # drawn by its set (a hidden node still has its transform)
+	if parts.is_empty():
+		return
+	_troop_next += 1
+	var id := _troop_next
+	var g: Array = [root, owner, parts, any_anim and owner is ArmyNode, loose, Transform3D(), false, 0, true, id,
+		still and not loose]
+	_troop_ids[id] = g
+	var ids: Array = owner.get_meta("troop_ids", [])
+	ids.append(id)
+	owner.set_meta("troop_ids", ids)  # (_pop_scale flags them too)
+	var cb := _troop_owner_fresh.bind(owner)  # one connection an owner (a bound callable's binds do not tell them apart)
+	if not owner.visibility_changed.is_connected(cb):
+		owner.visibility_changed.connect(cb)
+	if g[TG_STILL]:
+		root.tree_exiting.connect(_troop_fresh.bind(id))  # (gone: the next sync drops it)
+	_troop_groups.append(g)
+
+
+## An owner shown or hidden (or an ancestor of it): its groups are looked at again.
+func _troop_owner_fresh(owner: Node) -> void:
+	for id in owner.get_meta("troop_ids", []):
+		_troop_fresh(id)
+
+
+## Flags a group: the next sync looks at it again (shown or hidden, gone, its hex popped).
+func _troop_fresh(id: int) -> void:
+	var g: Variant = _troop_ids.get(id)
+	if g != null:
+		g[TG_FRESH] = true
+
+
+## A part's transform under its group's root (the product of the local transforms between them: fixed), or null when a
+## node on the way moves on its own ("troop_loose": the gunship's orbit).
+func _troop_rel(mi: Node3D, root: Node3D) -> Variant:
+	var xf := Transform3D.IDENTITY
+	var n: Node = mi
+	while n != root:
+		if not (n is Node3D) or n.has_meta("troop_loose") or (n as Node3D).top_level:
+			return null
+		xf = (n as Node3D).transform * xf
+		n = n.get_parent()
+	return xf
 
 
 func _sync_troops() -> void:
-	if _troop_parts.is_empty() and _troop_sets.is_empty():
+	if _troop_groups.is_empty() or _view_still():
 		return
 	var inv := global_transform.affine_inverse()
-	var lists := {}
-	var keep: Array = []
-	for part in _troop_parts:
-		var mi: Variant = part[0]
-		if not is_instance_valid(mi) or not (mi as Node).is_inside_tree():
+	var ident := inv == Transform3D.IDENTITY
+	var gi := 0
+	while gi < _troop_groups.size():
+		var g: Array = _troop_groups[gi]
+		if g[TG_STILL] and not g[TG_FRESH]:
+			gi += 1
+			continue  # a still guard: nothing to look at
+		var root: Variant = g[TG_ROOT]
+		if not is_instance_valid(root) or not (root as Node).is_inside_tree():  # (its owner is it or an ancestor)
+			_troop_drop(g)
+			_troop_groups[gi] = _troop_groups[-1]  # (order does not matter: swap-remove)
+			_troop_groups.pop_back()
 			continue
-		keep.append(part)
-		var owner: Node3D = part[3]
-		if not is_instance_valid(owner) or not owner.is_visible_in_tree():
+		gi += 1
+		var st: int = g[TG_ST]
+		if g[TG_ARMY]:
+			var v: Vector2i = (g[TG_OWNER] as Node).get_meta("troop_state", Vector2i.ZERO)
+			st = v.x * 2 + v.y
+		var vis: bool = g[TG_VIS]
+		if g[TG_FRESH]:
+			vis = (g[TG_OWNER] as Node3D).is_visible_in_tree()
+		var sig: Transform3D = Transform3D()
+		if vis:
+			sig = (root as Node3D).global_transform if ident else inv * (root as Node3D).global_transform
+		if g[TG_FRESH] or st != g[TG_ST]:  # shown, hidden, new, a new march / fight state: its sets change
+			g[TG_FRESH] = false
+			g[TG_VIS] = vis
+			g[TG_ST] = st
+			g[TG_SIG] = sig
+			_troop_regroup(g[TG_PARTS], vis, st, sig, inv)
 			continue
-		var key: String = part[1]
-		if part[2]:
-			var st: Vector2i = owner.get_meta("troop_state", Vector2i.ZERO)
-			key += "|%d%d" % [st.x, st.y]
-		if not lists.has(key):
-			lists[key] = []
-		(lists[key] as Array).append(inv * (mi as Node3D).global_transform)
-	_troop_parts = keep
-	for key in _troop_sets:
-		if not lists.has(key):
-			var idle: MultiMeshInstance3D = _troop_sets[key]
-			idle.visible = false
-	for key in lists:
-		var mmi: MultiMeshInstance3D = _troop_sets.get(key)
-		if mmi == null:
-			var base := String(key)
-			var parts := base.split("|")
-			if parts.size() > 3:
-				base = "|".join(parts.slice(0, 3))
-			var mm := MultiMesh.new()
-			mm.transform_format = MultiMesh.TRANSFORM_3D
-			mm.mesh = _troop_meshes[base]
-			mmi = MultiMeshInstance3D.new()
-			mmi.name = "troops"
-			mmi.multimesh = mm
-			mmi.cast_shadow = int(parts[2]) as GeometryInstance3D.ShadowCastingSetting
-			if parts.size() > 3:  # the troop shader's state: per draw, as it was per part
-				mmi.set_instance_shader_parameter("march", float(parts[3].substr(0, 1)))
-				mmi.set_instance_shader_parameter("fight", float(parts[3].substr(1, 1)))
-			add_child(mmi)
-			_troop_sets[key] = mmi
-		var xfs: Array = lists[key]
-		var mm := mmi.multimesh
-		if mm.instance_count < xfs.size():
-			mm.instance_count = nexti_pow2(xfs.size())
+		if not vis:
+			continue
+		var moved: bool = sig != g[TG_SIG]
+		if not moved and not g[TG_LOOSE]:
+			continue  # nothing of it changed: its slots hold
+		g[TG_SIG] = sig
+		for p in g[TG_PARTS]:  # moved (or loose parts aboard): only the transforms
+			var slot: int = p[TP_SLOT]
+			if slot < 0:
+				continue
+			var xf: Transform3D
+			if p[TP_REL] != null:
+				if not moved:
+					continue
+				xf = sig * (p[TP_REL] as Transform3D)
+			else:
+				var mi: Variant = p[TP_MI]
+				if not is_instance_valid(mi) or not (mi as Node).is_inside_tree():
+					_troop_leave(p)
+					p[TP_MI] = null  # (freed on its own: gone for good)
+					continue
+				xf = inv * (mi as Node3D).global_transform
+				if xf == p[TP_XF]:
+					continue
+			p[TP_XF] = xf
+			var m: Array = p[TP_S]
+			(m[0] as MultiMesh).set_instance_transform(slot, xf)
+			if not (m[1] as AABB).has_point(xf.origin):
+				_troop_dirty[p[TP_SET]] = true
+	for key in _troop_dirty:
+		var ts: Dictionary = _troop_sets[key]
+		var mmi: MultiMeshInstance3D = ts["mmi"]
+		var list: Array = ts["parts"]
+		(ts["m"][0] as MultiMesh).visible_instance_count = list.size()
+		mmi.visible = not list.is_empty()
+		if list.is_empty():
+			continue
 		var lo := Vector3(INF, INF, INF)
 		var hi := -lo
-		for i in xfs.size():
-			var xf: Transform3D = xfs[i]
-			mm.set_instance_transform(i, xf)
-			lo = lo.min(xf.origin)
-			hi = hi.max(xf.origin)
-		mm.visible_instance_count = xfs.size()
-		mmi.custom_aabb = AABB(lo - Vector3(1.5, 1.5, 1.5), hi - lo + Vector3(3.0, 3.0, 3.0))  # a part's reach round its origin
-		mmi.visible = true
+		for p in list:
+			var o: Vector3 = (p[TP_XF] as Transform3D).origin
+			lo = lo.min(o)
+			hi = hi.max(o)
+		var box := AABB(lo, hi - lo).grow(TROOP_SLACK)
+		ts["m"][1] = box
+		mmi.custom_aabb = box.grow(1.5)  # a part's reach round its origin
+	_troop_dirty.clear()
+
+
+## A group whose root is gone: its parts out of their sets, its owner's callback off (an owner can outlive it: the bay).
+func _troop_drop(g: Array) -> void:
+	for p in g[TG_PARTS]:
+		_troop_leave(p)
+	var id: int = g[TG_ID]
+	_troop_ids.erase(id)
+	var root: Variant = g[TG_ROOT]
+	if g[TG_STILL] and is_instance_valid(root) and (root as Node).tree_exiting.is_connected(_troop_fresh.bind(id)):
+		(root as Node).tree_exiting.disconnect(_troop_fresh.bind(id))
+	var owner: Variant = g[TG_OWNER]
+	if is_instance_valid(owner):
+		var ids: Array = (owner as Node).get_meta("troop_ids", [])
+		ids.erase(id)
+		var cb := _troop_owner_fresh.bind(owner)
+		if ids.is_empty() and (owner as Node3D).visibility_changed.is_connected(cb):
+			(owner as Node3D).visibility_changed.disconnect(cb)  # (its last group gone: an owner can outlive them, the bay)
+
+
+## A group shown, hidden or in a new state: each part into the set it belongs to now (or out), and written.
+func _troop_regroup(parts: Array, vis: bool, st: int, sig: Transform3D, inv: Transform3D) -> void:
+	for p in parts:
+		var mi: Variant = p[TP_MI]
+		if mi == null:
+			continue
+		if not is_instance_valid(mi) or not (mi as Node).is_inside_tree():
+			_troop_leave(p)
+			p[TP_MI] = null  # (freed on its own: gone for good)
+			continue
+		var want: String = p[TP_KEYS][st] if vis else ""
+		if want != p[TP_SET]:
+			_troop_leave(p)
+			if want != "":
+				_troop_join(p, want)
+		if want == "":
+			continue
+		var xf: Transform3D = sig * (p[TP_REL] as Transform3D) if p[TP_REL] != null else inv * (mi as Node3D).global_transform
+		p[TP_XF] = xf
+		var m: Array = p[TP_S]
+		(m[0] as MultiMesh).set_instance_transform(p[TP_SLOT], xf)
+		if not (m[1] as AABB).has_point(xf.origin):
+			_troop_dirty[want] = true
+
+
+## A part into the set `key`'s last slot (the set made on first use; a full one grows ×2 and is rewritten).
+func _troop_join(p: Array, key: String) -> void:
+	var s: Dictionary = _troop_sets.get(key, {})
+	if s.is_empty():
+		var parts := key.split("|")
+		var made := MultiMesh.new()
+		made.transform_format = MultiMesh.TRANSFORM_3D
+		made.mesh = _troop_meshes["|".join(parts.slice(0, 3))]
+		var mmi := MultiMeshInstance3D.new()
+		mmi.name = "troops"
+		mmi.multimesh = made
+		mmi.cast_shadow = int(parts[2]) as GeometryInstance3D.ShadowCastingSetting
+		if parts.size() > 3:  # the troop shader's state: per draw, as it was per part
+			mmi.set_instance_shader_parameter("march", float(parts[3].substr(0, 1)))
+			mmi.set_instance_shader_parameter("fight", float(parts[3].substr(1, 1)))
+		add_child(mmi)
+		s = {"mmi": mmi, "parts": [], "m": [made, AABB()]}  # (a part holds "m", not the set: no reference cycle)
+		_troop_sets[key] = s
+	var list: Array = s["parts"]
+	var mm: MultiMesh = s["m"][0]
+	if mm.instance_count < list.size() + 1:
+		mm.instance_count = nexti_pow2(list.size() + 1)  # (reallocated: the slots taken are written again)
+		for j in list.size():
+			mm.set_instance_transform(j, list[j][TP_XF])
+	p[TP_SET] = key
+	p[TP_SLOT] = list.size()
+	p[TP_S] = s["m"]
+	list.append(p)
+	_troop_dirty[key] = true
+
+
+## A part out of its set: the set's last part takes its slot.
+func _troop_leave(p: Array) -> void:
+	var key: String = p[TP_SET]
+	if key == "":
+		return
+	var s: Dictionary = _troop_sets[key]
+	var list: Array = s["parts"]
+	var slot: int = p[TP_SLOT]
+	var last: Array = list.pop_back()
+	if not is_same(last, p):
+		list[slot] = last
+		last[TP_SLOT] = slot
+		(s["m"][0] as MultiMesh).set_instance_transform(slot, last[TP_XF])
+	p[TP_SET] = ""
+	p[TP_SLOT] = -1
+	p[TP_S] = null
+	_troop_dirty[key] = true
 
 
 # ------------------------------------------------------------------ FX
@@ -6255,14 +6462,16 @@ func fireworks(pos: Vector3, volleys: int) -> void:
 ## names one outright. `color` picks the text's palette token (_float_ink); a NEG text («Потерян», an enemy's card)
 ## sits on an INK pill (FLOAT_PLATE), as the pink alone read poorly over the sunny map (playtest 2).
 ## A big offensive fires many at once (playtest 2: «Оккупирован!» ×4, «Потерян» ×3 over the plates): one the same as a
-## live floater (text, icon and colour) within FLOAT_JOIN s of its last join adds to it instead — «Оккупирован! ×4»,
-## held in full FLOAT_HOLD s more — except an amount («+86»: each is that hex's own). The pocket's chip («Котёл: N»,
+## live floater (text, icon and colour) within FLOAT_JOIN s of its last join and FLOAT_JOIN_HEXES hexes of it adds to it
+## instead — «Оккупирован! ×4», held in full FLOAT_HOLD s more — except an amount («+86»: each is that hex's own); one
+## farther off (another front, maybe off the screen) starts its own. The pocket's chip («Котёл: N»,
 ## the white flag) stays one per pocket: announced again for the same pocket (grown, or a second side's land in it)
 ## it keeps one chip with the larger count instead of a second chip (_same_pocket).
 const FLOAT_DUR := 1.3
 const FLOAT_RISE := 40.0
 const FLOAT_FADE := 0.585  # s: the fade at the end of a floater's life (the last 45 % of FLOAT_DUR)
 const FLOAT_JOIN := 1.0
+const FLOAT_JOIN_HEXES := 2  # hexes: a pile-up over nearby plates merges, a loss on another front is counted there
 const FLOAT_HOLD := 0.9
 const FLOAT_POCKET := "white_flag"
 ## The NEG floater's pill: opaque INK (#FF7A6E on #1B2140 is 6.2 : 1; at the chips' α 0.85 the sunlit ground showing
@@ -6341,7 +6550,8 @@ func _float_join(hex: int, key: String, body: String, icon_name: String) -> bool
 			if _tail_int(body) >= _tail_int(String(f["body"])):  # grown: the new size (a smaller count is a part of it)
 				f["body"] = body
 				f["key"] = key
-		elif String(f["key"]) != key or t - float(f["joined"]) > FLOAT_JOIN:
+		elif String(f["key"]) != key or t - float(f["joined"]) > FLOAT_JOIN \
+				or HexGrid.distance(HexGrid.axial(sim.cells[hex]), HexGrid.axial(sim.cells[int(f["hex"])])) > FLOAT_JOIN_HEXES:
 			continue
 		else:
 			f["n"] = int(f["n"]) + 1
@@ -6421,25 +6631,34 @@ func _float_fx(f: Dictionary, _k: float) -> void:
 ## window, the shop; never the ceremony, whose border wave and fireworks play on — the 3D view stops (main.gd calls
 ## set_frozen each frame, playtest 2 Q5: the result window over a late front cost 521–580 3D + shadow draws a frame
 ## for a dimmed, blurred backdrop). set_frozen(true) waits for the camera to hold still, renders that frame once more
-## into a SubViewport of the window's size (the same World3D, a copy of the camera, the root's MSAA), shows the
-## picture on a canvas layer under the tilt-shift (main.gd _add_tilt_shift, layer −1: it blurs and vignettes the
-## picture exactly as the live map) and the HUD, and turns the root viewport's 3D off (Viewport.disable_3d: no 3D and
-## no shadow draws at all). A camera that moves under the window (a focus) or a resized window takes a new picture.
-## set_frozen(false) brings the live view back at once. The map keeps ticking under the picture (a refreshed hex, an
-## army's last step), so the view is current again the frame the window closes.
+## into a SubViewport of the window's size (the same World3D, a copy of the camera, the root's MSAA) and shows it on a
+## canvas layer under the tilt-shift (main.gd _add_tilt_shift, layer −1: it blurs and vignettes the picture exactly as
+## the live map) and the HUD; the root viewport's 3D goes off in that same frame (Viewport.disable_3d: no 3D and no
+## shadow draws at all; a SubViewport renders before its parent, so the picture is in that frame's draw and the scene
+## is drawn once, not twice). The next frame the picture is copied into a plain texture (one readback) and the
+## SubViewport goes with its render buffers — MSAA colour and depth, the resolves: ~90 MB at 941×1672, ~150 MB at
+## 1080×2400, held for as long as the shop stayed open — so behind the window only the picture's ~6–10 MB are kept.
+## A camera that moves under the window (a focus) takes a new picture once it holds still; a resized window (a
+## rotation, split screen) takes one at once, never a stretched frame. set_frozen(false) brings the live view back at
+## once. The map keeps ticking under the picture (a refreshed hex, an army's last step), so the view is current again
+## the frame the window closes.
 const FREEZE_LAYER := -2  # under the tilt-shift (−1) and the HUD
 const FREEZE_STILL := 2  # frames the camera must hold still before the picture is taken …
 const FREEZE_WAIT_MS := 1500  # … or this long after the window opened, for a camera that never settles
 const FREEZE_EPS := 0.002  # world units: a camera closer than this to the picture's is still (≈ ⅙ px at the strategic view)
+const FREEZE_COPY_TRIES := 3  # frames a picture's copy is tried; failing (no readback) the SubViewport stays the picture
 var _frozen := false  # asked for (set_frozen)
 var _freeze_shown := false  # the picture is up and the root viewport draws no 3D
-var _freeze_vp: SubViewport
+var _freeze_vp: SubViewport  # only while a picture renders and is copied (then freed with its render buffers)
 var _freeze_layer: CanvasLayer
+var _freeze_pic: TextureRect
+var _freeze_px := Vector2i.ZERO  # the picture's size (the window's pixels when it was taken)
 var _freeze_since := 0  # ms: when the freeze was asked for, or the camera last moved under it
 var _freeze_still := 0  # frames the camera has held still
 var _freeze_last := Transform3D()  # the camera last frame
 var _freeze_at := Transform3D()  # the camera of the picture
-var _freeze_frame := -1  # the process frame the picture was asked to render in (−1: none pending)
+var _freeze_frame := -1  # the process frame the picture rendered in, its copy pending (−1: none)
+var _freeze_copies := 0  # frames the pending copy was tried
 
 
 ## Freezes (true) or thaws (false) the 3D view behind a window (see above). Cheap to call every frame.
@@ -6460,6 +6679,11 @@ func is_frozen() -> bool:
 	return _freeze_shown
 
 
+## True while nothing of the 3D map is drawn this frame: the picture is up and none renders (_sync_troops rests).
+func _view_still() -> bool:
+	return _freeze_shown and Engine.get_process_frames() != _freeze_frame
+
+
 func _cam_moved(a: Transform3D, b: Transform3D) -> bool:
 	return a.origin.distance_to(b.origin) > FREEZE_EPS or (a.basis.z - b.basis.z).length() > FREEZE_EPS * 0.1 \
 		or (a.basis.x - b.basis.x).length() > FREEZE_EPS * 0.1
@@ -6472,13 +6696,16 @@ func _step_freeze() -> void:
 	if cam == null:
 		return
 	var xf := cam.global_transform
-	if _freeze_frame >= 0:  # the picture renders this frame: up it goes two frames on, when it surely has
-		if Engine.get_process_frames() >= _freeze_frame + 2:
-			_freeze_frame = -1
-			_show_freeze()
+	if _freeze_frame >= 0 and Engine.get_process_frames() > _freeze_frame:  # it rendered last frame: keep a copy
+		if DisplayServer.get_name() == "headless":
+			_freeze_frame = -1  # (no renderer to read back: the SubViewport stays the picture)
+		else:
+			_copy_freeze()
+	if _freeze_shown and _freeze_px != _freeze_size():  # resized: the old picture would stretch — a new one now
+		_freeze_last = xf
+		_take_freeze(cam)
 		return
-	if _freeze_shown and not _cam_moved(xf, _freeze_at) and _freeze_vp != null \
-			and _freeze_vp.size == _freeze_size():
+	if _freeze_shown and not _cam_moved(xf, _freeze_at):
 		_freeze_last = xf
 		return
 	_freeze_still = _freeze_still + 1 if not _cam_moved(xf, _freeze_last) else 0
@@ -6494,27 +6721,27 @@ func _freeze_size() -> Vector2i:
 	return get_tree().root.size
 
 
+## Renders the camera's view into a fresh SubViewport this frame and puts it up at once, the root's 3D off.
 func _take_freeze(cam: Camera3D) -> void:
 	var root := get_tree().root
-	if _freeze_vp == null:
-		_freeze_vp = SubViewport.new()
-		_freeze_vp.name = "freeze_view"
-		_freeze_vp.gui_disable_input = true
-		_freeze_vp.msaa_3d = root.msaa_3d
-		_freeze_vp.screen_space_aa = root.screen_space_aa
-		_freeze_vp.use_taa = root.use_taa
-		_freeze_vp.use_debanding = root.use_debanding
-		_freeze_vp.scaling_3d_mode = root.scaling_3d_mode
-		_freeze_vp.scaling_3d_scale = root.scaling_3d_scale
-		_freeze_vp.mesh_lod_threshold = root.mesh_lod_threshold
-		_freeze_vp.positional_shadow_atlas_size = root.positional_shadow_atlas_size
-		_freeze_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
-		var c := Camera3D.new()
-		c.name = "cam"
-		_freeze_vp.add_child(c)
-		add_child(_freeze_vp)  # no world of its own: it draws the root's World3D (and its environment)
+	if _freeze_vp != null:  # (a copy still pending: this one replaces it)
+		_freeze_vp.queue_free()
+	_freeze_vp = SubViewport.new()
+	_freeze_vp.name = "freeze_view"
+	_freeze_vp.gui_disable_input = true
+	_freeze_vp.msaa_3d = root.msaa_3d
+	_freeze_vp.screen_space_aa = root.screen_space_aa
+	_freeze_vp.use_taa = root.use_taa
+	_freeze_vp.use_debanding = root.use_debanding
+	_freeze_vp.use_hdr_2d = root.use_hdr_2d
+	_freeze_vp.scaling_3d_mode = root.scaling_3d_mode
+	_freeze_vp.scaling_3d_scale = root.scaling_3d_scale
+	_freeze_vp.mesh_lod_threshold = root.mesh_lod_threshold
+	_freeze_vp.positional_shadow_atlas_size = root.positional_shadow_atlas_size
 	_freeze_vp.size = _freeze_size()
-	var fc: Camera3D = _freeze_vp.get_node("cam")
+	_freeze_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+	var fc := Camera3D.new()
+	fc.name = "cam"
 	fc.projection = cam.projection
 	fc.fov = cam.fov
 	fc.size = cam.size
@@ -6526,43 +6753,63 @@ func _take_freeze(cam: Camera3D) -> void:
 	fc.cull_mask = cam.cull_mask
 	fc.environment = cam.environment
 	fc.attributes = cam.attributes
-	fc.global_transform = cam.global_transform
+	fc.transform = cam.global_transform  # (under a viewport its own transform is its global one)
+	_freeze_vp.add_child(fc)
+	add_child(_freeze_vp)  # no world of its own: it draws the root's World3D (and its environment)
 	fc.current = true
 	_freeze_at = cam.global_transform
-	_freeze_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+	_freeze_px = _freeze_vp.size
 	_freeze_frame = Engine.get_process_frames()
-
-
-func _show_freeze() -> void:
+	_freeze_copies = 0
 	if _freeze_layer == null:
 		_freeze_layer = CanvasLayer.new()
 		_freeze_layer.name = "freeze_layer"
 		_freeze_layer.layer = FREEZE_LAYER
-		var pic := TextureRect.new()
-		pic.name = "picture"
-		pic.set_anchors_preset(Control.PRESET_FULL_RECT)
-		pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		pic.stretch_mode = TextureRect.STRETCH_SCALE
-		pic.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST  # the window's pixels one to one
-		pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		pic.texture = _freeze_vp.get_texture()
-		_freeze_layer.add_child(pic)
+		_freeze_pic = TextureRect.new()
+		_freeze_pic.name = "picture"
+		_freeze_pic.set_anchors_preset(Control.PRESET_FULL_RECT)
+		_freeze_pic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		_freeze_pic.stretch_mode = TextureRect.STRETCH_SCALE
+		_freeze_pic.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST  # the window's pixels one to one
+		_freeze_pic.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_freeze_layer.add_child(_freeze_pic)
 		add_child(_freeze_layer)
+	_freeze_pic.texture = _freeze_vp.get_texture()  # this frame's draw: the SubViewport's render, made before the root's
 	get_viewport().disable_3d = true
 	_freeze_shown = true
+
+
+## The rendered picture into a plain texture (one GPU → CPU readback a window), and the SubViewport freed with its
+## render buffers. No readback (a renderer that gives none): a few frames' tries, then the SubViewport stays the picture.
+func _copy_freeze() -> void:
+	var img: Image = _freeze_vp.get_texture().get_image()
+	if img == null or img.is_empty():
+		_freeze_copies += 1
+		if _freeze_copies >= FREEZE_COPY_TRIES:
+			_freeze_frame = -1  # (kept as it is: a live render target, as before the copy)
+		return
+	_freeze_pic.texture = ImageTexture.create_from_image(img)
+	_freeze_vp.queue_free()
+	_freeze_vp = null
+	_freeze_frame = -1
 
 
 func _thaw() -> void:
 	if is_inside_tree():
 		get_viewport().disable_3d = false
+	var was := _freeze_shown
 	_freeze_shown = false
 	_freeze_frame = -1
-	if _freeze_layer != null:  # the picture and its render target go (a window is open for seconds, not minutes)
+	_freeze_px = Vector2i.ZERO
+	if _freeze_layer != null:  # the picture goes with its window
 		_freeze_layer.queue_free()
 		_freeze_layer = null
+		_freeze_pic = null
 	if _freeze_vp != null:
 		_freeze_vp.queue_free()
 		_freeze_vp = null
+	if was and is_inside_tree():
+		_sync_troops()  # (skipped under the still picture: current before this frame's live draw)
 
 
 func _exit_tree() -> void:

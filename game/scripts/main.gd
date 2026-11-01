@@ -4939,6 +4939,7 @@ func _open_defeat_or_white(score: float) -> void:
 		ui.show_choice(tr("separate.t_white"), [{"tiles": [{"icon": "white_flag", "caption": tr("defeat.t_white"), "icon_side": 96.0}, truce_tile]},
 			tr("result.white_peace")], [[tr("result.peace"), "go", sign_w, {"icon": "dove"}], [tr("result.continue"), "war", back, {"size": "M"}]],
 			"go", "dove", portrait.merged({"mood": "tired", "say": tr("defeat.say_white")}))
+		ui._set_docked(true)  # (as under the battle's result it replaces: the card row, the tabs and the big button hide)
 		return
 	var lost := _defeat_losses(enemy)
 	var lvl: int = AI_PLUNDER_LVL.get(String(sim.states[enemy]["archetype"]), 3)
@@ -4955,6 +4956,7 @@ func _open_defeat_or_white(score: float) -> void:
 	ui.show_choice(tr("result.defeat_title"), [{"tiles": tiles}, tr("defeat.note_lost") if not lost.is_empty() else tr("defeat.note_nohex")],
 		[[tr("result.peace"), "go", sign_d, {"icon": "dove"}], [tr("result.continue"), "war", back, {"size": "M"}]],
 		"war", "white_flag", portrait.merged({"mood": "cunning", "say": tr("defeat.say")}))
+	ui._set_docked(true)
 
 
 ## Defeat (canon §9.14): the AI annexes what it occupies, ≤20% of value, ≤1 city, never the core.
@@ -9491,6 +9493,9 @@ func _demo(spec: String) -> void:
 		if what == "strike":
 			_answer_ultimatum("refuse")
 			rig.focus(map_view.cell_world(int(war["strike_hex"])), 0.45)
+		elif parts.size() > 1 and parts[1] == "inbox":  # ultimatum:inbox — closed with ✕, its letter in the inbox
+			ui.close_modal()
+			ui.show_inbox(inbox, now_s())
 		return
 	if what == "shop" or what == "royal":
 		econ.res["raivite"] = 2000
