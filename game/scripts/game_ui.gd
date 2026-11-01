@@ -1301,7 +1301,8 @@ func show_peace(enemy: String, budget: float, control: int, demands: Array, chos
 		if ra == 4 and absf(ca - cb) > 0.001:
 			return ca > cb
 		return int(a["i"]) < int(b["i"]))
-	var hint := _hold_hints <= 3
+	var pick := plunder < 0  # the plunder's level is the player's choice and none is made yet (08 §8.3 F31): the seal waits
+	var hint := _hold_hints <= 3 or pick
 	var rows := maxi(1, ceili(groups.size() / 3.0))
 	var row_h := 212.0
 	var head := 258.0  # leader, bubble, budget
@@ -1415,7 +1416,7 @@ func show_peace(enemy: String, budget: float, control: int, demands: Array, chos
 		box.add_child(wl)
 		y += 52.0
 	if hint:
-		var hl := Kit.label(tr("peace.hold_hint"), 26, Kit.MUTED_CREAM, false)
+		var hl := Kit.label(tr("peace.pick_hint") if pick else tr("peace.hold_hint"), 26, Kit.MUTED_CREAM, false)
 		hl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		hl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		hl.position = Vector2(32, y + 14.0)
@@ -1429,9 +1430,9 @@ func show_peace(enemy: String, budget: float, control: int, demands: Array, chos
 	var back := Kit.button(box, Rect2(32, fy, sw, 116), "info", tr("peace.back"), {"icon": "swords", "size": "L",
 		"cb": func(): action_pressed.emit("back_to_war")})
 	var sb := Kit.button(box, Rect2(48.0 + sw, fy, w - 80.0 - sw, 116), "go", tr("peace.seal"), {"icon": "treaty", "size": "L",
-		"hold": true, "hold_sec": 0.8, "enabled": not over, "cb": _on_seal})
+		"hold": true, "hold_sec": 0.8, "enabled": not over and not pick, "cb": _on_seal})
 	sb.name = "seal"
-	sb.denied.connect(func(): Kit.tooltip(sb, tr("peace.seal"), tr("peace.over")))
+	sb.denied.connect(func(): Kit.tooltip(sb, tr("peace.seal"), tr("peace.pick_hint") if pick and not over else tr("peace.over")))
 	Kit.unify([back, sb])
 	_seal_btn = sb
 	_modal_buttons = [back, sb]
@@ -1631,21 +1632,24 @@ func show_ceremony_counters(lines: Array, on_done: Callable, on_double := Callab
 			var r := Rect2(x0 + (i % 3) * (tw + 12.0), 16.0 + (i / 3) * 182.0, tw, 150)
 			var t: Control
 			if String(it.get("kind", "")) == "more":  # the hidden rewards' icons fanned, «+N» on the edge; a tap lists them
-				t = Kit.tile(well, r, {"pill": [["", String(it["text"])]]})
+				var fan := Control.new()  # (in the tile's picture box: the caption lays out under it as on the others)
+				fan.mouse_filter = Control.MOUSE_FILTER_IGNORE
 				var icons: Array = it.get("icons", [])
 				var n := mini(3, icons.size())
 				for k in n:
-					var fi := _icon_rect(String(icons[k]), 76)
-					fi.position = Vector2(r.size.x * 0.5 - 38.0 + (k - (n - 1) * 0.5) * 50.0, 22.0 + absf(k - (n - 1) * 0.5) * 6.0)
+					var fi := _icon_rect(String(icons[k]), 64)
+					fi.position = Vector2(4.0 + (k - (n - 1) * 0.5) * 40.0, 2.0 + absf(k - (n - 1) * 0.5) * 5.0)
 					fi.rotation_degrees = (k - (n - 1) * 0.5) * 10.0
-					fi.pivot_offset = Vector2(38, 60)
-					t.add_child(fi)
+					fi.pivot_offset = Vector2(32, 50)
+					fan.add_child(fi)
+				t = Kit.tile(well, r, {"pic_node": fan, "icon_side": 72.0, "title": tr("ceremony.cap.more"), "pill": [["", String(it["text"])]]})
 				var rest: Array = it.get("rest", [])
 				var tt := t
 				(t as Kit.KitTile).cb = func(): Kit.tooltip(tt, "", "\n".join(rest))
 			else:
 				var pill: Array = it.get("pill", [["", String(it.get("text", ""))]])
-				t = Kit.tile(well, r, {"icon": String(it.get("icon", "")), "icon_side": 92.0, "pill": pill})
+				var cap := String(it.get("cap", ""))  # what it is, in a word under the picture (Гексы, Город, Ящик, Золото…)
+				t = Kit.tile(well, r, {"icon": String(it.get("icon", "")), "icon_side": 72.0 if cap != "" else 92.0, "title": cap, "pill": pill})
 				if it.has("res"):
 					flyers.append([t, String(it["res"]), String(it.get("icon", ""))])
 				if int(it.get("lost", 0)) > 0:
@@ -6179,6 +6183,7 @@ var _ghost_to := Vector2(-1, -1)
 var _ghost_dot: Kit.KitShape
 var _coach_t := 0.0
 var _coach_kick := 0.0  # a refused tap: the ring jumps for a moment
+var _coach_hush := false  # the advisor stepped away (coach_quiet); the ring and the ghost stay
 var _coach_scrolled: Control  # the card the coach last scrolled the row to
 var _coach_bw := 0.0  # the bubble's own width (hugging the line); over a window's title it takes the full 600
 
@@ -6298,6 +6303,7 @@ func coach(text: String, target := Vector2(-1, -1), chip := "") -> void:
 		_build_coach()
 	var was := _coach.visible
 	_coach.visible = true
+	_coach_hush = false
 	_coach_mode = "dim"
 	_ghost_from = Vector2(-1, -1)
 	coach_target(target)
@@ -6348,6 +6354,12 @@ func coach_blocking() -> bool:
 ## (a target on the map among others); "ring" — no dim (a live battle, a two-part step): the ring and the pointer only.
 func coach_mode(m: String) -> void:
 	_coach_mode = m
+
+
+## The advisor (bust, bubble, name plate) steps away while the ring, the pointer and the ghost stay (a battle step's line
+## after its 6 s: the battle in view, the move still shown); the next coach() line brings it back.
+func coach_quiet(on: bool) -> void:
+	_coach_hush = on
 
 
 ## Ghost finger dragging from → to (screen px), looping; call every frame while the camera moves.
@@ -6572,7 +6584,7 @@ func _process_coach(delta: float) -> void:
 	_coach_dim.block = false
 	_coach_ring.visible = lit
 	_coach_arrow.visible = false
-	_coach_adv.visible = not away
+	_coach_adv.visible = not away and not _coach_hush
 	var holes: Array = []
 	if lit:
 		# the ring's margin: 12 px round the target, less on an axis where a neighbour or the screen edge is nearer
@@ -6615,7 +6627,7 @@ func _process_coach(delta: float) -> void:
 			_coach_ring.queue_redraw()
 		_coach_ring.position = rr.position
 		_coach_cut(rr)
-	if not away:
+	if not away and not _coach_hush:
 		_coach_place_advisor(vis, holes, frame)
 	if lit:
 		_coach_place_arrow(vis, holes, frame)
@@ -6697,8 +6709,9 @@ func _coach_room(vis: Rect2) -> Array:
 ## target down there, the opposite half for a target above the middle, and clear of the battlefield's front with no
 ## target — the bust at the screen edge away from the target, the bubble beside it with its tail toward the bust. It
 ## never covers a hole or the ghost finger's path: then the band y 180–420 (with the top group). A window the coach
-## points into keeps it out too (else the gap above or under the window); a window that leaves no room (a long
-## treaty) takes it over its title plate, above the leader — still clear of the target.
+## points into keeps it out too (else the gap above or under the window); a window that leaves no room (a long treaty
+## at 941×1672) docks it just under its title plate — over the window's first row (the leader and his line), never
+## the title (playtest 2: «Мирный договор» was hidden under the bubble) — still clear of the target.
 func _coach_place_advisor(vis: Rect2, holes: Array, frame: Rect2) -> void:
 	var has_t := _coach_rect.size.x > 0.0
 	var left := not has_t or _coach_rect.get_center().x >= vis.get_center().x
@@ -6722,11 +6735,13 @@ func _coach_place_advisor(vis: Rect2, holes: Array, frame: Rect2) -> void:
 			centres.append((top + win.position.y) * 0.5)
 		if vis.end.y - 12.0 - win.end.y >= COACH_BUST.y:
 			centres.append((win.end.y + vis.end.y - 12.0) * 0.5)
-		# over the title plate, its bottom above the window's first row (a leader's portrait at +64), under the plates
-		fallback.append(maxf(frame.position.y + 56.0 - COACH_BUST.y * 0.5, vis.position.y + 90.0 + _top.position.y + COACH_BUST.y * 0.5))
+		# docked under the title plate (its bottom at the frame's top + 42): the name plate standing on the bubble's top
+		# edge clears it by 4 px
+		var by0 := frame.position.y + 42.0 + 4.0 + COACH_PLATE_H * 0.5
+		fallback.append(by0 - 6.0 + _coach_bubble.size.y * 0.5)
 	for pass_ in [[centres, hard + soft], [fallback + centres, hard]]:
 		for cy in pass_[0]:
-			var over := frame.position.y + 42.0 + 10.0 if fallback.has(cy) and pass_[1] == hard else -1.0
+			var over := -1.0
 			var rs := _coach_group(vis, float(cy), left, map, over)
 			var hit := false
 			for r in rs:
@@ -7118,6 +7133,26 @@ func toast_rect() -> Rect2:
 ## does not need. While the coach shows the toast stays under it (§3.1): it goes under the plate(s) then. The plates
 ## are read at their resting place (a plate still dropping in does not move the toast).
 func _toast_spot(h := 72.0) -> Array:
+	var spot := _toast_spot_base(h)
+	# the advisor is never over a toast (the coach is above the toasts: one half hidden under its name plate read as
+	# broken, playtest 2): a toast in its band goes under it
+	var adv := _coach_adv_rect()
+	if not bool(spot[1]) and adv.size.y > 0.0 and adv.position.y < float(spot[0]) + h + TOAST_TITLE_GAP \
+			and adv.end.y > float(spot[0]) - TOAST_TITLE_GAP:
+		return [adv.end.y + TOAST_TITLE_GAP, false]
+	return spot
+
+
+## The coach's advisor (bust, bubble, name plate) on the canvas in root's coordinates while it shows, else Rect2().
+func _coach_adv_rect() -> Rect2:
+	if _coach == null or not _coach.visible or not _coach_adv.visible or not is_inside_tree():
+		return Rect2()
+	var r := _coach_bust.get_global_rect().merge(_coach_bubble.get_global_rect()).merge(_coach_plate.get_global_rect())
+	r.position.y -= root.get_global_rect().position.y
+	return r
+
+
+func _toast_spot_base(h := 72.0) -> Array:
 	var top_in := _top.position.y
 	var y := (TOAST_Y_BAR if _control_bar.visible else TOAST_Y) + top_in
 	if not is_inside_tree():

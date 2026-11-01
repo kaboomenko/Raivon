@@ -512,6 +512,162 @@ func _run() -> void:
 	g.queue_free()
 	await process_frame
 
+	# 4z. A fresh install (playtest 2, A-high 1): saves on and no save file yet — the tutorial is decided before the first
+	# tick: step 1 with no window over it, no calendar day credited, no orders chip, no free crate's timer, Bram not yet
+	# (he comes with the first peace). The test's own save and settings files: the player's real ones are never touched.
+	var SaveF = load("res://scripts/save.gd")
+	SaveF.path = "user://test_flow_fresh_save.json"
+	SaveF.settings_path = "user://test_flow_fresh_settings.json"
+	SaveF.wipe()
+	var gf: Node = load("res://scenes/main.tscn").instantiate()
+	root.add_child(gf)
+	await process_frame
+	await process_frame
+	gf._econ_tick()
+	_check(gf.save_enabled and gf.ftue == 1 and not gf.ui.has_modal() and gf.calendar.credited == 0 and not gf.calendar.pending
+		and not gf._orders_open() and not gf.hud._orders_chip.visible,
+		"fresh install: step 1 with no window over it, no calendar day credited, no orders (credited %d, modal %s)" % [gf.calendar.credited, str(gf.ui.has_modal())])
+	_check(not gf.stats.has("bram_given") and not gf.cases.free_started and not gf.stats.has("ftue_done"),
+		"fresh install: Bram, the free crate's timer and the tutorial's end all wait")
+	gf._ftue_tick(0.1)
+	_check(gf.ui._coach.visible and gf.ui._action2_kind == "declare", "fresh install: the step-1 coach on «Война!» from the first frame")
+	# the tutorial's end (its card's «Вперёд»): the first War Crate an hour later, the calendar's day 1 a few seconds
+	# after the colonize hint — once
+	gf.ftue = 0
+	gf._finish_tutorial()
+	gf._econ_tick()
+	_check(gf.cases.free_started and gf.cases.free_crate_left(gf.now_s()) == 3600 and gf.calendar.credited == 1 and not gf.ui.has_modal()
+		and gf._orders_open(), "after the tutorial: the first War Crate in 1 h, calendar day 1 credited, its screen not yet")
+	gf.time_offset += gf.CAL_AFTER_TUT_SEC
+	gf._econ_tick()
+	var cal_open: bool = gf.ui.has_modal()
+	gf.ui.close_modal()
+	gf._econ_tick()
+	_check(cal_open and not gf.ui.has_modal() and gf.calendar.credited == 1, "the calendar opens once with day 1, %d s after the tutorial" % gf.CAL_AFTER_TUT_SEC)
+	gf.queue_free()
+	await process_frame
+	# a save made in a gap of the tour (the first peace's ceremony: ftue 0, the next step waiting) resumes it on load —
+	# never «the tutorial is over» (the orders and the calendar would open over it)
+	var gapd: Dictionary = SaveF.read()
+	gapd["ftue"] = 0
+	gapd["ftue_next"] = 7
+	gapd["stats"] = {"flag_wizard": 1}
+	SaveF.write_raw(gapd)
+	var gr: Node = load("res://scenes/main.tscn").instantiate()
+	root.add_child(gr)
+	await process_frame
+	await process_frame
+	_check(gr.ftue == 7 and not gr.stats.has("ftue_done") and not gr._orders_open(), "a save made in the tour's gap resumes it (ftue %d)" % gr.ftue)
+	gr.queue_free()
+	await process_frame
+	# an old save past the tutorial (no ftue_next, ftue 0) gets the tutorial's end on load: its orders and calendar stay
+	var oldd: Dictionary = gapd.duplicate(true)
+	oldd.erase("ftue_next")
+	oldd["stats"] = {}
+	var go2: Node = load("res://scenes/main.tscn").instantiate()
+	go2.save_enabled = false
+	_check(SaveF.apply(go2, oldd) and go2.stats.has("ftue_done") and go2.ftue == 0, "an old save past the tutorial gets stats.ftue_done (migrated)")
+	go2.free()
+	SaveF.wipe()
+	if FileAccess.file_exists(SaveF.settings_path):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(SaveF.settings_path))
+	SaveF.path = SaveF.PATH
+	SaveF.settings_path = SaveF.SETTINGS_PATH
+
+	# 4y. War 1 cannot be lost (playtest 2, A-high 2; 08 §8.3 F06/F08): an idle player — no gesture at all — ends on ★★★
+	# with the flag and the first treaty's land; no ghost ever points at a fight it loses (F ≥ 1.1)
+	var gi := await _new_game()
+	gi.ftue = 1
+	gi._ftue_tick(0.1)
+	gi._on_action("declare")
+	gi._on_action("offensive")
+	var red := 0
+	var lv3 := false
+	while gi.battle != null and not gi.battle.over:
+		if gi.battle.tick % 10 == 0:
+			gi._ftue_tick(1.0)
+			var bgi: Dictionary = gi._ftue_battle_goal()
+			if not bgi.is_empty() and String(bgi["kind"]) == "army":
+				var ai = gi.battle.army_at(int(bgi["from"]), Types.PLAYER)
+				if ai == null or gi.battle.forecast(Types.PLAYER, [ai["id"]], int(bgi["to"]))["f"] < gi.FTUE_GHOST_F:
+					red += 1
+			lv3 = lv3 or gi._ftue_level() >= 3
+		gi._battle_step()
+	var ri: Dictionary = gi.battle.result()
+	var fhi: int = gi.flag_hex
+	_check(War.offensive_stars(ri["captured"], fhi, ri["routed_player_armies"]) == 3 and gi._ftue_haul().size() >= gi.FTUE_PEACE1_HEXES and red == 0 and lv3,
+		"FTUE war 1 idle: ★★★ with the flag and %d hexes at 0:55 (F08), no ghost under F 1.1, the help ladder reached level 3 (%s, red %d)" % [gi.FTUE_PEACE1_HEXES, str(ri["captured"]), red])
+	gi._end_offensive()
+	_check(gi.ftue == 5, "FTUE war 1 idle: the result goes on to the treaty (step %d)" % gi.ftue)
+	gi.queue_free()
+	await process_frame
+	# the ladder's level 3: a tap on the coached hex plays the drag; a failed offensive's «Ещё бой» starts the war over
+	var gl := await _new_game()
+	gl.ftue = 1
+	gl._ftue_tick(0.1)
+	gl._on_action("declare")
+	var arm0: Dictionary = {}
+	for a in gl.armies:
+		arm0[int(a["id"])] = [int(a["hex"]), int(a["str"])]
+	gl._on_action("offensive")
+	var g3: Dictionary = gl._ftue_battle_goal()
+	gl._battle_tap(int(g3["to"]))
+	_check(gl.ftue == 3, "a tap on the coached hex before the ladder's level 3 does nothing (step %d)" % gl.ftue)
+	gl._ftue_idle = 21.0
+	gl._battle_tap(int(g3["to"]))
+	_check(gl.ftue == 4, "the help ladder's level 3 (20 s idle): a tap on the coached hex counts as the drag (step %d)" % gl.ftue)
+	for i in 30:
+		gl._battle_step()
+	gl.battle._finish("time")  # (a war 1 that failed some other way: «Ещё бой» must start it over)
+	gl.battle._captured = {}
+	gl._end_offensive()
+	_check(gl.ftue == 2, "a failed tutorial offensive asks for «Ещё бой» (step %d)" % gl.ftue)
+	gl.ui.close_modal()
+	gl._ftue_retry()
+	var same_armies := true
+	for a in gl.armies:
+		if arm0.has(int(a["id"])):
+			same_armies = same_armies and int(a["hex"]) == int(arm0[int(a["id"])][0]) and int(a["str"]) == int(arm0[int(a["id"])][1])
+	var land_back := true
+	for c in gl.sim.cells:
+		land_back = land_back and (int(c["owner"]) != MapGen.BARONS or int(c["controller"]) == MapGen.BARONS)
+	_check(same_armies and land_back and int(gl.war["battles"]) == 0, "«Ещё бой» restores both sides' armies, the land and the war's points to the war's start")
+	gl.queue_free()
+	await process_frame
+	# a player who follows the coach, then waits (playtest 2, A-medium): the flag falls with time left, step 4b points at
+	# a third hex (F ≥ 1.1), and at 0:55 it falls by script — +3, the first treaty's land, the Residence lesson after it
+	var gw4 := await _new_game()
+	gw4.ftue = 1
+	gw4._ftue_tick(0.1)
+	gw4._on_action("declare")
+	gw4._on_action("offensive")
+	var cp4: Array = gw4._ftue_ghost_pair()
+	gw4.battle.issue(Types.PLAYER, {"t": "attack", "army": gw4.battle.army_at(cp4[0], Types.PLAYER)["id"], "target": cp4[1]})
+	gw4._ftue_attacked()
+	for i in 120:
+		if gw4.sim.cells[cp4[1]]["controller"] == Types.PLAYER:
+			break
+		gw4._battle_step()
+	gw4.battle.issue(Types.PLAYER, {"t": "card", "card": "attack", "target": gw4.flag_hex})
+	gw4._ftue_attacked()
+	var saw4b := false
+	var f4b := true
+	while gw4.battle != null and not gw4.battle.over:
+		if gw4.battle.tick % 10 == 0:
+			gw4._ftue_tick(1.0)
+			if gw4.ui._coach.visible and gw4.ui._coach_lbl.text == gw4.tr("ftue.4b"):
+				saw4b = true
+				var b4: Dictionary = gw4._ftue_battle_goal()
+				if not b4.is_empty():
+					var a4 = gw4.battle.army_at(int(b4["from"]), Types.PLAYER)
+					f4b = f4b and a4 != null and gw4.battle.forecast(Types.PLAYER, [a4["id"]], int(b4["to"]))["f"] >= gw4.FTUE_GHOST_F
+		gw4._battle_step()
+	var r4: Dictionary = gw4.battle.result()
+	_check(saw4b and f4b and (r4["captured"] as Array).size() >= 3 and r4["reason"] == "goals",
+		"FTUE war 1 followed then waited: step 4b points at a winnable third hex, +3 by 0:55 (%s)" % str(r4["captured"]))
+	gw4.queue_free()
+	await process_frame
+
 	# 5a. FTUE war 1 as the coach leads it (08 §8.3 F04–F07): the ghost's drag brings a second army beside the flag,
 	# «Атака» onto the flag takes it — the first offensive ends on ★★★
 	var gw := await _new_game()
@@ -576,6 +732,7 @@ func _run() -> void:
 		g.ui.close_modal()
 		g._open_peace()
 		_check(g.ftue == 6, "FTUE peace step")
+		_check(g.plunder_level == 0, "the first treaty spares: no plunder preselected (08 §8.3 F31; level %d)" % g.plunder_level)
 		# the parchment takes the war's whole haul; the points left over say they become the Barons' opinion
 		var pk: Array = []
 		var spent := 0.0
@@ -619,10 +776,35 @@ func _run() -> void:
 		_check(g.clean_realm_name("Очень длинное название державы") .length() == 20 and g.clean_realm_name("a\nb") == "a b", "names: 20 characters at most, one line")
 		_check(g.research.blueprints >= 1 or g.plunder_level == 0, "a plundered peace brings trophy blueprints (%d)" % g.research.blueprints)
 		_check(g.ftue == 7, "FTUE resumes after the ceremony (residence step)")
+		# never skipped for want of land (playtest 2: 9 hexes after a slow war 1 lost the lesson): the DL2 gate waits
+		var lose: Array = []
+		for c in g.sim.cells:
+			if lose.size() < 2 and int(c["owner"]) == Types.PLAYER and String(c["kind"]) == "plain" and not g._touches_owner(int(c["id"]), MapGen.BARONS) \
+					and g.deposits.at(int(c["id"])).is_empty() and c["id"] != g.sim.states[Types.PLAYER]["capital_id"]:
+				lose.append(int(c["id"]))
+		for h in lose:
+			g.sim.cells[h]["owner"] = Types.NOBODY
+			g.sim.cells[h]["controller"] = Types.NOBODY
+		g._econ_tick()
 		g._ftue_tick(0.1)
-		if g.ftue == 7:
-			g._on_building_upgrade(g.econ.buildings[0]["id"])
-		_check(g.ftue == 8, "FTUE: residence step done (or skipped for lack of land)")
+		_check(g.ftue == 7 and g._player_hexes() < 10 and g.econ.can_upgrade(g.econ.buildings[0], g.now_s()) == "",
+			"FTUE step 7 short of land (%d hexes): the DL2 gate waits, the lesson stays" % g._player_hexes())
+		for h in lose:
+			g.sim.cells[h]["owner"] = Types.PLAYER
+			g.sim.cells[h]["controller"] = Types.PLAYER
+		g._econ_tick()
+		g._open_tab("buildings")
+		g._ftue_tick(0.1)
+		g._on_building_upgrade(g.econ.buildings[0]["id"])
+		g._ftue_tick(0.1)
+		g._ftue_tick(0.1)
+		var res_id: int = g.econ.buildings[0]["id"]
+		_check(g.ftue == 7 and g._residence_busy() and g.ui._coach_lbl.text == g.tr("ftue.7c") and g.econ.speedup_cost(g.econ.buildings[0], g.now_s()) == 0,
+			"FTUE step 7c: the upgrade runs and the coach rings its free finish («%s»)" % g.ui._coach_lbl.text)
+		g._on_building_speedup(res_id)
+		g._ftue_tick(0.1)
+		_check(g.ftue == 8 and g.econ.dev_level() == 2 and not g.stats.has("dl_pending") and g._dl_wave_end > Time.get_ticks_msec(),
+			"FTUE: the free finish plays the DL2 ceremony at once (the wave), then step 8")
 		g._ftue_tick(0.1)
 		var dh: int = g._ftue_deposit()
 		g._select(dh)
@@ -718,6 +900,15 @@ func _run() -> void:
 				g.ui.close_modal()
 				g._open_peace()
 				_check(g.ftue == 15, "FTUE war 2 peace with plunder choice")
+				var gold_pk := false
+				for d in g._demands:
+					gold_pk = gold_pk or (String(d["kind"]) in ["contribution", "reparations"] and g._chosen.has(d["id"]))
+				_check(not gold_pk and g._peace_overflow().is_empty() and g.ui._modal.find_child("storage_warn", true, false) == null,
+					"FTUE treaty 2: land by default (08 §8.3 F30), no gold package, no storage warning")
+				var seal2 = g.ui._seal_btn
+				_check(g.plunder_level == -1 and seal2 != null and not seal2.enabled, "FTUE treaty 2: no plunder preselected, the seal waits for the choice (F31)")
+				g.ui.plunder_selected.emit(0)
+				_check(g.plunder_level == 0 and g.ui._seal_btn.enabled, "FTUE treaty 2: «Пощадить» picked, the seal opens")
 				var pk_on := false
 				for d in g._demands:
 					pk_on = pk_on or (String(d["kind"]) == "pocket" and g._chosen.has(d["id"]))
@@ -728,6 +919,11 @@ func _run() -> void:
 					g._step_ceremony(0.1)
 				g._end_ceremony()
 				_check(g.ui.has_modal() and g.ui._modal.find_child("ok", true, false) != null, "the tutorial closes on Bram's card")
+				var crate_left: int = g.cases.free_crate_left(g.now_s())
+				_check(crate_left > 0 and crate_left <= 3600 and not g._orders_open() and g._quiet(),
+					"the tutorial's card: the first War Crate within 1 h (%d s), no orders yet, toasts held while it shows" % crate_left)
+				g.ui.toast("held")  # (a toast while the card shows waits for its «Вперёд»)
+				_check(g.ui._toast_cur.is_empty() or String(g.ui._toast_cur.get("text", "")) != "held", "no toast over the tutorial's card")
 				print("NOTE  the tutorial ends at %d / %d hexes" % [g._player_hexes(), g._chapter_goal()])
 				_check(g._player_hexes() == 14, "the tutorial ends at 14 / 20 (canon §14.3: «Глава I: 14/20»)")
 				g.ui.close_modal()

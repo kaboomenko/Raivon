@@ -9,7 +9,7 @@
 	],
 	"duplicates": {"to": "cur_glitter", "rare": 20, "epic": 80, "legendary": 300},
 	"workshop_glitter": {"rare": 150, "epic": 400, "legendary": 1000},
-	"free_crate": {"case": "case_war_crate", "every_sec": 21600, "cap": 2},
+	"free_crate": {"case": "case_war_crate", "first_sec": 3600, "every_sec": 21600, "cap": 2},
 	"speedups": {"item_speedup_5m": 5, "item_speedup_15m": 15, "item_speedup_1h": 60, "item_speedup_3h": 180, "item_speedup_8h": 480},
 	"res_names": {"gold": "Золото", "food": "Еда", "metal": "Металл", "oil": "Нефть", "all": "Ресурсы"},
 	"res_names_en": {"gold": "Gold", "food": "Food", "metal": "Metal", "oil": "Oil", "all": "Resources"},

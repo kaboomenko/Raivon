@@ -519,6 +519,23 @@ func _test_treaty_matches_ts() -> void:
 	var res := War.apply_treaty(w2, war, pkg)
 	_eq(",".join(PackedStringArray(res["annexed"])), t["annexed"], "annexed")
 	_eq(",".join(PackedStringArray(res["returned"])), t["returned"], "returned")
+	# the warehouse in mind (playtest 2: «Склад не вместит 4 430 золота» with three packages recommended at a full store):
+	# an indemnity package goes in only while its gold fits the free room; the land is chosen as before
+	var big: float = 200.0  # points enough for everything
+	var count_c := func(p: Array) -> int:
+		return p.filter(func(d): return String(d["kind"]) == "contribution").size()
+	var free_all: Array = War.recommend_package(w2, war, demands, big)
+	var full: Array = War.recommend_package(w2, war, demands, big, {"gold_room": 0, "pack_gold": 980})
+	var room2: Array = War.recommend_package(w2, war, demands, big, {"gold_room": 2500, "pack_gold": 980})
+	var land_only: Array = War.recommend_package(w2, war, demands, big, {"land_only": true})
+	_check(count_c.call(free_all) == 3 and count_c.call(full) == 0 and count_c.call(room2) == 2,
+		"indemnity packages fit the warehouse: 3 unlimited, 0 at a full store, 2 in room for 2 (%d/%d/%d)" % [count_c.call(free_all), count_c.call(full), count_c.call(room2)])
+	var land_same := true
+	for d in free_all:
+		if String(d["kind"]) in ["annex", "pocket"]:
+			land_same = land_same and full.has(d) and land_only.has(d)
+	_check(land_same and land_only.filter(func(d): return not (String(d["kind"]) in ["annex", "pocket"])).is_empty(),
+		"the land part stays; land_only takes hexes and pockets alone")
 
 
 ## Formats a float like JS Number#toString for the short decimals used here.

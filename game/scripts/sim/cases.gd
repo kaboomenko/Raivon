@@ -59,6 +59,8 @@ var free_crates: int = 0
 var royal_keys: int = 0  # Royal case keys (the subscription gives one a week, 09 §9.13.1); never expire
 ## Unix time of the next free crate; 0 = timer not running (not started yet, or storage full).
 var next_free_crate: int = 0
+## The free crate's timer has started (start_free_crates: the tutorial's end); until then none accrues.
+var free_started: bool = false
 ## Collection-case items already received this season (cos_* ids, in order).
 var collection_opened: Array = []
 var collection_season: int = 0
@@ -540,12 +542,26 @@ func price_x10(case_id: String) -> int:
 	return int(_case(case_id).get("price_x10", 0))
 
 
+## Starts the free War Crate's timer (once; main calls it when the tutorial ends): the first crate comes `first_sec`
+## later (canon 00 §14.3: «первый Военный ящик через 1 ч (дальше каждые 6 ч)»; 08 §8.3.3 after F35), the next ones
+## every `every_sec`.
+func start_free_crates(now: int) -> void:
+	if free_started:
+		return
+	free_started = true
+	var fc: Dictionary = data().get("free_crate", {})
+	if free_crates < int(fc.get("cap", 2)) and next_free_crate <= 0:
+		next_free_crate = now + int(fc.get("first_sec", fc.get("every_sec", 21600)))
+
+
 ## Free war crate: +1 every 6 h, stored up to 2 (canon §15.4). The timer is paused while storage is full
-## and restarts when a crate is used. The first call starts the timer. Returns the current count.
+## and restarts when a crate is used; nothing accrues before start_free_crates. Returns the current count.
 func claim_free_crates(now: int) -> int:
 	var fc: Dictionary = data().get("free_crate", {})
 	var every := int(fc.get("every_sec", 21600))
 	var cap := int(fc.get("cap", 2))
+	if not free_started:
+		return free_crates
 	if free_crates >= cap:
 		next_free_crate = 0
 		return free_crates
@@ -560,13 +576,16 @@ func claim_free_crates(now: int) -> int:
 	return free_crates
 
 
-## Seconds until the next free crate; 0 when storage is full (timer paused) or one is due now.
+## Seconds until the next free crate; 0 when storage is full (timer paused) or one is due now; before the timer
+## starts, the first crate's wait (the tutorial's card shows it: «Военный ящик через 1 ч»).
 func free_crate_left(now: int) -> int:
 	var fc: Dictionary = data().get("free_crate", {})
 	var every := int(fc.get("every_sec", 21600))
 	var cap := int(fc.get("cap", 2))
 	if free_crates >= cap:
 		return 0
+	if not free_started:
+		return int(fc.get("first_sec", every))
 	if next_free_crate <= 0:
 		return every
 	var n := free_crates
@@ -939,6 +958,7 @@ func to_dict() -> Dictionary:
 		"free_crates": free_crates,
 		"royal_keys": royal_keys,
 		"next_free_crate": next_free_crate,
+		"free_started": free_started,
 		"collection_opened": collection_opened.duplicate(),
 		"collection_season": collection_season,
 		"opened": opened.duplicate(),
@@ -965,6 +985,8 @@ static func from_dict(d: Dictionary) -> RefCounted:
 	c.free_crates = int(d.get("free_crates", 0))
 	c.royal_keys = int(d.get("royal_keys", 0))
 	c.next_free_crate = int(d.get("next_free_crate", 0))
+	# a save from before the first-crate hour: its timer already ran (or its crates were stored)
+	c.free_started = bool(d.get("free_started", c.next_free_crate > 0 or c.free_crates > 0))
 	var co: Array = d.get("collection_opened", [])
 	for id in co:
 		c.collection_opened.append(String(id))

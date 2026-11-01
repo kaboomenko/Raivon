@@ -9,12 +9,16 @@ const PATH := "user://save.json"
 const VERSION := 1
 ## Player settings that outlive a «Новая игра» (the UI language): {"lang": "ru" | "en"}.
 const SETTINGS_PATH := "user://settings.json"
+## Where the save and the settings live: PATH / SETTINGS_PATH, a test points them at files of its own (a fresh install
+## with saves on, test_flow) so the player's real files are never touched.
+static var path := PATH
+static var settings_path := SETTINGS_PATH
 
 
 ## Writes the save file and returns the same dictionary (net.gd uploads it to the cloud).
 static func save(g: Node) -> Dictionary:
 	var d := to_dict(g)
-	var f := FileAccess.open(PATH, FileAccess.WRITE)
+	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f == null:
 		push_warning("save failed: %s" % FileAccess.get_open_error())
 		return d
@@ -24,7 +28,7 @@ static func save(g: Node) -> Dictionary:
 
 ## Writes a save received from the cloud (applied on the next load).
 static func write_raw(d: Dictionary) -> void:
-	var f := FileAccess.open(PATH, FileAccess.WRITE)
+	var f := FileAccess.open(path, FileAccess.WRITE)
 	if f:
 		f.store_string(JSON.stringify(d))
 
@@ -50,6 +54,7 @@ static func to_dict(g: Node) -> Dictionary:
 		"war": g.war,
 		"truce": g.truce,
 		"ftue": g.ftue,
+		"ftue_next": g._ftue_next,  # a tutorial step waiting out a gap (the first peace's ceremony, the raid)
 		"colonizing": g.colonizing,
 		"colonized": g.colonized,
 		"inbox": g.inbox,
@@ -111,9 +116,9 @@ static func to_dict(g: Node) -> Dictionary:
 
 ## Returns {} when there is no usable save.
 static func read() -> Dictionary:
-	if not FileAccess.file_exists(PATH):
+	if not FileAccess.file_exists(path):
 		return {}
-	var txt := FileAccess.get_file_as_string(PATH)
+	var txt := FileAccess.get_file_as_string(path)
 	var parsed: Variant = JSON.parse_string(txt)
 	if typeof(parsed) != TYPE_DICTIONARY or int(parsed.get("version", 0)) != VERSION:
 		return {}
@@ -211,6 +216,12 @@ static func apply(g: Node, d: Dictionary) -> bool:
 	for k in ss:
 		sts[k] = int(ss[k])
 	g.stats = sts
+	# the tutorial's end (stats.ftue_done: the orders, the calendar and the first free crate wait for it): a save from
+	# before the flag that is past the tutorial (ftue 0 and no step waiting) gets it; a new save in a gap of the tour
+	# (ftue 0, ftue_next > 0) resumes there instead (main._ready)
+	g._ftue_next = int(d.get("ftue_next", 0))
+	if g.ftue == 0 and g._ftue_next <= 0 and not sts.has("ftue_done"):
+		sts["ftue_done"] = maxi(1, int(d.get("saved_at", 1)))
 	g.stars_claimed = d.get("stars_claimed", {})
 	g.chapter_done = bool(d.get("chapter_done", false))
 	g.chapter = int(d.get("chapter", 1))
@@ -346,9 +357,9 @@ static func apply(g: Node, d: Dictionary) -> bool:
 
 ## Settings saved with write_settings(); {} when there are none.
 static func read_settings() -> Dictionary:
-	if not FileAccess.file_exists(SETTINGS_PATH):
+	if not FileAccess.file_exists(settings_path):
 		return {}
-	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(SETTINGS_PATH))
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(settings_path))
 	return parsed if typeof(parsed) == TYPE_DICTIONARY else {}
 
 
@@ -356,7 +367,7 @@ static func read_settings() -> Dictionary:
 static func write_settings(d: Dictionary) -> void:
 	var s := read_settings()
 	s.merge(d, true)
-	var f := FileAccess.open(SETTINGS_PATH, FileAccess.WRITE)
+	var f := FileAccess.open(settings_path, FileAccess.WRITE)
 	if f == null:
 		push_warning("settings save failed: %s" % FileAccess.get_open_error())
 		return
@@ -365,5 +376,5 @@ static func write_settings(d: Dictionary) -> void:
 
 ## Removes the game progress (settings such as the language stay).
 static func wipe() -> void:
-	if FileAccess.file_exists(PATH):
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(PATH))
+	if FileAccess.file_exists(path):
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))

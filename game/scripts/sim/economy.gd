@@ -177,6 +177,9 @@ var _rate_t: int = -1  # time the temporary modifiers are evaluated at (inside _
 var _events: Array = []
 ## Cache of the player's land, refreshed whenever a world is passed in.
 var _synced: bool = false
+## The tutorial's Residence lesson (canon §14.3, 3:30: «Резиденция → УР2»): the land gate of the next DL is waived while
+## the tour runs (main sets it), so a first war that took less land never skips the lesson. Not saved.
+var waive_hexes: bool = false
 var _own_kinds: Dictionary = {}      # official hex id -> kind
 var _own_ctrl: Dictionary = {}       # official hex id -> controlled by the player
 var _gold_net_milli: int = 0
@@ -378,7 +381,7 @@ func can_upgrade(b: Dictionary, now: int) -> String:
 			return "err.max_level"
 		if lvl >= max_level(b):
 			return "err.chapter_locked|%d" % (chapter + 1)
-		if _synced and _own_kinds.size() < RESIDENCE_HEXES[lvl + 1]:
+		if _synced and not waive_hexes and _own_kinds.size() < RESIDENCE_HEXES[lvl + 1]:
 			return "err.need_hexes|%d" % RESIDENCE_HEXES[lvl + 1]
 	else:
 		var cls: String = BUILDINGS[t]["class"]

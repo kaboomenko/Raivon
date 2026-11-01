@@ -161,6 +161,7 @@ peace.back,К войне,Back to war
 peace.offer,"Подпишу, если не больше %s",I'll sign for %s at most
 peace.demands,Требования,Demands
 peace.hold_hint,"Удерживайте, чтобы подписать",Hold to sign
+peace.pick_hint,Выберите: пощадить или разграбить,Choose: spare or plunder
 peace.over,Требования дороже ваших очков мира,The demands cost more than your peace points
 peace.budget_rest,%s / %s · остаток: +%s к мнению,%s / %s · left over: +%s opinion
 ceremony.double,×2,×2
@@ -171,6 +172,12 @@ ceremony.chapter_cap,Глава %s,Chapter %s
 ceremony.rep_hours,24ч,24h
 ceremony.opinion,Мнение,Opinion
 ceremony.cosmetic,Косметика,Cosmetic
+ceremony.cap.hexes,Гексы,Hexes
+ceremony.cap.city,Город,City
+ceremony.cap.cities,Города,Cities
+ceremony.cap.chest,Ящик,Chest
+ceremony.cap.blueprints,Чертежи,Blueprints
+ceremony.cap.more,Ещё,More
 ui.continue,Продолжить,Continue
 ui.close,Закрыть,Close
 ui.claim,Забрать,Claim
@@ -335,7 +342,7 @@ tile.deposit,"Залежь: %d %s, сбор за %s","Deposit: %d %s, gathered i
 tile.deposit_name,Залежь,Deposit
 toast.colonizing,Уже идёт колонизация,A colonization is already under way
 toast.no_gold,Не хватает золота,Not enough gold
-toast.settlers,Поселенцы в пути: «%s» станет вашим через %s,Settlers on the way: “%s” will be yours in %s
+toast.settlers,Поселенцы в пути: «%s» отойдёт вам через %s,Settlers on the way: “%s” will be yours in %s
 toast.no_raivite,Не хватает Райвитов,Not enough Raivites
 floater.plus_hex,+1 гекс,+1 hex
 toast.colonized,«%s» — ваша земля,“%s” is yours
@@ -483,13 +490,16 @@ ftue.2,Начните наступление!,Launch an offensive!
 ftue.3,Цель — «%s». Тяните от армии на гекс рядом с ней.,The goal is “%s”. Drag from your army onto a hex next to it.
 ftue.3_any,Тяните от армии на гекс рядом с целью — она пойдёт в атаку.,Drag from your army onto a hex next to the goal to attack.
 ftue.4,«Атака» бросает в бой все армии рядом. Возьмите «%s» — три звезды!,“Attack” sends every army nearby into battle. Take “%s”: three stars!
+ftue.4b,Ещё один гекс — и граница наша!,One more hex and the border is ours!
 ftue.4_any,«Атака» бросает в бой все армии рядом. Возьмите цель — три звезды!,“Attack” sends every army nearby into battle. Take the goal: three stars!
 ftue.5,Земля пока лишь занята. Подпишите мир — и граница сдвинется.,Captured land is only occupied. Sign a peace to move the border.
 ftue.6,"Удерживайте «Подписать мир», чтобы заключить договор.",Hold “Sign peace” to sign the treaty.
 ftue.7,Откройте «Здания» и улучшите Резиденцию — халупы станут избами.,Open “Buildings” and upgrade the Residence: huts become cottages.
 ftue.7b,Улучшите Резиденцию — халупы станут избами.,Upgrade the Residence: huts become cottages.
+ftue.7c,Первое ускорение бесплатно — нажмите «Бесплатно»!,The first speed-up is free: tap “Free”!
 ftue.8,Жёлтый контур — ресурсы даром. Коснитесь жилы и пошлите обоз.,"A yellow outline means free resources. Tap the vein, send a convoy."
 ftue.9,Укрепите границу: выберите гекс у Баронов и нажмите «Форт».,Fortify the border: pick a hex by the Barons and tap “Fort”.
+ftue.9b,Теперь «Форт» — плетень встанет на этот гекс.,Now “Fort”: a palisade goes up on this hex.
 ftue.10,Вольные Хутора заняли «%s»! Удерживайте «Война!».,The Free Hamlets seized “%s”! Hold “War!”.
 ftue.10_any,Вольные Хутора вышли к нашей границе! Удерживайте «Война!».,The Free Hamlets have pushed up to our border! Hold “War!”.
 ftue.11,Начните наступление!,Launch an offensive!

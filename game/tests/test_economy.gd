@@ -256,6 +256,11 @@ func _test_residence() -> void:
 	var e := Economy.new(w, T0)
 	var r := e._find_type("residence")
 	_eq(e.can_upgrade(r, T0), "err.need_hexes|10", "hex gate")
+	# the tutorial's Residence lesson waives the land gate (main sets it while the tour runs, playtest 2 Q1.3)
+	e.waive_hexes = true
+	_eq(e.can_upgrade(r, T0), "", "hex gate waived for the tutorial's lesson")
+	e.waive_hexes = false
+	_eq(e.can_upgrade(r, T0), "err.need_hexes|10", "hex gate back once the lesson is over")
 	_grant_hexes(w, 3)
 	e.tick(w, T0)
 	_eq(e.upgrade_cost(r), {"gold": 300, "food": 0, "metal": 100, "seconds": 60}, "DL2 price (11 §6.2)")

@@ -979,6 +979,8 @@ func _capture(cl: Dictionary, atk: Array) -> void:
 		_effects.append({"kind": "weak", "hex": target, "left": 20 * TICKS_PER_SEC})
 
 	# The strongest attacker moves in; the rest hold their hexes.
+	if atk.is_empty():
+		return  # (a scripted fall with no army of ours beside it: the hex is taken, nobody moves in)
 	var lead: Dictionary = atk[0]
 	for a in atk:
 		if a["str"] > lead["str"] or (a["str"] == lead["str"] and a["id"] < lead["id"]):
@@ -989,6 +991,24 @@ func _capture(cl: Dictionary, atk: Array) -> void:
 	var bt: Variant = cl["breakthrough"]
 	if bt != null and bt["army"] == lead["id"] and lead["hex"] == target and bt["steps"] < (4 if bool(lead.get("cmd_breach", false)) else 3):
 		_continue_breakthrough(lead, bt)
+
+
+## The tutorial's scripted fall of a hex (08 §8.3 F08: «если не взят к 0:55, защитник сценарно отступает и гекс
+## засчитывается в конце боя»): its garrison stands down, an army on it falls back (or routs), any clash on it ends and
+## the hex goes to `side` as a capture of this offensive — the strongest of its idle armies beside it moves in.
+func scripted_capture(side: int, target: int) -> void:
+	if over or not _valid_cell(target) or int(world.cells[target]["controller"]) != enemy_of(side):
+		return
+	for cl in clashes.duplicate():
+		if int(cl["target"]) == target:
+			clashes.erase(cl)
+	garrison[target] = 0
+	var atk: Array = []
+	for a in armies:
+		if a["side"] == side and not a["routed"] and a["str"] > 0 and a["move"] == null and attacking(a) == null \
+				and world.neighbors[target].has(a["hex"]):
+			atk.append(a)
+	_capture({"target": target, "side": side, "corridor": false, "breakthrough": null}, atk)
 
 
 func _continue_breakthrough(army: Dictionary, bt: Dictionary) -> void:

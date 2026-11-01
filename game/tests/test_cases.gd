@@ -512,7 +512,24 @@ func _test_rewards() -> void:
 func _test_free_crates() -> void:
 	var c := Cases.new(SEED)
 	var h := 3600
-	_eq(c.claim_free_crates(T0), 0, "timer starts at the first call")
+	# the timer waits for the tutorial's end (main: start_free_crates): nothing accrues before it, and the wait shown is
+	# the first crate's hour (canon 00 §14.3: «первый Военный ящик через 1 ч (дальше каждые 6 ч)»)
+	_eq(c.claim_free_crates(T0), 0, "no timer before the tutorial ends")
+	_eq(c.claim_free_crates(T0 + 30 * h), 0, "nothing accrues before the start, however long")
+	_eq(c.free_crate_left(T0 + 30 * h), h, "the first crate's wait shown before the start: 1 h")
+	var t1 := T0 + 30 * h
+	c.start_free_crates(t1)
+	_eq(c.free_crate_left(t1), h, "first crate 1 h after the tutorial")
+	c.start_free_crates(t1 + 600)
+	_eq(c.free_crate_left(t1 + 600), h - 600, "a second start does not move the timer")
+	_eq(c.claim_free_crates(t1 + h - 1), 0, "first: not yet at 59:59")
+	_eq(c.claim_free_crates(t1 + h), 1, "first crate after 1 h")
+	_eq(c.free_crate_left(t1 + h), 6 * h, "next 6 h after the first")
+	_eq(c.claim_free_crates(t1 + 7 * h - 1), 1, "next: not yet at 6 h − 1 s")
+	_eq(c.claim_free_crates(t1 + 7 * h), 2, "second 6 h after the first")
+	c = Cases.new(SEED)
+	c.start_free_crates(T0 - h + 6 * h)  # the first crate due at T0 + 6 h: the old cycle from here on
+	_eq(c.claim_free_crates(T0), 0, "timer running")
 	_eq(c.free_crate_left(T0), 6 * h, "6 h to the first crate")
 	_eq(c.claim_free_crates(T0 + 6 * h - 1), 0, "not yet")
 	_eq(c.free_crate_left(T0 + 6 * h - 1), 1, "1 s left")
@@ -530,8 +547,17 @@ func _test_free_crates() -> void:
 	_eq(c.claim_free_crates(T0 + 112 * h), 2, "second after another 6 h")
 	# Fresh account, long absence: capped at 2.
 	var d := Cases.new(SEED)
-	d.claim_free_crates(T0)
+	d.start_free_crates(T0)
 	_eq(d.claim_free_crates(T0 + 1000 * h), 2, "cap after a long absence")
+	# a save from before the first-crate hour: its running timer counts as started
+	var old := Cases.new(SEED)
+	old.next_free_crate = T0 + 2 * h
+	var od := old.to_dict()
+	od.erase("free_started")
+	var ol := Cases.from_dict(od)
+	_check(ol.free_started and ol.free_crate_left(T0) == 2 * h, "an old save's crate timer keeps running")
+	var fresh := Cases.from_dict(Cases.new(SEED).to_dict())
+	_check(not fresh.free_started, "a new account's timer waits for the tutorial (round trip)")
 
 
 func _test_history() -> void:
@@ -635,7 +661,7 @@ func _test_roundtrip() -> void:
 		a.open(["case_war_crate", "case_royal", "case_trophy_gold"][i % 3] as String, CTX, T0 + i)
 	a.open("case_collection", CTX, T0)
 	a.open("case_collection", CTX, T0)
-	a.claim_free_crates(T0)
+	a.start_free_crates(T0)
 	a.claim_free_crates(T0 + 7 * 3600)
 	var d := a.to_dict()
 	var b := Cases.from_dict(d)

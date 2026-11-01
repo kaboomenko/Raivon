@@ -196,8 +196,13 @@ static func available_demands(w: World, war: Dictionary) -> Array[Dictionary]:
 	return out
 
 
-## «Самое ценное за доступные очки»: pockets first, then the goal, then hexes by value, then gold.
-static func recommend_package(w: World, war: Dictionary, demands: Array, budget: float) -> Array[Dictionary]:
+## «Самое ценное за доступные очки»: pockets first, then the goal, then hexes by value, then gold. `opts`:
+##   gold_room: the gold the warehouse still takes (its free room less what the plunder and a triumph bring; canon §4:
+##     the rest would burn) — an indemnity package that would not fit in it is left out, its points become the loser's
+##     opinion (canon §10.1); absent: no limit;
+##   pack_gold: one package's gold (with gold_room);
+##   land_only: hexes and pockets only (the tutorial's second treaty, 08 §8.3 F30 «Земля» by default).
+static func recommend_package(w: World, war: Dictionary, demands: Array, budget: float, opts: Dictionary = {}) -> Array[Dictionary]:
 	var value := func(d: Dictionary) -> int:
 		var v := 0
 		for id in d["hexes"]:
@@ -222,10 +227,20 @@ static func recommend_package(w: World, war: Dictionary, demands: Array, budget:
 		return -1 if ia < ib else (1 if ia > ib else 0))
 	var chosen: Array[Dictionary] = []
 	var left := budget
+	var land_only := bool(opts.get("land_only", false))
+	var room := int(opts.get("gold_room", -1))
+	var pack := int(opts.get("pack_gold", 0))
+	var packs := 0
 	for d in order:
+		if land_only and not (String(d["kind"]) in ["annex", "pocket"]):
+			continue
+		if String(d["kind"]) == "contribution" and opts.has("gold_room") and (packs + 1) * pack > room:
+			continue  # the warehouse would not take its gold
 		if d["cost"] <= left + 1e-9:
 			chosen.append(d)
 			left = Types.round1(left - d["cost"])
+			if String(d["kind"]) == "contribution":
+				packs += 1
 	return chosen
 
 
