@@ -1,19 +1,21 @@
 #!/usr/bin/env bash
 # The store screenshot sets (docs/store/listing.md «Графика»): a curated set of game screens in ru and en at the
 # sizes the stores take, rendered by tools/godot_shot.sh (Mobile renderer, the window at the store size).
-# Usage: tools/store_shots.sh [OUTDIR] [--dry-run] [--langs=ru,en] [--sizes=play,iphone,ipad] [--scenes=map,battle,...]
+# Usage: tools/store_shots.sh [OUTDIR] [--dry-run] [--langs=ru,en] [--sizes=play,iphone] [--scenes=map,battle,...]
 #   OUTDIR      default docs/store/screens; shots land in OUTDIR/<size>/<lang>/NN_<scene>.png
 #   --dry-run   print every godot_shot.sh call (and check the names) without running Godot
 # Sizes (portrait):
 #   play    1080x1920  Google Play phone (Play takes 16:9 / 9:16 and rejects a side over twice the other, so not
 #                      the 1080x2400 of a modern phone)
 #   iphone  1290x2796  App Store 6.9"/6.7" iPhone (the one size App Store Connect requires; it scales it down)
-#   ipad    2064x2752  App Store 13" iPad (export_presets targeted_device_family includes iPad)
+#   ipad    2064x2752  App Store 13" iPad — not in the default set: the HUD is laid out for the 9:16 canvas and at 3:4
+#                      its right column (minimap, Front/Capital/Fort/Tower) and the bottom cards stop mid-screen, so the
+#                      iOS preset ships iPhone-only (targeted_device_family 0) and App Store Connect asks for no iPad shots
 # Scenes: map (a chapter III realm), battle (a DL5 battle with the war cards), peace (the peace treaty), ceremony
 # (the border flowing over the new land), city (a DL8 neon city), album (the commanders album).
 # Every PNG is flattened to RGB (App Store Connect refuses an alpha channel) and checked for its size; a shot that
 # fails says so and the run goes on. One godot run per shot, each under the shared /tmp/raivon_godot.lock (godot_shot.sh):
-# the full set (6 scenes x 2 languages x 3 sizes) takes about an hour on the 4-core box. Re-run it whenever the game's
+# the full set (6 scenes x 2 languages x 2 sizes) takes 30-60 minutes on the 4-core box. Re-run it whenever the game's
 # screens change (after a code lane lands), then read every shot at real size.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -21,7 +23,7 @@ ROOT="$(cd "$HERE/.." && pwd)"
 OUTARG="$ROOT/docs/store/screens"
 DRY=0
 LANGS=(ru en)
-SIZES=(play iphone ipad)
+SIZES=(play iphone)
 SCENES=(map battle peace ceremony city album)
 for a in "$@"; do
   case "$a" in
@@ -46,7 +48,8 @@ size_res() {
 # the scene's godot_shot.sh arguments (the demos of game/scripts/main.gd _demo; see tools/soft_shots.sh for timing)
 scene_args() {
   case "$1" in
-    map) echo "--demo=ch3:view --shot-delay=3" ;;
+    map) echo "--demo=ch3:view --shot-delay=6" ;;  # 6: the «Летопись» chip of the demo has faded out (at 3 s a
+                                                     # slow 1290x2796 render still caught it half-transparent)
     battle) echo "--dl=5 --ai-dl=5 --demo=battle:40 --shot-delay=3" ;;
     peace) echo "--demo=peace --shot-delay=3" ;;
     ceremony) echo "--fixed-fps=6 --demo=ceremony:0.15" ;;

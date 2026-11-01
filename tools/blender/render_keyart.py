@@ -2,9 +2,10 @@
 hex tiles (huts in front, neon citadel at the back), troops of matching eras beside them.
 
 Run: python3 tools/blender/render_keyart.py OUT.png [width height samples] [--frame=portrait|feature]
-  portrait (default, 941×1672 at 64 samples — the B4.6 settings): the splash and docs/store/keyart_portrait.png;
-  feature: the same scene seen across the path for the Play feature graphic (render 2048×1000, compose_keyart.py
-  --layout=feature scales it to 1024×500 with the title on the left).
+  portrait (default, 941×1672 at 64 samples — the B4.6 settings): docs/store/keyart_portrait.png and the splash
+  (compose_keyart.py --edge-fade=080F29 for game/assets/splash/splash.png);
+  feature: the same scene seen across the path for the Play feature graphic (render 2048×1000 at 48 samples;
+  compose_keyart.py --layout=feature scales it to 1024×500 with the title centred over the sky and sea).
 Uses the exported models in game/assets/models (run evolution_assets.py / troops_assets.py first).
 Then tools/ui/compose_keyart.py adds the title and refuses a render with black holes in the land.
 
