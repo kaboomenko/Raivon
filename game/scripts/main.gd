@@ -8497,13 +8497,15 @@ func _ftue_tick(delta: float) -> void:
 				target = ui.status_rect()  # «Мир»
 				near = [ui.action_rect()]
 		15:
-			# the choice first (08 §8.3 F31: «Пощадить» / «Разграбить 30%», nothing preselected), then the seal; the whole
-			# treaty stays in reach
+			# the choice first (08 §8.3 F31: «Пощадить» / «Разграбить 30%», nothing preselected), then the seal with step
+			# 6's line; the whole treaty stays in reach. One line each: at 941×1672 the advisor docks over the treaty's
+			# first row and a second line would hide its budget bar (playtest 2 review)
 			if plunder_level < 0:
 				target = ui.plunder_rect(0).merge(ui.plunder_rect(1))
 				near = [ui.plunder_rect(2)]
 			else:
 				target = ui.seal_rect()
+				line = "ftue.6"
 			var fr: Rect2 = ui.modal_rect()
 			reveal = fr.grow_individual(0, 42.0, 0, 0) if fr.size.x > 0.0 else Rect2()
 	var text := tr(line)

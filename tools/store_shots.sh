@@ -25,6 +25,7 @@ DRY=0
 LANGS=(ru en)
 SIZES=(play iphone)
 SCENES=(map battle peace ceremony city album)
+ALL_SCENES=("${SCENES[@]}")  # NN in the file name is the scene's place in this list, also for a --scenes= re-shoot
 for a in "$@"; do
   case "$a" in
     --dry-run) DRY=1 ;;
@@ -48,12 +49,14 @@ size_res() {
 # the scene's godot_shot.sh arguments (the demos of game/scripts/main.gd _demo; see tools/soft_shots.sh for timing)
 scene_args() {
   case "$1" in
-    map) echo "--demo=ch3:view --shot-delay=6" ;;  # 6: the «Летопись» chip of the demo has faded out (at 3 s a
-                                                     # slow 1290x2796 render still caught it half-transparent)
+    # map: the demo's jump to DL5 reaches Chronicle goals, announced in a burst after its world expansions; at 3 and
+    # 6 s shots caught a toast mid-fade, at 14 s all four stood on the first one whole («Летопись: Княжество»).
+    # The burst follows the wall clock, so after a run look at the band under the top bar and re-shoot a faded one.
+    map) echo "--demo=ch3:view --shot-delay=14" ;;
     battle) echo "--dl=5 --ai-dl=5 --demo=battle:40 --shot-delay=3" ;;
     peace) echo "--demo=peace --shot-delay=3" ;;
     ceremony) echo "--fixed-fps=6 --demo=ceremony:0.15" ;;
-    city) echo "--zoom=0.45 --dl=8 --ai-dl=8 --shot-delay=3" ;;
+    city) echo "--zoom=0.45 --dl=8 --ai-dl=8 --shot-delay=3" ;;  # «Летопись: Мегаполис» stands whole at 3 s
     album) echo "--demo=commanders --shot-delay=3" ;;
     *) return 1 ;;
   esac
@@ -68,8 +71,8 @@ for size in "${SIZES[@]}"; do
   res="$(size_res "$size")"
   for lang in "${LANGS[@]}"; do
     dir="$OUT/${size}_${res}/$lang"
-    i=0
     for scene in "${SCENES[@]}"; do
+      for i in "${!ALL_SCENES[@]}"; do [ "${ALL_SCENES[$i]}" = "$scene" ] && break; done
       i=$((i + 1))
       png="$dir/$(printf '%02d' "$i")_$scene.png"
       read -r -a ARGS <<< "$(scene_args "$scene")"

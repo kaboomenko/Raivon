@@ -493,7 +493,7 @@ ftue.4,«Атака» бросает в бой все армии рядом. В�
 ftue.4b,Ещё один гекс — и граница наша!,One more hex and the border is ours!
 ftue.4_any,«Атака» бросает в бой все армии рядом. Возьмите цель — три звезды!,“Attack” sends every army nearby into battle. Take the goal: three stars!
 ftue.5,Земля пока лишь занята. Подпишите мир — и граница сдвинется.,Captured land is only occupied. Sign a peace to move the border.
-ftue.6,"Удерживайте «Подписать мир», чтобы заключить договор.",Hold “Sign peace” to sign the treaty.
+ftue.6,Удерживайте «Подписать мир»!,Hold “Sign peace” to sign the treaty.
 ftue.7,Откройте «Здания» и улучшите Резиденцию — халупы станут избами.,Open “Buildings” and upgrade the Residence: huts become cottages.
 ftue.7b,Улучшите Резиденцию — халупы станут избами.,Upgrade the Residence: huts become cottages.
 ftue.7c,Первое ускорение бесплатно — нажмите «Бесплатно»!,The first speed-up is free: tap “Free”!
@@ -509,7 +509,7 @@ ftue.13,Отлично! Окружённые гексы сдаются быст�
 ftue.13_any,Отлично! Окружённые гексы сдаются быстрее. Захватите цель войны!,Great! Encircled hexes fall faster. Capture the war goal!
 ftue.13_neck,Цель наша! Теперь перешеек — и котёл захлопнется.,The goal is ours! Now take the neck to close the pocket.
 ftue.14,Подпишите мир с Хуторами.,Sign a peace with the Hamlets.
-ftue.15,Пощадить Хутора (+20 к мнению) или разграбить? Выберите и подпишите.,"Spare the Hamlets (+20 opinion) or plunder them? Choose, then sign."
+ftue.15,Пощадить (+20 к мнению) или грабить?,Spare them (+20 opinion) or plunder?
 ftue.raid,Мародёры идут с диких земель! Плетень их встретит.,Marauders are coming from the wildlands! The palisade will meet them.
 ftue.raid_done,Видите? Плетень выстоял — набег отбит.,See? The palisade held: the raid is repelled.
 tut.title,Обучение пройдено!,Tutorial complete!
