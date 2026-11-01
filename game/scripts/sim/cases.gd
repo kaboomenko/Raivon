@@ -15,7 +15,10 @@ extends RefCounted
 ## ctx for open(): {"income_per_hour": {"gold": int, "food": int, "metal": int[, "oil": int]}, "dl": int,
 ##   optional "commanders_owned": Array[String] (unlocked commanders; default — derived from `shards`
 ##   reaching the unlock cost 10/20/40/80, canon §8.4), optional "commanders_maxed": Array[String]
-##   (commanders with shards for level 20 — removed from random pools, canon §8.4)}.
+##   (commanders with shards for level 20 — removed from random pools, canon §8.4), optional "room":
+##   {gold, food, metal[, oil]: int} (the warehouse's free room: a resource item that would not fit drops out
+##   of the roll, the others keeping their weights — the tutorial's trophy chests never burn, playtest 2;
+##   nothing of the rolled rarity fits: a speed-up of the rare tier instead)}.
 ##
 ## Reward dicts (open()["rewards"]):
 ## Display names ("name", "category_name") are in the language current at the call (is_english()); the
@@ -653,6 +656,13 @@ func open(case_id: String, ctx: Dictionary, now: int) -> Dictionary:
 	var rarity := _pick_rarity(probs)
 	var tier: Dictionary = _tiers(case_id).get(rarity, {})
 	var elig := _eligible(case_id, tier.get("items", []), ctx)
+	if elig.is_empty() and ctx.has("room") and rarity == "common":
+		# no resource of this rarity fits the warehouse (ctx.room): a speed-up instead, which never fills it
+		var rare: Dictionary = _tiers(case_id).get("rare", {})
+		var alt := _eligible(case_id, rare.get("items", []), ctx)
+		if not alt.is_empty():
+			rarity = "rare"
+			elig = alt
 	var rewards: Array = []
 	var item_id := ""
 	var item_name := ""
@@ -764,12 +774,36 @@ func _pick_weighted(entries: Array) -> Dictionary:
 ## keep their relative weights — «шансы в «i» пересчитываются», canon §8.4).
 func _eligible(case_id: String, items: Array, ctx: Dictionary) -> Array:
 	var out: Array = []
+	var room: Dictionary = ctx.get("room", {})
 	for iv in items:
 		var item: Dictionary = iv
 		if item.has("shards") and _shard_entries(case_id, item, ctx).is_empty():
 			continue
+		if not room.is_empty() and not _fits(_item_res(case_id, item, ctx), room):
+			continue  # (ctx.room: it would burn in a full warehouse)
 		out.append([item, float(item.get("w", 1.0))])
 	return out
+
+
+## The resources an item grants ({gold, food, metal[, oil]}; a bundle's parts summed; {} for any other item).
+func _item_res(case_id: String, item: Dictionary, ctx: Dictionary) -> Dictionary:
+	if item.has("bundle"):
+		var sum := {}
+		for pv in item["bundle"]:
+			var part := _item_res(case_id, pv as Dictionary, ctx)
+			for k in part:
+				sum[k] = int(sum.get(k, 0)) + int(part[k])
+		return sum
+	if item.has("resources_h"):
+		return _res_amounts(case_id, item, ctx)
+	return {}
+
+
+static func _fits(res: Dictionary, room: Dictionary) -> bool:
+	for k in res:
+		if int(res[k]) > 0 and int(res[k]) > int(room.get(k, 0)):
+			return false
+	return true
 
 
 static func _pool(pool_id: String) -> Array:
@@ -910,6 +944,13 @@ func _grant(case_id: String, item: Dictionary, ctx: Dictionary, rewards: Array) 
 func _grant_res(case_id: String, item: Dictionary, ctx: Dictionary, rewards: Array) -> void:
 	var mult := int(_case(case_id).get("res_mult", 1))
 	var hours := int(item["resources_h"]) * mult
+	rewards.append({"kind": "res", "res": _res_amounts(case_id, item, ctx), "hours": hours, "item": String(item.get("id", "")),
+		"name": _item_name(item, mult, is_english())})
+
+
+## A resource item's amounts: its hours (× the case's res_mult) of the realm's income per hour (ctx).
+func _res_amounts(case_id: String, item: Dictionary, ctx: Dictionary) -> Dictionary:
+	var hours := int(item["resources_h"]) * int(_case(case_id).get("res_mult", 1))
 	var income: Dictionary = ctx.get("income_per_hour", {})
 	var dl := int(ctx.get("dl", 1))
 	var key := String(item.get("res", "all")).trim_prefix("res_")
@@ -925,8 +966,7 @@ func _grant_res(case_id: String, item: Dictionary, ctx: Dictionary, rewards: Arr
 			res["oil"] = int(income["oil"]) * hours
 	else:
 		res[key] = int(income.get(key, 0)) * hours
-	rewards.append({"kind": "res", "res": res, "hours": hours, "item": String(item.get("id", "")),
-		"name": _item_name(item, mult, is_english())})
+	return res
 
 
 func _grant_cosmetic(id: String, rewards: Array) -> void:

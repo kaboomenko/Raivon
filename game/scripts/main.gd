@@ -4142,6 +4142,15 @@ func _open_peace() -> void:
 ## triumph — the rest would burn (canon §4); their points go to the loser's opinion instead (canon §10.1). Priced on the
 ## same gross snapshot as the parchment's storage warning (_peace_overflow). The tutorial's second treaty is land only
 ## (08 §8.3 F30: «Земля» — the mine, the pocket and a hex — chosen by default).
+## The warehouse's free room per resource now (its cap less what it holds).
+func _store_room() -> Dictionary:
+	var cap: Dictionary = econ.storage_cap()
+	var out := {}
+	for r in cap:
+		out[r] = maxi(0, int(cap[r]) - int(econ.res.get(r, 0)))
+	return out
+
+
 func _recommend(score: float) -> Array:
 	var gross: Dictionary = econ.gross_per_hour(sim)
 	var room := maxi(0, int(econ.storage_cap().get("gold", 0)) - int(econ.res.get("gold", 0)))
@@ -4239,6 +4248,7 @@ func _allies_annex(enemy: int) -> void:
 
 func _sign_peace() -> void:
 	plunder_level = maxi(0, plunder_level)  # (a choice left open — the seal waits for it — spares)
+	var tutorial := ftue > 0  # (a tutorial treaty: its trophy chest rolls only what the warehouse holds, below)
 	# the spoils (plunder, triumph, indemnity) are priced on the realm as the treaty found it, before its land is
 	# annexed: the same basis the parchment's storage warning used (_peace_overflow), so the two agree
 	var gross0: Dictionary = econ.gross_per_hour(sim)
@@ -4403,7 +4413,12 @@ func _sign_peace() -> void:
 	# trophy chest for a victorious peace: bronze < 30, silver < 60, gold ≥ 60 war score (canon §15.4)
 	var score: float = _last_score  # war score at signing (the war dict is cleared below)
 	var chest := "case_trophy_gold" if score >= 60.0 else ("case_trophy_silver" if score >= 30.0 else "case_trophy_bronze")
-	var opened: Dictionary = cases.open(chest, _case_ctx(), now_s())
+	var cctx := _case_ctx()
+	if tutorial:
+		# the tutorial's trophies never burn (playtest 2 review: a gold roll ×2–3 filled the store at ceremony 2 —
+		# «Склад полон», coins that could not be collected): a resource the warehouse cannot hold drops out of the roll
+		cctx["room"] = _store_room()
+	var opened: Dictionary = cases.open(chest, cctx, now_s())
 	var chest_burned := _apply_case_rewards([opened])
 	lines.append("%s: %s" % [Cases.case_name(chest), ShopUI.describe(opened["rewards"][0]) if opened["rewards"].size() > 0 else "—"])
 	# the tiles, the big ones first — land, the cities, the trophy chest, the gold, the reparations, Raivites — and
