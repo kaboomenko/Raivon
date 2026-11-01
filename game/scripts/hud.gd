@@ -221,9 +221,15 @@ func _layout_res(with_oil: bool) -> void:
 		p.lay()
 
 
+## Over its cap (canon §4: crates, cases, the pass and packs are credited past the capacity) a plate reads «7 760» over
+## «/5 000», both in this colour (05 §6.3: the overfull store is shown red) — the surplus is unprotected and the
+## income waits on the hexes; the tooltip says so.
+const OVER_CAP := Kit.NEG
+
+
 ## The plates: stored amounts (exact below 10 000) with the warehouse fill (brown and a yellow number when full),
 ## the net income per hour (green, red, or a neutral «0/ч»), the tooltip text. Free builders show as the green
-## count on the Buildings tab.
+## count on the Buildings tab. A store over its cap shows «/cap» in OVER_CAP instead of the rate (_over).
 func set_resources(res: Dictionary, per_hour: Dictionary, caps: Dictionary, free_builders: int, builders: int) -> void:
 	_free_builders = free_builders
 	_builders = builders
@@ -245,18 +251,26 @@ func set_resources(res: Dictionary, per_hour: Dictionary, caps: Dictionary, free
 			p.tip_text = tr("hud.tip.raivite")
 			continue
 		var ph: int = int(per_hour.get(r, 0))
-		# «+1 855/ч» when it fits the plate at 22, else «+1,8K/ч», only then without the unit; 0 is neutral
-		var shown := _rate_text(ph, 0)
-		for form in [1, 2, 3]:
-			if p.rate_fits(shown):
-				break
-			shown = _rate_text(ph, form)
-		p.set_rate(shown, Kit.POS if ph > 0 else (Kit.NEG if ph < 0 else Kit.SOFT))
+		var over := cap > 0 and amount > cap
+		if over:
+			p.set_rate("/" + Kit.fmt_num(cap), OVER_CAP)
+		else:
+			# «+1 855/ч» when it fits the plate at 22, else «+1,8K/ч», only then without the unit; 0 is neutral
+			var shown := _rate_text(ph, 0)
+			for form in [1, 2, 3]:
+				if p.rate_fits(shown):
+					break
+				shown = _rate_text(ph, form)
+			p.set_rate(shown, Kit.POS if ph > 0 else (Kit.NEG if ph < 0 else Kit.SOFT))
 		var lines := PackedStringArray([tr("hud.tip.rate") % _rate_text(ph, 0)])
 		if cap > 0:
 			lines.append(tr("hud.tip.cap") % [Kit.fmt_exact(amount), Kit.fmt_exact(cap)])
-		lines.append(tr("hud.tip.full") if full else tr("hud.tip.src"))
+		if over:
+			lines.append(tr("hud.tip.over") % Kit.fmt_exact(amount - cap))
+		else:
+			lines.append(tr("hud.tip.full") if full else tr("hud.tip.src"))
 		p.tip_text = "\n".join(lines)
+		_over[r] = over
 	# one size for the numbers of the bar (raivite included): the smallest any plate needs; the rates one size
 	# below the values, also shared
 	var vcap := 64
@@ -271,6 +285,26 @@ func set_resources(res: Dictionary, per_hour: Dictionary, caps: Dictionary, free
 		var p: Kit.KitPill = res_pills[r]
 		if p.visible:
 			p.set_caps(vcap, maxi(22, mini(rcap, vcap - 2)) if p.has_rate else 0)
+			_paint_over(p, bool(_over.get(r, false)))
+
+
+var _over := {}  # res -> its store is over the cap (set_resources)
+
+
+## The value of a plate over its cap in OVER_CAP (the plate lays its value out WARN when full: this repaints it after
+## each layout — set_resources, and a resize through the plate's own `resized`).
+func _paint_over(p: Kit.KitPill, over: bool) -> void:
+	if over:
+		p.value.add_theme_color_override("font_color", OVER_CAP)
+	if not p.has_meta("over_hook"):
+		p.set_meta("over_hook", true)
+		var key := ""
+		for k in res_pills:
+			if res_pills[k] == p:
+				key = String(k)
+		p.resized.connect(func():
+			if bool(_over.get(key, false)):
+				p.value.add_theme_color_override("font_color", OVER_CAP))
 
 
 ## The income line, from the fullest form down: 0 «+1 855/ч», 1 «+1,8K/ч», 2 «+1 855», 3 «+1,8K» (Kit.fmt_num:

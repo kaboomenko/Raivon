@@ -158,6 +158,10 @@ var _remote_pending := {}
 var shop: Control
 var speed_minutes := 0  # speed-up items from cases, used on building timers
 var purchases := {}  # test-build purchases (sku -> count), first Raivite pack ×2
+var no_ads := false  # «Без рекламы» bought (09 §9.8.4): the interstitials' gate once they come; rewarded videos stay
+## «Паёк державы» running: {"day": the local game day it was bought (its day 1), "taken": the last day whose 60 were
+## taken} (_ration_day). Saved.
+var ration := {}
 var colonizing := {}  # hex -> unix time the colonization finishes
 var colonized := 0  # colonizations so far (price and timer grow, 05 §colonization)
 var time_offset := 0  # debug fast-forward for demos/tests (--skip=SECONDS)
@@ -314,6 +318,9 @@ func _ready() -> void:
 	# run without it (tests, shots) counts as past it
 	if save_enabled and not loaded:
 		ftue = 1
+		# a fresh start (a first launch, «Новая игра»): what was bought stays — the builder, «Без рекламы», the
+		# subscription, the season's pass, the bought frames (user://entitlements.json, _apply_entitlements)
+		_apply_entitlements(Save.read_entitlements())
 	elif not save_enabled and ftue == 0:
 		_finish_tutorial()
 	_tz_sync(now_s(), true)  # (the day the calendar and the orders count is local: before the first tick)
@@ -395,7 +402,7 @@ func _show_settings() -> void:
 	if _support_email() != "":  # «Поддержка» only with an address to write to (a release blocker until the owner sets it)
 		support = func(): _open_support()
 	ui.show_settings(sfx.enabled, func(): _set_sound(not sfx.enabled), _new_game, _set_language, manage,
-		func(): ui.toast(tr("patent.restored")), {"haptic": sfx.haptics, "on_haptic": func(): _set_haptics(not sfx.haptics),
+		func(): _restore_purchases(), {"haptic": sfx.haptics, "on_haptic": func(): _set_haptics(not sfx.haptics),
 			"privacy": func(): _open_legal("privacy", _show_settings), "terms": func(): _open_legal("terms", _show_settings),
 			"support": support, "licenses": func(): _open_legal("licenses", _show_settings)})
 
@@ -3103,9 +3110,29 @@ func _expand_world() -> void:
 	_minimap_snap = ""
 
 
+## Settings → «Новая игра» (held): a confirm window first — what goes (the realm, its armies, resources and Raivites,
+## commanders, the cases' items, the chapters) and what stays (the settings and every purchase that is a right: the
+## builder, «Без рекламы», the subscription, this season's pass, bought frames — user://entitlements.json, which
+## Save.wipe leaves). «Начать заново» wipes the save and starts over; ✕ goes back to the settings.
 func _new_game() -> void:
+	var kept := _kept_names(Save.read_entitlements() if save_enabled else _entitlements())
+	var lines: Array = [tr("newgame.lost")]
+	lines.append(tr("newgame.kept") % ", ".join(kept) if not kept.is_empty() else tr("newgame.kept_none"))
+	ui.show_choice(tr("newgame.title"), lines, [
+		[tr("ui.cancel"), "info", func(): _show_settings(), {"cancel": true}],
+		[tr("newgame.go"), "war", func(): _restart_game()],
+	], "war", "white_flag")
+
+
+## The game starts over: the save goes, the entitlements and the settings stay (Save.wipe), the scene reloads and the
+## fresh start applies the entitlements (_ready).
+func _restart_game() -> void:
+	ui.close_modal()
+	if not save_enabled:  # (a scripted run never touches the saves)
+		return
 	Save.wipe()
-	get_tree().reload_current_scene()
+	if is_inside_tree() and get_tree().current_scene == self:
+		get_tree().reload_current_scene()
 
 
 # ====================================================================== map mode
@@ -5025,7 +5052,7 @@ func _sign_peace() -> void:
 		# «Склад полон», coins that could not be collected): a resource the warehouse cannot hold drops out of the roll
 		cctx["room"] = _store_room()
 	var opened: Dictionary = cases.open(chest, cctx, now_s())
-	var chest_burned := _apply_case_rewards([opened])
+	_apply_case_rewards([opened])  # (a trophy chest is a case: credited over the cap, canon §4, 05 §6.3)
 	lines.append("%s: %s" % [Cases.case_name(chest), ShopUI.describe(opened["rewards"][0]) if opened["rewards"].size() > 0 else "—"])
 	# the tiles, the big ones first — land, the cities, the trophy chest, the gold, the reparations, Raivites — and
 	# the minor ones last (blueprints, food, metal): past 6 tiles those go into the «+N» tile (ui), not the chest. Each
@@ -5051,18 +5078,6 @@ func _sign_peace() -> void:
 		var rw0: Dictionary = opened["rewards"][0]
 		var chest_tile := {"kind": "tile", "icon": {"case_trophy_gold": "chest_royal", "case_trophy_silver": "chest_silver"}.get(chest, "chest_wood"),
 			"pill": _reward_pill(rw0), "name": Cases.case_name(chest), "order": 2, "cap": tr("ceremony.cap.chest")}
-		if not chest_burned.is_empty() and String(rw0.get("kind", "")) == "res":
-			# the chest's own resources at a full warehouse: its pill says what was credited, its chip what burned
-			var cpill: Array = []
-			for k in rw0["res"]:
-				if int(rw0["res"][k]) > 0 and cpill.size() < 2:
-					cpill.append([String(Hud.RES_ICON.get(String(k), "crate")), "+" + Kit.fmt_num(int(rw0["res"][k]) - int(chest_burned.get(String(k), 0)))])
-			chest_tile["pill"] = cpill
-			var lost_n := 0
-			for k in chest_burned:
-				lost_n += int(chest_burned[k])
-			chest_tile["lost"] = lost_n
-			chest_tile["lost_tip"] = tr("ceremony.lost_tip") % _amounts_text(chest_burned)
 		tiles.append(chest_tile)
 	tiles.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return int(a["order"]) < int(b["order"]))
 	items.append_array(tiles)
@@ -5983,24 +5998,24 @@ func _on_open_case(case_id: String, times: int, pay: String) -> void:
 	_autosave()
 
 
-## Credits what the opened cases hold. Their resources fill the warehouse up to its cap (canon §4 lets cases go past it:
-## a step of its own, with test_flow's «collect all» check) — returns what burned, {res: amount}, {} when all fitted.
+## Credits what the opened cases hold. Their resources go into the warehouse in full, past its cap if need be (canon §4:
+## crates, cases, the pass, packs and top-ups are credited over the capacity; the surplus is not protected and the
+## income waits on the hexes while a store is over its cap — Economy.add_resources(…, true)). Returns what was
+## credited, {res: amount}.
 func _apply_case_rewards(results: Array) -> Dictionary:
-	var burned := {}
+	var got := {}
 	for r in results:
 		for rw in r.get("rewards", []):
 			match String(rw.get("kind", "")):
 				"res":
-					var took: Dictionary = econ.add_resources(rw["res"])
-					for k in rw["res"]:
-						var lost: int = int(rw["res"][k]) - int(took.get(k, 0))
-						if lost > 0:
-							burned[String(k)] = int(burned.get(String(k), 0)) + lost
+					var took: Dictionary = econ.add_resources(rw["res"], true)
+					for k in took:
+						got[String(k)] = int(got.get(String(k), 0)) + int(took[k])
 				"speedup":
 					speed_minutes += int(rw["minutes"])
 				_:
 					pass  # shards, cosmetics and glitter are kept by the cases module itself
-	return burned
+	return got
 
 
 ## Demo helper: the player settles a corridor up to a hex of `s` and wraps around it, so their border bends.
@@ -6054,7 +6069,16 @@ func _demo_salient(s: int) -> void:
 	map_view.mark_dirty()
 
 
-## Store purchases: no billing SDK yet. Debug (test) builds grant the item so flows can be tested.
+## Store purchases: no billing SDK yet. Debug (test) builds grant the item so flows can be tested — this is the delivery
+## code billing will call (09 §9.8.10: «экран «Получено» с разбивкой»), so each pack gives what its card says (09 §9.8.1
+## rows 7–10, §9.8.4): Набор новобранца — 250 Р, 8 h of resources (over the cap, canon §4), Lady Vance (40 shards: her
+## unlock, or her levels if she is already open) and the frame «Первый указ», once; Пакет прораба — a builder for good
+## and 300 Р, once; Без рекламы — the saved `no_ads` flag (the interstitial gate when ads come; rewarded videos stay),
+## 200 Р and the frame «Меценат», once; Паёк державы — 300 Р now and 60 a game day for 30 days from the World card
+## (_ration_*), a new one only after the current ends. One-time packs show «Куплено» in the store and refuse a second
+## purchase; the first purchase of each Raivite pack is doubled (ShopUI draws its ribbon from the same `purchases`).
+## Every purchase goes into user://entitlements.json (_record_purchase): what «Новая игра» keeps and «Восстановить
+## покупки» re-applies.
 func _on_buy_sku(sku: String) -> void:
 	if sku == "patent_screen":
 		_open_patent()
@@ -6062,8 +6086,21 @@ func _on_buy_sku(sku: String) -> void:
 	if not OS.is_debug_build():
 		ui.toast(tr("toast.purchases_soon"))
 		return
+	var now := now_s()
+	if ShopUI.ONE_TIME.has(sku) and purchases.has(sku):
+		ui.toast(tr("toast.pack_owned"))  # (the store shows it «Куплено»: a stale tap)
+		return
+	if sku == "iap_ration" and _ration_day(now) > 0:
+		ui.toast(tr("toast.ration_running") % [_ration_day(now), RATION_DAYS])
+		return
+	if sku in ["iap_pass", "iap_pass_elite", "iap_pass_elite_up"]:
+		bp.refresh(now)
+		if (bp.premium and sku == "iap_pass") or bp.elite:
+			ui.toast(tr("toast.pass_owned"))  # a store would not sell it twice in a season
+			return
 	var first: bool = not purchases.has(sku)
 	purchases[sku] = int(purchases.get(sku, 0)) + 1
+	var rv0 := int(econ.res["raivite"])
 	for row in ShopUI.RAIVITE_SKUS:
 		if row[0] == sku:
 			var n: int = int(row[2]) * (2 if first else 1)
@@ -6071,41 +6108,204 @@ func _on_buy_sku(sku: String) -> void:
 			ui.toast(tr("toast.test_raivite") % n)
 	match sku:
 		"iap_pass", "iap_pass_elite", "iap_pass_elite_up":
-			bp.refresh(now_s())
-			if (bp.premium and sku == "iap_pass") or bp.elite:
-				ui.toast(tr("toast.pass_owned"))  # a store would not sell it twice in a season
-				return
 			bp.buy(sku)
 			if sku != "iap_pass":
 				cases.owned_cosmetics[String(BattlePass.data().get("elite_cosmetic", ""))] = true
 			ui.toast(tr("toast.pass_bought"))
+			_record_purchase(sku, 0)
 			_open_pass()
+			return
 		"iap_sub_patent", "iap_sub_trial":
-			patent.buy(now_s(), sku == "iap_sub_trial")
-			_patent_tick(now_s())
-			ui.toast(tr("toast.patent_on") % patent.days_left(now_s()))
+			patent.buy(now, sku == "iap_sub_trial")
+			_patent_tick(now)
+			ui.toast(tr("toast.patent_on") % patent.days_left(now))
+			_record_purchase(sku, 0)
 			_open_patent()
+			return
 		"iap_builder":
-			if first:
+			if econ.builders < MAX_BUILDERS:
 				econ.builders += 1
-				econ.res["raivite"] = int(econ.res["raivite"]) + 300
-				ui.toast(tr("toast.test_builder"))
+			else:  # (5 for good at most, 08 §8.8.4: the calendar's rule — its price in Raivites instead)
+				econ.res["raivite"] = int(econ.res["raivite"]) + BUILDER_RAIVITE
+			econ.res["raivite"] = int(econ.res["raivite"]) + 300
+			ui.toast(tr("toast.test_builder"))
 		"iap_starter":
 			econ.res["raivite"] = int(econ.res["raivite"]) + 250
 			var g: Dictionary = econ.gross_per_hour(sim)
-			econ.add_resources({"gold": int(g.get("gold", 0)) * 8, "food": int(g.get("food", 0)) * 8, "metal": int(g.get("metal", 0)) * 8})
-			ui.toast(tr("toast.test_starter"))
+			econ.add_resources({"gold": int(g.get("gold", 0)) * 8, "food": int(g.get("food", 0)) * 8, "metal": int(g.get("metal", 0)) * 8}, true)
+			# Lady Vance (epic) as Bram comes (_grant_bram): her unlock's shards — or, open already, as many for her levels
+			var open_before := _cmd_level("cmd_vance") > 0
+			cases.shards["cmd_vance"] = int(cases.shards.get("cmd_vance", 0)) + int(Commanders.UNLOCK["epic"])
+			cases.owned_cosmetics["cos_frame_first_decree"] = true
+			ui.toast(tr("toast.test_starter_shards" if open_before else "toast.test_starter") % int(Commanders.UNLOCK["epic"]))
 		"iap_no_ads":
+			no_ads = true
 			econ.res["raivite"] = int(econ.res["raivite"]) + 200
+			cases.owned_cosmetics["cos_frame_patron"] = true
 			ui.toast(tr("toast.test_no_ads"))
 		"iap_ration":
 			econ.res["raivite"] = int(econ.res["raivite"]) + 300
-			ui.toast(tr("toast.test_ration"))
+			ration = {"day": Calendar.local_day(now), "taken": -1}
+			ui.toast(tr("toast.test_ration") % [RATION_DAILY, RATION_DAYS])
+	_record_purchase(sku, int(econ.res["raivite"]) - rv0)
 	sfx.play("coin")
 	if shop:
-		shop.refresh(int(econ.res["raivite"]), now_s())
+		shop.refresh(int(econ.res["raivite"]), now)
 	_econ_tick()
 	_autosave()
+
+
+const MAX_BUILDERS := 5  # permanent builders at most (08 §8.8.4)
+const BUILDER_RAIVITE := 600  # a builder's price where one more cannot be given (the calendar's day 7, 08 §8.8.4)
+const RATION_DAYS := 30
+const RATION_DAILY := 60
+## Bought frames and inks: a «Новая игра» keeps them (they are entitlements, 09 §9.8.11), the cases' items it does not.
+const PAID_COSMETICS := ["cos_frame_first_decree", "cos_frame_patron", "cos_frame_patent_month", "cos_border_ink_season1_anim"]
+
+
+## «Паёк державы» (09 §9.8.4): the day of its 30 it is now (1…30), 0 when none runs. Its day 1 is the day it was bought.
+func _ration_day(now: int) -> int:
+	if ration.is_empty():
+		return 0
+	var n := Calendar.local_day(now) - int(ration.get("day", 0)) + 1
+	return n if n >= 1 and n <= RATION_DAYS else 0
+
+
+## Today's 60 are waiting (one take a game day, 04:00 local; a day not taken is gone: «нужен ежедневный вход»).
+func _ration_ready(now: int) -> bool:
+	return _ration_day(now) > 0 and not Calendar.seen(Calendar.local_day(now), int(ration.get("taken", -1)))
+
+
+## The World card «Паёк: день 12/30 · Забрать 60»: today's Raivites.
+func _claim_ration() -> void:
+	var now := now_s()
+	if not _ration_ready(now):
+		return
+	ration["taken"] = Calendar.local_day(now)
+	econ.res["raivite"] = int(econ.res["raivite"]) + RATION_DAILY
+	sfx.play("coin")
+	ui.toast(tr("toast.ration_claim") % [RATION_DAILY, _ration_day(now), RATION_DAYS], "raivite")
+	_autosave()
+	_open_tab("world")
+
+
+## The store's rows that cannot be bought now, by SKU: the pass already open this season, the ration running
+## («День 3/30»). The one-time packs ShopUI reads from `purchases` itself.
+func _shop_status() -> Dictionary:
+	var out := {}
+	bp.refresh(now_s())
+	if bp.premium:
+		out["iap_pass"] = tr("shop.bought")
+	var rd := _ration_day(now_s())
+	if rd > 0:
+		out["iap_ration"] = tr("shop.ration_day") % [rd, RATION_DAYS]
+	return out
+
+
+# ---------------------------------------------------------------------- entitlements (Новая игра, Восстановить покупки)
+
+## What the purchases entitle to, for user://entitlements.json: the purchase counts by SKU (the one-time packs and the
+## Raivite packs' first ×2 stay used), «Без рекламы», the subscription, this season's pass, the bought frames; `ledger`
+## (every purchase: SKU, time, Raivites credited) is kept as it was written.
+func _entitlements() -> Dictionary:
+	var cos: Array = []
+	for id in PAID_COSMETICS:
+		if cases.owned_cosmetics.has(id):
+			cos.append(id)
+	return {"version": 1, "skus": purchases.duplicate(), "no_ads": no_ads,
+		"patent": {"until": patent.until, "trial_used": patent.trial_used},
+		"pass": {"season": bp.season, "premium": bp.premium, "elite": bp.elite}, "cosmetics": cos}
+
+
+## A purchase into the entitlements file (with the game's saves only: tests and shots never write it).
+func _record_purchase(sku: String, raivites: int) -> void:
+	if not save_enabled:
+		return
+	var old := Save.read_entitlements()
+	var ledger: Array = old.get("ledger", [])
+	ledger.append({"sku": sku, "at": now_s(), "raivite": raivites})
+	var d := _entitlements()
+	var skus: Dictionary = old.get("skus", {})
+	for k in skus:  # (a count the file knows and this game does not: kept)
+		if not (d["skus"] as Dictionary).has(k):
+			d["skus"][k] = int(skus[k])
+	d["ledger"] = ledger
+	Save.write_entitlements(d)
+
+
+## Gives this game what the entitlements record holds and it lacks — a fresh start after «Новая игра», «Восстановить
+## покупки». Returns the names of what it gave.
+func _apply_entitlements(e: Dictionary) -> PackedStringArray:
+	var got := PackedStringArray()
+	if e.is_empty():
+		return got
+	var skus: Dictionary = e.get("skus", {})
+	for k in skus:
+		var sku := String(k)
+		if purchases.has(sku):
+			continue
+		purchases[sku] = int(skus[k])
+		if sku == "iap_builder":
+			if econ.builders < MAX_BUILDERS:
+				econ.builders += 1
+			got.append(tr("pack.builder"))
+		elif sku == "iap_no_ads":
+			got.append(tr("pack.no_ads"))
+	if bool(e.get("no_ads", false)):
+		no_ads = true
+	var pt: Dictionary = e.get("patent", {})
+	if int(pt.get("until", 0)) > patent.until:
+		patent.until = int(pt["until"])
+		if patent.active(now_s()):
+			got.append(tr("pack.patent"))
+			_patent_tick(now_s())
+	patent.trial_used = patent.trial_used or bool(pt.get("trial_used", false))
+	var ps: Dictionary = e.get("pass", {})
+	bp.refresh(now_s())
+	if int(ps.get("season", -1)) == bp.season and bool(ps.get("premium", false)) and not bp.premium:
+		bp.premium = true
+		bp.elite = bool(ps.get("elite", false))
+		got.append(tr("pack.pass"))
+	for id in e.get("cosmetics", []):
+		if not cases.owned_cosmetics.has(String(id)):
+			cases.owned_cosmetics[String(id)] = true
+			got.append(Cases.cosmetic_name(String(id)))
+	return got
+
+
+## What the record keeps across a «Новая игра», by name (the confirm window lists it).
+func _kept_names(e: Dictionary) -> PackedStringArray:
+	var out := PackedStringArray()
+	var skus: Dictionary = e.get("skus", {})
+	if skus.has("iap_builder"):
+		out.append(tr("pack.builder"))
+	if bool(e.get("no_ads", false)):
+		out.append(tr("pack.no_ads"))
+	if int((e.get("patent", {}) as Dictionary).get("until", 0)) > now_s():
+		out.append(tr("pack.patent"))
+	var ps: Dictionary = e.get("pass", {})
+	if int(ps.get("season", -1)) == BattlePass.season_of(now_s()) and bool(ps.get("premium", false)):
+		out.append(tr("pack.pass"))
+	for id in e.get("cosmetics", []):
+		out.append(Cases.cosmetic_name(String(id)))
+	return out
+
+
+## Settings / the patent → «Восстановить покупки»: re-applies the entitlements record and says what it found. No store
+## SDK yet — the record is this device's; with billing the store's restore takes its place (09 §9.8.10).
+func _restore_purchases() -> void:
+	var e := Save.read_entitlements() if save_enabled else _entitlements()
+	var got := _apply_entitlements(e)
+	if not got.is_empty():
+		ui.toast(tr("restore.done") % ", ".join(got), "gift")
+		_econ_tick()
+		_autosave()
+		return
+	var have := _kept_names(e)
+	if have.is_empty():
+		ui.toast(tr("restore.none"))
+	else:
+		ui.toast(tr("restore.same") % ", ".join(have))
 
 
 # ---------------------------------------------------------------------- research (canon §12.3)
@@ -6310,6 +6510,11 @@ func _world_items() -> Array:
 		var cd: int = maxi(1, calendar.credited)
 		items.append({"kind": "star", "id": "calendar", "icon": "calendar", "open": true, "claimed": false, "ready": calendar.pending,
 			"title": tr("cal.card") % Calendar.day_in_cycle(cd), "progress": Calendar.day_in_cycle(cd), "need": Calendar.LENGTH})
+	var rday := _ration_day(now_s())
+	if rday > 0:  # «Паёк: день 12/30 · Забрать 60» (09 §9.8.4): today's 60, a day not taken is gone
+		var rready := _ration_ready(now_s())
+		items.append({"kind": "star", "id": "ration", "icon": "food", "title": tr("ration.card") % [rday, RATION_DAYS, RATION_DAILY],
+			"progress": 1 if rready else 0, "need": 1, "claimed": not rready, "day": rday, "days": RATION_DAYS, "daily": RATION_DAILY})
 	items.append_array(_order_items())
 	items.append_array(_weekly_items())
 	var list := _stars()
@@ -6345,6 +6550,9 @@ func _on_world_action(id: String) -> void:
 		return
 	if id == "patent_daily":
 		_claim_patent_daily()
+		return
+	if id == "ration":
+		_claim_ration()
 		return
 	if id.begins_with("weekly"):
 		_claim_weekly(id)
@@ -6467,11 +6675,11 @@ func _pass_text(r: Array) -> String:
 
 func _pay_pass(r: Array) -> void:
 	match String(r[0]):
-		"res":
+		"res":  # the pass and the calendar credit over the cap (canon §4)
 			var gross: Dictionary = econ.gross_per_hour(sim)
 			var h: int = r[1]
 			econ.add_resources({"gold": h * maxi(60, int(gross.get("gold", 0))), "food": h * maxi(30, int(gross.get("food", 0))),
-				"metal": h * maxi(30, int(gross.get("metal", 0)))})
+				"metal": h * maxi(30, int(gross.get("metal", 0)))}, true)
 		"crate":
 			cases.free_crates += int(r[1])
 		"raivite":
@@ -8158,7 +8366,7 @@ func _open_patent() -> void:
 		"can_buy": _payments_enabled(), "price": PATENT_PRICE, "trial_price": PATENT_TRIAL_PRICE,
 		"on_terms": func(): _open_legal("terms", _open_patent), "on_privacy": func(): _open_legal("privacy", _open_patent)},
 		func(sku: String): _on_buy_sku(sku),
-		func(): ui.toast(tr("patent.restored")))
+		func(): _restore_purchases())
 
 
 func _claim_patent_daily() -> void:

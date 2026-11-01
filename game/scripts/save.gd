@@ -9,10 +9,15 @@ const PATH := "user://save.json"
 const VERSION := 1
 ## Player settings that outlive a «Новая игра» (the UI language): {"lang": "ru" | "en"}.
 const SETTINGS_PATH := "user://settings.json"
+## What the purchases entitle to (main._entitlements: the purchase counts and ledger, «Без рекламы», the subscription,
+## the season's pass, the bought frames): it outlives a «Новая игра» (wipe() leaves it) and «Восстановить покупки»
+## re-applies it. No store SDK yet — with billing the store's own records take its place (09 §9.8.10).
+const ENT_PATH := "user://entitlements.json"
 ## Where the save and the settings live: PATH / SETTINGS_PATH, a test points them at files of its own (a fresh install
 ## with saves on, test_flow) so the player's real files are never touched.
 static var path := PATH
 static var settings_path := SETTINGS_PATH
+static var ent_path := ENT_PATH
 
 
 ## Writes the save file and returns the same dictionary (net.gd uploads it to the cloud).
@@ -95,6 +100,8 @@ static func to_dict(g: Node) -> Dictionary:
 		"cases": g.cases.to_dict(),
 		"speed_minutes": g.speed_minutes,
 		"purchases": g.purchases,
+		"no_ads": g.no_ads,
+		"ration": g.ration,
 		"research": g.research.to_dict(),
 		"market": g.market.to_dict() if g.market != null else {},
 		"orders": g.orders.to_dict() if g.orders != null else {},
@@ -334,6 +341,9 @@ static func apply(g: Node, d: Dictionary) -> bool:
 		g.cases = load("res://scripts/sim/cases.gd").from_dict(d["cases"])
 	g.speed_minutes = int(d.get("speed_minutes", 0))
 	g.purchases = d.get("purchases", {})
+	g.no_ads = bool(d.get("no_ads", false))  # (a save from before it: none bought then that it would know of)
+	var ra: Variant = d.get("ration", {})
+	g.ration = {"day": int(ra.get("day", 0)), "taken": int(ra.get("taken", -1))} if typeof(ra) == TYPE_DICTIONARY and (ra as Dictionary).has("day") else {}
 	if d.has("research"):
 		g.research = load("res://scripts/sim/research.gd").from_dict(d["research"])
 	if typeof(d.get("camps")) == TYPE_DICTIONARY:
@@ -413,7 +423,23 @@ static func write_settings(d: Dictionary) -> void:
 	f.store_string(JSON.stringify(s))
 
 
-## Removes the game progress (settings such as the language stay).
+## The entitlements record; {} when there is none.
+static func read_entitlements() -> Dictionary:
+	if not FileAccess.file_exists(ent_path):
+		return {}
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(ent_path))
+	return parsed if typeof(parsed) == TYPE_DICTIONARY else {}
+
+
+static func write_entitlements(d: Dictionary) -> void:
+	var f := FileAccess.open(ent_path, FileAccess.WRITE)
+	if f == null:
+		push_warning("entitlements save failed: %s" % FileAccess.get_open_error())
+		return
+	f.store_string(JSON.stringify(d))
+
+
+## Removes the game progress (the settings such as the language and the entitlements record stay).
 static func wipe() -> void:
 	if FileAccess.file_exists(path):
 		DirAccess.remove_absolute(ProjectSettings.globalize_path(path))

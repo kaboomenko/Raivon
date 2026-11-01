@@ -6024,6 +6024,10 @@ func _star_card(it: Dictionary) -> Control:
 		title = tr("world.patent")
 		var n := _num_re.search(full)
 		stat = {"icon": "raivite", "text": "+" + (n.get_string() if n != null else ""), "check": claimed}
+	elif id == "ration":  # «Паёк державы» (09 §9.8.4): its day of 30 on the card, today's Raivites to take
+		icon = "food"
+		title = tr("world.ration") % [int(it.get("day", 1)), int(it.get("days", 30))]
+		stat = {"icon": "raivite", "text": "+%d" % int(it.get("daily", 0)), "check": claimed}
 	elif id.begins_with("order:") or id.begins_with("weekly:"):
 		var weekly := id.begins_with("weekly:")
 		icon = "medal_silver" if weekly else "orders"
@@ -6059,7 +6063,7 @@ func _star_card(it: Dictionary) -> Control:
 		opts["cta"] = {"role": "go", "caption": tr("ui.claim"), "cb": claim_cb}
 	else:
 		opts["stat"] = stat
-	if not claimed and not (id in ["pass", "calendar", "patent_daily"]):
+	if not claimed and not (id in ["pass", "calendar", "patent_daily", "ration"]):
 		tip.append(tr("world.tip.progress") % [mini(prog, need), need])
 	opts["details"] = "\n".join(tip)
 	return Kit.card(Kit.icon_tex(icon) if icon != "" else null, title, opts)

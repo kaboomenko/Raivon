@@ -416,7 +416,9 @@ func _show_odds(case_id: String) -> void:
 ## α 0.75 over the map, the best rarity on a hex plate of its colour, rotating rays and the item's tile 300 (several
 ## rewards: a grid of tiles, 4 a row, an incomplete last row centred, over the same rays); «Забрать» (go L) under it.
 ## The same reward merges into one tile whatever its rarity (tinted with the best): shards of one commander, a
-## resource, Glitter sum their amounts on the pill; repeated speed-up items count «×N» on the tile (§4.9).
+## resource, Glitter sum their amounts on the pill; repeated speed-up items count «×N» on the tile (§4.9). Resources
+## show what was credited, a tile a resource with its icon and amount («Ресурсы 16ч» is gold, food and metal: three
+## tiles, each merged with the other rewards of that resource) — the cases credit them in full, past the cap (canon §4).
 func show_reveal(results: Array) -> void:
 	if is_instance_valid(_reveal):
 		_reveal.queue_free()
@@ -427,7 +429,7 @@ func show_reveal(results: Array) -> void:
 		var rar := String(r.get("rarity", "common"))
 		if RARITY_ORDER.find(rar) > RARITY_ORDER.find(best):
 			best = rar
-		for rw in r.get("rewards", []):
+		for rw in _split_res(r.get("rewards", [])):
 			var rr := String((rw as Dictionary).get("rarity", rar))
 			if rr == "" or not RARITY_ORDER.has(rr):
 				rr = rar
@@ -535,6 +537,27 @@ func _store_shown(on: bool) -> void:
 			(c as CanvasItem).visible = on
 
 
+## The rewards with each resource bundle split into one reward a resource (its hours kept on each), so every resource
+## shows its own amount on the reveal.
+static func _split_res(rewards: Array) -> Array:
+	var out: Array = []
+	for rw in rewards:
+		var d: Dictionary = rw
+		if String(d.get("kind", "")) != "res":
+			out.append(d)
+			continue
+		var res: Dictionary = d.get("res", {})
+		var n0 := out.size()
+		for k in ["gold", "food", "metal", "oil"]:
+			if int(res.get(k, 0)) > 0:
+				var one := d.duplicate(true)
+				one["res"] = {k: int(res[k])}
+				out.append(one)
+		if out.size() == n0:
+			out.append(d)  # (an income of nothing: the item's own tile, «Ресурсы 8ч»)
+	return out
+
+
 ## What makes two rewards «the same» on the reveal (rarity aside): the commander's shards, the resource, the
 ## speed-up item, the cosmetic, Glitter.
 static func _reward_key(rw: Dictionary) -> String:
@@ -585,7 +608,7 @@ func _reward_look(rw: Dictionary, rarity: String, count := 1) -> Dictionary:
 			var keys: Array = res.keys().filter(func(k): return int(res[k]) > 0)
 			if keys.size() == 1:
 				o["icon"] = String(RES_ICON.get(String(keys[0]), "coin"))
-				o["pill"] = [["", Kit.fmt_num(int(res[keys[0]]))]]
+				o["pill"] = [["", "+" + Kit.fmt_num(int(res[keys[0]]))]]
 				o["title"] = tr("res.name." + String(keys[0]))
 			else:
 				o["icon"] = "crate"
