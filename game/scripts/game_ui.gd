@@ -5499,7 +5499,17 @@ func _diplomacy_cta(it: Dictionary, rel: String) -> Dictionary:
 		return ct
 	var why := String(it.get("pact_reason", ""))
 	if why == "":
-		return {"role": "info", "caption": tr("dipl.pact_btn"), "icon": "treaty", "cb": func(): diplomacy_action.emit(id, "pact")}
+		# the pact's 8 h of gold on it, as on the gift (B-M: a tap here charged it unseen); the tap opens the leader's
+		# window, where a hold signs it — short, the number red and the tap says how much is missing
+		var ct := {"role": "info", "caption": tr("dipl.pact_btn"), "icon": "treaty", "cb": func(): _leader_dialog(it)}
+		var pc := int(it.get("pact_cost", 0))
+		if pc > 0:
+			var st := _stock("gold")
+			var short := int(st[1]) >= 0 and pc > int(st[1])
+			ct["price"] = [["coin", fmt_num(pc), short]]
+			if short:
+				ct["short_reason"] = tr("pact.over_cap") % fmt_num(pc) if bool(it.get("pact_over_cap", false)) else tr("ult.no_gold") % fmt_num(pc - int(st[1]))
+		return ct
 	if int(it.get("pact_left", 0)) > 0:  # the pact holds: its time left
 		return {"role": "lock", "caption": fmt_time(int(it["pact_left"])), "icon": "hourglass", "enabled": false, "reason": why}
 	return {"role": "lock", "caption": tr("dipl.pact_btn"), "icon": "treaty", "enabled": false, "reason": why}

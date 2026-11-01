@@ -344,7 +344,11 @@ func _run() -> void:
 		"chapter goal met: signalled, the World tab's dot, «Расширить мир» (%s)" % g.ui._action2_kind)
 	g._on_action("expand")
 	_check(g.tab == "world" and g.chapter == 1, "«Расширить мир» opens the World tab at the chapter card")
-	g._on_world_action("expand")
+	g._on_action("expand")  # the big button again, the tab already on the chapter's card (B-L: it did nothing)
+	var ex2: int = g.chapter
+	if g.chapter == 1:
+		g._on_world_action("expand")
+	_check(ex2 == 2, "the big «Расширить мир» with the World tab open starts the expansion")
 	_check(g.chapter == 2 and econ.res["raivite"] >= rv0 + 210, "chapter I completes: legacy +200 Raivites, chapter II opens")
 	g.ui.close_modal()
 
@@ -1139,6 +1143,20 @@ func _run() -> void:
 	g.sim.cells[near]["owner"] = Types.PLAYER
 	g.sim.cells[near]["controller"] = Types.PLAYER
 	var fa: Dictionary = g._player_armies()[0]
+	# no army beside the camp: «Разбить лагерь» is a lock with the reason, «Марш» sends the nearest army (B-L: red and
+	# enabled, its tap only toasted)
+	var cfar: Array = g._player_armies().filter(func(a): return g.sim.neighbors[camp].has(int(a["hex"])))
+	if cfar.is_empty():
+		g._select(camp)
+		var cm: Dictionary = g._camp_marcher(camp)
+		_check(String(g.ui._primary_args[0]) == "camp_army" and String(g.ui._primary_args[2]) == "lock" and String(g.ui._primary_args[6]) == g.tr("camp.need_army_near") \
+				and g.ui._action_kind == ("camp_march" if not cm.is_empty() else ""),
+			"no army by the camp: the raid is locked with its reason, «Марш» offered (%s / %s)" % [str(g.ui._primary_args.slice(0, 3)), g.ui._action_kind])
+		if not cm.is_empty():
+			g._on_action("camp_march")
+			_check(g._march_dest.get(int(cm["army"]["id"]), -1) == int(cm["hex"]) or g.sim.neighbors[camp].has(int(cm["army"]["hex"])),
+				"«Марш» sends the nearest army next to the camp")
+			g._stop_marches()
 	fa["hex"] = near
 	fa["str"] = fa["max_str"]
 	g._select(camp)
@@ -1821,7 +1839,8 @@ func _run() -> void:
 	g.ultimatum_at = -1
 	g._issue_ultimatum(g.now_s(), MapGen.BARONS)
 	g.ui.close_modal()
-	_check(g._ult_buyout() == 0, "the Wolf's ultimatum has no buyout (canon §9.1)")
+	_check(g._ult_buyout() == 0 and String(g.inbox[-1]["text"]).begins_with("inbox.ultimatum.text_hex|"),
+		"the Wolf's ultimatum has no buyout, its letter names the hex alone (canon §9.1; %s)" % String(g.inbox[-1]["text"]))
 	g._select(-1)
 	g._refresh_ui()
 	_check(g.ui._status_args.size() > 0 and String(g.ui._status_args[0]) == "ultimatum" and g._unread() >= 1,
@@ -1845,12 +1864,31 @@ func _run() -> void:
 			q2ph = c["id"]
 	g.ultimatum = {"state": MapGen.HAMLETS, "hex": maxi(0, q2ph), "tribute": 100000, "deadline": g.now_s() + 60}
 	_check(g._ult_buyout() == mini(50000, int(g.econ.storage_cap()["gold"]) * 9 / 10), "a Fox's buyout is half the tribute, at most 90%% of the gold cap (%d)" % g._ult_buyout())
+	# the demand is a hex: its gold equivalent is max(8; 4 × value) h of gold (canon §9.1) — 12 h for a value-3 hex
+	var q2uh: int = int(g.ultimatum["hex"])
+	var q2v0: int = int(g.sim.cells[q2uh]["value"])
+	g.sim.cells[q2uh]["value"] = 3
+	g.ultimatum["tribute"] = 800
+	_check(g._ult_buyout() == 600, "the buyout is half the demanded hex's gold equivalent, 12 h for a value-3 hex (%d)" % g._ult_buyout())
+	g.sim.states[MapGen.HAMLETS]["archetype"] = "raven"
+	_check(g._ult_buyout() == 900, "the Raven's buyout is 75%% (%d)" % g._ult_buyout())
+	g.sim.states[MapGen.HAMLETS]["archetype"] = "fox"
+	g.sim.cells[q2uh]["value"] = q2v0
+	g.ultimatum["tribute"] = 100000
 	g.war.erase("strike_at")
 	g.war.erase("strike_hex")
 	g.time_offset += 1800
 	g._econ_tick()
 	_check(int(g.war.get("enemy", -1)) == MapGen.BARONS and int(g.war.get("started", 0)) == int(q2w0["started"]) and int(g.ultimatum.get("held", 0)) == 1 and g._ult_left() > 0,
 		"an ultimatum due during the Barons' war is held: the running war is never replaced (enemy %s)" % str(g.war.get("enemy", -1)))
+	# the demanded hex lost meanwhile: the demand moves to another hex of ours on that border, or lapses with none
+	var q2ul: Dictionary = g.ultimatum.duplicate()
+	g.sim.cells[q2uh]["owner"] = MapGen.BARONS
+	g._ultimatum_tick(g.now_s())
+	_check(g.ultimatum.is_empty() == (g._ult_target(MapGen.HAMLETS) < 0) and (g.ultimatum.is_empty() or (int(g.ultimatum["hex"]) != q2uh and int(g.sim.cells[int(g.ultimatum["hex"])]["owner"]) == Types.PLAYER)),
+		"a demanded hex lost during the hold: the ultimatum demands another of ours, or lapses (%s)" % str(g.ultimatum.get("hex", -1)))
+	g.sim.cells[q2uh]["owner"] = Types.PLAYER
+	g.ultimatum = q2ul
 	g._answer_ultimatum("refuse")
 	_check(int(g.war.get("enemy", -1)) == MapGen.BARONS and int(g.ultimatum.get("refused", 0)) == 1, "a refusal during a war waits for that war's end")
 	War.white_peace(g.sim)
@@ -2006,9 +2044,20 @@ func _run() -> void:
 			q2it = it
 	_check(int(q2it.get("pact_cost", 0)) == g._pact_cost() and q2it.has("opinion_parts") and bool(q2it.get("pact_over_cap", true)) == (g._pact_cost() > int(g.econ.storage_cap()["gold"])),
 		"the leader card carries the pact's price and the opinion's parts")
-	g.econ.res["gold"] = 0
 	g.pacts = {}
 	g._opinion_set(MapGen.HAMLETS, 10.0)
+	for it in g._diplomacy_items(g.now_s()):
+		if int((it as Dictionary).get("id", -1)) == MapGen.HAMLETS:
+			q2it = it
+	var q2ct: Dictionary = g.ui._diplomacy_cta(q2it, g.ui._relation(q2it))
+	var q2g0 := int(g.econ.res["gold"])
+	var q2pact: bool = String(q2ct.get("caption", "")) == g.tr("dipl.pact_btn") and q2ct.has("cb")
+	if q2pact:
+		(q2ct["cb"] as Callable).call()
+	_check(q2pact and q2ct.get("price", []).size() == 1 and g.ui.has_modal() and int(g.econ.res["gold"]) == q2g0 and g._pact_left(MapGen.HAMLETS) == 0,
+		"the neighbour card's «Пакт» shows its price and opens the leader's window: nothing is charged by a tap (%s)" % str(q2ct.get("price", [])))
+	g.ui.close_modal()
+	g.econ.res["gold"] = 0
 	g._on_diplomacy_action(MapGen.HAMLETS, "pact")
 	_check(g._pact_left(MapGen.HAMLETS) == 0 and int(g.econ.res["gold"]) == 0, "a pact short of gold is not signed")
 	g.queue_free()

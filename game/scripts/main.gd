@@ -3343,7 +3343,8 @@ func _ready_in(a: Dictionary) -> int:
 	return int(ceil(float(need) * REFILL_FULL_SEC[econ.dev_level()] / maxf(1.0, float(a["max_str"]) * sp)))
 
 
-## The refill's speed factor for `a` (the Infirmary, «Резерв», Captain Lira): _army_refill's.
+## The refill's speed factor for `a` (_army_refill, _ready_in): the Infirmary, «Резерв», Captain Lira (the
+## «b_Командир» term, 03 §9.2).
 func _refill_speed(a: Dictionary) -> float:
 	var inf_lvl := 1
 	for b in econ.buildings:
@@ -6943,21 +6944,12 @@ func _army_refill(now: int) -> void:
 	if dt <= 0 or mode == Mode.BATTLE:
 		return
 	var dl: int = econ.dev_level()
-	var inf_lvl := 1
-	for b in econ.buildings:
-		if b["type"] == "infirmary":
-			inf_lvl = int(b["level"])
-	var speed: float = (1.0 + 0.05 * inf_lvl) * (1.0 + 0.05 * research.level("reserve"))
 	var food_per_fx := float(Economy.PROD_MULT100[dl]) / 100.0 / Types.strength_mult(maxi(1, dl)) / 1000.0
-	var lira: int = commanders.army_of("cmd_lira") if _cmd_level("cmd_lira") > 0 else -1
 	for a in _player_armies():
 		var missing: int = int(a["max_str"]) - int(a["str"])
 		if missing <= 0:
 			continue
-		var sp := speed
-		if int(a["id"]) == lira:
-			sp *= 1.0 + _cmd_v("cmd_lira", 0) / 100.0  # Captain Lira: the «b_Командир» term of the refill (03 §9.2)
-		var heal := mini(missing, int(float(a["max_str"]) * dt * sp / REFILL_FULL_SEC[dl]))
+		var heal := mini(missing, int(float(a["max_str"]) * dt * _refill_speed(a) / REFILL_FULL_SEC[dl]))
 		var afford := int(floor(float(econ.res["food"]) / maxf(food_per_fx, 1e-9)))
 		heal = mini(heal, afford)
 		if heal <= 0:
@@ -8063,22 +8055,30 @@ func _ai_power(s: int) -> int:
 func _issue_ultimatum(now: int, state: int = MapGen.BARONS) -> void:
 	if state == MapGen.BARONS:
 		ultimatum_at = -1
+	var best := _ult_target(state)
+	if best < 0:
+		return
+	var tribute := 8 * maxi(60, int(econ.gross_per_hour(sim).get("gold", 0)))
+	ultimatum = {"state": state, "hex": best, "tribute": tribute, "deadline": now + 4 * 3600}
+	ultimatum["buyout"] = _ult_buyout()  # the buyout's fixed price, set when it comes (canon §9.1)
+	# the letter: the hex or the tribute; the Wolf takes no buyout, so its letter names the hex alone
+	_post(L.pack("inbox.ultimatum.title", [_state_key(state)]), L.pack("inbox.ultimatum.text", [_cell_key(best), tribute])
+		if int(ultimatum["buyout"]) > 0 else L.pack("inbox.ultimatum.text_hex", [_cell_key(best)]))
+	sfx.play("warn")
+	sfx.haptic(60)
+	rig.focus(map_view.cell_world(best))
+	_show_ultimatum()
+
+
+## The hex an ultimatum from `state` demands: our most valuable one on its border outside the Core (-1: none).
+func _ult_target(state: int) -> int:
 	var core := MapGen.core_of(sim, Types.PLAYER)
 	var best := -1
 	for c in sim.cells:
 		if c["owner"] == Types.PLAYER and Types.is_passable(c) and not core.has(c["id"]) and _touches_owner(c["id"], state):
 			if best < 0 or int(c["value"]) > int(sim.cells[best]["value"]):
 				best = c["id"]
-	if best < 0:
-		return
-	var tribute := 8 * maxi(60, int(econ.gross_per_hour(sim).get("gold", 0)))
-	ultimatum = {"state": state, "hex": best, "tribute": tribute, "deadline": now + 4 * 3600}
-	ultimatum["buyout"] = _ult_buyout()  # the buyout's fixed price, set when it comes (canon §9.1)
-	_post(L.pack("inbox.ultimatum.title", [_state_key(state)]), L.pack("inbox.ultimatum.text", [_cell_key(best), tribute]))
-	sfx.play("warn")
-	sfx.haptic(60)
-	rig.focus(map_view.cell_world(best))
-	_show_ultimatum()
+	return best
 
 
 func _show_ultimatum() -> void:
@@ -8095,9 +8095,10 @@ func _ult_left() -> int:
 	return maxi(0, int(ultimatum.get("deadline", 0)) - now_s())
 
 
-## The ultimatum's buyout (canon §9.1, 06 §9.1): one fixed price — 50% of the tribute, the Raven's 75% — no buyout
-## from the Wolf (0). Never over 90% of the gold the warehouse holds, so a full store can always pay it (B-M: 8 032 asked
-## of a 6 750 store).
+## The ultimatum's buyout (canon §9.1, 06 §9.1): one fixed price — 50% of what is demanded, the Raven's 75% — no
+## buyout from the Wolf (0). The demand is a hex: its gold equivalent is max(8; 4 × value) h of gold, the tribute's 8 h
+## for a hex of value 2 or less. Never over 90% of the gold the warehouse holds, so a full store can always pay it (B-M:
+## the whole tribute, 8 032, asked of a 6 750 store). Set once, when the ultimatum comes.
 func _ult_buyout() -> int:
 	if ultimatum.is_empty():
 		return 0
@@ -8106,7 +8107,8 @@ func _ult_buyout() -> int:
 	var arch := String(sim.states[int(ultimatum["state"])]["archetype"])
 	if arch == "wolf":
 		return 0
-	var price := int(ultimatum["tribute"]) * (75 if arch == "raven" else 50) / 100
+	var hours := maxi(8, 4 * int(sim.cells[int(ultimatum["hex"])]["value"]))
+	var price := int(ultimatum["tribute"]) * hours / 8 * (75 if arch == "raven" else 50) / 100
 	return mini(price, int(econ.storage_cap().get("gold", price)) * 9 / 10)
 
 
@@ -8119,6 +8121,15 @@ func _ultimatum_tick(now: int) -> void:
 	if _truce_left(s) > 0 or _pact_left(s) > 0:
 		ultimatum = {}
 		return
+	var h := int(ultimatum["hex"])
+	if int(sim.cells[h]["owner"]) != Types.PLAYER:
+		# the demanded hex is no longer ours (lost in the running war, swapped): the demand moves to the next one, and with
+		# none left on its border it lapses
+		h = _ult_target(s)
+		if h < 0:
+			ultimatum = {}
+			return
+		ultimatum["hex"] = h
 	if not war.is_empty():
 		if not ultimatum.has("refused") and int(ultimatum["deadline"]) - now < ULT_HOLD_SEC:
 			ultimatum["deadline"] = now + ULT_HOLD_SEC
@@ -8161,7 +8172,7 @@ func _answer_ultimatum(kind: String) -> void:
 				ultimatum["refused"] = 1
 				ultimatum["deadline"] = now
 				ui.close_modal()
-				ui.toast(tr("ult.deferred") % _state_name(enemy).replace(" ", Kit.NBSP), "swords")
+				ui.toast(tr("ult.deferred"), "swords")  # (no state name: «война с Вольные Хутора» — the window just named them)
 				_autosave()
 				return
 			_ensure_armies_for(enemy)
@@ -9385,27 +9396,45 @@ func _hex_dist(a: int, b: int) -> int:
 	return HexGrid.distance(Vector2i(int(sim.cells[a]["q"]), int(sim.cells[a]["r"])), Vector2i(int(sim.cells[b]["q"]), int(sim.cells[b]["r"])))
 
 
-## Scripted states for screenshots: plays the offensive with a simple bot (same as tests/test_sim.gd).
-## A demo's realm grows toward `s` over wild land until they share a border (a few hexes at most).
-func _demo_touch(s: int) -> void:
-	var cap: Vector3 = map_view.cell_world(sim.states[s]["capital_id"])
-	for step in 8:
-		for c in sim.cells:
-			if c["owner"] == Types.PLAYER and _touches_owner(c["id"], s):
-				return
-		var pick := -1
-		for c in sim.cells:
-			if c["owner"] == Types.NOBODY and Types.is_passable(c) and _touches_player(c["id"]) \
-					and (pick < 0 or map_view.cell_world(c["id"]).distance_to(cap) < map_view.cell_world(pick).distance_to(cap)):
-				pick = c["id"]
-		if pick < 0:
-			return
-		sim.cells[pick]["owner"] = Types.PLAYER
-		sim.cells[pick]["controller"] = Types.PLAYER
-		map_view.refresh_hex(pick)
+## A demo's or a test's realm grows toward `s` over wild land until they share a border: the shortest run of wild
+## passable hexes from our land to one beside `s` becomes ours. False when there is no such run (other states' land or
+## water between).
+func _demo_touch(s: int) -> bool:
+	for c in sim.cells:
+		if c["owner"] == Types.PLAYER and _touches_owner(c["id"], s):
+			return true
+	var from := {}
+	var queue: Array = []
+	for c in sim.cells:
+		if c["owner"] == Types.PLAYER:
+			for n in sim.neighbors[c["id"]]:
+				if n >= 0 and not from.has(n) and sim.cells[n]["owner"] == Types.NOBODY and Types.is_passable(sim.cells[n]):
+					from[n] = -1
+					queue.append(n)
+	var end := -1
+	var i := 0
+	while i < queue.size() and end < 0:
+		var h: int = queue[i]
+		i += 1
+		if _touches_owner(h, s):
+			end = h
+			break
+		for n in sim.neighbors[h]:
+			if n >= 0 and not from.has(n) and sim.cells[n]["owner"] == Types.NOBODY and Types.is_passable(sim.cells[n]):
+				from[n] = h
+				queue.append(n)
+	var found := false
+	while end >= 0:
+		sim.cells[end]["owner"] = Types.PLAYER
+		sim.cells[end]["controller"] = Types.PLAYER
+		map_view.refresh_hex(end)
+		end = int(from[end])
+		found = true
 	map_view.mark_dirty()
+	return found
 
 
+## Scripted states for screenshots: plays the offensive with a simple bot (same as tests/test_sim.gd).
 func _demo(spec: String) -> void:
 	var parts := spec.split(":")
 	var what := parts[0]
@@ -9658,16 +9687,18 @@ func _demo(spec: String) -> void:
 		_peace_offer()
 		return
 	if what in ["ult2", "ult_lock", "ult_map", "ult_war"]:
-		# chapter II, the River League's ultimatum (Owl: the buyout 50% of the tribute, at most 90% of the gold cap);
-		# ult_lock — closed with ✕, a Hamlets hex selected: «Война!» locked with the time left; ult_map — nothing selected:
-		# the status button with the deadline; ult_war — refused while a Barons war runs: the refusal waits for its end
+		# chapter II, a neighbour's ultimatum — the River League (an Owl) when wild land leads to it, else the Hamlets (a
+		# Fox): the buyout 50% of the tribute, at most 90% of the gold cap; ult_lock — closed with ✕, another state's hex
+		# selected: «Война!» locked with the time left; ult_map — nothing selected: the status button with the deadline;
+		# ult_war — refused while a Barons war runs: the refusal waits for its end
 		await _world_expansion()
 		ui.close_modal()
 		_set_dl(4)
 		truce = {}
 		ultimatum_at = -1
-		var ust := RingGen.LEAGUE
+		var ust := RingGen.LEAGUE if _demo_touch(RingGen.LEAGUE) else MapGen.HAMLETS
 		_demo_touch(ust)
+		econ.res["gold"] = int(econ.storage_cap()["gold"]) * 9 / 10  # (a full store pays the buyout)
 		if what == "ult_war":
 			_declare(MapGen.BARONS, War.recommend_goals(sim, MapGen.BARONS, 1)[0])
 		_issue_ultimatum(now_s(), ust)
@@ -9679,8 +9710,9 @@ func _demo(spec: String) -> void:
 			ui.close_modal()
 			_select(-1)
 		if what == "ult_lock":
-			_demo_touch(MapGen.HAMLETS)
-			var hg := War.recommend_goals(sim, MapGen.HAMLETS, 1)
+			var other := MapGen.HAMLETS if ust != MapGen.HAMLETS else MapGen.BARONS
+			_demo_touch(other)
+			var hg := War.recommend_goals(sim, other, 1)
 			if hg.size() > 0:
 				_select(hg[0])
 				rig.focus(map_view.cell_world(hg[0]), 0.45)
@@ -9710,13 +9742,27 @@ func _demo(spec: String) -> void:
 					var oc: Control = ui._modal.find_child("opinion", true, false)
 					if oc != null:
 						Kit.tooltip(oc, tr("dipl.opinion") % GameUI._signed(roundi(float(lit["opinion"]))), ui.opinion_breakdown(lit["opinion_parts"]))
+				if parts.size() > 2 and parts[2] == "tap":  # «Пакт» tapped while the gold is short: how much, or the store's cap
+					await get_tree().process_frame
+					var pb: Variant = ui._modal.find_child("act_pact", true, false)
+					if pb != null and (pb.get("cb") as Callable).is_valid():
+						(pb.get("cb") as Callable).call()
 		return
 	if what == "defeat":  # defeat[:white] — the losing war's offer: the hexes that go, the plunder's share (no stars)
+		# a realm of ~24 hexes, so the AI's 20% of its value covers a few occupied border hexes (_defeat_losses)
+		for i in 17:
+			for c in sim.cells:
+				if c["owner"] == Types.NOBODY and Types.is_passable(c) and _touches_player(c["id"]) and camps.at(c["id"]).is_empty():
+					c["owner"] = Types.PLAYER
+					c["controller"] = Types.PLAYER
+					map_view.refresh_hex(c["id"])
+					break
 		_declare(MapGen.BARONS, War.recommend_goals(sim, MapGen.BARONS, 1)[0])
 		var pc := MapGen.core_of(sim, Types.PLAYER)
 		var nl := 0
 		for c in sim.cells:
-			if nl < (0 if parts.size() > 1 else 3) and c["owner"] == Types.PLAYER and Types.is_passable(c) and not pc.has(c["id"]) and _touches_owner(c["id"], MapGen.BARONS):
+			if nl < (0 if parts.size() > 1 else 3) and c["owner"] == Types.PLAYER and Types.is_passable(c) and not pc.has(c["id"]) \
+					and _touches_owner(c["id"], MapGen.BARONS) and int(c["value"]) <= 2:
 				c["controller"] = MapGen.BARONS
 				map_view.refresh_hex(c["id"])
 				nl += 1
@@ -9991,7 +10037,8 @@ func _demo(spec: String) -> void:
 					rig.focus(map_view.cell_world(c["id"]), 0.4)
 					break
 		return
-	if what == "camp":
+	if what == "camp":  # camp[:far] — the nearest marauder camp selected; :far — no army beside it: «Разбить лагерь»
+		# locked, «Марш» brings the nearest one
 		_camps_tick(now_s())
 		var best := -1
 		var cap: int = sim.states[Types.PLAYER]["capital_id"]
@@ -9999,6 +10046,15 @@ func _demo(spec: String) -> void:
 			var h: int = cm["hex"]
 			if best < 0 or map_view.cell_world(h).distance_to(map_view.cell_world(cap)) < map_view.cell_world(best).distance_to(map_view.cell_world(cap)):
 				best = h
+		if parts.size() > 1 and parts[1] == "far" and best >= 0:
+			for a in _player_armies():
+				if sim.neighbors[best].has(int(a["hex"])):
+					for c in sim.cells:  # the farthest free hex of ours from the camp
+						if c["owner"] == Types.PLAYER and Types.is_passable(c) and _hex_dist(int(c["id"]), best) >= 3 \
+								and _player_armies().all(func(b): return int(b["hex"]) != int(c["id"])):
+							a["hex"] = c["id"]
+							break
+			map_view.sync_armies(armies, null)
 		_select(best)
 		rig.focus(map_view.cell_world(best), 0.4)
 		return

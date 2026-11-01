@@ -472,6 +472,7 @@ inbox.raid.text,Мародёры с диких земель налетели н�
 toast.raid_repelled,Мародёры разбились о плетень! Укрепления берегут гексы и склады.,The marauders broke against the palisade! Forts protect hexes and storage.
 inbox.ultimatum.title,Ультиматум: %s,Ultimatum: %s
 inbox.ultimatum.text,"Требуют «%s» или %d золота. Ответ — 4 ч, иначе война.","They demand “%s” or %d gold. Answer within 4 h, or it's war."
+inbox.ultimatum.text_hex,"Требуют «%s», откупа не берут. Ответ — 4 ч, иначе война.","They demand “%s” and take no buyout. Answer within 4 h, or it's war."
 inbox.ceded.title,Уступка,Concession
 inbox.ceded.text,«%s» отдан. Перемирие 24 ч.,“%s” ceded. 24 h truce.
 inbox.tribute.title,Дань уплачена,Tribute paid
@@ -1391,7 +1392,7 @@ story.ch4_veilmark,"Вейлмарк умеет ждать. Мы ударим, �
 inbox.war_cap.away,"Война длилась %d ч, пока вас не было, — белый мир.",The war lasted %d h while you were away: white peace.
 inbox.war_cap.defeat,Война длилась %d ч — мир с потерями.,The war lasted %d h: a peace with losses.
 ult.answer_first,Сначала ответьте на ультиматум,Answer the ultimatum first
-ult.deferred,Отказ отправлен: война с %s начнётся после текущей,Refusal sent: the war with %s starts once the current one ends
+ult.deferred,Отказ отправлен: их война начнётся после текущей,Refusal sent: their war starts once this one ends
 ui.recovering,Пополнение,Refilling
 ui.recovering_tip,Армии восстанавливаются: в атаку через %s (нужно 50%% силы),The armies are refilling: attack in %s (50%% strength needed)
 camp.need_army_near,Нужна армия рядом с лагерем (50% силы) — «Марш» приведёт ближайшую,An army must stand next to the camp (50% strength): March brings the nearest one
