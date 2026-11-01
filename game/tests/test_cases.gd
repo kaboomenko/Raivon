@@ -37,6 +37,7 @@ func _init() -> void:
 		["collection: no duplicates, 8 openings, growing legendary chance, prices", _test_collection],
 		["duplicates turn into Блёстки", _test_duplicates],
 		["rewards: resource hours, ×N, oil fallback, speed-ups", _test_rewards],
+		["ctx.room: what the warehouse cannot hold drops out of the roll (the tutorial's trophies)", _test_room],
 		["free crate timer: 6 h, stores 2", _test_free_crates],
 		["history keeps the last 100", _test_history],
 		["odds_items: rows sum to 100%, pools expand", _test_odds_items],
@@ -442,6 +443,41 @@ func _test_duplicates() -> void:
 	_eq(String(first["kind"]), "cosmetic", "first copy is a cosmetic")
 	_check(d.owned_cosmetics.has(String(first["id"])), "owned after the drop")
 	_check(not String(first["category"]).is_empty() and not String(first["name"]).is_empty(), "cosmetic has name / category")
+
+
+## The tutorial's trophy chests (main._sign_peace passes the warehouse's free room): a resource reward never exceeds
+## the room — gold at 4 900 / 5 000 rolls food, metal or a speed-up — and with room for all the roll is unchanged.
+func _test_room() -> void:
+	var room := {"gold": 100, "food": 3000, "metal": 3000}
+	var ctx := {"income_per_hour": CTX["income_per_hour"], "dl": 3, "room": room}
+	var c := Cases.new(SEED)
+	var over := 0
+	var kinds := {}
+	for i in range(3000):
+		for id in ["case_trophy_bronze", "case_trophy_silver", "case_trophy_gold"]:
+			var r := c.open(id, ctx, T0)
+			for rw in r["rewards"]:
+				kinds[String(rw["kind"])] = true
+				if String(rw["kind"]) == "res":
+					for k in rw["res"]:
+						over += int(int(rw["res"][k]) > int(room.get(k, 0)))
+	_eq(over, 0, "no resource reward over the free room")
+	_check(kinds.has("res") and kinds.has("speedup"), "food / metal still drop, and speed-ups (%s)" % str(kinds.keys()))
+	var tight := {"income_per_hour": CTX["income_per_hour"], "dl": 3, "room": {"gold": 0, "food": 0, "metal": 0}}
+	var c2 := Cases.new(SEED)
+	var res_n := 0
+	for i in range(500):
+		var r2 := c2.open("case_trophy_bronze", tight, T0)
+		for rw in r2["rewards"]:
+			res_n += int(String(rw["kind"]) == "res")
+	_eq(res_n, 0, "a full warehouse: never a resource (a speed-up instead)")
+	var a := Cases.new(SEED)
+	var b := Cases.new(SEED)
+	var roomy := {"income_per_hour": CTX["income_per_hour"], "dl": 3, "room": {"gold": 99999, "food": 99999, "metal": 99999}}
+	var same := true
+	for i in range(300):
+		same = same and JSON.stringify(a.open("case_trophy_silver", CTX, T0)) == JSON.stringify(b.open("case_trophy_silver", roomy, T0))
+	_check(same, "room for everything: the same rolls as without ctx.room")
 
 
 func _test_rewards() -> void:

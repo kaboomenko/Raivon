@@ -6202,7 +6202,7 @@ var _coach_t := 0.0
 var _coach_kick := 0.0  # a refused tap: the ring jumps for a moment
 var _coach_hush := false  # the advisor stepped away (coach_quiet); the ring and the ghost stay
 var _coach_scrolled: Control  # the card the coach last scrolled the row to
-var _coach_bw := 0.0  # the bubble's own width (hugging the line, 600 at most)
+var _coach_bw := 0.0  # the bubble's own width (hugging the line); docked over a window's first row it takes the full 600
 
 
 func _build_coach() -> void:
@@ -6744,40 +6744,41 @@ func _coach_place_advisor(vis: Rect2, holes: Array, frame: Rect2) -> void:
 	for i in range(1, holes.size()):
 		soft.append((holes[i][0] as Rect2).grow(8.0))
 	var map := frame.size.x <= 0.0
-	var placed: Array = []  # the candidates: [centre y, bust at the left]
+	var placed: Array = []  # the candidates: [centre y, bust at the left, bubble at its full width]
 	for cy in centres:
-		placed.append([cy, left])
+		placed.append([cy, left, false])
 	var fallback: Array = []
 	if not map:
 		var win := frame.grow_individual(0, 42.0 + 8.0, 0, 16.0)  # with its title plate and its shadow
 		soft.append(win)
 		var top := vis.position.y + 170.0 + _top.position.y  # under the plates and the war bar
 		if win.position.y - top >= COACH_BUST.y:
-			placed.append([(top + win.position.y) * 0.5, left])
+			placed.append([(top + win.position.y) * 0.5, left, false])
 		if vis.end.y - 12.0 - win.end.y >= COACH_BUST.y:
-			placed.append([(win.end.y + vis.end.y - 12.0) * 0.5, left])
+			placed.append([(win.end.y + vis.end.y - 12.0) * 0.5, left, false])
 		# docked under the title plate (its bottom at the frame's top + 42): the name plate standing on the bubble's top
 		# edge clears it by 4 px; where the window's first row is shorter than the bubble (its `coach_floor`, 4 px above
 		# the treaty's budget bar), the bubble ends at that floor and its name plate rises over the title plate's lip —
 		# never its caption. The bust stands at the left edge, over the leader's portrait: on the right it would cover
-		# the bar's end (playtest 2 review)
+		# the bar's end (playtest 2 review); the bubble takes its full 600, the line centred in it, so it covers the
+		# leader's line whole — a short one left its last glyph peeking out at the bubble's end
 		var bh := _coach_bubble.size.y
 		var by0 := frame.position.y + 42.0 + 4.0 + COACH_PLATE_H * 0.5
 		var low := _coach_floor(frame) - bh - COACH_SHADOW
 		if by0 > low:
 			by0 = maxf(low, frame.position.y + 42.0 - COACH_DOCK_LIP + COACH_PLATE_H * 0.5)
-		fallback.append([by0 - 6.0 + bh * 0.5, true])
+		fallback.append([by0 - 6.0 + bh * 0.5, true, true])
 	for pass_ in [[placed, hard + soft], [fallback + placed, hard]]:
 		for cand in pass_[0]:
-			var rs := _coach_group(vis, float(cand[0]), bool(cand[1]), map)
+			var rs := _coach_group(vis, float(cand[0]), bool(cand[1]), map, bool(cand[2]))
 			var hit := false
 			for r in rs:
 				for o in pass_[1]:
 					hit = hit or (r as Rect2).intersects(o)
 			if not hit:
-				_coach_group(vis, float(cand[0]), bool(cand[1]), map, true)
+				_coach_group(vis, float(cand[0]), bool(cand[1]), map, bool(cand[2]), true)
 				return
-	_coach_group(vis, float(centres[0]), left, map, true)
+	_coach_group(vis, float(centres[0]), left, map, false, true)
 
 
 ## How far down a docked advisor may reach in the open window (canvas y): 4 px above what its `coach_floor` meta marks
@@ -6791,10 +6792,11 @@ func _coach_floor(frame: Rect2) -> float:
 
 
 ## The advisor around the band centre `cy` (the bust at the left edge when `left`); on the map (`map`) the upper
-## band's bubble steps down under the minimap. Returns the bust's, the bubble's and the plate's rects; only with
-## `apply` does it move the nodes there (the candidates are weighed first, the chosen one placed once).
-func _coach_group(vis: Rect2, cy: float, left: bool, map: bool, apply := false) -> Array:
-	var bw := _coach_bw
+## band's bubble steps down under the minimap; `wide`: the bubble at its full 600, the line centred (docked over a
+## window's first row). Returns the bust's, the bubble's and the plate's rects; only with `apply` does it move the
+## nodes there (the candidates are weighed first, the chosen one placed once).
+func _coach_group(vis: Rect2, cy: float, left: bool, map: bool, wide := false, apply := false) -> Array:
+	var bw := maxf(_coach_bw, COACH_TEXT_W + 2.0 * COACH_PAD) if wide else _coach_bw
 	var bh := _coach_bubble.size.y
 	var bx := vis.position.x + 12.0 + COACH_BUST.x + 18.0 if left else vis.end.x - 12.0 - COACH_BUST.x - 18.0 - bw
 	var by := cy + 6.0 - bh * 0.5
@@ -6808,6 +6810,12 @@ func _coach_group(vis: Rect2, cy: float, left: bool, map: bool, apply := false) 
 	var bust := Rect2(vis.position.x + 12.0 if left else vis.end.x - 12.0 - COACH_BUST.x, cy - COACH_BUST.y * 0.5, COACH_BUST.x, COACH_BUST.y)
 	var plate := Rect2(Vector2(bx + 24.0 if left else bx + bw - 24.0 - _coach_plate.size.x, by - COACH_PLATE_H * 0.5), _coach_plate.size)
 	if apply:
+		if _coach_bubble.size.x != bw:  # the line centred in the wider bubble (or back), the chip kept at its end
+			_coach_bubble.size.x = bw
+			var cw := _coach_chip.size.x + 16.0 if is_instance_valid(_coach_chip) else 0.0
+			_coach_lbl.position.x = COACH_PAD if not wide else roundf((bw - cw - _coach_lbl.size.x) * 0.5)
+			if is_instance_valid(_coach_chip):
+				_coach_chip.position.x = bw - COACH_PAD - _coach_chip.size.x
 		_coach_bust.position = bust.position
 		_coach_bubble.position = Vector2(bx, by)
 		var dir := "left" if left else "right"

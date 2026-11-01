@@ -109,8 +109,12 @@ const FTUE_GHOST_F := 1.1  # the coach never points at a fight it loses (08 §8.
 const FTUE_F08_SEC := 5  # war 1: a target not ours by 0:55 falls by script (08 §8.3 F08), this long before the end
 const FTUE_LADDER: Array[float] = [6.0, 12.0, 20.0]  # the help ladder (08 §8.3.2): idle s to the ghost, the camera, the tap
 var _ftue_idle := 0.0  # seconds since the player's last gesture in a coached battle step (the help ladder)
+var _ftue_wrong := 0  # gestures in that step that did not play its move (the ladder's errors, 08 §8.3.2)
 var _ftue_goal_hex := -1  # the hex the coached battle step points at now (a new one starts the ladder over)
 var _ftue_cam := false  # the ladder's level 2 flew the camera to that hex
+var _ftue_goal_key: Array = []  # what _ftue_battle_goal() was worked out for (the battle, its tick, the step, a gesture)
+var _ftue_goal_memo := {}
+var _ftue_seq := 0  # bumped by a gesture or a scripted move: the coached move is worked out again
 var _ftue_war0 := {}  # a tutorial war as declared: «Ещё бой» after a failed offensive starts it over (_ftue_retry)
 const RAID_SEC := 12  # the FTUE raid comes this long after the fence is ordered (the coach counts it down)
 const RAID_HOLD_SEC := 3  # after it breaks on the fence the camera stays there this long before war 2's step
@@ -118,7 +122,9 @@ var _raid_hold := 0  # unix time until which the broken raid holds the lesson (0
 var _raid_hex := -1  # the fence hex of the raid lesson
 var _tutorial_end := false  # war 2's treaty is signed: the tutorial's closing card comes after its ceremony
 var _tut_card := false  # the tutorial's closing card is open (until its «Вперёд»)
-const CAL_AFTER_TUT_SEC := 5  # the calendar's day 1 opens this long after «Вперёд» (the colonize hint is seen first)
+const CAL_AFTER_TUT_SEC := 30  # the calendar's day 1 opens this long after «Вперёд» — its colonize hint is read first …
+const CAL_AFTER_HINT_SEC := 2  # … or this long after the player acts on it (settlers sent; 08 §8.8.1)
+var _cal_soon := 0  # unix time the calendar may open once the colonize hint was acted on (0: not yet)
 const HINT_AFTER_TUT_SEC := 60  # the «warehouse full → Market» hint keeps quiet this long after the tutorial
 var econ  # Economy (scripts/sim/economy.gd)
 var deposits  # Deposits (scripts/sim/deposits.gd)
@@ -720,6 +726,8 @@ func _defense_primary(hex: int) -> void:
 			have[String(b["type"])] = b
 	var now := now_s()
 	var type := "tower" if String(c["kind"]) == "plain" and String(c["terrain"]) == "plain" else "fort"
+	if ftue == 9 and have.is_empty() and _ftue_fence_ok(hex):
+		type = "fort"  # step 9's fence: the big button says «Форт» as the coach does (playtest 2 review: «Башня» built a tower)
 	if not have.has(type) and have.size() > 0:
 		type = "fort" if type == "tower" else "tower"
 	elif have.is_empty() and type == "tower" and econ.can_build(sim, "tower", hex, now).begins_with("err.tower_limit"):
@@ -2997,6 +3005,8 @@ func _colonize(id: int) -> void:
 		return
 	econ.res["gold"] -= cost
 	colonizing[id] = now_s() + _colonize_seconds()
+	if _cal_soon <= 0 and stats.has("ftue_done"):
+		_cal_soon = now_s() + CAL_AFTER_HINT_SEC  # the tutorial's last hint acted on: the calendar may come (_calendar_tick)
 	sfx.play("coin")
 	map_view.burst(id, Color(1.0, 0.85, 0.3))
 	ui.toast(tr("toast.settlers") % [_cell_name(id), GameUI.fmt_time(_colonize_seconds())])
@@ -3269,9 +3279,8 @@ func _start_offensive() -> void:
 			map_view.refresh_hex(flag_hex)
 	if ftue == 3 and flag_hex >= 0:
 		_ftue_ease(enemy)
-	_ftue_idle = 0.0
+	_ftue_ladder_reset()
 	_ftue_goal_hex = -1
-	_ftue_cam = false
 	if (ftue == 3 or ftue == 12) and flag_hex >= 0:
 		# the coach names the goal (ftue.3/ftue.4/ftue.13): a chip on it says which hex that is — every hex of theirs
 		# flies the same banners; an unnamed one by its kind («Равнина»): an icon alone is lost on the hex's edge
@@ -3375,6 +3384,7 @@ func _ftue_ease(enemy: int) -> void:
 			held[int(a["hex"])] = true
 	_ftue_pull_back(enemy, held)
 	map_view.sync_armies(armies, battle)
+	_ftue_seq += 1
 
 
 ## The war cards in hand: the base five, plus «Союзный корпус» while an ally fights in this war (canon §9.9).
@@ -3541,6 +3551,7 @@ func _ftue_f08() -> void:
 		if p.is_empty():
 			break
 		battle.scripted_capture(Types.PLAYER, int(p[1]))
+	_ftue_seq += 1
 
 
 ## Step 4b's target (and F08's): an enemy hex outside their core (a core hex is no haul) beside our land — with `winnable`,
@@ -3941,9 +3952,14 @@ func _on_order_drag(phase: int, screen: Vector2) -> void:
 		return
 	var g := _ftue_battle_goal()
 	if _ftue_level() >= 2 and not g.is_empty() and String(g["kind"]) == "army" and from == int(g["from"]) and hex != int(g["to"]) \
-			and sim.neighbors[int(g["to"])].has(hex):
+			and _ftue_in_zone(int(g["to"]), screen):
 		hex = int(g["to"])  # the help ladder's level 2 (08 §8.3.2): the coached hex's drop zone ×1.5
-	_ftue_gesture()  # (a drag made: the help ladder starts over; a tap goes through _battle_tap, which may be level 3's)
+	_order_drop(a, from, hex)
+	_ftue_gesture(g)  # (a drag made: the idle clock starts over, a wrong one counts; a tap goes through _battle_tap)
+
+
+## An army's drag released on `hex`: an attack on a hex of theirs beside it, a move onto one of ours.
+func _order_drop(a: Dictionary, from: int, hex: int) -> void:
 	if not sim.neighbors[from].has(hex):
 		ui.toast(tr("toast.adjacent_only"), "", "info", true)
 		return
@@ -4000,7 +4016,7 @@ func _battle_tap(id: int) -> void:
 		return
 	if _ftue_assist_tap(id):
 		return
-	_ftue_gesture()
+	_ftue_gesture(_ftue_battle_goal())  # (a tap in a coached step that asks for a drag: an error, F04)
 	var a = battle.army_at(id, Types.PLAYER)
 	if a == null:
 		var c: Dictionary = sim.cells[id]
@@ -4056,11 +4072,14 @@ func _on_card_drop(card: String, screen: Vector2) -> void:
 		return
 	var id: int = map_view.id_at_world(rig.ground_at(screen))
 	var g := _ftue_battle_goal()
-	var lv := _ftue_level()
-	_ftue_gesture()  # (a card dropped on the map: the help ladder starts over)
-	if card == "attack" and lv >= 2 and not g.is_empty() and String(g["kind"]) == "card" and id != int(g["to"]) \
-			and id >= 0 and sim.neighbors[int(g["to"])].has(id):
+	if card == "attack" and _ftue_level() >= 2 and not g.is_empty() and String(g["kind"]) == "card" and id != int(g["to"]) \
+			and _ftue_in_zone(int(g["to"]), screen):
 		id = int(g["to"])  # the help ladder's level 2 (08 §8.3.2): the flag's drop zone ×1.5
+	_card_drop(card, id)
+	_ftue_gesture(g)  # (a card dropped on the map: the idle clock starts over, a wrong drop counts)
+
+
+func _card_drop(card: String, id: int) -> void:
 	if id < 0:
 		return
 	if battle.energy_points(Types.PLAYER) < battle.card_cost(Types.PLAYER, card):
@@ -4875,7 +4894,7 @@ func _econ_tick() -> void:
 		_on_research_done(done_line)
 	econ.research = research.economy_levels()
 	econ.army_food_milli = _army_food_milli()
-	econ.waive_hexes = ftue > 0 and econ.dev_level() < 2  # the tour's Residence lesson never waits on land (step 7)
+	econ.waive_hexes = ftue == 7 and econ.dev_level() < 2  # the tour's Residence lesson never waits on land (step 7 only)
 	_econ_sync(now)
 	_quiet_sync()
 	_dl_play()  # a DL ceremony held back (a coach step, a protected moment) comes once the moment is free
@@ -6007,9 +6026,12 @@ func _calendar_tick(now: int) -> void:
 		return
 	if calendar.visit(now):
 		_cal_auto = save_enabled
-	# outside protected states (08 §8.8.1), and a few seconds after the tutorial's «Вперёд»: its colonize hint first
-	if _cal_auto and mode == Mode.MAP and not ui.has_modal() and shop == null and not _quiet() \
-			and now - int(stats.get("ftue_done", 0)) >= CAL_AFTER_TUT_SEC:
+	# outside protected states (08 §8.8.1), and after the tutorial's colonize hint: once the player acted on it, or
+	# half a minute after «Вперёд» (playtest 2 review: 5 s opened it over the hint still being read)
+	var after := int(stats.get("ftue_done", 0)) + CAL_AFTER_TUT_SEC
+	if _cal_soon > 0:
+		after = mini(after, _cal_soon)
+	if _cal_auto and mode == Mode.MAP and not ui.has_modal() and shop == null and not _quiet() and now >= after:
 		_cal_auto = false
 		_open_calendar()
 
@@ -8223,6 +8245,16 @@ func _ftue_ghost_pair() -> Array:
 func _ftue_battle_goal() -> Dictionary:
 	if battle == null or battle.over or mode != Mode.BATTLE or ftue not in [3, 4]:
 		return {}
+	# worked out once per battle tick (the coach asks every frame; step 4b's scan runs forecasts over the front — playtest
+	# 2 review: ~0.4 ms a frame): a gesture, an order or a scripted move in between bumps _ftue_seq
+	var key: Array = [battle.get_instance_id(), battle.tick, ftue, flag_hex, _ftue_seq]
+	if key != _ftue_goal_key:
+		_ftue_goal_key = key
+		_ftue_goal_memo = _ftue_battle_goal_now()
+	return _ftue_goal_memo
+
+
+func _ftue_battle_goal_now() -> Dictionary:
 	if ftue == 3:
 		var p3 := _ftue_ghost_pair()
 		return {} if p3.is_empty() else {"kind": "army", "from": int(p3[0]), "to": int(p3[1])}
@@ -8241,20 +8273,58 @@ func _ftue_battle_goal() -> Dictionary:
 	return {} if p4.is_empty() else {"kind": "army", "from": int(p4[0]), "to": int(p4[1])}
 
 
-## The help ladder's level in a coached battle step (08 §8.3.2): 0, then 1 (the ghost) after 6 s without a gesture, 2
-## (the camera on the target, a wider drop zone) after 12 s, 3 (a tap on the target counts as the drag) after 20 s.
+## The help ladder's level in a coached battle step (08 §8.3.2): 0, then 1 (the ghost) after 6 s without a gesture or
+## 1 wrong one, 2 (the camera on the target, a wider drop zone) after 12 s or 2 wrong ones, 3 (a tap on the target
+## counts as the drag) after 20 s or 3 wrong ones (F04: «тап вместо свайпа → уровень 1»).
 func _ftue_level() -> int:
 	var lv := 0
 	for t in FTUE_LADDER:
 		if _ftue_idle >= t:
 			lv += 1
-	return lv
+	return maxi(lv, mini(_ftue_wrong, FTUE_LADDER.size()))
 
 
-## The player touched the battle (an army picked up, a card lifted, a tap): the ladder starts over.
-func _ftue_gesture() -> void:
+## The player touched the battle (a tap, an army's drag, a card dropped): the idle clock starts over, and a gesture
+## that did not play the move the step asked for (`g`, the step's move before it) counts as an error — errors only
+## lift the help (playtest 2 review: a player tapping wrongly lost the ghost after each tap).
+func _ftue_gesture(g := {}) -> void:
 	_ftue_idle = 0.0
 	_ftue_cam = false
+	_ftue_seq += 1
+	if not g.is_empty() and not _ftue_goal_hit(g):
+		_ftue_wrong += 1
+
+
+## A new coached move (or a new offensive): the ladder starts over from level 0.
+func _ftue_ladder_reset() -> void:
+	_ftue_idle = 0.0
+	_ftue_wrong = 0
+	_ftue_cam = false
+	_ftue_seq += 1
+
+
+## The help ladder's level-2 drop zone (08 §8.3.2 «зона попадания ×1,5»): a release within 1.5 hex radii of the coached
+## hex's centre, on screen, counts as on it (playtest 2 review: any neighbour of it did — a drag onto the flag beside it
+## was rerouted).
+func _ftue_in_zone(to: int, screen: Vector2) -> bool:
+	var cam: Camera3D = rig.cam
+	var c := cam.unproject_position(map_view.cell_world(to))
+	var step := INF  # the centres' distance to the nearest neighbour: √3 hex radii
+	for n in sim.neighbors[to]:
+		if n >= 0:
+			step = minf(step, c.distance_to(cam.unproject_position(map_view.cell_world(n))))
+	return step < INF and screen.distance_to(c) <= 1.5 * step / sqrt(3.0)
+
+
+## True when the coached move `g` is being played: an attack of ours on its hex, or the hex already ours.
+func _ftue_goal_hit(g: Dictionary) -> bool:
+	var to := int(g["to"])
+	if battle == null or int(sim.cells[to]["controller"]) == Types.PLAYER:
+		return true
+	for cl in battle.clashes:
+		if int(cl["target"]) == to and int(cl["side"]) == Types.PLAYER:
+			return true
+	return false
 
 
 ## Level 3 (08 §8.3.2: «тап по цели засчитывается как свайп»): a tap on the coached hex — or on the army the ghost
@@ -8280,7 +8350,7 @@ func _ftue_play_goal(g: Dictionary) -> bool:
 	if ok:
 		sfx.play("attack")
 		sfx.haptic(15)
-		_ftue_gesture()
+		_ftue_gesture(g)
 		_ftue_attacked()
 	return ok
 
@@ -8585,7 +8655,7 @@ func _ftue_ladder_tick(delta: float, g: Dictionary) -> void:
 	var to := int(g["to"])
 	if to != _ftue_goal_hex:
 		_ftue_goal_hex = to
-		_ftue_gesture()
+		_ftue_ladder_reset()
 	_ftue_idle += delta
 	var cam: Camera3D = rig.cam
 	var from_p := Vector2(-1, -1)

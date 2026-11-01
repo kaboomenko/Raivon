@@ -29,6 +29,19 @@ func _new_game() -> Node:
 	return g
 
 
+## A game at the tutorial's step 1 as a first launch has it: `ftue` set before _ready, so the tutorial's end
+## (stats.ftue_done), the free crate's timer and Bram all wait for it (playtest 2 review: tests that set ftue after
+## _ready ran a tutorial already counted as over).
+func _new_tutorial() -> Node:
+	var g: Node = load("res://scenes/main.tscn").instantiate()
+	g.save_enabled = false
+	g.ftue = 1
+	root.add_child(g)
+	await process_frame
+	await process_frame
+	return g
+
+
 ## A game right after the first victorious peace, truce expired (the player owns land beyond the core).
 func _after_first_peace() -> Node:
 	var g := await _new_game()
@@ -538,12 +551,24 @@ func _run() -> void:
 	gf._econ_tick()
 	_check(gf.cases.free_started and gf.cases.free_crate_left(gf.now_s()) == 3600 and gf.calendar.credited == 1 and not gf.ui.has_modal()
 		and gf._orders_open(), "after the tutorial: the first War Crate in 1 h, calendar day 1 credited, its screen not yet")
-	gf.time_offset += gf.CAL_AFTER_TUT_SEC
+	gf.time_offset += 6
+	gf._econ_tick()
+	var cal_early: bool = gf.ui.has_modal()
+	# the colonize hint acted on (settlers sent): the calendar comes a moment later, not over the hint being read
+	var wild := -1
+	for c in gf.sim.cells:
+		if wild < 0 and int(c["owner"]) == Types.NOBODY and int(c["controller"]) == Types.NOBODY and Types.is_passable(c) \
+				and gf._touches_player(int(c["id"])) and gf.camps.at(int(c["id"])).is_empty() and gf._ai_claimed(int(c["id"])) < 0:
+			wild = int(c["id"])
+	gf.econ.res["gold"] = maxi(int(gf.econ.res["gold"]), gf._colonize_cost())
+	gf._colonize(wild)
+	gf.time_offset += gf.CAL_AFTER_HINT_SEC
 	gf._econ_tick()
 	var cal_open: bool = gf.ui.has_modal()
 	gf.ui.close_modal()
 	gf._econ_tick()
-	_check(cal_open and not gf.ui.has_modal() and gf.calendar.credited == 1, "the calendar opens once with day 1, %d s after the tutorial" % gf.CAL_AFTER_TUT_SEC)
+	_check(not cal_early and wild >= 0 and cal_open and not gf.ui.has_modal() and gf.calendar.credited == 1,
+		"the calendar opens once with day 1: not 6 s after the tutorial, %d s after the colonize hint is acted on" % gf.CAL_AFTER_HINT_SEC)
 	gf.queue_free()
 	await process_frame
 	# a save made in a gap of the tour (the first peace's ceremony: ftue 0, the next step waiting) resumes it on load —
@@ -576,8 +601,7 @@ func _run() -> void:
 
 	# 4y. War 1 cannot be lost (playtest 2, A-high 2; 08 §8.3 F06/F08): an idle player — no gesture at all — ends on ★★★
 	# with the flag and the first treaty's land; no ghost ever points at a fight it loses (F ≥ 1.1)
-	var gi := await _new_game()
-	gi.ftue = 1
+	var gi := await _new_tutorial()
 	gi._ftue_tick(0.1)
 	gi._on_action("declare")
 	gi._on_action("offensive")
@@ -602,8 +626,7 @@ func _run() -> void:
 	gi.queue_free()
 	await process_frame
 	# the ladder's level 3: a tap on the coached hex plays the drag; a failed offensive's «Ещё бой» starts the war over
-	var gl := await _new_game()
-	gl.ftue = 1
+	var gl := await _new_tutorial()
 	gl._ftue_tick(0.1)
 	gl._on_action("declare")
 	var arm0: Dictionary = {}
@@ -612,10 +635,30 @@ func _run() -> void:
 	gl._on_action("offensive")
 	var gtap: Dictionary = gl._ftue_battle_goal()
 	gl._battle_tap(int(gtap["to"]))
-	_check(gl.ftue == 3, "a tap on the coached hex before the ladder's level 3 does nothing (step %d)" % gl.ftue)
-	gl._ftue_idle = 21.0
+	var lv_a: int = gl._ftue_level()
 	gl._battle_tap(int(gtap["to"]))
-	_check(gl.ftue == 4, "the help ladder's level 3 (20 s idle): a tap on the coached hex counts as the drag (step %d)" % gl.ftue)
+	var lv_b: int = gl._ftue_level()
+	_check(gl.ftue == 3 and lv_a == 1 and lv_b == 2,
+		"a tap on the coached hex before the ladder's level 3 does nothing; each wrong gesture lifts the help (08 §8.3.2: levels %d, %d)" % [lv_a, lv_b])
+	# the ladder's level 2 drop zone: 1.5 hex radii round the coached hex on screen — not any neighbour of it
+	var zcam: Camera3D = gl.rig.cam
+	var zc: Vector2 = zcam.unproject_position(gl.map_view.cell_world(int(gtap["to"])))
+	var zstep := INF
+	var zfar := -1
+	for zn in gl.sim.neighbors[int(gtap["to"])]:
+		if zn >= 0:
+			var zd: float = zc.distance_to(zcam.unproject_position(gl.map_view.cell_world(zn)))
+			zstep = minf(zstep, zd)
+			if zn != int(gtap["from"]):
+				zfar = zn
+	var zp: Vector2 = zcam.unproject_position(gl.map_view.cell_world(zfar))
+	var znear: Vector2 = zc + (zp - zc).normalized() * zstep / sqrt(3.0) * 1.2  # just over the hex's edge, on its neighbour
+	_check(gl._ftue_in_zone(int(gtap["to"]), znear) and not gl._ftue_in_zone(int(gtap["to"]), zp),
+		"the ladder's wider drop zone: just past the coached hex's edge counts, the next hex's centre does not")
+	gl._battle_tap(int(gtap["to"]))
+	_check(gl.ftue == 3 and gl._ftue_level() == 3 and gl._ftue_idle < 1.0, "three wrong gestures: the help ladder's level 3 without the 20 s")
+	gl._battle_tap(int(gtap["to"]))
+	_check(gl.ftue == 4, "the help ladder's level 3: a tap on the coached hex counts as the drag (step %d)" % gl.ftue)
 	for i in 30:
 		gl._battle_step()
 	gl.battle._finish("time")  # (a war 1 that failed some other way: «Ещё бой» must start it over)
@@ -636,8 +679,7 @@ func _run() -> void:
 	await process_frame
 	# a player who follows the coach, then waits (playtest 2, A-medium): the flag falls with time left, step 4b points at
 	# a third hex (F ≥ 1.1), and at 0:55 it falls by script — +3, the first treaty's land, the Residence lesson after it
-	var gw4 := await _new_game()
-	gw4.ftue = 1
+	var gw4 := await _new_tutorial()
 	gw4._ftue_tick(0.1)
 	gw4._on_action("declare")
 	gw4._on_action("offensive")
@@ -700,8 +742,7 @@ func _run() -> void:
 
 	# 5a. FTUE war 1 as the coach leads it (08 §8.3 F04–F07): the ghost's drag brings a second army beside the flag,
 	# «Атака» onto the flag takes it — the first offensive ends on ★★★
-	var gw := await _new_game()
-	gw.ftue = 1
+	var gw := await _new_tutorial()
 	gw._ftue_tick(0.1)
 	gw._on_action("declare")
 	gw._on_action("offensive")
@@ -730,8 +771,9 @@ func _run() -> void:
 	await process_frame
 
 	# 5. FTUE: guided first war (canon §14.3)
-	g = await _new_game()
-	g.ftue = 1
+	g = await _new_tutorial()
+	_check(not g.stats.has("ftue_done") and not g.cases.free_started and not g.stats.has("bram_given") and not g._orders_open(),
+		"a tutorial game: its end, the free crate's timer, Bram and the orders all wait")
 	g._ftue_tick(0.1)
 	_check(g.selected >= 0 and g.ui._action2_kind == "declare", "FTUE preselects a war goal (sel %d, kind %s)" % [g.selected, g.ui._action2_kind])
 	g._on_action("declare")
@@ -943,19 +985,39 @@ func _run() -> void:
 				for d in g._demands:
 					pk_on = pk_on or (String(d["kind"]) == "pocket" and g._chosen.has(d["id"]))
 				_check(pk_on, "FTUE treaty 2 takes the pocket (08 F30: «… + котёл + 1 гекс»)")
+				# the store near its cap (playtest 2 review: a gold roll ×2–3 filled it at ceremony 2, «Склад полон»): the
+				# tutorial's trophy chest rolls only what the warehouse can hold — the ceremony burns nothing
+				g.econ.res["gold"] = int(g.econ.storage_cap()["gold"]) - 300
+				var res_b: Dictionary = g.econ.res.duplicate()
+				var room_b: Dictionary = g._store_room()
 				g._sign_peace()
+				var chest_ok := true
+				var chest_got := {}
+				for rw in g.cases.history[-1]["rewards"]:
+					if String(rw["kind"]) == "res":
+						for k in rw["res"]:
+							chest_got[k] = int(rw["res"][k])
+							chest_ok = chest_ok and int(rw["res"][k]) <= int(room_b.get(k, 0)) \
+								and int(g.econ.res[k]) == int(res_b[k]) + int(rw["res"][k])
+				_check(chest_ok and int(g.econ.res["gold"]) < int(g.econ.storage_cap()["gold"]),
+					"FTUE treaty 2 at a near-full store: the trophy chest burns nothing (%s, gold %d)" % [str(chest_got), int(g.econ.res["gold"])])
 				_check(g.ftue == 0, "FTUE complete after war 2")
 				for i in 80:
 					g._step_ceremony(0.1)
 				g._end_ceremony()
 				_check(g.ui.has_modal() and g.ui._modal.find_child("ok", true, false) != null, "the tutorial closes on Bram's card")
 				var crate_left: int = g.cases.free_crate_left(g.now_s())
-				_check(crate_left > 0 and crate_left <= 3600 and not g._orders_open() and g._quiet(),
-					"the tutorial's card: the first War Crate within 1 h (%d s), no orders yet, toasts held while it shows" % crate_left)
+				_check(crate_left > 0 and crate_left <= 3600 and not g._orders_open() and g._quiet() and not g.cases.free_started \
+					and not g.stats.has("ftue_done"),
+					"the tutorial's card: the first War Crate within 1 h (%d s), its timer, the orders and the end wait, toasts held" % crate_left)
 				g.ui.toast("held")  # (a toast while the card shows waits for its «Вперёд»)
 				_check(g.ui._toast_cur.is_empty() or String(g.ui._toast_cur.get("text", "")) != "held", "no toast over the tutorial's card")
 				print("NOTE  the tutorial ends at %d / %d hexes" % [g._player_hexes(), g._chapter_goal()])
 				_check(g._player_hexes() == 14, "the tutorial ends at 14 / 20 (canon §14.3: «Глава I: 14/20»)")
+				var go_btn = g.ui._modal.find_child("ok", true, false)
+				go_btn.cb.call()  # «Вперёд»
+				_check(g.stats.has("ftue_done") and g.cases.free_started and g.cases.free_crate_left(g.now_s()) == 3600 and g._orders_open()
+					and not g._tut_card, "«Вперёд» ends the tutorial: the first War Crate 1 h from then, the orders open")
 				g.ui.close_modal()
 				_check(g._star_progress(g.STARS[2]) >= 1 and not g.stars_claimed.has("pocket"), "the chapter star «Котёл по договору» can be claimed after the tutorial")
 				g._on_world_action("pocket")
