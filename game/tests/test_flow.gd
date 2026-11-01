@@ -149,7 +149,9 @@ func _run() -> void:
 		g._econ_tick()
 		_check(g._player_hexes() == n0 + 1 and g.colonizing.is_empty(), "colonization timer adds a hex")
 
-	# 2b. Economy: income accrues, «collect all», building upgrade with a timer
+	# 2b. Economy: income accrues, «collect all», building upgrade with a timer (the scripted Barons ultimatum stays away:
+	# the truce after the first peace runs on the game's clock now, and these checks jump it by hours)
+	g.ultimatum_at = g.now_s() + 3650 * 86400
 	var econ = g.econ
 	g.time_offset += 2 * 3600
 	g._econ_tick()
@@ -1863,8 +1865,16 @@ func _run() -> void:
 	g.truce = {}
 	g.ultimatum = {}
 	g.chapter = 2
-	var q2g: Array = War.recommend_goals(g.sim, MapGen.BARONS, 1)
-	g._declare(MapGen.BARONS, q2g[0])
+	g._demo_touch(MapGen.BARONS)
+	var q2bg := func() -> int:
+		for c in g.sim.cells:
+			if int(c["owner"]) == MapGen.BARONS and Types.is_passable(c) and g._touches_player(c["id"]) and not MapGen.core_of(g.sim, MapGen.BARONS).has(c["id"]):
+				return int(c["id"])
+		for c in g.sim.cells:
+			if int(c["owner"]) == MapGen.BARONS and Types.is_passable(c) and g._touches_player(c["id"]):
+				return int(c["id"])
+		return int(g.sim.states[MapGen.BARONS]["capital_id"])
+	g._declare(MapGen.BARONS, q2bg.call())
 	_check(int(g.war.get("chapter", 0)) == 2 and g._ai_energy(MapGen.BARONS) == 800 and int(g._war_rule("cap")) == 24 * 3600 and int(g._war_rule("truce")) == 8 * 3600,
 		"a chapter II war: cap 24 h, truce 8 h, AI energy ×0.8 (%d)" % g._ai_energy(MapGen.BARONS))
 	g.sim.states[MapGen.BARONS]["hegemon"] = true
@@ -1917,7 +1927,7 @@ func _run() -> void:
 	# a cap that ran out while the player was away 24 h+ is a white peace (canon §9.11)
 	g.truce = {}
 	g._set_mode(g.Mode.MAP)
-	g._declare(MapGen.BARONS, War.recommend_goals(g.sim, MapGen.BARONS, 1)[0])
+	g._declare(MapGen.BARONS, q2bg.call())
 	g.war.erase("strike_at")
 	g.war["battles"] = 10
 	g._away = [g.now_s() + 3600, g.now_s() + 3600 + 30 * 3600]
@@ -1963,7 +1973,7 @@ func _run() -> void:
 	_check(q2m.size() == 1 and String(q2m[0]["c"]) == "op_legacy" and absf(float(q2m[0]["v"]) - 30.0) < 0.01, "an older save's opinion number becomes one legacy memory")
 	q2g2.free()
 	# (4) readiness (canon §2.2 #3): below 50% an army sits the offensive out; none ready — the button waits
-	g._declare(MapGen.BARONS, War.recommend_goals(g.sim, MapGen.BARONS, 1)[0])
+	g._declare(MapGen.BARONS, q2bg.call())
 	g.war.erase("strike_at")
 	g._set_mode(g.Mode.WAR)
 	var q2pa: Array = g._player_armies()

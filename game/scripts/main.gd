@@ -6831,11 +6831,13 @@ func _on_diplomacy_action(s: int, kind: String) -> void:
 				ui.toast(whyp)
 				return
 			var cost := _pact_cost()
-			if cost > int(econ.storage_cap().get("gold", cost)):  # 8 h of gold over what the warehouse holds (B-M)
-				ui.toast(tr("pact.over_cap") % GameUI.fmt_num(cost), "coin", "error")
-				return
-			if econ.res["gold"] < cost:  # how much is missing, not a bare «Не хватает золота»
-				ui.toast(tr("ult.no_gold") % GameUI.fmt_num(cost - int(econ.res["gold"])), "coin", "error")
+			if econ.res["gold"] < cost:
+				# how much is missing, not a bare «Не хватает золота»; 8 h of gold over what the warehouse holds can never be
+				# saved up: it says so (B-M)
+				if cost > int(econ.storage_cap().get("gold", cost)):
+					ui.toast(tr("pact.over_cap") % GameUI.fmt_num(cost), "coin", "error")
+				else:
+					ui.toast(tr("ult.no_gold") % GameUI.fmt_num(cost - int(econ.res["gold"])), "coin", "error")
 				return
 			econ.res["gold"] -= cost
 			pacts[s] = now_s() + PACT_SEC

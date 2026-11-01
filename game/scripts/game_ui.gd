@@ -5540,10 +5540,8 @@ func _leader_dialog(it: Dictionary) -> void:
 		var pc := int(it.get("pact_cost", 0))
 		var gst := _stock("gold")
 		var p_short := ""
-		if bool(it.get("pact_over_cap", false)):
-			p_short = tr("pact.over_cap") % fmt_num(pc)
-		elif int(gst[1]) >= 0 and pc > int(gst[1]):
-			p_short = tr("ult.no_gold") % fmt_num(pc - int(gst[1]))
+		if int(gst[1]) >= 0 and pc > int(gst[1]):
+			p_short = tr("pact.over_cap") % fmt_num(pc) if bool(it.get("pact_over_cap", false)) else tr("ult.no_gold") % fmt_num(pc - int(gst[1]))
 		acts.append({"kind": "pact", "cap": tr("dipl.pact_btn"), "icon": "treaty", "on": why_p == "", "why": why_p,
 			"price": [["coin", fmt_num(pc), p_short != ""]] if pc > 0 else [], "short": p_short if why_p == "" else "", "hold": true})
 	if rel == "ally":
