@@ -5421,8 +5421,8 @@ func opinion_breakdown(parts: Array) -> String:
 			continue
 		var num := Kit.fmt_dec(absf(v), 1).trim_suffix(",0").trim_suffix(".0")
 		var s := ("+" if v > 0.0 else Kit.MINUS) + num + Kit.NBSP + tr("opinion.part." + String(p[0]))
-		if int(p[2]) > 0:
-			s += " " + tr("opinion.melts") % fmt_time(int(p[2]))
+		if int(p[2]) > 0:  # «(тает 14ч 24м)» never splits over two lines (Q2 review)
+			s += " " + (tr("opinion.melts") % fmt_time(int(p[2]))).replace(" ", Kit.NBSP)
 		out.append(s)
 	return " · ".join(out)
 
@@ -5489,6 +5489,17 @@ func _diplomacy_cta(it: Dictionary, rel: String) -> Dictionary:
 		return {"role": "go", "caption": tr("dipl.peace"), "icon": "dove", "cb": _peace_cb(it)}
 	if bool(it.get("can_call", false)):
 		return {"role": "info", "caption": tr("dipl.call"), "icon": "horn", "cb": func(): diplomacy_action.emit(id, "call")}
+	if bool(it.get("support_war", false)) and String(it.get("support_reason", "x")) == "":
+		# at war with another AI state: «Поддержать» (06 §12.4) with its price; the tap opens the leader's window, where
+		# a hold sends the subsidy
+		var sct := {"role": "info", "caption": tr("dipl.support"), "icon": "shield", "cb": func(): _leader_dialog(it)}
+		var sc := int(it.get("support_cost", 0))
+		var sst := _stock("gold")
+		var s_short := int(sst[1]) >= 0 and sc > int(sst[1])
+		sct["price"] = [["coin", fmt_num(sc), s_short]]
+		if s_short:
+			sct["short_reason"] = tr("ult.no_gold") % fmt_num(sc - int(sst[1]))
+		return sct
 	# a gift while they dislike us — or for an ally below the goodwill (60) that lets us call them into a war
 	var op := float(it.get("opinion", 0.0))
 	if (op < 0.0 or (rel == "ally" and op < CALL_OPINION)) and int(it.get("gift_left", 0)) == 0:
@@ -5567,6 +5578,15 @@ func _leader_dialog(it: Dictionary) -> void:
 	var g := _gift_price(it)
 	acts.append({"kind": "gift", "cap": tr("dipl.gift"), "icon": "gift", "on": gl == 0,
 		"why": tr("dipl.gift_wait") % fmt_time(gl), "price": [g[0]], "short": g[1]})
+	if rel != "war" and bool(it.get("support_war", false)):
+		# «Поддержать» (06 §12.4) while they fight another AI state: 4 h of gold for their armies +10% and their goodwill,
+		# its price on it and signed by a hold, as the pact; a day's wait or their war on our ally greys it with the reason
+		var why_u := String(it.get("support_reason", ""))
+		var sc := int(it.get("support_cost", 0))
+		var sst := _stock("gold")
+		var s_short := tr("ult.no_gold") % fmt_num(sc - int(sst[1])) if int(sst[1]) >= 0 and sc > int(sst[1]) else ""
+		acts.append({"kind": "support", "cap": tr("dipl.support"), "icon": "shield", "on": why_u == "", "why": why_u,
+			"price": [["coin", fmt_num(sc), s_short != ""]], "short": s_short if why_u == "" else "", "hold": true})
 	var rows := ceili(acts.size() / 2.0)
 	var grid_y := 280.0
 	var foot_y := grid_y + rows * 88.0 + (rows - 1) * 16.0 + 36.0
@@ -5622,7 +5642,8 @@ func _leader_dialog(it: Dictionary) -> void:
 		oc.mouse_filter = Control.MOUSE_FILTER_STOP
 		oc.gui_input.connect(func(e: InputEvent):
 			if e is InputEventMouseButton and (e as InputEventMouseButton).pressed and (e as InputEventMouseButton).button_index == MOUSE_BUTTON_LEFT:
-				Kit.tooltip(oc, tr("dipl.opinion") % _signed(vi), opinion_breakdown(parts)))
+				# below the chip: above it, it covered the leader's name and the window's title (Q2 review)
+				Kit.tooltip(oc, tr("dipl.opinion") % _signed(vi), opinion_breakdown(parts), true))
 	# the actions: two per row, the last one alone in the middle
 	var bw := (w - 64.0 - 16.0) * 0.5
 	var grid: Array = []

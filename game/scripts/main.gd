@@ -792,7 +792,8 @@ func _primary_for_selection() -> void:
 	ui.set_action("", "")
 	if selected < 0 and not ultimatum.is_empty():
 		# an ultimatum closed with ✕ is not a dead end (B-H1): its deadline on the status button, a tap opens it again
-		ui.set_action("ultimatum", tr("ult.title"), GameUI.fmt_time(_ult_left()), "war")
+		# (the info face: red stays the big button's, the one loud thing — Q2 review; the plate says it is the time to answer)
+		ui.set_action("ultimatum", tr("ult.title"), tr("ult.left") % GameUI.fmt_time(_ult_left()), "info")
 	if selected < 0:
 		if mode == Mode.MAP and _can_expand():  # the chapter's goal is met: its climax comes first (07 §3.1 `ready`)
 			ui.set_primary("expand", tr("ui.expand_world"), "go", true, "globe")
@@ -869,7 +870,8 @@ func _primary_for_selection() -> void:
 		elif not ultimatum.is_empty():
 			# an ultimatum waits for its answer (B-H1): no war on anyone meanwhile — the lock says so with the time
 			# left, and its tap opens the ultimatum again
-			ui.set_primary("ult_wait", tr("ui.declare_war"), "lock", true, "", [["", GameUI.fmt_time(_ult_left())]], tr("ult.answer_first"))
+			ui.set_primary("ult_wait", tr("ui.declare_war"), "lock", true, "", [["hourglass", tr("ult.left") % GameUI.fmt_time(_ult_left())]],
+				tr("ult.answer_first"))
 		else:
 			ui.set_primary("declare", tr("ui.declare_war"), "war")
 	elif _march_primary():
@@ -958,6 +960,10 @@ func _pick_wait() -> void:
 	if settling > 0 and (soon == 0 or settling <= soon):  # our settlers free the wild land first
 		var t := GameUI.fmt_time(settling)
 		ui.set_primary("pick_wait", tr("ui.pick_target"), "lock", false, "", [["", t]], tr("tile.settling") % t)
+	elif not ultimatum.is_empty() and (soon == 0 or _ult_left() <= soon):
+		# no war on anyone while an ultimatum waits (B-H1): that is what holds the targets, not a lack of them
+		var t := GameUI.fmt_time(_ult_left())
+		ui.set_primary("pick_wait", tr("ui.pick_target"), "lock", false, "", [["", tr("ult.left") % t]], tr("ult.answer_first"))
 	elif soon > 0:
 		var t := GameUI.fmt_time(soon)
 		ui.set_primary("pick_wait", tr("ui.pick_target"), "lock", false, "", [["", t]], tr("ui.pick_wait") % t)
@@ -972,10 +978,11 @@ func _offensive_primary() -> void:
 	var wait := 0
 	# an army attacks at 50%+ of its strength (canon §2.2 #3, 03 §5.1): with none ready the button waits for the refill
 	if ftue == 0 and _ready_armies().is_empty() and not _player_armies().is_empty():
-		var heal := -1
-		for a in _player_armies():
-			var s := _ready_in(a)
-			heal = s if heal < 0 else mini(heal, s)
+		var heal := _ready_soonest()
+		if heal < 0:  # the store's food cannot pay for the refill: it waits for the harvest, not for a time
+			var short := GameUI.fmt_num(_refill_food_short())
+			ui.set_primary("recovering", tr("ui.recovering"), "lock", false, "", [["food", short]], tr("ui.recovering_food") % short)
+			return
 		var t := GameUI.fmt_time(maxi(1, heal))
 		ui.set_primary("recovering", tr("ui.recovering"), "lock", false, "", [["", t]], tr("ui.recovering_tip") % t)
 		return
@@ -1303,9 +1310,11 @@ func _ai_wars_tick(now: int) -> void:
 			_ai_peace(w)
 			continue
 		while now >= int(w["next"]) and now < int(w["until"]):
+			# our subsidy's +10% (06 §12.4) for the steps inside its 12 h; an ally's plea backs it the whole war
+			var bst := int(w.get("boost", -1)) if int(w["next"]) < int(w.get("boost_until", int(w["next"]) + 1)) else -1
 			w["next"] = int(w["next"]) + 2 * 3600
-			var pa: int = _ai_power(a) * (11 if int(w.get("boost", -1)) == a else 10)
-			var pb: int = _ai_power(b) * (11 if int(w.get("boost", -1)) == b else 10)
+			var pa: int = _ai_power(a) * (11 if bst == a else 10)
+			var pb: int = _ai_power(b) * (11 if bst == b else 10)
 			var strong := a if pa >= pb else b
 			var weak := b if strong == a else a
 			var n := 1 + _roll("aiw:%d:%d:%d" % [a, b, int(w["next"])], 3)
@@ -1346,7 +1355,7 @@ func _ai_wars_tick(now: int) -> void:
 ## Our ally is attacked by another AI (canon §10.7): support it with 4 h of gold (its armies +10% in that war,
 ## opinion +15) or refuse (opinion −15).
 func _ally_asks(ally: int, attacker: int) -> void:
-	var cost := 4 * maxi(60, int(econ.gross_per_hour(sim).get("gold", 0)))
+	var cost := _support_cost()
 	_post(L.pack("inbox.ally_asks.title", [_state_key(ally)]), L.pack("inbox.ally_asks.text", [_state_key(ally), _state_key(attacker)]))
 	if mode != Mode.MAP or ui.has_modal():
 		return
@@ -1355,11 +1364,7 @@ func _ally_asks(ally: int, attacker: int) -> void:
 		if econ.res["gold"] < cost:
 			ui.toast(tr("toast.no_gold"), "coin", "error")
 			return
-		econ.res["gold"] -= cost
-		for w in ai_wars:
-			if int(w["b"]) == ally or int(w["a"]) == ally:
-				w["boost"] = ally
-		_opinion_add(ally, 15.0, "op_war_support")
+		_support(ally, cost, true)  # (the same subsidy as the leader card's «Поддержать», 06 §12.4: for the whole war)
 		ui.close_modal()
 		ui.toast(tr("toast.ally_supported") % _state_name(ally))
 		_autosave()
@@ -1895,6 +1900,56 @@ func _subsidy_tick(now: int) -> void:
 		_post("inbox.subsidy.title", L.pack("inbox.subsidy.text", [_state_key(s), _state_key(enemy)]))
 		ui.toast(tr("toast.subsidy") % [_state_name(s), _state_name(enemy)])
 		return
+
+
+## «Поддержать в войне» (06 §12.4, the subsidy): a neighbour fighting another AI state gets 4 h of our gross gold — its
+## armies +10% in that war for 12 h, its opinion +15 (op_war_support), its enemy's −15 (op_supported_enemy); once a
+## day for each state. Playtest 2's review: without it an Owl with a shared border topped out near +20 on gifts alone,
+## and the canon's way to an alliance (06 §13.1: 50) was missing its main step. Our ally's own plea (_ally_asks) is the
+## same subsidy.
+const SUPPORT_SEC := 12 * 3600
+const SUPPORT_EVERY_SEC := 86400
+var support_at := {}  # AI state -> unix time of our last subsidy to it
+
+
+func _support_cost() -> int:
+	return 4 * maxi(60, int(econ.gross_per_hour(sim).get("gold", 0)))  # 4 h of gross gold (canon)
+
+
+## "" when `s` can be subsidised now; else the first check that fails (06 §12.2: «Не воюет», «Это ваш враг», «Воюет с
+## вашим союзником»), then the day's wait.
+func _support_reason(s: int) -> String:
+	var foe := ai_war_of(s)
+	if foe < 0:
+		return tr("support.no_war")
+	if not war.is_empty() and War.sides(war).has(s):
+		return tr("support.our_enemy")
+	if allies.has(foe):
+		return tr("support.vs_ally")
+	var wait := int(support_at.get(s, -SUPPORT_EVERY_SEC)) + SUPPORT_EVERY_SEC - now_s()
+	if wait > 0:
+		return tr("support.wait") % GameUI.fmt_time(wait)
+	return ""
+
+
+## The subsidy goes to `s` (its price taken by the caller): the AI war's +10% for it, the two opinions, the day's mark.
+func _support(s: int, cost: int, whole_war := false) -> void:
+	var now := now_s()
+	var foe := ai_war_of(s)
+	for w in ai_wars:
+		if int(w["a"]) == s or int(w["b"]) == s:
+			if whole_war:  # our ally's plea: for the whole war
+				w["boost"] = s
+				w.erase("boost_until")
+			elif int(w.get("boost", -1)) != s or w.has("boost_until"):
+				w["boost"] = s
+				w["boost_until"] = now + SUPPORT_SEC
+	econ.res["gold"] = maxi(0, int(econ.res["gold"]) - cost)
+	_opinion_add(s, 15.0, "op_war_support")
+	if foe >= 0:
+		_opinion_add(foe, -15.0, "op_supported_enemy")
+	support_at[s] = now
+	sfx.play("coin")
 
 
 # ---------------------------------------------------------------------- non-aggression pact (canon §10.8, 06 §11)
@@ -3334,13 +3389,48 @@ func _ready_armies() -> Array:
 	return _player_armies().filter(func(a): return _army_ready(a))
 
 
-## Seconds until `a` is back at 50% at the refill's pace (_army_refill; 0 if it is).
+## Seconds until `a` is back at 50% at the refill's pace (_army_refill; 0 if it is), -1 when the food in store cannot
+## pay for that much refill (it then waits for food, not for time: Q2 review — the timer ran on with an empty store).
 func _ready_in(a: Dictionary) -> int:
-	var need := int(a["max_str"]) / 2 + int(a["max_str"]) % 2 - int(a["str"])
+	var need := _ready_need(a)
 	if need <= 0:
 		return 0
+	if float(econ.res["food"]) < ceil(need * _refill_food_per()):
+		return -1
 	var sp := _refill_speed(a)
 	return int(ceil(float(need) * REFILL_FULL_SEC[econ.dev_level()] / maxf(1.0, float(a["max_str"]) * sp)))
+
+
+## Strength (thousandths) `a` lacks to 50%.
+func _ready_need(a: Dictionary) -> int:
+	return int(a["max_str"]) / 2 + int(a["max_str"]) % 2 - int(a["str"])
+
+
+## The first army back at 50%: its seconds (_ready_in), -1 when the food is short for every one of them.
+func _ready_soonest() -> int:
+	var heal := -1
+	for a in _player_armies():
+		var t := _ready_in(a)
+		if t >= 0 and (heal < 0 or t < heal):
+			heal = t
+	return heal
+
+
+## The food the store lacks to bring the nearest army to 50% (whole units).
+func _refill_food_short() -> int:
+	var least := -1
+	for a in _player_armies():
+		var n := _ready_need(a)
+		if n > 0:
+			var f := int(ceil(n * _refill_food_per()))
+			least = f if least < 0 else mini(least, f)
+	return maxi(1, maxi(0, least) - int(econ.res["food"]))
+
+
+## Food per thousandth of Strength refilled: 1 food a point × М_произв / М_силы (_army_refill).
+func _refill_food_per() -> float:
+	var dl: int = econ.dev_level()
+	return float(Economy.PROD_MULT100[dl]) / 100.0 / Types.strength_mult(maxi(1, dl)) / 1000.0
 
 
 ## The refill's speed factor for `a` (_army_refill, _ready_in): the Infirmary, «Резерв», Captain Lira (the
@@ -3396,7 +3486,11 @@ func _camp_marcher(hex: int) -> Dictionary:
 func _start_offensive() -> void:
 	var enemy: int = _front()
 	if ftue == 0 and _ready_armies().is_empty() and not _player_armies().is_empty():
-		ui.toast(tr("ui.recovering_tip") % GameUI.fmt_time(maxi(1, _ready_in(_player_armies()[0]))), "helmet", "info", true)
+		var heal := _ready_soonest()  # (the soonest army, as the big button says)
+		if heal < 0:
+			ui.toast(tr("ui.recovering_food") % GameUI.fmt_num(_refill_food_short()), "food", "info", true)
+		else:
+			ui.toast(tr("ui.recovering_tip") % GameUI.fmt_time(maxi(1, heal)), "helmet", "info", true)
 		return  # (none at 50%: the big button waits for the refill)
 	_ensure_armies_for(enemy)
 	_stop_marches()
@@ -4868,6 +4962,8 @@ func _ftue_resume(resume: int) -> void:
 func _finish_tutorial() -> void:
 	stats["ftue_done"] = maxi(1, now_s())
 	_tut_card = false
+	if ultimatum_at > 0:  # the scripted Barons ultimatum ~2 h after the first session (canon §14.3, 9:30–10:00)
+		ultimatum_at = maxi(ultimatum_at, now_s() + 2 * 3600)
 	if cases != null:
 		cases.start_free_crates(now_s())
 
@@ -4953,7 +5049,7 @@ func _open_defeat_or_white(score: float) -> void:
 	var sign_d := func():
 		ui.close_modal()
 		_apply_defeat(enemy, lost)
-	ui.show_choice(tr("result.defeat_title"), [{"tiles": tiles}, tr("defeat.note_lost") if not lost.is_empty() else tr("defeat.note_nohex")],
+	ui.show_choice(tr("result.defeat_title"), [{"tiles": tiles}, (tr("defeat.note_lost1") if lost.size() == 1 else tr("defeat.note_lost")) if not lost.is_empty() else tr("defeat.note_nohex")],
 		[[tr("result.peace"), "go", sign_d, {"icon": "dove"}], [tr("result.continue"), "war", back, {"size": "M"}]],
 		"war", "white_flag", portrait.merged({"mood": "cunning", "say": tr("defeat.say")}))
 	ui._set_docked(true)
@@ -6085,6 +6181,11 @@ func _open_pass() -> void:
 ## stats.ftue_done (_finish_tutorial); the tour's own gaps with `ftue` at 0 (the first peace's ceremony, the raid, war 2's
 ## ceremony and card) never count.
 func _orders_open() -> bool:
+	return _tour_over()
+
+
+## The tutorial is over for good: its end is kept (stats.ftue_done) and none of the tour's own gaps is open.
+func _tour_over() -> bool:
 	return stats.has("ftue_done") and ftue == 0 and _ftue_next == 0 and _raid_hold == 0 and not _tutorial_end and not _tut_card
 
 
@@ -6649,11 +6750,37 @@ func _op_static_parts(s: int) -> Array:
 		out.append(["op_alarm", -10.0])  # «Тревога соседей» 50%+: everyone is wary (canon §10.8)
 	if not war.is_empty() and not war.has("ended") and War.sides(war).has(s):
 		out.append(["op_war", -50.0])  # at war with us; after the peace a memory (_war_memory)
-	elif not war.is_empty() and ai_war_of(s) >= 0 and War.sides(war).has(ai_war_of(s)):
-		out.append(["op_common_enemy", 20.0])
+	elif _common_enemy(s):
+		out.append(["op_common_enemy", 20.0])  # while both fight it; then a memory (_common_enemy_tick)
 	if allies.has(s):
 		out.append(["op_alliance", 10.0])
 	return out
+
+
+## `s` fights the state we are at war with (06 §11.2 «Общий враг»: +20 while it lasts).
+func _common_enemy(s: int) -> bool:
+	if war.is_empty() or war.has("ended"):
+		return false
+	var foe := ai_war_of(s)
+	return foe >= 0 and War.sides(war).has(foe) and not War.sides(war).has(s)
+
+
+## «Общий враг» ends — their war or ours over — and leaves its memory: +20 fading over 48 h (06 §11.2: «пока оба воюют
+## с одним государством, затем память», 0.42 an hour). Who has the standing term is kept in the war (war.common).
+func _common_enemy_tick() -> void:
+	if war.is_empty():
+		return
+	var cur: Array = []
+	for s in _ai_states():
+		if _common_enemy(s):
+			cur.append(s)
+	for s in war.get("common", []):
+		if not cur.has(int(s)):
+			_opinion_add(int(s), 20.0, "op_common_enemy")
+	if cur.is_empty():
+		war.erase("common")
+	else:
+		war["common"] = cur
 
 
 func _op_static(s: int) -> float:
@@ -6705,6 +6832,9 @@ func _war_memory(white: bool) -> void:
 		return
 	if war.has("ended"):
 		return
+	for s in war.get("common", []):  # a common enemy's +20 goes on as a memory too
+		_opinion_add(int(s), 20.0, "op_common_enemy")
+	war.erase("common")
 	war["ended"] = 1  # (the treaty's ceremony still holds the war: its −50 is a memory already)
 	for s in War.sides(war):
 		_opinion_add(int(s), -25.0 if white else -50.0, "op_war_memory")
@@ -6801,6 +6931,8 @@ func _diplomacy_items(now: int) -> Array:
 			"war_ult": war.is_empty() and not ultimatum.is_empty(),  # «Объявить войну» opens the pending ultimatum (B-H1)
 			"pact_reason": _pact_reason(s), "pact_left": _pact_left(s),
 			"pact_cost": _pact_cost(), "pact_over_cap": _pact_cost() > int(econ.storage_cap().get("gold", 0)),
+			# «Поддержать» (06 §12.4) while it fights another AI state: the subsidy's price and the first failing check
+			"support_war": ai_war_of(s) >= 0, "support_reason": _support_reason(s), "support_cost": _support_cost(),
 			"opinion_parts": _opinion_parts(s),
 			"separate": _can_separate(s),
 			"swap_reason": _swap_reason(s),
@@ -6852,6 +6984,18 @@ func _on_diplomacy_action(s: int, kind: String) -> void:
 			_coalition_tick(now_s())
 			_refresh_ui()
 			_autosave()
+		"support":  # «Поддержать» (06 §12.4): the subsidy, signed by a hold on its price
+			var whys := _support_reason(s)
+			if whys != "":
+				ui.toast(whys)
+				return
+			var scost := _support_cost()
+			if econ.res["gold"] < scost:
+				ui.toast(tr("ult.no_gold") % GameUI.fmt_num(scost - int(econ.res["gold"])), "coin", "error")
+				return
+			_support(s, scost)
+			ui.toast(tr("toast.war_supported") % _state_name(s), "coin")
+			_refresh_ui()
 		"ultimatum":  # the leader card's «Объявить войну» while an ultimatum waits: the ultimatum first
 			ui.toast(tr("ult.answer_first"), "mail", "info", true)
 			if not ultimatum.is_empty():
@@ -6946,7 +7090,7 @@ func _army_refill(now: int) -> void:
 	if dt <= 0 or mode == Mode.BATTLE:
 		return
 	var dl: int = econ.dev_level()
-	var food_per_fx := float(Economy.PROD_MULT100[dl]) / 100.0 / Types.strength_mult(maxi(1, dl)) / 1000.0
+	var food_per_fx := _refill_food_per()
 	for a in _player_armies():
 		var missing: int = int(a["max_str"]) - int(a["str"])
 		if missing <= 0:
@@ -7989,7 +8133,11 @@ func _ai_tick(now: int) -> void:
 		ftue = 10 if _hamlets_front() >= 0 else 0  # war 2's front: the Hamlets come up to our border if need be
 		if ftue == 0:  # no way to the Hamlets at all for war 2: the tour closes here, on its card
 			_tutorial_card()
-	if ultimatum_at > 0 and now >= ultimatum_at and ultimatum.is_empty() and war.is_empty() and mode == Mode.MAP and _truce_left(MapGen.BARONS) == 0:
+	# the scripted Barons ultimatum (canon §14.3: «придёт через ~2 ч» after the first session) never comes inside the tour:
+	# a player back 2 h after war 1's peace met it mid-tutorial, and its lock then blocked war 2 (Q2 review) — it waits
+	# for the tutorial's end, which moves it 2 h on from there (_finish_tutorial)
+	if ultimatum_at > 0 and now >= ultimatum_at and ultimatum.is_empty() and war.is_empty() and mode == Mode.MAP and _truce_left(MapGen.BARONS) == 0 \
+			and _tour_over():
 		_issue_ultimatum(now)
 	if not ultimatum.is_empty():
 		_ultimatum_tick(now)
@@ -7997,6 +8145,7 @@ func _ai_tick(now: int) -> void:
 	_coalition_tick(now)
 	_subsidy_tick(now)
 	_separate_offer_tick(now)
+	_common_enemy_tick()
 	if war.is_empty():
 		return
 	if war.has("strike_at"):
@@ -8023,7 +8172,7 @@ const ULT_CHANCE := {"wolf": 35, "raven": 25, "fox": 10, "owl": 10, "turtle": 5}
 
 
 func _ultimatum_rolls(now: int) -> void:
-	if ultimatum_at >= 0 or not ultimatum.is_empty() or not war.is_empty() or mode != Mode.MAP or ftue != 0:
+	if ultimatum_at >= 0 or not ultimatum.is_empty() or not war.is_empty() or mode != Mode.MAP or not _tour_over():
 		return
 	for s in _ai_states():
 		if not ult_check.has(s):
@@ -8063,13 +8212,19 @@ func _issue_ultimatum(now: int, state: int = MapGen.BARONS) -> void:
 	var tribute := 8 * maxi(60, int(econ.gross_per_hour(sim).get("gold", 0)))
 	ultimatum = {"state": state, "hex": best, "tribute": tribute, "deadline": now + 4 * 3600}
 	ultimatum["buyout"] = _ult_buyout()  # the buyout's fixed price, set when it comes (canon §9.1)
-	# the letter: the hex or the tribute; the Wolf takes no buyout, so its letter names the hex alone
-	_post(L.pack("inbox.ultimatum.title", [_state_key(state)]), L.pack("inbox.ultimatum.text", [_cell_key(best), tribute])
-		if int(ultimatum["buyout"]) > 0 else L.pack("inbox.ultimatum.text_hex", [_cell_key(best)]))
+	_ult_letter()
 	sfx.play("warn")
 	sfx.haptic(60)
 	rig.focus(map_view.cell_world(best))
 	_show_ultimatum()
+
+
+## The pending ultimatum's letter: the hex or the tribute; the Wolf takes no buyout, so its letter names the hex alone.
+func _ult_letter() -> void:
+	var state := int(ultimatum["state"])
+	var hex := int(ultimatum["hex"])
+	_post(L.pack("inbox.ultimatum.title", [_state_key(state)]), L.pack("inbox.ultimatum.text", [_cell_key(hex), int(ultimatum["tribute"])])
+		if int(ultimatum.get("buyout", 0)) > 0 else L.pack("inbox.ultimatum.text_hex", [_cell_key(hex)]))
 
 
 ## The hex an ultimatum from `state` demands: our most valuable one on its border outside the Core (-1: none).
@@ -8132,6 +8287,16 @@ func _ultimatum_tick(now: int) -> void:
 			ultimatum = {}
 			return
 		ultimatum["hex"] = h
+		_ult_letter()  # the new demand in the inbox, as the first one (Q2 review: it moved without a word)
+	if not war.is_empty() and War.sides(war).has(s):
+		# its sender is at war with us already (a coalition it joined): its war has come — the demand is void, and an
+		# answer now would cede a hex to a state at war with us or sign it a truce in the middle of the war (Q2 review)
+		ultimatum = {}
+		_post("inbox.ult_void.title", L.pack("inbox.ult_void.text", [_state_key(s)]))
+		hud.set_mail(_unread())
+		if ui.has_modal() and ui._modal.find_child("option_0", true, false) != null:  # (its window, if open)
+			ui.close_modal()
+		return
 	if not war.is_empty():
 		if not ultimatum.has("refused") and int(ultimatum["deadline"]) - now < ULT_HOLD_SEC:
 			ultimatum["deadline"] = now + ULT_HOLD_SEC
@@ -8419,7 +8584,7 @@ func _war_cap() -> void:
 	ui.close_modal()
 	# the cap ran out while the player was away 24 h or more: a white peace, whatever the score (canon §9.11)
 	var cap_at := int(war.get("started", 0)) + cap
-	if _away[1] - _away[0] >= 86400 and cap_at >= _away[0] and cap_at <= _away[1]:
+	if cap_at - _away[0] >= 86400 and cap_at <= _away[1]:  # (gone 24 h before the cap ran out, not just after it)
 		War.white_peace(sim)
 		_post("inbox.war_cap.title", L.pack("inbox.war_cap.away", [hours]))
 		_finish_war(enemy, tr("toast.war_cap_white"), "dove", true)
@@ -9722,7 +9887,7 @@ func _demo(spec: String) -> void:
 				_select(hg[0])
 				rig.focus(map_view.cell_world(hg[0]), 0.45)
 		return
-	if what == "leader":  # leader[:<state>[:plain]] — chapter III at DL6, a neighbour's leader card (default: Saren, a Fox):
+	if what == "leader":  # leader[:<state>[:plain|parts|tap|support]] — chapter III at DL6, a neighbour's leader card (default: Saren, a Fox):
 		# the pact's price over the warehouse's cap, the opinion's sum and its parts on a tap; :plain — no price (the card
 		# as it was before playtest 2's pact fix, for the canvas count)
 		await _world_expansion()
@@ -9733,6 +9898,11 @@ func _demo(spec: String) -> void:
 		var ls := int(parts[1]) if parts.size() > 1 else RingNext.SAREN
 		_opinion_add(ls, 10.0 * 1.05, "op_gift")
 		_opinion_add(ls, 4.5, "op_peace_leftover")
+		if parts.size() > 2 and parts[2] == "support":  # :support — it fights another AI state: «Поддержать» (06 §12.4)
+			for o in _ai_states():
+				if o != ls:
+					ai_wars = [{"a": o, "b": ls, "until": now_s() + 30 * 3600, "next": now_s() + 7200}]
+					break
 		_open_tab("diplomacy")
 		for it in _diplomacy_items(now_s()):
 			if int((it as Dictionary).get("id", -1)) == ls:
@@ -9746,7 +9916,7 @@ func _demo(spec: String) -> void:
 					await get_tree().process_frame
 					var oc: Control = ui._modal.find_child("opinion", true, false)
 					if oc != null:
-						Kit.tooltip(oc, tr("dipl.opinion") % GameUI._signed(roundi(float(lit["opinion"]))), ui.opinion_breakdown(lit["opinion_parts"]))
+						Kit.tooltip(oc, tr("dipl.opinion") % GameUI._signed(roundi(float(lit["opinion"]))), ui.opinion_breakdown(lit["opinion_parts"]), true)
 				if parts.size() > 2 and parts[2] == "tap":  # «Пакт» tapped while the gold is short: how much, or the store's cap
 					await get_tree().process_frame
 					var pb: Variant = ui._modal.find_child("act_pact", true, false)

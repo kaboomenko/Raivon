@@ -68,6 +68,7 @@ static func to_dict(g: Node) -> Dictionary:
 		"intro_offer_day": g.intro_offer_day,
 		"opinion": g.opinion,
 		"gift_at": g.gift_at,
+		"support_at": g.support_at,
 		"stats": g.stats,
 		"stars_claimed": g.stars_claimed,
 		"chapter_done": g.chapter_done,
@@ -183,6 +184,9 @@ static func apply(g: Node, d: Dictionary) -> bool:
 	g.colonizing = col
 	g.colonized = int(d.get("colonized", 0))
 	g.inbox = d.get("inbox", [])
+	for m in g.inbox:  # a v0.9.1 war-cap letter is a plain key: its text says how long the war ran now (chapter I's 2 h)
+		if typeof(m) == TYPE_DICTIONARY and String(m.get("text", "")) in ["inbox.war_cap.peace", "inbox.war_cap.white"]:
+			m["text"] = String(m["text"]) + "|2"
 	var ult := {}
 	var su: Dictionary = d.get("ultimatum", {})
 	for k in su:
@@ -205,14 +209,23 @@ static func apply(g: Node, d: Dictionary) -> bool:
 	var op := {}
 	var so: Dictionary = d.get("opinion", {})
 	var saved_at := int(d.get("saved_at", 0))
+	# that number held the running war's own −50 (a coalition's −20 for each member), which the war's standing term
+	# counts now — and its peace turns into a memory: it comes out of the legacy number, not counted twice (Q2 review)
+	var war_fold := {}
+	if not war.is_empty() and war.has("enemy"):
+		if war.has("coalition"):
+			for m in war["coalition"]:
+				war_fold[int(m)] = 20.0
+		else:
+			war_fold[int(war["enemy"])] = 50.0
 	for k in so:
 		var mems: Array = []
 		if typeof(so[k]) == TYPE_ARRAY:
 			for m in so[k]:
 				if typeof(m) == TYPE_DICTIONARY:
 					mems.append({"c": String(m.get("c", "op_legacy")), "v": float(m.get("v", 0.0)), "at": int(m.get("at", saved_at))})
-		elif absf(float(so[k])) >= 0.05:
-			mems.append({"c": "op_legacy", "v": float(so[k]), "at": saved_at})
+		elif absf(float(so[k]) + float(war_fold.get(int(k), 0.0))) >= 0.05:
+			mems.append({"c": "op_legacy", "v": float(so[k]) + float(war_fold.get(int(k), 0.0)), "at": saved_at})
 		op[int(k)] = mems
 	g.opinion = op
 	if g.get("_away") != null:  # the absence this load ends: a war cap that ran out in it (main._war_cap, canon §9.11)
@@ -222,6 +235,11 @@ static func apply(g: Node, d: Dictionary) -> bool:
 	for k in sg:
 		ga[int(k)] = int(sg[k])
 	g.gift_at = ga
+	var sp := {}  # our last subsidy to each state (06 §12.4; an older save has none)
+	var ssp: Dictionary = d.get("support_at", {})
+	for k in ssp:
+		sp[int(k)] = int(ssp[k])
+	g.support_at = sp
 	g._last_opinion = int(d.get("saved_at", 0))
 	var sts := {}
 	var ss: Dictionary = d.get("stats", {})
